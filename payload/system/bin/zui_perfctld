@@ -1,6 +1,6 @@
 #!/system/bin/sh
 
-DATA_ROOT=/data/zui_perfctl
+DATA_ROOT=/data/local/tmp/zui_perfctl
 PERF_DIR=$DATA_ROOT/perfctl
 DONE_DIR=$PERF_DIR/processed
 ZUI_DIR=$DATA_ROOT/zuipp
@@ -9,10 +9,6 @@ REFRESH_DIR=$DATA_ROOT/refresh
 LOG_DIR=$DATA_ROOT/log
 LOG_FILE=$LOG_DIR/perfctld.log
 STATUS_FILE=$PERF_DIR/status.prop
-
-APP_FILES=/data/user/0/com.zui.perfctl/files
-APP_REQUEST=$APP_FILES/request.prop
-APP_STATUS=$APP_FILES/status.prop
 ADB_REQUEST=$PERF_DIR/request.prop
 
 SYSTEM_GAME_POLICY=/system/etc/game_policy.xml
@@ -32,11 +28,31 @@ ZUI_ENABLED=$ZUI_DIR/enabled.flag
 ASOUL_ENABLED=$ASOUL_DIR/enabled.flag
 REFRESH_ENABLED=$REFRESH_DIR/enabled.flag
 
+REQ_ID_KEY=zui_perfctl_request_id
+REQ_CMD_KEY=zui_perfctl_cmd
+REQ_RATE_KEY=zui_perfctl_rate
+STATUS_TIME_KEY=zui_perfctl_status_time
+STATUS_LAST_KEY=zui_perfctl_status_last
+STATUS_TEXT_KEY=zui_perfctl_status_text
+
 LAST_TOP_APP=
 LAST_REFRESH_RATE=
+LAST_SETTINGS_REQUEST_ID=
 
 ts() {
     date '+%Y-%m-%d %H:%M:%S'
+}
+
+settings_get_clean() {
+    value="$(settings get system "$1" 2>/dev/null)"
+    if [ "$value" = "null" ]; then
+        value=
+    fi
+    echo "$value"
+}
+
+settings_put_quiet() {
+    settings put system "$1" "$2" >/dev/null 2>&1
 }
 
 log_line() {
@@ -52,10 +68,19 @@ set_status() {
             echo "$line"
         done
     } > "$STATUS_FILE"
-    chmod 0644 "$STATUS_FILE" 2>/dev/null
-    if [ -d "$APP_FILES" ]; then
-        cp "$STATUS_FILE" "$APP_STATUS" 2>/dev/null
-        chmod 0644 "$APP_STATUS" 2>/dev/null
+    chmod 0664 "$STATUS_FILE" 2>/dev/null
+
+    last=
+    for line in "$@"; do
+        case "$line" in
+            last=*) last="${line#last=}" ;;
+        esac
+    done
+    settings_put_quiet "$STATUS_TIME_KEY" "$(ts)"
+    settings_put_quiet "$STATUS_LAST_KEY" "$last"
+    if [ -s "$STATUS_FILE" ]; then
+        status_text="$(tr '\n' ';' < "$STATUS_FILE" 2>/dev/null)"
+        settings_put_quiet "$STATUS_TEXT_KEY" "$status_text"
     fi
 }
 
@@ -66,13 +91,13 @@ copy_if_missing() {
         return 0
     fi
     if [ -s "$src" ]; then
-        cp "$src" "$dst" && chmod 0644 "$dst"
+        cp "$src" "$dst" && chmod 0664 "$dst"
     fi
 }
 
 init_dirs() {
     mkdir -p "$PERF_DIR" "$DONE_DIR" "$ZUI_DIR" "$ASOUL_DIR" "$REFRESH_DIR" "$LOG_DIR"
-    chmod 0755 "$DATA_ROOT" "$PERF_DIR" "$DONE_DIR" "$ZUI_DIR" "$ASOUL_DIR" "$REFRESH_DIR" "$LOG_DIR" 2>/dev/null
+    chmod 0775 "$DATA_ROOT" "$PERF_DIR" "$DONE_DIR" "$ZUI_DIR" "$ASOUL_DIR" "$REFRESH_DIR" "$LOG_DIR" 2>/dev/null
     copy_if_missing "$DEFAULT_GAME_POLICY" "$WORK_GAME_POLICY"
     copy_if_missing "$DEFAULT_PERF_CONFIG" "$WORK_PERF_CONFIG"
     copy_if_missing "$DEFAULT_ASOPT" "$WORK_ASOPT"
@@ -123,11 +148,11 @@ validate_zuipp_files() {
         log_line "zuipp validate failed: missing work xml"
         return 1
     fi
-    if ! grep -q "game" "$WORK_GAME_POLICY"; then
-        log_line "zuipp validate warning: game_policy has no game text"
+    if ! grep -q "AppPolicy" "$WORK_GAME_POLICY"; then
+        log_line "zuipp validate warning: game_policy has no AppPolicy text"
     fi
-    if ! grep -q "config" "$WORK_PERF_CONFIG"; then
-        log_line "zuipp validate warning: performanceconfig has no config text"
+    if ! grep -q "PerformanceConfig" "$WORK_PERF_CONFIG"; then
+        log_line "zuipp validate warning: performanceconfig has no PerformanceConfig text"
     fi
     return 0
 }
@@ -150,7 +175,7 @@ apply_zuipp() {
     bind_file "$WORK_PERF_CONFIG" "$SYSTEM_PERF_CONFIG" "performanceconfig" || ok=0
     if [ "$ok" = "1" ]; then
         touch "$ZUI_ENABLED"
-        chmod 0644 "$ZUI_ENABLED" 2>/dev/null
+        chmod 0664 "$ZUI_ENABLED" 2>/dev/null
         restart_zuipp
         set_status "daemon=running" "last=apply_zuipp_ok"
         return 0
@@ -170,9 +195,9 @@ restore_zuipp() {
 
 restart_asoul() {
     log_line "restart asoul"
-    setprop ctl.restart zui_asoulopt
+    setprop ctl.restart zui_asoulopt >> "$LOG_FILE" 2>&1
     sleep 1
-    setprop ctl.start zui_asoulopt
+    setprop ctl.start zui_asoulopt >> "$LOG_FILE" 2>&1
     set_status "daemon=running" "last=restart_asoul"
 }
 
@@ -187,7 +212,7 @@ apply_asoul() {
         return 1
     }
     touch "$ASOUL_ENABLED"
-    chmod 0644 "$ASOUL_ENABLED" 2>/dev/null
+    chmod 0664 "$ASOUL_ENABLED" 2>/dev/null
     restart_asoul
     set_status "daemon=running" "last=apply_asoul_ok"
 }
@@ -229,14 +254,23 @@ restore_refresh_rate() {
     set_status "daemon=running" "last=restore_refresh"
 }
 
+extract_pkg_from_focus() {
+    line="$1"
+    pkg="$(echo "$line" | sed -n 's/.* u[0-9][0-9]* \([^/ }]*\)\/.*/\1/p' | head -n 1)"
+    if [ -z "$pkg" ]; then
+        pkg="$(echo "$line" | sed -n 's/.* \([A-Za-z0-9_][A-Za-z0-9_.]*\)\/[A-Za-z0-9_.$]*.*/\1/p' | head -n 1)"
+    fi
+    echo "$pkg"
+}
+
 current_top_app() {
-    pid=
-    if [ -r /dev/cpuset/top-app/cgroup.procs ]; then
-        pid="$(head -n 1 /dev/cpuset/top-app/cgroup.procs 2>/dev/null)"
+    line="$(dumpsys window 2>/dev/null | grep 'mCurrentFocus=' | head -n 1)"
+    pkg="$(extract_pkg_from_focus "$line")"
+    if [ -z "$pkg" ]; then
+        line="$(dumpsys activity activities 2>/dev/null | grep 'topResumedActivity=' | head -n 1)"
+        pkg="$(extract_pkg_from_focus "$line")"
     fi
-    if [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ]; then
-        tr '\000' '\n' < "/proc/$pid/cmdline" 2>/dev/null | head -n 1
-    fi
+    echo "$pkg"
 }
 
 rule_for_app() {
@@ -295,14 +329,11 @@ archive_request() {
     mv "$file" "$DONE_DIR/$stamp.$base" 2>/dev/null
 }
 
-process_request() {
-    file="$1"
-    if [ ! -s "$file" ]; then
-        return 0
-    fi
-    cmd="$(prop_value cmd "$file")"
-    rate="$(prop_value rate "$file")"
-    log_line "request: $file cmd=$cmd rate=$rate"
+handle_request() {
+    source="$1"
+    cmd="$2"
+    rate="$3"
+    log_line "request: $source cmd=$cmd rate=$rate"
 
     case "$cmd" in
         apply_zuipp) apply_zuipp ;;
@@ -315,7 +346,7 @@ process_request() {
         restore_refresh) restore_refresh_rate ;;
         enable_auto_refresh)
             touch "$REFRESH_ENABLED"
-            chmod 0644 "$REFRESH_ENABLED" 2>/dev/null
+            chmod 0664 "$REFRESH_ENABLED" 2>/dev/null
             set_status "daemon=running" "last=enable_auto_refresh"
             ;;
         disable_auto_refresh)
@@ -329,7 +360,28 @@ process_request() {
             set_status "daemon=running" "last=unknown_request" "cmd=$cmd"
             ;;
     esac
+}
+
+process_request_file() {
+    file="$1"
+    if [ ! -s "$file" ]; then
+        return 0
+    fi
+    cmd="$(prop_value cmd "$file")"
+    rate="$(prop_value rate "$file")"
+    handle_request "$file" "$cmd" "$rate"
     archive_request "$file"
+}
+
+process_settings_request() {
+    id="$(settings_get_clean "$REQ_ID_KEY")"
+    if [ -z "$id" ] || [ "$id" = "$LAST_SETTINGS_REQUEST_ID" ]; then
+        return 0
+    fi
+    LAST_SETTINGS_REQUEST_ID="$id"
+    cmd="$(settings_get_clean "$REQ_CMD_KEY")"
+    rate="$(settings_get_clean "$REQ_RATE_KEY")"
+    handle_request "settings:$id" "$cmd" "$rate"
 }
 
 boot_restore() {
@@ -348,8 +400,8 @@ main_loop() {
     log_line "zui_perfctld start"
     boot_restore
     while true; do
-        process_request "$APP_REQUEST"
-        process_request "$ADB_REQUEST"
+        process_settings_request
+        process_request_file "$ADB_REQUEST"
         refresh_tick
         sleep 2
     done

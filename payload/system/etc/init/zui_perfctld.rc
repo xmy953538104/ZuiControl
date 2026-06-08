@@ -5,5 +5,5 @@ service zui_perfctld /system/bin/sh /system/bin/zui_perfctld
     class late_start
     disabled
     user root
-    group root system readproc graphics
+    group root system shell readproc graphics
     seclabel u:r:shell:s0

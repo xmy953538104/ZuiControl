@@ -7,7 +7,7 @@ It keeps the official ZuiPP and game helper packages installed, then adds:
 - `com.zui.perfctl`: privileged Android app UI.
 - `/system/bin/zui_perfctld`: root init daemon for XML bind mounts, refresh-rate commands, and AsoulOpt control.
 - Embedded `AsoulOpt` service copied from the known working 187 payload.
-- Runtime config under `/data/zui_perfctl`.
+- Runtime config under `/data/local/tmp/zui_perfctl` for the current shell-domain prototype.
 
 ## Layout
 
@@ -37,9 +37,9 @@ python scripts/ApplyZuiperfCtlPayload.py --unpack /path/to/work/unpack
 
 Runtime logs on device:
 
-- `/data/zui_perfctl/log/perfctld.log`
-- `/data/zui_perfctl/log/asoulopt.log`
+- `/data/local/tmp/zui_perfctl/log/perfctld.log`
+- `/data/local/tmp/zui_perfctl/log/asoulopt.log`
 
 ## Notes
 
-This is still a v1 prototype. ZuiPP XML changes are applied through bind mount, and ZuiPP/GameHelper processes are restarted so they reload cached XML. Automatic refresh switching is disabled by default until rules are added to `/data/zui_perfctl/refresh/rules.prop`.
+This is still a prototype. The app sends commands through `Settings.System` keys (`zui_perfctl_request_id`, `zui_perfctl_cmd`, `zui_perfctl_rate`) so the shell-domain daemon does not need to read app-private data. Automatic refresh switching is disabled by default until rules are added to `/data/local/tmp/zui_perfctl/refresh/rules.prop`.

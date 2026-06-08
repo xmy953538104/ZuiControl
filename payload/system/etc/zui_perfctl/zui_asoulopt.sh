@@ -1,6 +1,6 @@
 #!/system/bin/sh
 
-LOG_DIR=/data/zui_perfctl/log
+LOG_DIR=/data/local/tmp/zui_perfctl/log
 LOG=$LOG_DIR/asoulopt.log
 CFG=/system/etc/asopt.conf
 
@@ -23,7 +23,7 @@ lock_val() {
 }
 
 mkdir -p "$LOG_DIR"
-chmod 0755 /data/zui_perfctl "$LOG_DIR" 2>/dev/null
+chmod 0775 /data/local/tmp/zui_perfctl "$LOG_DIR" 2>/dev/null
 
 until [ "$(getprop sys.boot_completed)" = "1" ]; do
     sleep 2
