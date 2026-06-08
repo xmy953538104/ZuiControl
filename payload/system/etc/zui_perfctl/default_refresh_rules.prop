@@ -1,0 +1,11 @@
+# One rule per line:
+# package.name=60
+# package.name=90
+# package.name=120
+# package.name=144
+#
+# Enable automatic switching from the app or with:
+#   echo "cmd=enable_auto_refresh" > /data/zui_perfctl/perfctl/request.prop
+#
+# Example, keep disabled until you intentionally choose it:
+# com.kurogame.mingchao=120

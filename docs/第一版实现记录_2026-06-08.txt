@@ -1,0 +1,129 @@
+ZuiperfCtl 第一版实现记录
+日期：2026-06-08
+
+一、第一版目标
+做一套新的系统级工具，而不是替换 ZuiPP / 游戏助手。
+官方 ZuiPP 和游戏助手继续保留，我们新增：
+1. com.zui.perfctl 前端 App，负责显示按钮、写请求文件。
+2. /system/bin/zui_perfctld 守护服务，开机后以 init 服务启动，负责实际执行 root/system 侧操作。
+3. AsoulOpt 内置服务，沿用之前 187 成功案例里的二进制、rc、启动脚本和 SELinux 上下文。
+
+二、目录和文件
+App 源码：
+app
+
+系统 payload：
+payload
+
+关键文件：
+payload/system/bin/zui_perfctld
+payload/system/bin/AsoulOpt
+payload/system/etc/init/zui_perfctld.rc
+payload/system/etc/init/zui_asoulopt.rc
+payload/system/etc/zui_perfctl/default_game_policy.xml
+payload/system/etc/zui_perfctl/default_performanceconfig.xml
+payload/system/etc/zui_perfctl/default_asopt.conf
+payload/system/etc/zui_perfctl/default_refresh_rules.prop
+payload/system/etc/permissions/privapp-permissions-zui-perfctl.xml
+
+辅助脚本：
+scripts/BuildZuiperfCtl.ps1
+scripts/ApplyZuiperfCtlPayload.py
+.github/workflows/build.yml
+
+三、工作方式
+App 不直接修改 /system，也不需要 root。
+App 写入：
+/data/user/0/com.zui.perfctl/files/request.prop
+
+守护服务每 2 秒读取请求，执行后把请求移动到：
+/data/zui_perfctl/perfctl/processed
+
+守护服务日志：
+/data/zui_perfctl/log/perfctld.log
+
+守护服务状态：
+/data/zui_perfctl/perfctl/status.prop
+/data/user/0/com.zui.perfctl/files/status.prop
+
+四、ZuiPP XML 调度
+守护服务首次启动会复制默认模板到：
+/data/zui_perfctl/zuipp/game_policy.xml
+/data/zui_perfctl/zuipp/performanceconfig.xml
+
+执行 apply_zuipp 后：
+1. bind mount /data/zui_perfctl/zuipp/game_policy.xml 到 /system/etc/game_policy.xml
+2. bind mount /data/zui_perfctl/zuipp/performanceconfig.xml 到 /system/etc/performanceconfig.xml
+3. force-stop com.zui.pp / com.zui.game.service / com.zui.gamehelper，让它们重新读取 XML
+
+结论：
+XML 修改不需要重刷包。
+XML 修改后不需要重启系统。
+XML 修改后大概率需要重启 ZuiPP / 游戏助手相关进程，因为之前测试显示它们会缓存 XML。
+
+五、AsoulOpt
+第一版 payload 已经包含 AsoulOpt 本体，不再依赖旧 my-tset payload 才能启动。
+
+默认 /system/etc/asopt.conf 沿用旧成功案例：
+mode=2
+rt=0
+opt=0xDEADBEEF
+
+守护服务会准备工作副本：
+/data/zui_perfctl/asoul/asopt.conf
+
+执行 apply_asoul 后：
+1. bind mount /data/zui_perfctl/asoul/asopt.conf 到 /system/etc/asopt.conf
+2. restart zui_asoulopt
+
+六、刷新率
+手动锁帧命令会同时写：
+settings put system peak_refresh_rate X.0
+settings put system min_refresh_rate X.0
+
+支持 X：
+60 / 90 / 120 / 144
+
+restore_refresh 会删除 peak_refresh_rate 和 min_refresh_rate，让系统回到默认自适应。
+
+自动按前台 App 切换的第一版逻辑：
+1. 规则文件在 /data/zui_perfctl/refresh/rules.prop
+2. 格式是 package.name=120
+3. 默认禁用，必须通过 App 或 request.prop 执行 enable_auto_refresh
+4. 守护服务读取 /dev/cpuset/top-app/cgroup.procs 判断当前前台进程
+
+七、已做的本地校验
+1. Gradle 项目配置可解析：
+   使用本地 Gradle 9.3.1 执行 gradle -p ZuiperfCtl tasks --all 成功。
+
+2. APK 本地编译未完成：
+   assembleDebug 失败原因是本机没有 Android SDK，也没有 ANDROID_HOME / ANDROID_SDK_ROOT。
+   当前失败点不是 Kotlin 或项目配置，而是缺 SDK location。
+
+3. PowerShell 脚本语法：
+   scripts/BuildZuiperfCtl.ps1 通过 PowerShell parser 检查。
+
+4. XML：
+   App Manifest 和 privapp-permissions XML 可被严格 XML 解析。
+   default_game_policy.xml 和 default_performanceconfig.xml 与 187 官方来源 SHA256 一致。
+   注意：官方 performanceconfig.xml 用严格 XML DOM 解析会报注释格式问题，因此后续做表单编辑时不能用会重排整份文件的严格 XML 序列化器，应使用保守的定点改写。
+
+5. Python / shell：
+   本机 PATH 没有 python/python3/py，也没有 bash；WSL 存在但没有可用发行版。
+   因此 ApplyZuiperfCtlPayload.py 和 zui_perfctld 的解释器级语法检查需要在 CI、Linux、或设备侧继续做。
+
+八、下一步测试顺序
+1. 在 GitHub Actions 运行 Build ZuiperfCtl，拿到 ZuiperfCtl-debug-apk 和完整 payload。
+2. 或者本机补 Android SDK 后运行：
+   powershell -ExecutionPolicy Bypass -File scripts/BuildZuiperfCtl.ps1
+3. APK 放入 payload 后，对已解包镜像运行：
+   python scripts/ApplyZuiperfCtlPayload.py --unpack work/unpack
+4. 打包刷机后先看：
+   /data/zui_perfctl/log/perfctld.log
+   /data/zui_perfctl/log/asoulopt.log
+5. 再在 App 内依次测试：
+   刷新状态
+   重启 AsoulOpt
+   手动锁 60 / 120 / 恢复系统
+   应用 ZuiPP XML
+6. 设备验证稳定后，再做第二版：游戏档位表单，把 GPU/CPU 档位映射成安全的 XML 定点修改。

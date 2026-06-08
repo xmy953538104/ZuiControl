@@ -1,0 +1,562 @@
+ZuiperfCtl 系统级 App 与守护服务计划 - 2026-06-08
+
+一、先说结论
+
+1. 不替换 ZuiPP。
+   我们没有 Lenovo/ZUI 的 APK platform 签名，不能安全替换 com.zui.pp。
+   后续路线是保留官方 ZuiPP，让它继续当系统游戏调度入口。
+
+2. 我们做自己的系统级控制器。
+   名字暂定 ZuiperfCtl。
+   它由两部分组成:
+   - 系统内置 App: 负责界面、编辑配置、展示状态。
+   - init/root 守护服务: 负责真正执行 bind mount、重启 PP、启动/管理 AsoulOpt、写刷新率 settings。
+
+3. App 不是“直接改 system 的文件管理器”。
+   App 更像控制面板和编辑器。
+   真正动系统的是守护服务。
+   这样权限边界清楚，也更不容易把系统弄到无法开机。
+
+4. XML 调度路线已经实测可行。
+   只复制到 /data/user/0/com.zui.pp/files 不生效。
+   通过 bind mount 覆盖 /system/etc/game_policy.xml 后，ZuiPP 确实吃到了我们的测试 XML。
+
+5. 第一版 XML 更新需要重启 PP/GameHelper，但不需要重启系统。
+   已验证两种情况:
+   - bind mount 后，重启 com.zui.pp 和 com.zui.game.service，再打开鸣潮，策略生效。
+   - bind mount 后完全不重启 PP/GameHelper，PP 进程视角能看到新 XML，但进入 GameMode 后仍按旧缓存把鸣潮拉回 60Hz。
+
+   结论:
+   ZuiPP/GameHelper 很可能在启动或服务初始化时把 XML 读进内存，不会因为文件路径内容变化而自动热加载。
+   因此第一版设计为:
+   改 XML -> 守护服务校验 -> bind mount -> 重启 PP/GameHelper -> 生效。
+   不重启整机。
+
+二、整体工作方式，用人话讲
+
+官方现在是:
+ZuiPP 去 /system/etc/game_policy.xml 和 /system/etc/performanceconfig.xml 读调度表。
+
+我们以后是:
+用户在 ZuiperfCtl 里改配置。
+配置保存到 /data/zui_perfctl/zuipp/。
+守护服务检查配置没问题后，把 /system/etc/game_policy.xml 这个路径临时“指向”我们的配置文件。
+ZuiPP 还是以为自己在读官方路径。
+实际上内容已经变成我们的配置。
+
+这就是 bind mount 的意义。
+不是改坏系统原文件，而是给同一个路径换一个临时内容。
+卸载 mount 或重启后，系统原文件还在。
+
+三、XML 更新是否实时生效
+
+1. 开机时
+
+守护服务应该开机启动。
+但不建议让它成为“开机必须成功”的关键服务。
+
+正确做法:
+系统先正常开机。
+守护服务在 /data 可用后启动。
+读取 /data/zui_perfctl/zuipp/active/ 下的配置。
+校验通过就 bind mount。
+校验失败就什么都不挂，让官方 XML 继续生效。
+
+这样即使我们的配置坏了，也不影响开机。
+
+2. App 里修改 XML 后
+
+推荐流程:
+App 把新配置写到 staging 目录。
+守护服务校验 XML。
+校验通过后生成 active 配置。
+守护服务重新 bind mount。
+守护服务重启 com.zui.pp 和 com.zui.game.service。
+重新打开游戏后，新策略生效。
+
+预计体验:
+不用重启系统。
+需要等 PP/GameHelper 重启，通常是几秒级。
+
+3. 能不能不重启 PP
+
+2026-06-08 已补测，结论是不行。
+
+实测过程:
+PP PID 15771、GameHelper PID 15891 保持不重启。
+先把测试 XML bind mount 到 /system/etc/game_policy.xml 和 /system/etc/performanceconfig.xml。
+再确认 /proc/15771/root/system/etc/game_policy.xml 里，鸣潮的 RefreshRateConfig 已经变成 120。
+随后直接打开鸣潮，等系统进入 GameMode。
+
+实测结果:
+topResumedActivity 是 com.kurogame.mingchao/com.epicgames.ue4.GameActivity。
+zui_playing_mode 进入 GameMode。
+peak_refresh_rate 仍被设为 60.0。
+min_refresh_rate 仍为空。
+显示渲染范围仍是 0.0-60.0。
+PP/GameHelper PID 没变。
+
+解释:
+文件路径已经换成功了，但 PP/GameHelper 使用的还是旧配置缓存。
+所以仅仅替换 XML 文件，不足以让正在运行的 PP 重新解析策略。
+
+第一版结论:
+XML 更新后要重启 PP/GameHelper。
+不需要重启整机。
+后续可以继续找是否存在官方 provider/broadcast/reload 接口，但第一版不依赖它。
+
+四、系统 App 怎么做到像系统应用一样稳定
+
+关键点:
+真正要常驻的不是 App UI，而是 init 守护服务。
+
+App 可以被系统杀掉，但不应该影响:
+1. 已经挂好的 XML。
+2. 已经启动的 AsoulOpt。
+3. 已经运行的刷新率自动切换服务。
+
+所以架构上要分开:
+
+1. ZuiperfCtl.apk
+   位置:
+   /system/priv-app/ZuiperfCtl/ZuiperfCtl.apk
+
+   作用:
+   - 编辑游戏配置。
+   - 编辑刷新率规则。
+   - 编辑 AsoulOpt 配置。
+   - 展示当前前台包名、刷新率、PP 状态、AsoulOpt 状态、日志。
+   - 向守护服务发送“应用配置”“恢复默认”“重启 AsoulOpt”等请求。
+
+   它不直接写 /system/etc。
+   它不直接写 sysfs。
+   它不依赖 Magisk/APatch 的 su 弹窗。
+
+2. zui_perfctld
+   位置:
+   /system/bin/zui_perfctld
+   /system/etc/init/zui_perfctld.rc
+
+   运行身份:
+   root。
+
+   作用:
+   - 开机读取配置。
+   - bind mount ZuiPP XML。
+   - 按请求重启 ZuiPP/GameHelper。
+   - 管理 AsoulOpt 启停和配置。
+   - 按前台 App 切换刷新率。
+   - 写日志。
+   - 做回滚保护。
+
+3. 通信方式
+
+第一版建议用本地 Unix socket:
+   /dev/socket/zui_perfctld
+
+守护服务只接受:
+   system/root/shell
+   我们的 ZuiperfCtl 包 UID
+
+如果 UID 校验不好做，第一版也可以先用受控 request 文件:
+   /data/zui_perfctl/perfctl/request.json
+
+但长期更推荐 Unix socket，因为响应快、权限边界更清楚。
+
+4. 不被后台清理
+
+核心守护服务不走 Android 普通后台 Service。
+它由 init 启动，不属于普通 App 后台进程。
+因此不会像普通应用一样被后台清理。
+
+ZuiperfCtl.apk 本身可以做成 priv-app，并加入:
+   RECEIVE_BOOT_COMPLETED
+   QUERY_ALL_PACKAGES
+   WRITE_SETTINGS
+   FOREGROUND_SERVICE
+   DUMP
+
+但注意:
+没有 platform 签名时，不能假设所有 signature 权限都能拿到。
+所以 App 不应该依赖这些高危权限完成核心功能。
+核心动作都交给 root 守护服务。
+
+5. 是否要 android:persistent=true
+
+不建议第一版给完整 UI App 做 persistent。
+
+理由:
+如果 UI App 有 bug，persistent 可能导致系统反复拉起，反而增加风险。
+我们需要常驻的是守护服务，不是 UI。
+
+可以后续做一个极小的状态服务或 Tile 服务，但不是第一版必需。
+
+五、AsoulOpt、XML 调度、刷新率三合一
+
+可以放在一个 App 里统一管理。
+但内部要分层，不能全部混在一起。
+
+建议三块:
+
+1. AsoulOpt 管理
+
+配置目录:
+   /data/zui_perfctl/asoul/asopt.conf
+
+如果当前 AsoulOpt 二进制仍读 /system/etc/asopt.conf:
+   守护服务开机时把 /data/zui_perfctl/asoul/asopt.conf bind mount 到 /system/etc/asopt.conf。
+
+启动方式:
+   不建议 init 直接启动裸二进制。
+   建议守护服务或 wrapper 负责启动:
+   /system/bin/AsoulOpt >> /data/zui_perfctl/log/asoulopt.log 2>&1
+
+App 里提供:
+   - 查看 AsoulOpt 是否运行。
+   - 查看日志。
+   - 编辑 asopt.conf。
+   - 重启 AsoulOpt。
+   - 恢复默认配置。
+
+2. ZuiPP XML 管理
+
+配置目录:
+   /data/zui_perfctl/zuipp/base/
+   /data/zui_perfctl/zuipp/staging/
+   /data/zui_perfctl/zuipp/active/
+   /data/zui_perfctl/zuipp/backup/
+
+App 里不建议第一版做“任意文本编辑器”。
+更推荐做结构化编辑:
+   - 选择游戏包名。
+   - 选择目标刷新率。
+   - 选择 Default/PowerSave/Savage 模式。
+   - 修改某些 Level 的 GPU/CPU 上限。
+   - 保存为一个 profile。
+
+守护服务负责:
+   - 从 profile 生成 XML。
+   - 检查 XML 是否完整。
+   - 检查 game_policy 引用的 Level 在 performanceconfig 中是否存在。
+   - 校验通过后再应用。
+
+这样比直接让用户手改 XML 安全。
+
+3. 刷新率管理
+
+规则目录:
+   /data/zui_perfctl/refresh/rules.json
+
+逻辑:
+   进入目标包名:
+      保存原 peak_refresh_rate 和 min_refresh_rate。
+      写入目标 peak_refresh_rate。
+      写入目标 min_refresh_rate。
+
+   离开目标包名:
+      恢复进入前的 peak/min。
+
+例如:
+   鸣潮省电稳定:
+      peak=60
+      min=60
+
+   鸣潮高触控模式:
+      peak=120
+      min=120
+
+注意:
+ZuiPP 的 XML RefreshRateConfig 只控制 peak。
+真正硬锁刷新率，还要守护服务写 min。
+
+六、前台 App 检测怎么做
+
+参考 Scene:
+Scene4 主要靠无障碍服务监听窗口变化。
+相关代码:
+   work/scene_vtools/app/src/main/java/com/omarea/vtools/AccessibilityScenceMode.kt
+   work/scene_vtools/app/src/main/java/com/omarea/scene_mode/AppSwitchHandler.kt
+
+Scene 这么做是因为它是普通 App，需要用户授权无障碍才能稳定知道前台是谁。
+
+我们不建议照搬无障碍作为主路。
+因为我们是系统内置 + root 守护服务，可以用更底层的方法。
+
+推荐前台检测优先级:
+
+1. 主路: /dev/cpuset/top-app/cgroup.procs
+
+读取 top-app 进程组里的 pid。
+再读:
+   /proc/<pid>/cmdline
+   /proc/<pid>/status
+
+得到当前 top app 的进程名/包名。
+
+优点:
+   不需要无障碍。
+   不需要 UsageStats 授权。
+   低成本。
+   Scene 的 swap-controller 也借鉴了这个方向。
+
+参考:
+   work/scene_vtools/swap-controller/adb_process/src/Main.java
+
+2. 兜底: dumpsys activity activities
+
+读取 topResumedActivity。
+优点是准确。
+缺点是 dumpsys 成本比读 cgroup 高。
+
+可以作为:
+   - 启动时校准。
+   - top-app 解析不到包名时兜底。
+   - 调试模式使用。
+
+3. 不作为主路: AccessibilityService
+
+除非 top-app/cgroup 在某些场景不准，再考虑加一个可选无障碍辅助模式。
+
+七、SCene/Scene4 能借鉴什么
+
+来源:
+   https://github.com/helloklf/vtools
+   本地克隆:
+   work/scene_vtools
+   当前克隆提交:
+   d735955
+
+可以借鉴:
+1. 前台切换后的状态机。
+   Scene 的 AppSwitchHandler 会判断包名是否变化，避免重复执行。
+
+2. 每个 App 一个配置。
+   Scene 用包名映射模式，我们也应该用包名映射刷新率/XML profile。
+
+3. 延迟切换和防抖。
+   刚切应用时不要立刻连续执行多次策略。
+   可以延迟 500ms-1500ms，确认前台稳定再应用。
+
+4. 屏幕开关逻辑。
+   熄屏后降低轮询频率或停止刷新率控制。
+   亮屏后恢复。
+
+5. FPS 读取思路。
+   Scene 的 FpsUtils 会优先读 measured_fps:
+      /sys/class/drm/sde-crtc-0/measured_fps
+      /sys/class/graphics/fb0/measured_fps
+   再尝试 SurfaceFlinger service call。
+
+   我们可以借鉴，但要结合 TB321FU 实机节点重新确认。
+
+不建议照搬:
+1. 无障碍主链路。
+2. 大量通用机型 powercfg 脚本。
+3. 普通 root App 的 keep shell 模式。
+4. Xposed 模块逻辑。
+5. 复杂悬浮窗体系。
+
+我们的目标更窄:
+只服务这台 ZUI 平板和我们的刷包环境。
+所以应该更轻、更稳、更少权限弹窗。
+
+八、语言和工程选择
+
+推荐组合:
+   App: Kotlin 原生 Android。
+   守护服务第一阶段: shell 原型。
+   守护服务正式版: C++ native daemon。
+
+1. 为什么 App 用 Kotlin
+
+优点:
+   Android 原生支持好。
+   写界面、设置页、JSON、文件管理、权限检查都方便。
+   GitHub CI 构建成熟。
+   以后维护比 Java 更舒服。
+
+不建议第一版用 Compose。
+理由:
+   不是不能用，而是我们追求轻量和稳定。
+   普通 Activity + XML layout 或少量 Material 组件就够了。
+
+2. 为什么守护服务先 shell，再 C++
+
+shell 原型:
+   优点是最快验证。
+   bind mount、settings、kill PP、启动 AsoulOpt 都能很快写出来。
+
+   缺点是长期维护、并发请求、错误处理、日志轮转不够稳。
+
+C++ daemon:
+   优点是体积小、启动快、无运行时依赖、适合 init 常驻。
+   NDK + CMake 放进 GitHub Actions 也比较成熟。
+
+Rust daemon:
+   也可以，而且安全性好。
+   但 CI、交叉编译、Android libc/SELinux/Unix socket 细节会多一些。
+   第一版不建议为了“语言优雅”增加工程复杂度。
+
+结论:
+第一阶段先 shell 打通功能。
+第二阶段把稳定逻辑迁移到 C++。
+
+九、GitHub CI 构建方式
+
+建议产物不是单个 APK，而是一个刷包 payload:
+
+1. APK:
+   system/priv-app/ZuiperfCtl/ZuiperfCtl.apk
+
+2. 守护服务:
+   system/bin/zui_perfctld
+
+3. init rc:
+   system/etc/init/zui_perfctld.rc
+
+4. priv-app 权限白名单:
+   system/etc/permissions/privapp-permissions-zui-perfctl.xml
+
+5. 默认配置:
+   system/etc/zui_perfctl/default_game_policy.xml
+   system/etc/zui_perfctl/default_performanceconfig.xml
+   system/etc/zui_perfctl/default_asopt.conf
+
+6. 日志目录由守护服务创建:
+   /data/zui_perfctl/log/
+
+CI 流程:
+1. checkout。
+2. set up JDK。
+3. set up Android SDK/NDK。
+4. Gradle 构建 APK。
+5. CMake/NDK 构建 native daemon。
+6. 组装 payload zip。
+7. 上传 artifact。
+
+签名:
+APK 用我们自己的 release key 签名。
+不需要 platform 签名才能放进 /system/priv-app。
+但是不能依赖 platform 签名权限。
+
+镜像签名:
+仍然使用你已有的 AVB/vbmeta 官方链路处理镜像。
+
+十、安全和回滚设计
+
+守护服务必须保守。
+
+1. 配置校验失败:
+   不应用。
+   保持官方 XML。
+   写日志。
+
+2. bind mount 失败:
+   不重启 PP。
+   写日志。
+
+3. 重启 PP 后异常:
+   卸载 mount。
+   恢复官方 XML。
+   再重启 PP。
+
+4. 刷新率异常:
+   提供一键恢复:
+      settings put system peak_refresh_rate 120.0
+      settings delete system min_refresh_rate
+
+5. AsoulOpt 异常:
+   允许停用 AsoulOpt。
+   不影响 XML 调度和刷新率控制。
+
+6. 开机保护:
+   如果 /data/zui_perfctl/disable.flag 存在，守护服务只记录日志，不应用任何修改。
+
+7. 日志:
+   /data/zui_perfctl/log/perfctld.log
+   /data/zui_perfctl/log/asoulopt.log
+   /data/zui_perfctl/log/app_requests.log
+
+十一、阶段计划
+
+阶段 0: 已完成
+
+结论:
+“不重启 PP/GameHelper 热更新 XML”实测不生效。
+PP 进程视角能看到新文件，但进入 GameMode 仍按旧缓存执行。
+
+后续可选:
+继续找 com.zui.pp 是否暴露 provider、broadcast 或 reload 接口。
+第一版不依赖这些接口，直接采用“bind mount + 重启 PP/GameHelper”。
+
+阶段 1: shell 守护服务原型
+
+功能:
+1. 开机创建 /data/zui_perfctl/ 目录。
+2. 应用默认 XML bind mount。
+3. 重启 PP/GameHelper。
+4. 按请求恢复官方 XML。
+5. 记录日志。
+
+先不做 UI。
+先用 adb 写 request 文件测试。
+
+阶段 2: 刷新率控制原型
+
+功能:
+1. 读取前台包名。
+2. 匹配 /data/zui_perfctl/refresh/rules.json。
+3. 进入游戏写 peak/min。
+4. 离开游戏恢复。
+5. 手动切换 60/90/120/144。
+
+阶段 3: AsoulOpt 管理
+
+功能:
+1. bind mount asopt.conf。
+2. 启动 AsoulOpt。
+3. 停止 AsoulOpt。
+4. 重启 AsoulOpt。
+5. 日志重定向。
+6. 状态检测。
+
+阶段 4: Kotlin App
+
+功能:
+1. 首页状态。
+2. 游戏配置列表。
+3. 刷新率规则编辑。
+4. XML profile 编辑。
+5. AsoulOpt 配置编辑。
+6. 日志查看。
+7. 一键恢复官方默认。
+
+阶段 5: native daemon
+
+把 shell 原型里稳定下来的逻辑迁移到 C++。
+
+十二、当前推荐第一版范围
+
+第一版不要贪多。
+
+建议只做:
+1. 守护服务。
+2. XML bind mount + 重启 PP/GameHelper。
+3. 刷新率 peak/min 按包名切换。
+4. AsoulOpt 启停和日志。
+5. 一个简单 App 管理界面。
+
+暂时不做:
+1. 替换 ZuiPP。
+2. Patch ZuiPP。
+3. RefreshRateProvider 桥。
+4. 复杂悬浮窗。
+5. 大量机型通用调度脚本。
+6. 任意 sysfs 频率调参。
+
+最终判断:
+这条路线符合当前限制。
+不需要 PP 签名。
+不需要每次改调度都刷包。
+不依赖普通 root 授权弹窗。
+可以把 AsoulOpt、XML 调度、刷新率统一在一个系统 App 里管理。
