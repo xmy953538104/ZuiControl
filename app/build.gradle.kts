@@ -10,8 +10,35 @@ android {
         applicationId = "com.zui.perfctl"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            val storeFilePath = providers.gradleProperty("zuiperf.storeFile").orNull
+                ?: System.getenv("KEYSTORE_FILE")
+            if (!storeFilePath.isNullOrBlank()) {
+                storeFile = file(storeFilePath)
+            }
+            storePassword = providers.gradleProperty("zuiperf.storePassword").orNull
+                ?: System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = providers.gradleProperty("zuiperf.keyAlias").orNull
+                ?: System.getenv("KEY_ALIAS")
+            keyPassword = providers.gradleProperty("zuiperf.keyPassword").orNull
+                ?: System.getenv("KEY_PASSWORD")
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            isDebuggable = false
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+        }
+        getByName("debug") {
+            isDebuggable = true
+        }
     }
 
     compileOptions {

@@ -12,12 +12,6 @@
         android:label="ZuiperfCtl"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <provider
-            android:name="com.zui.perfctl.RefreshRateBridgeProvider"
-            android:authorities="com.lenovo.safecenter.power.RefreshRateProvider"
-            android:directBootAware="true"
-            android:exported="true" />
-
         <activity
             android:name="com.zui.perfctl.MainActivity"
             android:exported="true"

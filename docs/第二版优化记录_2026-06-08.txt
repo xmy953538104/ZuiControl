@@ -1,0 +1,115 @@
+ZuiperfCtl 第二版优化记录 - 2026-06-08
+
+本轮目标:
+1. GitHub Actions 改为 release 签名构建，不再使用 debug 产物作为正式刷包来源。
+2. 移除废弃 RefreshRateProvider 桥，避免继续出现 provider 找不到或组件缓存相关噪音。
+3. 把 App 从测试按钮面板改成中文可用界面，支持添加应用包名并选择 60/90/120/144Hz 规则。
+4. 修复 zui_perfctld 重启重复消费旧 Settings 请求的问题。
+5. 修复 XML 工作副本和当前系统真实 game_policy.xml 基线不一致的问题。
+
+已修改内容:
+
+一、CI / 签名
+- 修改 ZuiperfCtl/.github/workflows/build.yml。
+- CI 现在执行 :app:assembleRelease。
+- 使用 GitHub Actions secrets:
+  - KEYSTORE
+  - KEYSTORE_PASSWORD
+  - KEY_ALIAS
+  - KEY_PASSWORD
+- KEYSTORE 按 base64 解码为临时 jks 文件。
+- CI artifact 名称改为:
+  - ZuiperfCtl-release-apk
+  - zui-perfctl-v2-payload
+
+二、App 版本与签名配置
+- app/build.gradle.kts:
+  - versionCode = 2
+  - versionName = 0.2.0
+  - 增加 release signingConfig，读取 Gradle property 或环境变量。
+  - release 构建关闭 debuggable。
+
+三、移除 RefreshRateProvider 桥
+- AndroidManifest.xml 删除 provider 声明:
+  - com.lenovo.safecenter.power.RefreshRateProvider
+- 删除 RefreshRateBridgeProvider.java。
+- 本地重新编译后的 APK manifest 已确认:
+  - versionCode = 2
+  - versionName = 0.2.0
+  - No provider bridge in manifest
+
+四、App 中文界面
+- MainActivity.kt 重写为中文控制面板。
+- 现在第一屏可做:
+  - 手动锁 60/90/120/144Hz
+  - 恢复系统默认刷新率
+  - 输入包名
+  - 从已安装应用列表选择包名
+  - 保存包名 -> 刷新率规则
+  - 删除规则
+  - 开启/关闭自动切换
+  - 查看守护服务状态和当前规则
+  - 高级操作: 重启 AsoulOpt、应用 Asoul 配置、应用/恢复 XML
+- App 仍通过 Settings.System 发请求，真实写入由 init 守护服务完成。
+
+五、zui_perfctld 守护服务
+- 新增请求字段:
+  - zui_perfctl_package
+- 新增命令:
+  - set_refresh_rule
+  - remove_refresh_rule
+- 新增发布状态:
+  - zui_perfctl_refresh_rules_text
+  - zui_perfctl_auto_refresh
+- 规则写入位置:
+  - /data/local/tmp/zui_perfctl/refresh/rules.prop
+- 保存规则时会校验包名和刷新率，只允许 60/90/120/144。
+- 删除规则后会刷新自动切换状态。
+- 开启自动切换或改规则后，会重置 LAST_TOP_APP，让当前前台应用可以重新匹配。
+- 处理完 Settings 请求后会:
+  - 记录 last_settings_request_id
+  - 删除 zui_perfctl_cmd / zui_perfctl_rate / zui_perfctl_package
+  - 避免重启后重复消费旧 request_id
+- 启动时如果发现系统里残留旧 request_id，会记录并忽略它。
+
+六、XML 基线修复
+- payload/system/etc/zui_perfctl/default_game_policy.xml 已同步为当前最终 /system/etc/game_policy.xml。
+- SHA256:
+  - 01818A75EFABB0513C74E72056797418DC9BF5E2AD884B2BCE802D65EED32398
+- zui_perfctld 首次初始化工作副本时优先从:
+  - /system/etc/game_policy.xml
+  - /system/etc/performanceconfig.xml
+  复制。
+- default_* 文件现在只作为兜底。
+- 如果旧工作副本等于旧 fallback，但系统真实文件已变更，daemon 会自动迁移到真实系统文件。
+
+七、本地验证
+- Git Bash shell 语法检查通过:
+  - payload/system/bin/zui_perfctld
+  - payload/system/etc/zui_perfctl/zui_asoulopt.sh
+- 本地 Android debug 编译通过:
+  - :app:assembleDebug
+- 使用临时测试 keystore 的 release 编译通过:
+  - :app:assembleRelease
+  - 输出 app/build/outputs/apk/release/app-release.apk
+- Windows 构建脚本 Debug 模式通过，并能复制当前 APK 到 payload。
+- 本地 payload APK 已覆盖为当前 v2 APK，避免误用残留 v1 APK。
+- aapt 检查:
+  - package: com.zui.perfctl
+  - versionCode: 2
+  - versionName: 0.2.0
+  - manifest 不再包含 provider / RefreshRateProvider
+
+八、仍需 CI / 刷入后验证
+1. GitHub Actions release 签名是否一次通过。
+2. release APK 是否能被系统作为 /system/priv-app 正常解析。
+3. 刷入后 dumpsys package com.zui.perfctl 是否显示 versionCode=2。
+4. dumpsys package providers 中不应再出现旧 RefreshRateProvider 桥。
+5. App 内添加包名规则后，/data/local/tmp/zui_perfctl/refresh/rules.prop 是否正确更新。
+6. 开启自动切换后，前台应用命中规则是否能自动锁到指定刷新率。
+7. 重启后不应再重复消费旧 auto_off_1 或其他旧 request_id。
+
+当前建议:
+- 先推送到 GitHub 触发 CI。
+- CI 成功后，使用 zui-perfctl-v2-payload 替换 payload，再重新打 super/vbmeta 刷入测试。
+- AsoulOpt 的 SELinux 路线本轮未改动，继续沿用已经验证正常的 performanced 域方案。

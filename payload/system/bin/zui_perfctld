@@ -10,6 +10,7 @@ LOG_DIR=$DATA_ROOT/log
 LOG_FILE=$LOG_DIR/perfctld.log
 STATUS_FILE=$PERF_DIR/status.prop
 ADB_REQUEST=$PERF_DIR/request.prop
+LAST_SETTINGS_ID_FILE=$PERF_DIR/last_settings_request_id
 
 SYSTEM_GAME_POLICY=/system/etc/game_policy.xml
 SYSTEM_PERF_CONFIG=/system/etc/performanceconfig.xml
@@ -31,9 +32,12 @@ REFRESH_ENABLED=$REFRESH_DIR/enabled.flag
 REQ_ID_KEY=zui_perfctl_request_id
 REQ_CMD_KEY=zui_perfctl_cmd
 REQ_RATE_KEY=zui_perfctl_rate
+REQ_PACKAGE_KEY=zui_perfctl_package
 STATUS_TIME_KEY=zui_perfctl_status_time
 STATUS_LAST_KEY=zui_perfctl_status_last
 STATUS_TEXT_KEY=zui_perfctl_status_text
+RULES_TEXT_KEY=zui_perfctl_refresh_rules_text
+AUTO_REFRESH_KEY=zui_perfctl_auto_refresh
 
 LAST_TOP_APP=
 LAST_REFRESH_RATE=
@@ -53,6 +57,10 @@ settings_get_clean() {
 
 settings_put_quiet() {
     settings put system "$1" "$2" >/dev/null 2>&1
+}
+
+settings_delete_quiet() {
+    settings delete system "$1" >/dev/null 2>&1
 }
 
 log_line() {
@@ -95,13 +103,50 @@ copy_if_missing() {
     fi
 }
 
+copy_work_file() {
+    live="$1"
+    fallback="$2"
+    dst="$3"
+    name="$4"
+
+    if [ ! -s "$dst" ]; then
+        if [ -s "$live" ]; then
+            cp "$live" "$dst" && chmod 0664 "$dst"
+            log_line "$name initialized from live system file"
+            return 0
+        fi
+        copy_if_missing "$fallback" "$dst"
+        log_line "$name initialized from fallback file"
+        return 0
+    fi
+
+    if [ -s "$live" ] && [ -s "$fallback" ] && cmp -s "$dst" "$fallback" && ! cmp -s "$live" "$fallback"; then
+        cp "$live" "$dst" && chmod 0664 "$dst"
+        log_line "$name migrated from fallback to live system file"
+    fi
+}
+
+publish_refresh_state() {
+    rules_text=
+    if [ -s "$REFRESH_RULES" ]; then
+        rules_text="$(grep -v '^[[:space:]]*#' "$REFRESH_RULES" 2>/dev/null | grep -v '^[[:space:]]*$' 2>/dev/null)"
+    fi
+    settings_put_quiet "$RULES_TEXT_KEY" "$rules_text"
+    if [ -f "$REFRESH_ENABLED" ]; then
+        settings_put_quiet "$AUTO_REFRESH_KEY" "1"
+    else
+        settings_put_quiet "$AUTO_REFRESH_KEY" "0"
+    fi
+}
+
 init_dirs() {
     mkdir -p "$PERF_DIR" "$DONE_DIR" "$ZUI_DIR" "$ASOUL_DIR" "$REFRESH_DIR" "$LOG_DIR"
     chmod 0775 "$DATA_ROOT" "$PERF_DIR" "$DONE_DIR" "$ZUI_DIR" "$ASOUL_DIR" "$REFRESH_DIR" "$LOG_DIR" 2>/dev/null
-    copy_if_missing "$DEFAULT_GAME_POLICY" "$WORK_GAME_POLICY"
-    copy_if_missing "$DEFAULT_PERF_CONFIG" "$WORK_PERF_CONFIG"
+    copy_work_file "$SYSTEM_GAME_POLICY" "$DEFAULT_GAME_POLICY" "$WORK_GAME_POLICY" "game_policy"
+    copy_work_file "$SYSTEM_PERF_CONFIG" "$DEFAULT_PERF_CONFIG" "$WORK_PERF_CONFIG" "performanceconfig"
     copy_if_missing "$DEFAULT_ASOPT" "$WORK_ASOPT"
     copy_if_missing "$DEFAULT_REFRESH_RULES" "$REFRESH_RULES"
+    publish_refresh_state
     set_status "daemon=running" "last=init"
 }
 
@@ -290,6 +335,78 @@ rule_for_app() {
     return 1
 }
 
+valid_package_name() {
+    pkg="$1"
+    case "$pkg" in
+        ""|.*|*.) return 1 ;;
+        *..*) return 1 ;;
+        *[!A-Za-z0-9_.]*) return 1 ;;
+    esac
+    return 0
+}
+
+valid_refresh_rate() {
+    case "$1" in
+        60|90|120|144) return 0 ;;
+    esac
+    return 1
+}
+
+rewrite_rules_without_pkg() {
+    pkg="$1"
+    tmp="$REFRESH_RULES.tmp"
+    mkdir -p "$REFRESH_DIR"
+    : > "$tmp"
+    if [ -s "$REFRESH_RULES" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            key="${line%%=*}"
+            if [ "$key" = "$pkg" ]; then
+                continue
+            fi
+            echo "$line" >> "$tmp"
+        done < "$REFRESH_RULES"
+    fi
+    mv "$tmp" "$REFRESH_RULES"
+    chmod 0664 "$REFRESH_RULES" 2>/dev/null
+}
+
+set_refresh_rule() {
+    pkg="$1"
+    rate="$2"
+    if ! valid_package_name "$pkg" || ! valid_refresh_rate "$rate"; then
+        log_line "invalid refresh rule: pkg=$pkg rate=$rate"
+        set_status "daemon=running" "last=set_refresh_rule_failed" "package=$pkg" "rate=$rate"
+        return 1
+    fi
+    rewrite_rules_without_pkg "$pkg"
+    echo "$pkg=$rate" >> "$REFRESH_RULES"
+    chmod 0664 "$REFRESH_RULES" 2>/dev/null
+    LAST_TOP_APP=
+    publish_refresh_state
+    log_line "refresh rule saved: $pkg -> $rate"
+    set_status "daemon=running" "last=set_refresh_rule" "package=$pkg" "rate=$rate"
+    if [ -f "$REFRESH_ENABLED" ]; then
+        refresh_tick
+    fi
+}
+
+remove_refresh_rule() {
+    pkg="$1"
+    if ! valid_package_name "$pkg"; then
+        log_line "invalid refresh rule remove: pkg=$pkg"
+        set_status "daemon=running" "last=remove_refresh_rule_failed" "package=$pkg"
+        return 1
+    fi
+    rewrite_rules_without_pkg "$pkg"
+    LAST_TOP_APP=
+    publish_refresh_state
+    log_line "refresh rule removed: $pkg"
+    set_status "daemon=running" "last=remove_refresh_rule" "package=$pkg"
+    if [ -f "$REFRESH_ENABLED" ]; then
+        refresh_tick
+    fi
+}
+
 refresh_tick() {
     if [ ! -f "$REFRESH_ENABLED" ]; then
         return 0
@@ -333,7 +450,8 @@ handle_request() {
     source="$1"
     cmd="$2"
     rate="$3"
-    log_line "request: $source cmd=$cmd rate=$rate"
+    pkg="$4"
+    log_line "request: $source cmd=$cmd rate=$rate pkg=$pkg"
 
     case "$cmd" in
         apply_zuipp) apply_zuipp ;;
@@ -344,17 +462,26 @@ handle_request() {
         restart_asoul) restart_asoul ;;
         set_refresh) set_refresh_rate "$rate" ;;
         restore_refresh) restore_refresh_rate ;;
+        set_refresh_rule) set_refresh_rule "$pkg" "$rate" ;;
+        remove_refresh_rule) remove_refresh_rule "$pkg" ;;
         enable_auto_refresh)
             touch "$REFRESH_ENABLED"
             chmod 0664 "$REFRESH_ENABLED" 2>/dev/null
+            LAST_TOP_APP=
+            publish_refresh_state
             set_status "daemon=running" "last=enable_auto_refresh"
+            refresh_tick
             ;;
         disable_auto_refresh)
             rm -f "$REFRESH_ENABLED"
             restore_refresh_rate
+            publish_refresh_state
             set_status "daemon=running" "last=disable_auto_refresh"
             ;;
-        status) set_status "daemon=running" "last=status" ;;
+        status)
+            publish_refresh_state
+            set_status "daemon=running" "last=status"
+            ;;
         *)
             log_line "unknown request cmd: $cmd"
             set_status "daemon=running" "last=unknown_request" "cmd=$cmd"
@@ -369,7 +496,8 @@ process_request_file() {
     fi
     cmd="$(prop_value cmd "$file")"
     rate="$(prop_value rate "$file")"
-    handle_request "$file" "$cmd" "$rate"
+    pkg="$(prop_value package "$file")"
+    handle_request "$file" "$cmd" "$rate" "$pkg"
     archive_request "$file"
 }
 
@@ -378,10 +506,20 @@ process_settings_request() {
     if [ -z "$id" ] || [ "$id" = "$LAST_SETTINGS_REQUEST_ID" ]; then
         return 0
     fi
+    if [ -s "$LAST_SETTINGS_ID_FILE" ] && [ "$id" = "$(cat "$LAST_SETTINGS_ID_FILE" 2>/dev/null)" ]; then
+        LAST_SETTINGS_REQUEST_ID="$id"
+        return 0
+    fi
     LAST_SETTINGS_REQUEST_ID="$id"
     cmd="$(settings_get_clean "$REQ_CMD_KEY")"
     rate="$(settings_get_clean "$REQ_RATE_KEY")"
-    handle_request "settings:$id" "$cmd" "$rate"
+    pkg="$(settings_get_clean "$REQ_PACKAGE_KEY")"
+    handle_request "settings:$id" "$cmd" "$rate" "$pkg"
+    echo "$id" > "$LAST_SETTINGS_ID_FILE"
+    chmod 0664 "$LAST_SETTINGS_ID_FILE" 2>/dev/null
+    settings_delete_quiet "$REQ_CMD_KEY"
+    settings_delete_quiet "$REQ_RATE_KEY"
+    settings_delete_quiet "$REQ_PACKAGE_KEY"
 }
 
 boot_restore() {
@@ -395,9 +533,22 @@ boot_restore() {
     fi
 }
 
+init_settings_request_state() {
+    id="$(settings_get_clean "$REQ_ID_KEY")"
+    if [ -n "$id" ] && [ ! -s "$LAST_SETTINGS_ID_FILE" ]; then
+        echo "$id" > "$LAST_SETTINGS_ID_FILE"
+        chmod 0664 "$LAST_SETTINGS_ID_FILE" 2>/dev/null
+        LAST_SETTINGS_REQUEST_ID="$id"
+        log_line "ignore stale settings request at boot: $id"
+    elif [ -s "$LAST_SETTINGS_ID_FILE" ]; then
+        LAST_SETTINGS_REQUEST_ID="$(cat "$LAST_SETTINGS_ID_FILE" 2>/dev/null)"
+    fi
+}
+
 main_loop() {
     init_dirs
     log_line "zui_perfctld start"
+    init_settings_request_state
     boot_restore
     while true; do
         process_settings_request

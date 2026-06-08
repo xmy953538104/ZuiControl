@@ -41,23 +41,32 @@ jobs:
           bash -n payload/system/bin/zui_perfctld
           bash -n payload/system/etc/zui_perfctl/zui_asoulopt.sh
 
-      - name: Build debug APK
-        run: gradle -p . :app:assembleDebug
+      - name: Decode release keystore
+        run: |
+          printf '%s' "${{ secrets.KEYSTORE }}" | base64 -d > "$RUNNER_TEMP/zuiperfctl-release.jks"
+
+      - name: Build release APK
+        run: |
+          gradle -p . :app:assembleRelease \
+            -Pzuiperf.storeFile="$RUNNER_TEMP/zuiperfctl-release.jks" \
+            -Pzuiperf.storePassword="${{ secrets.KEYSTORE_PASSWORD }}" \
+            -Pzuiperf.keyAlias="${{ secrets.KEY_ALIAS }}" \
+            -Pzuiperf.keyPassword="${{ secrets.KEY_PASSWORD }}"
 
       - name: Stage payload APK
         run: |
           mkdir -p payload/system/priv-app/ZuiperfCtl
-          cp app/build/outputs/apk/debug/app-debug.apk \
+          cp app/build/outputs/apk/release/app-release.apk \
             payload/system/priv-app/ZuiperfCtl/ZuiperfCtl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ZuiperfCtl-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: ZuiperfCtl-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
 
       - name: Upload payload
         uses: actions/upload-artifact@v4
         with:
-          name: zui-perfctl-v1-payload
+          name: zui-perfctl-v2-payload
           path: payload

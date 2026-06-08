@@ -1,24 +1,26 @@
-ZuiperfCtl v1 payload
+ZuiperfCtl v2 payload
 
 Goal:
 - Keep official ZuiPP and ZuiGameHelper installed.
 - Add our own privileged app: com.zui.perfctl.
 - Add root init daemon: /system/bin/zui_perfctld.
 - Add embedded AsoulOpt service from the proven 187 payload.
-- Runtime data lives under /data/zui_perfctl.
+- Runtime data lives under /data/local/tmp/zui_perfctl for the current shell-domain prototype.
 
 Data layout after boot:
-- /data/zui_perfctl/zuipp/game_policy.xml
-- /data/zui_perfctl/zuipp/performanceconfig.xml
-- /data/zui_perfctl/asoul/asopt.conf
-- /data/zui_perfctl/refresh/rules.prop
-- /data/zui_perfctl/perfctl/request.prop
-- /data/zui_perfctl/perfctl/status.prop
-- /data/zui_perfctl/log/perfctld.log
+- /data/local/tmp/zui_perfctl/zuipp/game_policy.xml
+- /data/local/tmp/zui_perfctl/zuipp/performanceconfig.xml
+- /data/local/tmp/zui_perfctl/asoul/asopt.conf
+- /data/local/tmp/zui_perfctl/refresh/rules.prop
+- /data/local/tmp/zui_perfctl/perfctl/request.prop
+- /data/local/tmp/zui_perfctl/perfctl/status.prop
+- /data/local/tmp/zui_perfctl/log/perfctld.log
 
 Request format:
   id=optional-number
   cmd=apply_zuipp
+  package=optional.package.name
+  rate=60|90|120|144
 
 Supported commands:
 - apply_zuipp
@@ -29,6 +31,8 @@ Supported commands:
 - restart_asoul
 - set_refresh with rate=60, 90, 120, or 144
 - restore_refresh
+- set_refresh_rule with package=package.name and rate=60, 90, 120, or 144
+- remove_refresh_rule with package=package.name
 - enable_auto_refresh
 - disable_auto_refresh
 - status
