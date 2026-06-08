@@ -126,12 +126,13 @@ def update_metadata(root, unpack, entries, dry_run, report):
 
 def main():
     parser = argparse.ArgumentParser(description="Apply ZuiperfCtl v1 payload into an unpacked image tree.")
+    parser.add_argument("--root", help="Project root containing work/config, default: this repository root")
     parser.add_argument("--unpack", help="Unpacked image root, default: work/unpack")
     parser.add_argument("--payload", help="Payload root, default: payload")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    root = resolve_root()
+    root = pathlib.Path(args.root).resolve() if args.root else resolve_root()
     unpack = resolve_unpack(root, args.unpack)
     payload = pathlib.Path(args.payload).resolve() if args.payload else root / "payload"
     if not payload.exists():
