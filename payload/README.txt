@@ -1,58 +1,49 @@
-ZuiperfCtl v6 payload
+ZuiperfCtl v7 payload
 
-Goal:
-- Keep official ZuiPP and ZuiGameHelper installed.
-- Add our own privileged app: com.zui.zuiperfctl.
-- Add root init daemon: /system/bin/zui_perfctld.
-- Add embedded AsoulOpt service from the proven 187 payload.
-- Runtime data lives under /data/local/tmp/zui_perfctl.
-- XML/asopt runtime bind mounts are requested through zui_perfctl.* properties and performed by init.
+System components:
+- /system/priv-app/ZuiperfCtl/ZuiperfCtl.apk
+- /system/bin/zui_perfctld
+- /system/bin/AsoulOpt
+- /system/etc/init/zui_perfctld.rc
+- /system/etc/init/zui_asoulopt.rc
 
-Data layout after boot:
+Runtime data:
+- /data/local/tmp/zui_perfctl/refresh/rules.prop
+- /data/local/tmp/zui_perfctl/performance/profiles.prop
 - /data/local/tmp/zui_perfctl/zuipp/game_policy.xml
 - /data/local/tmp/zui_perfctl/zuipp/performanceconfig.xml
-- /data/local/tmp/zui_perfctl/asoul/asopt.conf
-- /data/local/tmp/zui_perfctl/refresh/rules.prop
-- /data/local/tmp/zui_perfctl/profiles/apps.prop
-- /data/local/tmp/zui_perfctl/perfctl/request.prop
-- /data/local/tmp/zui_perfctl/perfctl/status.prop
 - /data/local/tmp/zui_perfctl/log/perfctld.log
+- /data/local/tmp/zui_perfctl/log/asoulopt.log
 
-Request format:
-  id=optional-number
-  cmd=apply_zuipp
-  package=optional.package.name
-  rate=60|90|120|144
-  refresh=0|1
-  zuipp=0|1
-  asoul=0|1
+App request channel:
+- Settings.System key: zui_perfctl_request_text
+- Atomic format:
+  id|cmd|rate|package|mode|cpu_max_khz|cpu_min_khz|gpu_max_khz|gpu_min_khz
 
-App request transport:
-  zui_perfctl_request_text=id|cmd|rate|package|refresh|zuipp|asoul
-
-The complete request is written in one Settings.System update. The legacy
-multi-key Settings.System transport and request.prop remain supported for ADB
-maintenance.
-
-Supported commands:
-- apply_zuipp
+User-facing commands:
+- status
+- learn_refresh
+- restore_refresh
+- remove_refresh_rule
+- set_performance_profile
+- remove_performance_profile
+- apply_performance
 - restore_zuipp
+- export_logs
+
+Maintenance commands kept for ADB diagnostics:
+- apply_zuipp
 - restart_zuipp
 - apply_asoul
 - restore_asoul
 - restart_asoul
-- set_refresh with rate=60, 90, 120, or 144
-- restore_refresh
-- set_refresh_rule with package=package.name and rate=60, 90, 120, or 144
-- remove_refresh_rule with package=package.name
-- set_app_profile with package=package.name, rate=60/90/120/144, refresh=0/1, zuipp=0/1, asoul=0/1
-- remove_app_profile with package=package.name
-- enable_auto_refresh
-- disable_auto_refresh
-- status
 
-Important:
-- XML changes are applied through bind mount. ZuiPP/GameHelper still need restart to reload cached XML.
-- Automatic refresh switching is disabled by default. Add rules to /data/local/tmp/zui_perfctl/refresh/rules.prop and enable it explicitly.
-- The APK is built from the root app module and should be copied to:
-  system/priv-app/ZuiperfCtl/ZuiperfCtl.apk
+Behavior:
+- Refresh-rate baseline is a hard 120Hz lock.
+- A notification rate click learns the current foreground package.
+- Choosing 120Hz removes that package's exception rule.
+- Performance profiles are converted into ZuiPP XML by XmlProfileGenerator.
+- Applying performance regenerates both XML files, bind mounts them through init,
+  and restarts ZuiPP/game helper packages.
+- AsoulOpt is not configured per app. The UI only reports service health and
+  exports its log.

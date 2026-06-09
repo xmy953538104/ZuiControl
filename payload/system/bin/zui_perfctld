@@ -1,18 +1,20 @@
 #!/system/bin/sh
 
 DATA_ROOT=/data/local/tmp/zui_perfctl
-PERF_DIR=$DATA_ROOT/perfctl
-DONE_DIR=$PERF_DIR/processed
+CONTROL_DIR=$DATA_ROOT/perfctl
+DONE_DIR=$CONTROL_DIR/processed
 ZUI_DIR=$DATA_ROOT/zuipp
 ASOUL_DIR=$DATA_ROOT/asoul
 REFRESH_DIR=$DATA_ROOT/refresh
-PROFILE_DIR=$DATA_ROOT/profiles
+PERFORMANCE_DIR=$DATA_ROOT/performance
 LOG_DIR=$DATA_ROOT/log
+
 LOG_FILE=$LOG_DIR/perfctld.log
-STATUS_FILE=$PERF_DIR/status.prop
-ADB_REQUEST=$PERF_DIR/request.prop
-LAST_SETTINGS_ID_FILE=$PERF_DIR/last_settings_request_id
-LAST_SETTINGS_TEXT_FILE=$PERF_DIR/last_settings_request_text
+ASOUL_LOG=$LOG_DIR/asoulopt.log
+STATUS_FILE=$CONTROL_DIR/status.prop
+ADB_REQUEST=$CONTROL_DIR/request.prop
+LAST_REQUEST_FILE=$CONTROL_DIR/last_settings_request_text
+
 APP_PACKAGE=com.zui.zuiperfctl
 APP_SERVICE_COMPONENT=com.zui.zuiperfctl/com.zui.perfctl.PerfCtlQuickService
 PROP_ZUIPP=zui_perfctl.zuipp
@@ -21,41 +23,39 @@ PROP_ASOUL=zui_perfctl.asoul
 SYSTEM_GAME_POLICY=/system/etc/game_policy.xml
 SYSTEM_PERF_CONFIG=/system/etc/performanceconfig.xml
 SYSTEM_ASOPT=/system/etc/asopt.conf
-
 DEFAULT_GAME_POLICY=/system/etc/zui_perfctl/default_game_policy.xml
 DEFAULT_PERF_CONFIG=/system/etc/zui_perfctl/default_performanceconfig.xml
 DEFAULT_ASOPT=/system/etc/zui_perfctl/default_asopt.conf
-DEFAULT_REFRESH_RULES=/system/etc/zui_perfctl/default_refresh_rules.prop
 
 WORK_GAME_POLICY=$ZUI_DIR/game_policy.xml
 WORK_PERF_CONFIG=$ZUI_DIR/performanceconfig.xml
 WORK_ASOPT=$ASOUL_DIR/asopt.conf
 REFRESH_RULES=$REFRESH_DIR/rules.prop
-APP_PROFILES=$PROFILE_DIR/apps.prop
+PERFORMANCE_PROFILES=$PERFORMANCE_DIR/profiles.prop
+PERFORMANCE_SUMMARY=$PERFORMANCE_DIR/summary.txt
 ZUI_ENABLED=$ZUI_DIR/enabled.flag
 ASOUL_ENABLED=$ASOUL_DIR/enabled.flag
-REFRESH_ENABLED=$REFRESH_DIR/enabled.flag
 
-REQ_ID_KEY=zui_perfctl_request_id
 REQ_TEXT_KEY=zui_perfctl_request_text
-REQ_CMD_KEY=zui_perfctl_cmd
-REQ_RATE_KEY=zui_perfctl_rate
-REQ_PACKAGE_KEY=zui_perfctl_package
-REQ_PROFILE_REFRESH_KEY=zui_perfctl_profile_refresh
-REQ_PROFILE_ZUIPP_KEY=zui_perfctl_profile_zuipp
-REQ_PROFILE_ASOUL_KEY=zui_perfctl_profile_asoul
 STATUS_TIME_KEY=zui_perfctl_status_time
 STATUS_LAST_KEY=zui_perfctl_status_last
 STATUS_TEXT_KEY=zui_perfctl_status_text
 RULES_TEXT_KEY=zui_perfctl_refresh_rules_text
-PROFILES_TEXT_KEY=zui_perfctl_profiles_text
-AUTO_REFRESH_KEY=zui_perfctl_auto_refresh
+PERFORMANCE_PROFILES_KEY=zui_perfctl_performance_profiles_text
+PERFORMANCE_SUMMARY_KEY=zui_perfctl_performance_summary
+TOP_PACKAGE_KEY=zui_perfctl_top_package
+ASOUL_HEALTH_KEY=zui_perfctl_asoul_health
+XML_STATE_KEY=zui_perfctl_xml_state
+LOG_EXPORT_KEY=zui_perfctl_log_export
 
+BASE_REFRESH_RATE=120
 LAST_TOP_APP=
+LAST_USER_APP=
 LAST_REFRESH_RATE=
-LAST_SETTINGS_REQUEST_ID=
 LAST_SETTINGS_REQUEST_TEXT=
 EMPTY_TOP_TICKS=0
+HEALTH_TICKS=0
+LOOP_TICKS=0
 
 ts() {
     date '+%Y-%m-%d %H:%M:%S'
@@ -66,24 +66,29 @@ settings_get_clean() {
     if [ "$value" = "null" ]; then
         value=
     fi
-    echo "$value"
+    printf '%s\n' "$value"
 }
 
 settings_put_quiet() {
     settings put system "$1" "$2" >/dev/null 2>&1
 }
 
-settings_delete_quiet() {
-    settings delete system "$1" >/dev/null 2>&1
-}
-
 log_line() {
     mkdir -p "$LOG_DIR"
-    echo "$(ts) $*" >> "$LOG_FILE"
+    printf '%s %s\n' "$(ts)" "$*" >> "$LOG_FILE"
+}
+
+trim_log() {
+    [ -s "$LOG_FILE" ] || return 0
+    size="$(wc -c < "$LOG_FILE" 2>/dev/null)"
+    if [ "${size:-0}" -gt 524288 ]; then
+        tail -n 2000 "$LOG_FILE" > "$LOG_FILE.tmp" 2>/dev/null &&
+            mv "$LOG_FILE.tmp" "$LOG_FILE"
+    fi
 }
 
 set_status() {
-    mkdir -p "$PERF_DIR"
+    mkdir -p "$CONTROL_DIR"
     {
         echo "time=$(ts)"
         for line in "$@"; do
@@ -100,10 +105,8 @@ set_status() {
     done
     settings_put_quiet "$STATUS_TIME_KEY" "$(ts)"
     settings_put_quiet "$STATUS_LAST_KEY" "$last"
-    if [ -s "$STATUS_FILE" ]; then
-        status_text="$(tr '\n' ';' < "$STATUS_FILE" 2>/dev/null)"
-        settings_put_quiet "$STATUS_TEXT_KEY" "$status_text"
-    fi
+    status_text="$(tr '\n' ';' < "$STATUS_FILE" 2>/dev/null)"
+    settings_put_quiet "$STATUS_TEXT_KEY" "$status_text"
 }
 
 copy_if_missing() {
@@ -122,49 +125,156 @@ copy_work_file() {
     fallback="$2"
     dst="$3"
     name="$4"
-
-    if [ ! -s "$dst" ]; then
-        if [ -s "$live" ]; then
-            cp "$live" "$dst" && chmod 0664 "$dst"
-            log_line "$name initialized from live system file"
-            return 0
-        fi
-        copy_if_missing "$fallback" "$dst"
-        log_line "$name initialized from fallback file"
+    if [ -s "$dst" ]; then
         return 0
     fi
-
-    if [ -s "$live" ] && [ -s "$fallback" ] && cmp -s "$dst" "$fallback" && ! cmp -s "$live" "$fallback"; then
+    if [ -s "$live" ]; then
         cp "$live" "$dst" && chmod 0664 "$dst"
-        log_line "$name migrated from fallback to live system file"
+        log_line "$name initialized from live system file"
+    else
+        copy_if_missing "$fallback" "$dst"
+        log_line "$name initialized from payload default"
     fi
+}
+
+valid_package_name() {
+    pkg="$1"
+    case "$pkg" in
+        ""|.*|*.) return 1 ;;
+        *..*) return 1 ;;
+        *[!A-Za-z0-9_.]*) return 1 ;;
+    esac
+    return 0
+}
+
+valid_refresh_rate() {
+    case "$1" in
+        60|90|120|144) return 0 ;;
+    esac
+    return 1
+}
+
+valid_mode() {
+    case "$1" in
+        balanced|powersave|savage) return 0 ;;
+    esac
+    return 1
+}
+
+valid_positive_int() {
+    case "$1" in
+        ""|*[!0-9]*) return 1 ;;
+    esac
+    [ "$1" -gt 0 ]
+}
+
+rewrite_rules_without_pkg() {
+    pkg="$1"
+    tmp="$REFRESH_RULES.tmp"
+    : > "$tmp"
+    if [ -s "$REFRESH_RULES" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            key="${line%%=*}"
+            [ "$key" = "$pkg" ] && continue
+            echo "$line" >> "$tmp"
+        done < "$REFRESH_RULES"
+    fi
+    mv "$tmp" "$REFRESH_RULES"
+    chmod 0664 "$REFRESH_RULES" 2>/dev/null
+}
+
+rewrite_performance_without_key() {
+    pkg="$1"
+    mode="$2"
+    tmp="$PERFORMANCE_PROFILES.tmp"
+    : > "$tmp"
+    if [ -s "$PERFORMANCE_PROFILES" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            line_pkg="$(printf '%s\n' "$line" | cut -d '|' -f 1)"
+            line_mode="$(printf '%s\n' "$line" | cut -d '|' -f 2)"
+            if [ "$line_pkg" = "$pkg" ] && [ "$line_mode" = "$mode" ]; then
+                continue
+            fi
+            echo "$line" >> "$tmp"
+        done < "$PERFORMANCE_PROFILES"
+    fi
+    mv "$tmp" "$PERFORMANCE_PROFILES"
+    chmod 0664 "$PERFORMANCE_PROFILES" 2>/dev/null
+}
+
+migrate_refresh_rules() {
+    tmp="$REFRESH_RULES.migrate"
+    : > "$tmp"
+    if [ -s "$REFRESH_RULES" ]; then
+        while IFS='=' read -r pkg rate; do
+            valid_package_name "$pkg" || continue
+            valid_refresh_rate "$rate" || continue
+            [ "$rate" = "$BASE_REFRESH_RATE" ] && continue
+            printf '%s=%s\n' "$pkg" "$rate" >> "$tmp"
+        done < "$REFRESH_RULES"
+    fi
+    mv "$tmp" "$REFRESH_RULES"
+    chmod 0664 "$REFRESH_RULES" 2>/dev/null
 }
 
 publish_refresh_state() {
     rules_text=
     if [ -s "$REFRESH_RULES" ]; then
-        rules_text="$(grep -v '^[[:space:]]*#' "$REFRESH_RULES" 2>/dev/null | grep -v '^[[:space:]]*$' 2>/dev/null)"
+        rules_text="$(grep -v '^[[:space:]]*#' "$REFRESH_RULES" 2>/dev/null |
+            grep -v '^[[:space:]]*$' 2>/dev/null)"
     fi
     settings_put_quiet "$RULES_TEXT_KEY" "$rules_text"
-    if [ -f "$REFRESH_ENABLED" ]; then
-        settings_put_quiet "$AUTO_REFRESH_KEY" "1"
+}
+
+publish_performance_state() {
+    profiles_text=
+    if [ -s "$PERFORMANCE_PROFILES" ]; then
+        profiles_text="$(grep -v '^[[:space:]]*#' "$PERFORMANCE_PROFILES" 2>/dev/null |
+            grep -v '^[[:space:]]*$' 2>/dev/null)"
+    fi
+    settings_put_quiet "$PERFORMANCE_PROFILES_KEY" "$profiles_text"
+    summary=
+    [ -s "$PERFORMANCE_SUMMARY" ] && summary="$(cat "$PERFORMANCE_SUMMARY" 2>/dev/null)"
+    settings_put_quiet "$PERFORMANCE_SUMMARY_KEY" "$summary"
+}
+
+is_mounted_on() {
+    target="$1"
+    while read -r _ mount_point _; do
+        [ "$mount_point" = "$target" ] && return 0
+    done < /proc/mounts
+    return 1
+}
+
+publish_xml_state() {
+    if is_mounted_on "$SYSTEM_GAME_POLICY" && is_mounted_on "$SYSTEM_PERF_CONFIG"; then
+        settings_put_quiet "$XML_STATE_KEY" "已挂载，工作 XML 正在生效"
     else
-        settings_put_quiet "$AUTO_REFRESH_KEY" "0"
+        settings_put_quiet "$XML_STATE_KEY" "未挂载，当前使用官方 XML"
     fi
 }
 
-publish_profile_state() {
-    dedupe_profiles_file
-    profiles_text=
-    if [ -s "$APP_PROFILES" ]; then
-        profiles_text="$(grep -v '^[[:space:]]*#' "$APP_PROFILES" 2>/dev/null | grep -v '^[[:space:]]*$' 2>/dev/null)"
+publish_asoul_health() {
+    service_state="$(getprop init.svc.zui_asoulopt 2>/dev/null)"
+    pid="$(pidof AsoulOpt 2>/dev/null | awk '{print $1}')"
+    domain=
+    if [ -n "$pid" ]; then
+        domain="$(ps -AZ 2>/dev/null | awk -v wanted="$pid" '$3 == wanted {print $1; exit}')"
     fi
-    settings_put_quiet "$PROFILES_TEXT_KEY" "$profiles_text"
+    log_size=0
+    [ -f "$ASOUL_LOG" ] && log_size="$(wc -c < "$ASOUL_LOG" 2>/dev/null)"
+    health="服务：${service_state:-unknown}
+进程：${pid:-未运行}
+SELinux：${domain:-未识别}
+日志：${log_size:-0} 字节"
+    settings_put_quiet "$ASOUL_HEALTH_KEY" "$health"
 }
 
 publish_state() {
     publish_refresh_state
-    publish_profile_state
+    publish_performance_state
+    publish_xml_state
+    publish_asoul_health
 }
 
 grant_app_permissions() {
@@ -173,64 +283,29 @@ grant_app_permissions() {
     appops set "$APP_PACKAGE" WRITE_SETTINGS allow >/dev/null 2>&1
 }
 
-start_app_service() {
-    am start-foreground-service -n "$APP_SERVICE_COMPONENT" >/dev/null 2>&1 ||
+notify_quick_service() {
+    am start-foreground-service \
+        -a com.zui.zuiperfctl.action.REFRESH_NOTIFICATION \
+        -n "$APP_SERVICE_COMPONENT" >/dev/null 2>&1 ||
         am startservice -n "$APP_SERVICE_COMPONENT" >/dev/null 2>&1
 }
 
 init_dirs() {
-    mkdir -p "$PERF_DIR" "$DONE_DIR" "$ZUI_DIR" "$ASOUL_DIR" "$REFRESH_DIR" "$PROFILE_DIR" "$LOG_DIR"
-    chmod 0775 "$DATA_ROOT" "$PERF_DIR" "$DONE_DIR" "$ZUI_DIR" "$ASOUL_DIR" "$REFRESH_DIR" "$PROFILE_DIR" "$LOG_DIR" 2>/dev/null
-    copy_work_file "$SYSTEM_GAME_POLICY" "$DEFAULT_GAME_POLICY" "$WORK_GAME_POLICY" "game_policy"
-    copy_work_file "$SYSTEM_PERF_CONFIG" "$DEFAULT_PERF_CONFIG" "$WORK_PERF_CONFIG" "performanceconfig"
+    mkdir -p "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" "$ASOUL_DIR" \
+        "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR"
+    chmod 0775 "$DATA_ROOT" "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" "$ASOUL_DIR" \
+        "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR" 2>/dev/null
+    copy_work_file "$SYSTEM_GAME_POLICY" "$DEFAULT_GAME_POLICY" \
+        "$WORK_GAME_POLICY" "game_policy"
+    copy_work_file "$SYSTEM_PERF_CONFIG" "$DEFAULT_PERF_CONFIG" \
+        "$WORK_PERF_CONFIG" "performanceconfig"
     copy_if_missing "$DEFAULT_ASOPT" "$WORK_ASOPT"
-    copy_if_missing "$DEFAULT_REFRESH_RULES" "$REFRESH_RULES"
-    if [ ! -e "$APP_PROFILES" ]; then
-        : > "$APP_PROFILES"
-        chmod 0664 "$APP_PROFILES" 2>/dev/null
-    fi
+    [ -e "$REFRESH_RULES" ] || : > "$REFRESH_RULES"
+    [ -e "$PERFORMANCE_PROFILES" ] || : > "$PERFORMANCE_PROFILES"
+    chmod 0664 "$REFRESH_RULES" "$PERFORMANCE_PROFILES" 2>/dev/null
+    migrate_refresh_rules
+    rm -f "$REFRESH_DIR/enabled.flag"
     grant_app_permissions
-    start_app_service
-    publish_state
-    set_status "daemon=running" "last=init"
-}
-
-is_mounted_on() {
-    target="$1"
-    while read -r _ mount_point _; do
-        if [ "$mount_point" = "$target" ]; then
-            return 0
-        fi
-    done < /proc/mounts
-    return 1
-}
-
-umount_if_needed() {
-    target="$1"
-    if is_mounted_on "$target"; then
-        umount "$target" >> "$LOG_FILE" 2>&1
-    fi
-}
-
-bind_file() {
-    src="$1"
-    dst="$2"
-    name="$3"
-    if [ ! -s "$src" ]; then
-        log_line "$name source missing: $src"
-        return 1
-    fi
-    if [ ! -e "$dst" ]; then
-        log_line "$name target missing: $dst"
-        return 1
-    fi
-    umount_if_needed "$dst"
-    if mount -o bind "$src" "$dst" >> "$LOG_FILE" 2>&1; then
-        log_line "$name bind ok: $src -> $dst"
-        return 0
-    fi
-    log_line "$name bind failed: $src -> $dst"
-    return 1
 }
 
 trigger_init_action() {
@@ -259,36 +334,11 @@ wait_mount_state() {
                 is_mounted_on "$target" && ok=0
             fi
         done
-        if [ "$ok" = "1" ]; then
-            return 0
-        fi
+        [ "$ok" = "1" ] && return 0
         tries=$((tries - 1))
         sleep 1
     done
     return 1
-}
-
-validate_zuipp_files() {
-    if [ ! -s "$WORK_GAME_POLICY" ] || [ ! -s "$WORK_PERF_CONFIG" ]; then
-        log_line "zuipp validate failed: missing work xml"
-        return 1
-    fi
-    if ! grep -q "AppPolicy" "$WORK_GAME_POLICY"; then
-        log_line "zuipp validate warning: game_policy has no AppPolicy text"
-    fi
-    if ! grep -q "PerformanceConfig" "$WORK_PERF_CONFIG"; then
-        log_line "zuipp validate warning: performanceconfig has no PerformanceConfig text"
-    fi
-    return 0
-}
-
-restart_zuipp() {
-    log_line "restart zuipp/gamehelper"
-    force_stop_package com.zui.pp
-    force_stop_package com.zui.game.service
-    force_stop_package com.zui.gamehelper
-    force_stop_package com.lenovo.legionzone
-    set_status "daemon=running" "last=restart_zuipp"
 }
 
 force_stop_package() {
@@ -297,6 +347,30 @@ force_stop_package() {
         am force-stop --user 0 "$pkg" >> "$LOG_FILE" 2>&1 ||
             log_line "force-stop failed: $pkg"
     fi
+}
+
+restart_zuipp() {
+    log_line "restart ZuiPP and game services"
+    force_stop_package com.zui.pp
+    force_stop_package com.zui.game.service
+    force_stop_package com.zui.gamehelper
+    force_stop_package com.lenovo.legionzone
+}
+
+validate_zuipp_files() {
+    if [ ! -s "$WORK_GAME_POLICY" ] || [ ! -s "$WORK_PERF_CONFIG" ]; then
+        log_line "ZuiPP XML validation failed: missing work file"
+        return 1
+    fi
+    grep -q "AppPolicy" "$WORK_GAME_POLICY" 2>/dev/null || {
+        log_line "ZuiPP XML validation failed: AppPolicy missing"
+        return 1
+    }
+    grep -q "GameLimitConfig" "$WORK_PERF_CONFIG" 2>/dev/null || {
+        log_line "ZuiPP XML validation failed: GameLimitConfig missing"
+        return 1
+    }
+    return 0
 }
 
 apply_zuipp() {
@@ -309,10 +383,12 @@ apply_zuipp() {
         touch "$ZUI_ENABLED"
         chmod 0664 "$ZUI_ENABLED" 2>/dev/null
         restart_zuipp
+        publish_xml_state
         set_status "daemon=running" "last=apply_zuipp_ok"
         return 0
     fi
-    log_line "zuipp init bind failed: prop=$(getprop "$PROP_ZUIPP" 2>/dev/null)"
+    log_line "ZuiPP bind failed: prop=$(getprop "$PROP_ZUIPP" 2>/dev/null)"
+    publish_xml_state
     set_status "daemon=running" "last=apply_zuipp_failed"
     return 1
 }
@@ -320,86 +396,81 @@ apply_zuipp() {
 restore_zuipp() {
     trigger_init_action "$PROP_ZUIPP" restore
     wait_mount_state unmounted "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG" ||
-        log_line "zuipp init restore wait timeout"
+        log_line "ZuiPP restore wait timeout"
     rm -f "$ZUI_ENABLED"
     restart_zuipp
-    log_line "zuipp restore system xml"
+    publish_xml_state
     set_status "daemon=running" "last=restore_zuipp"
 }
 
 restart_asoul() {
     if trigger_init_action "$PROP_ASOUL" restart; then
-        log_line "asoul restart requested through init"
+        log_line "AsoulOpt restart requested"
+        sleep 1
+        publish_asoul_health
         set_status "daemon=running" "last=restart_asoul"
         return 0
     fi
-    log_line "asoul restart request failed"
     set_status "daemon=running" "last=restart_asoul_failed"
     return 1
 }
 
 apply_asoul() {
-    if [ ! -s "$WORK_ASOPT" ]; then
-        log_line "asoul config missing: $WORK_ASOPT"
-        set_status "daemon=running" "last=apply_asoul_failed"
-        return 1
+    [ -s "$WORK_ASOPT" ] || return 1
+    if trigger_init_action "$PROP_ASOUL" apply &&
+        wait_mount_state mounted "$SYSTEM_ASOPT"; then
+        touch "$ASOUL_ENABLED"
+        chmod 0664 "$ASOUL_ENABLED" 2>/dev/null
+        publish_asoul_health
+        return 0
     fi
-    if ! trigger_init_action "$PROP_ASOUL" apply ||
-        ! wait_mount_state mounted "$SYSTEM_ASOPT"; then
-        log_line "asoul init bind failed: prop=$(getprop "$PROP_ASOUL" 2>/dev/null)"
-        set_status "daemon=running" "last=apply_asoul_failed"
-        return 1
-    fi
-    touch "$ASOUL_ENABLED"
-    chmod 0664 "$ASOUL_ENABLED" 2>/dev/null
-    set_status "daemon=running" "last=apply_asoul_ok"
+    return 1
 }
 
 restore_asoul() {
     trigger_init_action "$PROP_ASOUL" restore
-    wait_mount_state unmounted "$SYSTEM_ASOPT" ||
-        log_line "asoul init restore wait timeout"
+    wait_mount_state unmounted "$SYSTEM_ASOPT" || true
     rm -f "$ASOUL_ENABLED"
-    set_status "daemon=running" "last=restore_asoul"
+    publish_asoul_health
 }
 
 set_refresh_rate() {
     rate="$1"
-    case "$rate" in
-        60|90|120|144) ;;
-        *)
-            log_line "invalid refresh rate: $rate"
-            set_status "daemon=running" "last=set_refresh_failed" "rate=$rate"
-            return 1
-            ;;
-    esac
+    valid_refresh_rate "$rate" || {
+        log_line "invalid refresh rate: $rate"
+        set_status "daemon=running" "last=set_refresh_failed" "rate=$rate"
+        return 1
+    }
+    peak="$(settings_get_clean peak_refresh_rate)"
+    min="$(settings_get_clean min_refresh_rate)"
+    if [ "$peak" = "$rate.0" ] && [ "$min" = "$rate.0" ]; then
+        LAST_REFRESH_RATE="$rate"
+        return 0
+    fi
     if settings put system peak_refresh_rate "$rate.0" >> "$LOG_FILE" 2>&1 &&
         settings put system min_refresh_rate "$rate.0" >> "$LOG_FILE" 2>&1; then
         LAST_REFRESH_RATE="$rate"
         log_line "refresh locked: $rate"
-        set_status "daemon=running" "last=set_refresh_ok" "rate=$rate"
         return 0
     fi
     log_line "refresh lock failed: $rate"
-    set_status "daemon=running" "last=set_refresh_failed" "rate=$rate"
     return 1
 }
 
 restore_refresh_rate() {
-    settings delete system min_refresh_rate >> "$LOG_FILE" 2>&1
-    settings delete system peak_refresh_rate >> "$LOG_FILE" 2>&1
-    LAST_REFRESH_RATE=
-    log_line "refresh restored to system default"
-    set_status "daemon=running" "last=restore_refresh"
+    set_refresh_rate "$BASE_REFRESH_RATE"
+    set_status "daemon=running" "last=restore_refresh" "rate=$BASE_REFRESH_RATE"
 }
 
 extract_pkg_from_focus() {
     line="$1"
     pkg="$(echo "$line" | sed -n 's/.* u[0-9][0-9]* \([^/ }]*\)\/.*/\1/p' | head -n 1)"
     if [ -z "$pkg" ]; then
-        pkg="$(echo "$line" | sed -n 's/.* \([A-Za-z0-9_][A-Za-z0-9_.]*\)\/[A-Za-z0-9_.$]*.*/\1/p' | head -n 1)"
+        pkg="$(echo "$line" |
+            sed -n 's/.* \([A-Za-z0-9_][A-Za-z0-9_.]*\)\/[A-Za-z0-9_.$]*.*/\1/p' |
+            head -n 1)"
     fi
-    echo "$pkg"
+    printf '%s\n' "$pkg"
 }
 
 current_top_app() {
@@ -415,243 +486,219 @@ current_top_app() {
         line="$(dumpsys window 2>/dev/null | grep 'mCurrentFocus=' | head -n 1)"
         pkg="$(extract_pkg_from_focus "$line")"
     fi
-    echo "$pkg"
+    printf '%s\n' "$pkg"
+}
+
+is_overlay_package() {
+    case "$1" in
+        com.android.systemui) return 0 ;;
+    esac
+    return 1
+}
+
+is_non_target_package() {
+    case "$1" in
+        "$APP_PACKAGE"|com.zui.launcher|com.android.launcher3) return 0 ;;
+    esac
+    return 1
 }
 
 rule_for_app() {
     pkg="$1"
-    if [ ! -s "$REFRESH_RULES" ]; then
-        return 1
-    fi
+    [ -s "$REFRESH_RULES" ] || return 1
     while IFS='=' read -r key value; do
-        case "$key" in
-            ""|\#*) continue ;;
-        esac
-        if [ "$key" = "$pkg" ]; then
-            echo "$value"
-            return 0
-        fi
+        [ "$key" = "$pkg" ] || continue
+        printf '%s\n' "$value"
+        return 0
     done < "$REFRESH_RULES"
     return 1
-}
-
-valid_package_name() {
-    pkg="$1"
-    case "$pkg" in
-        ""|.*|*.) return 1 ;;
-        *..*) return 1 ;;
-        *[!A-Za-z0-9_.]*) return 1 ;;
-    esac
-    return 0
-}
-
-valid_refresh_rate() {
-    case "$1" in
-        60|90|120|144) return 0 ;;
-    esac
-    return 1
-}
-
-valid_flag() {
-    case "$1" in
-        0|1) return 0 ;;
-    esac
-    return 1
-}
-
-rewrite_rules_without_pkg() {
-    pkg="$1"
-    tmp="$REFRESH_RULES.tmp"
-    mkdir -p "$REFRESH_DIR"
-    : > "$tmp"
-    if [ -s "$REFRESH_RULES" ]; then
-        while IFS= read -r line || [ -n "$line" ]; do
-            key="${line%%=*}"
-            if [ "$key" = "$pkg" ]; then
-                continue
-            fi
-            echo "$line" >> "$tmp"
-        done < "$REFRESH_RULES"
-    fi
-    mv "$tmp" "$REFRESH_RULES"
-    chmod 0664 "$REFRESH_RULES" 2>/dev/null
-}
-
-rewrite_profiles_without_pkg() {
-    pkg="$1"
-    tmp="$APP_PROFILES.tmp"
-    mkdir -p "$PROFILE_DIR"
-    : > "$tmp"
-    if [ -s "$APP_PROFILES" ]; then
-        while IFS= read -r line || [ -n "$line" ]; do
-            key="$(printf '%s\n' "$line" | cut -d '|' -f 1)"
-            if [ "$key" = "$pkg" ]; then
-                continue
-            fi
-            echo "$line" >> "$tmp"
-        done < "$APP_PROFILES"
-    fi
-    mv "$tmp" "$APP_PROFILES"
-    chmod 0664 "$APP_PROFILES" 2>/dev/null
-}
-
-dedupe_profiles_file() {
-    if [ ! -s "$APP_PROFILES" ]; then
-        return 0
-    fi
-    tmp="$APP_PROFILES.dedupe"
-    awk -F'|' '
-        NF >= 5 && $1 != "" {
-            if (!seen[$1]) {
-                order[++n] = $1
-            }
-            seen[$1] = 1
-            line[$1] = $0
-        }
-        END {
-            for (i = 1; i <= n; i++) {
-                print line[order[i]]
-            }
-        }
-    ' "$APP_PROFILES" > "$tmp" 2>/dev/null || {
-        rm -f "$tmp"
-        return 1
-    }
-    mv "$tmp" "$APP_PROFILES"
-    chmod 0664 "$APP_PROFILES" 2>/dev/null
 }
 
 set_refresh_rule() {
     pkg="$1"
     rate="$2"
-    if ! valid_package_name "$pkg" || ! valid_refresh_rate "$rate"; then
-        log_line "invalid refresh rule: pkg=$pkg rate=$rate"
-        set_status "daemon=running" "last=set_refresh_rule_failed" "package=$pkg" "rate=$rate"
-        return 1
-    fi
+    valid_package_name "$pkg" && valid_refresh_rate "$rate" || return 1
     rewrite_rules_without_pkg "$pkg"
-    echo "$pkg=$rate" >> "$REFRESH_RULES"
-    chmod 0664 "$REFRESH_RULES" 2>/dev/null
-    LAST_TOP_APP=
-    publish_state
-    log_line "refresh rule saved: $pkg -> $rate"
-    set_status "daemon=running" "last=set_refresh_rule" "package=$pkg" "rate=$rate"
-    if [ -f "$REFRESH_ENABLED" ]; then
-        refresh_tick
+    if [ "$rate" != "$BASE_REFRESH_RATE" ]; then
+        printf '%s=%s\n' "$pkg" "$rate" >> "$REFRESH_RULES"
     fi
+    chmod 0664 "$REFRESH_RULES" 2>/dev/null
+    publish_refresh_state
 }
 
 remove_refresh_rule() {
     pkg="$1"
-    if ! valid_package_name "$pkg"; then
-        log_line "invalid refresh rule remove: pkg=$pkg"
-        set_status "daemon=running" "last=remove_refresh_rule_failed" "package=$pkg"
-        return 1
-    fi
+    valid_package_name "$pkg" || return 1
     rewrite_rules_without_pkg "$pkg"
     LAST_TOP_APP=
-    publish_state
-    log_line "refresh rule removed: $pkg"
+    publish_refresh_state
+    refresh_tick
     set_status "daemon=running" "last=remove_refresh_rule" "package=$pkg"
-    if [ -f "$REFRESH_ENABLED" ]; then
-        refresh_tick
-    fi
 }
 
-set_app_profile() {
-    pkg="$1"
-    rate="$2"
-    refresh="$3"
-    zuipp="$4"
-    asoul="$5"
-    if ! valid_package_name "$pkg" || ! valid_refresh_rate "$rate" ||
-        ! valid_flag "$refresh" || ! valid_flag "$zuipp" || ! valid_flag "$asoul"; then
-        log_line "invalid app profile: pkg=$pkg rate=$rate refresh=$refresh zuipp=$zuipp asoul=$asoul"
-        set_status "daemon=running" "last=set_app_profile_failed" "package=$pkg"
+learn_refresh() {
+    rate="$1"
+    valid_refresh_rate "$rate" || {
+        set_status "daemon=running" "last=learn_refresh_failed" "rate=$rate"
         return 1
+    }
+    top="$(current_top_app)"
+    if [ -z "$top" ] || is_overlay_package "$top"; then
+        top="$LAST_USER_APP"
+    elif is_non_target_package "$top"; then
+        top=
     fi
-
-    rewrite_profiles_without_pkg "$pkg"
-    if [ "$refresh" = "1" ] || [ "$zuipp" = "1" ] || [ "$asoul" = "1" ]; then
-        echo "$pkg|$rate|$refresh|$zuipp|$asoul" >> "$APP_PROFILES"
-    fi
-    chmod 0664 "$APP_PROFILES" 2>/dev/null
-    dedupe_profiles_file
-
-    if [ "$refresh" = "1" ]; then
-        rewrite_rules_without_pkg "$pkg"
-        echo "$pkg=$rate" >> "$REFRESH_RULES"
-        chmod 0664 "$REFRESH_RULES" 2>/dev/null
+    set_refresh_rate "$rate" || return 1
+    if valid_package_name "$top"; then
+        LAST_USER_APP="$top"
+        LAST_TOP_APP="$top"
+        settings_put_quiet "$TOP_PACKAGE_KEY" "$top"
+        set_refresh_rule "$top" "$rate"
+        log_line "learned refresh: $top -> $rate"
+        set_status "daemon=running" "last=learn_refresh" "package=$top" "rate=$rate"
     else
-        rewrite_rules_without_pkg "$pkg"
+        log_line "refresh changed without learnable foreground app: $rate"
+        set_status "daemon=running" "last=learn_refresh_global" "rate=$rate"
     fi
-
-    LAST_TOP_APP=
-    publish_state
-    log_line "app profile saved: $pkg rate=$rate refresh=$refresh zuipp=$zuipp asoul=$asoul"
-    set_status "daemon=running" "last=set_app_profile" "package=$pkg" "rate=$rate" "refresh=$refresh" "zuipp=$zuipp" "asoul=$asoul"
-    if [ -f "$REFRESH_ENABLED" ]; then
-        refresh_tick
-    fi
-}
-
-remove_app_profile() {
-    pkg="$1"
-    if ! valid_package_name "$pkg"; then
-        log_line "invalid app profile remove: pkg=$pkg"
-        set_status "daemon=running" "last=remove_app_profile_failed" "package=$pkg"
-        return 1
-    fi
-    rewrite_profiles_without_pkg "$pkg"
-    rewrite_rules_without_pkg "$pkg"
-    LAST_TOP_APP=
-    publish_state
-    log_line "app profile removed: $pkg"
-    set_status "daemon=running" "last=remove_app_profile" "package=$pkg"
-    if [ -f "$REFRESH_ENABLED" ]; then
-        refresh_tick
-    fi
+    notify_quick_service
 }
 
 refresh_tick() {
-    if [ ! -f "$REFRESH_ENABLED" ]; then
-        return 0
-    fi
     top="$(current_top_app)"
     if [ -z "$top" ]; then
         EMPTY_TOP_TICKS=$((EMPTY_TOP_TICKS + 1))
-        if [ "$EMPTY_TOP_TICKS" -ge 3 ] && [ -n "$LAST_REFRESH_RATE" ]; then
-            log_line "top app unavailable, restore refresh after $EMPTY_TOP_TICKS checks"
-            LAST_TOP_APP=
-            restore_refresh_rate
+        if [ "$EMPTY_TOP_TICKS" -ge 3 ]; then
+            set_refresh_rate "$BASE_REFRESH_RATE"
         fi
         return 0
     fi
     EMPTY_TOP_TICKS=0
+    if is_overlay_package "$top"; then
+        [ -n "$LAST_USER_APP" ] && top="$LAST_USER_APP"
+    elif ! is_non_target_package "$top"; then
+        LAST_USER_APP="$top"
+    fi
+    [ -n "$top" ] || return 0
     if [ "$top" = "$LAST_TOP_APP" ]; then
         return 0
     fi
     LAST_TOP_APP="$top"
+    settings_put_quiet "$TOP_PACKAGE_KEY" "$top"
     rate="$(rule_for_app "$top")"
-    if [ -z "$rate" ]; then
-        base="${top%%:*}"
-        if [ "$base" != "$top" ]; then
-            rate="$(rule_for_app "$base")"
-        fi
-    fi
-    if [ -n "$rate" ]; then
-        log_line "top app matched refresh rule: $top -> $rate"
-        set_refresh_rate "$rate"
-    elif [ -n "$LAST_REFRESH_RATE" ]; then
-        log_line "top app no rule, restore refresh: $top"
-        restore_refresh_rate
-    fi
+    [ -n "$rate" ] || rate="$BASE_REFRESH_RATE"
+    set_refresh_rate "$rate"
+    log_line "foreground refresh: $top -> $rate"
+    notify_quick_service
 }
 
-prop_value() {
-    key="$1"
-    file="$2"
-    sed -n "s/^$key=//p" "$file" 2>/dev/null | tail -n 1
+set_performance_profile() {
+    pkg="$1"
+    mode="$2"
+    cpu_max="$3"
+    cpu_min="$4"
+    gpu_max="$5"
+    gpu_min="$6"
+    if ! valid_package_name "$pkg" || ! valid_mode "$mode" ||
+        ! valid_positive_int "$cpu_max" || ! valid_positive_int "$cpu_min" ||
+        ! valid_positive_int "$gpu_max" || ! valid_positive_int "$gpu_min" ||
+        [ "$cpu_max" -lt "$cpu_min" ] || [ "$gpu_max" -lt "$gpu_min" ]; then
+        log_line "invalid performance profile: $pkg $mode $cpu_max $cpu_min $gpu_max $gpu_min"
+        set_status "daemon=running" "last=set_performance_profile_failed" "package=$pkg"
+        return 1
+    fi
+    rewrite_performance_without_key "$pkg" "$mode"
+    printf '%s|%s|%s|%s|%s|%s\n' \
+        "$pkg" "$mode" "$cpu_max" "$cpu_min" "$gpu_max" "$gpu_min" \
+        >> "$PERFORMANCE_PROFILES"
+    chmod 0664 "$PERFORMANCE_PROFILES" 2>/dev/null
+    publish_performance_state
+    log_line "performance profile saved: $pkg/$mode"
+    set_status "daemon=running" "last=set_performance_profile" \
+        "package=$pkg" "mode=$mode"
+}
+
+remove_performance_profile() {
+    pkg="$1"
+    mode="$2"
+    if ! valid_package_name "$pkg" || ! valid_mode "$mode"; then
+        set_status "daemon=running" "last=remove_performance_profile_failed"
+        return 1
+    fi
+    rewrite_performance_without_key "$pkg" "$mode"
+    publish_performance_state
+    log_line "performance profile removed: $pkg/$mode"
+    set_status "daemon=running" "last=remove_performance_profile" \
+        "package=$pkg" "mode=$mode"
+}
+
+app_apk_path() {
+    if [ -n "$ZUI_PERFCTL_APK_OVERRIDE" ] &&
+        [ -s "$ZUI_PERFCTL_APK_OVERRIDE" ]; then
+        printf '%s\n' "$ZUI_PERFCTL_APK_OVERRIDE"
+        return 0
+    fi
+    pm path "$APP_PACKAGE" 2>/dev/null | sed -n 's/^package://p' | head -n 1
+}
+
+generate_performance_xml() {
+    apk="$(app_apk_path)"
+    if [ ! -s "$apk" ]; then
+        log_line "XML generator APK missing"
+        return 1
+    fi
+    rm -f "$PERFORMANCE_SUMMARY"
+    if CLASSPATH="$apk" app_process /system/bin com.zui.perfctl.XmlProfileGenerator \
+        "$DEFAULT_GAME_POLICY" "$DEFAULT_PERF_CONFIG" "$PERFORMANCE_PROFILES" \
+        "$WORK_GAME_POLICY" "$WORK_PERF_CONFIG" \
+        > "$PERFORMANCE_SUMMARY.tmp" 2>&1; then
+        mv "$PERFORMANCE_SUMMARY.tmp" "$PERFORMANCE_SUMMARY"
+        chmod 0664 "$WORK_GAME_POLICY" "$WORK_PERF_CONFIG" "$PERFORMANCE_SUMMARY" 2>/dev/null
+        publish_performance_state
+        log_line "performance XML generated"
+        return 0
+    fi
+    mv "$PERFORMANCE_SUMMARY.tmp" "$PERFORMANCE_SUMMARY" 2>/dev/null
+    publish_performance_state
+    log_line "performance XML generation failed: $(tail -n 1 "$PERFORMANCE_SUMMARY" 2>/dev/null)"
+    return 1
+}
+
+apply_performance() {
+    if generate_performance_xml && apply_zuipp; then
+        set_status "daemon=running" "last=apply_performance_ok"
+        return 0
+    fi
+    set_status "daemon=running" "last=apply_performance_failed"
+    return 1
+}
+
+export_logs() {
+    publish_state
+    export_text="ZuiperfCtl 运行记录
+导出时间：$(ts)
+
+[状态]
+$(cat "$STATUS_FILE" 2>/dev/null)
+
+[刷新率规则]
+$(cat "$REFRESH_RULES" 2>/dev/null)
+
+[性能配置]
+$(cat "$PERFORMANCE_PROFILES" 2>/dev/null)
+
+[XML 生成摘要]
+$(cat "$PERFORMANCE_SUMMARY" 2>/dev/null)
+
+[AsoulOpt 健康状态]
+$(settings_get_clean "$ASOUL_HEALTH_KEY")
+
+[守护服务日志末尾]
+$(tail -n 120 "$LOG_FILE" 2>/dev/null)
+
+[AsoulOpt 日志末尾]
+$(tail -n 80 "$ASOUL_LOG" 2>/dev/null)"
+    settings_put_quiet "$LOG_EXPORT_KEY" "$export_text"
+    set_status "daemon=running" "last=export_logs"
 }
 
 archive_request() {
@@ -662,94 +709,67 @@ archive_request() {
     mv "$file" "$DONE_DIR/$stamp.$base" 2>/dev/null
 }
 
+prop_value() {
+    key="$1"
+    file="$2"
+    sed -n "s/^$key=//p" "$file" 2>/dev/null | tail -n 1
+}
+
 handle_request() {
     source="$1"
     cmd="$2"
     rate="$3"
     pkg="$4"
-    profile_refresh="$5"
-    profile_zuipp="$6"
-    profile_asoul="$7"
-    log_line "request: $source cmd=$cmd rate=$rate pkg=$pkg refresh=$profile_refresh zuipp=$profile_zuipp asoul=$profile_asoul"
+    mode="$5"
+    cpu_max="$6"
+    cpu_min="$7"
+    gpu_max="$8"
+    gpu_min="$9"
+    log_line "request: $source cmd=$cmd rate=$rate pkg=$pkg mode=$mode"
 
     case "$cmd" in
-        apply_zuipp) apply_zuipp ;;
-        restore_zuipp) restore_zuipp ;;
-        restart_zuipp) restart_zuipp ;;
-        apply_asoul) apply_asoul ;;
-        restore_asoul) restore_asoul ;;
-        restart_asoul) restart_asoul ;;
-        set_refresh) set_refresh_rate "$rate" ;;
-        restore_refresh) restore_refresh_rate ;;
-        set_refresh_rule) set_refresh_rule "$pkg" "$rate" ;;
-        remove_refresh_rule) remove_refresh_rule "$pkg" ;;
-        set_app_profile) set_app_profile "$pkg" "$rate" "$profile_refresh" "$profile_zuipp" "$profile_asoul" ;;
-        remove_app_profile) remove_app_profile "$pkg" ;;
-        enable_auto_refresh)
-            touch "$REFRESH_ENABLED"
-            chmod 0664 "$REFRESH_ENABLED" 2>/dev/null
-            LAST_TOP_APP=
-            publish_state
-            set_status "daemon=running" "last=enable_auto_refresh"
-            refresh_tick
-            ;;
-        disable_auto_refresh)
-            rm -f "$REFRESH_ENABLED"
-            restore_refresh_rate
-            publish_state
-            set_status "daemon=running" "last=disable_auto_refresh"
-            ;;
         status)
             publish_state
             set_status "daemon=running" "last=status"
             ;;
+        learn_refresh) learn_refresh "$rate" ;;
+        set_refresh) set_refresh_rate "$rate" ;;
+        restore_refresh) restore_refresh_rate ;;
+        remove_refresh_rule) remove_refresh_rule "$pkg" ;;
+        set_performance_profile)
+            set_performance_profile "$pkg" "$mode" \
+                "$cpu_max" "$cpu_min" "$gpu_max" "$gpu_min"
+            ;;
+        remove_performance_profile) remove_performance_profile "$pkg" "$mode" ;;
+        apply_performance) apply_performance ;;
+        apply_zuipp) apply_zuipp ;;
+        restore_zuipp) restore_zuipp ;;
+        restart_zuipp) restart_zuipp ;;
+        restart_asoul) restart_asoul ;;
+        apply_asoul) apply_asoul ;;
+        restore_asoul) restore_asoul ;;
+        export_logs) export_logs ;;
         *)
-            log_line "unknown request cmd: $cmd"
+            log_line "unknown request: $cmd"
             set_status "daemon=running" "last=unknown_request" "cmd=$cmd"
             ;;
     esac
+    trim_log
 }
 
 process_request_file() {
     file="$1"
-    if [ ! -s "$file" ]; then
-        return 0
-    fi
-    cmd="$(prop_value cmd "$file")"
-    rate="$(prop_value rate "$file")"
-    pkg="$(prop_value package "$file")"
-    profile_refresh="$(prop_value refresh "$file")"
-    profile_zuipp="$(prop_value zuipp "$file")"
-    profile_asoul="$(prop_value asoul "$file")"
-    handle_request "$file" "$cmd" "$rate" "$pkg" "$profile_refresh" "$profile_zuipp" "$profile_asoul"
+    [ -s "$file" ] || return 0
+    handle_request "$file" \
+        "$(prop_value cmd "$file")" \
+        "$(prop_value rate "$file")" \
+        "$(prop_value package "$file")" \
+        "$(prop_value mode "$file")" \
+        "$(prop_value cpu_max "$file")" \
+        "$(prop_value cpu_min "$file")" \
+        "$(prop_value gpu_max "$file")" \
+        "$(prop_value gpu_min "$file")"
     archive_request "$file"
-}
-
-process_settings_request() {
-    id="$(settings_get_clean "$REQ_ID_KEY")"
-    if [ -z "$id" ] || [ "$id" = "$LAST_SETTINGS_REQUEST_ID" ]; then
-        return 0
-    fi
-    if [ -s "$LAST_SETTINGS_ID_FILE" ] && [ "$id" = "$(cat "$LAST_SETTINGS_ID_FILE" 2>/dev/null)" ]; then
-        LAST_SETTINGS_REQUEST_ID="$id"
-        return 0
-    fi
-    LAST_SETTINGS_REQUEST_ID="$id"
-    cmd="$(settings_get_clean "$REQ_CMD_KEY")"
-    rate="$(settings_get_clean "$REQ_RATE_KEY")"
-    pkg="$(settings_get_clean "$REQ_PACKAGE_KEY")"
-    profile_refresh="$(settings_get_clean "$REQ_PROFILE_REFRESH_KEY")"
-    profile_zuipp="$(settings_get_clean "$REQ_PROFILE_ZUIPP_KEY")"
-    profile_asoul="$(settings_get_clean "$REQ_PROFILE_ASOUL_KEY")"
-    handle_request "settings:$id" "$cmd" "$rate" "$pkg" "$profile_refresh" "$profile_zuipp" "$profile_asoul"
-    echo "$id" > "$LAST_SETTINGS_ID_FILE"
-    chmod 0664 "$LAST_SETTINGS_ID_FILE" 2>/dev/null
-    settings_delete_quiet "$REQ_CMD_KEY"
-    settings_delete_quiet "$REQ_RATE_KEY"
-    settings_delete_quiet "$REQ_PACKAGE_KEY"
-    settings_delete_quiet "$REQ_PROFILE_REFRESH_KEY"
-    settings_delete_quiet "$REQ_PROFILE_ZUIPP_KEY"
-    settings_delete_quiet "$REQ_PROFILE_ASOUL_KEY"
 }
 
 process_atomic_settings_request() {
@@ -757,83 +777,75 @@ process_atomic_settings_request() {
     if [ -z "$request" ] || [ "$request" = "$LAST_SETTINGS_REQUEST_TEXT" ]; then
         return 0
     fi
-    if [ -s "$LAST_SETTINGS_TEXT_FILE" ] &&
-        [ "$request" = "$(cat "$LAST_SETTINGS_TEXT_FILE" 2>/dev/null)" ]; then
-        LAST_SETTINGS_REQUEST_TEXT="$request"
-        return 0
-    fi
+    LAST_SETTINGS_REQUEST_TEXT="$request"
+    echo "$request" > "$LAST_REQUEST_FILE"
+    chmod 0664 "$LAST_REQUEST_FILE" 2>/dev/null
 
     field_count="$(printf '%s\n' "$request" | awk -F'|' '{print NF}')"
-    LAST_SETTINGS_REQUEST_TEXT="$request"
-    echo "$request" > "$LAST_SETTINGS_TEXT_FILE"
-    chmod 0664 "$LAST_SETTINGS_TEXT_FILE" 2>/dev/null
-    if [ "$field_count" -ne 7 ]; then
-        log_line "invalid atomic settings request: fields=$field_count"
+    if [ "$field_count" -ne 9 ]; then
+        log_line "invalid atomic request field count: $field_count"
         return 1
     fi
-
     id="$(printf '%s\n' "$request" | cut -d '|' -f 1)"
     cmd="$(printf '%s\n' "$request" | cut -d '|' -f 2)"
-    rate="$(printf '%s\n' "$request" | cut -d '|' -f 3)"
-    pkg="$(printf '%s\n' "$request" | cut -d '|' -f 4)"
-    profile_refresh="$(printf '%s\n' "$request" | cut -d '|' -f 5)"
-    profile_zuipp="$(printf '%s\n' "$request" | cut -d '|' -f 6)"
-    profile_asoul="$(printf '%s\n' "$request" | cut -d '|' -f 7)"
-    if [ -z "$id" ] || [ -z "$cmd" ]; then
-        log_line "invalid atomic settings request: empty id or cmd"
-        return 1
-    fi
-    handle_request "settings-atomic:$id" "$cmd" "$rate" "$pkg" \
-        "$profile_refresh" "$profile_zuipp" "$profile_asoul"
+    [ -n "$id" ] && [ -n "$cmd" ] || return 1
+    handle_request "settings:$id" "$cmd" \
+        "$(printf '%s\n' "$request" | cut -d '|' -f 3)" \
+        "$(printf '%s\n' "$request" | cut -d '|' -f 4)" \
+        "$(printf '%s\n' "$request" | cut -d '|' -f 5)" \
+        "$(printf '%s\n' "$request" | cut -d '|' -f 6)" \
+        "$(printf '%s\n' "$request" | cut -d '|' -f 7)" \
+        "$(printf '%s\n' "$request" | cut -d '|' -f 8)" \
+        "$(printf '%s\n' "$request" | cut -d '|' -f 9)"
 }
 
 boot_restore() {
     if [ -f "$ZUI_ENABLED" ]; then
-        log_line "boot apply enabled zuipp bind"
+        log_line "restoring enabled ZuiPP bind"
         apply_zuipp
     fi
     if [ -f "$ASOUL_ENABLED" ]; then
-        log_line "boot apply enabled asoul bind"
+        log_line "restoring enabled AsoulOpt config bind"
         apply_asoul
     fi
 }
 
-init_settings_request_state() {
-    id="$(settings_get_clean "$REQ_ID_KEY")"
-    if [ -n "$id" ] && [ ! -s "$LAST_SETTINGS_ID_FILE" ]; then
-        echo "$id" > "$LAST_SETTINGS_ID_FILE"
-        chmod 0664 "$LAST_SETTINGS_ID_FILE" 2>/dev/null
-        LAST_SETTINGS_REQUEST_ID="$id"
-        log_line "ignore stale settings request at boot: $id"
-    elif [ -s "$LAST_SETTINGS_ID_FILE" ]; then
-        LAST_SETTINGS_REQUEST_ID="$(cat "$LAST_SETTINGS_ID_FILE" 2>/dev/null)"
-    fi
-}
-
-init_atomic_settings_request_state() {
+init_request_state() {
     request="$(settings_get_clean "$REQ_TEXT_KEY")"
-    if [ -n "$request" ] && [ ! -s "$LAST_SETTINGS_TEXT_FILE" ]; then
-        echo "$request" > "$LAST_SETTINGS_TEXT_FILE"
-        chmod 0664 "$LAST_SETTINGS_TEXT_FILE" 2>/dev/null
+    if [ -s "$LAST_REQUEST_FILE" ]; then
+        LAST_SETTINGS_REQUEST_TEXT="$(cat "$LAST_REQUEST_FILE" 2>/dev/null)"
+    elif [ -n "$request" ]; then
+        echo "$request" > "$LAST_REQUEST_FILE"
+        chmod 0664 "$LAST_REQUEST_FILE" 2>/dev/null
         LAST_SETTINGS_REQUEST_TEXT="$request"
-        log_line "ignore stale atomic settings request at boot"
-    elif [ -s "$LAST_SETTINGS_TEXT_FILE" ]; then
-        LAST_SETTINGS_REQUEST_TEXT="$(cat "$LAST_SETTINGS_TEXT_FILE" 2>/dev/null)"
     fi
 }
 
 main_loop() {
     init_dirs
-    log_line "zui_perfctld start"
-    init_atomic_settings_request_state
-    init_settings_request_state
+    init_request_state
+    log_line "zui_perfctld v7 start"
     boot_restore
+    set_refresh_rate "$BASE_REFRESH_RATE"
+    publish_state
+    set_status "daemon=running" "last=init"
+    notify_quick_service
+
     while true; do
         process_atomic_settings_request
-        process_settings_request
         process_request_file "$ADB_REQUEST"
-        refresh_tick
-        sleep 1
+        LOOP_TICKS=$((LOOP_TICKS + 1))
+        if [ "$LOOP_TICKS" -ge 4 ]; then
+            refresh_tick
+            LOOP_TICKS=0
+        fi
+        HEALTH_TICKS=$((HEALTH_TICKS + 1))
+        if [ "$HEALTH_TICKS" -ge 40 ]; then
+            publish_asoul_health
+            publish_xml_state
+            HEALTH_TICKS=0
+        fi
+        sleep 0.25
     done
 }
 

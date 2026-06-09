@@ -10,9 +10,11 @@ object PerfCtlRequest {
         cmd: String,
         rate: Int? = null,
         pkg: String? = null,
-        refresh: Boolean? = null,
-        zuipp: Boolean? = null,
-        asoul: Boolean? = null,
+        mode: String? = null,
+        cpuMax: Int? = null,
+        cpuMin: Int? = null,
+        gpuMax: Int? = null,
+        gpuMin: Int? = null,
     ) {
         val resolver = context.contentResolver
         val requestId = "${System.currentTimeMillis()}_${SystemClock.elapsedRealtimeNanos()}_$cmd"
@@ -21,9 +23,11 @@ object PerfCtlRequest {
             cmd,
             rate?.toString().orEmpty(),
             pkg.orEmpty().replace("|", ""),
-            refresh.toFlag(),
-            zuipp.toFlag(),
-            asoul.toFlag(),
+            mode.orEmpty().replace("|", ""),
+            cpuMax?.toString().orEmpty(),
+            cpuMin?.toString().orEmpty(),
+            gpuMax?.toString().orEmpty(),
+            gpuMin?.toString().orEmpty(),
         ).joinToString("|")
         Settings.System.putString(
             resolver,
@@ -32,11 +36,4 @@ object PerfCtlRequest {
         )
     }
 
-    private fun Boolean?.toFlag(): String {
-        return when (this) {
-            true -> "1"
-            false -> "0"
-            null -> ""
-        }
-    }
 }

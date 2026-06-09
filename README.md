@@ -5,8 +5,8 @@ ZuiperfCtl is a system app and init daemon prototype for ZUI performance control
 It keeps the official ZuiPP and game helper packages installed, then adds:
 
 - `com.zui.zuiperfctl`: privileged Android app UI. The Kotlin source package is still `com.zui.perfctl`, but the APK package name is new to avoid the old signature-mismatch state on flashed devices.
-- `PerfCtlQuickService`: silent ongoing notification for quick refresh-rate switching.
-- `/system/bin/zui_perfctld`: root init daemon for XML bind mounts, refresh-rate commands, and AsoulOpt control.
+- `PerfCtlQuickService`: ongoing notification with direct 60/90/120/144Hz controls.
+- `/system/bin/zui_perfctld`: root init daemon for XML generation/bind mounts and foreground refresh-rate learning.
 - Embedded `AsoulOpt` service copied from the known working 187 payload.
 - Runtime config under `/data/local/tmp/zui_perfctl`.
 
@@ -52,10 +52,17 @@ Runtime logs on device:
 ## Notes
 
 The app sends each command as one atomic `Settings.System` payload in
-`zui_perfctl_request_text` so rapid operations cannot mix command parameters.
-The daemon still accepts the older multi-key protocol and ADB request file for
-maintenance compatibility. App profiles are persisted under
-`/data/local/tmp/zui_perfctl/profiles/apps.prop`; refresh-rate profiles are
-applied through `/data/local/tmp/zui_perfctl/refresh/rules.prop`.
+`zui_perfctl_request_text`. Refresh-rate exceptions are learned when a rate is
+selected from the notification while an app is in the foreground. The global
+baseline is a hard 120Hz lock, and selecting 120Hz removes that app's exception.
+
+Performance profiles are independent from refresh-rate rules and are persisted
+under `/data/local/tmp/zui_perfctl/performance/profiles.prop`. Each profile
+contains a ZuiPP mode plus CPU/GPU upper and lower limits. The APK's
+`XmlProfileGenerator` converts these profiles into valid `game_policy.xml` and
+`performanceconfig.xml` work files before the daemon applies them.
+
+AsoulOpt is not configured per app. It remains an independent system service;
+the app reports its service/domain health and exports its log.
 
 XML bind mounts are requested by the daemon through `zui_perfctl.*` properties and executed by Android init. `scripts/ApplyZuiperfCtlPayload.py` adds the matching property context and the minimal init `mounton` SELinux rule, then updates the platform sepolicy hash so the device recompiles split sepolicy at boot.

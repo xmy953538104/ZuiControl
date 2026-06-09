@@ -2,15 +2,14 @@ package com.zui.perfctl
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -22,601 +21,743 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
 import android.widget.BaseAdapter
-import android.widget.CheckBox
 import android.widget.EditText
-import android.widget.ImageView
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
-import java.text.Collator
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 class MainActivity : Activity() {
-    private lateinit var appAdapter: AppAdapter
-    private lateinit var statusView: TextView
-    private lateinit var selectedTitle: TextView
-    private lateinit var selectedPackage: TextView
-    private lateinit var ruleSummary: TextView
-    private lateinit var refreshCheck: CheckBox
-    private lateinit var zuippCheck: CheckBox
-    private lateinit var asoulCheck: CheckBox
-    private lateinit var rateButtons: Map<Int, TextView>
-    private lateinit var filterButtons: Map<AppFilter, TextView>
-    private lateinit var listHint: TextView
-
     private val handler = Handler(Looper.getMainLooper())
-    private val apps = mutableListOf<InstalledApp>()
-    private val visibleApps = mutableListOf<InstalledApp>()
-    private val profiles = linkedMapOf<String, AppProfile>()
+    private val performanceProfiles = linkedMapOf<String, PerformanceProfile>()
+    private val refreshRules = linkedMapOf<String, Int>()
+    private val labelCache = linkedMapOf<String, String>()
 
-    private var selectedPackageName: String? = null
-    private var selectedRate = 120
-    private var changingDetail = false
-    private var currentFilter = AppFilter.USER
-    private var currentKeyword = ""
-    private var appsLoaded = false
+    private lateinit var contentHost: FrameLayout
+    private lateinit var tabButtons: Map<Page, TextView>
+    private lateinit var refreshRulesHost: LinearLayout
+    private lateinit var refreshStatus: TextView
+    private lateinit var performanceListHost: LinearLayout
+    private lateinit var selectedAppTitle: TextView
+    private lateinit var selectedPackageView: TextView
+    private lateinit var modeSpinner: Spinner
+    private lateinit var cpuMaxInput: EditText
+    private lateinit var cpuMinInput: EditText
+    private lateinit var gpuMaxInput: EditText
+    private lateinit var gpuMinInput: EditText
+    private lateinit var performanceSummary: TextView
+    private lateinit var systemStatus: TextView
+    private lateinit var asoulStatus: TextView
+
+    private var currentPage = Page.REFRESH
+    private var selectedPackage: String? = null
     private var commandInFlight = false
     private var lastCommandAt = 0L
+    private var pendingExportText = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestNotificationPermission()
-        reloadProfiles()
-        setContentView(buildContent())
-        refreshStatus(sendDaemonStatus = true)
-        loadAppsAsync()
-        handler.postDelayed({ PerfCtlQuickService.start(this) }, 350)
+        reloadState()
+        setContentView(buildRoot())
+        showPage(Page.REFRESH)
+        handler.postDelayed({ PerfCtlQuickService.start(this) }, 250)
+        sendCommand(null) {
+            PerfCtlRequest.send(this, PerfCtlContract.CMD_STATUS)
+        }
     }
 
-    private fun buildContent(): View {
-        val tablet = resources.configuration.screenWidthDp >= 700
+    override fun onResume() {
+        super.onResume()
+        if (::contentHost.isInitialized) {
+            reloadState()
+            renderCurrentPage()
+        }
+    }
+
+    private fun buildRoot(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(COLOR_BG)
-            setPadding(dp(18), dp(16), dp(18), dp(18))
+            setPadding(dp(18), dp(14), dp(18), dp(18))
         }
-
         root.addView(header(), matchWrap())
-
-        val content = LinearLayout(this).apply {
-            orientation = if (tablet) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-            gravity = Gravity.TOP
-        }
-        root.addView(content, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
+        root.addView(pageTabs(), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(44),
+        ).apply {
+            setMargins(0, 0, 0, dp(12))
+        })
+        contentHost = FrameLayout(this)
+        root.addView(contentHost, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
             0,
             1f,
         ))
-
-        val listPanel = panel().apply {
-            orientation = LinearLayout.VERTICAL
-            addView(searchBox(), matchWrap())
-            addView(appList(), LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                if (tablet) 0 else dp(360),
-                if (tablet) 1f else 0f,
-            ))
-        }
-        val detailPanel = panel().apply {
-            orientation = LinearLayout.VERTICAL
-            addView(detailContent(), matchWrap())
-        }
-
-        if (tablet) {
-            content.addView(listPanel, LinearLayout.LayoutParams(dp(380), ViewGroup.LayoutParams.MATCH_PARENT).apply {
-                setMargins(0, 0, dp(12), 0)
-            })
-            content.addView(detailPanel, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-        } else {
-            content.addView(listPanel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, 0, 0, dp(12))
-            })
-            content.addView(detailPanel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        }
-
         return root
     }
 
     private fun header(): View {
-        val box = LinearLayout(this).apply {
+        return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(14))
-        }
-        val titles = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        titles.addView(label("Zui 性能控制", 24f, COLOR_TEXT, Typeface.BOLD))
-        titles.addView(label("应用档案 / 刷新率 / XML 调度 / AsoulOpt", 13f, COLOR_SUBTLE, Typeface.NORMAL))
-        box.addView(titles, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        box.addView(textButton("静音通知") { PerfCtlQuickService.start(this); toast("通知已刷新") })
-        return box
-    }
-
-    private fun searchBox(): View {
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        box.addView(label("应用列表", 17f, COLOR_TEXT, Typeface.BOLD))
-        box.addView(filterTabs(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)).apply {
-            setMargins(0, dp(10), 0, 0)
-        })
-        box.addView(EditText(this).apply {
-            hint = "搜索应用或包名"
-            setSingleLine(true)
-            textSize = 14f
-            setPadding(dp(12), 0, dp(12), 0)
-            background = rounded(COLOR_FIELD, dp(8), COLOR_STROKE)
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-                override fun afterTextChanged(s: Editable?) = Unit
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                    filterApps(s?.toString().orEmpty())
+            setPadding(0, 0, 0, dp(12))
+            val titleBox = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(label("ZuiperfCtl", 23f, COLOR_TEXT, Typeface.BOLD))
+                addView(label("ZUI 性能控制", 12f, COLOR_SUBTLE, Typeface.NORMAL))
+            }
+            addView(titleBox, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(commandButton("刷新") {
+                sendCommand("正在刷新") {
+                    PerfCtlRequest.send(this@MainActivity, PerfCtlContract.CMD_STATUS)
                 }
-            })
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply {
-            setMargins(0, dp(8), 0, dp(10))
-        })
-        listHint = label("正在读取应用...", 12f, COLOR_SUBTLE, Typeface.NORMAL).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), 0, dp(2), dp(8))
+            }, LinearLayout.LayoutParams(dp(92), dp(40)))
         }
-        box.addView(listHint, matchWrap())
-        return box
     }
 
-    private fun filterTabs(): View {
+    private fun pageTabs(): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            background = rounded(COLOR_FIELD, dp(8), COLOR_STROKE)
+            setPadding(dp(3), dp(3), dp(3), dp(3))
         }
-        val buttons = linkedMapOf<AppFilter, TextView>()
-        AppFilter.values().forEachIndexed { index, filter ->
-            val tab = chip(filter.title) {
-                currentFilter = filter
-                updateFilterButtons()
-                applyAppFilter()
-                if (visibleApps.none { it.packageName == selectedPackageName }) {
-                    selectApp(visibleApps.firstOrNull()?.packageName)
-                }
+        val map = linkedMapOf<Page, TextView>()
+        Page.entries.forEach { page ->
+            val tab = label(page.title, 14f, COLOR_TEXT, Typeface.BOLD).apply {
+                gravity = Gravity.CENTER
+                setOnClickListener { showPage(page) }
             }
-            buttons[filter] = tab
-            row.addView(tab, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-                setMargins(0, 0, if (index == AppFilter.values().lastIndex) 0 else dp(6), 0)
-            })
+            map[page] = tab
+            row.addView(tab, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         }
-        filterButtons = buttons
-        updateFilterButtons()
+        tabButtons = map
         return row
     }
 
-    private fun appList(): View {
-        appAdapter = AppAdapter()
-        return ListView(this).apply {
-            adapter = appAdapter
-            divider = null
-            cacheColorHint = Color.TRANSPARENT
-            setOnItemClickListener { _, _, position, _ ->
-                visibleApps.getOrNull(position)?.let { selectApp(it.packageName) }
-            }
+    private fun showPage(page: Page) {
+        currentPage = page
+        tabButtons.forEach { (item, view) ->
+            val selected = item == page
+            view.setTextColor(if (selected) Color.WHITE else COLOR_TEXT)
+            view.background = rounded(
+                if (selected) COLOR_ACCENT else Color.TRANSPARENT,
+                dp(6),
+                Color.TRANSPARENT,
+            )
         }
+        renderCurrentPage()
     }
 
-    private fun detailContent(): View {
-        val scroll = ScrollView(this)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+    private fun renderCurrentPage() {
+        contentHost.removeAllViews()
+        val view = when (currentPage) {
+            Page.REFRESH -> buildRefreshPage()
+            Page.PERFORMANCE -> buildPerformancePage()
+            Page.SYSTEM -> buildSystemPage()
         }
+        contentHost.addView(view, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+    }
+
+    private fun buildRefreshPage(): View {
+        val scroll = ScrollView(this)
+        val root = vertical()
         scroll.addView(root)
 
-        selectedTitle = label("选择一个应用", 21f, COLOR_TEXT, Typeface.BOLD)
-        selectedPackage = label("", 13f, COLOR_SUBTLE, Typeface.NORMAL)
-        root.addView(selectedTitle)
-        root.addView(selectedPackage)
+        refreshStatus = infoPanel()
+        root.addView(refreshStatus, matchWrap())
+        root.addView(sectionTitle("已学习规则"), sectionMargins())
 
-        ruleSummary = statusPanel()
-        root.addView(ruleSummary, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            setMargins(0, dp(14), 0, dp(14))
-        })
+        refreshRulesHost = vertical()
+        root.addView(refreshRulesHost, matchWrap())
 
-        root.addView(label("档案开关", 16f, COLOR_TEXT, Typeface.BOLD))
-        refreshCheck = check("刷新率规则")
-        zuippCheck = check("XML 调度档案")
-        asoulCheck = check("AsoulOpt 线程档案")
-        root.addView(refreshCheck)
-        root.addView(zuippCheck)
-        root.addView(asoulCheck)
-
-        root.addView(label("刷新率", 16f, COLOR_TEXT, Typeface.BOLD).apply {
-            setPadding(0, dp(18), 0, dp(8))
-        })
-        val rateRow = LinearLayout(this).apply {
+        val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-        }
-        val rateViews = linkedMapOf<Int, TextView>()
-        PerfCtlContract.rates.forEachIndexed { index, rate ->
-            val chip = chip("${rate}Hz") {
-                selectedRate = rate
-                updateRateButtons()
-            }
-            rateViews[rate] = chip
-            rateRow.addView(chip, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
-                setMargins(0, 0, if (index == PerfCtlContract.rates.lastIndex) 0 else dp(8), 0)
+            addView(commandButton("恢复全局 120Hz") {
+                sendCommand("正在恢复 120Hz") {
+                    PerfCtlRequest.send(this@MainActivity, PerfCtlContract.CMD_RESTORE_REFRESH)
+                }
+            }, LinearLayout.LayoutParams(0, dp(44), 1f))
+            addView(commandButton("刷新通知") {
+                PerfCtlQuickService.start(this@MainActivity)
+            }, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                setMargins(dp(8), 0, 0, 0)
             })
         }
-        rateButtons = rateViews
-        root.addView(rateRow)
-
-        root.addView(label("操作", 16f, COLOR_TEXT, Typeface.BOLD).apply {
-            setPadding(0, dp(18), 0, dp(8))
+        root.addView(actions, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            setMargins(0, dp(12), 0, 0)
         })
-        row(root,
-            textButton("保存档案") { saveSelectedProfile() },
-            textButton("移除档案") { removeSelectedProfile() },
-        )
-        row(root,
-            textButton("开启自动") { sendSimple(PerfCtlContract.CMD_ENABLE_AUTO_REFRESH) },
-            textButton("关闭自动") { sendSimple(PerfCtlContract.CMD_DISABLE_AUTO_REFRESH) },
-        )
-        row(root,
-            textButton("立即锁定") { sendSimple(PerfCtlContract.CMD_SET_REFRESH, selectedRate) },
-            textButton("恢复默认") { sendSimple(PerfCtlContract.CMD_RESTORE_REFRESH) },
-        )
-
-        root.addView(label("系统状态", 16f, COLOR_TEXT, Typeface.BOLD).apply {
-            setPadding(0, dp(18), 0, dp(8))
-        })
-        statusView = statusPanel()
-        root.addView(statusView, matchWrap())
-
-        row(root,
-            textButton("刷新状态") { refreshStatus(sendDaemonStatus = true) },
-            textButton("重启 AsoulOpt") { sendSimple(PerfCtlContract.CMD_RESTART_ASOUL) },
-        )
-        row(root,
-            textButton("应用 XML") { sendSimple(PerfCtlContract.CMD_APPLY_ZUIPP) },
-            textButton("恢复 XML") { sendSimple(PerfCtlContract.CMD_RESTORE_ZUIPP) },
-        )
+        renderRefreshState()
         return scroll
     }
 
-    private fun saveSelectedProfile() {
-        val pkg = selectedPackageName ?: return toast("先选择应用")
-        val profile = AppProfile(
-            packageName = pkg,
-            rate = selectedRate,
-            refreshEnabled = refreshCheck.isChecked,
-            zuippEnabled = zuippCheck.isChecked,
-            asoulEnabled = asoulCheck.isChecked,
-        )
-        if (!profile.enabled) {
-            removeSelectedProfile()
+    private fun renderRefreshState() {
+        if (!::refreshStatus.isInitialized) {
             return
         }
-        profiles[pkg] = profile
-        updateSelectedDetail()
-        appAdapter.notifyDataSetChanged()
-        sendCommand("已保存档案") {
+        val peak = setting("peak_refresh_rate").cleanSetting().ifBlank { "120" }
+        val min = setting("min_refresh_rate").cleanSetting().ifBlank { "120" }
+        val top = setting(PerfCtlContract.KEY_TOP_PACKAGE).ifBlank { "未识别" }
+        refreshStatus.text = "当前 ${peak}Hz · 最低 ${min}Hz\n前台 $top · 基线 120Hz"
+
+        refreshRulesHost.removeAllViews()
+        if (refreshRules.isEmpty()) {
+            refreshRulesHost.addView(emptyText("暂无例外规则"), matchWrap())
+            return
+        }
+        refreshRules.forEach { (pkg, rate) ->
+            val row = horizontalRow()
+            val text = vertical().apply {
+                addView(label(labelForPackage(pkg), 15f, COLOR_TEXT, Typeface.BOLD))
+                addView(label(pkg, 11f, COLOR_SUBTLE, Typeface.NORMAL))
+            }
+            row.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(rateBadge("${rate}Hz"), LinearLayout.LayoutParams(dp(72), dp(36)))
+            row.addView(commandButton("移除") {
+                sendCommand("正在移除规则") {
+                    PerfCtlRequest.send(
+                        this@MainActivity,
+                        PerfCtlContract.CMD_REMOVE_REFRESH_RULE,
+                        pkg = pkg,
+                    )
+                }
+            }, LinearLayout.LayoutParams(dp(72), dp(36)).apply {
+                setMargins(dp(8), 0, 0, 0)
+            })
+            refreshRulesHost.addView(row, cardMargins())
+        }
+    }
+
+    private fun buildPerformancePage(): View {
+        val tablet = resources.configuration.screenWidthDp >= 700
+        val root = LinearLayout(this).apply {
+            orientation = if (tablet) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            gravity = Gravity.TOP
+        }
+
+        val listPanel = panel().apply {
+            orientation = LinearLayout.VERTICAL
+            val head = horizontalRow().apply {
+                background = null
+                setPadding(0, 0, 0, dp(8))
+                addView(sectionTitle("性能配置"), LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    1f,
+                ))
+                addView(commandButton("添加应用") { showPackagePicker() },
+                    LinearLayout.LayoutParams(dp(104), dp(40)))
+            }
+            addView(head)
+            performanceListHost = vertical()
+            addView(ScrollView(this@MainActivity).apply {
+                addView(performanceListHost)
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                if (tablet) 0 else dp(260),
+                if (tablet) 1f else 0f,
+            ))
+        }
+
+        val formPanel = panel().apply {
+            orientation = LinearLayout.VERTICAL
+            selectedAppTitle = label("选择或添加应用", 20f, COLOR_TEXT, Typeface.BOLD)
+            selectedPackageView = label("", 12f, COLOR_SUBTLE, Typeface.NORMAL)
+            addView(selectedAppTitle)
+            addView(selectedPackageView)
+
+            addView(fieldTitle("运行模式"), fieldMargins())
+            modeSpinner = Spinner(this@MainActivity).apply {
+                adapter = SimpleTextAdapter(PerformanceMode.entries.map { it.title })
+                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                    override fun onItemSelected(
+                        parent: AdapterView<*>?,
+                        view: View?,
+                        position: Int,
+                        id: Long,
+                    ) {
+                        loadSelectedProfile()
+                    }
+                }
+            }
+            addView(modeSpinner, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ))
+
+            val cpuRow = horizontalRow().apply {
+                background = null
+                setPadding(0, 0, 0, 0)
+            }
+            cpuMaxInput = numericField("上限 GHz", "2.5")
+            cpuMinInput = numericField("下限 GHz", "1.5")
+            cpuRow.addView(fieldBox("CPU 上限", cpuMaxInput), LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            cpuRow.addView(fieldBox("CPU 下限", cpuMinInput), LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(dp(10), 0, 0, 0)
+            })
+            addView(cpuRow, fieldMargins())
+
+            val gpuRow = horizontalRow().apply {
+                background = null
+                setPadding(0, 0, 0, 0)
+            }
+            gpuMaxInput = numericField("上限 MHz", "720")
+            gpuMinInput = numericField("下限 MHz", "422")
+            gpuRow.addView(fieldBox("GPU 上限", gpuMaxInput), LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            gpuRow.addView(fieldBox("GPU 下限", gpuMinInput), LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(dp(10), 0, 0, 0)
+            })
+            addView(gpuRow, fieldMargins())
+
+            performanceSummary = infoPanel()
+            addView(performanceSummary, fieldMargins())
+
+            val saveRow = horizontalRow().apply {
+                background = null
+                setPadding(0, 0, 0, 0)
+                addView(primaryButton("保存模式") { savePerformanceProfile() },
+                    LinearLayout.LayoutParams(0, dp(44), 1f))
+                addView(commandButton("删除模式") { removePerformanceProfile() },
+                    LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                        setMargins(dp(8), 0, 0, 0)
+                    })
+            }
+            addView(saveRow, fieldMargins())
+
+            val applyRow = horizontalRow().apply {
+                background = null
+                setPadding(0, 0, 0, 0)
+                addView(primaryButton("生成并应用调度") {
+                    sendCommand("正在生成并应用") {
+                        PerfCtlRequest.send(
+                            this@MainActivity,
+                            PerfCtlContract.CMD_APPLY_PERFORMANCE,
+                        )
+                    }
+                }, LinearLayout.LayoutParams(0, dp(44), 1f))
+                addView(commandButton("恢复官方调度") {
+                    sendCommand("正在恢复官方调度") {
+                        PerfCtlRequest.send(
+                            this@MainActivity,
+                            PerfCtlContract.CMD_RESTORE_ZUIPP,
+                        )
+                    }
+                }, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                    setMargins(dp(8), 0, 0, 0)
+                })
+            }
+            addView(applyRow)
+        }
+
+        if (tablet) {
+            root.addView(listPanel, LinearLayout.LayoutParams(dp(390), ViewGroup.LayoutParams.MATCH_PARENT).apply {
+                setMargins(0, 0, dp(12), 0)
+            })
+            root.addView(ScrollView(this).apply {
+                addView(formPanel)
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        } else {
+            root.addView(listPanel, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                setMargins(0, 0, 0, dp(12))
+            })
+            root.addView(ScrollView(this).apply {
+                addView(formPanel)
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f,
+            ))
+        }
+        renderPerformanceProfiles()
+        updatePerformanceForm()
+        return root
+    }
+
+    private fun renderPerformanceProfiles() {
+        if (!::performanceListHost.isInitialized) {
+            return
+        }
+        performanceListHost.removeAllViews()
+        if (performanceProfiles.isEmpty()) {
+            performanceListHost.addView(emptyText("暂无性能配置"), matchWrap())
+            return
+        }
+        performanceProfiles.values.forEach { profile ->
+            val selected = profile.packageName == selectedPackage &&
+                profile.mode == selectedMode()
+            val row = vertical().apply {
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = rounded(
+                    if (selected) COLOR_SELECTED else Color.WHITE,
+                    dp(7),
+                    if (selected) COLOR_ACCENT else COLOR_STROKE,
+                )
+                addView(label(
+                    "${labelForPackage(profile.packageName)} · ${profile.mode.title}",
+                    14f,
+                    COLOR_TEXT,
+                    Typeface.BOLD,
+                ))
+                addView(label(
+                    "CPU ${formatGHz(profile.cpuMinKHz)}-${formatGHz(profile.cpuMaxKHz)}GHz  " +
+                        "GPU ${profile.gpuMinKHz / 1000}-${profile.gpuMaxKHz / 1000}MHz",
+                    11f,
+                    COLOR_SUBTLE,
+                    Typeface.NORMAL,
+                ))
+                setOnClickListener {
+                    selectedPackage = profile.packageName
+                    modeSpinner.setSelection(profile.mode.ordinal)
+                    updatePerformanceForm()
+                    renderPerformanceProfiles()
+                }
+            }
+            performanceListHost.addView(row, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                setMargins(0, 0, 0, dp(8))
+            })
+        }
+    }
+
+    private fun updatePerformanceForm() {
+        if (!::selectedAppTitle.isInitialized) {
+            return
+        }
+        val pkg = selectedPackage
+        selectedAppTitle.text = pkg?.let { labelForPackage(it) } ?: "选择或添加应用"
+        selectedPackageView.text = pkg.orEmpty()
+        loadSelectedProfile()
+        performanceSummary.text = setting(PerfCtlContract.KEY_PERFORMANCE_SUMMARY)
+            .ifBlank { "工作 XML 尚未生成" }
+    }
+
+    private fun loadSelectedProfile() {
+        if (!::cpuMaxInput.isInitialized) {
+            return
+        }
+        val pkg = selectedPackage ?: return
+        val profile = performanceProfiles["$pkg|${selectedMode().id}"]
+        if (profile == null) {
+            cpuMaxInput.setText("2.5")
+            cpuMinInput.setText("1.5")
+            gpuMaxInput.setText("720")
+            gpuMinInput.setText("422")
+        } else {
+            cpuMaxInput.setText(formatGHz(profile.cpuMaxKHz))
+            cpuMinInput.setText(formatGHz(profile.cpuMinKHz))
+            gpuMaxInput.setText((profile.gpuMaxKHz / 1000).toString())
+            gpuMinInput.setText((profile.gpuMinKHz / 1000).toString())
+        }
+        renderPerformanceProfiles()
+    }
+
+    private fun savePerformanceProfile() {
+        val pkg = selectedPackage ?: return toast("请先添加应用")
+        val cpuMax = parseGHz(cpuMaxInput.text.toString()) ?: return toast("CPU 上限格式错误")
+        val cpuMin = parseGHz(cpuMinInput.text.toString()) ?: return toast("CPU 下限格式错误")
+        val gpuMax = parseMHz(gpuMaxInput.text.toString()) ?: return toast("GPU 上限格式错误")
+        val gpuMin = parseMHz(gpuMinInput.text.toString()) ?: return toast("GPU 下限格式错误")
+        if (cpuMax < cpuMin || gpuMax < gpuMin) {
+            return toast("上限不能低于下限")
+        }
+        if (cpuMin !in 300_000..3_400_000 || cpuMax !in 300_000..3_400_000) {
+            return toast("CPU 范围应为 0.3-3.4GHz")
+        }
+        if (gpuMin !in 231_000..903_000 || gpuMax !in 231_000..903_000) {
+            return toast("GPU 范围应为 231-903MHz")
+        }
+        val profile = PerformanceProfile(pkg, selectedMode(), cpuMax, cpuMin, gpuMax, gpuMin)
+        performanceProfiles[profile.key] = profile
+        renderPerformanceProfiles()
+        sendCommand("正在保存性能配置") {
             PerfCtlRequest.send(
                 this,
-                PerfCtlContract.CMD_SET_APP_PROFILE,
-                rate = profile.rate,
-                pkg = profile.packageName,
-                refresh = profile.refreshEnabled,
-                zuipp = profile.zuippEnabled,
-                asoul = profile.asoulEnabled,
+                PerfCtlContract.CMD_SET_PERFORMANCE_PROFILE,
+                pkg = pkg,
+                mode = profile.mode.id,
+                cpuMax = cpuMax,
+                cpuMin = cpuMin,
+                gpuMax = gpuMax,
+                gpuMin = gpuMin,
             )
         }
     }
 
-    private fun removeSelectedProfile() {
-        val pkg = selectedPackageName ?: return toast("先选择应用")
-        profiles.remove(pkg)
-        updateSelectedDetail()
-        appAdapter.notifyDataSetChanged()
-        sendCommand("已移除档案") {
-            PerfCtlRequest.send(this, PerfCtlContract.CMD_REMOVE_APP_PROFILE, pkg = pkg)
+    private fun removePerformanceProfile() {
+        val pkg = selectedPackage ?: return toast("请先选择应用")
+        val key = "$pkg|${selectedMode().id}"
+        performanceProfiles.remove(key)
+        renderPerformanceProfiles()
+        sendCommand("正在删除性能配置") {
+            PerfCtlRequest.send(
+                this,
+                PerfCtlContract.CMD_REMOVE_PERFORMANCE_PROFILE,
+                pkg = pkg,
+                mode = selectedMode().id,
+            )
         }
     }
 
-    private fun sendSimple(cmd: String, rate: Int? = null) {
-        sendCommand("已发送") {
-            PerfCtlRequest.send(this, cmd, rate = rate)
+    private fun buildSystemPage(): View {
+        val scroll = ScrollView(this)
+        val root = vertical()
+        scroll.addView(root)
+
+        root.addView(sectionTitle("运行状态"))
+        systemStatus = infoPanel()
+        root.addView(systemStatus, fieldMargins())
+
+        root.addView(sectionTitle("AsoulOpt"), sectionMargins())
+        asoulStatus = infoPanel()
+        root.addView(asoulStatus, fieldMargins())
+
+        val row = horizontalRow().apply {
+            background = null
+            setPadding(0, 0, 0, 0)
+            addView(commandButton("刷新状态") {
+                sendCommand("正在刷新") {
+                    PerfCtlRequest.send(this@MainActivity, PerfCtlContract.CMD_STATUS)
+                }
+            }, LinearLayout.LayoutParams(0, dp(44), 1f))
+            addView(primaryButton("导出运行日志") { exportLogs() },
+                LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                    setMargins(dp(8), 0, 0, 0)
+                })
+        }
+        root.addView(row)
+        renderSystemState()
+        return scroll
+    }
+
+    private fun renderSystemState() {
+        if (!::systemStatus.isInitialized) {
+            return
+        }
+        val status = setting(PerfCtlContract.KEY_STATUS_TEXT)
+        val xml = setting(PerfCtlContract.KEY_XML_STATE).ifBlank { "未挂载" }
+        val last = setting(PerfCtlContract.KEY_STATUS_LAST).ifBlank { "无" }
+        systemStatus.text = "守护服务 运行中\nXML $xml\n最近操作 ${commandName(last)}\n$status"
+        asoulStatus.text = setting(PerfCtlContract.KEY_ASOUL_HEALTH)
+            .ifBlank { "正在读取 AsoulOpt 状态" }
+    }
+
+    private fun exportLogs() {
+        sendCommand("正在整理日志") {
+            PerfCtlRequest.send(this, PerfCtlContract.CMD_EXPORT_LOGS)
+        }
+        handler.postDelayed({
+            pendingExportText = setting(PerfCtlContract.KEY_LOG_EXPORT)
+            if (pendingExportText.isBlank()) {
+                toast("日志尚未准备好")
+                return@postDelayed
+            }
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            startActivityForResult(
+                Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TITLE, "ZuiperfCtl_logs_$stamp.txt")
+                },
+                REQUEST_EXPORT_LOG,
+            )
+        }, 1600)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_EXPORT_LOG || resultCode != RESULT_OK) {
+            return
+        }
+        val uri: Uri = data?.data ?: return
+        runCatching {
+            contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
+                it.write(pendingExportText)
+            }
+        }.onSuccess {
+            toast("日志已导出")
+        }.onFailure {
+            toast("日志导出失败")
         }
     }
 
-    private fun sendCommand(message: String, block: () -> Unit) {
+    private fun showPackagePicker() {
+        val root = vertical().apply {
+            setPadding(dp(16), dp(8), dp(16), 0)
+        }
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val userTab = chip("用户应用")
+        val systemTab = chip("系统应用")
+        tabs.addView(userTab, LinearLayout.LayoutParams(0, dp(40), 1f))
+        tabs.addView(systemTab, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+            setMargins(dp(8), 0, 0, 0)
+        })
+        root.addView(tabs)
+
+        val search = EditText(this).apply {
+            hint = "搜索包名"
+            setSingleLine(true)
+            textSize = 14f
+            setPadding(dp(12), 0, dp(12), 0)
+            background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+        }
+        root.addView(search, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(46),
+        ).apply {
+            setMargins(0, dp(10), 0, dp(8))
+        })
+
+        val list = ListView(this).apply {
+            divider = null
+            cacheColorHint = Color.TRANSPARENT
+        }
+        root.addView(list, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(520),
+        ))
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("选择应用")
+            .setView(root)
+            .setNegativeButton("取消", null)
+            .create()
+        val adapter = PackagePickerAdapter()
+        list.adapter = adapter
+        list.setOnItemClickListener { _, _, position, _ ->
+            adapter.getEntry(position)?.let {
+                selectedPackage = it.info.packageName
+                labelCache[it.info.packageName] = it.label()
+                dialog.dismiss()
+                updatePerformanceForm()
+            }
+        }
+        fun selectSystem(system: Boolean) {
+            adapter.systemApps = system
+            adapter.applyFilter(search.text.toString())
+            styleChip(userTab, !system)
+            styleChip(systemTab, system)
+        }
+        userTab.setOnClickListener { selectSystem(false) }
+        systemTab.setOnClickListener { selectSystem(true) }
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun afterTextChanged(s: Editable?) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                adapter.applyFilter(s?.toString().orEmpty())
+            }
+        })
+        selectSystem(false)
+        dialog.show()
+        Thread {
+            @Suppress("DEPRECATION")
+            val entries = packageManager.getInstalledApplications(0)
+                .asSequence()
+                .filter { it.packageName != packageName }
+                .map { PackageEntry(it) }
+                .sortedBy { it.info.packageName.lowercase(Locale.ROOT) }
+                .toList()
+            handler.post {
+                adapter.setEntries(entries)
+                selectSystem(false)
+            }
+        }.start()
+    }
+
+    private fun reloadState() {
+        refreshRules.clear()
+        setting(PerfCtlContract.KEY_RULES_TEXT).lineSequence().forEach { line ->
+            val parts = line.trim().split("=", limit = 2)
+            val rate = parts.getOrNull(1)?.toIntOrNull()
+            if (parts.size == 2 && PackageNames.isValid(parts[0]) &&
+                rate != null && rate in PerfCtlContract.rates && rate != 120) {
+                refreshRules[parts[0]] = rate
+            }
+        }
+        performanceProfiles.clear()
+        setting(PerfCtlContract.KEY_PERFORMANCE_PROFILES_TEXT).lineSequence()
+            .mapNotNull { PerformanceProfile.parse(it) }
+            .forEach { performanceProfiles[it.key] = it }
+    }
+
+    private fun sendCommand(message: String?, block: () -> Unit) {
         val now = SystemClock.elapsedRealtime()
-        if (commandInFlight || now - lastCommandAt < 350) {
-            toast("操作处理中")
+        if (commandInFlight || now - lastCommandAt < 180) {
+            if (message != null) toast("操作处理中")
             return
         }
         commandInFlight = true
         lastCommandAt = now
-        toast(message)
+        if (message != null) toast(message)
         Thread {
             runCatching { block() }
             handler.post {
-                commandInFlight = false
-                updateSelectedDetail()
-                if (::appAdapter.isInitialized) {
-                    appAdapter.notifyDataSetChanged()
-                }
-                handler.postDelayed({ refreshStatus() }, 800)
-                handler.postDelayed({ refreshStatus() }, 2400)
+                PerfCtlQuickService.start(this)
+                handler.postDelayed({
+                    commandInFlight = false
+                    reloadState()
+                    renderCurrentPage()
+                }, 380)
             }
         }.start()
     }
 
-    private fun refreshStatus(sendDaemonStatus: Boolean = false) {
-        if (sendDaemonStatus) {
-            PerfCtlRequest.send(this, PerfCtlContract.CMD_STATUS)
-        }
-        reloadProfiles()
-        applyAppFilter(notify = false)
-        updateSelectedDetail()
-        if (::appAdapter.isInitialized) {
-            appAdapter.notifyDataSetChanged()
-        }
+    private fun selectedMode(): PerformanceMode {
+        val position = if (::modeSpinner.isInitialized) modeSpinner.selectedItemPosition else 0
+        return PerformanceMode.entries.getOrElse(position) { PerformanceMode.BALANCED }
+    }
 
-        val resolver = contentResolver
-        val status = Settings.System.getString(resolver, PerfCtlContract.KEY_STATUS_TEXT).orEmpty()
-        val last = Settings.System.getString(resolver, PerfCtlContract.KEY_STATUS_LAST).orEmpty()
-        val time = Settings.System.getString(resolver, PerfCtlContract.KEY_STATUS_TIME).orEmpty()
-        val peak = Settings.System.getString(resolver, "peak_refresh_rate").cleanSetting()
-        val min = Settings.System.getString(resolver, "min_refresh_rate").cleanSetting()
-        val auto = Settings.System.getString(resolver, PerfCtlContract.KEY_AUTO_REFRESH).cleanSetting()
-        statusView.text = buildString {
-            append("守护服务: ")
-            append(if (status.contains("daemon=running") || last.isNotBlank()) "运行中" else "等待状态")
-            append("\n最近操作: ").append(commandName(last.ifBlank { "无" }))
-            if (time.isNotBlank()) append("\n状态时间: ").append(time)
-            append("\n刷新率: 最高 ").append(peak.ifBlank { "系统默认" })
-            append(" / 最低 ").append(min.ifBlank { "系统默认" })
-            append("\n自动切换: ").append(if (auto == "1") "已开启" else "已关闭")
-            if (status.isNotBlank()) {
-                append("\n\n").append(status.replace(';', '\n').trim())
-            }
+    private fun parseGHz(value: String): Int? =
+        value.trim().toDoubleOrNull()?.let { (it * 1_000_000).toInt() }
+
+    private fun parseMHz(value: String): Int? =
+        value.trim().toDoubleOrNull()?.let { (it * 1000).toInt() }
+
+    private fun formatGHz(khz: Int): String =
+        String.format(Locale.US, "%.3f", khz / 1_000_000.0).trimEnd('0').trimEnd('.')
+
+    private fun labelForPackage(pkg: String): String {
+        return labelCache.getOrPut(pkg) {
+            runCatching {
+                packageManager.getApplicationInfo(pkg, 0).loadLabel(packageManager).toString()
+            }.getOrDefault(pkg)
         }
     }
 
-    private fun reloadProfiles() {
-        profiles.clear()
-        val profileText = Settings.System.getString(contentResolver, PerfCtlContract.KEY_PROFILES_TEXT).orEmpty()
-        profileText.lineSequence()
-            .mapNotNull { AppProfile.parse(it) }
-            .forEach { profiles[it.packageName] = it }
+    private fun setting(key: String): String =
+        Settings.System.getString(contentResolver, key).orEmpty().takeUnless { it == "null" }.orEmpty()
 
-        val rulesText = Settings.System.getString(contentResolver, PerfCtlContract.KEY_RULES_TEXT).orEmpty()
-        rulesText.lineSequence()
-            .mapNotNull { line ->
-                val parts = line.trim().split("=", limit = 2)
-                if (parts.size != 2 || !AppProfile.isValidPackageName(parts[0])) {
-                    null
-                } else {
-                    val rate = parts[1].toIntOrNull()?.takeIf { it in PerfCtlContract.rates } ?: 120
-                    parts[0] to rate
-                }
-            }
-            .forEach { (pkg, rate) ->
-                profiles.putIfAbsent(pkg, AppProfile(pkg, rate, refreshEnabled = true))
-            }
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
-    private fun loadAppsAsync() {
-        appsLoaded = false
-        updateListHint()
-        Thread {
-            val loaded = queryInstalledApps()
-            handler.post {
-                apps.clear()
-                apps.addAll(loaded)
-                appsLoaded = true
-                applyAppFilter(notify = false)
-                selectInitialApp()
-                updateListHint()
-                if (::appAdapter.isInitialized) {
-                    appAdapter.notifyDataSetChanged()
-                }
-            }
-        }.start()
-    }
-
-    private fun queryInstalledApps(): List<InstalledApp> {
-        val collator = Collator.getInstance(Locale.CHINA)
-        @Suppress("DEPRECATION")
-        val installed = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-        return installed
-            .map { info ->
-                val pkg = info.packageName
-                val label = info.loadLabel(packageManager)?.toString()?.trim().orEmpty().ifBlank { pkg }
-                val icon = loadScaledIcon(info)
-                val isSystem = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0 ||
-                    (info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
-                InstalledApp(label, pkg, icon, isSystem)
-            }
-            .distinctBy { it.packageName }
-            .sortedWith { a, b -> collator.compare(a.label, b.label) }
-    }
-
-    private fun loadScaledIcon(info: ApplicationInfo): Drawable? {
-        return runCatching {
-            val source = info.loadIcon(packageManager)
-            val size = dp(36)
-            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            source.setBounds(0, 0, size, size)
-            source.draw(canvas)
-            BitmapDrawable(resources, bitmap)
-        }.getOrNull()
-    }
-
-    private fun filterApps(keyword: String) {
-        currentKeyword = keyword
-        applyAppFilter()
-        updateListHint()
-    }
-
-    private fun applyAppFilter(notify: Boolean = true) {
-        val lower = currentKeyword.trim().lowercase(Locale.ROOT)
-        visibleApps.clear()
-        visibleApps.addAll(apps.filter {
-            matchesCurrentTab(it) && (lower.isBlank() ||
-                it.label.lowercase(Locale.ROOT).contains(lower) ||
-                it.packageName.lowercase(Locale.ROOT).contains(lower))
-        })
-        if (::appAdapter.isInitialized && notify) {
-            appAdapter.notifyDataSetChanged()
-        }
-        updateListHint()
-    }
-
-    private fun updateListHint() {
-        if (!::listHint.isInitialized) {
-            return
-        }
-        listHint.text = if (!appsLoaded) {
-            "正在读取应用..."
-        } else {
-            "显示 ${visibleApps.size} / 共 ${apps.size} 个应用"
-        }
-    }
-
-    private fun matchesCurrentTab(app: InstalledApp): Boolean {
-        return when (currentFilter) {
-            AppFilter.USER -> !app.isSystem
-            AppFilter.SYSTEM -> app.isSystem
-            AppFilter.CONFIGURED -> profiles[app.packageName]?.enabled == true
-            AppFilter.ALL -> true
-        }
-    }
-
-    private fun updateFilterButtons() {
-        if (!::filterButtons.isInitialized) {
-            return
-        }
-        filterButtons.forEach { (filter, view) ->
-            val selected = filter == currentFilter
-            view.setTextColor(if (selected) Color.WHITE else COLOR_TEXT)
-            view.background = rounded(if (selected) COLOR_ACCENT else COLOR_FIELD, dp(8), if (selected) COLOR_ACCENT else COLOR_STROKE)
-        }
-    }
-
-    private fun selectInitialApp() {
-        val firstProfile = profiles.keys.firstOrNull()
-        val firstApp = visibleApps.firstOrNull()?.packageName ?: apps.firstOrNull()?.packageName
-        selectApp(firstProfile ?: firstApp)
-    }
-
-    private fun selectApp(pkg: String?) {
-        selectedPackageName = pkg
-        val profile = pkg?.let { profiles[it] }
-        selectedRate = profile?.rate ?: selectedRate
-        updateSelectedDetail()
-        if (::appAdapter.isInitialized) {
-            appAdapter.notifyDataSetChanged()
-        }
-    }
-
-    private fun updateSelectedDetail() {
-        val pkg = selectedPackageName
-        val app = apps.firstOrNull { it.packageName == pkg }
-        val profile = pkg?.let { profiles[it] }
-        changingDetail = true
-        selectedTitle.text = app?.label ?: pkg ?: "选择一个应用"
-        selectedPackage.text = pkg.orEmpty()
-        selectedRate = profile?.rate ?: selectedRate
-        refreshCheck.isChecked = profile?.refreshEnabled ?: true
-        zuippCheck.isChecked = profile?.zuippEnabled ?: false
-        asoulCheck.isChecked = profile?.asoulEnabled ?: false
-        ruleSummary.text = if (profile?.enabled == true) {
-            "档案: ${profile.rate}Hz / ${profile.tags()}"
-        } else {
-            "档案: 未启用"
-        }
-        changingDetail = false
-        updateRateButtons()
-    }
-
-    private fun updateRateButtons() {
-        rateButtons.forEach { (rate, view) ->
-            val selected = rate == selectedRate
-            view.setTextColor(if (selected) Color.WHITE else COLOR_TEXT)
-            view.background = rounded(if (selected) COLOR_ACCENT else COLOR_FIELD, dp(8), if (selected) COLOR_ACCENT else COLOR_STROKE)
-        }
-    }
-
-    private fun check(text: String): CheckBox {
-        return CheckBox(this).apply {
-            this.text = text
-            textSize = 14f
-            setTextColor(COLOR_TEXT)
-            minHeight = dp(42)
-            setOnCheckedChangeListener { _, _ ->
-                if (!changingDetail) {
-                    ruleSummary.text = "档案: 待保存"
-                }
-            }
-        }
-    }
-
-    private fun row(root: LinearLayout, vararg views: View) {
-        val line = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-        views.forEachIndexed { index, view ->
-            line.addView(view, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                setMargins(0, 0, if (index == views.lastIndex) 0 else dp(8), dp(8))
-            })
-        }
-        root.addView(line, matchWrap())
-    }
-
-    private fun textButton(text: String, onClick: () -> Unit): TextView {
-        return label(text, 13f, COLOR_TEXT, Typeface.BOLD).apply {
-            gravity = Gravity.CENTER
-            background = rounded(COLOR_FIELD, dp(8), COLOR_STROKE)
-            setOnClickListener { onClick() }
-        }
-    }
-
-    private fun chip(text: String, onClick: () -> Unit): TextView {
-        return textButton(text, onClick)
-    }
-
-    private fun panel(): LinearLayout {
-        return LinearLayout(this).apply {
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            background = rounded(Color.WHITE, dp(8), COLOR_STROKE)
-        }
-    }
-
-    private fun statusPanel(): TextView {
-        return label("", 13f, COLOR_TEXT, Typeface.NORMAL).apply {
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = rounded(COLOR_FIELD, dp(8), COLOR_STROKE)
-        }
-    }
-
-    private fun label(value: String, size: Float, color: Int, style: Int): TextView {
-        return TextView(this).apply {
-            text = value
-            textSize = size
-            setTextColor(color)
-            typeface = Typeface.DEFAULT_BOLD.takeIf { style == Typeface.BOLD } ?: Typeface.DEFAULT
-            includeFontPadding = true
-        }
-    }
-
-    private fun rounded(color: Int, radius: Int, stroke: Int): GradientDrawable {
-        return GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = radius.toFloat()
-            setStroke(dp(1), stroke)
-        }
-    }
+    private fun String.cleanSetting(): String = removeSuffix(".0")
 
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -625,41 +766,116 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun AppProfile.tags(): String {
-        val tags = mutableListOf<String>()
-        if (refreshEnabled) tags += "刷新率"
-        if (zuippEnabled) tags += "XML"
-        if (asoulEnabled) tags += "线程"
-        return tags.joinToString(" / ").ifBlank { "未启用" }
+    private fun commandName(value: String): String = when (value) {
+        PerfCtlContract.CMD_LEARN_REFRESH -> "记忆刷新率"
+        PerfCtlContract.CMD_REMOVE_REFRESH_RULE -> "移除刷新率规则"
+        PerfCtlContract.CMD_RESTORE_REFRESH -> "恢复 120Hz"
+        PerfCtlContract.CMD_SET_PERFORMANCE_PROFILE -> "保存性能配置"
+        PerfCtlContract.CMD_REMOVE_PERFORMANCE_PROFILE -> "删除性能配置"
+        PerfCtlContract.CMD_APPLY_PERFORMANCE -> "应用性能调度"
+        PerfCtlContract.CMD_RESTORE_ZUIPP -> "恢复官方调度"
+        PerfCtlContract.CMD_EXPORT_LOGS -> "导出日志"
+        PerfCtlContract.CMD_STATUS -> "刷新状态"
+        "init" -> "初始化"
+        else -> value
     }
 
-    private fun commandName(value: String): String {
-        return when (value) {
-            PerfCtlContract.CMD_SET_REFRESH -> "手动锁刷新率"
-            PerfCtlContract.CMD_RESTORE_REFRESH -> "恢复系统默认"
-            PerfCtlContract.CMD_ENABLE_AUTO_REFRESH -> "开启自动切换"
-            PerfCtlContract.CMD_DISABLE_AUTO_REFRESH -> "关闭自动切换"
-            PerfCtlContract.CMD_SET_APP_PROFILE -> "保存应用档案"
-            PerfCtlContract.CMD_REMOVE_APP_PROFILE -> "移除应用档案"
-            PerfCtlContract.CMD_APPLY_ZUIPP -> "应用 XML"
-            PerfCtlContract.CMD_RESTORE_ZUIPP -> "恢复 XML"
-            PerfCtlContract.CMD_RESTART_ASOUL -> "重启 AsoulOpt"
-            PerfCtlContract.CMD_STATUS -> "刷新状态"
-            "init" -> "初始化"
-            "无" -> "无"
-            else -> value
+    private fun vertical() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+    }
+
+    private fun horizontalRow() = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        background = rounded(Color.WHITE, dp(8), COLOR_STROKE)
+    }
+
+    private fun panel() = LinearLayout(this).apply {
+        setPadding(dp(14), dp(14), dp(14), dp(14))
+        background = rounded(Color.WHITE, dp(8), COLOR_STROKE)
+    }
+
+    private fun sectionTitle(text: String) = label(text, 17f, COLOR_TEXT, Typeface.BOLD)
+
+    private fun fieldTitle(text: String) = label(text, 13f, COLOR_SUBTLE, Typeface.BOLD)
+
+    private fun fieldBox(title: String, field: EditText) = vertical().apply {
+        addView(fieldTitle(title))
+        addView(field, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(46),
+        ).apply {
+            setMargins(0, dp(6), 0, 0)
+        })
+    }
+
+    private fun numericField(hintText: String, defaultValue: String) = EditText(this).apply {
+        hint = hintText
+        setText(defaultValue)
+        inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+            android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        setSingleLine(true)
+        textSize = 15f
+        setPadding(dp(12), 0, dp(12), 0)
+        background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+    }
+
+    private fun infoPanel() = label("", 13f, COLOR_TEXT, Typeface.NORMAL).apply {
+        setPadding(dp(13), dp(11), dp(13), dp(11))
+        background = rounded(COLOR_FIELD, dp(8), COLOR_STROKE)
+    }
+
+    private fun emptyText(text: String) = label(text, 13f, COLOR_SUBTLE, Typeface.NORMAL).apply {
+        gravity = Gravity.CENTER
+        setPadding(dp(12), dp(24), dp(12), dp(24))
+    }
+
+    private fun rateBadge(text: String) = label(text, 13f, Color.WHITE, Typeface.BOLD).apply {
+        gravity = Gravity.CENTER
+        background = rounded(COLOR_GREEN, dp(7), COLOR_GREEN)
+    }
+
+    private fun commandButton(text: String, action: () -> Unit) =
+        label(text, 13f, COLOR_TEXT, Typeface.BOLD).apply {
+            gravity = Gravity.CENTER
+            background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+            setOnClickListener { action() }
         }
-    }
 
-    private fun String?.cleanSetting(): String {
-        if (this == null || this == "null") {
-            return ""
+    private fun primaryButton(text: String, action: () -> Unit) =
+        label(text, 13f, Color.WHITE, Typeface.BOLD).apply {
+            gravity = Gravity.CENTER
+            background = rounded(COLOR_ACCENT, dp(7), COLOR_ACCENT)
+            setOnClickListener { action() }
         }
-        return removeSuffix(".0")
+
+    private fun chip(text: String) = label(text, 13f, COLOR_TEXT, Typeface.BOLD).apply {
+        gravity = Gravity.CENTER
+        background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
     }
 
-    private fun toast(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    private fun styleChip(view: TextView, selected: Boolean) {
+        view.setTextColor(if (selected) Color.WHITE else COLOR_TEXT)
+        view.background = rounded(
+            if (selected) COLOR_ACCENT else COLOR_FIELD,
+            dp(7),
+            if (selected) COLOR_ACCENT else COLOR_STROKE,
+        )
+    }
+
+    private fun label(value: String, size: Float, color: Int, style: Int) = TextView(this).apply {
+        text = value
+        textSize = size
+        setTextColor(color)
+        typeface = if (style == Typeface.BOLD) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+        includeFontPadding = true
+    }
+
+    private fun rounded(color: Int, radius: Int, stroke: Int) = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = radius.toFloat()
+        setStroke(dp(1), stroke)
     }
 
     private fun matchWrap() = LinearLayout.LayoutParams(
@@ -667,100 +883,129 @@ class MainActivity : Activity() {
         ViewGroup.LayoutParams.WRAP_CONTENT,
     )
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+    private fun sectionMargins() = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+    ).apply {
+        setMargins(0, dp(18), 0, dp(8))
+    }
 
-    private inner class AppAdapter : BaseAdapter() {
-        override fun getCount(): Int = visibleApps.size
-        override fun getItem(position: Int): Any = visibleApps[position]
-        override fun getItemId(position: Int): Long = visibleApps[position].packageName.hashCode().toLong()
+    private fun fieldMargins() = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+    ).apply {
+        setMargins(0, dp(14), 0, 0)
+    }
+
+    private fun cardMargins() = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+    ).apply {
+        setMargins(0, 0, 0, dp(8))
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private inner class PackageEntry(val info: ApplicationInfo) {
+        private var resolvedLabel: String? = null
+        val system: Boolean
+            get() = info.flags and ApplicationInfo.FLAG_SYSTEM != 0 ||
+                info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0
+
+        fun label(): String {
+            return resolvedLabel ?: runCatching {
+                info.loadLabel(packageManager).toString().ifBlank { info.packageName }
+            }.getOrDefault(info.packageName).also {
+                resolvedLabel = it
+            }
+        }
+    }
+
+    private inner class PackagePickerAdapter : BaseAdapter() {
+        private val all = mutableListOf<PackageEntry>()
+        private val visible = mutableListOf<PackageEntry>()
+        var systemApps = false
+
+        fun setEntries(entries: List<PackageEntry>) {
+            all.clear()
+            all.addAll(entries)
+        }
+
+        fun applyFilter(query: String) {
+            val lower = query.trim().lowercase(Locale.ROOT)
+            visible.clear()
+            visible.addAll(all.filter {
+                it.system == systemApps &&
+                    (lower.isBlank() ||
+                        it.info.packageName.lowercase(Locale.ROOT).contains(lower) ||
+                        labelCache[it.info.packageName]?.lowercase(Locale.ROOT)?.contains(lower) == true)
+            })
+            notifyDataSetChanged()
+        }
+
+        fun getEntry(position: Int): PackageEntry? = visible.getOrNull(position)
+
+        override fun getCount(): Int = visible.size
+        override fun getItem(position: Int): Any = visible[position]
+        override fun getItemId(position: Int): Long = visible[position].info.packageName.hashCode().toLong()
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-            val holder: RowHolder
-            val row: LinearLayout
-            if (convertView == null) {
-                row = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(8), dp(8), dp(8), dp(8))
-                }
-                val check = CheckBox(this@MainActivity)
-                val icon = ImageView(this@MainActivity)
-                val texts = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                }
-                val title = label("", 14f, COLOR_TEXT, Typeface.BOLD)
-                val sub = label("", 12f, COLOR_SUBTLE, Typeface.NORMAL)
-                val badge = label("", 12f, COLOR_ACCENT, Typeface.NORMAL)
-                texts.addView(title)
-                texts.addView(sub)
-                texts.addView(badge)
-                row.addView(check, LinearLayout.LayoutParams(dp(44), dp(44)))
-                row.addView(icon, LinearLayout.LayoutParams(dp(36), dp(36)).apply {
-                    setMargins(0, 0, dp(10), 0)
-                })
-                row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                holder = RowHolder(check, icon, title, sub, badge)
-                row.tag = holder
+            val row = (convertView as? LinearLayout) ?: vertical().apply {
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                addView(label("", 14f, COLOR_TEXT, Typeface.BOLD))
+                addView(label("", 11f, COLOR_SUBTLE, Typeface.NORMAL))
+            }
+            val entry = visible[position]
+            val title = row.getChildAt(0) as TextView
+            val pkg = row.getChildAt(1) as TextView
+            title.text = entry.label()
+            pkg.text = entry.info.packageName
+            labelCache[entry.info.packageName] = title.text.toString()
+            row.background = if (position % 2 == 0) {
+                rounded(COLOR_FIELD, dp(6), Color.TRANSPARENT)
             } else {
-                row = convertView as LinearLayout
-                holder = row.tag as RowHolder
+                Color.TRANSPARENT.toDrawable()
             }
-
-            val app = visibleApps[position]
-            val profile = profiles[app.packageName]
-            val selected = app.packageName == selectedPackageName
-            holder.check.setOnCheckedChangeListener(null)
-            holder.check.isChecked = profile?.enabled == true
-            holder.check.setOnClickListener {
-                selectApp(app.packageName)
-                if (holder.check.isChecked) {
-                    saveSelectedProfile()
-                } else {
-                    removeSelectedProfile()
-                }
-            }
-            holder.icon.setImageDrawable(app.icon)
-            holder.title.text = app.label
-            holder.sub.text = app.packageName
-            holder.badge.text = buildString {
-                append(if (app.isSystem) "系统应用" else "用户应用")
-                append(" · ")
-                append(profile?.let { "${it.rate}Hz / ${it.tags()}" } ?: "未启用")
-            }
-            row.background = rounded(if (selected) COLOR_SELECTED else Color.TRANSPARENT, dp(8), Color.TRANSPARENT)
             return row
         }
     }
 
-    private data class InstalledApp(
-        val label: String,
-        val packageName: String,
-        val icon: Drawable?,
-        val isSystem: Boolean,
-    )
+    private inner class SimpleTextAdapter(private val items: List<String>) : BaseAdapter() {
+        override fun getCount(): Int = items.size
+        override fun getItem(position: Int): Any = items[position]
+        override fun getItemId(position: Int): Long = position.toLong()
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View =
+            label(items[position], 14f, COLOR_TEXT, Typeface.BOLD).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), 0, dp(12), 0)
+                background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+            }
 
-    private data class RowHolder(
-        val check: CheckBox,
-        val icon: ImageView,
-        val title: TextView,
-        val sub: TextView,
-        val badge: TextView,
-    )
+        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup?): View =
+            label(items[position], 14f, COLOR_TEXT, Typeface.NORMAL).apply {
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                setBackgroundColor(Color.WHITE)
+            }
+    }
 
-    private enum class AppFilter(val title: String) {
-        USER("用户"),
-        SYSTEM("系统"),
-        CONFIGURED("已配置"),
-        ALL("全部"),
+    private fun Int.toDrawable() = android.graphics.drawable.ColorDrawable(this)
+
+    private enum class Page(val title: String) {
+        REFRESH("刷新率"),
+        PERFORMANCE("性能调度"),
+        SYSTEM("系统状态"),
     }
 
     companion object {
-        private val COLOR_BG = Color.rgb(245, 247, 251)
-        private val COLOR_FIELD = Color.rgb(239, 243, 248)
-        private val COLOR_SELECTED = Color.rgb(229, 239, 255)
-        private val COLOR_STROKE = Color.rgb(218, 226, 236)
-        private val COLOR_TEXT = Color.rgb(24, 31, 42)
-        private val COLOR_SUBTLE = Color.rgb(91, 103, 120)
-        private val COLOR_ACCENT = Color.rgb(36, 101, 220)
+        private const val REQUEST_EXPORT_LOG = 901
+        private val COLOR_BG = Color.rgb(244, 247, 250)
+        private val COLOR_FIELD = Color.rgb(238, 242, 246)
+        private val COLOR_SELECTED = Color.rgb(226, 239, 255)
+        private val COLOR_STROKE = Color.rgb(211, 220, 230)
+        private val COLOR_TEXT = Color.rgb(28, 34, 42)
+        private val COLOR_SUBTLE = Color.rgb(91, 101, 114)
+        private val COLOR_ACCENT = Color.rgb(35, 102, 207)
+        private val COLOR_GREEN = Color.rgb(32, 132, 99)
     }
 }

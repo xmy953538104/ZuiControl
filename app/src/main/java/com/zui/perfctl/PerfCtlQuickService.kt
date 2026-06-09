@@ -12,50 +12,62 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.widget.RemoteViews
 
 class PerfCtlQuickService : Service() {
     private val handler = Handler(Looper.getMainLooper())
+    private lateinit var notificationManager: NotificationManager
 
     override fun onCreate() {
         super.onCreate()
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val requested = when (intent?.action) {
-            PerfCtlContract.ACTION_SET_60 -> sendRefresh(60)
-            PerfCtlContract.ACTION_SET_90 -> sendRefresh(90)
-            PerfCtlContract.ACTION_SET_120 -> sendRefresh(120)
-            PerfCtlContract.ACTION_SET_144 -> sendRefresh(144)
-            PerfCtlContract.ACTION_RESTORE -> sendCommand(PerfCtlContract.CMD_RESTORE_REFRESH)
-            PerfCtlContract.ACTION_AUTO_ON -> sendCommand(PerfCtlContract.CMD_ENABLE_AUTO_REFRESH)
-            PerfCtlContract.ACTION_AUTO_OFF -> sendCommand(PerfCtlContract.CMD_DISABLE_AUTO_REFRESH)
-            else -> false
+        val rate = when (intent?.action) {
+            PerfCtlContract.ACTION_SET_60 -> 60
+            PerfCtlContract.ACTION_SET_90 -> 90
+            PerfCtlContract.ACTION_SET_120 -> 120
+            PerfCtlContract.ACTION_SET_144 -> 144
+            else -> intent?.getIntExtra(PerfCtlContract.EXTRA_RATE, 0)?.takeIf {
+                it in PerfCtlContract.rates
+            }
         }
-        startForeground(NOTIFICATION_ID, buildNotification())
-        if (requested) {
+        if (rate != null) {
+            PerfCtlRequest.send(this, PerfCtlContract.CMD_LEARN_REFRESH, rate = rate)
+            updateNotification(rate)
             handler.removeCallbacksAndMessages(null)
-            handler.postDelayed({
-                startForeground(NOTIFICATION_ID, buildNotification())
-            }, NOTIFICATION_REFRESH_DELAY_MS)
+            handler.postDelayed({ updateNotification() }, NOTIFICATION_REFRESH_DELAY_MS)
+        } else {
+            updateNotification()
         }
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun sendRefresh(rate: Int): Boolean {
-        PerfCtlRequest.send(this, PerfCtlContract.CMD_SET_REFRESH, rate = rate)
-        return true
+    private fun updateNotification(rateOverride: Int? = null) {
+        notificationManager.notify(NOTIFICATION_ID, buildNotification(rateOverride))
     }
 
-    private fun sendCommand(command: String): Boolean {
-        PerfCtlRequest.send(this, command)
-        return true
-    }
-
-    private fun buildNotification(): Notification {
+    private fun buildNotification(rateOverride: Int? = null): Notification {
+        val selectedRate = rateOverride ?: currentRate()
+        val content = RemoteViews(packageName, R.layout.notification_perfctl).apply {
+            val topPackage = Settings.System.getString(
+                contentResolver,
+                PerfCtlContract.KEY_TOP_PACKAGE,
+            ).orEmpty().takeUnless { it == "null" }.orEmpty()
+            setTextViewText(
+                R.id.notification_title,
+                topPackage.ifBlank { "ZuiperfCtl · 全局 120Hz" },
+            )
+            bindRate(this, R.id.rate_60, 60, selectedRate, PerfCtlContract.ACTION_SET_60)
+            bindRate(this, R.id.rate_90, 90, selectedRate, PerfCtlContract.ACTION_SET_90)
+            bindRate(this, R.id.rate_120, 120, selectedRate, PerfCtlContract.ACTION_SET_120)
+            bindRate(this, R.id.rate_144, 144, selectedRate, PerfCtlContract.ACTION_SET_144)
+        }
         val openIntent = PendingIntent.getActivity(
             this,
             1,
@@ -70,61 +82,85 @@ class PerfCtlQuickService : Service() {
         builder
             .setSmallIcon(R.drawable.ic_stat_perfctl)
             .setContentTitle("ZuiperfCtl")
-            .setContentText(notificationText())
+            .setContentText("${selectedRate}Hz")
             .setContentIntent(openIntent)
+            .setCustomContentView(content)
+            .setCustomBigContentView(content)
+            .setStyle(Notification.DecoratedCustomViewStyle())
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setLocalOnly(true)
+            .setCategory(Notification.CATEGORY_SERVICE)
             .setDefaults(0)
-            .addAction(action("60", PerfCtlContract.ACTION_SET_60, 60))
-            .addAction(action("90", PerfCtlContract.ACTION_SET_90, 90))
-            .addAction(action("120", PerfCtlContract.ACTION_SET_120, 120))
-            .addAction(action("144", PerfCtlContract.ACTION_SET_144, 144))
-            .addAction(action("默认", PerfCtlContract.ACTION_RESTORE, 200))
         return builder.build()
     }
 
-    private fun notificationText(): String {
-        val peak = Settings.System.getString(contentResolver, "peak_refresh_rate")
-            ?.takeIf { it != "null" }
-            ?.removeSuffix(".0")
-        val auto = Settings.System.getString(contentResolver, PerfCtlContract.KEY_AUTO_REFRESH) == "1"
-        val refresh = peak?.let { "${it}Hz" } ?: "系统默认"
-        return "刷新率 $refresh / 自动${if (auto) "开" else "关"}"
+    private fun bindRate(
+        views: RemoteViews,
+        viewId: Int,
+        rate: Int,
+        selectedRate: Int,
+        action: String,
+    ) {
+        val selected = rate == selectedRate
+        views.setTextViewText(viewId, rate.toString())
+        views.setInt(
+            viewId,
+            "setBackgroundResource",
+            if (selected) R.drawable.notify_rate_selected else R.drawable.notify_rate_normal,
+        )
+        views.setTextColor(viewId, if (selected) COLOR_SELECTED_TEXT else COLOR_NORMAL_TEXT)
+        views.setOnClickPendingIntent(
+            viewId,
+            PendingIntent.getService(
+                this,
+                rate,
+                Intent(this, PerfCtlQuickService::class.java)
+                    .setAction(action)
+                    .putExtra(PerfCtlContract.EXTRA_RATE, rate),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            ),
+        )
     }
 
-    private fun action(title: String, action: String, requestCode: Int): Notification.Action {
-        val intent = PendingIntent.getService(
-            this,
-            requestCode,
-            Intent(this, PerfCtlQuickService::class.java).setAction(action),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        return Notification.Action.Builder(R.drawable.ic_stat_perfctl, title, intent).build()
+    private fun currentRate(): Int {
+        val min = Settings.System.getString(contentResolver, "min_refresh_rate")
+            ?.removeSuffix(".0")
+            ?.toIntOrNull()
+        val peak = Settings.System.getString(contentResolver, "peak_refresh_rate")
+            ?.removeSuffix(".0")
+            ?.toIntOrNull()
+        return when {
+            min != null && min == peak && min in PerfCtlContract.rates -> min
+            peak in PerfCtlContract.rates -> peak!!
+            else -> 120
+        }
     }
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return
         }
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "ZuiperfCtl 静音控制",
+            "ZuiperfCtl 刷新率控制",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "刷新率快捷控制"
+            description = "当前应用的刷新率快捷切换"
             setSound(null, null)
             enableVibration(false)
             setShowBadge(false)
         }
-        manager.createNotificationChannel(channel)
+        notificationManager.createNotificationChannel(channel)
     }
 
     companion object {
-        private const val CHANNEL_ID = "zui_perfctl_quick"
+        private const val CHANNEL_ID = "zui_perfctl_quick_v2"
         private const val NOTIFICATION_ID = 18701
-        private const val NOTIFICATION_REFRESH_DELAY_MS = 1300L
+        private const val NOTIFICATION_REFRESH_DELAY_MS = 380L
+        private const val COLOR_SELECTED_TEXT = 0xFFFFFFFF.toInt()
+        private const val COLOR_NORMAL_TEXT = 0xFF1C222A.toInt()
 
         fun start(context: Context) {
             val intent = Intent(context, PerfCtlQuickService::class.java)

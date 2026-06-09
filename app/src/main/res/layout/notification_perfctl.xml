@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="48dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="4dp"
+    android:paddingEnd="4dp">
+
+    <TextView
+        android:id="@+id/notification_title"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:ellipsize="middle"
+        android:gravity="center_vertical"
+        android:maxLines="2"
+        android:paddingEnd="6dp"
+        android:text="ZuiperfCtl"
+        android:textColor="#1C222A"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/rate_60"
+        style="@style/NotificationRateButton"
+        android:text="60" />
+
+    <TextView
+        android:id="@+id/rate_90"
+        style="@style/NotificationRateButton"
+        android:text="90" />
+
+    <TextView
+        android:id="@+id/rate_120"
+        style="@style/NotificationRateButton"
+        android:text="120" />
+
+    <TextView
+        android:id="@+id/rate_144"
+        style="@style/NotificationRateButton"
+        android:text="144" />
+</LinearLayout>
