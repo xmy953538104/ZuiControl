@@ -2,7 +2,6 @@ package com.zui.perfctl
 
 import android.Manifest
 import android.app.Activity
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -13,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
@@ -20,7 +20,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
-import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
@@ -30,8 +29,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.text.Collator
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 class MainActivity : Activity() {
@@ -45,9 +42,9 @@ class MainActivity : Activity() {
     private lateinit var asoulCheck: CheckBox
     private lateinit var rateButtons: Map<Int, TextView>
     private lateinit var filterButtons: Map<AppFilter, TextView>
+    private lateinit var listHint: TextView
 
     private val handler = Handler(Looper.getMainLooper())
-    private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.CHINA)
     private val apps = mutableListOf<InstalledApp>()
     private val visibleApps = mutableListOf<InstalledApp>()
     private val profiles = linkedMapOf<String, AppProfile>()
@@ -57,16 +54,18 @@ class MainActivity : Activity() {
     private var changingDetail = false
     private var currentFilter = AppFilter.USER
     private var currentKeyword = ""
+    private var appsLoaded = false
+    private var commandInFlight = false
+    private var lastCommandAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestNotificationPermission()
-        PerfCtlQuickService.start(this)
         reloadProfiles()
-        loadApps()
         setContentView(buildContent())
-        selectInitialApp()
         refreshStatus(sendDaemonStatus = true)
+        loadAppsAsync()
+        handler.postDelayed({ PerfCtlQuickService.start(this) }, 350)
     }
 
     private fun buildContent(): View {
@@ -158,6 +157,11 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply {
             setMargins(0, dp(8), 0, dp(10))
         })
+        listHint = label("正在读取应用...", 12f, COLOR_SUBTLE, Typeface.NORMAL).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), 0, dp(2), dp(8))
+        }
+        box.addView(listHint, matchWrap())
         return box
     }
 
@@ -289,37 +293,58 @@ class MainActivity : Activity() {
             return
         }
         profiles[pkg] = profile
-        PerfCtlRequest.send(
-            this,
-            PerfCtlContract.CMD_SET_APP_PROFILE,
-            rate = profile.rate,
-            pkg = profile.packageName,
-            refresh = profile.refreshEnabled,
-            zuipp = profile.zuippEnabled,
-            asoul = profile.asoulEnabled,
-        )
-        afterCommand("已保存档案")
+        updateSelectedDetail()
+        appAdapter.notifyDataSetChanged()
+        sendCommand("已保存档案") {
+            PerfCtlRequest.send(
+                this,
+                PerfCtlContract.CMD_SET_APP_PROFILE,
+                rate = profile.rate,
+                pkg = profile.packageName,
+                refresh = profile.refreshEnabled,
+                zuipp = profile.zuippEnabled,
+                asoul = profile.asoulEnabled,
+            )
+        }
     }
 
     private fun removeSelectedProfile() {
         val pkg = selectedPackageName ?: return toast("先选择应用")
         profiles.remove(pkg)
-        PerfCtlRequest.send(this, PerfCtlContract.CMD_REMOVE_APP_PROFILE, pkg = pkg)
-        afterCommand("已移除档案")
+        updateSelectedDetail()
+        appAdapter.notifyDataSetChanged()
+        sendCommand("已移除档案") {
+            PerfCtlRequest.send(this, PerfCtlContract.CMD_REMOVE_APP_PROFILE, pkg = pkg)
+        }
     }
 
     private fun sendSimple(cmd: String, rate: Int? = null) {
-        PerfCtlRequest.send(this, cmd, rate = rate)
-        afterCommand("已发送")
+        sendCommand("已发送") {
+            PerfCtlRequest.send(this, cmd, rate = rate)
+        }
     }
 
-    private fun afterCommand(message: String) {
+    private fun sendCommand(message: String, block: () -> Unit) {
+        val now = SystemClock.elapsedRealtime()
+        if (commandInFlight || now - lastCommandAt < 350) {
+            toast("操作处理中")
+            return
+        }
+        commandInFlight = true
+        lastCommandAt = now
         toast(message)
-        updateSelectedDetail()
-        appAdapter.notifyDataSetChanged()
-        PerfCtlQuickService.start(this)
-        handler.postDelayed({ refreshStatus() }, 700)
-        handler.postDelayed({ refreshStatus() }, 2400)
+        Thread {
+            runCatching { block() }
+            handler.post {
+                commandInFlight = false
+                updateSelectedDetail()
+                if (::appAdapter.isInitialized) {
+                    appAdapter.notifyDataSetChanged()
+                }
+                handler.postDelayed({ refreshStatus() }, 800)
+                handler.postDelayed({ refreshStatus() }, 2400)
+            }
+        }.start()
     }
 
     private fun refreshStatus(sendDaemonStatus: Boolean = false) {
@@ -329,7 +354,9 @@ class MainActivity : Activity() {
         reloadProfiles()
         applyAppFilter(notify = false)
         updateSelectedDetail()
-        appAdapter.notifyDataSetChanged()
+        if (::appAdapter.isInitialized) {
+            appAdapter.notifyDataSetChanged()
+        }
 
         val resolver = contentResolver
         val status = Settings.System.getString(resolver, PerfCtlContract.KEY_STATUS_TEXT).orEmpty()
@@ -375,12 +402,30 @@ class MainActivity : Activity() {
             }
     }
 
-    private fun loadApps() {
+    private fun loadAppsAsync() {
+        appsLoaded = false
+        updateListHint()
+        Thread {
+            val loaded = queryInstalledApps()
+            handler.post {
+                apps.clear()
+                apps.addAll(loaded)
+                appsLoaded = true
+                applyAppFilter(notify = false)
+                selectInitialApp()
+                updateListHint()
+                if (::appAdapter.isInitialized) {
+                    appAdapter.notifyDataSetChanged()
+                }
+            }
+        }.start()
+    }
+
+    private fun queryInstalledApps(): List<InstalledApp> {
         val collator = Collator.getInstance(Locale.CHINA)
-        apps.clear()
         @Suppress("DEPRECATION")
         val installed = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-        apps.addAll(installed
+        return installed
             .map { info ->
                 val pkg = info.packageName
                 val label = info.loadLabel(packageManager)?.toString()?.trim().orEmpty().ifBlank { pkg }
@@ -390,13 +435,13 @@ class MainActivity : Activity() {
                 InstalledApp(label, pkg, icon, isSystem)
             }
             .distinctBy { it.packageName }
-            .sortedWith { a, b -> collator.compare(a.label, b.label) })
-        applyAppFilter(notify = false)
+            .sortedWith { a, b -> collator.compare(a.label, b.label) }
     }
 
     private fun filterApps(keyword: String) {
         currentKeyword = keyword
         applyAppFilter()
+        updateListHint()
     }
 
     private fun applyAppFilter(notify: Boolean = true) {
@@ -409,6 +454,18 @@ class MainActivity : Activity() {
         })
         if (::appAdapter.isInitialized && notify) {
             appAdapter.notifyDataSetChanged()
+        }
+        updateListHint()
+    }
+
+    private fun updateListHint() {
+        if (!::listHint.isInitialized) {
+            return
+        }
+        listHint.text = if (!appsLoaded) {
+            "正在读取应用..."
+        } else {
+            "显示 ${visibleApps.size} / 共 ${apps.size} 个应用"
         }
     }
 
@@ -443,7 +500,9 @@ class MainActivity : Activity() {
         val profile = pkg?.let { profiles[it] }
         selectedRate = profile?.rate ?: selectedRate
         updateSelectedDetail()
-        appAdapter.notifyDataSetChanged()
+        if (::appAdapter.isInitialized) {
+            appAdapter.notifyDataSetChanged()
+        }
     }
 
     private fun updateSelectedDetail() {
@@ -638,9 +697,8 @@ class MainActivity : Activity() {
             holder.check.setOnCheckedChangeListener(null)
             holder.check.isChecked = profile?.enabled == true
             holder.check.setOnClickListener {
-                selectedPackageName = app.packageName
+                selectApp(app.packageName)
                 if (holder.check.isChecked) {
-                    selectedRate = profile?.rate ?: selectedRate
                     saveSelectedProfile()
                 } else {
                     removeSelectedProfile()

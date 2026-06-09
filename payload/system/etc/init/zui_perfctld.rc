@@ -16,11 +16,17 @@ on property:zui_perfctl.zuipp=restore
 on property:zui_perfctl.asoul=apply
     umount /system/etc/asopt.conf
     mount none /data/local/tmp/zui_perfctl/asoul/asopt.conf /system/etc/asopt.conf bind
+    restart zui_asoulopt
     setprop zui_perfctl.asoul done
 
 on property:zui_perfctl.asoul=restore
     umount /system/etc/asopt.conf
+    restart zui_asoulopt
     setprop zui_perfctl.asoul restored
+
+on property:zui_perfctl.asoul=restart
+    restart zui_asoulopt
+    setprop zui_perfctl.asoul restarted
 
 service zui_perfctld /system/bin/sh /system/bin/zui_perfctld
     class late_start

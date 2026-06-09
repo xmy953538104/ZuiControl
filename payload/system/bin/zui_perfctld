@@ -150,6 +150,7 @@ publish_refresh_state() {
 }
 
 publish_profile_state() {
+    dedupe_profiles_file
     profiles_text=
     if [ -s "$APP_PROFILES" ]; then
         profiles_text="$(grep -v '^[[:space:]]*#' "$APP_PROFILES" 2>/dev/null | grep -v '^[[:space:]]*$' 2>/dev/null)"
@@ -279,10 +280,19 @@ validate_zuipp_files() {
 
 restart_zuipp() {
     log_line "restart zuipp/gamehelper"
-    am force-stop com.zui.pp >> "$LOG_FILE" 2>&1
-    am force-stop com.zui.game.service >> "$LOG_FILE" 2>&1
-    am force-stop com.zui.gamehelper >> "$LOG_FILE" 2>&1
+    force_stop_package com.zui.pp
+    force_stop_package com.zui.game.service
+    force_stop_package com.zui.gamehelper
+    force_stop_package com.lenovo.legionzone
     set_status "daemon=running" "last=restart_zuipp"
+}
+
+force_stop_package() {
+    pkg="$1"
+    if pm path "$pkg" >/dev/null 2>&1; then
+        am force-stop --user 0 "$pkg" >> "$LOG_FILE" 2>&1 ||
+            log_line "force-stop failed: $pkg"
+    fi
 }
 
 apply_zuipp() {
@@ -314,11 +324,14 @@ restore_zuipp() {
 }
 
 restart_asoul() {
-    log_line "restart asoul"
-    setprop ctl.restart zui_asoulopt >> "$LOG_FILE" 2>&1
-    sleep 1
-    setprop ctl.start zui_asoulopt >> "$LOG_FILE" 2>&1
-    set_status "daemon=running" "last=restart_asoul"
+    if trigger_init_action "$PROP_ASOUL" restart; then
+        log_line "asoul restart requested through init"
+        set_status "daemon=running" "last=restart_asoul"
+        return 0
+    fi
+    log_line "asoul restart request failed"
+    set_status "daemon=running" "last=restart_asoul_failed"
+    return 1
 }
 
 apply_asoul() {
@@ -335,7 +348,6 @@ apply_asoul() {
     fi
     touch "$ASOUL_ENABLED"
     chmod 0664 "$ASOUL_ENABLED" 2>/dev/null
-    restart_asoul
     set_status "daemon=running" "last=apply_asoul_ok"
 }
 
@@ -463,13 +475,39 @@ rewrite_profiles_without_pkg() {
     : > "$tmp"
     if [ -s "$APP_PROFILES" ]; then
         while IFS= read -r line || [ -n "$line" ]; do
-            key="${line%%|*}"
+            key="$(printf '%s\n' "$line" | cut -d '|' -f 1)"
             if [ "$key" = "$pkg" ]; then
                 continue
             fi
             echo "$line" >> "$tmp"
         done < "$APP_PROFILES"
     fi
+    mv "$tmp" "$APP_PROFILES"
+    chmod 0664 "$APP_PROFILES" 2>/dev/null
+}
+
+dedupe_profiles_file() {
+    if [ ! -s "$APP_PROFILES" ]; then
+        return 0
+    fi
+    tmp="$APP_PROFILES.dedupe"
+    awk -F'|' '
+        NF >= 5 && $1 != "" {
+            if (!seen[$1]) {
+                order[++n] = $1
+            }
+            seen[$1] = 1
+            line[$1] = $0
+        }
+        END {
+            for (i = 1; i <= n; i++) {
+                print line[order[i]]
+            }
+        }
+    ' "$APP_PROFILES" > "$tmp" 2>/dev/null || {
+        rm -f "$tmp"
+        return 1
+    }
     mv "$tmp" "$APP_PROFILES"
     chmod 0664 "$APP_PROFILES" 2>/dev/null
 }
@@ -529,6 +567,7 @@ set_app_profile() {
         echo "$pkg|$rate|$refresh|$zuipp|$asoul" >> "$APP_PROFILES"
     fi
     chmod 0664 "$APP_PROFILES" 2>/dev/null
+    dedupe_profiles_file
 
     if [ "$refresh" = "1" ]; then
         rewrite_rules_without_pkg "$pkg"

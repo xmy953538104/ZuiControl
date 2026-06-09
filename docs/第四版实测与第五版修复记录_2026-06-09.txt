@@ -1,0 +1,86 @@
+ZuiperfCtl v4 实测与 v5 修复记录 - 2026-06-09
+
+一、v4 刷入后设备状态
+
+设备:
+- TB321FU
+- ZUI_16.1.11.187_250227_PRC
+- SELinux: Enforcing
+
+已确认正常:
+1. com.zui.zuiperfctl 已作为 /system/priv-app/ZuiperfCtl 注册。
+2. versionCode=4, versionName=0.4.0。
+3. App 是 privileged package。
+4. WRITE_SETTINGS、QUERY_ALL_PACKAGES、POST_NOTIFICATIONS、FOREGROUND_SERVICE 等权限已授予。
+5. init.svc.zui_perfctld=running。
+6. init.svc.zui_asoulopt=running。
+7. AsoulOpt 进程运行域为 u:r:performanced:s0。
+8. ZuiperfCtl 常驻通知已存在，通知通道 importance=LOW，无声音无震动，包含 60/90/120/144/默认五个动作。
+9. XML 运行时覆盖已实测成功:
+   - apply_zuipp 后 /system/etc/game_policy.xml 出现在 /proc/mounts。
+   - apply_zuipp 后 /system/etc/performanceconfig.xml 出现在 /proc/mounts。
+   - restore_zuipp 后两项挂载消失。
+10. Asoul 配置运行时覆盖已实测成功:
+    - apply_asoul 后 /system/etc/asopt.conf 出现在 /proc/mounts。
+11. 刷新率手动锁定已实测成功:
+    - 60Hz: peak_refresh_rate=60.0, min_refresh_rate=60.0。
+    - 120Hz: peak_refresh_rate=120.0, min_refresh_rate=120.0。
+
+二、v4 暴露的问题
+
+1. App 点击和页面响应偏慢
+- 原因: MainActivity 在 UI 线程同步读取全部应用、标签和图标。
+- 平板系统应用较多，这会拖住首次打开和部分刷新。
+- 原因二: 每次按钮命令后都立即 startForegroundService 刷通知，造成不必要的 Binder/前台服务压力。
+
+2. 应用档案重复
+- 设备上 /data/local/tmp/zui_perfctl/profiles/apps.prop 出现:
+  com.zui.notes|120|1|0|0
+  com.zui.notes|60|1|0|0
+  com.zui.notes|90|1|0|0
+- 根因: zui_perfctld 里用 ${line%%|*} 拆包名，在设备 shell 下没有按预期工作，旧行没有被移除。
+- refresh/rules.prop 没有重复，因为它使用的是 key=value 格式。
+
+3. Asoul 重启动作不干净
+- apply_asoul 的 bind mount 成功。
+- 但 daemon 直接 setprop ctl.restart/ctl.start zui_asoulopt 被 SELinux 拒绝:
+  ctl_restart_prop / ctl_start_prop property_service denied。
+- 结论: shell 域 daemon 不应该直接控制 init 服务，应该和 XML 一样走 init 属性桥。
+
+4. restart_zuipp 日志里出现 Bad arguments
+- XML 挂载本身成功。
+- Bad arguments 来自重启/force-stop 相关命令输出，v5 改为先检查包是否存在，再带 --user 0 执行 force-stop，减少噪声。
+
+三、v5 已修改
+
+App:
+1. versionCode 升到 5，versionName 升到 0.5.0。
+2. 应用列表改为后台线程加载，先显示界面，再异步读取应用列表。
+3. 增加列表统计提示: 显示 X / 共 Y 个应用。
+4. 按钮命令改为后台线程写 Settings.System，避免主线程卡顿。
+5. 增加 350ms 防抖和单命令处理中保护，避免重复点击生成重复请求。
+6. 按钮命令后不再每次立即重启通知服务。
+7. 列表勾选应用时，先选中该应用，再保存/移除档案，避免拿上一项的开关状态误保存。
+
+daemon/init:
+1. rewrite_profiles_without_pkg 改为 cut -d '|' -f 1 取包名。
+2. 新增 dedupe_profiles_file，发布状态前和保存档案后都会清理重复档案，保留每个包名的最后一次配置。
+3. apply_asoul 不再由 daemon 直接 ctl.restart。
+4. init rc 新增:
+   - zui_perfctl.asoul=restart
+   - apply/restore asoul 后由 init restart zui_asoulopt。
+5. restart_asoul 命令改为 setprop zui_perfctl.asoul=restart，由 init 执行。
+6. restart_zuipp 改为 force_stop_package，先 pm path 检查包是否存在，再 force-stop --user 0。
+
+四、v5 待刷入后重点复查
+
+1. dumpsys package com.zui.zuiperfctl:
+   - versionCode=5
+   - versionName=0.5.0
+   - privileged
+2. /data/local/tmp/zui_perfctl/profiles/apps.prop 是否自动去重。
+3. App 首次打开和按钮响应是否明显变快。
+4. 点击 重启 AsoulOpt 后 dmesg 不应再出现 ctl.restart/ctl.start denied。
+5. apply_asoul 后 AsoulOpt 是否由 init 正常 restart。
+6. apply_zuipp/restore_zuipp 继续确认 /proc/mounts。
+
