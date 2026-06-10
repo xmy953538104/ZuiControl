@@ -600,7 +600,7 @@ class MainActivity : Activity() {
         )
         performanceProfiles[profile.key] = profile
         renderPerformanceProfiles()
-        sendCommand("正在保存性能配置") {
+        sendCommand("正在保存性能配置", settleDelayMs = LONG_COMMAND_DELAY_MS) {
             PerfCtlRequest.send(
                 this,
                 PerfCtlContract.CMD_SET_PERFORMANCE_PROFILE,
@@ -1213,7 +1213,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_EXPORT_LOG = 901
-        private const val APP_VERSION_NAME = "0.13.0"
+        private const val APP_VERSION_NAME = "0.14.0"
         private const val SHORT_COMMAND_DELAY_MS = 720L
         private const val LONG_COMMAND_DELAY_MS = 6500L
         private const val EXPORT_COMMAND_DELAY_MS = 1800L

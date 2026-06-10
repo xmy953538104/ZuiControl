@@ -11,12 +11,15 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.widget.RemoteViews
 
 class PerfCtlQuickService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var notificationManager: NotificationManager
+    private var pendingRate: Int? = null
+    private var pendingRateUntilMs = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -37,10 +40,14 @@ class PerfCtlQuickService : Service() {
             }
         }
         if (rate != null) {
+            pendingRate = rate
+            pendingRateUntilMs = SystemClock.elapsedRealtime() + PENDING_RATE_TIMEOUT_MS
+            lockRefreshOptimistically(rate)
             PerfCtlRequest.send(this, PerfCtlContract.CMD_LEARN_REFRESH, rate = rate)
             handler.removeCallbacksAndMessages(null)
             updateNotification(rate)
             handler.postDelayed({ updateNotification() }, NOTIFICATION_REFRESH_DELAY_MS)
+            handler.postDelayed({ updateNotification() }, PENDING_RATE_TIMEOUT_MS + 80L)
         } else {
             updateNotification()
         }
@@ -54,7 +61,7 @@ class PerfCtlQuickService : Service() {
     }
 
     private fun buildNotification(rateOverride: Int? = null): Notification {
-        val selectedRate = rateOverride ?: currentRate()
+        val selectedRate = rateOverride ?: pendingDisplayRate() ?: currentRate()
         val content = RemoteViews(packageName, R.layout.notification_perfctl).apply {
             setTextViewText(R.id.notification_title, "ZuiperfCtl")
             bindRate(this, R.id.rate_60, 60, selectedRate, PerfCtlContract.ACTION_SET_60)
@@ -90,6 +97,22 @@ class PerfCtlQuickService : Service() {
             .setSound(null)
             .setVibrate(null)
         return builder.build()
+    }
+
+    private fun lockRefreshOptimistically(rate: Int) {
+        Settings.System.putString(contentResolver, PerfCtlContract.KEY_ACTIVE_REFRESH, rate.toString())
+        Settings.System.putString(contentResolver, "peak_refresh_rate", "$rate.0")
+        Settings.System.putString(contentResolver, "min_refresh_rate", "$rate.0")
+    }
+
+    private fun pendingDisplayRate(): Int? {
+        val rate = pendingRate ?: return null
+        if (SystemClock.elapsedRealtime() <= pendingRateUntilMs) {
+            return rate
+        }
+        pendingRate = null
+        pendingRateUntilMs = 0L
+        return null
     }
 
     private fun bindRate(
@@ -154,13 +177,15 @@ class PerfCtlQuickService : Service() {
         }
         notificationManager.deleteNotificationChannel("zui_perfctl_quick_v3")
         notificationManager.deleteNotificationChannel("zui_perfctl_quick_v4")
+        notificationManager.deleteNotificationChannel("zui_perfctl_quick_v5")
         notificationManager.createNotificationChannel(channel)
     }
 
     companion object {
-        private const val CHANNEL_ID = "zui_perfctl_quick_v5"
+        private const val CHANNEL_ID = "zui_perfctl_quick_v6"
         private const val NOTIFICATION_ID = 18701
-        private const val NOTIFICATION_REFRESH_DELAY_MS = 260L
+        private const val NOTIFICATION_REFRESH_DELAY_MS = 120L
+        private const val PENDING_RATE_TIMEOUT_MS = 1600L
         private const val COLOR_SELECTED_TEXT = 0xFFFFFFFF.toInt()
         private const val COLOR_NORMAL_TEXT = 0xFF1C222A.toInt()
 

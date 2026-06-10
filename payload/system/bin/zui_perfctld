@@ -56,6 +56,8 @@ GPU_DEVFREQ=$GPU_ROOT/devfreq
 GPU_FREQS_DESC="903000 834000 770000 720000 680000 629000 578000 500000 422000 366000 310000 231000"
 GPU_DEFAULT_MIN_PL=11
 GPU_DEFAULT_MAX_PL=0
+GPU_DEFAULT_MIN_KHZ=231000
+GPU_DEFAULT_MAX_KHZ=903000
 GPU_REASSERT_INTERVAL=8
 LAST_TOP_APP=
 LAST_USER_APP=
@@ -757,6 +759,8 @@ restore_gpu_limits() {
     [ -d "$GPU_ROOT" ] || return 0
     [ -n "$LAST_GPU_PROFILE" ] || return 0
     ok=1
+    echo "$(khz_to_hz "$GPU_DEFAULT_MAX_KHZ")" > "$GPU_DEVFREQ/max_freq" 2>/dev/null || true
+    echo "$(khz_to_hz "$GPU_DEFAULT_MIN_KHZ")" > "$GPU_DEVFREQ/min_freq" 2>/dev/null || true
     echo "$GPU_DEFAULT_MIN_PL" > "$GPU_ROOT/min_pwrlevel" 2>>"$LOG_FILE" || ok=0
     echo "$GPU_DEFAULT_MAX_PL" > "$GPU_ROOT/max_pwrlevel" 2>>"$LOG_FILE" || ok=0
     LAST_GPU_PROFILE=
@@ -840,8 +844,9 @@ set_performance_profile() {
         >> "$PERFORMANCE_PROFILES"
     chmod 0664 "$PERFORMANCE_PROFILES" 2>/dev/null
     clear_performance_summary
-    publish_performance_state
     log_line "performance profile saved: $pkg/$mode"
+    generate_performance_xml
+    publish_performance_state
     LAST_GPU_PROFILE=
     apply_gpu_limits_for_pkg "$(current_top_app)"
     set_status "daemon=running" "last=set_performance_profile" \
@@ -857,8 +862,9 @@ remove_performance_profile() {
     fi
     rewrite_performance_without_key "$pkg" "$mode"
     clear_performance_summary
-    publish_performance_state
     log_line "performance profile removed: $pkg/$mode"
+    generate_performance_xml
+    publish_performance_state
     LAST_GPU_PROFILE=
     apply_gpu_limits_for_pkg "$(current_top_app)"
     set_status "daemon=running" "last=remove_performance_profile" \
@@ -1118,7 +1124,7 @@ init_request_state() {
 main_loop() {
     init_dirs
     init_request_state
-    log_line "zui_perfctld v13 start"
+    log_line "zui_perfctld v14 start"
     boot_restore
     set_refresh_rate "$BASE_REFRESH_RATE"
     publish_state
