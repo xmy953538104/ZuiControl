@@ -1,4 +1,4 @@
-ZuiperfCtl v9 payload
+ZuiperfCtl v10 payload
 
 System components:
 - /system/priv-app/ZuiperfCtl/ZuiperfCtl.apk
@@ -40,7 +40,8 @@ Maintenance commands kept for ADB diagnostics:
 
 Behavior:
 - Refresh-rate baseline is a hard 120Hz lock.
-- Foreground polling is relaxed when there are no non-120Hz exception rules.
+- Foreground polling runs every 0.25s while exception rules exist, and sleeps
+  almost completely when there are no non-120Hz exception rules.
 - A notification rate click learns the current foreground package.
 - Choosing 120Hz removes that package's exception rule.
 - Performance profiles are converted into ZuiPP XML by XmlProfileGenerator.

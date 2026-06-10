@@ -155,7 +155,7 @@ valid_package_name() {
 
 valid_refresh_rate() {
     case "$1" in
-        60|90|120|144) return 0 ;;
+        60|90|120|144|165) return 0 ;;
     esac
     return 1
 }
@@ -602,12 +602,14 @@ learn_refresh() {
 
 refresh_tick() {
     if [ ! -s "$REFRESH_RULES" ]; then
-        set_refresh_rate "$BASE_REFRESH_RATE"
         NO_RULE_TOP_TICKS=$((NO_RULE_TOP_TICKS + 1))
-        if [ "$NO_RULE_TOP_TICKS" -lt 5 ]; then
-            return 0
+        if [ "$LAST_REFRESH_RATE" != "$BASE_REFRESH_RATE" ] ||
+            [ "$NO_RULE_TOP_TICKS" -ge 20 ]; then
+            set_refresh_rate "$BASE_REFRESH_RATE"
+            NO_RULE_TOP_TICKS=0
         fi
-        NO_RULE_TOP_TICKS=0
+        LAST_TOP_APP=
+        return 0
     else
         NO_RULE_TOP_TICKS=0
     fi
@@ -954,7 +956,7 @@ init_request_state() {
 main_loop() {
     init_dirs
     init_request_state
-    log_line "zui_perfctld v9 start"
+    log_line "zui_perfctld v10 start"
     boot_restore
     set_refresh_rate "$BASE_REFRESH_RATE"
     publish_state
@@ -964,11 +966,7 @@ main_loop() {
     while true; do
         process_atomic_settings_request
         process_request_file "$ADB_REQUEST"
-        LOOP_TICKS=$((LOOP_TICKS + 1))
-        if [ "$LOOP_TICKS" -ge 4 ]; then
-            refresh_tick
-            LOOP_TICKS=0
-        fi
+        refresh_tick
         HEALTH_TICKS=$((HEALTH_TICKS + 1))
         if [ "$HEALTH_TICKS" -ge 40 ]; then
             publish_asoul_health

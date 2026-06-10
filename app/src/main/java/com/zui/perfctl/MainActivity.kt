@@ -222,9 +222,8 @@ class MainActivity : Activity() {
 
     private fun headerStatusText(): String {
         val peak = setting("peak_refresh_rate").cleanSetting().ifBlank { "120" }
-        val top = setting(PerfCtlContract.KEY_TOP_PACKAGE).ifBlank { "未识别前台" }
         val last = setting(PerfCtlContract.KEY_STATUS_LAST).ifBlank { "init" }
-        return "v$APP_VERSION_NAME · ${peak}Hz · ${commandName(last)} · $top"
+        return "v$APP_VERSION_NAME · ${peak}Hz · ${commandName(last)}"
     }
 
     private fun updateHeaderStatus() {
@@ -274,8 +273,7 @@ class MainActivity : Activity() {
         }
         val peak = setting("peak_refresh_rate").cleanSetting().ifBlank { "120" }
         val min = setting("min_refresh_rate").cleanSetting().ifBlank { "120" }
-        val top = setting(PerfCtlContract.KEY_TOP_PACKAGE).ifBlank { "未识别" }
-        refreshStatus.text = "当前 ${peak}Hz · 最低 ${min}Hz\n前台 $top · 基线 120Hz"
+        refreshStatus.text = "当前 ${peak}Hz · 最低 ${min}Hz\n基线 120Hz"
 
         refreshRulesHost.removeAllViews()
         if (refreshRules.isEmpty()) {
@@ -561,25 +559,25 @@ class MainActivity : Activity() {
 
     private fun savePerformanceProfile() {
         val pkg = selectedPackage ?: return toast("请先添加应用")
-        val littleMax = parseFreq(littleMaxInput.text.toString(), LITTLE_FREQS)
+        val littleMax = parseFreq(littleMaxInput.text.toString(), LITTLE_FREQS, preferHigh = true)
             ?: return toast("Little 上限不在可用档位")
-        val littleMin = parseFreq(littleMinInput.text.toString(), LITTLE_FREQS)
+        val littleMin = parseFreq(littleMinInput.text.toString(), LITTLE_FREQS, preferHigh = false)
             ?: return toast("Little 下限不在可用档位")
-        val bigMax = parseFreq(bigMaxInput.text.toString(), BIG_FREQS)
+        val bigMax = parseFreq(bigMaxInput.text.toString(), BIG_FREQS, preferHigh = true)
             ?: return toast("Big 上限不在可用档位")
-        val bigMin = parseFreq(bigMinInput.text.toString(), BIG_FREQS)
+        val bigMin = parseFreq(bigMinInput.text.toString(), BIG_FREQS, preferHigh = false)
             ?: return toast("Big 下限不在可用档位")
-        val titanMax = parseFreq(titanMaxInput.text.toString(), TITAN_FREQS)
+        val titanMax = parseFreq(titanMaxInput.text.toString(), TITAN_FREQS, preferHigh = true)
             ?: return toast("Titan 上限不在可用档位")
-        val titanMin = parseFreq(titanMinInput.text.toString(), TITAN_FREQS)
+        val titanMin = parseFreq(titanMinInput.text.toString(), TITAN_FREQS, preferHigh = false)
             ?: return toast("Titan 下限不在可用档位")
-        val megaMax = parseFreq(megaMaxInput.text.toString(), MEGA_FREQS)
+        val megaMax = parseFreq(megaMaxInput.text.toString(), MEGA_FREQS, preferHigh = true)
             ?: return toast("Mega 上限不在可用档位")
-        val megaMin = parseFreq(megaMinInput.text.toString(), MEGA_FREQS)
+        val megaMin = parseFreq(megaMinInput.text.toString(), MEGA_FREQS, preferHigh = false)
             ?: return toast("Mega 下限不在可用档位")
-        val gpuMax = parseFreq(gpuMaxInput.text.toString(), GPU_FREQS)
+        val gpuMax = parseFreq(gpuMaxInput.text.toString(), GPU_FREQS, preferHigh = true)
             ?: return toast("GPU 上限不在可用档位")
-        val gpuMin = parseFreq(gpuMinInput.text.toString(), GPU_FREQS)
+        val gpuMin = parseFreq(gpuMinInput.text.toString(), GPU_FREQS, preferHigh = false)
             ?: return toast("GPU 下限不在可用档位")
         if (littleMax < littleMin || bigMax < bigMin || titanMax < titanMin ||
             megaMax < megaMin || gpuMax < gpuMin) {
@@ -857,39 +855,35 @@ class MainActivity : Activity() {
         return PerformanceMode.entries.getOrElse(position) { PerformanceMode.BALANCED }
     }
 
-    private fun parseFreq(value: String, available: IntArray): Int? {
+    private fun parseFreq(value: String, available: IntArray, preferHigh: Boolean): Int? {
         val normalized = value.trim()
         if (normalized.isBlank()) {
             return null
         }
-        available.firstOrNull { formatFreq(it) == normalized }?.let { return it }
+        available.firstOrNull { it.toString() == normalized }?.let { return it }
         val requestedGhz = normalized.toDoubleOrNull() ?: return null
-        val requested = Math.round(requestedGhz * 1_000_000).toInt()
-        available.firstOrNull { it == requested }?.let { return it }
-        shorthandBucket(normalized, requestedGhz)?.let { bucket ->
-            available
-                .filter { Math.floor(it / 100_000.0).toInt() == bucket }
-                .minByOrNull { kotlin.math.abs(it - requested) }
-                ?.let { return it }
+        val bucket = Math.floor(requestedGhz * 10.0).toInt()
+        val matches = available.filter { freqBucket(it) == bucket }
+        if (matches.isNotEmpty()) {
+            return if (preferHigh) matches.maxOrNull() else matches.minOrNull()
         }
-        return available
-            .minByOrNull { kotlin.math.abs(it - requested) }
-            ?.takeIf { kotlin.math.abs(it - requested) <= 10_000 }
+        return null
     }
 
-    private fun shorthandBucket(value: String, ghz: Double): Int? {
-        if (!Regex("""\d+\.\d0*""").matches(value)) {
-            return null
-        }
-        return Math.floor(ghz * 10.0).toInt()
-    }
+    private fun freqBucket(khz: Int): Int = Math.floor(khz / 100_000.0).toInt()
 
     private fun formatFreq(khz: Int): String =
-        String.format(Locale.US, "%.2f", khz / 1_000_000.0).trimEnd('0').trimEnd('.')
+        String.format(Locale.US, "%.1f", freqBucket(khz) / 10.0)
 
     private fun frequencyHelp(title: String, available: IntArray): String =
-        available.mapIndexed { index, khz ->
-            "${index + 1}档  ${formatFreq(khz)}GHz  ($khz)"
+        available.groupBy { freqBucket(it) }.map { (bucket, values) ->
+            val sorted = values.sorted()
+            val detail = if (sorted.size == 1) {
+                sorted.first().toString()
+            } else {
+                "${sorted.first()}-${sorted.last()}"
+            }
+            "${String.format(Locale.US, "%.1f", bucket / 10.0)}GHz  ($detail)"
         }.joinToString("\n", prefix = "$title 可填写频率\n")
 
     private fun showFrequencyHelp(title: String, available: IntArray) {
@@ -1196,7 +1190,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_EXPORT_LOG = 901
-        private const val APP_VERSION_NAME = "0.9.0"
+        private const val APP_VERSION_NAME = "0.10.0"
         private const val SHORT_COMMAND_DELAY_MS = 720L
         private const val LONG_COMMAND_DELAY_MS = 6500L
         private const val EXPORT_COMMAND_DELAY_MS = 1800L

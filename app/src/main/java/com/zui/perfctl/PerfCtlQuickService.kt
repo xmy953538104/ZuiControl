@@ -31,6 +31,7 @@ class PerfCtlQuickService : Service() {
             PerfCtlContract.ACTION_SET_90 -> 90
             PerfCtlContract.ACTION_SET_120 -> 120
             PerfCtlContract.ACTION_SET_144 -> 144
+            PerfCtlContract.ACTION_SET_165 -> 165
             else -> intent?.getIntExtra(PerfCtlContract.EXTRA_RATE, 0)?.takeIf {
                 it in PerfCtlContract.rates
             }
@@ -38,6 +39,7 @@ class PerfCtlQuickService : Service() {
         if (rate != null) {
             PerfCtlRequest.send(this, PerfCtlContract.CMD_LEARN_REFRESH, rate = rate)
             handler.removeCallbacksAndMessages(null)
+            updateNotification(rate)
             handler.postDelayed({ updateNotification() }, NOTIFICATION_REFRESH_DELAY_MS)
         } else {
             updateNotification()
@@ -54,18 +56,12 @@ class PerfCtlQuickService : Service() {
     private fun buildNotification(rateOverride: Int? = null): Notification {
         val selectedRate = rateOverride ?: currentRate()
         val content = RemoteViews(packageName, R.layout.notification_perfctl).apply {
-            val topPackage = Settings.System.getString(
-                contentResolver,
-                PerfCtlContract.KEY_TOP_PACKAGE,
-            ).orEmpty().takeUnless { it == "null" }.orEmpty()
-            setTextViewText(
-                R.id.notification_title,
-                topPackage.ifBlank { "ZuiperfCtl · 全局 120Hz" },
-            )
+            setTextViewText(R.id.notification_title, "ZuiperfCtl")
             bindRate(this, R.id.rate_60, 60, selectedRate, PerfCtlContract.ACTION_SET_60)
             bindRate(this, R.id.rate_90, 90, selectedRate, PerfCtlContract.ACTION_SET_90)
             bindRate(this, R.id.rate_120, 120, selectedRate, PerfCtlContract.ACTION_SET_120)
             bindRate(this, R.id.rate_144, 144, selectedRate, PerfCtlContract.ACTION_SET_144)
+            bindRate(this, R.id.rate_165, 165, selectedRate, PerfCtlContract.ACTION_SET_165)
         }
         val openIntent = PendingIntent.getActivity(
             this,
@@ -155,7 +151,7 @@ class PerfCtlQuickService : Service() {
     companion object {
         private const val CHANNEL_ID = "zui_perfctl_quick_v2"
         private const val NOTIFICATION_ID = 18701
-        private const val NOTIFICATION_REFRESH_DELAY_MS = 720L
+        private const val NOTIFICATION_REFRESH_DELAY_MS = 260L
         private const val COLOR_SELECTED_TEXT = 0xFFFFFFFF.toInt()
         private const val COLOR_NORMAL_TEXT = 0xFF1C222A.toInt()
 

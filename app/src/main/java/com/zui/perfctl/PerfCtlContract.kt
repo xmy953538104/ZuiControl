@@ -31,7 +31,8 @@ object PerfCtlContract {
     const val ACTION_SET_90 = "com.zui.zuiperfctl.action.SET_90"
     const val ACTION_SET_120 = "com.zui.zuiperfctl.action.SET_120"
     const val ACTION_SET_144 = "com.zui.zuiperfctl.action.SET_144"
+    const val ACTION_SET_165 = "com.zui.zuiperfctl.action.SET_165"
     const val EXTRA_RATE = "rate"
 
-    val rates = listOf(60, 90, 120, 144)
+    val rates = listOf(60, 90, 120, 144, 165)
 }
