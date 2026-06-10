@@ -218,7 +218,9 @@ class MainActivity : Activity() {
     }
 
     private fun headerStatusText(): String {
-        val peak = setting("peak_refresh_rate").cleanSetting().ifBlank { "120" }
+        val peak = setting(PerfCtlContract.KEY_ACTIVE_REFRESH)
+            .ifBlank { setting("peak_refresh_rate").cleanSetting() }
+            .ifBlank { "120" }
         val last = setting(PerfCtlContract.KEY_STATUS_LAST).ifBlank { "init" }
         return "v$APP_VERSION_NAME · ${peak}Hz · ${commandName(last)}"
     }
@@ -270,7 +272,8 @@ class MainActivity : Activity() {
         }
         val peak = setting("peak_refresh_rate").cleanSetting().ifBlank { "120" }
         val min = setting("min_refresh_rate").cleanSetting().ifBlank { "120" }
-        refreshStatus.text = "当前 ${peak}Hz · 最低 ${min}Hz\n基线 120Hz"
+        val active = setting(PerfCtlContract.KEY_ACTIVE_REFRESH).ifBlank { peak }
+        refreshStatus.text = "当前 ${active}Hz · peak ${peak}Hz · min ${min}Hz\n基线 120Hz"
 
         refreshRulesHost.removeAllViews()
         if (refreshRules.isEmpty()) {
@@ -670,7 +673,8 @@ class MainActivity : Activity() {
         val status = setting(PerfCtlContract.KEY_STATUS_TEXT)
         val xml = setting(PerfCtlContract.KEY_XML_STATE).ifBlank { "未挂载" }
         val last = setting(PerfCtlContract.KEY_STATUS_LAST).ifBlank { "无" }
-        systemStatus.text = "守护服务 运行中\nXML $xml\n最近操作 ${commandName(last)}\n$status"
+        val gpu = setting(PerfCtlContract.KEY_GPU_STATE).ifBlank { "KGSL 等待回读" }
+        systemStatus.text = "守护服务 运行中\nXML $xml\nGPU $gpu\n最近操作 ${commandName(last)}\n$status"
         asoulStatus.text = setting(PerfCtlContract.KEY_ASOUL_HEALTH)
             .ifBlank { "正在读取 AsoulOpt 状态" }
     }
@@ -860,25 +864,30 @@ class MainActivity : Activity() {
         }
         available.firstOrNull { it.toString() == normalized }?.let { return it }
         val requestedGhz = normalized.toDoubleOrNull() ?: return null
-        val bucket = Math.floor(requestedGhz * 10.0).toInt()
-        val matches = available.filter { freqBucket(it) == bucket }
-        if (matches.isNotEmpty()) {
-            return if (preferHigh) matches.maxOrNull() else matches.minOrNull()
+        val exactKHz = Math.round(requestedGhz * 1_000_000.0).toInt()
+        available.firstOrNull { kotlin.math.abs(it - exactKHz) <= 5_000 }?.let { return it }
+        val minDistance = available.minOf { kotlin.math.abs(it - exactKHz) }
+        val nearest = available.filter { kotlin.math.abs(it - exactKHz) == minDistance }
+        val selected = if (preferHigh) nearest.maxOrNull() else nearest.minOrNull()
+            ?: return null
+        return if (minDistance <= 80_000) {
+            selected
+        } else {
+            null
         }
-        return null
     }
 
-    private fun freqBucket(khz: Int): Int = Math.floor(khz / 100_000.0).toInt()
-
     private fun formatFreq(khz: Int): String =
-        String.format(Locale.US, "%.1f", freqBucket(khz) / 10.0)
+        String.format(Locale.US, "%.2f", khz / 1_000_000.0)
+            .trimEnd('0')
+            .trimEnd('.')
 
     private fun frequencyHelp(title: String, available: IntArray): String =
         available.map { formatFreq(it) }
             .distinct()
-            .chunked(5)
-            .joinToString("\n", prefix = "$title\n") { row ->
-                row.joinToString("    ") { "$it GHz" }
+            .chunked(8)
+            .joinToString("\n", prefix = "$title\nGHz: ") { row ->
+                row.joinToString("    ")
             }
 
     private fun showFrequencyHelp(title: String, available: IntArray) {
@@ -980,9 +989,9 @@ class MainActivity : Activity() {
     private fun actionPair(left: TextView, right: TextView) = horizontalRow().apply {
         background = null
         setPadding(0, 0, 0, 0)
-        addView(left, LinearLayout.LayoutParams(0, dp(46), 1f))
-        addView(right, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
-            setMargins(dp(10), 0, 0, 0)
+        addView(left, LinearLayout.LayoutParams(0, dp(48), 1f))
+        addView(right, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+            setMargins(dp(12), 0, 0, 0)
         })
     }
 
@@ -1099,7 +1108,7 @@ class MainActivity : Activity() {
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
     ).apply {
-        setMargins(0, dp(8), 0, 0)
+        setMargins(0, dp(12), 0, 0)
     }
 
     private fun cardMargins() = LinearLayout.LayoutParams(
@@ -1204,7 +1213,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_EXPORT_LOG = 901
-        private const val APP_VERSION_NAME = "0.12.0"
+        private const val APP_VERSION_NAME = "0.13.0"
         private const val SHORT_COMMAND_DELAY_MS = 720L
         private const val LONG_COMMAND_DELAY_MS = 6500L
         private const val EXPORT_COMMAND_DELAY_MS = 1800L

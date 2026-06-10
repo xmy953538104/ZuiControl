@@ -44,15 +44,26 @@ RULES_TEXT_KEY=zui_perfctl_refresh_rules_text
 PERFORMANCE_PROFILES_KEY=zui_perfctl_performance_profiles_text
 PERFORMANCE_SUMMARY_KEY=zui_perfctl_performance_summary
 TOP_PACKAGE_KEY=zui_perfctl_top_package
+ACTIVE_REFRESH_KEY=zui_perfctl_active_refresh
+GPU_STATE_KEY=zui_perfctl_gpu_state
 ASOUL_HEALTH_KEY=zui_perfctl_asoul_health
 XML_STATE_KEY=zui_perfctl_xml_state
 LOG_EXPORT_KEY=zui_perfctl_log_export
 
 BASE_REFRESH_RATE=120
+GPU_ROOT=/sys/class/kgsl/kgsl-3d0
+GPU_DEVFREQ=$GPU_ROOT/devfreq
+GPU_FREQS_DESC="903000 834000 770000 720000 680000 629000 578000 500000 422000 366000 310000 231000"
+GPU_DEFAULT_MIN_PL=11
+GPU_DEFAULT_MAX_PL=0
+GPU_REASSERT_INTERVAL=8
 LAST_TOP_APP=
 LAST_USER_APP=
 LAST_USER_APP_TIME=0
 LAST_REFRESH_RATE=
+LAST_GPU_PROFILE=
+LAST_GPU_STATE=
+GPU_REASSERT_TICKS=0
 LAST_SETTINGS_REQUEST_TEXT=
 EMPTY_TOP_TICKS=0
 HEALTH_TICKS=0
@@ -77,6 +88,19 @@ settings_get_clean() {
 
 settings_put_quiet() {
     settings put system "$1" "$2" >/dev/null 2>&1
+}
+
+read_file_clean() {
+    cat "$1" 2>/dev/null | tr -d '\r\n'
+}
+
+refresh_value_matches() {
+    value="$1"
+    rate="$2"
+    case "$value" in
+        "$rate"|"$rate".*) return 0 ;;
+    esac
+    return 1
 }
 
 log_line() {
@@ -284,11 +308,25 @@ SELinux：${domain:-未识别}
     settings_put_quiet "$ASOUL_HEALTH_KEY" "$health"
 }
 
+publish_gpu_state() {
+    [ -d "$GPU_ROOT" ] || {
+        settings_put_quiet "$GPU_STATE_KEY" "KGSL not found"
+        return 0
+    }
+    if [ -n "$LAST_GPU_STATE" ]; then
+        settings_put_quiet "$GPU_STATE_KEY" "$LAST_GPU_STATE"
+        return 0
+    fi
+    settings_put_quiet "$GPU_STATE_KEY" \
+        "actual_pl=$(read_file_clean "$GPU_ROOT/min_pwrlevel")-$(read_file_clean "$GPU_ROOT/max_pwrlevel") actual_freq=$(read_file_clean "$GPU_DEVFREQ/min_freq")-$(read_file_clean "$GPU_DEVFREQ/max_freq") cur=$(read_file_clean "$GPU_DEVFREQ/cur_freq")"
+}
+
 publish_state() {
     publish_refresh_state
     publish_performance_state
     publish_xml_state
     publish_asoul_health
+    publish_gpu_state
 }
 
 grant_app_permissions() {
@@ -455,20 +493,27 @@ set_refresh_rate() {
         set_status "daemon=running" "last=set_refresh_failed" "rate=$rate"
         return 1
     }
-    peak="$(settings_get_clean peak_refresh_rate)"
-    min="$(settings_get_clean min_refresh_rate)"
-    if [ "$peak" = "$rate.0" ] && [ "$min" = "$rate.0" ]; then
+    if refresh_is_locked "$rate"; then
         LAST_REFRESH_RATE="$rate"
+        settings_put_quiet "$ACTIVE_REFRESH_KEY" "$rate"
         return 0
     fi
     if settings put system peak_refresh_rate "$rate.0" >> "$LOG_FILE" 2>&1 &&
         settings put system min_refresh_rate "$rate.0" >> "$LOG_FILE" 2>&1; then
         LAST_REFRESH_RATE="$rate"
+        settings_put_quiet "$ACTIVE_REFRESH_KEY" "$rate"
         log_line "refresh locked: $rate"
         return 0
     fi
     log_line "refresh lock failed: $rate"
     return 1
+}
+
+refresh_is_locked() {
+    rate="$1"
+    peak="$(settings_get_clean peak_refresh_rate)"
+    min="$(settings_get_clean min_refresh_rate)"
+    refresh_value_matches "$peak" "$rate" && refresh_value_matches "$min" "$rate"
 }
 
 restore_refresh_rate() {
@@ -599,6 +644,132 @@ learn_refresh() {
     notify_quick_service
 }
 
+khz_to_hz() {
+    printf '%s000\n' "$1"
+}
+
+gpu_pwrlevel_for_khz() {
+    target="$1"
+    index=0
+    for freq in $GPU_FREQS_DESC; do
+        if [ "$freq" = "$target" ]; then
+            printf '%s\n' "$index"
+            return 0
+        fi
+        index=$((index + 1))
+    done
+    return 1
+}
+
+profile_gpu_limits_for_app() {
+    pkg="$1"
+    [ -s "$PERFORMANCE_PROFILES" ] || return 1
+    first_match=
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            ""|\#*) continue ;;
+        esac
+        old_ifs="$IFS"
+        IFS='|'
+        set -- $line
+        IFS="$old_ifs"
+        line_pkg="$1"
+        line_mode="$2"
+        if [ $# -eq 6 ]; then
+            line_gpu_max="$5"
+            line_gpu_min="$6"
+        else
+            line_gpu_max="${11}"
+            line_gpu_min="${12}"
+        fi
+        [ "$line_pkg" = "$pkg" ] || continue
+        valid_mode "$line_mode" || continue
+        valid_positive_int "$line_gpu_max" || continue
+        valid_positive_int "$line_gpu_min" || continue
+        if [ -z "$first_match" ]; then
+            first_match="$line_mode|$line_gpu_max|$line_gpu_min"
+        fi
+        if [ "$line_mode" = "balanced" ]; then
+            printf '%s|%s|%s\n' "$line_mode" "$line_gpu_max" "$line_gpu_min"
+            return 0
+        fi
+    done < "$PERFORMANCE_PROFILES"
+    [ -n "$first_match" ] || return 1
+    printf '%s\n' "$first_match"
+}
+
+apply_gpu_limits_for_pkg() {
+    pkg="$1"
+    [ -d "$GPU_ROOT" ] || return 0
+    GPU_REASSERT_TICKS=$((GPU_REASSERT_TICKS + 1))
+    limits="$(profile_gpu_limits_for_app "$pkg")"
+    if [ -z "$limits" ]; then
+        restore_gpu_limits
+        return 0
+    fi
+
+    old_ifs="$IFS"
+    IFS='|'
+    set -- $limits
+    IFS="$old_ifs"
+    mode="$1"
+    gpu_max="$2"
+    gpu_min="$3"
+    max_pl="$(gpu_pwrlevel_for_khz "$gpu_max")" || {
+        log_line "gpu limit skipped: unsupported max $gpu_max for $pkg"
+        return 1
+    }
+    min_pl="$(gpu_pwrlevel_for_khz "$gpu_min")" || {
+        log_line "gpu limit skipped: unsupported min $gpu_min for $pkg"
+        return 1
+    }
+    target="$pkg|$mode|$gpu_max|$gpu_min"
+    if [ "$target" = "$LAST_GPU_PROFILE" ] &&
+        [ "$GPU_REASSERT_TICKS" -lt "$GPU_REASSERT_INTERVAL" ]; then
+        return 0
+    fi
+    GPU_REASSERT_TICKS=0
+
+    ok=1
+    echo "$max_pl" > "$GPU_ROOT/max_pwrlevel" 2>>"$LOG_FILE" || ok=0
+    echo "$min_pl" > "$GPU_ROOT/min_pwrlevel" 2>>"$LOG_FILE" || ok=0
+    echo "$(khz_to_hz "$gpu_max")" > "$GPU_DEVFREQ/max_freq" 2>/dev/null || true
+    echo "$(khz_to_hz "$gpu_min")" > "$GPU_DEVFREQ/min_freq" 2>/dev/null || true
+
+    actual_max_pl="$(read_file_clean "$GPU_ROOT/max_pwrlevel")"
+    actual_min_pl="$(read_file_clean "$GPU_ROOT/min_pwrlevel")"
+    actual_max_freq="$(read_file_clean "$GPU_DEVFREQ/max_freq")"
+    actual_min_freq="$(read_file_clean "$GPU_DEVFREQ/min_freq")"
+    actual_cur_freq="$(read_file_clean "$GPU_DEVFREQ/cur_freq")"
+    LAST_GPU_STATE="$pkg/$mode target=${gpu_min}-${gpu_max}kHz pl=${min_pl}-${max_pl} actual_pl=${actual_min_pl}-${actual_max_pl} actual_freq=${actual_min_freq}-${actual_max_freq} cur=${actual_cur_freq}"
+    settings_put_quiet "$GPU_STATE_KEY" "$LAST_GPU_STATE"
+
+    if [ "$ok" = "1" ]; then
+        LAST_GPU_PROFILE="$target"
+        log_line "gpu limits applied: $LAST_GPU_STATE"
+        return 0
+    fi
+    log_line "gpu limits failed: $LAST_GPU_STATE context=$(cat /proc/self/attr/current 2>/dev/null)"
+    return 1
+}
+
+restore_gpu_limits() {
+    [ -d "$GPU_ROOT" ] || return 0
+    [ -n "$LAST_GPU_PROFILE" ] || return 0
+    ok=1
+    echo "$GPU_DEFAULT_MIN_PL" > "$GPU_ROOT/min_pwrlevel" 2>>"$LOG_FILE" || ok=0
+    echo "$GPU_DEFAULT_MAX_PL" > "$GPU_ROOT/max_pwrlevel" 2>>"$LOG_FILE" || ok=0
+    LAST_GPU_PROFILE=
+    GPU_REASSERT_TICKS=0
+    LAST_GPU_STATE="default actual_pl=$(read_file_clean "$GPU_ROOT/min_pwrlevel")-$(read_file_clean "$GPU_ROOT/max_pwrlevel") actual_freq=$(read_file_clean "$GPU_DEVFREQ/min_freq")-$(read_file_clean "$GPU_DEVFREQ/max_freq")"
+    settings_put_quiet "$GPU_STATE_KEY" "$LAST_GPU_STATE"
+    if [ "$ok" = "1" ]; then
+        log_line "gpu limits restored: $LAST_GPU_STATE"
+    else
+        log_line "gpu restore failed: $LAST_GPU_STATE"
+    fi
+}
+
 refresh_tick() {
     top="$(current_top_app)"
     if [ -z "$top" ]; then
@@ -613,11 +784,18 @@ refresh_tick() {
     rate="$(rule_for_app "$top")"
     [ -n "$rate" ] || rate="$BASE_REFRESH_RATE"
     if [ "$top" = "$LAST_TOP_APP" ] && [ "$rate" = "$LAST_REFRESH_RATE" ]; then
+        if ! refresh_is_locked "$rate"; then
+            set_refresh_rate "$rate"
+            log_line "refresh reasserted: $top -> $rate"
+            notify_quick_service
+        fi
+        apply_gpu_limits_for_pkg "$top"
         return 0
     fi
     LAST_TOP_APP="$top"
     settings_put_quiet "$TOP_PACKAGE_KEY" "$top"
     set_refresh_rate "$rate"
+    apply_gpu_limits_for_pkg "$top"
     log_line "foreground refresh: $top -> $rate"
     notify_quick_service
 }
@@ -664,6 +842,8 @@ set_performance_profile() {
     clear_performance_summary
     publish_performance_state
     log_line "performance profile saved: $pkg/$mode"
+    LAST_GPU_PROFILE=
+    apply_gpu_limits_for_pkg "$(current_top_app)"
     set_status "daemon=running" "last=set_performance_profile" \
         "package=$pkg" "mode=$mode"
 }
@@ -679,6 +859,8 @@ remove_performance_profile() {
     clear_performance_summary
     publish_performance_state
     log_line "performance profile removed: $pkg/$mode"
+    LAST_GPU_PROFILE=
+    apply_gpu_limits_for_pkg "$(current_top_app)"
     set_status "daemon=running" "last=remove_performance_profile" \
         "package=$pkg" "mode=$mode"
 }
@@ -717,6 +899,8 @@ generate_performance_xml() {
 
 apply_performance() {
     if generate_performance_xml && apply_zuipp; then
+        LAST_GPU_PROFILE=
+        apply_gpu_limits_for_pkg "$(current_top_app)"
         set_status "daemon=running" "last=apply_performance_ok"
         return 0
     fi
@@ -934,7 +1118,7 @@ init_request_state() {
 main_loop() {
     init_dirs
     init_request_state
-    log_line "zui_perfctld v12 start"
+    log_line "zui_perfctld v13 start"
     boot_restore
     set_refresh_rate "$BASE_REFRESH_RATE"
     publish_state

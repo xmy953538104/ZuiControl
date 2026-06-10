@@ -166,6 +166,13 @@ def patch_plat_sepolicy(unpack, payload, dry_run, report):
         update_plat_mapping_hash(unpack, report)
 
 
+def patch_vendor_sepolicy(unpack, payload, dry_run, report):
+    patch = payload / "patches" / "vendor_sepolicy_zui_perfctl_kgsl.cil"
+    target = unpack / "vendor_a" / "etc" / "selinux" / "vendor_sepolicy.cil"
+    additions = append_unique_lines(target, read_patch_lines(patch), dry_run)
+    report["vendor_sepolicy_added"] = additions
+
+
 def update_plat_mapping_hash(unpack, report):
     sepolicy_dir = unpack / "system_a" / "system" / "etc" / "selinux"
     plat = sepolicy_dir / "plat_sepolicy.cil"
@@ -212,6 +219,7 @@ def main():
     entries = copy_payload(payload, unpack, args.dry_run, report)
     patch_property_contexts(unpack, payload, args.dry_run, report)
     patch_plat_sepolicy(unpack, payload, args.dry_run, report)
+    patch_vendor_sepolicy(unpack, payload, args.dry_run, report)
     update_metadata(root, unpack, entries, args.dry_run, report)
 
     out_dir = root / "work" / "config"

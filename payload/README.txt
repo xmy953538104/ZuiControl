@@ -1,4 +1,4 @@
-ZuiperfCtl v12 payload
+ZuiperfCtl v13 payload
 
 System components:
 - /system/priv-app/ZuiperfCtl/ZuiperfCtl.apk
@@ -42,6 +42,9 @@ Behavior:
 - Refresh-rate baseline is a hard 120Hz lock.
 - Foreground polling always resolves the active scene package, then applies that
   package's learned rule or the 120Hz baseline.
+- The daemon re-checks peak_refresh_rate and min_refresh_rate even when the
+  foreground scene has not changed, so ZUI drift is locked back to the learned
+  scene value.
 - SystemUI and ZuiperfCtl are treated as transient overlays. Notification clicks
   learn the most recent real foreground scene, so pulling the shade over a game
   records the game, not SystemUI or ZuiperfCtl.
@@ -52,5 +55,7 @@ Behavior:
 - CPU/GPU level IDs use 1-based lowIndex*100+highIndex inside each hardware type.
 - Applying performance regenerates both XML files, bind mounts them through init,
   and restarts ZuiPP/game helper packages.
+- If ZuiPP does not enforce a foreground profile's GPU range, the daemon also
+  applies the same range to KGSL pwrlevel nodes and publishes the live GPU state.
 - AsoulOpt is not configured per app. The UI only reports service health and
   exports its log.

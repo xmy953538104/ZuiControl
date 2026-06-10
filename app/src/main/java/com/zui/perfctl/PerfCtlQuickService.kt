@@ -85,7 +85,7 @@ class PerfCtlQuickService : Service() {
             .setShowWhen(false)
             .setLocalOnly(true)
             .setCategory(Notification.CATEGORY_SERVICE)
-            .setPriority(Notification.PRIORITY_LOW)
+            .setPriority(Notification.PRIORITY_DEFAULT)
             .setDefaults(0)
             .setSound(null)
             .setVibrate(null)
@@ -121,6 +121,10 @@ class PerfCtlQuickService : Service() {
     }
 
     private fun currentRate(): Int {
+        Settings.System.getString(contentResolver, PerfCtlContract.KEY_ACTIVE_REFRESH)
+            ?.toIntOrNull()
+            ?.takeIf { it in PerfCtlContract.rates }
+            ?.let { return it }
         val min = Settings.System.getString(contentResolver, "min_refresh_rate")
             ?.removeSuffix(".0")
             ?.toIntOrNull()
@@ -141,7 +145,7 @@ class PerfCtlQuickService : Service() {
         val channel = NotificationChannel(
             CHANNEL_ID,
             "ZuiperfCtl 刷新率控制",
-            NotificationManager.IMPORTANCE_LOW,
+            NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
             description = "当前应用的刷新率快捷切换"
             setSound(null, null)
@@ -149,11 +153,12 @@ class PerfCtlQuickService : Service() {
             setShowBadge(false)
         }
         notificationManager.deleteNotificationChannel("zui_perfctl_quick_v3")
+        notificationManager.deleteNotificationChannel("zui_perfctl_quick_v4")
         notificationManager.createNotificationChannel(channel)
     }
 
     companion object {
-        private const val CHANNEL_ID = "zui_perfctl_quick_v4"
+        private const val CHANNEL_ID = "zui_perfctl_quick_v5"
         private const val NOTIFICATION_ID = 18701
         private const val NOTIFICATION_REFRESH_DELAY_MS = 260L
         private const val COLOR_SELECTED_TEXT = 0xFFFFFFFF.toInt()

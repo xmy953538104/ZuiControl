@@ -22,6 +22,8 @@ object PerfCtlContract {
     const val KEY_PERFORMANCE_PROFILES_TEXT = "zui_perfctl_performance_profiles_text"
     const val KEY_PERFORMANCE_SUMMARY = "zui_perfctl_performance_summary"
     const val KEY_TOP_PACKAGE = "zui_perfctl_top_package"
+    const val KEY_ACTIVE_REFRESH = "zui_perfctl_active_refresh"
+    const val KEY_GPU_STATE = "zui_perfctl_gpu_state"
     const val KEY_ASOUL_HEALTH = "zui_perfctl_asoul_health"
     const val KEY_XML_STATE = "zui_perfctl_xml_state"
     const val KEY_LOG_EXPORT = "zui_perfctl_log_export"
