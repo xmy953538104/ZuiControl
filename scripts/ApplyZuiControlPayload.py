@@ -461,6 +461,12 @@ def main():
         "dry_run": args.dry_run,
         "warnings": [],
     }
+    report["zuipp_xml_baseline_model"] = {
+        "baked_baseline": "/system/etc/game_policy.xml and /system/etc/performanceconfig.xml as shipped in the built image; they may already be ZuiControl custom tables.",
+        "active_runtime": "/data/vendor/zui_control/zuipp/active/ is bind-mounted to /system/etc at boot and after each XML apply.",
+        "payload_templates": "/system/etc/zui_control/default_game_policy.xml and default_performanceconfig.xml are templates/fallback inputs, not automatically treated as official originals.",
+        "official_original": "Only expose an official-original restore path when an original pair was explicitly captured under /data/vendor/zui_control/zuipp/official_original/.",
+    }
 
     apk = payload / "system" / "priv-app" / "ZuiControl" / "ZuiControl.apk"
     if not apk.exists():

@@ -3,6 +3,8 @@ package com.zui.zuicontrol
 object ZuiControlContract {
     const val CMD_APPLY_ZUIPP = "apply_zuipp"
     const val CMD_RESTORE_ZUIPP = "restore_zuipp"
+    const val CMD_RESTORE_LAST_GOOD = "restore_last_good"
+    const val CMD_RESTORE_OFFICIAL_ORIGINAL = "restore_official_original"
     const val CMD_RESTART_ASOUL = "restart_asoul"
     const val CMD_STATUS = "status"
     const val CMD_SET_PERFORMANCE_PROFILE = "set_performance_profile"

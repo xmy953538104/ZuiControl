@@ -8,9 +8,11 @@ import org.w3c.dom.NodeList;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
+import java.io.InputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -85,6 +87,9 @@ public final class XmlProfileGenerator {
             File outputGame,
             File outputPerf
     ) throws Exception {
+        if (!defaultGame.isFile() || !defaultPerf.isFile()) {
+            throw new IllegalStateException("baked baseline XML missing");
+        }
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(false);
         factory.setIgnoringComments(false);
@@ -159,6 +164,10 @@ public final class XmlProfileGenerator {
         writeDocument(game, outputGame);
         writeDocument(perf, outputPerf);
         System.out.println("profiles=" + profiles.size());
+        System.out.println("baseline_game_sha256=" + sha256(defaultGame));
+        System.out.println("baseline_performance_sha256=" + sha256(defaultPerf));
+        System.out.println("output_game_sha256=" + sha256(outputGame));
+        System.out.println("output_performance_sha256=" + sha256(outputPerf));
         for (String summary : summaries) {
             System.out.println(summary);
         }
@@ -403,6 +412,22 @@ public final class XmlProfileGenerator {
                     StandardCopyOption.REPLACE_EXISTING
             );
         }
+    }
+
+    private static String sha256(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] buffer = new byte[8192];
+        try (InputStream input = Files.newInputStream(file.toPath())) {
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, read);
+            }
+        }
+        StringBuilder builder = new StringBuilder();
+        for (byte item : digest.digest()) {
+            builder.append(String.format(Locale.US, "%02x", item & 0xff));
+        }
+        return builder.toString();
     }
 
     private static final class LevelValue {

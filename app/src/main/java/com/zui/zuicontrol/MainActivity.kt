@@ -515,8 +515,8 @@ class MainActivity : Activity() {
                         )
                     }
                 },
-                commandButton("恢复官方调度") {
-                    sendCommand("正在恢复官方调度", settleDelayMs = LONG_COMMAND_DELAY_MS) {
+                commandButton("恢复基线调度") {
+                    sendCommand("正在恢复基线调度", settleDelayMs = LONG_COMMAND_DELAY_MS) {
                         ZuiControlRequest.send(
                             this@MainActivity,
                             ZuiControlContract.CMD_RESTORE_ZUIPP,
@@ -617,9 +617,9 @@ class MainActivity : Activity() {
         selectedAppTitle.text = pkg?.let { labelForPackage(it) } ?: "选择或添加应用"
         selectedPackageView.text = pkg?.let { "$it · ${selectedMode().title}" } ?: "未选择应用"
         loadSelectedProfile()
-        val xmlState = setting(ZuiControlContract.KEY_XML_STATE).ifBlank { "未挂载，当前使用官方 XML" }
+        val xmlState = setting(ZuiControlContract.KEY_XML_STATE).ifBlank { "active XML 等待挂载" }
         val summary = setting(ZuiControlContract.KEY_PERFORMANCE_SUMMARY)
-            .ifBlank { "工作 XML 尚未生成；保存后点“生成并应用调度”才会改写 ZuiPP 工作 XML。" }
+            .ifBlank { "staging XML 尚未生成；保存后点“生成并应用调度”会校验 staging 并提升为 active。" }
         performanceSummary.text = "$xmlState\n$summary"
     }
 
@@ -1048,7 +1048,10 @@ class MainActivity : Activity() {
         ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE -> "保存性能配置"
         ZuiControlContract.CMD_REMOVE_PERFORMANCE_PROFILE -> "删除性能配置"
         ZuiControlContract.CMD_APPLY_PERFORMANCE -> "应用性能调度"
-        ZuiControlContract.CMD_RESTORE_ZUIPP -> "恢复官方调度"
+        ZuiControlContract.CMD_RESTORE_ZUIPP -> "恢复基线调度"
+        ZuiControlContract.CMD_RESTORE_LAST_GOOD -> "恢复 last_good"
+        ZuiControlContract.CMD_RESTORE_OFFICIAL_ORIGINAL -> "恢复官方原始表"
+        "restore_baked_baseline" -> "恢复基线调度"
         ZuiControlContract.CMD_EXPORT_LOGS -> "导出日志"
         ZuiControlContract.CMD_STATUS -> "刷新状态"
         "init" -> "初始化"

@@ -3,6 +3,7 @@
 .gitattributes text eol=lf
 *.kt text eol=lf
 *.kts text eol=lf
+*.java text eol=lf
 *.xml text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
@@ -15,5 +16,6 @@
 *.ps1 text eol=crlf
 
 payload/system/bin/zui_perfctld text eol=lf
+payload/system/bin/zui_controld text eol=lf
 payload/system/bin/AsoulOpt binary
 *.apk binary

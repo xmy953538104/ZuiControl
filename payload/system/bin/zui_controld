@@ -4,6 +4,12 @@ DATA_ROOT=/data/vendor/zui_control
 CONTROL_DIR=$DATA_ROOT/zuicontrol
 DONE_DIR=$CONTROL_DIR/processed
 ZUI_DIR=$DATA_ROOT/zuipp
+ZUI_BAKED_DIR=$ZUI_DIR/baked_baseline
+ZUI_ACTIVE_DIR=$ZUI_DIR/active
+ZUI_STAGING_DIR=$ZUI_DIR/staging
+ZUI_LAST_GOOD_DIR=$ZUI_DIR/last_good
+ZUI_STATE_DIR=$ZUI_DIR/state
+ZUI_OFFICIAL_DIR=$ZUI_DIR/official_original
 ASOUL_DIR=$DATA_ROOT/asoul
 REFRESH_DIR=$DATA_ROOT/refresh
 PERFORMANCE_DIR=$DATA_ROOT/performance
@@ -32,12 +38,26 @@ DEFAULT_GAME_POLICY=/system/etc/zui_control/default_game_policy.xml
 DEFAULT_PERF_CONFIG=/system/etc/zui_control/default_performanceconfig.xml
 DEFAULT_ASOPT=/system/etc/zui_control/default_asopt.conf
 
-WORK_GAME_POLICY=$ZUI_DIR/game_policy.xml
-WORK_PERF_CONFIG=$ZUI_DIR/performanceconfig.xml
+BAKED_GAME_POLICY=$ZUI_BAKED_DIR/game_policy.xml
+BAKED_PERF_CONFIG=$ZUI_BAKED_DIR/performanceconfig.xml
+ACTIVE_GAME_POLICY=$ZUI_ACTIVE_DIR/game_policy.xml
+ACTIVE_PERF_CONFIG=$ZUI_ACTIVE_DIR/performanceconfig.xml
+STAGING_GAME_POLICY=$ZUI_STAGING_DIR/game_policy.xml
+STAGING_PERF_CONFIG=$ZUI_STAGING_DIR/performanceconfig.xml
+LAST_GOOD_GAME_POLICY=$ZUI_LAST_GOOD_DIR/game_policy.xml
+LAST_GOOD_PERF_CONFIG=$ZUI_LAST_GOOD_DIR/performanceconfig.xml
+OFFICIAL_GAME_POLICY=$ZUI_OFFICIAL_DIR/game_policy.xml
+OFFICIAL_PERF_CONFIG=$ZUI_OFFICIAL_DIR/performanceconfig.xml
+WORK_GAME_POLICY=$ACTIVE_GAME_POLICY
+WORK_PERF_CONFIG=$ACTIVE_PERF_CONFIG
 WORK_ASOPT=$ASOUL_DIR/asopt.conf
 REFRESH_RULES=$REFRESH_DIR/rules.prop
 PERFORMANCE_PROFILES=$PERFORMANCE_DIR/profiles.prop
 PERFORMANCE_SUMMARY=$PERFORMANCE_DIR/summary.txt
+XML_STATUS_FILE=$ZUI_STATE_DIR/status.prop
+XML_LAST_ERROR_FILE=$ZUI_STATE_DIR/last_error.txt
+XML_ACTIVE_SHA_FILE=$ZUI_STATE_DIR/active.sha256
+XML_VERIFY_FILE=$ZUI_STATE_DIR/verify.txt
 ZUI_ENABLED=$ZUI_DIR/enabled.flag
 ASOUL_ENABLED=$ASOUL_DIR/enabled.flag
 
@@ -196,6 +216,141 @@ copy_work_file() {
     fi
 }
 
+file_sha() {
+    [ -s "$1" ] || return 1
+    sha256sum "$1" 2>/dev/null | awk '{print $1}'
+}
+
+same_file_hash() {
+    left="$(file_sha "$1")"
+    right="$(file_sha "$2")"
+    [ -n "$left" ] && [ "$left" = "$right" ]
+}
+
+set_xml_error() {
+    mkdir -p "$ZUI_STATE_DIR"
+    printf '%s %s\n' "$(ts)" "$*" > "$XML_LAST_ERROR_FILE"
+    chmod 0664 "$XML_LAST_ERROR_FILE" 2>/dev/null
+    log_line "ZuiPP XML error: $*"
+}
+
+clear_xml_error() {
+    rm -f "$XML_LAST_ERROR_FILE"
+}
+
+write_xml_status_file() {
+    mkdir -p "$ZUI_STATE_DIR"
+    {
+        echo "time=$(ts)"
+        for line in "$@"; do
+            echo "$line"
+        done
+        if [ -s "$XML_LAST_ERROR_FILE" ]; then
+            echo "last_error=$(cat "$XML_LAST_ERROR_FILE" 2>/dev/null)"
+        fi
+    } > "$XML_STATUS_FILE"
+    chmod 0664 "$XML_STATUS_FILE" 2>/dev/null
+}
+
+write_active_sha() {
+    mkdir -p "$ZUI_STATE_DIR"
+    {
+        echo "game_policy=$(file_sha "$ACTIVE_GAME_POLICY")"
+        echo "performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")"
+    } > "$XML_ACTIVE_SHA_FILE"
+    chmod 0664 "$XML_ACTIVE_SHA_FILE" 2>/dev/null
+}
+
+copy_xml_file() {
+    src="$1"
+    dst="$2"
+    [ -s "$src" ] || return 1
+    mkdir -p "$(dirname "$dst")"
+    cp "$src" "$dst" && chmod 0664 "$dst"
+}
+
+copy_xml_pair_to_dir() {
+    src_game="$1"
+    src_perf="$2"
+    dst_dir="$3"
+    label="$4"
+    [ -s "$src_game" ] && [ -s "$src_perf" ] || {
+        set_xml_error "$label source XML missing"
+        return 1
+    }
+    mkdir -p "$dst_dir"
+    game_tmp="$dst_dir/game_policy.xml.tmp"
+    perf_tmp="$dst_dir/performanceconfig.xml.tmp"
+    rm -f "$game_tmp" "$perf_tmp"
+    if cp "$src_game" "$game_tmp" &&
+        cp "$src_perf" "$perf_tmp" &&
+        chmod 0664 "$game_tmp" "$perf_tmp" &&
+        mv "$game_tmp" "$dst_dir/game_policy.xml" &&
+        mv "$perf_tmp" "$dst_dir/performanceconfig.xml"; then
+        return 0
+    fi
+    rm -f "$game_tmp" "$perf_tmp"
+    set_xml_error "$label copy failed"
+    return 1
+}
+
+validate_xml_pair() {
+    game="$1"
+    perf="$2"
+    label="$3"
+    if [ ! -s "$game" ] || [ ! -s "$perf" ]; then
+        set_xml_error "$label validation failed: missing XML"
+        return 1
+    fi
+    grep -q "AppPolicy" "$game" 2>/dev/null || {
+        set_xml_error "$label validation failed: AppPolicy missing"
+        return 1
+    }
+    grep -q "GameLimitConfig" "$perf" 2>/dev/null || {
+        set_xml_error "$label validation failed: GameLimitConfig missing"
+        return 1
+    }
+    return 0
+}
+
+init_baked_baseline_xml() {
+    mkdir -p "$ZUI_BAKED_DIR"
+    if [ -s "$BAKED_GAME_POLICY" ] && [ -s "$BAKED_PERF_CONFIG" ]; then
+        return 0
+    fi
+    if copy_xml_pair_to_dir "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG" \
+        "$ZUI_BAKED_DIR" "baked baseline"; then
+        log_line "ZuiPP baked baseline initialized from current /system/etc"
+        return 0
+    fi
+    if copy_xml_pair_to_dir "$DEFAULT_GAME_POLICY" "$DEFAULT_PERF_CONFIG" \
+        "$ZUI_BAKED_DIR" "baked baseline fallback"; then
+        log_line "ZuiPP baked baseline initialized from payload template"
+        return 0
+    fi
+    return 1
+}
+
+init_active_xml() {
+    init_baked_baseline_xml || return 1
+    mkdir -p "$ZUI_ACTIVE_DIR" "$ZUI_STAGING_DIR" "$ZUI_LAST_GOOD_DIR" \
+        "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR"
+    if [ ! -s "$ACTIVE_GAME_POLICY" ] || [ ! -s "$ACTIVE_PERF_CONFIG" ]; then
+        copy_xml_pair_to_dir "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
+            "$ZUI_ACTIVE_DIR" "active init" || return 1
+        log_line "ZuiPP active XML initialized from baked baseline"
+    fi
+    validate_xml_pair "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" "active" || return 1
+    if [ ! -s "$LAST_GOOD_GAME_POLICY" ] || [ ! -s "$LAST_GOOD_PERF_CONFIG" ]; then
+        copy_xml_pair_to_dir "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" \
+            "$ZUI_LAST_GOOD_DIR" "last_good init" || return 1
+        log_line "ZuiPP last_good initialized from active XML"
+    fi
+    rm -f "$ZUI_DIR/p2test_touch" "$ZUI_DIR"/p2test_* 2>/dev/null
+    write_active_sha
+    return 0
+}
+
 valid_package_name() {
     pkg="$1"
     case "$pkg" in
@@ -305,14 +460,100 @@ is_mounted_on() {
     return 1
 }
 
+mount_source_for_target() {
+    target="$1"
+    awk -v wanted="$target" '$2 == wanted {print $1; exit}' /proc/mounts 2>/dev/null
+}
+
+verify_proc_xml_view() {
+    pkg="$1"
+    label="$2"
+    pid="$(pidof "$pkg" 2>/dev/null | awk '{print $1}')"
+    if [ -z "$pid" ]; then
+        echo "${label}_pid=not_running" >> "$XML_VERIFY_FILE"
+        return 0
+    fi
+    proc_game="/proc/$pid/root$SYSTEM_GAME_POLICY"
+    proc_perf="/proc/$pid/root$SYSTEM_PERF_CONFIG"
+    if ! same_file_hash "$ACTIVE_GAME_POLICY" "$proc_game"; then
+        set_xml_error "$label game_policy hash mismatch pid=$pid"
+        echo "${label}_pid=$pid game_policy=mismatch" >> "$XML_VERIFY_FILE"
+        return 1
+    fi
+    if ! same_file_hash "$ACTIVE_PERF_CONFIG" "$proc_perf"; then
+        set_xml_error "$label performanceconfig hash mismatch pid=$pid"
+        echo "${label}_pid=$pid performanceconfig=mismatch" >> "$XML_VERIFY_FILE"
+        return 1
+    fi
+    echo "${label}_pid=$pid game_policy=ok performanceconfig=ok" >> "$XML_VERIFY_FILE"
+    return 0
+}
+
+verify_zuipp_mounts() {
+    mkdir -p "$ZUI_STATE_DIR"
+    : > "$XML_VERIFY_FILE"
+    chmod 0664 "$XML_VERIFY_FILE" 2>/dev/null
+    {
+        echo "active_game_policy=$(file_sha "$ACTIVE_GAME_POLICY")"
+        echo "active_performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")"
+        echo "system_game_policy=$(file_sha "$SYSTEM_GAME_POLICY")"
+        echo "system_performanceconfig=$(file_sha "$SYSTEM_PERF_CONFIG")"
+        echo "game_policy_mount_source=$(mount_source_for_target "$SYSTEM_GAME_POLICY")"
+        echo "performanceconfig_mount_source=$(mount_source_for_target "$SYSTEM_PERF_CONFIG")"
+    } >> "$XML_VERIFY_FILE"
+
+    if ! is_mounted_on "$SYSTEM_GAME_POLICY" ||
+        ! is_mounted_on "$SYSTEM_PERF_CONFIG"; then
+        set_xml_error "active bind missing in /proc/mounts"
+        write_xml_status_file "mounted=false" "active_hash=$(file_sha "$ACTIVE_GAME_POLICY")"
+        return 1
+    fi
+    if ! same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY"; then
+        set_xml_error "system game_policy hash does not match active"
+        write_xml_status_file "mounted=true" "game_policy=mismatch"
+        return 1
+    fi
+    if ! same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG"; then
+        set_xml_error "system performanceconfig hash does not match active"
+        write_xml_status_file "mounted=true" "performanceconfig=mismatch"
+        return 1
+    fi
+    verify_proc_xml_view "com.zui.pp" "ZuiPP" || return 1
+    verify_proc_xml_view "com.zui.game.service" "GameHelper" || return 1
+    clear_xml_error
+    write_active_sha
+    write_xml_status_file \
+        "mounted=true" \
+        "game_policy=$(file_sha "$ACTIVE_GAME_POLICY")" \
+        "performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")" \
+        "source=active"
+    return 0
+}
+
 publish_xml_state() {
-    if is_mounted_on "$SYSTEM_GAME_POLICY" && is_mounted_on "$SYSTEM_PERF_CONFIG"; then
-        settings_put_quiet "$XML_STATE_KEY" "已挂载，工作 XML 正在生效"
-    elif grep -q 'ZuiControl unified policy' "$SYSTEM_GAME_POLICY" 2>/dev/null &&
-        grep -q 'ZuiControl unified levels' "$SYSTEM_PERF_CONFIG" 2>/dev/null; then
-        settings_put_quiet "$XML_STATE_KEY" "系统 XML 已是 ZuiControl 自定义调度表"
+    game_hash="$(file_sha "$ACTIVE_GAME_POLICY")"
+    perf_hash="$(file_sha "$ACTIVE_PERF_CONFIG")"
+    if is_mounted_on "$SYSTEM_GAME_POLICY" && is_mounted_on "$SYSTEM_PERF_CONFIG" &&
+        same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY" &&
+        same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG"; then
+        settings_put_quiet "$XML_STATE_KEY" \
+            "active bind 已生效；game=${game_hash:-unknown}；perf=${perf_hash:-unknown}"
+        write_xml_status_file "mounted=true" "source=active" \
+            "game_policy=${game_hash:-unknown}" "performanceconfig=${perf_hash:-unknown}"
+    elif [ -s "$ACTIVE_GAME_POLICY" ] && [ -s "$ACTIVE_PERF_CONFIG" ] &&
+        same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY" &&
+        same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG"; then
+        settings_put_quiet "$XML_STATE_KEY" \
+            "active 与 /system/etc 一致，但当前未挂载"
+        write_xml_status_file "mounted=false" "source=active-matches-system" \
+            "game_policy=${game_hash:-unknown}" "performanceconfig=${perf_hash:-unknown}"
+    elif [ -s "$BAKED_GAME_POLICY" ] && [ -s "$BAKED_PERF_CONFIG" ]; then
+        settings_put_quiet "$XML_STATE_KEY" "未挂载 active；当前 /system/etc 为 baked baseline 或其他系统表"
+        write_xml_status_file "mounted=false" "source=baked_or_system" \
+            "game_policy=${game_hash:-unknown}" "performanceconfig=${perf_hash:-unknown}"
     else
-        settings_put_quiet "$XML_STATE_KEY" "未挂载，当前使用官方 XML"
+        settings_put_quiet "$XML_STATE_KEY" "XML baseline 尚未初始化"
+        write_xml_status_file "mounted=false" "source=uninitialized"
     fi
 }
 
@@ -456,14 +697,15 @@ maybe_patch_safecenter_keepalive() {
 }
 
 init_dirs() {
-    mkdir -p "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" "$ASOUL_DIR" \
+    mkdir -p "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" "$ZUI_BAKED_DIR" \
+        "$ZUI_ACTIVE_DIR" "$ZUI_STAGING_DIR" "$ZUI_LAST_GOOD_DIR" \
+        "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR" "$ASOUL_DIR" \
         "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR"
-    chmod 0775 "$DATA_ROOT" "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" "$ASOUL_DIR" \
-        "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR" 2>/dev/null
-    copy_work_file "$SYSTEM_GAME_POLICY" "$DEFAULT_GAME_POLICY" \
-        "$WORK_GAME_POLICY" "game_policy"
-    copy_work_file "$SYSTEM_PERF_CONFIG" "$DEFAULT_PERF_CONFIG" \
-        "$WORK_PERF_CONFIG" "performanceconfig"
+    chmod 0775 "$DATA_ROOT" "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" \
+        "$ZUI_BAKED_DIR" "$ZUI_ACTIVE_DIR" "$ZUI_STAGING_DIR" \
+        "$ZUI_LAST_GOOD_DIR" "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR" \
+        "$ASOUL_DIR" "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR" 2>/dev/null
+    init_active_xml || log_line "ZuiPP XML init failed"
     copy_if_missing "$DEFAULT_ASOPT" "$WORK_ASOPT"
     [ -e "$REFRESH_RULES" ] || : > "$REFRESH_RULES"
     [ -e "$PERFORMANCE_PROFILES" ] || : > "$PERFORMANCE_PROFILES"
@@ -519,53 +761,116 @@ restart_zuipp() {
     force_stop_package com.zui.pp
     force_stop_package com.zui.game.service
     force_stop_package com.zui.gamehelper
-    force_stop_package com.lenovo.legionzone
 }
 
 validate_zuipp_files() {
-    if [ ! -s "$WORK_GAME_POLICY" ] || [ ! -s "$WORK_PERF_CONFIG" ]; then
-        log_line "ZuiPP XML validation failed: missing work file"
+    validate_xml_pair "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" "active"
+}
+
+backup_active_to_last_good() {
+    validate_xml_pair "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" "active" || return 1
+    copy_xml_pair_to_dir "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" \
+        "$ZUI_LAST_GOOD_DIR" "last_good backup"
+}
+
+rollback_active_xml() {
+    reason="$1"
+    log_line "rollback active XML: $reason"
+    if [ -s "$LAST_GOOD_GAME_POLICY" ] && [ -s "$LAST_GOOD_PERF_CONFIG" ]; then
+        copy_xml_pair_to_dir "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" \
+            "$ZUI_ACTIVE_DIR" "rollback last_good" || return 1
+        apply_zuipp "rollback_last_good"
+        return $?
+    fi
+    copy_xml_pair_to_dir "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
+        "$ZUI_ACTIVE_DIR" "rollback baked baseline" || return 1
+    apply_zuipp "rollback_baked"
+}
+
+promote_staging_to_active() {
+    validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "staging" || return 1
+    backup_active_to_last_good || return 1
+    if ! copy_xml_pair_to_dir "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" \
+        "$ZUI_ACTIVE_DIR" "promote staging"; then
+        rollback_active_xml "promote copy failed"
         return 1
     fi
-    grep -q "AppPolicy" "$WORK_GAME_POLICY" 2>/dev/null || {
-        log_line "ZuiPP XML validation failed: AppPolicy missing"
-        return 1
-    }
-    grep -q "GameLimitConfig" "$WORK_PERF_CONFIG" 2>/dev/null || {
-        log_line "ZuiPP XML validation failed: GameLimitConfig missing"
-        return 1
-    }
-    return 0
+    if apply_zuipp "promote_staging"; then
+        backup_active_to_last_good
+        return 0
+    fi
+    rollback_active_xml "apply active failed"
+    return 1
 }
 
 apply_zuipp() {
+    reason="${1:-manual}"
+    init_active_xml || {
+        set_status "daemon=running" "last=apply_zuipp_failed" "reason=init_failed"
+        return 1
+    }
     validate_zuipp_files || {
-        set_status "daemon=running" "last=apply_zuipp_failed"
+        set_status "daemon=running" "last=apply_zuipp_failed" "reason=validate_failed"
         return 1
     }
     if trigger_init_action "$PROP_ZUIPP" apply &&
-        wait_mount_state mounted "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; then
+        wait_mount_state mounted "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG" &&
+        verify_zuipp_mounts; then
         touch "$ZUI_ENABLED"
         chmod 0664 "$ZUI_ENABLED" 2>/dev/null
         restart_zuipp
         publish_xml_state
-        set_status "daemon=running" "last=apply_zuipp_ok"
+        set_status "daemon=running" "last=apply_zuipp_ok" "reason=$reason"
         return 0
     fi
     log_line "ZuiPP bind failed: prop=$(getprop "$PROP_ZUIPP" 2>/dev/null)"
     publish_xml_state
-    set_status "daemon=running" "last=apply_zuipp_failed"
+    set_status "daemon=running" "last=apply_zuipp_failed" "reason=$reason"
     return 1
 }
 
 restore_zuipp() {
-    trigger_init_action "$PROP_ZUIPP" restore
-    wait_mount_state unmounted "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG" ||
-        log_line "ZuiPP restore wait timeout"
-    rm -f "$ZUI_ENABLED"
-    restart_zuipp
+    init_active_xml || return 1
+    copy_xml_pair_to_dir "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
+        "$ZUI_ACTIVE_DIR" "restore baked baseline" || {
+        set_status "daemon=running" "last=restore_zuipp_failed" "reason=copy_failed"
+        return 1
+    }
+    if ! apply_zuipp "restore_baked_baseline"; then
+        rollback_active_xml "restore baked baseline failed"
+        set_status "daemon=running" "last=restore_zuipp_failed"
+        return 1
+    fi
+    backup_active_to_last_good
     publish_xml_state
-    set_status "daemon=running" "last=restore_zuipp"
+    set_status "daemon=running" "last=restore_baked_baseline"
+}
+
+restore_last_good_zuipp() {
+    init_active_xml || return 1
+    if [ ! -s "$LAST_GOOD_GAME_POLICY" ] || [ ! -s "$LAST_GOOD_PERF_CONFIG" ]; then
+        set_xml_error "last_good restore requested but last_good XML is missing"
+        publish_xml_state
+        set_status "daemon=running" "last=restore_last_good_failed"
+        return 1
+    fi
+    copy_xml_pair_to_dir "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" \
+        "$ZUI_ACTIVE_DIR" "restore last_good" || return 1
+    apply_zuipp "restore_last_good"
+}
+
+restore_official_original_zuipp() {
+    init_active_xml || return 1
+    if [ ! -s "$OFFICIAL_GAME_POLICY" ] || [ ! -s "$OFFICIAL_PERF_CONFIG" ]; then
+        set_xml_error "official original restore requested but official_original XML is not saved"
+        publish_xml_state
+        set_status "daemon=running" "last=restore_official_original_unavailable"
+        return 1
+    fi
+    backup_active_to_last_good || true
+    copy_xml_pair_to_dir "$OFFICIAL_GAME_POLICY" "$OFFICIAL_PERF_CONFIG" \
+        "$ZUI_ACTIVE_DIR" "restore official original" || return 1
+    apply_zuipp "restore_official_original"
 }
 
 restart_asoul() {
@@ -951,20 +1256,32 @@ app_apk_path() {
 }
 
 generate_performance_xml() {
+    init_active_xml || return 1
     apk="$(app_apk_path)"
     if [ ! -s "$apk" ]; then
         log_line "XML generator APK missing"
+        set_xml_error "XML generator APK missing"
         return 1
     fi
+    mkdir -p "$ZUI_STAGING_DIR"
     rm -f "$PERFORMANCE_SUMMARY"
     if CLASSPATH="$apk" app_process /system/bin com.zui.zuicontrol.XmlProfileGenerator \
-        "$DEFAULT_GAME_POLICY" "$DEFAULT_PERF_CONFIG" "$PERFORMANCE_PROFILES" \
-        "$WORK_GAME_POLICY" "$WORK_PERF_CONFIG" \
+        "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" "$PERFORMANCE_PROFILES" \
+        "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" \
         > "$PERFORMANCE_SUMMARY.tmp" 2>&1; then
+        validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "staging" || {
+            mv "$PERFORMANCE_SUMMARY.tmp" "$PERFORMANCE_SUMMARY" 2>/dev/null
+            publish_performance_state
+            return 1
+        }
+        {
+            echo "staging_game_policy=$(file_sha "$STAGING_GAME_POLICY")"
+            echo "staging_performanceconfig=$(file_sha "$STAGING_PERF_CONFIG")"
+        } >> "$PERFORMANCE_SUMMARY.tmp"
         mv "$PERFORMANCE_SUMMARY.tmp" "$PERFORMANCE_SUMMARY"
-        chmod 0664 "$WORK_GAME_POLICY" "$WORK_PERF_CONFIG" "$PERFORMANCE_SUMMARY" 2>/dev/null
+        chmod 0664 "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "$PERFORMANCE_SUMMARY" 2>/dev/null
         publish_performance_state
-        log_line "performance XML generated"
+        log_line "performance XML generated into staging"
         return 0
     fi
     mv "$PERFORMANCE_SUMMARY.tmp" "$PERFORMANCE_SUMMARY" 2>/dev/null
@@ -974,7 +1291,7 @@ generate_performance_xml() {
 }
 
 apply_performance() {
-    if generate_performance_xml && apply_zuipp; then
+    if generate_performance_xml && promote_staging_to_active; then
         LAST_GPU_PROFILE=
         apply_gpu_limits_for_pkg "$(active_scene_pkg)"
         set_status "daemon=running" "last=apply_performance_ok"
@@ -1066,6 +1383,8 @@ handle_request() {
         apply_performance) apply_performance ;;
         apply_zuipp) apply_zuipp ;;
         restore_zuipp) restore_zuipp ;;
+        restore_last_good) restore_last_good_zuipp ;;
+        restore_official_original) restore_official_original_zuipp ;;
         restart_zuipp) restart_zuipp ;;
         restart_asoul) restart_asoul ;;
         apply_asoul) apply_asoul ;;
@@ -1169,10 +1488,8 @@ process_atomic_settings_request() {
 }
 
 boot_restore() {
-    if [ -f "$ZUI_ENABLED" ]; then
-        log_line "restoring enabled ZuiPP bind"
-        apply_zuipp
-    fi
+    log_line "mounting active ZuiPP XML at boot"
+    apply_zuipp "boot_active"
     if [ -f "$ASOUL_ENABLED" ]; then
         log_line "restoring enabled AsoulOpt config bind"
         apply_asoul
