@@ -1,2 +1,4 @@
 /data/system/zui_control(/.*)? u:object_r:system_data_file:s0
+/data/vendor/zui_control/zuipp/active/game_policy\.xml u:object_r:system_file:s0
+/data/vendor/zui_control/zuipp/active/performanceconfig\.xml u:object_r:system_file:s0
 /data/vendor/zui_control(/.*)? u:object_r:shell_data_file:s0

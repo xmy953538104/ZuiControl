@@ -261,6 +261,15 @@ write_active_sha() {
     chmod 0664 "$XML_ACTIVE_SHA_FILE" 2>/dev/null
 }
 
+label_active_xml() {
+    for file in "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG"; do
+        [ -e "$file" ] || continue
+        chcon u:object_r:system_file:s0 "$file" >/dev/null 2>&1 ||
+            restorecon "$file" >/dev/null 2>&1 || true
+        chmod 0664 "$file" 2>/dev/null
+    done
+}
+
 copy_xml_file() {
     src="$1"
     dst="$2"
@@ -347,6 +356,7 @@ init_active_xml() {
         log_line "ZuiPP last_good initialized from active XML"
     fi
     rm -f "$ZUI_DIR/p2test_touch" "$ZUI_DIR"/p2test_* 2>/dev/null
+    label_active_xml
     write_active_sha
     return 0
 }
@@ -468,28 +478,57 @@ mount_source_for_target() {
 verify_proc_xml_view() {
     pkg="$1"
     label="$2"
-    pid="$(pidof "$pkg" 2>/dev/null | awk '{print $1}')"
-    if [ -z "$pid" ]; then
-        echo "${label}_pid=not_running" >> "$XML_VERIFY_FILE"
+    active_game_sha="$(file_sha "$ACTIVE_GAME_POLICY")"
+    active_perf_sha="$(file_sha "$ACTIVE_PERF_CONFIG")"
+    tries=20
+    while [ "$tries" -gt 0 ]; do
+        pid="$(pidof "$pkg" 2>/dev/null | awk '{print $1}')"
+        if [ -z "$pid" ]; then
+            echo "${label}_pid=not_running" >> "$XML_VERIFY_FILE"
+            return 0
+        fi
+        proc_game="/proc/$pid/root$SYSTEM_GAME_POLICY"
+        proc_perf="/proc/$pid/root$SYSTEM_PERF_CONFIG"
+        proc_game_sha="$(file_sha "$proc_game")"
+        proc_perf_sha="$(file_sha "$proc_perf")"
+        if [ -n "$active_game_sha" ] && [ "$active_game_sha" = "$proc_game_sha" ] &&
+            [ -n "$active_perf_sha" ] && [ "$active_perf_sha" = "$proc_perf_sha" ]; then
+            echo "${label}_pid=$pid game_policy=ok performanceconfig=ok" >> "$XML_VERIFY_FILE"
+            return 0
+        fi
+        tries=$((tries - 1))
+        sleep 1
+    done
+    proc_game_sha="$(file_sha "$proc_game")"
+    proc_perf_sha="$(file_sha "$proc_perf")"
+    if [ -n "$active_game_sha" ] && [ "$active_game_sha" = "$proc_game_sha" ] &&
+        [ -n "$active_perf_sha" ] && [ "$active_perf_sha" = "$proc_perf_sha" ]; then
+        echo "${label}_pid=$pid game_policy=ok performanceconfig=ok" >> "$XML_VERIFY_FILE"
         return 0
     fi
-    proc_game="/proc/$pid/root$SYSTEM_GAME_POLICY"
-    proc_perf="/proc/$pid/root$SYSTEM_PERF_CONFIG"
-    if ! same_file_hash "$ACTIVE_GAME_POLICY" "$proc_game"; then
+    if [ -z "$proc_game_sha" ] || [ -z "$proc_perf_sha" ]; then
+        proc_mount_game="$(grep " $SYSTEM_GAME_POLICY " "/proc/$pid/mountinfo" 2>/dev/null | head -n 1)"
+        proc_mount_perf="$(grep " $SYSTEM_PERF_CONFIG " "/proc/$pid/mountinfo" 2>/dev/null | head -n 1)"
+        if [ -n "$proc_mount_game" ] && [ -n "$proc_mount_perf" ]; then
+            echo "${label}_pid=$pid proc_hash=unreadable mountinfo=ok" >> "$XML_VERIFY_FILE"
+        else
+            echo "${label}_pid=$pid proc_hash=unreadable mountinfo=unreadable" >> "$XML_VERIFY_FILE"
+        fi
+        return 0
+    fi
+    if [ "$active_game_sha" != "$proc_game_sha" ]; then
         set_xml_error "$label game_policy hash mismatch pid=$pid"
-        echo "${label}_pid=$pid game_policy=mismatch" >> "$XML_VERIFY_FILE"
+        echo "${label}_pid=$pid game_policy=mismatch active=${active_game_sha:-empty} proc=${proc_game_sha:-empty}" >> "$XML_VERIFY_FILE"
         return 1
     fi
-    if ! same_file_hash "$ACTIVE_PERF_CONFIG" "$proc_perf"; then
+    if [ "$active_perf_sha" != "$proc_perf_sha" ]; then
         set_xml_error "$label performanceconfig hash mismatch pid=$pid"
-        echo "${label}_pid=$pid performanceconfig=mismatch" >> "$XML_VERIFY_FILE"
+        echo "${label}_pid=$pid performanceconfig=mismatch active=${active_perf_sha:-empty} proc=${proc_perf_sha:-empty}" >> "$XML_VERIFY_FILE"
         return 1
     fi
-    echo "${label}_pid=$pid game_policy=ok performanceconfig=ok" >> "$XML_VERIFY_FILE"
-    return 0
 }
 
-verify_zuipp_mounts() {
+begin_zuipp_verify_file() {
     mkdir -p "$ZUI_STATE_DIR"
     : > "$XML_VERIFY_FILE"
     chmod 0664 "$XML_VERIFY_FILE" 2>/dev/null
@@ -501,7 +540,10 @@ verify_zuipp_mounts() {
         echo "game_policy_mount_source=$(mount_source_for_target "$SYSTEM_GAME_POLICY")"
         echo "performanceconfig_mount_source=$(mount_source_for_target "$SYSTEM_PERF_CONFIG")"
     } >> "$XML_VERIFY_FILE"
+}
 
+verify_zuipp_mount_core() {
+    begin_zuipp_verify_file
     if ! is_mounted_on "$SYSTEM_GAME_POLICY" ||
         ! is_mounted_on "$SYSTEM_PERF_CONFIG"; then
         set_xml_error "active bind missing in /proc/mounts"
@@ -518,8 +560,18 @@ verify_zuipp_mounts() {
         write_xml_status_file "mounted=true" "performanceconfig=mismatch"
         return 1
     fi
+    return 0
+}
+
+verify_zuipp_process_views() {
     verify_proc_xml_view "com.zui.pp" "ZuiPP" || return 1
     verify_proc_xml_view "com.zui.game.service" "GameHelper" || return 1
+    return 0
+}
+
+verify_zuipp_mounts() {
+    verify_zuipp_mount_core || return 1
+    verify_zuipp_process_views || return 1
     clear_xml_error
     write_active_sha
     write_xml_status_file \
@@ -750,17 +802,51 @@ wait_mount_state() {
 
 force_stop_package() {
     pkg="$1"
+    start_pids="$(pidof "$pkg" 2>/dev/null)"
     if pm path "$pkg" >/dev/null 2>&1; then
         am force-stop --user 0 "$pkg" >> "$LOG_FILE" 2>&1 ||
             log_line "force-stop failed: $pkg"
+        sleep 1
+        pids="$(pidof "$pkg" 2>/dev/null)"
+        if [ -n "$pids" ]; then
+            log_line "force-stop left $pkg running; TERM pids=$pids"
+            kill $pids >> "$LOG_FILE" 2>&1 || true
+            tries=10
+            new_pids="$pids"
+            while [ "$tries" -gt 0 ]; do
+                sleep 1
+                new_pids="$(pidof "$pkg" 2>/dev/null)"
+                [ "$new_pids" != "$start_pids" ] && break
+                tries=$((tries - 1))
+            done
+            if [ -n "$start_pids" ] && [ "$new_pids" = "$start_pids" ]; then
+                log_line "TERM left $pkg running; KILL pids=$new_pids"
+                kill -9 $new_pids >> "$LOG_FILE" 2>&1 || true
+            fi
+            tries=10
+            while [ "$tries" -gt 0 ]; do
+                sleep 1
+                new_pids="$(pidof "$pkg" 2>/dev/null)"
+                [ "$new_pids" != "$start_pids" ] && break
+                tries=$((tries - 1))
+            done
+            if [ -n "$start_pids" ] && [ "$new_pids" = "$start_pids" ]; then
+                log_line "restart did not replace $pkg pids=$new_pids"
+                return 1
+            fi
+            log_line "restart result $pkg old=${start_pids:-none} new=${new_pids:-none}"
+        fi
     fi
+    return 0
 }
 
 restart_zuipp() {
     log_line "restart ZuiPP and game services"
-    force_stop_package com.zui.pp
-    force_stop_package com.zui.game.service
-    force_stop_package com.zui.gamehelper
+    ok=0
+    force_stop_package com.zui.pp || ok=1
+    force_stop_package com.zui.game.service || ok=1
+    force_stop_package com.zui.gamehelper || ok=1
+    return "$ok"
 }
 
 validate_zuipp_files() {
@@ -813,12 +899,32 @@ apply_zuipp() {
         set_status "daemon=running" "last=apply_zuipp_failed" "reason=validate_failed"
         return 1
     }
+    label_active_xml
     if trigger_init_action "$PROP_ZUIPP" apply &&
         wait_mount_state mounted "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG" &&
-        verify_zuipp_mounts; then
+        verify_zuipp_mount_core; then
         touch "$ZUI_ENABLED"
         chmod 0664 "$ZUI_ENABLED" 2>/dev/null
-        restart_zuipp
+        if ! restart_zuipp; then
+            set_xml_error "ZuiPP/GameHelper restart incomplete"
+            publish_xml_state
+            set_status "daemon=running" "last=apply_zuipp_failed" "reason=restart"
+            return 1
+        fi
+        sleep 2
+        if ! verify_zuipp_process_views; then
+            log_line "ZuiPP process XML view verify failed after restart"
+            publish_xml_state
+            set_status "daemon=running" "last=apply_zuipp_failed" "reason=process_view"
+            return 1
+        fi
+        clear_xml_error
+        write_active_sha
+        write_xml_status_file \
+            "mounted=true" \
+            "game_policy=$(file_sha "$ACTIVE_GAME_POLICY")" \
+            "performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")" \
+            "source=active"
         publish_xml_state
         set_status "daemon=running" "last=apply_zuipp_ok" "reason=$reason"
         return 0
@@ -1366,6 +1472,7 @@ handle_request() {
     case "$cmd" in
         status)
             publish_state
+            verify_zuipp_mounts >/dev/null 2>&1 || publish_xml_state
             set_status "daemon=running" "last=status"
             ;;
         set_refresh) set_refresh_rate "$rate" ;;

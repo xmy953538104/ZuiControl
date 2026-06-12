@@ -1,8 +1,11 @@
 ;; ZuiControl init bind-mount bridge.
-;; The shell-domain daemon only requests init actions through zui_control.* properties.
-;; Init performs the file bind mounts, then the daemon verifies /proc/mounts.
+;; Init performs file bind mounts, then the shell-domain daemon verifies state.
+;; P2 XML reload only signals ZuiPP/GameHelper after active XML is remounted.
 (type zui_control_service)
 (typeattributeset service_manager_type (zui_control_service))
 (allow system_server zui_control_service (service_manager (add find)))
 (allow priv_app zui_control_service (service_manager (find)))
 (allow init system_file (file (mounton)))
+(allow shell self (capability (kill)))
+(allow shell system_app (process (signal sigkill)))
+(allow shell platform_app (process (signal sigkill)))

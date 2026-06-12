@@ -1044,7 +1044,6 @@ class MainActivity : Activity() {
     private fun String.cleanSetting(): String = removeSuffix(".0")
 
     private fun commandName(value: String): String = when (value) {
-        "learn_refresh_no_target" -> "未找到前台场景"
         ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE -> "保存性能配置"
         ZuiControlContract.CMD_REMOVE_PERFORMANCE_PROFILE -> "删除性能配置"
         ZuiControlContract.CMD_APPLY_PERFORMANCE -> "应用性能调度"
