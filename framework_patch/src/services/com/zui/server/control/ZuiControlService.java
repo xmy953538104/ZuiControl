@@ -70,6 +70,7 @@ public final class ZuiControlService extends Binder {
     private String mRawFocusedPackage = "";
     private String mCurrentScenePackage = "";
     private String mLastNonTransientScenePackage = "";
+    private String mAppliedScenePackage = "";
     private int mCurrentUserId = 0;
     private int mCurrentUid = -1;
     private int mCurrentDisplayId = Display.DEFAULT_DISPLAY;
@@ -132,9 +133,17 @@ public final class ZuiControlService extends Binder {
     private synchronized void handleFocusedApp(String pkg, int uid, int userId, int displayId) {
         mRawFocusedPackage = safe(pkg);
         mCurrentDisplayId = resolveDisplayId(displayId);
+        if (APP_PACKAGE.equals(mRawFocusedPackage)) {
+            mCurrentUid = uid;
+            mCurrentUserId = userId;
+            applyProfile(profileFor(APP_PACKAGE, mCurrentUserId), "controlPanel");
+            publishState();
+            return;
+        }
         if (mRawFocusedPackage.isEmpty() || isTransientPackage(mRawFocusedPackage)) {
-            String scene = !mCurrentScenePackage.isEmpty()
-                    ? mCurrentScenePackage : mLastNonTransientScenePackage;
+            String scene = !mAppliedScenePackage.isEmpty()
+                    ? mAppliedScenePackage : (!mCurrentScenePackage.isEmpty()
+                    ? mCurrentScenePackage : mLastNonTransientScenePackage);
             if (!scene.isEmpty()) {
                 applyProfile(profileFor(scene, mCurrentUserId), "transient");
             }
@@ -222,7 +231,8 @@ public final class ZuiControlService extends Binder {
         if (pkg == null || pkg.isEmpty()) {
             return "ok=0\nerror=no_current_scene";
         }
-        return setProfileLocked(pkg, mCurrentUserId, displayHz, fpsCap, mode, true);
+        return setProfileLocked(pkg, mCurrentUserId, displayHz, fpsCap, mode,
+                !isControlPanelContext());
     }
 
     private synchronized String setProfile(String pkg, int userId, int displayHz, int fpsCap, String mode) {
@@ -232,7 +242,7 @@ public final class ZuiControlService extends Binder {
         if (!packageExists(pkg)) {
             return "ok=0\nerror=package_not_found";
         }
-        return setProfileLocked(pkg, userId, displayHz, fpsCap, mode, pkg.equals(mCurrentScenePackage));
+        return setProfileLocked(pkg, userId, displayHz, fpsCap, mode, shouldApplyPackageNow(pkg));
     }
 
     private String setProfileLocked(String pkg, int userId, int displayHz, int fpsCap,
@@ -244,7 +254,7 @@ public final class ZuiControlService extends Binder {
         if (!"default".equals(pkg) && isDefaultEquivalent(profile)) {
             mProfiles.remove(key(userId, pkg));
             saveProfiles();
-            Profile fallback = defaultProfile(userId);
+            Profile fallback = profileFor(pkg, userId);
             if (applyNow) {
                 applyProfile(fallback, "restoreDefault");
             }
@@ -269,16 +279,17 @@ public final class ZuiControlService extends Binder {
         }
         mProfiles.remove(key(userId, pkg));
         saveProfiles();
-        if (pkg.equals(mCurrentScenePackage)) {
-            applyProfile(defaultProfile(userId), "remove");
+        if (shouldApplyPackageNow(pkg)) {
+            applyProfile(profileFor(pkg, userId), "remove");
         }
         publishState();
         return "ok=1\nremoved=" + pkg;
     }
 
     private synchronized String refreshNow() {
-        Profile profile = mCurrentScenePackage.isEmpty()
-                ? defaultProfile(mCurrentUserId) : profileFor(mCurrentScenePackage, mCurrentUserId);
+        String pkg = !mAppliedScenePackage.isEmpty() ? mAppliedScenePackage : mCurrentScenePackage;
+        Profile profile = pkg.isEmpty()
+                ? defaultProfile(mCurrentUserId) : profileFor(pkg, mCurrentUserId);
         applyProfile(profile, "refreshNow");
         publishState();
         return "ok=1\n" + state();
@@ -302,6 +313,7 @@ public final class ZuiControlService extends Binder {
     }
 
     private void applyProfile(Profile profile, String reason) {
+        mAppliedScenePackage = profile.packageName;
         mTargetDisplayHz = profile.displayHz;
         mTargetFpsCap = profile.fpsCap;
         mTargetMode = profile.mode;
@@ -429,7 +441,12 @@ public final class ZuiControlService extends Binder {
 
     private Profile profileFor(String pkg, int userId) {
         Profile profile = mProfiles.get(key(userId, pkg));
-        return profile != null ? profile : defaultProfile(userId);
+        if (profile != null) {
+            return profile;
+        }
+        Profile fallback = defaultProfile(userId);
+        return "default".equals(pkg) ? fallback
+                : new Profile(pkg, userId, fallback.displayHz, fallback.fpsCap, fallback.mode);
     }
 
     private Profile defaultProfile(int userId) {
@@ -587,6 +604,7 @@ public final class ZuiControlService extends Binder {
                 + "\nrawFocusedPackage=" + mRawFocusedPackage
                 + "\ncurrentScenePackage=" + mCurrentScenePackage
                 + "\nlastNonTransientScenePackage=" + mLastNonTransientScenePackage
+                + "\nappliedScenePackage=" + mAppliedScenePackage
                 + "\ntargetDisplayHz=" + mTargetDisplayHz
                 + "\nactualDisplayHz=" + actualHz()
                 + "\ntargetFpsCap=" + mTargetFpsCap
@@ -659,6 +677,15 @@ public final class ZuiControlService extends Binder {
         if (!certOk) {
             throw new SecurityException("ZuiControl cert mismatch");
         }
+    }
+
+    private boolean isControlPanelContext() {
+        return APP_PACKAGE.equals(mRawFocusedPackage)
+                || APP_PACKAGE.equals(mAppliedScenePackage);
+    }
+
+    private boolean shouldApplyPackageNow(String pkg) {
+        return safe(pkg).equals(mAppliedScenePackage);
     }
 
     private boolean packageExists(String pkg) {

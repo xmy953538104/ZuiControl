@@ -291,9 +291,15 @@ class MainActivity : Activity() {
         val currentScene = stateValue(serviceState, "currentScenePackage").ifBlank { "等待前台场景" }
         val rawFocused = stateValue(serviceState, "rawFocusedPackage").ifBlank { "无" }
         val lastScene = stateValue(serviceState, "lastNonTransientScenePackage").ifBlank { "无" }
+        val appliedScene = stateValue(serviceState, "appliedScenePackage").ifBlank { currentScene }
         val owner = stateValue(serviceState, "refreshOwner").ifBlank { "system_server" }
         refreshStatus.text = if (stateOk) {
-            "当前场景 $currentScene\n目标 ${active}Hz · 实际 ${actual}Hz · owner $owner\nraw $rawFocused · last $lastScene"
+            val sceneLine = if (appliedScene != currentScene) {
+                "显示场景 $appliedScene\n业务场景 $currentScene"
+            } else {
+                "当前场景 $currentScene"
+            }
+            "$sceneLine\n目标 ${active}Hz · 实际 ${actual}Hz · owner $owner\nraw $rawFocused · last $lastScene"
         } else {
             "zui_control 服务暂不可用\n$serviceState"
         }
