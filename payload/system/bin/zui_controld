@@ -716,17 +716,6 @@ remove_refresh_rule() {
     set_status "daemon=running" "last=remove_refresh_rule_ignored" "package=$pkg" "refresh_owner=$REFRESH_OWNER"
 }
 
-learn_refresh() {
-    rate="$1"
-    valid_refresh_rate "$rate" || {
-        set_status "daemon=running" "last=learn_refresh_failed" "rate=$rate"
-        return 1
-    }
-    log_line "learn refresh ignored: owner=$REFRESH_OWNER rate=$rate"
-    set_status "daemon=running" "last=learn_refresh_ignored" "rate=$rate" "refresh_owner=$REFRESH_OWNER"
-    notify_quick_service
-}
-
 apply_scene_package() {
     top="$1"
     source="$2"
@@ -1062,7 +1051,6 @@ handle_request() {
             publish_state
             set_status "daemon=running" "last=status"
             ;;
-        learn_refresh) learn_refresh "$rate" "$pkg" ;;
         set_refresh) set_refresh_rate "$rate" ;;
         restore_refresh) restore_refresh_rate ;;
         remove_refresh_rule) remove_refresh_rule "$pkg" ;;
