@@ -537,6 +537,16 @@ verify_zuipp_mount_core() {
     return 0
 }
 
+system_xml_contexts_ok() {
+    for file in "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; do
+        context="$(ls -Z "$file" 2>/dev/null | awk '{print $1}')"
+        if [ "$context" != "u:object_r:system_file:s0" ]; then
+            return 1
+        fi
+    done
+    return 0
+}
+
 verify_system_xml_contexts() {
     for file in "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; do
         context="$(ls -Z "$file" 2>/dev/null | awk '{print $1}')"
@@ -566,10 +576,20 @@ publish_xml_state() {
     perf_hash="$(file_sha "$ACTIVE_PERF_CONFIG")"
     if is_mounted_on "$SYSTEM_GAME_POLICY" && is_mounted_on "$SYSTEM_PERF_CONFIG" &&
         same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY" &&
-        same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG"; then
+        same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG" &&
+        system_xml_contexts_ok; then
+        clear_xml_error
         settings_put_quiet "$XML_STATE_KEY" \
             "state=mounted;source=active;game=${game_hash:-unknown};perf=${perf_hash:-unknown}"
         write_xml_status_file "mounted=true" "source=active" \
+            "game_policy=${game_hash:-unknown}" "performanceconfig=${perf_hash:-unknown}"
+    elif is_mounted_on "$SYSTEM_GAME_POLICY" && is_mounted_on "$SYSTEM_PERF_CONFIG" &&
+        same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY" &&
+        same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG"; then
+        verify_system_xml_contexts >/dev/null 2>&1 || true
+        settings_put_quiet "$XML_STATE_KEY" \
+            "state=mounted_context_error;source=active;game=${game_hash:-unknown};perf=${perf_hash:-unknown}"
+        write_xml_status_file "mounted=false" "source=active-context-error" \
             "game_policy=${game_hash:-unknown}" "performanceconfig=${perf_hash:-unknown}"
     elif [ -s "$ACTIVE_GAME_POLICY" ] && [ -s "$ACTIVE_PERF_CONFIG" ] &&
         same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY" &&
@@ -780,6 +800,39 @@ wait_mount_state() {
     return 1
 }
 
+wait_prop_value() {
+    prop="$1"
+    expected="$2"
+    tries="${3:-10}"
+    while [ "$tries" -gt 0 ]; do
+        [ "$(getprop "$prop" 2>/dev/null)" = "$expected" ] && return 0
+        tries=$((tries - 1))
+        sleep 1
+    done
+    return 1
+}
+
+prepare_active_replace() {
+    if trigger_init_action "$PROP_ZUIPP" prepare_active &&
+        wait_prop_value "$PROP_ZUIPP" prepared 10 &&
+        wait_mount_state unmounted "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; then
+        mkdir -p "$ZUI_ACTIVE_DIR"
+        chmod 0775 "$ZUI_ACTIVE_DIR" 2>/dev/null || true
+        return 0
+    fi
+    set_xml_error "prepare active replace failed"
+    log_line "ZuiPP prepare active failed: prop=$(getprop "$PROP_ZUIPP" 2>/dev/null)"
+    return 1
+}
+
+replace_active_xml_from_pair() {
+    src_game="$1"
+    src_perf="$2"
+    label="$3"
+    prepare_active_replace || return 1
+    copy_xml_pair_to_dir "$src_game" "$src_perf" "$ZUI_ACTIVE_DIR" "$label"
+}
+
 validate_zuipp_files() {
     validate_xml_pair "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" "active"
 }
@@ -794,21 +847,21 @@ rollback_active_xml() {
     reason="$1"
     log_line "rollback active XML: $reason"
     if [ -s "$LAST_GOOD_GAME_POLICY" ] && [ -s "$LAST_GOOD_PERF_CONFIG" ]; then
-        copy_xml_pair_to_dir "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" \
-            "$ZUI_ACTIVE_DIR" "rollback last_good" || return 1
+        replace_active_xml_from_pair "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" \
+            "rollback last_good" || return 1
         apply_zuipp "rollback_last_good"
         return $?
     fi
-    copy_xml_pair_to_dir "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
-        "$ZUI_ACTIVE_DIR" "rollback baked baseline" || return 1
+    replace_active_xml_from_pair "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
+        "rollback baked baseline" || return 1
     apply_zuipp "rollback_baked"
 }
 
 promote_staging_to_active() {
     validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "staging" || return 1
     backup_active_to_last_good || return 1
-    if ! copy_xml_pair_to_dir "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" \
-        "$ZUI_ACTIVE_DIR" "promote staging"; then
+    if ! replace_active_xml_from_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" \
+        "promote staging"; then
         rollback_active_xml "promote copy failed"
         return 1
     fi
@@ -832,6 +885,7 @@ apply_zuipp() {
     }
     label_active_xml
     if trigger_init_action "$PROP_ZUIPP" apply &&
+        wait_prop_value "$PROP_ZUIPP" done 10 &&
         wait_mount_state mounted "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; then
         label_bound_system_xml
     else
@@ -864,8 +918,8 @@ apply_zuipp() {
 
 restore_zuipp() {
     init_active_xml || return 1
-    copy_xml_pair_to_dir "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
-        "$ZUI_ACTIVE_DIR" "restore baked baseline" || {
+    replace_active_xml_from_pair "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
+        "restore baked baseline" || {
         set_status "daemon=running" "last=restore_zuipp_failed" "reason=copy_failed"
         return 1
     }
@@ -887,8 +941,8 @@ restore_last_good_zuipp() {
         set_status "daemon=running" "last=restore_last_good_failed"
         return 1
     fi
-    copy_xml_pair_to_dir "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" \
-        "$ZUI_ACTIVE_DIR" "restore last_good" || return 1
+    replace_active_xml_from_pair "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" \
+        "restore last_good" || return 1
     apply_zuipp "restore_last_good"
 }
 
@@ -901,8 +955,8 @@ restore_official_original_zuipp() {
         return 1
     fi
     backup_active_to_last_good || true
-    copy_xml_pair_to_dir "$OFFICIAL_GAME_POLICY" "$OFFICIAL_PERF_CONFIG" \
-        "$ZUI_ACTIVE_DIR" "restore official original" || return 1
+    replace_active_xml_from_pair "$OFFICIAL_GAME_POLICY" "$OFFICIAL_PERF_CONFIG" \
+        "restore official original" || return 1
     apply_zuipp "restore_official_original"
 }
 

@@ -371,6 +371,24 @@ def append_unique_lines(target, lines, dry_run):
     return additions
 
 
+def merge_unique_lines_by_key(target, lines, dry_run):
+    if not lines:
+        return [], False
+    target = pathlib.Path(target)
+    current = []
+    if target.exists():
+        current = target.read_text(encoding="utf-8", errors="ignore").splitlines()
+    keys = {first_field(line) for line in lines}
+    kept = [line for line in current if first_field(line) not in keys]
+    updated = kept + lines
+    additions = [line for line in lines if line not in current]
+    changed = updated != current
+    if changed and not dry_run:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("\n".join(updated) + "\n", encoding="utf-8")
+    return additions, changed
+
+
 def patch_property_contexts(unpack, payload, dry_run, report):
     patch = payload / "patches" / "plat_property_contexts_add.txt"
     target = unpack / "system_a" / "system" / "etc" / "selinux" / "plat_property_contexts"
@@ -388,8 +406,9 @@ def patch_service_contexts(unpack, payload, dry_run, report):
 def patch_file_contexts(unpack, payload, dry_run, report):
     patch = payload / "patches" / "plat_file_contexts_add.txt"
     target = unpack / "system_a" / "system" / "etc" / "selinux" / "plat_file_contexts"
-    additions = append_unique_lines(target, read_patch_lines(patch), dry_run)
+    additions, changed = merge_unique_lines_by_key(target, read_patch_lines(patch), dry_run)
     report["file_contexts_added"] = additions
+    report["file_contexts_reordered_or_replaced"] = changed
 
 
 def patch_plat_sepolicy(unpack, payload, dry_run, report):
