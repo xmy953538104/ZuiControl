@@ -395,10 +395,17 @@ def patch_file_contexts(unpack, payload, dry_run, report):
 def patch_plat_sepolicy(unpack, payload, dry_run, report):
     patch = payload / "patches" / "plat_sepolicy_zui_control.cil"
     target = unpack / "system_a" / "system" / "etc" / "selinux" / "plat_sepolicy.cil"
+    obsolete = [
+        "(allow shell self (capability (kill)))",
+        "(allow shell system_app (process (signal sigkill)))",
+        "(allow shell platform_app (process (signal sigkill)))",
+    ]
+    removed = remove_lines_containing(target, obsolete, dry_run)
     patch_lines = read_patch_lines(patch)
     additions = append_unique_lines(target, patch_lines, dry_run)
+    report["plat_sepolicy_removed"] = removed
     report["plat_sepolicy_added"] = additions
-    if patch_lines and not dry_run:
+    if (patch_lines or removed) and not dry_run:
         update_plat_mapping_hash(unpack, report)
 
 
