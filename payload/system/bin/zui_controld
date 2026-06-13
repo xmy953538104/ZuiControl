@@ -264,7 +264,6 @@ write_active_sha() {
 label_active_xml() {
     for file in "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG"; do
         [ -e "$file" ] || continue
-        chown root:root "$file" >/dev/null 2>&1 || true
         current_context="$(ls -Z "$file" 2>/dev/null | awk '{print $1}')"
         if [ "$current_context" != "u:object_r:system_file:s0" ]; then
             chcon u:object_r:system_file:s0 "$file" >/dev/null 2>&1 ||
@@ -1273,8 +1272,8 @@ scene_event_tick() {
 }
 
 set_performance_profile() {
-    pkg="$1"
-    mode="$2"
+    profile_pkg="$1"
+    profile_mode="$2"
     little_max="$3"
     little_min="$4"
     big_max="$5"
@@ -1286,7 +1285,7 @@ set_performance_profile() {
     mega_min="$1"
     gpu_max="$2"
     gpu_min="$3"
-    if ! valid_package_name "$pkg" || ! valid_mode "$mode" ||
+    if ! valid_package_name "$profile_pkg" || ! valid_mode "$profile_mode" ||
         ! valid_positive_int "$little_max" || ! valid_positive_int "$little_min" ||
         ! valid_positive_int "$big_max" || ! valid_positive_int "$big_min" ||
         ! valid_positive_int "$titan_max" || ! valid_positive_int "$titan_min" ||
@@ -1297,13 +1296,13 @@ set_performance_profile() {
         [ "$titan_max" -lt "$titan_min" ] ||
         [ "$mega_max" -lt "$mega_min" ] ||
         [ "$gpu_max" -lt "$gpu_min" ]; then
-        log_line "invalid performance profile: $pkg $mode"
-        set_status "daemon=running" "last=set_performance_profile_failed" "package=$pkg"
+        log_line "invalid performance profile: $profile_pkg $profile_mode"
+        set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg"
         return 1
     fi
-    rewrite_performance_without_key "$pkg" "$mode"
+    rewrite_performance_without_key "$profile_pkg" "$profile_mode"
     printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
-        "$pkg" "$mode" \
+        "$profile_pkg" "$profile_mode" \
         "$little_max" "$little_min" \
         "$big_max" "$big_min" \
         "$titan_max" "$titan_min" \
@@ -1312,42 +1311,42 @@ set_performance_profile() {
         >> "$PERFORMANCE_PROFILES"
     chmod 0664 "$PERFORMANCE_PROFILES" 2>/dev/null
     clear_performance_summary
-    log_line "performance profile saved: $pkg/$mode"
+    log_line "performance profile saved: $profile_pkg/$profile_mode"
     if generate_performance_xml && promote_staging_to_active; then
         publish_performance_state
         LAST_GPU_PROFILE=
         apply_gpu_limits_for_pkg "$(active_scene_pkg)"
         set_status "daemon=running" "last=set_performance_profile_applied" \
-            "package=$pkg" "mode=$mode"
+            "package=$profile_pkg" "mode=$profile_mode"
         return 0
     fi
     publish_performance_state
     set_status "daemon=running" "last=set_performance_profile_failed" \
-        "package=$pkg" "mode=$mode" "reason=apply_failed"
+        "package=$profile_pkg" "mode=$profile_mode" "reason=apply_failed"
     return 1
 }
 
 remove_performance_profile() {
-    pkg="$1"
-    mode="$2"
-    if ! valid_package_name "$pkg" || ! valid_mode "$mode"; then
+    profile_pkg="$1"
+    profile_mode="$2"
+    if ! valid_package_name "$profile_pkg" || ! valid_mode "$profile_mode"; then
         set_status "daemon=running" "last=remove_performance_profile_failed"
         return 1
     fi
-    rewrite_performance_without_key "$pkg" "$mode"
+    rewrite_performance_without_key "$profile_pkg" "$profile_mode"
     clear_performance_summary
-    log_line "performance profile removed: $pkg/$mode"
+    log_line "performance profile removed: $profile_pkg/$profile_mode"
     if generate_performance_xml && promote_staging_to_active; then
         publish_performance_state
         LAST_GPU_PROFILE=
         apply_gpu_limits_for_pkg "$(active_scene_pkg)"
         set_status "daemon=running" "last=remove_performance_profile_applied" \
-            "package=$pkg" "mode=$mode"
+            "package=$profile_pkg" "mode=$profile_mode"
         return 0
     fi
     publish_performance_state
     set_status "daemon=running" "last=remove_performance_profile_failed" \
-        "package=$pkg" "mode=$mode" "reason=apply_failed"
+        "package=$profile_pkg" "mode=$profile_mode" "reason=apply_failed"
     return 1
 }
 

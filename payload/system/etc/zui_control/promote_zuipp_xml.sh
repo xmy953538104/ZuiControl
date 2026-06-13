@@ -36,8 +36,6 @@ if cp "$GAME_SRC" "$GAME_TMP" &&
     chmod 0664 "$GAME_TMP" "$PERF_TMP" &&
     mv "$GAME_TMP" "$GAME_DST" &&
     mv "$PERF_TMP" "$PERF_DST"; then
-    chown root:root "$GAME_DST" "$PERF_DST" 2>/dev/null || true
-    chmod 0664 "$GAME_DST" "$PERF_DST" 2>/dev/null || true
     write_status "ok"
     exit 0
 fi
