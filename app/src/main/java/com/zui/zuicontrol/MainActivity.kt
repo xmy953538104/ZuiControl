@@ -980,12 +980,20 @@ class MainActivity : Activity() {
 
     private fun parseFreq(value: String, available: IntArray, preferHigh: Boolean): Int? {
         val normalized = value.trim()
+            .lowercase(Locale.US)
+            .removeSuffix("mhz")
+            .removeSuffix("ghz")
+            .trim()
         if (normalized.isBlank()) {
             return null
         }
         available.firstOrNull { it.toString() == normalized }?.let { return it }
-        val requestedGhz = normalized.toDoubleOrNull() ?: return null
-        val exactKHz = Math.round(requestedGhz * 1_000_000.0).toInt()
+        val requested = normalized.toDoubleOrNull() ?: return null
+        val exactKHz = when {
+            requested >= 10_000.0 -> Math.round(requested).toInt()
+            requested >= 100.0 -> Math.round(requested * 1_000.0).toInt()
+            else -> Math.round(requested * 1_000_000.0).toInt()
+        }
         available.firstOrNull { kotlin.math.abs(it - exactKHz) <= 5_000 }?.let { return it }
         val minDistance = available.minOf { kotlin.math.abs(it - exactKHz) }
         val nearest = available.filter { kotlin.math.abs(it - exactKHz) == minDistance }

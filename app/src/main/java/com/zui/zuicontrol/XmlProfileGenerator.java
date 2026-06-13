@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.transform.OutputKeys;
 import javax.xml.transform.Transformer;
@@ -90,9 +91,7 @@ public final class XmlProfileGenerator {
         if (!defaultGame.isFile() || !defaultPerf.isFile()) {
             throw new IllegalStateException("baked baseline XML missing");
         }
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setNamespaceAware(false);
-        factory.setIgnoringComments(false);
+        DocumentBuilderFactory factory = newDocumentFactory();
         Document game = factory.newDocumentBuilder().parse(defaultGame);
         Document perf = factory.newDocumentBuilder().parse(defaultPerf);
 
@@ -178,51 +177,64 @@ public final class XmlProfileGenerator {
         if (!file.isFile()) {
             return new ArrayList<>();
         }
+        int lineNumber = 0;
+        int skipped = 0;
         try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = reader.readLine()) != null) {
+                lineNumber++;
                 line = line.trim();
                 if (line.isEmpty() || line.startsWith("#")) {
                     continue;
                 }
                 String[] parts = line.split("\\|", -1);
-                if (!validPackage(parts[0])) {
+                for (int i = 0; i < parts.length; i++) {
+                    parts[i] = parts[i].trim();
+                }
+                if (parts.length != 6 && parts.length != 12) {
+                    skipped += skipProfile(lineNumber, "invalid_field_count");
                     continue;
                 }
-                int modeIndex = modeIndex(parts[1]);
+                if (!validPackage(parts[0])) {
+                    skipped += skipProfile(lineNumber, "invalid_package");
+                    continue;
+                }
+                int modeIndex = modeIndexOrMinus(parts[1]);
+                if (modeIndex < 0) {
+                    skipped += skipProfile(lineNumber, "invalid_mode");
+                    continue;
+                }
+                int[] values = parseProfileValues(parts);
+                if (values == null) {
+                    skipped += skipProfile(lineNumber, "invalid_number");
+                    continue;
+                }
                 Profile profile;
                 if (parts.length == 6) {
-                    int cpuMax = Integer.parseInt(parts[2]);
-                    int cpuMin = Integer.parseInt(parts[3]);
-                    int gpuMax = Integer.parseInt(parts[4]);
-                    int gpuMin = Integer.parseInt(parts[5]);
                     profile = new Profile(parts[0], parts[1], modeIndex,
-                            cpuMax, cpuMin, cpuMax, cpuMin, cpuMax, cpuMin, cpuMax, cpuMin,
-                            gpuMax, gpuMin);
-                } else if (parts.length == 12) {
-                    profile = new Profile(parts[0], parts[1], modeIndex,
-                            Integer.parseInt(parts[2]),
-                            Integer.parseInt(parts[3]),
-                            Integer.parseInt(parts[4]),
-                            Integer.parseInt(parts[5]),
-                            Integer.parseInt(parts[6]),
-                            Integer.parseInt(parts[7]),
-                            Integer.parseInt(parts[8]),
-                            Integer.parseInt(parts[9]),
-                            Integer.parseInt(parts[10]),
-                            Integer.parseInt(parts[11]));
+                            values[0], values[1], values[0], values[1],
+                            values[0], values[1], values[0], values[1],
+                            values[2], values[3]);
                 } else {
+                    profile = new Profile(parts[0], parts[1], modeIndex,
+                            values[0], values[1], values[2], values[3],
+                            values[4], values[5], values[6], values[7],
+                            values[8], values[9]);
+                }
+                if (!profile.valid()) {
+                    skipped += skipProfile(lineNumber, "invalid_range");
                     continue;
                 }
-                if (profile.valid()) {
-                    result.put(profile.pkg + "|" + profile.mode, profile);
-                }
+                result.put(profile.pkg + "|" + profile.mode, profile);
             }
+        }
+        if (skipped > 0) {
+            System.out.println("skipped_profiles=" + skipped);
         }
         return new ArrayList<>(result.values());
     }
 
-    private static int modeIndex(String mode) {
+    private static int modeIndexOrMinus(String mode) {
         switch (mode) {
             case "balanced":
                 return 0;
@@ -231,12 +243,61 @@ public final class XmlProfileGenerator {
             case "savage":
                 return 2;
             default:
-                throw new IllegalArgumentException("invalid mode: " + mode);
+                return -1;
         }
+    }
+
+    private static int[] parseProfileValues(String[] parts) {
+        int[] values = new int[parts.length - 2];
+        for (int i = 2; i < parts.length; i++) {
+            try {
+                values[i - 2] = Integer.parseInt(parts[i]);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return values;
+    }
+
+    private static int skipProfile(int lineNumber, String reason) {
+        System.out.println("skip_profile line=" + lineNumber + " reason=" + reason);
+        return 1;
     }
 
     private static boolean validPackage(String value) {
         return value.matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+");
+    }
+
+    private static DocumentBuilderFactory newDocumentFactory() {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(false);
+        factory.setIgnoringComments(false);
+        try {
+            factory.setXIncludeAware(false);
+        } catch (UnsupportedOperationException ignored) {
+        }
+        try {
+            factory.setExpandEntityReferences(false);
+        } catch (UnsupportedOperationException ignored) {
+        }
+        trySetFeature(factory, XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        trySetFeature(factory, "http://apache.org/xml/features/disallow-doctype-decl", true);
+        trySetFeature(factory, "http://xml.org/sax/features/external-general-entities", false);
+        trySetFeature(factory, "http://xml.org/sax/features/external-parameter-entities", false);
+        trySetFeature(factory, "http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+        return factory;
+    }
+
+    private static void trySetFeature(
+            DocumentBuilderFactory factory,
+            String feature,
+            boolean value
+    ) {
+        try {
+            factory.setFeature(feature, value);
+        } catch (Exception ignored) {
+            // Android framework XML parser support varies; unsupported hardening flags are skipped.
+        }
     }
 
     private static LevelValue cpuLevel(int[] available, int requestedMax, int requestedMin) {
