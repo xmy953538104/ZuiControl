@@ -537,8 +537,20 @@ verify_zuipp_mount_core() {
     return 0
 }
 
+verify_system_xml_contexts() {
+    for file in "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; do
+        context="$(ls -Z "$file" 2>/dev/null | awk '{print $1}')"
+        if [ "$context" != "u:object_r:system_file:s0" ]; then
+            set_xml_error "$file context mismatch: $context"
+            return 1
+        fi
+    done
+    return 0
+}
+
 verify_zuipp_mounts() {
     verify_zuipp_mount_core || return 1
+    verify_system_xml_contexts || return 1
     clear_xml_error
     write_active_sha
     write_xml_status_file \
@@ -829,7 +841,7 @@ apply_zuipp() {
         set_status "daemon=running" "last=apply_zuipp_failed" "reason=mount_failed"
         return 1
     fi
-    if verify_zuipp_mount_core; then
+    if verify_zuipp_mount_core && verify_system_xml_contexts; then
         touch "$ZUI_ENABLED"
         chmod 0664 "$ZUI_ENABLED" 2>/dev/null
         clear_xml_error

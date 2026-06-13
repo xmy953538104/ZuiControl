@@ -17,6 +17,10 @@ on property:zui_control.zuipp=apply
     umount /system/etc/performanceconfig.xml
     mount none /data/vendor/zui_control/zuipp/active/game_policy.xml /system/etc/game_policy.xml bind
     mount none /data/vendor/zui_control/zuipp/active/performanceconfig.xml /system/etc/performanceconfig.xml bind
+    restorecon /system/etc/game_policy.xml
+    restorecon /system/etc/performanceconfig.xml
+    chmod 0664 /system/etc/game_policy.xml
+    chmod 0664 /system/etc/performanceconfig.xml
     setprop zui_control.zuipp done
 
 on property:zui_control.zuipp=restore
