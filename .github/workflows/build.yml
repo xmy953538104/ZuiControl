@@ -41,6 +41,7 @@ jobs:
           python3 -m py_compile scripts/ApplyZuiControlPayload.py
           python3 -m py_compile scripts/PatchZuiControlFramework.py
           bash -n payload/system/bin/zui_controld
+          bash -n payload/system/etc/zui_control/promote_zuipp_xml.sh
           bash -n payload/system/etc/zui_control/zui_asoulopt.sh
 
       - name: Decode release keystore
