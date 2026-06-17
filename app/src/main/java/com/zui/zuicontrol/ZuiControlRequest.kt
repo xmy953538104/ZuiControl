@@ -21,26 +21,37 @@ object ZuiControlRequest {
         megaMin: Int? = null,
         gpuMax: Int? = null,
         gpuMin: Int? = null,
+        stagePayload: String? = null,
     ) {
         val resolver = context.contentResolver
         val requestId = "${System.currentTimeMillis()}_${SystemClock.elapsedRealtimeNanos()}_$cmd"
-        val requestText = listOf(
-            requestId,
-            cmd,
-            rate?.toString().orEmpty(),
-            pkg.orEmpty().replace("|", ""),
-            mode.orEmpty().replace("|", ""),
-            littleMax?.toString().orEmpty(),
-            littleMin?.toString().orEmpty(),
-            bigMax?.toString().orEmpty(),
-            bigMin?.toString().orEmpty(),
-            titanMax?.toString().orEmpty(),
-            titanMin?.toString().orEmpty(),
-            megaMax?.toString().orEmpty(),
-            megaMin?.toString().orEmpty(),
-            gpuMax?.toString().orEmpty(),
-            gpuMin?.toString().orEmpty(),
-        ).joinToString("|")
+        val requestText = if (cmd == ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE_STAGED) {
+            listOf(
+                requestId,
+                cmd,
+                stagePayload.orEmpty().filter { it.isDigit() || it == '-' || it == ',' || it == ';' },
+                pkg.orEmpty().replace("|", ""),
+                mode.orEmpty().replace("|", ""),
+            ).joinToString("|")
+        } else {
+            listOf(
+                requestId,
+                cmd,
+                rate?.toString().orEmpty(),
+                pkg.orEmpty().replace("|", ""),
+                mode.orEmpty().replace("|", ""),
+                littleMax?.toString().orEmpty(),
+                littleMin?.toString().orEmpty(),
+                bigMax?.toString().orEmpty(),
+                bigMin?.toString().orEmpty(),
+                titanMax?.toString().orEmpty(),
+                titanMin?.toString().orEmpty(),
+                megaMax?.toString().orEmpty(),
+                megaMin?.toString().orEmpty(),
+                gpuMax?.toString().orEmpty(),
+                gpuMin?.toString().orEmpty(),
+            ).joinToString("|")
+        }
         Settings.System.putString(
             resolver,
             ZuiControlContract.KEY_REQUEST_TEXT,

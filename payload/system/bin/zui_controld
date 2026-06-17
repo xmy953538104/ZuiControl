@@ -48,8 +48,6 @@ LAST_GOOD_GAME_POLICY=$ZUI_LAST_GOOD_DIR/game_policy.xml
 LAST_GOOD_PERF_CONFIG=$ZUI_LAST_GOOD_DIR/performanceconfig.xml
 OFFICIAL_GAME_POLICY=$ZUI_OFFICIAL_DIR/game_policy.xml
 OFFICIAL_PERF_CONFIG=$ZUI_OFFICIAL_DIR/performanceconfig.xml
-WORK_GAME_POLICY=$ACTIVE_GAME_POLICY
-WORK_PERF_CONFIG=$ACTIVE_PERF_CONFIG
 WORK_ASOPT=$ASOUL_DIR/asopt.conf
 REFRESH_RULES=$REFRESH_DIR/rules.prop
 PERFORMANCE_PROFILES=$PERFORMANCE_DIR/profiles.prop
@@ -86,8 +84,6 @@ GPU_DEFAULT_MIN_KHZ=231000
 GPU_DEFAULT_MAX_KHZ=903000
 GPU_REASSERT_INTERVAL=8
 LAST_TOP_APP=
-LAST_USER_APP=
-LAST_USER_APP_TIME=0
 LAST_REFRESH_RATE=
 LAST_GPU_PROFILE=
 LAST_GPU_STATE=
@@ -99,9 +95,8 @@ SAFE_CENTER_KEEPALIVE_TICKS=0
 SAFE_CENTER_KEEPALIVE_ATTEMPTS=0
 SAFE_CENTER_KEEPALIVE_MAX_ATTEMPTS=60
 SAFE_CENTER_KEEPALIVE_DONE=0
-LOOP_TICKS=0
 SCENE_TTL_SECONDS=60
-LOOP_SLEEP_SECONDS=0.5
+LOOP_SLEEP_SECONDS=1
 
 ts() {
     date '+%Y-%m-%d %H:%M:%S'
@@ -141,15 +136,6 @@ settings_put_secure_quiet() {
 
 read_file_clean() {
     cat "$1" 2>/dev/null | tr -d '\r\n'
-}
-
-refresh_value_matches() {
-    value="$1"
-    rate="$2"
-    case "$value" in
-        "$rate"|"$rate".*) return 0 ;;
-    esac
-    return 1
 }
 
 log_line() {
@@ -196,23 +182,6 @@ copy_if_missing() {
     fi
     if [ -s "$src" ]; then
         cp "$src" "$dst" && chmod 0664 "$dst"
-    fi
-}
-
-copy_work_file() {
-    live="$1"
-    fallback="$2"
-    dst="$3"
-    name="$4"
-    if [ -s "$dst" ]; then
-        return 0
-    fi
-    if [ -s "$live" ]; then
-        cp "$live" "$dst" && chmod 0664 "$dst"
-        log_line "$name initialized from live system file"
-    else
-        copy_if_missing "$fallback" "$dst"
-        log_line "$name initialized from payload default"
     fi
 }
 
@@ -274,23 +243,6 @@ label_active_xml() {
             chmod 0664 "$file" 2>/dev/null || true
         fi
     done
-}
-
-label_bound_system_xml() {
-    for file in "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; do
-        [ -e "$file" ] || continue
-        chown root:root "$file" >/dev/null 2>&1 || true
-        restorecon "$file" >/dev/null 2>&1 || true
-        chmod 0664 "$file" >/dev/null 2>&1 || true
-    done
-}
-
-copy_xml_file() {
-    src="$1"
-    dst="$2"
-    [ -s "$src" ] || return 1
-    mkdir -p "$(dirname "$dst")"
-    cp "$src" "$dst" && chmod 0664 "$dst"
 }
 
 prepare_xml_replace_target() {
@@ -412,26 +364,60 @@ valid_mode() {
     return 1
 }
 
+valid_stage_payload() {
+    [ -n "$1" ] || return 1
+    awk -v payload="$1" '
+        BEGIN {
+            if (payload !~ /^[-0-9,;]+$/) {
+                exit 1
+            }
+            count = split(payload, stages, ";")
+            if (count < 1) {
+                exit 1
+            }
+            previous = 0
+            for (i = 1; i <= count; i++) {
+                if (stages[i] == "") {
+                    exit 1
+                }
+                fields = split(stages[i], values, ",")
+                if (fields != 11 || values[1] !~ /^-?[0-9]+$/) {
+                    exit 1
+                }
+                thermal = values[1] + 0
+                if (i == 1) {
+                    if (thermal != -1000) {
+                        exit 1
+                    }
+                } else {
+                    if (thermal < 1 || thermal > 16 || thermal <= previous) {
+                        exit 1
+                    }
+                    previous = thermal
+                }
+                for (j = 2; j <= 11; j++) {
+                    if (values[j] !~ /^[0-9]+$/ || values[j] + 0 <= 0) {
+                        exit 1
+                    }
+                }
+                if ((values[2] + 0) < (values[3] + 0) ||
+                    (values[4] + 0) < (values[5] + 0) ||
+                    (values[6] + 0) < (values[7] + 0) ||
+                    (values[8] + 0) < (values[9] + 0) ||
+                    (values[10] + 0) < (values[11] + 0)) {
+                    exit 1
+                }
+            }
+            exit 0
+        }
+    '
+}
+
 valid_positive_int() {
     case "$1" in
         ""|*[!0-9]*) return 1 ;;
     esac
     [ "$1" -gt 0 ]
-}
-
-rewrite_rules_without_pkg() {
-    pkg="$1"
-    tmp="$REFRESH_RULES.tmp"
-    : > "$tmp"
-    if [ -s "$REFRESH_RULES" ]; then
-        while IFS= read -r line || [ -n "$line" ]; do
-            key="${line%%=*}"
-            [ "$key" = "$pkg" ] && continue
-            echo "$line" >> "$tmp"
-        done < "$REFRESH_RULES"
-    fi
-    mv "$tmp" "$REFRESH_RULES"
-    chmod 0664 "$REFRESH_RULES" 2>/dev/null
 }
 
 rewrite_performance_without_key() {
@@ -441,8 +427,12 @@ rewrite_performance_without_key() {
     : > "$tmp"
     if [ -s "$PERFORMANCE_PROFILES" ]; then
         while IFS= read -r line || [ -n "$line" ]; do
-            line_pkg="$(printf '%s\n' "$line" | cut -d '|' -f 1)"
-            line_mode="$(printf '%s\n' "$line" | cut -d '|' -f 2)"
+            old_ifs="$IFS"
+            IFS='|'
+            set -- $line
+            IFS="$old_ifs"
+            line_pkg="$1"
+            line_mode="$2"
             if [ "$line_pkg" = "$pkg" ] && [ "$line_mode" = "$mode" ]; then
                 continue
             fi
@@ -899,11 +889,9 @@ apply_zuipp() {
         return 1
     }
     label_active_xml
-    if trigger_init_action "$PROP_ZUIPP" apply &&
-        wait_prop_value "$PROP_ZUIPP" done 10 &&
-        wait_mount_state mounted "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; then
-        label_bound_system_xml
-    else
+    if ! trigger_init_action "$PROP_ZUIPP" apply ||
+        ! wait_prop_value "$PROP_ZUIPP" done 10 ||
+        ! wait_mount_state mounted "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; then
         set_xml_error "bind mount action failed"
         log_line "ZuiPP mount failed: prop=$(getprop "$PROP_ZUIPP" 2>/dev/null)"
         publish_xml_state
@@ -1009,10 +997,6 @@ set_refresh_rate() {
     return 0
 }
 
-refresh_is_locked() {
-    return 0
-}
-
 restore_refresh_rate() {
     set_status "daemon=running" "last=restore_refresh_ignored" "refresh_owner=$REFRESH_OWNER"
 }
@@ -1034,20 +1018,6 @@ is_scene_package() {
     is_overlay_package "$pkg" && return 1
     is_self_package "$pkg" && return 1
     return 0
-}
-
-remember_user_app() {
-    pkg="$1"
-    valid_package_name "$pkg" || return 1
-    LAST_USER_APP="$pkg"
-    LAST_USER_APP_TIME="$(now_seconds)"
-}
-
-recent_last_user_app() {
-    valid_package_name "$LAST_USER_APP" || return 1
-    now="$(now_seconds)"
-    age=$((now - LAST_USER_APP_TIME))
-    [ "$age" -ge 0 ] && [ "$age" -le "$SCENE_TTL_SECONDS" ]
 }
 
 latest_scene_event_pkg() {
@@ -1083,29 +1053,6 @@ active_scene_pkg() {
     return 1
 }
 
-rule_for_app() {
-    pkg="$1"
-    [ -s "$REFRESH_RULES" ] || return 1
-    while IFS='=' read -r key value; do
-        [ "$key" = "$pkg" ] || continue
-        printf '%s\n' "$value"
-        return 0
-    done < "$REFRESH_RULES"
-    return 1
-}
-
-set_refresh_rule() {
-    pkg="$1"
-    rate="$2"
-    valid_package_name "$pkg" && valid_refresh_rate "$rate" || return 1
-    rewrite_rules_without_pkg "$pkg"
-    if [ "$rate" != "$BASE_REFRESH_RATE" ]; then
-        printf '%s=%s\n' "$pkg" "$rate" >> "$REFRESH_RULES"
-    fi
-    chmod 0664 "$REFRESH_RULES" 2>/dev/null
-    publish_refresh_state
-}
-
 remove_refresh_rule() {
     pkg="$1"
     valid_package_name "$pkg" || return 1
@@ -1119,7 +1066,6 @@ apply_scene_package() {
     if ! is_scene_package "$top"; then
         return 1
     fi
-    remember_user_app "$top"
     if [ "$top" = "$LAST_TOP_APP" ]; then
         apply_gpu_limits_for_pkg "$top"
         return 0
@@ -1170,7 +1116,11 @@ profile_gpu_limits_for_app() {
         IFS="$old_ifs"
         line_pkg="$1"
         line_mode="$2"
-        if [ $# -eq 6 ]; then
+        if [ "$3" = "v2" ]; then
+            first_stage="${4%%;*}"
+            line_gpu_max="$(printf '%s\n' "$first_stage" | cut -d ',' -f 10)"
+            line_gpu_min="$(printf '%s\n' "$first_stage" | cut -d ',' -f 11)"
+        elif [ $# -eq 6 ]; then
             line_gpu_max="$5"
             line_gpu_min="$6"
         else
@@ -1318,6 +1268,36 @@ set_performance_profile() {
         apply_gpu_limits_for_pkg "$(active_scene_pkg)"
         set_status "daemon=running" "last=set_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode"
+        return 0
+    fi
+    publish_performance_state
+    set_status "daemon=running" "last=set_performance_profile_failed" \
+        "package=$profile_pkg" "mode=$profile_mode" "reason=apply_failed"
+    return 1
+}
+
+set_performance_profile_staged() {
+    profile_pkg="$1"
+    profile_mode="$2"
+    stage_payload="$3"
+    if ! valid_package_name "$profile_pkg" || ! valid_mode "$profile_mode" ||
+        ! valid_stage_payload "$stage_payload"; then
+        log_line "invalid staged performance profile: $profile_pkg $profile_mode"
+        set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg"
+        return 1
+    fi
+    rewrite_performance_without_key "$profile_pkg" "$profile_mode"
+    printf '%s|%s|v2|%s\n' "$profile_pkg" "$profile_mode" "$stage_payload" \
+        >> "$PERFORMANCE_PROFILES"
+    chmod 0664 "$PERFORMANCE_PROFILES" 2>/dev/null
+    clear_performance_summary
+    log_line "staged performance profile saved: $profile_pkg/$profile_mode"
+    if generate_performance_xml && promote_staging_to_active; then
+        publish_performance_state
+        LAST_GPU_PROFILE=
+        apply_gpu_limits_for_pkg "$(active_scene_pkg)"
+        set_status "daemon=running" "last=set_performance_profile_applied" \
+            "package=$profile_pkg" "mode=$profile_mode" "thermal=staged"
         return 0
     fi
     publish_performance_state
@@ -1484,6 +1464,7 @@ handle_request() {
                 "$mega_max" "$mega_min" \
                 "$gpu_max" "$gpu_min"
             ;;
+        set_performance_profile_staged) set_performance_profile_staged "$pkg" "$mode" "$rate" ;;
         remove_performance_profile) remove_performance_profile "$pkg" "$mode" ;;
         apply_performance) apply_performance ;;
         apply_zuipp) apply_zuipp ;;
@@ -1552,43 +1533,48 @@ process_atomic_settings_request() {
     echo "$request" > "$LAST_REQUEST_FILE"
     chmod 0664 "$LAST_REQUEST_FILE" 2>/dev/null
 
-    field_count="$(printf '%s\n' "$request" | awk -F'|' '{print NF}')"
-    if [ "$field_count" -ne 9 ] && [ "$field_count" -ne 15 ]; then
-        log_line "invalid atomic request field count: $field_count"
+    old_ifs="$IFS"
+    IFS='|'
+    read -r id cmd rate pkg mode field6 field7 field8 field9 field10 \
+        field11 field12 field13 field14 field15 extra <<EOF
+$request
+EOF
+    IFS="$old_ifs"
+    [ -n "$id" ] && [ -n "$cmd" ] || return 1
+    if [ -n "$extra" ]; then
+        log_line "invalid atomic request: too many fields cmd=$cmd"
         return 1
     fi
-    id="$(printf '%s\n' "$request" | cut -d '|' -f 1)"
-    cmd="$(printf '%s\n' "$request" | cut -d '|' -f 2)"
-    [ -n "$id" ] && [ -n "$cmd" ] || return 1
-    if [ "$field_count" -eq 9 ]; then
-        cpu_max="$(printf '%s\n' "$request" | cut -d '|' -f 6)"
-        cpu_min="$(printf '%s\n' "$request" | cut -d '|' -f 7)"
+
+    if [ "$cmd" = "set_performance_profile_staged" ]; then
+        stage_payload="$rate"
+        [ -n "$stage_payload" ] || stage_payload="$field6"
         handle_request "settings:$id" "$cmd" \
-            "$(printf '%s\n' "$request" | cut -d '|' -f 3)" \
-            "$(printf '%s\n' "$request" | cut -d '|' -f 4)" \
-            "$(printf '%s\n' "$request" | cut -d '|' -f 5)" \
+            "$stage_payload" "$pkg" "$mode" \
+            "" "" "" "" "" "" "" "" "" ""
+        return 0
+    fi
+
+    if [ "$cmd" = "set_performance_profile" ] &&
+        [ -z "$field10$field11$field12$field13$field14$field15" ]; then
+        cpu_max="$field6"
+        cpu_min="$field7"
+        handle_request "settings:$id" "$cmd" \
+            "$rate" "$pkg" "$mode" \
             "$cpu_max" "$cpu_min" \
             "$cpu_max" "$cpu_min" \
             "$cpu_max" "$cpu_min" \
             "$cpu_max" "$cpu_min" \
-            "$(printf '%s\n' "$request" | cut -d '|' -f 8)" \
-            "$(printf '%s\n' "$request" | cut -d '|' -f 9)"
+            "$field8" "$field9"
         return 0
     fi
     handle_request "settings:$id" "$cmd" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 3)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 4)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 5)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 6)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 7)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 8)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 9)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 10)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 11)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 12)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 13)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 14)" \
-        "$(printf '%s\n' "$request" | cut -d '|' -f 15)"
+        "$rate" "$pkg" "$mode" \
+        "$field6" "$field7" \
+        "$field8" "$field9" \
+        "$field10" "$field11" \
+        "$field12" "$field13" \
+        "$field14" "$field15"
 }
 
 boot_restore() {
@@ -1635,7 +1621,7 @@ main_loop() {
             fi
         fi
         HEALTH_TICKS=$((HEALTH_TICKS + 1))
-        if [ "$HEALTH_TICKS" -ge 40 ]; then
+        if [ "$HEALTH_TICKS" -ge 20 ]; then
             publish_asoul_health
             publish_xml_state
             HEALTH_TICKS=0

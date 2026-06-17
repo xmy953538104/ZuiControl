@@ -58,6 +58,11 @@ class MainActivity : Activity() {
     private lateinit var megaMinInput: EditText
     private lateinit var gpuMaxInput: EditText
     private lateinit var gpuMinInput: EditText
+    private lateinit var thermalCurveSpinner: Spinner
+    private lateinit var warmTempInput: EditText
+    private lateinit var hotTempInput: EditText
+    private lateinit var protectTempInput: EditText
+    private lateinit var thermalPreview: TextView
     private lateinit var performanceSummary: TextView
     private lateinit var systemStatus: TextView
     private lateinit var asoulStatus: TextView
@@ -67,6 +72,7 @@ class MainActivity : Activity() {
     private var commandInFlight = false
     private var lastCommandAt = 0L
     private var pendingExportText = ""
+    private var loadingPerformanceForm = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -451,7 +457,12 @@ class MainActivity : Activity() {
                         position: Int,
                         id: Long,
                     ) {
-                        loadSelectedProfile()
+                        if (::performanceSummary.isInitialized) {
+                            updatePerformanceForm()
+                            renderPerformanceProfiles()
+                        } else {
+                            loadSelectedProfile()
+                        }
                     }
                 }
             }
@@ -459,13 +470,62 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48),
             ))
-            addView(compactNote("模式对应 game_policy.xml 的三段 LimitConfig；生成时只替换当前模式的常用温区，最后一个高温保护段保留官方策略。"),
+            addView(compactNote("模式对应 game_policy.xml 的三段 LimitConfig；保存时会生成多温度段配置，按温度逐段引用 CPU/GPU level。"),
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                 ).apply {
                     setMargins(0, dp(8), 0, 0)
                 })
+
+            addView(fieldTitle("温控曲线"), fieldMargins())
+            thermalCurveSpinner = Spinner(this@MainActivity).apply {
+                adapter = SimpleTextAdapter(ThermalCurve.entries.map { it.title })
+                background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+                setPadding(dp(4), 0, dp(4), 0)
+                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                    override fun onItemSelected(
+                        parent: AdapterView<*>?,
+                        view: View?,
+                        position: Int,
+                        id: Long,
+                    ) {
+                        if (!loadingPerformanceForm) {
+                            updateThermalPreview()
+                        }
+                    }
+                }
+            }
+            addView(thermalCurveSpinner, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ))
+            addView(compactNote("默认段使用你填写的频率；中温、高温、保护段按曲线自动降低上限。温度阈值映射到 performanceconfig.xml 的 TempLevel。"),
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    setMargins(0, dp(8), 0, 0)
+                })
+
+            warmTempInput = numericField("42", "42")
+            hotTempInput = numericField("45", "45")
+            protectTempInput = numericField("48", "48")
+            addView(horizontalRow().apply {
+                background = null
+                setPadding(0, 0, 0, 0)
+                addView(fieldBox("中温 ℃", warmTempInput), LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                addView(fieldBox("高温 ℃", hotTempInput), LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dp(10), 0, 0, 0)
+                })
+                addView(fieldBox("保护 ℃", protectTempInput), LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dp(10), 0, 0, 0)
+                })
+            }, fieldMargins())
 
             littleMaxInput = numericField("上限 GHz", formatFreq(LITTLE_FREQS.last()))
             littleMinInput = numericField("下限 GHz", formatFreq(LITTLE_FREQS.first()))
@@ -497,6 +557,10 @@ class MainActivity : Activity() {
                 addView(megaRow, fieldMargins())
                 addView(gpuRow, fieldMargins())
             }
+
+            thermalPreview = infoPanel()
+            addView(thermalPreview, fieldMargins())
+            bindThermalPreviewUpdates()
 
             performanceSummary = infoPanel()
             addView(performanceSummary, fieldMargins())
@@ -593,11 +657,20 @@ class MainActivity : Activity() {
                     COLOR_SUBTLE,
                     Typeface.NORMAL,
                 ))
+                addView(label(
+                    "温控 ${profile.thermalSummary()}",
+                    11f,
+                    COLOR_SUBTLE,
+                    Typeface.NORMAL,
+                ))
                 setOnClickListener {
                     selectedPackage = profile.packageName
-                    modeSpinner.setSelection(profile.mode.ordinal)
-                    updatePerformanceForm()
-                    renderPerformanceProfiles()
+                    if (modeSpinner.selectedItemPosition == profile.mode.ordinal) {
+                        updatePerformanceForm()
+                        renderPerformanceProfiles()
+                    } else {
+                        modeSpinner.setSelection(profile.mode.ordinal)
+                    }
                 }
             }
             performanceListHost.addView(row, LinearLayout.LayoutParams(
@@ -629,61 +702,303 @@ class MainActivity : Activity() {
         }
         val pkg = selectedPackage ?: return
         val profile = performanceProfiles["$pkg|${selectedMode().id}"]
-        if (profile == null) {
-            littleMaxInput.setText(formatFreq(LITTLE_FREQS.last()))
-            littleMinInput.setText(formatFreq(LITTLE_FREQS.first()))
-            bigMaxInput.setText(formatFreq(BIG_FREQS.last()))
-            bigMinInput.setText(formatFreq(BIG_FREQS.first()))
-            titanMaxInput.setText(formatFreq(TITAN_FREQS.last()))
-            titanMinInput.setText(formatFreq(TITAN_FREQS.first()))
-            megaMaxInput.setText(formatFreq(MEGA_FREQS.last()))
-            megaMinInput.setText(formatFreq(MEGA_FREQS.first()))
-            gpuMaxInput.setText(formatFreq(GPU_FREQS.first()))
-            gpuMinInput.setText(formatFreq(GPU_FREQS.last()))
-        } else {
-            littleMaxInput.setText(formatFreq(profile.littleMaxKHz))
-            littleMinInput.setText(formatFreq(profile.littleMinKHz))
-            bigMaxInput.setText(formatFreq(profile.bigMaxKHz))
-            bigMinInput.setText(formatFreq(profile.bigMinKHz))
-            titanMaxInput.setText(formatFreq(profile.titanMaxKHz))
-            titanMinInput.setText(formatFreq(profile.titanMinKHz))
-            megaMaxInput.setText(formatFreq(profile.megaMaxKHz))
-            megaMinInput.setText(formatFreq(profile.megaMinKHz))
-            gpuMaxInput.setText(formatFreq(profile.gpuMaxKHz))
-            gpuMinInput.setText(formatFreq(profile.gpuMinKHz))
+        loadingPerformanceForm = true
+        try {
+            if (profile == null) {
+                littleMaxInput.setText(formatFreq(LITTLE_FREQS.last()))
+                littleMinInput.setText(formatFreq(LITTLE_FREQS.first()))
+                bigMaxInput.setText(formatFreq(BIG_FREQS.last()))
+                bigMinInput.setText(formatFreq(BIG_FREQS.first()))
+                titanMaxInput.setText(formatFreq(TITAN_FREQS.last()))
+                titanMinInput.setText(formatFreq(TITAN_FREQS.first()))
+                megaMaxInput.setText(formatFreq(MEGA_FREQS.last()))
+                megaMinInput.setText(formatFreq(MEGA_FREQS.first()))
+                gpuMaxInput.setText(formatFreq(GPU_FREQS.first()))
+                gpuMinInput.setText(formatFreq(GPU_FREQS.last()))
+                setDefaultThermalForm()
+            } else {
+                littleMaxInput.setText(formatFreq(profile.littleMaxKHz))
+                littleMinInput.setText(formatFreq(profile.littleMinKHz))
+                bigMaxInput.setText(formatFreq(profile.bigMaxKHz))
+                bigMinInput.setText(formatFreq(profile.bigMinKHz))
+                titanMaxInput.setText(formatFreq(profile.titanMaxKHz))
+                titanMinInput.setText(formatFreq(profile.titanMinKHz))
+                megaMaxInput.setText(formatFreq(profile.megaMaxKHz))
+                megaMinInput.setText(formatFreq(profile.megaMinKHz))
+                gpuMaxInput.setText(formatFreq(profile.gpuMaxKHz))
+                gpuMinInput.setText(formatFreq(profile.gpuMinKHz))
+                loadThermalForm(profile)
+            }
+        } finally {
+            loadingPerformanceForm = false
         }
-        renderPerformanceProfiles()
+        updateThermalPreview()
     }
 
     private fun savePerformanceProfile() {
         val pkg = selectedPackage ?: return toast("请先添加应用")
-        val littleMax = parseFreq(littleMaxInput.text.toString(), LITTLE_FREQS, preferHigh = true)
-            ?: return toast("Little 上限不在可用档位")
-        val littleMin = parseFreq(littleMinInput.text.toString(), LITTLE_FREQS, preferHigh = false)
-            ?: return toast("Little 下限不在可用档位")
-        val bigMax = parseFreq(bigMaxInput.text.toString(), BIG_FREQS, preferHigh = true)
-            ?: return toast("Big 上限不在可用档位")
-        val bigMin = parseFreq(bigMinInput.text.toString(), BIG_FREQS, preferHigh = false)
-            ?: return toast("Big 下限不在可用档位")
-        val titanMax = parseFreq(titanMaxInput.text.toString(), TITAN_FREQS, preferHigh = true)
-            ?: return toast("Titan 上限不在可用档位")
-        val titanMin = parseFreq(titanMinInput.text.toString(), TITAN_FREQS, preferHigh = false)
-            ?: return toast("Titan 下限不在可用档位")
-        val megaMax = parseFreq(megaMaxInput.text.toString(), MEGA_FREQS, preferHigh = true)
-            ?: return toast("Mega 上限不在可用档位")
-        val megaMin = parseFreq(megaMinInput.text.toString(), MEGA_FREQS, preferHigh = false)
-            ?: return toast("Mega 下限不在可用档位")
-        val gpuMax = parseFreq(gpuMaxInput.text.toString(), GPU_FREQS, preferHigh = true)
-            ?: return toast("GPU 上限不在可用档位")
-        val gpuMin = parseFreq(gpuMinInput.text.toString(), GPU_FREQS, preferHigh = false)
-            ?: return toast("GPU 下限不在可用档位")
-        if (littleMax < littleMin || bigMax < bigMin || titanMax < titanMin ||
-            megaMax < megaMin || gpuMax < gpuMin) {
-            return toast("上限不能低于下限")
-        }
+        val base = currentFrequencyBundle(showToast = true) ?: return
+        val stages = buildThermalStages(base, showToast = true) ?: return
         val profile = PerformanceProfile(
             pkg,
             selectedMode(),
+            base.littleMax,
+            base.littleMin,
+            base.bigMax,
+            base.bigMin,
+            base.titanMax,
+            base.titanMin,
+            base.megaMax,
+            base.megaMin,
+            base.gpuMax,
+            base.gpuMin,
+            stages,
+        )
+        performanceProfiles[profile.key] = profile
+        renderPerformanceProfiles()
+        sendCommand("正在保存并应用", settleDelayMs = LONG_COMMAND_DELAY_MS) {
+            ZuiControlRequest.send(
+                this,
+                ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE_STAGED,
+                pkg = pkg,
+                mode = profile.mode.id,
+                stagePayload = profile.stagePayload(),
+            )
+        }
+    }
+
+    private fun setDefaultThermalForm() {
+        if (::thermalCurveSpinner.isInitialized) {
+            thermalCurveSpinner.setSelection(ThermalCurve.BALANCED.ordinal)
+        }
+        warmTempInput.setText("42")
+        hotTempInput.setText("45")
+        protectTempInput.setText("48")
+    }
+
+    private fun loadThermalForm(profile: PerformanceProfile) {
+        val thresholds = profile.stages
+            .filter { it.thresholdLevel != TEMP_DEFAULT_LEVEL }
+            .take(3)
+        if (thresholds.size == 3) {
+            warmTempInput.setText(thresholds[0].temperatureCelsius().toString())
+            hotTempInput.setText(thresholds[1].temperatureCelsius().toString())
+            protectTempInput.setText(thresholds[2].temperatureCelsius().toString())
+        } else {
+            warmTempInput.setText("42")
+            hotTempInput.setText("45")
+            protectTempInput.setText("48")
+        }
+        if (::thermalCurveSpinner.isInitialized) {
+            thermalCurveSpinner.setSelection(inferThermalCurve(profile).ordinal)
+        }
+    }
+
+    private fun bindThermalPreviewUpdates() {
+        val watcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                if (!loadingPerformanceForm) {
+                    updateThermalPreview()
+                }
+            }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+        }
+        listOf(
+            warmTempInput,
+            hotTempInput,
+            protectTempInput,
+            littleMaxInput,
+            littleMinInput,
+            bigMaxInput,
+            bigMinInput,
+            titanMaxInput,
+            titanMinInput,
+            megaMaxInput,
+            megaMinInput,
+            gpuMaxInput,
+            gpuMinInput,
+        ).forEach { it.addTextChangedListener(watcher) }
+    }
+
+    private fun updateThermalPreview() {
+        if (!::thermalPreview.isInitialized) {
+            return
+        }
+        val base = currentFrequencyBundle(showToast = false)
+        if (base == null) {
+            thermalPreview.text = "温控预览等待完整频率输入"
+            return
+        }
+        val stages = buildThermalStages(base, showToast = false)
+        if (stages == null) {
+            thermalPreview.text = "温控预览等待有效温度，范围 35-50℃，且中温 < 高温 < 保护"
+            return
+        }
+        thermalPreview.text = stages.joinToString(
+            separator = "\n",
+            prefix = "温控预览 · ${selectedThermalCurve().title}\n",
+        ) { stage ->
+            "${stage.title()}: " +
+                "L ${formatFreq(stage.littleMinKHz)}-${formatFreq(stage.littleMaxKHz)}  " +
+                "B ${formatFreq(stage.bigMinKHz)}-${formatFreq(stage.bigMaxKHz)}  " +
+                "T ${formatFreq(stage.titanMinKHz)}-${formatFreq(stage.titanMaxKHz)}  " +
+                "M ${formatFreq(stage.megaMinKHz)}-${formatFreq(stage.megaMaxKHz)}  " +
+                "GPU ${formatFreq(stage.gpuMinKHz)}-${formatFreq(stage.gpuMaxKHz)}"
+        }
+    }
+
+    private fun selectedThermalCurve(): ThermalCurve {
+        val position = if (::thermalCurveSpinner.isInitialized) {
+            thermalCurveSpinner.selectedItemPosition
+        } else {
+            0
+        }
+        return ThermalCurve.entries.getOrElse(position) { ThermalCurve.BALANCED }
+    }
+
+    private fun inferThermalCurve(profile: PerformanceProfile): ThermalCurve {
+        val defaultStage = profile.stages.firstOrNull { it.thresholdLevel == TEMP_DEFAULT_LEVEL }
+            ?: return ThermalCurve.BALANCED
+        val thermalStages = profile.stages.filter { it.thresholdLevel != TEMP_DEFAULT_LEVEL }.take(3)
+        if (thermalStages.size != 3) {
+            return ThermalCurve.BALANCED
+        }
+        val base = FrequencyBundle(
+            defaultStage.littleMaxKHz,
+            defaultStage.littleMinKHz,
+            defaultStage.bigMaxKHz,
+            defaultStage.bigMinKHz,
+            defaultStage.titanMaxKHz,
+            defaultStage.titanMinKHz,
+            defaultStage.megaMaxKHz,
+            defaultStage.megaMinKHz,
+            defaultStage.gpuMaxKHz,
+            defaultStage.gpuMinKHz,
+        )
+        val thresholds = ThermalThresholds(
+            thermalStages[0].thresholdLevel,
+            thermalStages[1].thresholdLevel,
+            thermalStages[2].thresholdLevel,
+        )
+        return ThermalCurve.entries.firstOrNull { curve ->
+            buildThermalStagesFor(base, thresholds, curve) == listOf(defaultStage) + thermalStages
+        } ?: ThermalCurve.BALANCED
+    }
+
+    private fun buildThermalStages(
+        base: FrequencyBundle,
+        showToast: Boolean,
+    ): List<PerformanceStage>? {
+        val thresholds = parseThermalThresholds(showToast) ?: return null
+        return buildThermalStagesFor(base, thresholds, selectedThermalCurve())
+    }
+
+    private fun buildThermalStagesFor(
+        base: FrequencyBundle,
+        thresholds: ThermalThresholds,
+        curve: ThermalCurve,
+    ): List<PerformanceStage> {
+        return listOf(
+            stageAt(TEMP_DEFAULT_LEVEL, 100, base),
+            stageAt(thresholds.warmLevel, curve.warmPercent, base),
+            stageAt(thresholds.hotLevel, curve.hotPercent, base),
+            stageAt(thresholds.protectLevel, curve.protectPercent, base),
+        )
+    }
+
+    private fun stageAt(
+        thresholdLevel: Int,
+        percent: Int,
+        base: FrequencyBundle,
+    ): PerformanceStage {
+        val littleMax = scaledMax(base.littleMax, LITTLE_FREQS, percent)
+        val bigMax = scaledMax(base.bigMax, BIG_FREQS, percent)
+        val titanMax = scaledMax(base.titanMax, TITAN_FREQS, percent)
+        val megaMax = scaledMax(base.megaMax, MEGA_FREQS, percent)
+        val gpuMax = scaledMax(base.gpuMax, GPU_FREQS, percent)
+        return PerformanceStage(
+            thresholdLevel,
+            littleMax,
+            minOf(base.littleMin, littleMax),
+            bigMax,
+            minOf(base.bigMin, bigMax),
+            titanMax,
+            minOf(base.titanMin, titanMax),
+            megaMax,
+            minOf(base.megaMin, megaMax),
+            gpuMax,
+            minOf(base.gpuMin, gpuMax),
+        )
+    }
+
+    private fun scaledMax(maxKHz: Int, available: IntArray, percent: Int): Int {
+        val requested = (maxKHz.toLong() * percent / 100L).toInt()
+        var selected = available.first()
+        for (value in available) {
+            if (value > requested) {
+                break
+            }
+            selected = value
+        }
+        return selected
+    }
+
+    private fun parseThermalThresholds(showToast: Boolean): ThermalThresholds? {
+        val warm = parseTempLevel(warmTempInput.text.toString(), "中温", showToast) ?: return null
+        val hot = parseTempLevel(hotTempInput.text.toString(), "高温", showToast) ?: return null
+        val protect = parseTempLevel(protectTempInput.text.toString(), "保护", showToast) ?: return null
+        if (warm >= hot || hot >= protect) {
+            if (showToast) {
+                toast("温度必须递增：中温 < 高温 < 保护")
+            }
+            return null
+        }
+        return ThermalThresholds(warm, hot, protect)
+    }
+
+    private fun parseTempLevel(value: String, label: String, showToast: Boolean): Int? {
+        val temp = value.trim().removeSuffix("℃").removeSuffix("C")
+            .removeSuffix("c").trim().toDoubleOrNull()
+        val celsius = temp?.let { Math.round(it).toInt() }
+        if (celsius == null || celsius !in 35..50) {
+            if (showToast) {
+                toast("$label 温度范围为 35-50℃")
+            }
+            return null
+        }
+        return celsius - TEMP_LEVEL_OFFSET
+    }
+
+    private fun currentFrequencyBundle(showToast: Boolean): FrequencyBundle? {
+        val littleMax = parseFrequencyField(littleMaxInput, LITTLE_FREQS, true, "Little 上限", showToast)
+            ?: return null
+        val littleMin = parseFrequencyField(littleMinInput, LITTLE_FREQS, false, "Little 下限", showToast)
+            ?: return null
+        val bigMax = parseFrequencyField(bigMaxInput, BIG_FREQS, true, "Big 上限", showToast)
+            ?: return null
+        val bigMin = parseFrequencyField(bigMinInput, BIG_FREQS, false, "Big 下限", showToast)
+            ?: return null
+        val titanMax = parseFrequencyField(titanMaxInput, TITAN_FREQS, true, "Titan 上限", showToast)
+            ?: return null
+        val titanMin = parseFrequencyField(titanMinInput, TITAN_FREQS, false, "Titan 下限", showToast)
+            ?: return null
+        val megaMax = parseFrequencyField(megaMaxInput, MEGA_FREQS, true, "Mega 上限", showToast)
+            ?: return null
+        val megaMin = parseFrequencyField(megaMinInput, MEGA_FREQS, false, "Mega 下限", showToast)
+            ?: return null
+        val gpuMax = parseFrequencyField(gpuMaxInput, GPU_FREQS, true, "GPU 上限", showToast)
+            ?: return null
+        val gpuMin = parseFrequencyField(gpuMinInput, GPU_FREQS, false, "GPU 下限", showToast)
+            ?: return null
+        if (littleMax < littleMin || bigMax < bigMin || titanMax < titanMin ||
+            megaMax < megaMin || gpuMax < gpuMin) {
+            if (showToast) {
+                toast("上限不能低于下限")
+            }
+            return null
+        }
+        return FrequencyBundle(
             littleMax,
             littleMin,
             bigMax,
@@ -695,26 +1010,20 @@ class MainActivity : Activity() {
             gpuMax,
             gpuMin,
         )
-        performanceProfiles[profile.key] = profile
-        renderPerformanceProfiles()
-        sendCommand("正在保存并应用", settleDelayMs = LONG_COMMAND_DELAY_MS) {
-            ZuiControlRequest.send(
-                this,
-                ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE,
-                pkg = pkg,
-                mode = profile.mode.id,
-                littleMax = littleMax,
-                littleMin = littleMin,
-                bigMax = bigMax,
-                bigMin = bigMin,
-                titanMax = titanMax,
-                titanMin = titanMin,
-                megaMax = megaMax,
-                megaMin = megaMin,
-                gpuMax = gpuMax,
-                gpuMin = gpuMin,
-            )
+    }
+
+    private fun parseFrequencyField(
+        field: EditText,
+        available: IntArray,
+        preferHigh: Boolean,
+        label: String,
+        showToast: Boolean,
+    ): Int? {
+        val parsed = parseFreq(field.text.toString(), available, preferHigh)
+        if (parsed == null && showToast) {
+            toast("$label 不在可用档位")
         }
+        return parsed
     }
 
     private fun removePerformanceProfile() {
@@ -1052,6 +1361,7 @@ class MainActivity : Activity() {
     private fun String.cleanSetting(): String = removeSuffix(".0")
 
     private fun commandName(value: String): String = when (value) {
+        ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE_STAGED -> "保存温控性能配置"
         ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE -> "保存性能配置"
         ZuiControlContract.CMD_REMOVE_PERFORMANCE_PROFILE -> "删除性能配置"
         ZuiControlContract.CMD_APPLY_PERFORMANCE -> "应用性能调度"
@@ -1339,6 +1649,37 @@ class MainActivity : Activity() {
     }
 
     private fun Int.toDrawable() = android.graphics.drawable.ColorDrawable(this)
+
+    private data class FrequencyBundle(
+        val littleMax: Int,
+        val littleMin: Int,
+        val bigMax: Int,
+        val bigMin: Int,
+        val titanMax: Int,
+        val titanMin: Int,
+        val megaMax: Int,
+        val megaMin: Int,
+        val gpuMax: Int,
+        val gpuMin: Int,
+    )
+
+    private data class ThermalThresholds(
+        val warmLevel: Int,
+        val hotLevel: Int,
+        val protectLevel: Int,
+    )
+
+    private enum class ThermalCurve(
+        val title: String,
+        val warmPercent: Int,
+        val hotPercent: Int,
+        val protectPercent: Int,
+    ) {
+        BALANCED("均衡温控", 92, 82, 68),
+        COOL("保守降温", 86, 74, 58),
+        PERFORMANCE("激进保持", 98, 90, 78),
+        FLAT("全温同频", 100, 100, 100),
+    }
 
     private enum class Page(val title: String) {
         REFRESH("刷新率"),

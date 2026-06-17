@@ -109,18 +109,6 @@ public final class XmlProfileGenerator {
 
         List<String> summaries = new ArrayList<>();
         for (Profile profile : profiles) {
-            LevelValue little = cpuLevel(LITTLE, profile.littleMax, profile.littleMin);
-            LevelValue big = cpuLevel(BIG, profile.bigMax, profile.bigMin);
-            LevelValue titan = cpuLevel(TITAN, profile.titanMax, profile.titanMin);
-            LevelValue mega = cpuLevel(MEGA, profile.megaMax, profile.megaMin);
-            LevelValue gpu = gpuLevel(profile.gpuMax, profile.gpuMin);
-
-            upsertFreq(perf, types.get("LittleCore"), little);
-            upsertFreq(perf, types.get("BigCore"), big);
-            upsertFreq(perf, types.get("TitanCore"), titan);
-            upsertFreq(perf, types.get("MegaCore"), mega);
-            upsertFreq(perf, types.get("GPU"), gpu);
-
             Element app = findApp(game, profile.pkg);
             if (app == null) {
                 app = (Element) defaultApp.cloneNode(true);
@@ -136,28 +124,56 @@ public final class XmlProfileGenerator {
             if (modes.length != 3) {
                 throw new IllegalStateException("LimitConfig mode count invalid for " + profile.pkg);
             }
-            String ids = little.level + "_" + big.level + "_" + titan.level + "_"
-                    + mega.level + "_" + gpu.level;
-            modes[profile.modeIndex] = replaceActiveLevels(modes[profile.modeIndex], ids);
+
+            List<String> stagedSegments = new ArrayList<>();
+            List<String> stageSummaries = new ArrayList<>();
+            String firstIds = null;
+            for (Stage stage : profile.stages) {
+                LevelValue little = cpuLevel(LITTLE, stage.littleMax, stage.littleMin);
+                LevelValue big = cpuLevel(BIG, stage.bigMax, stage.bigMin);
+                LevelValue titan = cpuLevel(TITAN, stage.titanMax, stage.titanMin);
+                LevelValue mega = cpuLevel(MEGA, stage.megaMax, stage.megaMin);
+                LevelValue gpu = gpuLevel(stage.gpuMax, stage.gpuMin);
+
+                upsertFreq(perf, types.get("LittleCore"), little);
+                upsertFreq(perf, types.get("BigCore"), big);
+                upsertFreq(perf, types.get("TitanCore"), titan);
+                upsertFreq(perf, types.get("MegaCore"), mega);
+                upsertFreq(perf, types.get("GPU"), gpu);
+
+                String ids = little.level + "_" + big.level + "_" + titan.level + "_"
+                        + mega.level + "_" + gpu.level;
+                if (firstIds == null) {
+                    firstIds = ids;
+                }
+                stagedSegments.add(stage.thresholdLevel + ":" + ids);
+                stageSummaries.add(String.format(
+                        Locale.US,
+                        "%s L %.2f-%.2f B %.2f-%.2f T %.2f-%.2f M %.2f-%.2f GPU %.2f-%.2fGHz ids=%s",
+                        stage.label(),
+                        little.min / 1000000.0,
+                        little.max / 1000000.0,
+                        big.min / 1000000.0,
+                        big.max / 1000000.0,
+                        titan.min / 1000000.0,
+                        titan.max / 1000000.0,
+                        mega.min / 1000000.0,
+                        mega.max / 1000000.0,
+                        gpu.min / 1000000.0,
+                        gpu.max / 1000000.0,
+                        ids
+                ));
+            }
+            if (profile.staged) {
+                modes[profile.modeIndex] = String.join("|", stagedSegments);
+            } else {
+                modes[profile.modeIndex] = replaceActiveLevels(modes[profile.modeIndex], firstIds);
+            }
             limit.setTextContent(String.join(" ", modes));
 
-            summaries.add(String.format(
-                    Locale.US,
-                    "%s/%s L %.2f-%.2f B %.2f-%.2f T %.2f-%.2f M %.2f-%.2f GPU %.2f-%.2fGHz ids=%s",
-                    profile.pkg,
-                    profile.mode,
-                    little.min / 1000000.0,
-                    little.max / 1000000.0,
-                    big.min / 1000000.0,
-                    big.max / 1000000.0,
-                    titan.min / 1000000.0,
-                    titan.max / 1000000.0,
-                    mega.min / 1000000.0,
-                    mega.max / 1000000.0,
-                    gpu.min / 1000000.0,
-                    gpu.max / 1000000.0,
-                    ids
-            ));
+            summaries.add(profile.pkg + "/" + profile.mode + " " +
+                    (profile.staged ? "thermal_stages=" : "legacy=") +
+                    String.join("; ", stageSummaries));
         }
 
         writeDocument(game, outputGame);
@@ -191,7 +207,7 @@ public final class XmlProfileGenerator {
                 for (int i = 0; i < parts.length; i++) {
                     parts[i] = parts[i].trim();
                 }
-                if (parts.length != 6 && parts.length != 12) {
+                if (parts.length != 4 && parts.length != 6 && parts.length != 12) {
                     skipped += skipProfile(lineNumber, "invalid_field_count");
                     continue;
                 }
@@ -204,22 +220,38 @@ public final class XmlProfileGenerator {
                     skipped += skipProfile(lineNumber, "invalid_mode");
                     continue;
                 }
-                int[] values = parseProfileValues(parts);
-                if (values == null) {
-                    skipped += skipProfile(lineNumber, "invalid_number");
-                    continue;
-                }
                 Profile profile;
-                if (parts.length == 6) {
-                    profile = new Profile(parts[0], parts[1], modeIndex,
-                            values[0], values[1], values[0], values[1],
-                            values[0], values[1], values[0], values[1],
-                            values[2], values[3]);
+                if (parts.length == 4) {
+                    if (!"v2".equals(parts[2])) {
+                        skipped += skipProfile(lineNumber, "invalid_profile_version");
+                        continue;
+                    }
+                    List<Stage> stages = parseStages(parts[3]);
+                    if (stages.isEmpty()) {
+                        skipped += skipProfile(lineNumber, "invalid_stage_payload");
+                        continue;
+                    }
+                    profile = new Profile(parts[0], parts[1], modeIndex, stages, true);
                 } else {
+                    int[] values = parseProfileValues(parts);
+                    if (values == null) {
+                        skipped += skipProfile(lineNumber, "invalid_number");
+                        continue;
+                    }
+                    Stage stage;
+                    if (parts.length == 6) {
+                        stage = new Stage(-1000,
+                                values[0], values[1], values[0], values[1],
+                                values[0], values[1], values[0], values[1],
+                                values[2], values[3]);
+                    } else {
+                        stage = new Stage(-1000,
+                                values[0], values[1], values[2], values[3],
+                                values[4], values[5], values[6], values[7],
+                                values[8], values[9]);
+                    }
                     profile = new Profile(parts[0], parts[1], modeIndex,
-                            values[0], values[1], values[2], values[3],
-                            values[4], values[5], values[6], values[7],
-                            values[8], values[9]);
+                            Arrays.asList(stage), false);
                 }
                 if (!profile.valid()) {
                     skipped += skipProfile(lineNumber, "invalid_range");
@@ -257,6 +289,42 @@ public final class XmlProfileGenerator {
             }
         }
         return values;
+    }
+
+    private static List<Stage> parseStages(String payload) {
+        List<Stage> result = new ArrayList<>();
+        String[] segments = payload.split(";", -1);
+        for (String segment : segments) {
+            segment = segment.trim();
+            if (segment.isEmpty()) {
+                continue;
+            }
+            String[] parts = segment.split(",", -1);
+            if (parts.length != 11) {
+                return new ArrayList<>();
+            }
+            int[] values = new int[11];
+            for (int i = 0; i < parts.length; i++) {
+                try {
+                    values[i] = Integer.parseInt(parts[i].trim());
+                } catch (NumberFormatException ignored) {
+                    return new ArrayList<>();
+                }
+            }
+            result.add(new Stage(
+                    values[0],
+                    values[1],
+                    values[2],
+                    values[3],
+                    values[4],
+                    values[5],
+                    values[6],
+                    values[7],
+                    values[8],
+                    values[9],
+                    values[10]));
+        }
+        return result;
     }
 
     private static int skipProfile(int lineNumber, String reason) {
@@ -509,6 +577,49 @@ public final class XmlProfileGenerator {
         final String pkg;
         final String mode;
         final int modeIndex;
+        final List<Stage> stages;
+        final boolean staged;
+
+        Profile(
+                String pkg,
+                String mode,
+                int modeIndex,
+                List<Stage> stages,
+                boolean staged
+        ) {
+            this.pkg = pkg;
+            this.mode = mode;
+            this.modeIndex = modeIndex;
+            this.stages = stages;
+            this.staged = staged;
+        }
+
+        boolean valid() {
+            if (stages.isEmpty()) {
+                return false;
+            }
+            if (stages.get(0).thresholdLevel != -1000) {
+                return false;
+            }
+            int previousThermalLevel = 0;
+            for (int i = 0; i < stages.size(); i++) {
+                Stage stage = stages.get(i);
+                if (!stage.valid()) {
+                    return false;
+                }
+                if (i > 0) {
+                    if (stage.thresholdLevel <= previousThermalLevel) {
+                        return false;
+                    }
+                    previousThermalLevel = stage.thresholdLevel;
+                }
+            }
+            return true;
+        }
+    }
+
+    private static final class Stage {
+        final int thresholdLevel;
         final int littleMax;
         final int littleMin;
         final int bigMax;
@@ -520,10 +631,8 @@ public final class XmlProfileGenerator {
         final int gpuMax;
         final int gpuMin;
 
-        Profile(
-                String pkg,
-                String mode,
-                int modeIndex,
+        Stage(
+                int thresholdLevel,
                 int littleMax,
                 int littleMin,
                 int bigMax,
@@ -535,9 +644,7 @@ public final class XmlProfileGenerator {
                 int gpuMax,
                 int gpuMin
         ) {
-            this.pkg = pkg;
-            this.mode = mode;
-            this.modeIndex = modeIndex;
+            this.thresholdLevel = thresholdLevel;
             this.littleMax = littleMax;
             this.littleMin = littleMin;
             this.bigMax = bigMax;
@@ -551,11 +658,19 @@ public final class XmlProfileGenerator {
         }
 
         boolean valid() {
-            return littleMin > 0 && littleMax >= littleMin
+            return (thresholdLevel == -1000 || thresholdLevel >= 1 && thresholdLevel <= 16)
+                    && littleMin > 0 && littleMax >= littleMin
                     && bigMin > 0 && bigMax >= bigMin
                     && titanMin > 0 && titanMax >= titanMin
                     && megaMin > 0 && megaMax >= megaMin
                     && gpuMin > 0 && gpuMax >= gpuMin;
+        }
+
+        String label() {
+            if (thresholdLevel == -1000) {
+                return "default";
+            }
+            return (thresholdLevel + 34) + "C";
         }
     }
 }

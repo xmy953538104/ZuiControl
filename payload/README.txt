@@ -22,7 +22,7 @@ Runtime data:
 - /data/vendor/zui_control/zuipp/staging/
 - /data/vendor/zui_control/zuipp/last_good/
 - /data/vendor/zui_control/zuipp/state/
-- /data/vendor/zui_control/log/zuicontrold.log
+- /data/vendor/zui_control/log/controld.log
 - /data/vendor/zui_control/log/asoulopt.log
 
 Behavior:

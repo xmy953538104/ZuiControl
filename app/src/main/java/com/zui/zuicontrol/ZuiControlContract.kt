@@ -8,6 +8,7 @@ object ZuiControlContract {
     const val CMD_RESTART_ASOUL = "restart_asoul"
     const val CMD_STATUS = "status"
     const val CMD_SET_PERFORMANCE_PROFILE = "set_performance_profile"
+    const val CMD_SET_PERFORMANCE_PROFILE_STAGED = "set_performance_profile_staged"
     const val CMD_REMOVE_PERFORMANCE_PROFILE = "remove_performance_profile"
     const val CMD_APPLY_PERFORMANCE = "apply_performance"
     const val CMD_EXPORT_LOGS = "export_logs"
