@@ -58,10 +58,9 @@ class MainActivity : Activity() {
     private lateinit var megaMinInput: EditText
     private lateinit var gpuMaxInput: EditText
     private lateinit var gpuMinInput: EditText
-    private lateinit var thermalCurveSpinner: Spinner
-    private lateinit var warmTempInput: EditText
-    private lateinit var hotTempInput: EditText
-    private lateinit var protectTempInput: EditText
+    private lateinit var thermalZoneSpinner: Spinner
+    private lateinit var warmStartInput: EditText
+    private lateinit var hotStartInput: EditText
     private lateinit var thermalPreview: TextView
     private lateinit var performanceSummary: TextView
     private lateinit var systemStatus: TextView
@@ -73,6 +72,8 @@ class MainActivity : Activity() {
     private var lastCommandAt = 0L
     private var pendingExportText = ""
     private var loadingPerformanceForm = false
+    private var currentThermalZone = ThermalZone.NORMAL
+    private val thermalDrafts = mutableMapOf<ThermalZone, FrequencyBundle>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -470,7 +471,7 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48),
             ))
-            addView(compactNote("模式对应 game_policy.xml 的三段 LimitConfig；保存时会生成多温度段配置，按温度逐段引用 CPU/GPU level。"),
+            addView(compactNote("每个模式保存三段温区配置；切换温区后填写该温区的 CPU/GPU 上下限。"),
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -478,9 +479,9 @@ class MainActivity : Activity() {
                     setMargins(0, dp(8), 0, 0)
                 })
 
-            addView(fieldTitle("温控曲线"), fieldMargins())
-            thermalCurveSpinner = Spinner(this@MainActivity).apply {
-                adapter = SimpleTextAdapter(ThermalCurve.entries.map { it.title })
+            addView(fieldTitle("温区"), fieldMargins())
+            thermalZoneSpinner = Spinner(this@MainActivity).apply {
+                adapter = SimpleTextAdapter(ThermalZone.entries.map { it.title })
                 background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
                 setPadding(dp(4), 0, dp(4), 0)
                 onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -491,17 +492,17 @@ class MainActivity : Activity() {
                         position: Int,
                         id: Long,
                     ) {
-                        if (!loadingPerformanceForm) {
-                            updateThermalPreview()
+                        if (!loadingPerformanceForm && ::littleMaxInput.isInitialized) {
+                            switchThermalZone(position)
                         }
                     }
                 }
             }
-            addView(thermalCurveSpinner, LinearLayout.LayoutParams(
+            addView(thermalZoneSpinner, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48),
             ))
-            addView(compactNote("默认段使用你填写的频率；中温、高温、保护段按曲线自动降低上限。温度阈值映射到 performanceconfig.xml 的 TempLevel。"),
+            addView(compactNote("温区由两个起点决定：低温小于中温起点，中温介于两个起点，高温大于等于高温起点。"),
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -509,19 +510,14 @@ class MainActivity : Activity() {
                     setMargins(0, dp(8), 0, 0)
                 })
 
-            warmTempInput = numericField("42", "42")
-            hotTempInput = numericField("45", "45")
-            protectTempInput = numericField("48", "48")
+            warmStartInput = numericField("42", "42")
+            hotStartInput = numericField("48", "48")
             addView(horizontalRow().apply {
                 background = null
                 setPadding(0, 0, 0, 0)
-                addView(fieldBox("中温 ℃", warmTempInput), LinearLayout.LayoutParams(
+                addView(fieldBox("中温起点 ℃", warmStartInput), LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                addView(fieldBox("高温 ℃", hotTempInput), LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    setMargins(dp(10), 0, 0, 0)
-                })
-                addView(fieldBox("保护 ℃", protectTempInput), LinearLayout.LayoutParams(
+                addView(fieldBox("高温起点 ℃", hotStartInput), LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                     setMargins(dp(10), 0, 0, 0)
                 })
@@ -690,10 +686,27 @@ class MainActivity : Activity() {
         selectedAppTitle.text = pkg?.let { labelForPackage(it) } ?: "选择或添加应用"
         selectedPackageView.text = pkg?.let { "$it · ${selectedMode().title}" } ?: "未选择应用"
         loadSelectedProfile()
-        val xmlState = setting(ZuiControlContract.KEY_XML_STATE).ifBlank { "active XML 等待挂载" }
-        val summary = setting(ZuiControlContract.KEY_PERFORMANCE_SUMMARY)
-            .ifBlank { "staging XML 尚未生成；保存配置后会生成 XML 并提升为 active。" }
-        performanceSummary.text = "$xmlState\n$summary"
+        performanceSummary.text = performanceXmlStatusText()
+    }
+
+    private fun performanceXmlStatusText(): String {
+        val xmlState = setting(ZuiControlContract.KEY_XML_STATE)
+        val last = setting(ZuiControlContract.KEY_STATUS_LAST)
+        val daemon = setting(ZuiControlContract.KEY_DAEMON_STATUS_TEXT)
+        val errorLine = listOf(xmlState, last, daemon)
+            .flatMap { it.lineSequence() }
+            .firstOrNull {
+                it.contains("failed", ignoreCase = true) ||
+                    it.contains("error", ignoreCase = true)
+            }
+        if (errorLine != null) {
+            return "XML 异常：$errorLine"
+        }
+        return if (xmlState.startsWith("state=mounted")) {
+            "XML 已启用"
+        } else {
+            "XML 未启用"
+        }
     }
 
     private fun loadSelectedProfile() {
@@ -705,28 +718,8 @@ class MainActivity : Activity() {
         loadingPerformanceForm = true
         try {
             if (profile == null) {
-                littleMaxInput.setText(formatFreq(LITTLE_FREQS.last()))
-                littleMinInput.setText(formatFreq(LITTLE_FREQS.first()))
-                bigMaxInput.setText(formatFreq(BIG_FREQS.last()))
-                bigMinInput.setText(formatFreq(BIG_FREQS.first()))
-                titanMaxInput.setText(formatFreq(TITAN_FREQS.last()))
-                titanMinInput.setText(formatFreq(TITAN_FREQS.first()))
-                megaMaxInput.setText(formatFreq(MEGA_FREQS.last()))
-                megaMinInput.setText(formatFreq(MEGA_FREQS.first()))
-                gpuMaxInput.setText(formatFreq(GPU_FREQS.first()))
-                gpuMinInput.setText(formatFreq(GPU_FREQS.last()))
                 setDefaultThermalForm()
             } else {
-                littleMaxInput.setText(formatFreq(profile.littleMaxKHz))
-                littleMinInput.setText(formatFreq(profile.littleMinKHz))
-                bigMaxInput.setText(formatFreq(profile.bigMaxKHz))
-                bigMinInput.setText(formatFreq(profile.bigMinKHz))
-                titanMaxInput.setText(formatFreq(profile.titanMaxKHz))
-                titanMinInput.setText(formatFreq(profile.titanMinKHz))
-                megaMaxInput.setText(formatFreq(profile.megaMaxKHz))
-                megaMinInput.setText(formatFreq(profile.megaMinKHz))
-                gpuMaxInput.setText(formatFreq(profile.gpuMaxKHz))
-                gpuMinInput.setText(formatFreq(profile.gpuMinKHz))
                 loadThermalForm(profile)
             }
         } finally {
@@ -737,21 +730,21 @@ class MainActivity : Activity() {
 
     private fun savePerformanceProfile() {
         val pkg = selectedPackage ?: return toast("请先添加应用")
-        val base = currentFrequencyBundle(showToast = true) ?: return
-        val stages = buildThermalStages(base, showToast = true) ?: return
+        val stages = buildThermalStages(showToast = true) ?: return
+        val base = stages.first()
         val profile = PerformanceProfile(
             pkg,
             selectedMode(),
-            base.littleMax,
-            base.littleMin,
-            base.bigMax,
-            base.bigMin,
-            base.titanMax,
-            base.titanMin,
-            base.megaMax,
-            base.megaMin,
-            base.gpuMax,
-            base.gpuMin,
+            base.littleMaxKHz,
+            base.littleMinKHz,
+            base.bigMaxKHz,
+            base.bigMinKHz,
+            base.titanMaxKHz,
+            base.titanMinKHz,
+            base.megaMaxKHz,
+            base.megaMinKHz,
+            base.gpuMaxKHz,
+            base.gpuMinKHz,
             stages,
         )
         performanceProfiles[profile.key] = profile
@@ -768,30 +761,54 @@ class MainActivity : Activity() {
     }
 
     private fun setDefaultThermalForm() {
-        if (::thermalCurveSpinner.isInitialized) {
-            thermalCurveSpinner.setSelection(ThermalCurve.BALANCED.ordinal)
+        val defaults = defaultFrequencyBundle()
+        thermalDrafts.clear()
+        ThermalZone.entries.forEach { zone ->
+            thermalDrafts[zone] = defaults
         }
-        warmTempInput.setText("42")
-        hotTempInput.setText("45")
-        protectTempInput.setText("48")
+        warmStartInput.setText("42")
+        hotStartInput.setText("48")
+        currentThermalZone = ThermalZone.NORMAL
+        if (::thermalZoneSpinner.isInitialized &&
+            thermalZoneSpinner.selectedItemPosition != currentThermalZone.ordinal) {
+            thermalZoneSpinner.setSelection(currentThermalZone.ordinal)
+        }
+        loadThermalZoneFields(currentThermalZone)
     }
 
     private fun loadThermalForm(profile: PerformanceProfile) {
-        val thresholds = profile.stages
-            .filter { it.thresholdLevel != TEMP_DEFAULT_LEVEL }
-            .take(3)
-        if (thresholds.size == 3) {
-            warmTempInput.setText(thresholds[0].temperatureCelsius().toString())
-            hotTempInput.setText(thresholds[1].temperatureCelsius().toString())
-            protectTempInput.setText(thresholds[2].temperatureCelsius().toString())
-        } else {
-            warmTempInput.setText("42")
-            hotTempInput.setText("45")
-            protectTempInput.setText("48")
+        val defaultStage = profile.stages.firstOrNull { it.thresholdLevel == TEMP_DEFAULT_LEVEL }
+            ?: PerformanceStage(
+                TEMP_DEFAULT_LEVEL,
+                profile.littleMaxKHz,
+                profile.littleMinKHz,
+                profile.bigMaxKHz,
+                profile.bigMinKHz,
+                profile.titanMaxKHz,
+                profile.titanMinKHz,
+                profile.megaMaxKHz,
+                profile.megaMinKHz,
+                profile.gpuMaxKHz,
+                profile.gpuMinKHz,
+            )
+        val thermalStages = profile.stages.filter { it.thresholdLevel != TEMP_DEFAULT_LEVEL }
+        val midStage = thermalStages.firstOrNull()
+        val hotStage = when {
+            thermalStages.size >= 2 -> thermalStages.last()
+            else -> null
         }
-        if (::thermalCurveSpinner.isInitialized) {
-            thermalCurveSpinner.setSelection(inferThermalCurve(profile).ordinal)
+        thermalDrafts.clear()
+        thermalDrafts[ThermalZone.NORMAL] = bundleFromStage(defaultStage)
+        thermalDrafts[ThermalZone.MID] = bundleFromStage(midStage ?: defaultStage)
+        thermalDrafts[ThermalZone.HOT] = bundleFromStage(hotStage ?: midStage ?: defaultStage)
+        warmStartInput.setText((midStage?.temperatureCelsius() ?: 42).toString())
+        hotStartInput.setText((hotStage?.temperatureCelsius() ?: 48).toString())
+        currentThermalZone = ThermalZone.NORMAL
+        if (::thermalZoneSpinner.isInitialized &&
+            thermalZoneSpinner.selectedItemPosition != currentThermalZone.ordinal) {
+            thermalZoneSpinner.setSelection(currentThermalZone.ordinal)
         }
+        loadThermalZoneFields(currentThermalZone)
     }
 
     private fun bindThermalPreviewUpdates() {
@@ -805,9 +822,8 @@ class MainActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
         }
         listOf(
-            warmTempInput,
-            hotTempInput,
-            protectTempInput,
+            warmStartInput,
+            hotStartInput,
             littleMaxInput,
             littleMinInput,
             bigMaxInput,
@@ -825,136 +841,139 @@ class MainActivity : Activity() {
         if (!::thermalPreview.isInitialized) {
             return
         }
-        val base = currentFrequencyBundle(showToast = false)
-        if (base == null) {
-            thermalPreview.text = "温控预览等待完整频率输入"
+        val thresholds = parseThermalThresholds(showToast = false)
+        if (thresholds == null) {
+            thermalPreview.text = "温区等待有效起点：35-50℃，且中温起点 < 高温起点"
             return
         }
-        val stages = buildThermalStages(base, showToast = false)
-        if (stages == null) {
-            thermalPreview.text = "温控预览等待有效温度，范围 35-50℃，且中温 < 高温 < 保护"
+        thermalPreview.text = "当前温区：${currentThermalZone.title}（" +
+            "${zoneRangeText(currentThermalZone, thresholds)}）\n" +
+            ThermalZone.entries.joinToString(" · ") { zone ->
+                "${zone.shortTitle} ${zoneRangeText(zone, thresholds)}"
+            }
+    }
+
+    private fun switchThermalZone(position: Int) {
+        val next = ThermalZone.entries.getOrElse(position) { ThermalZone.NORMAL }
+        if (next == currentThermalZone) {
+            updateThermalPreview()
             return
         }
-        thermalPreview.text = stages.joinToString(
-            separator = "\n",
-            prefix = "温控预览 · ${selectedThermalCurve().title}\n",
-        ) { stage ->
-            "${stage.title()}: " +
-                "L ${formatFreq(stage.littleMinKHz)}-${formatFreq(stage.littleMaxKHz)}  " +
-                "B ${formatFreq(stage.bigMinKHz)}-${formatFreq(stage.bigMaxKHz)}  " +
-                "T ${formatFreq(stage.titanMinKHz)}-${formatFreq(stage.titanMaxKHz)}  " +
-                "M ${formatFreq(stage.megaMinKHz)}-${formatFreq(stage.megaMaxKHz)}  " +
-                "GPU ${formatFreq(stage.gpuMinKHz)}-${formatFreq(stage.gpuMaxKHz)}"
+        saveVisibleThermalDraft(showToast = false)
+        currentThermalZone = next
+        loadingPerformanceForm = true
+        try {
+            loadThermalZoneFields(next)
+        } finally {
+            loadingPerformanceForm = false
         }
+        updateThermalPreview()
     }
 
-    private fun selectedThermalCurve(): ThermalCurve {
-        val position = if (::thermalCurveSpinner.isInitialized) {
-            thermalCurveSpinner.selectedItemPosition
-        } else {
-            0
-        }
-        return ThermalCurve.entries.getOrElse(position) { ThermalCurve.BALANCED }
+    private fun loadThermalZoneFields(zone: ThermalZone) {
+        setFrequencyFields(thermalDrafts[zone] ?: defaultFrequencyBundle())
     }
 
-    private fun inferThermalCurve(profile: PerformanceProfile): ThermalCurve {
-        val defaultStage = profile.stages.firstOrNull { it.thresholdLevel == TEMP_DEFAULT_LEVEL }
-            ?: return ThermalCurve.BALANCED
-        val thermalStages = profile.stages.filter { it.thresholdLevel != TEMP_DEFAULT_LEVEL }.take(3)
-        if (thermalStages.size != 3) {
-            return ThermalCurve.BALANCED
-        }
-        val base = FrequencyBundle(
-            defaultStage.littleMaxKHz,
-            defaultStage.littleMinKHz,
-            defaultStage.bigMaxKHz,
-            defaultStage.bigMinKHz,
-            defaultStage.titanMaxKHz,
-            defaultStage.titanMinKHz,
-            defaultStage.megaMaxKHz,
-            defaultStage.megaMinKHz,
-            defaultStage.gpuMaxKHz,
-            defaultStage.gpuMinKHz,
-        )
-        val thresholds = ThermalThresholds(
-            thermalStages[0].thresholdLevel,
-            thermalStages[1].thresholdLevel,
-            thermalStages[2].thresholdLevel,
-        )
-        return ThermalCurve.entries.firstOrNull { curve ->
-            buildThermalStagesFor(base, thresholds, curve) == listOf(defaultStage) + thermalStages
-        } ?: ThermalCurve.BALANCED
+    private fun setFrequencyFields(bundle: FrequencyBundle) {
+        littleMaxInput.setText(formatFreq(bundle.littleMax))
+        littleMinInput.setText(formatFreq(bundle.littleMin))
+        bigMaxInput.setText(formatFreq(bundle.bigMax))
+        bigMinInput.setText(formatFreq(bundle.bigMin))
+        titanMaxInput.setText(formatFreq(bundle.titanMax))
+        titanMinInput.setText(formatFreq(bundle.titanMin))
+        megaMaxInput.setText(formatFreq(bundle.megaMax))
+        megaMinInput.setText(formatFreq(bundle.megaMin))
+        gpuMaxInput.setText(formatFreq(bundle.gpuMax))
+        gpuMinInput.setText(formatFreq(bundle.gpuMin))
     }
 
-    private fun buildThermalStages(
-        base: FrequencyBundle,
-        showToast: Boolean,
-    ): List<PerformanceStage>? {
+    private fun saveVisibleThermalDraft(showToast: Boolean): Boolean {
+        val bundle = currentFrequencyBundle(showToast) ?: return false
+        thermalDrafts[currentThermalZone] = bundle
+        return true
+    }
+
+    private fun buildThermalStages(showToast: Boolean): List<PerformanceStage>? {
+        if (!saveVisibleThermalDraft(showToast)) {
+            return null
+        }
         val thresholds = parseThermalThresholds(showToast) ?: return null
-        return buildThermalStagesFor(base, thresholds, selectedThermalCurve())
-    }
-
-    private fun buildThermalStagesFor(
-        base: FrequencyBundle,
-        thresholds: ThermalThresholds,
-        curve: ThermalCurve,
-    ): List<PerformanceStage> {
         return listOf(
-            stageAt(TEMP_DEFAULT_LEVEL, 100, base),
-            stageAt(thresholds.warmLevel, curve.warmPercent, base),
-            stageAt(thresholds.hotLevel, curve.hotPercent, base),
-            stageAt(thresholds.protectLevel, curve.protectPercent, base),
+            stageFromBundle(TEMP_DEFAULT_LEVEL, thermalDrafts[ThermalZone.NORMAL] ?: defaultFrequencyBundle()),
+            stageFromBundle(thresholds.warmLevel, thermalDrafts[ThermalZone.MID] ?: defaultFrequencyBundle()),
+            stageFromBundle(thresholds.hotLevel, thermalDrafts[ThermalZone.HOT] ?: defaultFrequencyBundle()),
         )
     }
 
-    private fun stageAt(
+    private fun stageFromBundle(
         thresholdLevel: Int,
-        percent: Int,
-        base: FrequencyBundle,
+        bundle: FrequencyBundle,
     ): PerformanceStage {
-        val littleMax = scaledMax(base.littleMax, LITTLE_FREQS, percent)
-        val bigMax = scaledMax(base.bigMax, BIG_FREQS, percent)
-        val titanMax = scaledMax(base.titanMax, TITAN_FREQS, percent)
-        val megaMax = scaledMax(base.megaMax, MEGA_FREQS, percent)
-        val gpuMax = scaledMax(base.gpuMax, GPU_FREQS, percent)
         return PerformanceStage(
             thresholdLevel,
-            littleMax,
-            minOf(base.littleMin, littleMax),
-            bigMax,
-            minOf(base.bigMin, bigMax),
-            titanMax,
-            minOf(base.titanMin, titanMax),
-            megaMax,
-            minOf(base.megaMin, megaMax),
-            gpuMax,
-            minOf(base.gpuMin, gpuMax),
+            bundle.littleMax,
+            bundle.littleMin,
+            bundle.bigMax,
+            bundle.bigMin,
+            bundle.titanMax,
+            bundle.titanMin,
+            bundle.megaMax,
+            bundle.megaMin,
+            bundle.gpuMax,
+            bundle.gpuMin,
         )
     }
 
-    private fun scaledMax(maxKHz: Int, available: IntArray, percent: Int): Int {
-        val requested = (maxKHz.toLong() * percent / 100L).toInt()
-        var selected = available.first()
-        for (value in available) {
-            if (value > requested) {
-                break
-            }
-            selected = value
+    private fun bundleFromStage(stage: PerformanceStage): FrequencyBundle {
+        return FrequencyBundle(
+            stage.littleMaxKHz,
+            stage.littleMinKHz,
+            stage.bigMaxKHz,
+            stage.bigMinKHz,
+            stage.titanMaxKHz,
+            stage.titanMinKHz,
+            stage.megaMaxKHz,
+            stage.megaMinKHz,
+            stage.gpuMaxKHz,
+            stage.gpuMinKHz,
+        )
+    }
+
+    private fun defaultFrequencyBundle(): FrequencyBundle {
+        return FrequencyBundle(
+            LITTLE_FREQS.last(),
+            LITTLE_FREQS.first(),
+            BIG_FREQS.last(),
+            BIG_FREQS.first(),
+            TITAN_FREQS.last(),
+            TITAN_FREQS.first(),
+            MEGA_FREQS.last(),
+            MEGA_FREQS.first(),
+            GPU_FREQS.first(),
+            GPU_FREQS.last(),
+        )
+    }
+
+    private fun zoneRangeText(zone: ThermalZone, thresholds: ThermalThresholds): String {
+        val warm = thresholds.warmLevel + TEMP_LEVEL_OFFSET
+        val hot = thresholds.hotLevel + TEMP_LEVEL_OFFSET
+        return when (zone) {
+            ThermalZone.NORMAL -> "<${warm}℃"
+            ThermalZone.MID -> "${warm}-${hot - 1}℃"
+            ThermalZone.HOT -> "≥${hot}℃"
         }
-        return selected
     }
 
     private fun parseThermalThresholds(showToast: Boolean): ThermalThresholds? {
-        val warm = parseTempLevel(warmTempInput.text.toString(), "中温", showToast) ?: return null
-        val hot = parseTempLevel(hotTempInput.text.toString(), "高温", showToast) ?: return null
-        val protect = parseTempLevel(protectTempInput.text.toString(), "保护", showToast) ?: return null
-        if (warm >= hot || hot >= protect) {
+        val warm = parseTempLevel(warmStartInput.text.toString(), "中温起点", showToast) ?: return null
+        val hot = parseTempLevel(hotStartInput.text.toString(), "高温起点", showToast) ?: return null
+        if (warm >= hot) {
             if (showToast) {
-                toast("温度必须递增：中温 < 高温 < 保护")
+                toast("温度必须递增：中温起点 < 高温起点")
             }
             return null
         }
-        return ThermalThresholds(warm, hot, protect)
+        return ThermalThresholds(warm, hot)
     }
 
     private fun parseTempLevel(value: String, label: String, showToast: Boolean): Int? {
@@ -1666,19 +1685,15 @@ class MainActivity : Activity() {
     private data class ThermalThresholds(
         val warmLevel: Int,
         val hotLevel: Int,
-        val protectLevel: Int,
     )
 
-    private enum class ThermalCurve(
+    private enum class ThermalZone(
         val title: String,
-        val warmPercent: Int,
-        val hotPercent: Int,
-        val protectPercent: Int,
+        val shortTitle: String,
     ) {
-        BALANCED("均衡温控", 92, 82, 68),
-        COOL("保守降温", 86, 74, 58),
-        PERFORMANCE("激进保持", 98, 90, 78),
-        FLAT("全温同频", 100, 100, 100),
+        NORMAL("低温", "低温"),
+        MID("中温", "中温"),
+        HOT("高温", "高温"),
     }
 
     private enum class Page(val title: String) {

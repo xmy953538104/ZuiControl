@@ -1339,16 +1339,38 @@ app_apk_path() {
     pm path "$APP_PACKAGE" 2>/dev/null | sed -n 's/^package://p' | head -n 1
 }
 
+performance_profiles_have_entries() {
+    [ -s "$PERFORMANCE_PROFILES" ] || return 1
+    grep -q '^[[:space:]]*[^#[:space:]]' "$PERFORMANCE_PROFILES" 2>/dev/null
+}
+
 generate_performance_xml() {
     init_active_xml || return 1
+    mkdir -p "$ZUI_STAGING_DIR"
+    rm -f "$PERFORMANCE_SUMMARY"
+    if ! performance_profiles_have_entries; then
+        if stage_xml_pair_from_pair "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
+            "empty performance profiles"; then
+            {
+                echo "profiles=0"
+                echo "staging_game_policy=$(file_sha "$STAGING_GAME_POLICY")"
+                echo "staging_performanceconfig=$(file_sha "$STAGING_PERF_CONFIG")"
+            } > "$PERFORMANCE_SUMMARY"
+            chmod 0664 "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" \
+                "$PERFORMANCE_SUMMARY" 2>/dev/null
+            publish_performance_state
+            log_line "performance profiles empty; staged baked baseline"
+            return 0
+        fi
+        publish_performance_state
+        return 1
+    fi
     apk="$(app_apk_path)"
     if [ ! -s "$apk" ]; then
         log_line "XML generator APK missing"
         set_xml_error "XML generator APK missing"
         return 1
     fi
-    mkdir -p "$ZUI_STAGING_DIR"
-    rm -f "$PERFORMANCE_SUMMARY"
     if CLASSPATH="$apk" app_process /system/bin com.zui.zuicontrol.XmlProfileGenerator \
         "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" "$PERFORMANCE_PROFILES" \
         "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" \
@@ -1419,13 +1441,13 @@ archive_request() {
     base="$(basename "$file")"
     stamp="$(date '+%Y%m%d_%H%M%S')"
     mkdir -p "$DONE_DIR"
-    mv "$file" "$DONE_DIR/$stamp.$base" 2>/dev/null
+    mv "$file" "$DONE_DIR/$stamp.$base" 2>/dev/null || rm -f "$file"
 }
 
 prop_value() {
     key="$1"
     file="$2"
-    sed -n "s/^$key=//p" "$file" 2>/dev/null | tail -n 1
+    sed -n "s/^$key=//p" "$file" 2>/dev/null | tail -n 1 | tr -d '\r'
 }
 
 handle_request() {

@@ -56,7 +56,13 @@ data class PerformanceProfile(
 
     fun thermalSummary(): String {
         if (stages.size <= 1) {
-            return "默认温区"
+            return "单温区"
+        }
+        val thermalStages = stages.filter { it.thresholdLevel != TEMP_DEFAULT_LEVEL }
+        if (thermalStages.size == 2) {
+            val warm = thermalStages[0].temperatureCelsius()
+            val hot = thermalStages[1].temperatureCelsius()
+            return "低温 <${warm}℃ / 中温 ${warm}-${hot - 1}℃ / 高温 ≥${hot}℃"
         }
         return stages.joinToString(" / ") { it.title() }
     }
