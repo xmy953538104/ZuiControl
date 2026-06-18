@@ -1227,16 +1227,27 @@ apply_gpu_limits_for_pkg() {
         return 1
     }
     target="$pkg|$mode|$gpu_max|$gpu_min"
+    target_max_freq="$(khz_to_hz "$gpu_max")"
+    target_min_freq="$(khz_to_hz "$gpu_min")"
+
+    actual_max_pl="$(read_file_clean "$GPU_ROOT/max_pwrlevel")"
+    actual_min_pl="$(read_file_clean "$GPU_ROOT/min_pwrlevel")"
+    actual_max_freq="$(read_file_clean "$GPU_DEVFREQ/max_freq")"
+    actual_min_freq="$(read_file_clean "$GPU_DEVFREQ/min_freq")"
     if [ "$target" = "$LAST_GPU_PROFILE" ] &&
-        [ "$GPU_REASSERT_TICKS" -lt "$GPU_REASSERT_INTERVAL" ]; then
+        [ "$GPU_REASSERT_TICKS" -lt "$GPU_REASSERT_INTERVAL" ] &&
+        [ "$actual_min_freq" = "$target_min_freq" ] &&
+        [ "$actual_max_freq" = "$target_max_freq" ] &&
+        [ "$actual_min_pl" = "$min_pl" ] &&
+        [ "$actual_max_pl" = "$max_pl" ]; then
         return 0
     fi
     GPU_REASSERT_TICKS=0
 
-    target_max_freq="$(khz_to_hz "$gpu_max")"
-    target_min_freq="$(khz_to_hz "$gpu_min")"
     echo "$target_max_freq" > "$GPU_DEVFREQ/max_freq" 2>>"$LOG_FILE" || true
+    echo "$max_pl" > "$GPU_ROOT/max_pwrlevel" 2>>"$LOG_FILE" || true
     echo "$target_min_freq" > "$GPU_DEVFREQ/min_freq" 2>>"$LOG_FILE" || true
+    echo "$min_pl" > "$GPU_ROOT/min_pwrlevel" 2>>"$LOG_FILE" || true
 
     actual_max_pl="$(read_file_clean "$GPU_ROOT/max_pwrlevel")"
     actual_min_pl="$(read_file_clean "$GPU_ROOT/min_pwrlevel")"
@@ -1247,7 +1258,9 @@ apply_gpu_limits_for_pkg() {
     settings_put_quiet "$GPU_STATE_KEY" "$LAST_GPU_STATE"
 
     if [ "$actual_min_freq" = "$target_min_freq" ] &&
-        [ "$actual_max_freq" = "$target_max_freq" ]; then
+        [ "$actual_max_freq" = "$target_max_freq" ] &&
+        [ "$actual_min_pl" = "$min_pl" ] &&
+        [ "$actual_max_pl" = "$max_pl" ]; then
         LAST_GPU_PROFILE="$target"
         log_line "gpu limits applied: $LAST_GPU_STATE"
         return 0
@@ -1261,6 +1274,8 @@ restore_gpu_limits() {
     [ -n "$LAST_GPU_PROFILE" ] || return 0
     target_min_freq="$(khz_to_hz "$GPU_DEFAULT_MIN_KHZ")"
     target_max_freq="$(khz_to_hz "$GPU_DEFAULT_MAX_KHZ")"
+    echo "$GPU_DEFAULT_MAX_PL" > "$GPU_ROOT/max_pwrlevel" 2>/dev/null || true
+    echo "$GPU_DEFAULT_MIN_PL" > "$GPU_ROOT/min_pwrlevel" 2>/dev/null || true
     echo "$target_min_freq" > "$GPU_DEVFREQ/min_freq" 2>/dev/null || true
     echo "$target_max_freq" > "$GPU_DEVFREQ/max_freq" 2>/dev/null || true
     LAST_GPU_PROFILE=
@@ -1268,7 +1283,9 @@ restore_gpu_limits() {
     LAST_GPU_STATE="default actual_pl=$(read_file_clean "$GPU_ROOT/min_pwrlevel")-$(read_file_clean "$GPU_ROOT/max_pwrlevel") actual_freq=$(read_file_clean "$GPU_DEVFREQ/min_freq")-$(read_file_clean "$GPU_DEVFREQ/max_freq")"
     settings_put_quiet "$GPU_STATE_KEY" "$LAST_GPU_STATE"
     if [ "$(read_file_clean "$GPU_DEVFREQ/min_freq")" = "$target_min_freq" ] &&
-        [ "$(read_file_clean "$GPU_DEVFREQ/max_freq")" = "$target_max_freq" ]; then
+        [ "$(read_file_clean "$GPU_DEVFREQ/max_freq")" = "$target_max_freq" ] &&
+        [ "$(read_file_clean "$GPU_ROOT/min_pwrlevel")" = "$GPU_DEFAULT_MIN_PL" ] &&
+        [ "$(read_file_clean "$GPU_ROOT/max_pwrlevel")" = "$GPU_DEFAULT_MAX_PL" ]; then
         log_line "gpu limits restored: $LAST_GPU_STATE"
     else
         log_line "gpu restore failed: $LAST_GPU_STATE"
