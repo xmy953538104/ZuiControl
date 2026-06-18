@@ -82,6 +82,7 @@ GPU_DEFAULT_MIN_PL=11
 GPU_DEFAULT_MAX_PL=0
 GPU_DEFAULT_MIN_KHZ=231000
 GPU_DEFAULT_MAX_KHZ=903000
+TEMP_LEVEL_OFFSET=34
 GPU_REASSERT_INTERVAL=8
 LAST_TOP_APP=
 LAST_REFRESH_RATE=
@@ -1102,6 +1103,59 @@ gpu_pwrlevel_for_khz() {
     return 1
 }
 
+thermal_level() {
+    for type_file in /sys/class/thermal/thermal_zone*/type; do
+        [ -f "$type_file" ] || continue
+        [ "$(read_file_clean "$type_file")" = "user_front_temp" ] || continue
+        temp_milli="$(read_file_clean "${type_file%/type}/temp")"
+        valid_positive_int "$temp_milli" || return 1
+        temp_c=$(((temp_milli + 500) / 1000))
+        printf '%s\n' $((temp_c - TEMP_LEVEL_OFFSET))
+        return 0
+    done
+    return 1
+}
+
+stage_gpu_limits_for_payload() {
+    payload="$1"
+    current_level="$(thermal_level 2>/dev/null)"
+    selected_stage=
+    selected_threshold=-1000
+
+    old_ifs="$IFS"
+    IFS=';'
+    set -- $payload
+    IFS="$old_ifs"
+    for stage in "$@"; do
+        [ -n "$stage" ] || continue
+        threshold="$(printf '%s\n' "$stage" | cut -d ',' -f 1)"
+        case "$threshold" in
+            -1000)
+                if [ -z "$selected_stage" ]; then
+                    selected_stage="$stage"
+                    selected_threshold=-1000
+                fi
+                ;;
+            *)
+                valid_positive_int "$current_level" || continue
+                valid_positive_int "$threshold" || continue
+                if [ "$current_level" -ge "$threshold" ] &&
+                    [ "$threshold" -ge "$selected_threshold" ]; then
+                    selected_stage="$stage"
+                    selected_threshold="$threshold"
+                fi
+                ;;
+        esac
+    done
+
+    [ -n "$selected_stage" ] || return 1
+    line_gpu_max="$(printf '%s\n' "$selected_stage" | cut -d ',' -f 10)"
+    line_gpu_min="$(printf '%s\n' "$selected_stage" | cut -d ',' -f 11)"
+    valid_positive_int "$line_gpu_max" || return 1
+    valid_positive_int "$line_gpu_min" || return 1
+    printf '%s|%s|%s\n' "$line_gpu_max" "$line_gpu_min" "${current_level:-unknown}:$selected_threshold"
+}
+
 profile_gpu_limits_for_app() {
     pkg="$1"
     [ -s "$PERFORMANCE_PROFILES" ] || return 1
@@ -1117,25 +1171,28 @@ profile_gpu_limits_for_app() {
         line_pkg="$1"
         line_mode="$2"
         if [ "$3" = "v2" ]; then
-            first_stage="${4%%;*}"
-            line_gpu_max="$(printf '%s\n' "$first_stage" | cut -d ',' -f 10)"
-            line_gpu_min="$(printf '%s\n' "$first_stage" | cut -d ',' -f 11)"
+            stage_limits="$(stage_gpu_limits_for_payload "$4")" || continue
+            line_gpu_max="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 1)"
+            line_gpu_min="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 2)"
+            line_thermal="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 3)"
         elif [ $# -eq 6 ]; then
             line_gpu_max="$5"
             line_gpu_min="$6"
+            line_thermal="legacy"
         else
             line_gpu_max="${11}"
             line_gpu_min="${12}"
+            line_thermal="legacy"
         fi
         [ "$line_pkg" = "$pkg" ] || continue
         valid_mode "$line_mode" || continue
         valid_positive_int "$line_gpu_max" || continue
         valid_positive_int "$line_gpu_min" || continue
         if [ -z "$first_match" ]; then
-            first_match="$line_mode|$line_gpu_max|$line_gpu_min"
+            first_match="$line_mode|$line_gpu_max|$line_gpu_min|$line_thermal"
         fi
         if [ "$line_mode" = "balanced" ]; then
-            printf '%s|%s|%s\n' "$line_mode" "$line_gpu_max" "$line_gpu_min"
+            printf '%s|%s|%s|%s\n' "$line_mode" "$line_gpu_max" "$line_gpu_min" "$line_thermal"
             return 0
         fi
     done < "$PERFORMANCE_PROFILES"
@@ -1160,6 +1217,7 @@ apply_gpu_limits_for_pkg() {
     mode="$1"
     gpu_max="$2"
     gpu_min="$3"
+    thermal_match="$4"
     max_pl="$(gpu_pwrlevel_for_khz "$gpu_max")" || {
         log_line "gpu limit skipped: unsupported max $gpu_max for $pkg"
         return 1
@@ -1175,21 +1233,21 @@ apply_gpu_limits_for_pkg() {
     fi
     GPU_REASSERT_TICKS=0
 
-    ok=1
-    echo "$max_pl" > "$GPU_ROOT/max_pwrlevel" 2>>"$LOG_FILE" || ok=0
-    echo "$min_pl" > "$GPU_ROOT/min_pwrlevel" 2>>"$LOG_FILE" || ok=0
-    echo "$(khz_to_hz "$gpu_max")" > "$GPU_DEVFREQ/max_freq" 2>/dev/null || true
-    echo "$(khz_to_hz "$gpu_min")" > "$GPU_DEVFREQ/min_freq" 2>/dev/null || true
+    target_max_freq="$(khz_to_hz "$gpu_max")"
+    target_min_freq="$(khz_to_hz "$gpu_min")"
+    echo "$target_max_freq" > "$GPU_DEVFREQ/max_freq" 2>>"$LOG_FILE" || true
+    echo "$target_min_freq" > "$GPU_DEVFREQ/min_freq" 2>>"$LOG_FILE" || true
 
     actual_max_pl="$(read_file_clean "$GPU_ROOT/max_pwrlevel")"
     actual_min_pl="$(read_file_clean "$GPU_ROOT/min_pwrlevel")"
     actual_max_freq="$(read_file_clean "$GPU_DEVFREQ/max_freq")"
     actual_min_freq="$(read_file_clean "$GPU_DEVFREQ/min_freq")"
     actual_cur_freq="$(read_file_clean "$GPU_DEVFREQ/cur_freq")"
-    LAST_GPU_STATE="$pkg/$mode target=${gpu_min}-${gpu_max}kHz pl=${min_pl}-${max_pl} actual_pl=${actual_min_pl}-${actual_max_pl} actual_freq=${actual_min_freq}-${actual_max_freq} cur=${actual_cur_freq}"
+    LAST_GPU_STATE="$pkg/$mode thermal=${thermal_match:-unknown} target=${gpu_min}-${gpu_max}kHz pl=${min_pl}-${max_pl} actual_pl=${actual_min_pl}-${actual_max_pl} actual_freq=${actual_min_freq}-${actual_max_freq} cur=${actual_cur_freq}"
     settings_put_quiet "$GPU_STATE_KEY" "$LAST_GPU_STATE"
 
-    if [ "$ok" = "1" ]; then
+    if [ "$actual_min_freq" = "$target_min_freq" ] &&
+        [ "$actual_max_freq" = "$target_max_freq" ]; then
         LAST_GPU_PROFILE="$target"
         log_line "gpu limits applied: $LAST_GPU_STATE"
         return 0
@@ -1201,16 +1259,16 @@ apply_gpu_limits_for_pkg() {
 restore_gpu_limits() {
     [ -d "$GPU_ROOT" ] || return 0
     [ -n "$LAST_GPU_PROFILE" ] || return 0
-    ok=1
-    echo "$(khz_to_hz "$GPU_DEFAULT_MAX_KHZ")" > "$GPU_DEVFREQ/max_freq" 2>/dev/null || true
-    echo "$(khz_to_hz "$GPU_DEFAULT_MIN_KHZ")" > "$GPU_DEVFREQ/min_freq" 2>/dev/null || true
-    echo "$GPU_DEFAULT_MIN_PL" > "$GPU_ROOT/min_pwrlevel" 2>>"$LOG_FILE" || ok=0
-    echo "$GPU_DEFAULT_MAX_PL" > "$GPU_ROOT/max_pwrlevel" 2>>"$LOG_FILE" || ok=0
+    target_min_freq="$(khz_to_hz "$GPU_DEFAULT_MIN_KHZ")"
+    target_max_freq="$(khz_to_hz "$GPU_DEFAULT_MAX_KHZ")"
+    echo "$target_min_freq" > "$GPU_DEVFREQ/min_freq" 2>/dev/null || true
+    echo "$target_max_freq" > "$GPU_DEVFREQ/max_freq" 2>/dev/null || true
     LAST_GPU_PROFILE=
     GPU_REASSERT_TICKS=0
     LAST_GPU_STATE="default actual_pl=$(read_file_clean "$GPU_ROOT/min_pwrlevel")-$(read_file_clean "$GPU_ROOT/max_pwrlevel") actual_freq=$(read_file_clean "$GPU_DEVFREQ/min_freq")-$(read_file_clean "$GPU_DEVFREQ/max_freq")"
     settings_put_quiet "$GPU_STATE_KEY" "$LAST_GPU_STATE"
-    if [ "$ok" = "1" ]; then
+    if [ "$(read_file_clean "$GPU_DEVFREQ/min_freq")" = "$target_min_freq" ] &&
+        [ "$(read_file_clean "$GPU_DEVFREQ/max_freq")" = "$target_max_freq" ]; then
         log_line "gpu limits restored: $LAST_GPU_STATE"
     else
         log_line "gpu restore failed: $LAST_GPU_STATE"

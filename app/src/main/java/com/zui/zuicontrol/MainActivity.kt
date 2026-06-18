@@ -558,6 +558,14 @@ class MainActivity : Activity() {
 
             thermalPreview = infoPanel()
             addView(thermalPreview, fieldMargins())
+            addView(commandButton("当前频率同步到全部温区") {
+                syncCurrentThermalZoneToAll()
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(44),
+            ).apply {
+                setMargins(0, dp(10), 0, 0)
+            })
             bindThermalPreviewUpdates()
 
             performanceSummary = infoPanel()
@@ -893,6 +901,16 @@ class MainActivity : Activity() {
         val bundle = currentFrequencyBundle(showToast) ?: return false
         thermalDrafts[currentThermalZone] = bundle
         return true
+    }
+
+    private fun syncCurrentThermalZoneToAll() {
+        val bundle = currentFrequencyBundle(showToast = true) ?: return
+        ThermalZone.entries.forEach { zone ->
+            thermalDrafts[zone] = bundle
+        }
+        setFrequencyFields(bundle)
+        updateThermalPreview()
+        toast("已同步到全部温区")
     }
 
     private fun buildThermalStages(showToast: Boolean): List<PerformanceStage>? {
