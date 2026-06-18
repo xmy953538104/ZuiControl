@@ -701,9 +701,11 @@ class MainActivity : Activity() {
 
     private fun performanceXmlStatusText(): String {
         val xmlState = setting(ZuiControlContract.KEY_XML_STATE)
-        val last = setting(ZuiControlContract.KEY_STATUS_LAST)
+        if (xmlState.startsWith("state=mounted")) {
+            return "XML 已启用"
+        }
         val daemon = setting(ZuiControlContract.KEY_DAEMON_STATUS_TEXT)
-        val errorLine = listOf(xmlState, last, daemon)
+        val errorLine = listOf(xmlState, daemon)
             .flatMap { it.lineSequence() }
             .firstOrNull {
                 it.contains("failed", ignoreCase = true) ||
@@ -712,11 +714,7 @@ class MainActivity : Activity() {
         if (errorLine != null) {
             return "XML 异常：$errorLine"
         }
-        return if (xmlState.startsWith("state=mounted")) {
-            "XML 已启用"
-        } else {
-            "XML 未启用"
-        }
+        return "XML 未启用"
     }
 
     private fun loadSelectedProfile() {

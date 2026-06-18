@@ -792,6 +792,24 @@ wait_mount_state() {
     return 1
 }
 
+zuipp_mount_ready() {
+    is_mounted_on "$SYSTEM_GAME_POLICY" &&
+        is_mounted_on "$SYSTEM_PERF_CONFIG" &&
+        same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY" &&
+        same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG" &&
+        system_xml_contexts_ok
+}
+
+wait_zuipp_mount_ready() {
+    tries="${1:-10}"
+    while [ "$tries" -gt 0 ]; do
+        zuipp_mount_ready && return 0
+        tries=$((tries - 1))
+        sleep 1
+    done
+    return 1
+}
+
 wait_prop_value() {
     prop="$1"
     expected="$2"
@@ -827,15 +845,34 @@ mark_zuipp_apply_success() {
     set_status "daemon=running" "last=apply_zuipp_ok" "reason=$reason"
 }
 
+remount_active_xml() {
+    reason="${1:-manual}"
+    validate_zuipp_files || {
+        set_status "daemon=running" "last=apply_zuipp_failed" "reason=validate_failed"
+        return 1
+    }
+    label_active_xml
+    if trigger_init_action "$PROP_ZUIPP" apply &&
+        wait_prop_value "$PROP_ZUIPP" done 10 &&
+        wait_zuipp_mount_ready 10 &&
+        verify_zuipp_mount_core &&
+        verify_system_xml_contexts; then
+        mark_zuipp_apply_success "$reason"
+        return 0
+    fi
+    set_xml_error "active bind mount verification failed"
+    log_line "ZuiPP active remount failed: prop=$(getprop "$PROP_ZUIPP" 2>/dev/null)"
+    publish_xml_state
+    set_status "daemon=running" "last=apply_zuipp_failed" "reason=remount_failed"
+    return 1
+}
+
 promote_staging_with_init() {
     reason="$1"
     validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "staging" || return 1
     if trigger_init_action "$PROP_ZUIPP" promote_active &&
         wait_prop_value "$PROP_ZUIPP" done 10 &&
-        wait_mount_state mounted "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG" &&
-        verify_zuipp_mount_core &&
-        verify_system_xml_contexts; then
-        mark_zuipp_apply_success "$reason"
+        remount_active_xml "$reason"; then
         return 0
     fi
     set_xml_error "promote active verification failed"
@@ -889,25 +926,7 @@ apply_zuipp() {
         set_status "daemon=running" "last=apply_zuipp_failed" "reason=validate_failed"
         return 1
     }
-    label_active_xml
-    if ! trigger_init_action "$PROP_ZUIPP" apply ||
-        ! wait_prop_value "$PROP_ZUIPP" done 10 ||
-        ! wait_mount_state mounted "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; then
-        set_xml_error "bind mount action failed"
-        log_line "ZuiPP mount failed: prop=$(getprop "$PROP_ZUIPP" 2>/dev/null)"
-        publish_xml_state
-        set_status "daemon=running" "last=apply_zuipp_failed" "reason=mount_failed"
-        return 1
-    fi
-    if verify_zuipp_mount_core && verify_system_xml_contexts; then
-        mark_zuipp_apply_success "$reason"
-        return 0
-    fi
-    set_xml_error "bind mount verification failed"
-    log_line "ZuiPP verify failed: prop=$(getprop "$PROP_ZUIPP" 2>/dev/null)"
-    publish_xml_state
-    set_status "daemon=running" "last=apply_zuipp_failed" "reason=verify_failed"
-    return 1
+    remount_active_xml "$reason"
 }
 
 restore_zuipp() {
