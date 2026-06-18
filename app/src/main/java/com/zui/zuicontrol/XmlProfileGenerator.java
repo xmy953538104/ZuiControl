@@ -109,6 +109,7 @@ public final class XmlProfileGenerator {
             throw new IllegalStateException("default App missing in game_policy.xml");
         }
         normalizeAppRefreshAttributes(game);
+        String[] defaultModes = limitModes(defaultApp, "default");
         Map<String, Element> types = gameLimitTypes(perf);
         for (String required : Arrays.asList(
                 "LittleCore", "BigCore", "TitanCore", "MegaCore", "GPU")) {
@@ -119,10 +120,19 @@ public final class XmlProfileGenerator {
 
         List<String> summaries = new ArrayList<>();
         Map<String, Boolean> packageHasIndependent = new LinkedHashMap<>();
+        Map<String, boolean[]> configuredIndependentModes = new LinkedHashMap<>();
         for (Profile profile : profiles) {
             Boolean current = packageHasIndependent.get(profile.pkg);
             packageHasIndependent.put(profile.pkg,
                     (current != null && current.booleanValue()) || profile.independentPolicy());
+            if (profile.independentPolicy()) {
+                boolean[] configuredModes = configuredIndependentModes.get(profile.pkg);
+                if (configuredModes == null) {
+                    configuredModes = new boolean[3];
+                    configuredIndependentModes.put(profile.pkg, configuredModes);
+                }
+                configuredModes[profile.modeIndex] = true;
+            }
         }
         for (Map.Entry<String, Boolean> entry : packageHasIndependent.entrySet()) {
             if (!entry.getValue().booleanValue() && removeApp(game, entry.getKey())) {
@@ -183,7 +193,10 @@ public final class XmlProfileGenerator {
                 app = (Element) defaultApp.cloneNode(true);
                 app.setAttribute("name", profile.pkg);
                 app.setAttribute("pkg", profile.pkg);
-                defaultApp.getParentNode().appendChild(app);
+                Node parent = defaultApp.getParentNode();
+                parent.appendChild(game.createTextNode("\n    "));
+                parent.appendChild(app);
+                parent.appendChild(game.createTextNode("\n"));
             }
             FrameValue frame = frameValue(profile, refreshRules);
             upsertAttribute(app, "RefreshRateConfig", Integer.toString(frame.normalHz));
@@ -193,15 +206,18 @@ public final class XmlProfileGenerator {
             if (limit == null) {
                 throw new IllegalStateException("LimitConfig missing for " + profile.pkg);
             }
-            String[] modes = normalize(limit.getTextContent()).split(" ");
-            if (modes.length != 3) {
-                throw new IllegalStateException("LimitConfig mode count invalid for " + profile.pkg);
-            }
+            String[] modes = limitModes(app, profile.pkg, false);
             if (profile.staged) {
                 modes[profile.modeIndex] = String.join("|", stagedSegments);
             } else {
                 modes[profile.modeIndex] = replaceActiveLevels(modes[profile.modeIndex], firstIds);
             }
+            String[] fallbackSources = stabilizeModes(
+                    modes,
+                    defaultModes,
+                    configuredIndependentModes.get(profile.pkg),
+                    profile.modeIndex
+            );
             limit.setTextContent(String.join(" ", modes));
 
             summaries.add(profile.pkg + "/" + profile.mode +
@@ -209,7 +225,8 @@ public final class XmlProfileGenerator {
                     " refresh=" + frame.normalHz +
                     " powersave=" + frame.powerSaveHz + " " +
                     (profile.staged ? "thermal_stages=" : "legacy=") +
-                    String.join("; ", stageSummaries));
+                    String.join("; ", stageSummaries) +
+                    fallbackSummary(fallbackSources));
         }
 
         writeDocument(game, outputGame);
@@ -632,6 +649,113 @@ public final class XmlProfileGenerator {
         return null;
     }
 
+    private static String[] limitModes(Element app, String label) {
+        return limitModes(app, label, true);
+    }
+
+    private static String[] limitModes(Element app, String label, boolean requireValid) {
+        Element limit = findAttribute(app, "LimitConfig");
+        if (limit == null) {
+            throw new IllegalStateException("LimitConfig missing for " + label);
+        }
+        String text = normalize(limit.getTextContent());
+        String[] modes = text.isEmpty() ? new String[0] : text.split(" ");
+        if (modes.length != 3) {
+            throw new IllegalStateException("LimitConfig mode count invalid for " + label);
+        }
+        if (!requireValid) {
+            return modes;
+        }
+        for (int i = 0; i < modes.length; i++) {
+            if (!validLimitModeBlock(modes[i])) {
+                throw new IllegalStateException(
+                        "LimitConfig mode invalid for " + label + "/" + modeName(i));
+            }
+        }
+        return modes;
+    }
+
+    private static String[] stabilizeModes(
+            String[] modes,
+            String[] defaultModes,
+            boolean[] configuredModes,
+            int currentModeIndex
+    ) {
+        String[] fallbackSources = new String[3];
+        for (int i = 0; i < modes.length; i++) {
+            boolean configured = configuredModes != null && configuredModes[i];
+            if (!configured || !validLimitModeBlock(modes[i])) {
+                FallbackBlock fallback = fallbackModeBlock(defaultModes, modes, currentModeIndex, i);
+                modes[i] = fallback.block;
+                fallbackSources[i] = (!configured ? "" : "repair:") + fallback.source;
+            }
+        }
+        return fallbackSources;
+    }
+
+    private static FallbackBlock fallbackModeBlock(
+            String[] defaultModes,
+            String[] modes,
+            int currentModeIndex,
+            int modeIndex
+    ) {
+        if (modeIndex >= 0 && modeIndex < defaultModes.length &&
+                validLimitModeBlock(defaultModes[modeIndex])) {
+            return new FallbackBlock(defaultModes[modeIndex], "default");
+        }
+        if (currentModeIndex >= 0 && currentModeIndex < modes.length &&
+                validLimitModeBlock(modes[currentModeIndex])) {
+            return new FallbackBlock(modes[currentModeIndex], modeName(currentModeIndex));
+        }
+        throw new IllegalStateException("no safe LimitConfig fallback for " + modeName(modeIndex));
+    }
+
+    private static boolean validLimitModeBlock(String block) {
+        if (block == null) {
+            return false;
+        }
+        block = normalize(block);
+        if (block.isEmpty()) {
+            return false;
+        }
+        String[] segments = block.split("\\|", -1);
+        for (String segment : segments) {
+            int separator = segment.indexOf(':');
+            if (separator <= 0 || separator >= segment.length() - 1) {
+                return false;
+            }
+            if (!isInteger(segment.substring(0, separator))) {
+                return false;
+            }
+            String[] ids = segment.substring(separator + 1).split("_", -1);
+            if (ids.length != 5) {
+                return false;
+            }
+            for (String id : ids) {
+                if (!isInteger(id)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean isInteger(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        int start = value.charAt(0) == '-' ? 1 : 0;
+        if (start == value.length()) {
+            return false;
+        }
+        for (int i = start; i < value.length(); i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static void upsertAttribute(Element app, String name, String value) {
         Element attribute = findAttribute(app, name);
         if (attribute == null) {
@@ -713,6 +837,29 @@ public final class XmlProfileGenerator {
         return String.join("|", segments);
     }
 
+    private static String fallbackSummary(String[] fallbackSources) {
+        List<String> items = new ArrayList<>();
+        for (int i = 0; i < fallbackSources.length; i++) {
+            if (fallbackSources[i] != null) {
+                items.add(modeName(i) + ":" + fallbackSources[i]);
+            }
+        }
+        return items.isEmpty() ? "" : " fallback=" + String.join(",", items);
+    }
+
+    private static String modeName(int index) {
+        switch (index) {
+            case 0:
+                return "balanced";
+            case 1:
+                return "powersave";
+            case 2:
+                return "savage";
+            default:
+                return "mode" + index;
+        }
+    }
+
     private static String normalize(String value) {
         return value.trim().replaceAll("\\s+", " ");
     }
@@ -730,6 +877,7 @@ public final class XmlProfileGenerator {
         Transformer transformer = TransformerFactory.newInstance().newTransformer();
         transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
         transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
         transformer.transform(new DOMSource(document), new StreamResult(temp));
         try {
             Files.move(
@@ -801,6 +949,16 @@ public final class XmlProfileGenerator {
                 return value.intValue();
             }
             return validRefreshHz(defaultHz) && defaultHz > 0 ? defaultHz : DEFAULT_REFRESH_HZ;
+        }
+    }
+
+    private static final class FallbackBlock {
+        final String block;
+        final String source;
+
+        FallbackBlock(String block, String source) {
+            this.block = block;
+            this.source = source;
         }
     }
 

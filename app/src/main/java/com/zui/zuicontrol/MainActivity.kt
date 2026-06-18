@@ -693,9 +693,11 @@ class MainActivity : Activity() {
         }
         performanceListHost.removeAllViews()
         if (performanceProfiles.isEmpty()) {
+            selectedPackage = null
             performanceListHost.addView(emptyText("暂无性能配置"), matchWrap())
             return
         }
+        ensureSelectedPerformanceProfile()
         performanceProfiles.values.forEach { profile ->
             val selected = profile.packageName == selectedPackage &&
                 profile.mode == selectedMode()
@@ -762,6 +764,7 @@ class MainActivity : Activity() {
         if (!::selectedAppTitle.isInitialized) {
             return
         }
+        ensureSelectedPerformanceProfile()
         val pkg = selectedPackage
         selectedAppTitle.text = pkg?.let { labelForPackage(it) } ?: "选择或添加应用"
         selectedPackageView.text = pkg?.let { "$it · ${selectedMode().title}" } ?: "未选择应用"
@@ -1154,6 +1157,7 @@ class MainActivity : Activity() {
         val key = "$pkg|${selectedMode().id}"
         performanceProfiles.remove(key)
         renderPerformanceProfiles()
+        updatePerformanceForm()
         sendCommand("正在删除性能配置") {
             ZuiControlRequest.send(
                 this,
@@ -1408,6 +1412,23 @@ class MainActivity : Activity() {
     private fun selectedMode(): PerformanceMode {
         val position = if (::modeSpinner.isInitialized) modeSpinner.selectedItemPosition else 0
         return PerformanceMode.entries.getOrElse(position) { PerformanceMode.BALANCED }
+    }
+
+    private fun ensureSelectedPerformanceProfile() {
+        if (performanceProfiles.isEmpty()) {
+            selectedPackage = null
+            return
+        }
+        val currentKey = selectedPackage?.let { "$it|${selectedMode().id}" }
+        if (currentKey != null && performanceProfiles.containsKey(currentKey)) {
+            return
+        }
+        val profile = performanceProfiles.values.firstOrNull { it.mode == selectedMode() }
+            ?: performanceProfiles.values.first()
+        selectedPackage = profile.packageName
+        if (::modeSpinner.isInitialized && modeSpinner.selectedItemPosition != profile.mode.ordinal) {
+            modeSpinner.setSelection(profile.mode.ordinal)
+        }
     }
 
     private fun selectedGamePolicy(): GamePolicyMode {
