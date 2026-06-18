@@ -358,6 +358,27 @@ valid_refresh_rate() {
     return 1
 }
 
+valid_game_policy_mode() {
+    case "$1" in
+        independent|default) return 0 ;;
+    esac
+    return 1
+}
+
+valid_game_policy_refresh_rate() {
+    case "$1" in
+        0|60|90|120|144|165) return 0 ;;
+    esac
+    return 1
+}
+
+valid_game_policy_power_save_refresh_rate() {
+    case "$1" in
+        0|30|60|90|120|144|165) return 0 ;;
+    esac
+    return 1
+}
+
 valid_mode() {
     case "$1" in
         balanced|powersave|savage) return 0 ;;
@@ -1204,7 +1225,12 @@ profile_gpu_limits_for_app() {
         IFS="$old_ifs"
         line_pkg="$1"
         line_mode="$2"
-        if [ "$3" = "v2" ]; then
+        if [ "$3" = "v3" ]; then
+            stage_limits="$(stage_gpu_limits_for_payload "$7")" || continue
+            line_gpu_max="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 1)"
+            line_gpu_min="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 2)"
+            line_thermal="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 3)"
+        elif [ "$3" = "v2" ]; then
             stage_limits="$(stage_gpu_limits_for_payload "$4")" || continue
             line_gpu_max="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 1)"
             line_gpu_min="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 2)"
@@ -1389,15 +1415,37 @@ set_performance_profile_staged() {
     profile_pkg="$1"
     profile_mode="$2"
     stage_payload="$3"
+    profile_policy="$4"
+    profile_refresh="$5"
+    profile_power_save="$6"
     if ! valid_package_name "$profile_pkg" || ! valid_mode "$profile_mode" ||
         ! valid_stage_payload "$stage_payload"; then
         log_line "invalid staged performance profile: $profile_pkg $profile_mode"
         set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg"
         return 1
     fi
+    if [ -n "$profile_policy$profile_refresh$profile_power_save" ]; then
+        profile_policy="${profile_policy:-independent}"
+        profile_refresh="${profile_refresh:-0}"
+        profile_power_save="${profile_power_save:-0}"
+        if ! valid_game_policy_mode "$profile_policy" ||
+            ! valid_game_policy_refresh_rate "$profile_refresh" ||
+            ! valid_game_policy_power_save_refresh_rate "$profile_power_save"; then
+            log_line "invalid staged policy: $profile_pkg $profile_mode policy=$profile_policy refresh=$profile_refresh powersave=$profile_power_save"
+            set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg" "reason=invalid_policy"
+            return 1
+        fi
+    fi
     rewrite_performance_without_key "$profile_pkg" "$profile_mode"
-    printf '%s|%s|v2|%s\n' "$profile_pkg" "$profile_mode" "$stage_payload" \
-        >> "$PERFORMANCE_PROFILES"
+    if [ -n "$profile_policy$profile_refresh$profile_power_save" ]; then
+        printf '%s|%s|v3|%s|%s|%s|%s\n' \
+            "$profile_pkg" "$profile_mode" "$profile_policy" \
+            "$profile_refresh" "$profile_power_save" "$stage_payload" \
+            >> "$PERFORMANCE_PROFILES"
+    else
+        printf '%s|%s|v2|%s\n' "$profile_pkg" "$profile_mode" "$stage_payload" \
+            >> "$PERFORMANCE_PROFILES"
+    fi
     chmod 0664 "$PERFORMANCE_PROFILES" 2>/dev/null
     clear_performance_summary
     log_line "staged performance profile saved: $profile_pkg/$profile_mode"
@@ -1711,17 +1759,24 @@ process_atomic_settings_request() {
     fi
 
     if [ "$cmd" = "set_performance_profile_staged" ]; then
-        if [ "$field_count" -ne 5 ]; then
+        if [ "$field_count" -ne 5 ] && [ "$field_count" -ne 8 ]; then
             log_line "invalid staged request: fields=$field_count"
             set_status "daemon=running" "last=invalid_request" "cmd=$cmd"
             remember_settings_request "$request"
             return 1
         fi
         stage_payload="$rate"
-        handle_request "settings:$id" "$cmd" \
-            "$stage_payload" "$pkg" "$mode" \
-            "" "" "" "" "" "" "" "" "" ""
+        if [ "$field_count" -eq 8 ]; then
+            log_line "request: settings:$id cmd=$cmd pkg=$pkg mode=$mode policy=$field6 refresh=$field7 powersave=$field8"
+            set_performance_profile_staged "$pkg" "$mode" "$stage_payload" \
+                "$field6" "$field7" "$field8"
+        else
+            handle_request "settings:$id" "$cmd" \
+                "$stage_payload" "$pkg" "$mode" \
+                "" "" "" "" "" "" "" "" "" ""
+        fi
         result=$?
+        trim_log
         remember_settings_request "$request"
         return "$result"
     fi

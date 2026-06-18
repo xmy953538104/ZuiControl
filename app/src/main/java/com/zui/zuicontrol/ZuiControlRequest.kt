@@ -22,6 +22,9 @@ object ZuiControlRequest {
         gpuMax: Int? = null,
         gpuMin: Int? = null,
         stagePayload: String? = null,
+        gamePolicy: String? = null,
+        refreshHz: Int? = null,
+        powerSaveRefreshHz: Int? = null,
     ) {
         val resolver = context.contentResolver
         val requestId = "${System.currentTimeMillis()}_${SystemClock.elapsedRealtimeNanos()}_$cmd"
@@ -32,6 +35,9 @@ object ZuiControlRequest {
                 stagePayload.orEmpty().filter { it.isDigit() || it == '-' || it == ',' || it == ';' },
                 pkg.orEmpty().replace("|", ""),
                 mode.orEmpty().replace("|", ""),
+                gamePolicy.orEmpty().filter { it.isLetterOrDigit() || it == '_' },
+                refreshHz?.toString().orEmpty(),
+                powerSaveRefreshHz?.toString().orEmpty(),
             ).joinToString("|")
         } else {
             listOf(

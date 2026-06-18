@@ -109,22 +109,6 @@ public final class XmlProfileGenerator {
 
         List<String> summaries = new ArrayList<>();
         for (Profile profile : profiles) {
-            Element app = findApp(game, profile.pkg);
-            if (app == null) {
-                app = (Element) defaultApp.cloneNode(true);
-                app.setAttribute("name", profile.pkg);
-                app.setAttribute("pkg", profile.pkg);
-                defaultApp.getParentNode().appendChild(app);
-            }
-            Element limit = findAttribute(app, "LimitConfig");
-            if (limit == null) {
-                throw new IllegalStateException("LimitConfig missing for " + profile.pkg);
-            }
-            String[] modes = normalize(limit.getTextContent()).split(" ");
-            if (modes.length != 3) {
-                throw new IllegalStateException("LimitConfig mode count invalid for " + profile.pkg);
-            }
-
             List<String> stagedSegments = new ArrayList<>();
             List<String> stageSummaries = new ArrayList<>();
             String firstIds = null;
@@ -164,6 +148,37 @@ public final class XmlProfileGenerator {
                         ids
                 ));
             }
+
+            if (!profile.independentPolicy()) {
+                summaries.add(profile.pkg + "/" + profile.mode + " policy=default " +
+                        (profile.staged ? "thermal_stages=" : "legacy=") +
+                        String.join("; ", stageSummaries));
+                continue;
+            }
+
+            Element app = findApp(game, profile.pkg);
+            if (app == null) {
+                app = (Element) defaultApp.cloneNode(true);
+                app.setAttribute("name", profile.pkg);
+                app.setAttribute("pkg", profile.pkg);
+                defaultApp.getParentNode().appendChild(app);
+            }
+            if (profile.refreshHz > 0) {
+                upsertAttribute(app, "RefreshRateConfig", Integer.toString(profile.refreshHz));
+            }
+            if (profile.powerSaveRefreshHz > 0) {
+                upsertAttribute(app, "PowerSaveRefreshRateConfig",
+                        Integer.toString(profile.powerSaveRefreshHz));
+            }
+
+            Element limit = findAttribute(app, "LimitConfig");
+            if (limit == null) {
+                throw new IllegalStateException("LimitConfig missing for " + profile.pkg);
+            }
+            String[] modes = normalize(limit.getTextContent()).split(" ");
+            if (modes.length != 3) {
+                throw new IllegalStateException("LimitConfig mode count invalid for " + profile.pkg);
+            }
             if (profile.staged) {
                 modes[profile.modeIndex] = String.join("|", stagedSegments);
             } else {
@@ -171,7 +186,9 @@ public final class XmlProfileGenerator {
             }
             limit.setTextContent(String.join(" ", modes));
 
-            summaries.add(profile.pkg + "/" + profile.mode + " " +
+            summaries.add(profile.pkg + "/" + profile.mode +
+                    " policy=independent refresh=" + profile.refreshHz +
+                    " powersave=" + profile.powerSaveRefreshHz + " " +
                     (profile.staged ? "thermal_stages=" : "legacy=") +
                     String.join("; ", stageSummaries));
         }
@@ -207,7 +224,8 @@ public final class XmlProfileGenerator {
                 for (int i = 0; i < parts.length; i++) {
                     parts[i] = parts[i].trim();
                 }
-                if (parts.length != 4 && parts.length != 6 && parts.length != 12) {
+                if (parts.length != 4 && parts.length != 6 && parts.length != 7
+                        && parts.length != 12) {
                     skipped += skipProfile(lineNumber, "invalid_field_count");
                     continue;
                 }
@@ -221,17 +239,42 @@ public final class XmlProfileGenerator {
                     continue;
                 }
                 Profile profile;
-                if (parts.length == 4) {
-                    if (!"v2".equals(parts[2])) {
+                if (parts.length == 4 || parts.length == 7) {
+                    boolean v3 = parts.length == 7;
+                    if (v3 && !"v3".equals(parts[2])) {
                         skipped += skipProfile(lineNumber, "invalid_profile_version");
                         continue;
                     }
-                    List<Stage> stages = parseStages(parts[3]);
+                    if (!v3 && !"v2".equals(parts[2])) {
+                        skipped += skipProfile(lineNumber, "invalid_profile_version");
+                        continue;
+                    }
+                    String policy = "independent";
+                    int refreshHz = 0;
+                    int powerSaveRefreshHz = 0;
+                    String stagePayload = parts[3];
+                    if (v3) {
+                        policy = parts[3];
+                        if (!validPolicy(policy)) {
+                            skipped += skipProfile(lineNumber, "invalid_policy");
+                            continue;
+                        }
+                        refreshHz = parseIntOrMinus(parts[4]);
+                        powerSaveRefreshHz = parseIntOrMinus(parts[5]);
+                        if (!validRefreshHz(refreshHz) ||
+                                !validPowerSaveRefreshHz(powerSaveRefreshHz)) {
+                            skipped += skipProfile(lineNumber, "invalid_refresh");
+                            continue;
+                        }
+                        stagePayload = parts[6];
+                    }
+                    List<Stage> stages = parseStages(stagePayload);
                     if (stages.isEmpty()) {
                         skipped += skipProfile(lineNumber, "invalid_stage_payload");
                         continue;
                     }
-                    profile = new Profile(parts[0], parts[1], modeIndex, stages, true);
+                    profile = new Profile(parts[0], parts[1], modeIndex, stages, true,
+                            policy, refreshHz, powerSaveRefreshHz);
                 } else {
                     int[] values = parseProfileValues(parts);
                     if (values == null) {
@@ -251,7 +294,7 @@ public final class XmlProfileGenerator {
                                 values[8], values[9]);
                     }
                     profile = new Profile(parts[0], parts[1], modeIndex,
-                            Arrays.asList(stage), false);
+                            Arrays.asList(stage), false, "independent", 0, 0);
                 }
                 if (!profile.valid()) {
                     skipped += skipProfile(lineNumber, "invalid_range");
@@ -289,6 +332,27 @@ public final class XmlProfileGenerator {
             }
         }
         return values;
+    }
+
+    private static int parseIntOrMinus(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
+    }
+
+    private static boolean validPolicy(String value) {
+        return "independent".equals(value) || "default".equals(value);
+    }
+
+    private static boolean validRefreshHz(int value) {
+        return value == 0 || value == 60 || value == 90 || value == 120
+                || value == 144 || value == 165;
+    }
+
+    private static boolean validPowerSaveRefreshHz(int value) {
+        return validRefreshHz(value) || value == 30;
     }
 
     private static List<Stage> parseStages(String payload) {
@@ -483,6 +547,16 @@ public final class XmlProfileGenerator {
         return null;
     }
 
+    private static void upsertAttribute(Element app, String name, String value) {
+        Element attribute = findAttribute(app, name);
+        if (attribute == null) {
+            attribute = app.getOwnerDocument().createElement("Attribute");
+            attribute.setAttribute("name", name);
+            app.appendChild(attribute);
+        }
+        attribute.setTextContent(value);
+    }
+
     private static Map<String, Element> gameLimitTypes(Document document) {
         Map<String, Element> result = new LinkedHashMap<>();
         NodeList configs = document.getElementsByTagName("GameLimitConfig");
@@ -579,23 +653,36 @@ public final class XmlProfileGenerator {
         final int modeIndex;
         final List<Stage> stages;
         final boolean staged;
+        final String policy;
+        final int refreshHz;
+        final int powerSaveRefreshHz;
 
         Profile(
                 String pkg,
                 String mode,
                 int modeIndex,
                 List<Stage> stages,
-                boolean staged
+                boolean staged,
+                String policy,
+                int refreshHz,
+                int powerSaveRefreshHz
         ) {
             this.pkg = pkg;
             this.mode = mode;
             this.modeIndex = modeIndex;
             this.stages = stages;
             this.staged = staged;
+            this.policy = policy;
+            this.refreshHz = refreshHz;
+            this.powerSaveRefreshHz = powerSaveRefreshHz;
         }
 
         boolean valid() {
             if (stages.isEmpty()) {
+                return false;
+            }
+            if (!validPolicy(policy) || !validRefreshHz(refreshHz)
+                    || !validPowerSaveRefreshHz(powerSaveRefreshHz)) {
                 return false;
             }
             if (stages.get(0).thresholdLevel != -1000) {
@@ -615,6 +702,10 @@ public final class XmlProfileGenerator {
                 }
             }
             return true;
+        }
+
+        boolean independentPolicy() {
+            return "independent".equals(policy);
         }
     }
 

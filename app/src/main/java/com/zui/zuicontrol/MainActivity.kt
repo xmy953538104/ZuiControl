@@ -48,6 +48,8 @@ class MainActivity : Activity() {
     private lateinit var selectedAppTitle: TextView
     private lateinit var selectedPackageView: TextView
     private lateinit var modeSpinner: Spinner
+    private lateinit var policySpinner: Spinner
+    private lateinit var policySummary: TextView
     private lateinit var littleMaxInput: EditText
     private lateinit var littleMinInput: EditText
     private lateinit var bigMaxInput: EditText
@@ -479,6 +481,32 @@ class MainActivity : Activity() {
                     setMargins(0, dp(8), 0, 0)
                 })
 
+            addView(fieldTitle("调度条目"), fieldMargins())
+            policySpinner = Spinner(this@MainActivity).apply {
+                adapter = SimpleTextAdapter(GamePolicyMode.entries.map { it.title })
+                background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+                setPadding(dp(4), 0, dp(4), 0)
+                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                    override fun onItemSelected(
+                        parent: AdapterView<*>?,
+                        view: View?,
+                        position: Int,
+                        id: Long,
+                    ) {
+                        if (!loadingPerformanceForm) {
+                            updatePolicySummary()
+                        }
+                    }
+                }
+            }
+            addView(policySpinner, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ))
+            policySummary = infoPanel()
+            addView(policySummary, fieldMargins())
+
             addView(fieldTitle("温度起始点"), fieldMargins())
             addView(compactNote("低温 < 中温起始点；中温 ≥ 中温起始点 且 < 高温起始点；高温 ≥ 高温起始点。"),
                 LinearLayout.LayoutParams(
@@ -669,6 +697,13 @@ class MainActivity : Activity() {
                     COLOR_SUBTLE,
                     Typeface.NORMAL,
                 ))
+                addView(label(
+                    "${profile.gamePolicy.title} · 普通 ${profile.resolvedRefreshHz(refreshTargetFor(profile.packageName))}Hz" +
+                        " · 节能 ${profile.resolvedPowerSaveRefreshHz(refreshTargetFor(profile.packageName))}Hz",
+                    11f,
+                    COLOR_SUBTLE,
+                    Typeface.NORMAL,
+                ))
                 setOnClickListener {
                     selectedPackage = profile.packageName
                     if (modeSpinner.selectedItemPosition == profile.mode.ordinal) {
@@ -696,6 +731,7 @@ class MainActivity : Activity() {
         selectedAppTitle.text = pkg?.let { labelForPackage(it) } ?: "选择或添加应用"
         selectedPackageView.text = pkg?.let { "$it · ${selectedMode().title}" } ?: "未选择应用"
         loadSelectedProfile()
+        updatePolicySummary()
         performanceSummary.text = performanceXmlStatusText()
     }
 
@@ -727,8 +763,10 @@ class MainActivity : Activity() {
         try {
             if (profile == null) {
                 setDefaultThermalForm()
+                setPolicySelection(GamePolicyMode.INDEPENDENT)
             } else {
                 loadThermalForm(profile)
+                setPolicySelection(profile.gamePolicy)
             }
         } finally {
             loadingPerformanceForm = false
@@ -740,6 +778,8 @@ class MainActivity : Activity() {
         val pkg = selectedPackage ?: return toast("请先添加应用")
         val stages = buildThermalStages(showToast = true) ?: return
         val base = stages.first()
+        val refreshHz = refreshTargetFor(pkg)
+        val powerSaveHz = powerSaveRefreshFor(refreshHz)
         val profile = PerformanceProfile(
             pkg,
             selectedMode(),
@@ -754,9 +794,13 @@ class MainActivity : Activity() {
             base.gpuMaxKHz,
             base.gpuMinKHz,
             stages,
+            selectedGamePolicy(),
+            refreshHz,
+            powerSaveHz,
         )
         performanceProfiles[profile.key] = profile
         renderPerformanceProfiles()
+        updatePolicySummary()
         sendCommand("正在保存并应用", settleDelayMs = LONG_COMMAND_DELAY_MS) {
             ZuiControlRequest.send(
                 this,
@@ -764,6 +808,9 @@ class MainActivity : Activity() {
                 pkg = pkg,
                 mode = profile.mode.id,
                 stagePayload = profile.stagePayload(),
+                gamePolicy = profile.gamePolicy.id,
+                refreshHz = profile.refreshHz,
+                powerSaveRefreshHz = profile.powerSaveRefreshHz,
             )
         }
     }
@@ -1323,6 +1370,42 @@ class MainActivity : Activity() {
         val position = if (::modeSpinner.isInitialized) modeSpinner.selectedItemPosition else 0
         return PerformanceMode.entries.getOrElse(position) { PerformanceMode.BALANCED }
     }
+
+    private fun selectedGamePolicy(): GamePolicyMode {
+        val position = if (::policySpinner.isInitialized) policySpinner.selectedItemPosition else 0
+        return GamePolicyMode.entries.getOrElse(position) { GamePolicyMode.INDEPENDENT }
+    }
+
+    private fun setPolicySelection(policy: GamePolicyMode) {
+        if (::policySpinner.isInitialized && policySpinner.selectedItemPosition != policy.ordinal) {
+            policySpinner.setSelection(policy.ordinal)
+        }
+    }
+
+    private fun updatePolicySummary() {
+        if (!::policySummary.isInitialized) {
+            return
+        }
+        val pkg = selectedPackage
+        if (pkg == null) {
+            policySummary.text = "未选择应用"
+            return
+        }
+        val refreshHz = refreshTargetFor(pkg)
+        val powerSaveHz = powerSaveRefreshFor(refreshHz)
+        policySummary.text = when (selectedGamePolicy()) {
+            GamePolicyMode.INDEPENDENT ->
+                "XML 独立条目 · 普通 ${refreshHz}Hz · 节能 ${powerSaveHz}Hz"
+            GamePolicyMode.DEFAULT ->
+                "XML 走 default · 普通 ${refreshHz}Hz · 节能随 default"
+        }
+    }
+
+    private fun refreshTargetFor(pkg: String): Int =
+        refreshRules[pkg] ?: RefreshSceneController.BASE_REFRESH_RATE
+
+    private fun powerSaveRefreshFor(refreshHz: Int): Int =
+        if (refreshHz <= 60) refreshHz else 60
 
     private fun parseFreq(value: String, available: IntArray, preferHigh: Boolean): Int? {
         val normalized = value.trim()
