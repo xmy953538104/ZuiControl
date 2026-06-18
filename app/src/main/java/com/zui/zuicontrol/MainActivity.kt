@@ -1865,7 +1865,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_EXPORT_LOG = 901
-        private const val APP_VERSION_NAME = "0.18.0"
+        private val APP_VERSION_NAME = BuildConfig.VERSION_NAME
         private const val SHORT_COMMAND_DELAY_MS = 720L
         private const val LONG_COMMAND_DELAY_MS = 6500L
         private const val EXPORT_COMMAND_DELAY_MS = 1800L

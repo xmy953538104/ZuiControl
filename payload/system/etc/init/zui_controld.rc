@@ -31,6 +31,8 @@ on property:zui_control.zuipp=restore
 on property:zui_control.zuipp=promote_active
     rm /data/vendor/zui_control/zuipp/active/game_policy.xml.tmp
     rm /data/vendor/zui_control/zuipp/active/performanceconfig.xml.tmp
+    rm /data/vendor/zui_control/zuipp/active/game_policy.xml
+    rm /data/vendor/zui_control/zuipp/active/performanceconfig.xml
     mkdir /data/vendor/zui_control/zuipp/active 0775 root shell
     exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/promote_zuipp_xml.sh
     chown root root /data/vendor/zui_control/zuipp/active/game_policy.xml

@@ -198,6 +198,18 @@ same_file_hash() {
     [ -n "$left" ] && [ "$left" = "$right" ]
 }
 
+verify_active_matches_staging() {
+    if ! same_file_hash "$STAGING_GAME_POLICY" "$ACTIVE_GAME_POLICY"; then
+        set_xml_error "promote active game_policy hash does not match staging"
+        return 1
+    fi
+    if ! same_file_hash "$STAGING_PERF_CONFIG" "$ACTIVE_PERF_CONFIG"; then
+        set_xml_error "promote active performanceconfig hash does not match staging"
+        return 1
+    fi
+    return 0
+}
+
 set_xml_error() {
     mkdir -p "$ZUI_STATE_DIR"
     printf '%s %s\n' "$(ts)" "$*" > "$XML_LAST_ERROR_FILE"
@@ -916,6 +928,7 @@ promote_staging_with_init() {
     validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "staging" || return 1
     if trigger_init_action "$PROP_ZUIPP" promote_active &&
         wait_prop_value "$PROP_ZUIPP" done 10 &&
+        verify_active_matches_staging &&
         remount_active_xml "$reason"; then
         return 0
     fi
