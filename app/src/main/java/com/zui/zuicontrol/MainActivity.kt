@@ -233,7 +233,15 @@ class MainActivity : Activity() {
             .ifBlank { setting("peak_refresh_rate").cleanSetting() }
             .ifBlank { "120" }
         val last = setting(ZuiControlContract.KEY_STATUS_LAST).ifBlank { "init" }
-        return "v$APP_VERSION_NAME · ${displayHz}Hz · ${commandName(last)}"
+        return "v${appVersionName()} · ${displayHz}Hz · ${commandName(last)}"
+    }
+
+    private fun appVersionName(): String {
+        return try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
+        } catch (_: Exception) {
+            "unknown"
+        }
     }
 
     private fun updateHeaderStatus() {
@@ -1865,7 +1873,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_EXPORT_LOG = 901
-        private val APP_VERSION_NAME = BuildConfig.VERSION_NAME
         private const val SHORT_COMMAND_DELAY_MS = 720L
         private const val LONG_COMMAND_DELAY_MS = 6500L
         private const val EXPORT_COMMAND_DELAY_MS = 1800L
