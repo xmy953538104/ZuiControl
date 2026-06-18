@@ -49,6 +49,7 @@ class MainActivity : Activity() {
     private lateinit var selectedPackageView: TextView
     private lateinit var modeSpinner: Spinner
     private lateinit var policySpinner: Spinner
+    private lateinit var framePolicySpinner: Spinner
     private lateinit var policySummary: TextView
     private lateinit var littleMaxInput: EditText
     private lateinit var littleMinInput: EditText
@@ -261,6 +262,7 @@ class MainActivity : Activity() {
                     if (!reply.ok) {
                         throw IllegalStateException(reply.text)
                     }
+                    ZuiControlRequest.send(this@MainActivity, ZuiControlContract.CMD_SYNC_XML_REFRESH)
                 }
             }, LinearLayout.LayoutParams(0, dp(44), 1f))
             addView(commandButton("添加规则") {
@@ -397,6 +399,7 @@ class MainActivity : Activity() {
             if (!reply.ok) {
                 throw IllegalStateException(reply.text)
             }
+            ZuiControlRequest.send(this, ZuiControlContract.CMD_SYNC_XML_REFRESH)
         }
     }
 
@@ -406,6 +409,7 @@ class MainActivity : Activity() {
             if (!reply.ok) {
                 throw IllegalStateException(reply.text)
             }
+            ZuiControlRequest.send(this, ZuiControlContract.CMD_SYNC_XML_REFRESH)
         }
     }
 
@@ -501,6 +505,30 @@ class MainActivity : Activity() {
                 }
             }
             addView(policySpinner, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ))
+
+            addView(fieldTitle("游戏帧率"), fieldMargins())
+            framePolicySpinner = Spinner(this@MainActivity).apply {
+                adapter = SimpleTextAdapter(FramePolicy.entries.map { it.title })
+                background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+                setPadding(dp(4), 0, dp(4), 0)
+                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                    override fun onItemSelected(
+                        parent: AdapterView<*>?,
+                        view: View?,
+                        position: Int,
+                        id: Long,
+                    ) {
+                        if (!loadingPerformanceForm) {
+                            updatePolicySummary()
+                        }
+                    }
+                }
+            }
+            addView(framePolicySpinner, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48),
             ))
@@ -698,8 +726,7 @@ class MainActivity : Activity() {
                     Typeface.NORMAL,
                 ))
                 addView(label(
-                    "${profile.gamePolicy.title} · 普通 ${profile.resolvedRefreshHz(refreshTargetFor(profile.packageName))}Hz" +
-                        " · 节能 ${profile.resolvedPowerSaveRefreshHz(refreshTargetFor(profile.packageName))}Hz",
+                    "${profile.gamePolicy.title} · ${frameSummary(profile.packageName, profile.framePolicy)}",
                     11f,
                     COLOR_SUBTLE,
                     Typeface.NORMAL,
@@ -764,9 +791,11 @@ class MainActivity : Activity() {
             if (profile == null) {
                 setDefaultThermalForm()
                 setPolicySelection(GamePolicyMode.INDEPENDENT)
+                setFramePolicySelection(defaultFramePolicyFor(pkg))
             } else {
                 loadThermalForm(profile)
                 setPolicySelection(profile.gamePolicy)
+                setFramePolicySelection(profile.framePolicy)
             }
         } finally {
             loadingPerformanceForm = false
@@ -778,8 +807,12 @@ class MainActivity : Activity() {
         val pkg = selectedPackage ?: return toast("请先添加应用")
         val stages = buildThermalStages(showToast = true) ?: return
         val base = stages.first()
-        val refreshHz = refreshTargetFor(pkg)
-        val powerSaveHz = powerSaveRefreshFor(refreshHz)
+        val gamePolicy = selectedGamePolicy()
+        val framePolicy = if (gamePolicy == GamePolicyMode.DEFAULT) {
+            FramePolicy.DEFAULT
+        } else {
+            selectedFramePolicy()
+        }
         val profile = PerformanceProfile(
             pkg,
             selectedMode(),
@@ -794,9 +827,8 @@ class MainActivity : Activity() {
             base.gpuMaxKHz,
             base.gpuMinKHz,
             stages,
-            selectedGamePolicy(),
-            refreshHz,
-            powerSaveHz,
+            gamePolicy,
+            framePolicy,
         )
         performanceProfiles[profile.key] = profile
         renderPerformanceProfiles()
@@ -809,8 +841,7 @@ class MainActivity : Activity() {
                 mode = profile.mode.id,
                 stagePayload = profile.stagePayload(),
                 gamePolicy = profile.gamePolicy.id,
-                refreshHz = profile.refreshHz,
-                powerSaveRefreshHz = profile.powerSaveRefreshHz,
+                framePolicy = profile.framePolicy.id,
             )
         }
     }
@@ -1376,9 +1407,20 @@ class MainActivity : Activity() {
         return GamePolicyMode.entries.getOrElse(position) { GamePolicyMode.INDEPENDENT }
     }
 
+    private fun selectedFramePolicy(): FramePolicy {
+        val position = if (::framePolicySpinner.isInitialized) framePolicySpinner.selectedItemPosition else 0
+        return FramePolicy.entries.getOrElse(position) { FramePolicy.DEFAULT }
+    }
+
     private fun setPolicySelection(policy: GamePolicyMode) {
         if (::policySpinner.isInitialized && policySpinner.selectedItemPosition != policy.ordinal) {
             policySpinner.setSelection(policy.ordinal)
+        }
+    }
+
+    private fun setFramePolicySelection(policy: FramePolicy) {
+        if (::framePolicySpinner.isInitialized && framePolicySpinner.selectedItemPosition != policy.ordinal) {
+            framePolicySpinner.setSelection(policy.ordinal)
         }
     }
 
@@ -1391,15 +1433,32 @@ class MainActivity : Activity() {
             policySummary.text = "未选择应用"
             return
         }
-        val refreshHz = refreshTargetFor(pkg)
-        val powerSaveHz = powerSaveRefreshFor(refreshHz)
+        val framePolicy = selectedFramePolicy()
+        if (::framePolicySpinner.isInitialized) {
+            framePolicySpinner.isEnabled = selectedGamePolicy() == GamePolicyMode.INDEPENDENT
+            framePolicySpinner.alpha = if (framePolicySpinner.isEnabled) 1f else 0.55f
+        }
         policySummary.text = when (selectedGamePolicy()) {
             GamePolicyMode.INDEPENDENT ->
-                "XML 独立条目 · 普通 ${refreshHz}Hz · 节能 ${powerSaveHz}Hz"
+                "XML 独立条目 · ${frameSummary(pkg, framePolicy)}"
             GamePolicyMode.DEFAULT ->
-                "XML 走 default · 普通 ${refreshHz}Hz · 节能随 default"
+                "XML 走 default · default 120/60"
         }
     }
+
+    private fun frameSummary(pkg: String, policy: FramePolicy): String {
+        return when (policy) {
+            FramePolicy.DEFAULT -> "默认 120/60"
+            FramePolicy.FIXED_60 -> "游戏 60/60"
+            FramePolicy.FOLLOW_DISPLAY -> {
+                val refreshHz = refreshTargetFor(pkg)
+                "跟随 ${refreshHz}Hz / 节能 ${powerSaveRefreshFor(refreshHz)}Hz"
+            }
+        }
+    }
+
+    private fun defaultFramePolicyFor(pkg: String): FramePolicy =
+        if (refreshRules.containsKey(pkg)) FramePolicy.FOLLOW_DISPLAY else FramePolicy.DEFAULT
 
     private fun refreshTargetFor(pkg: String): Int =
         refreshRules[pkg] ?: RefreshSceneController.BASE_REFRESH_RATE
@@ -1485,6 +1544,7 @@ class MainActivity : Activity() {
         ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE -> "保存性能配置"
         ZuiControlContract.CMD_REMOVE_PERFORMANCE_PROFILE -> "删除性能配置"
         ZuiControlContract.CMD_APPLY_PERFORMANCE -> "应用性能调度"
+        ZuiControlContract.CMD_SYNC_XML_REFRESH -> "同步 XML 帧率"
         ZuiControlContract.CMD_RESTORE_ZUIPP -> "恢复基线调度"
         ZuiControlContract.CMD_RESTORE_LAST_GOOD -> "恢复 last_good"
         ZuiControlContract.CMD_RESTORE_OFFICIAL_ORIGINAL -> "恢复官方原始表"

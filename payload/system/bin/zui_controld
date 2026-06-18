@@ -50,6 +50,7 @@ OFFICIAL_GAME_POLICY=$ZUI_OFFICIAL_DIR/game_policy.xml
 OFFICIAL_PERF_CONFIG=$ZUI_OFFICIAL_DIR/performanceconfig.xml
 WORK_ASOPT=$ASOUL_DIR/asopt.conf
 REFRESH_RULES=$REFRESH_DIR/rules.prop
+SYSTEM_REFRESH_PROFILES=/data/system/zui_control/profiles.prop
 PERFORMANCE_PROFILES=$PERFORMANCE_DIR/profiles.prop
 PERFORMANCE_SUMMARY=$PERFORMANCE_DIR/summary.txt
 XML_STATUS_FILE=$ZUI_STATE_DIR/status.prop
@@ -335,7 +336,6 @@ init_active_xml() {
             "$ZUI_LAST_GOOD_DIR" "last_good init" || return 1
         log_line "ZuiPP last_good initialized from active XML"
     fi
-    rm -f "$ZUI_DIR/p2test_touch" "$ZUI_DIR"/p2test_* 2>/dev/null
     label_active_xml
     write_active_sha
     return 0
@@ -377,6 +377,29 @@ valid_game_policy_power_save_refresh_rate() {
         0|30|60|90|120|144|165) return 0 ;;
     esac
     return 1
+}
+
+valid_frame_policy() {
+    case "$1" in
+        default|fixed60|follow_display) return 0 ;;
+    esac
+    return 1
+}
+
+legacy_frame_policy() {
+    legacy_policy="$1"
+    legacy_refresh="$2"
+    legacy_power_save="$3"
+    if [ "$legacy_policy" != "independent" ]; then
+        echo "default"
+    elif [ "$legacy_refresh" = "60" ] && [ "$legacy_power_save" = "60" ]; then
+        echo "fixed60"
+    elif [ -n "$legacy_refresh" ] && [ "$legacy_refresh" != "0" ] &&
+        [ "$legacy_refresh" != "$BASE_REFRESH_RATE" ]; then
+        echo "follow_display"
+    else
+        echo "default"
+    fi
 }
 
 valid_mode() {
@@ -1225,7 +1248,12 @@ profile_gpu_limits_for_app() {
         IFS="$old_ifs"
         line_pkg="$1"
         line_mode="$2"
-        if [ "$3" = "v3" ]; then
+        if [ "$3" = "v4" ]; then
+            stage_limits="$(stage_gpu_limits_for_payload "$6")" || continue
+            line_gpu_max="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 1)"
+            line_gpu_min="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 2)"
+            line_thermal="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 3)"
+        elif [ "$3" = "v3" ]; then
             stage_limits="$(stage_gpu_limits_for_payload "$7")" || continue
             line_gpu_max="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 1)"
             line_gpu_min="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 2)"
@@ -1416,31 +1444,48 @@ set_performance_profile_staged() {
     profile_mode="$2"
     stage_payload="$3"
     profile_policy="$4"
-    profile_refresh="$5"
+    profile_frame_or_refresh="$5"
     profile_power_save="$6"
+    profile_frame_policy=
     if ! valid_package_name "$profile_pkg" || ! valid_mode "$profile_mode" ||
         ! valid_stage_payload "$stage_payload"; then
         log_line "invalid staged performance profile: $profile_pkg $profile_mode"
         set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg"
         return 1
     fi
-    if [ -n "$profile_policy$profile_refresh$profile_power_save" ]; then
+    if [ -n "$profile_policy$profile_frame_or_refresh$profile_power_save" ]; then
         profile_policy="${profile_policy:-independent}"
-        profile_refresh="${profile_refresh:-0}"
-        profile_power_save="${profile_power_save:-0}"
-        if ! valid_game_policy_mode "$profile_policy" ||
-            ! valid_game_policy_refresh_rate "$profile_refresh" ||
-            ! valid_game_policy_power_save_refresh_rate "$profile_power_save"; then
-            log_line "invalid staged policy: $profile_pkg $profile_mode policy=$profile_policy refresh=$profile_refresh powersave=$profile_power_save"
+        if ! valid_game_policy_mode "$profile_policy"; then
+            log_line "invalid staged policy: $profile_pkg $profile_mode policy=$profile_policy"
             set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg" "reason=invalid_policy"
             return 1
         fi
+        if [ -n "$profile_power_save" ] ||
+            printf '%s\n' "$profile_frame_or_refresh" | grep -q '^[0-9][0-9]*$'; then
+            profile_refresh="${profile_frame_or_refresh:-0}"
+            profile_power_save="${profile_power_save:-0}"
+            if ! valid_game_policy_refresh_rate "$profile_refresh" ||
+                ! valid_game_policy_power_save_refresh_rate "$profile_power_save"; then
+                log_line "invalid staged legacy refresh: $profile_pkg $profile_mode policy=$profile_policy refresh=$profile_refresh powersave=$profile_power_save"
+                set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg" "reason=invalid_policy"
+                return 1
+            fi
+            profile_frame_policy="$(legacy_frame_policy "$profile_policy" "$profile_refresh" "$profile_power_save")"
+        else
+            profile_frame_policy="${profile_frame_or_refresh:-default}"
+            if ! valid_frame_policy "$profile_frame_policy"; then
+                log_line "invalid staged frame policy: $profile_pkg $profile_mode policy=$profile_policy frame=$profile_frame_policy"
+                set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg" "reason=invalid_frame_policy"
+                return 1
+            fi
+        fi
+        [ "$profile_policy" = "default" ] && profile_frame_policy=default
     fi
     rewrite_performance_without_key "$profile_pkg" "$profile_mode"
-    if [ -n "$profile_policy$profile_refresh$profile_power_save" ]; then
-        printf '%s|%s|v3|%s|%s|%s|%s\n' \
+    if [ -n "$profile_policy$profile_frame_policy" ]; then
+        printf '%s|%s|v4|%s|%s|%s\n' \
             "$profile_pkg" "$profile_mode" "$profile_policy" \
-            "$profile_refresh" "$profile_power_save" "$stage_payload" \
+            "$profile_frame_policy" "$stage_payload" \
             >> "$PERFORMANCE_PROFILES"
     else
         printf '%s|%s|v2|%s\n' "$profile_pkg" "$profile_mode" "$stage_payload" \
@@ -1505,31 +1550,32 @@ generate_performance_xml() {
     init_active_xml || return 1
     mkdir -p "$ZUI_STAGING_DIR"
     rm -f "$PERFORMANCE_SUMMARY"
-    if ! performance_profiles_have_entries; then
-        if stage_xml_pair_from_pair "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
-            "empty performance profiles"; then
+    profiles_empty=0
+    performance_profiles_have_entries || profiles_empty=1
+    apk="$(app_apk_path)"
+    if [ ! -s "$apk" ]; then
+        if [ "$profiles_empty" = "1" ] &&
+            stage_xml_pair_from_pair "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
+                "empty performance profiles fallback"; then
             {
                 echo "profiles=0"
+                echo "generator=unavailable"
                 echo "staging_game_policy=$(file_sha "$STAGING_GAME_POLICY")"
                 echo "staging_performanceconfig=$(file_sha "$STAGING_PERF_CONFIG")"
             } > "$PERFORMANCE_SUMMARY"
             chmod 0664 "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" \
                 "$PERFORMANCE_SUMMARY" 2>/dev/null
             publish_performance_state
-            log_line "performance profiles empty; staged baked baseline"
+            log_line "performance generator missing; staged baked baseline fallback"
             return 0
         fi
-        publish_performance_state
-        return 1
-    fi
-    apk="$(app_apk_path)"
-    if [ ! -s "$apk" ]; then
         log_line "XML generator APK missing"
         set_xml_error "XML generator APK missing"
         return 1
     fi
     if CLASSPATH="$apk" app_process /system/bin com.zui.zuicontrol.XmlProfileGenerator \
         "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" "$PERFORMANCE_PROFILES" \
+        "$SYSTEM_REFRESH_PROFILES" \
         "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" \
         > "$PERFORMANCE_SUMMARY.tmp" 2>&1; then
         validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "staging" || {
@@ -1550,6 +1596,17 @@ generate_performance_xml() {
     mv "$PERFORMANCE_SUMMARY.tmp" "$PERFORMANCE_SUMMARY" 2>/dev/null
     publish_performance_state
     log_line "performance XML generation failed: $(tail -n 1 "$PERFORMANCE_SUMMARY" 2>/dev/null)"
+    return 1
+}
+
+sync_xml_refresh() {
+    if generate_performance_xml && promote_staging_to_active; then
+        publish_performance_state
+        set_status "daemon=running" "last=sync_xml_refresh_ok"
+        return 0
+    fi
+    publish_performance_state
+    set_status "daemon=running" "last=sync_xml_refresh_failed"
     return 1
 }
 
@@ -1662,6 +1719,7 @@ handle_request() {
         set_performance_profile_staged) set_performance_profile_staged "$pkg" "$mode" "$rate"; result=$? ;;
         remove_performance_profile) remove_performance_profile "$pkg" "$mode"; result=$? ;;
         apply_performance) apply_performance; result=$? ;;
+        sync_xml_refresh) sync_xml_refresh; result=$? ;;
         apply_zuipp) apply_zuipp; result=$? ;;
         restore_zuipp) restore_zuipp; result=$? ;;
         restore_last_good) restore_last_good_zuipp; result=$? ;;
@@ -1759,14 +1817,18 @@ process_atomic_settings_request() {
     fi
 
     if [ "$cmd" = "set_performance_profile_staged" ]; then
-        if [ "$field_count" -ne 5 ] && [ "$field_count" -ne 8 ]; then
+        if [ "$field_count" -ne 5 ] && [ "$field_count" -ne 7 ] && [ "$field_count" -ne 8 ]; then
             log_line "invalid staged request: fields=$field_count"
             set_status "daemon=running" "last=invalid_request" "cmd=$cmd"
             remember_settings_request "$request"
             return 1
         fi
         stage_payload="$rate"
-        if [ "$field_count" -eq 8 ]; then
+        if [ "$field_count" -eq 7 ]; then
+            log_line "request: settings:$id cmd=$cmd pkg=$pkg mode=$mode policy=$field6 frame=$field7"
+            set_performance_profile_staged "$pkg" "$mode" "$stage_payload" \
+                "$field6" "$field7"
+        elif [ "$field_count" -eq 8 ]; then
             log_line "request: settings:$id cmd=$cmd pkg=$pkg mode=$mode policy=$field6 refresh=$field7 powersave=$field8"
             set_performance_profile_staged "$pkg" "$mode" "$stage_payload" \
                 "$field6" "$field7" "$field8"

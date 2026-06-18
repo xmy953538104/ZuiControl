@@ -29,22 +29,20 @@ data class PerformanceProfile(
         ),
     ),
     val gamePolicy: GamePolicyMode = GamePolicyMode.INDEPENDENT,
-    val refreshHz: Int = 0,
-    val powerSaveRefreshHz: Int = 0,
+    val framePolicy: FramePolicy = FramePolicy.DEFAULT,
 ) {
     val key: String
         get() = "$packageName|${mode.id}"
 
     fun serialize(): String {
         if (stages.size > 1 || stages.firstOrNull()?.thresholdLevel != TEMP_DEFAULT_LEVEL ||
-            gamePolicy != GamePolicyMode.INDEPENDENT || refreshHz > 0 || powerSaveRefreshHz > 0) {
+            gamePolicy != GamePolicyMode.INDEPENDENT || framePolicy != FramePolicy.DEFAULT) {
             return listOf(
                 packageName,
                 mode.id,
-                "v3",
+                "v4",
                 gamePolicy.id,
-                refreshHz,
-                powerSaveRefreshHz,
+                framePolicy.id,
                 stagePayload(),
             ).joinToString("|")
         }
@@ -66,13 +64,6 @@ data class PerformanceProfile(
 
     fun stagePayload(): String = stages.joinToString(";") { it.serialize() }
 
-    fun resolvedRefreshHz(defaultRefreshHz: Int): Int =
-        refreshHz.takeIf { it > 0 } ?: defaultRefreshHz
-
-    fun resolvedPowerSaveRefreshHz(defaultRefreshHz: Int): Int =
-        powerSaveRefreshHz.takeIf { it > 0 }
-            ?: if (resolvedRefreshHz(defaultRefreshHz) <= 60) resolvedRefreshHz(defaultRefreshHz) else 60
-
     fun thermalSummary(): String {
         if (stages.size <= 1) {
             return "单温区"
@@ -93,10 +84,34 @@ data class PerformanceProfile(
                 return null
             }
             val mode = PerformanceMode.fromId(parts[1]) ?: return null
+            if (parts.size == 6 && parts[2] == "v4") {
+                val gamePolicy = GamePolicyMode.fromId(parts[3]) ?: return null
+                val framePolicy = FramePolicy.fromId(parts[4]) ?: return null
+                val stages = parseStages(parts[5]).takeIf { it.isNotEmpty() } ?: return null
+                val primary = stages.first()
+                return PerformanceProfile(
+                    parts[0],
+                    mode,
+                    primary.littleMaxKHz,
+                    primary.littleMinKHz,
+                    primary.bigMaxKHz,
+                    primary.bigMinKHz,
+                    primary.titanMaxKHz,
+                    primary.titanMinKHz,
+                    primary.megaMaxKHz,
+                    primary.megaMinKHz,
+                    primary.gpuMaxKHz,
+                    primary.gpuMinKHz,
+                    stages,
+                    gamePolicy,
+                    framePolicy,
+                ).takeIf { it.isValid() }
+            }
             if (parts.size == 7 && parts[2] == "v3") {
                 val gamePolicy = GamePolicyMode.fromId(parts[3]) ?: return null
                 val refreshHz = parts[4].toIntOrNull() ?: return null
                 val powerSaveRefreshHz = parts[5].toIntOrNull() ?: return null
+                val framePolicy = FramePolicy.fromLegacy(gamePolicy, refreshHz, powerSaveRefreshHz)
                 val stages = parseStages(parts[6]).takeIf { it.isNotEmpty() } ?: return null
                 val primary = stages.first()
                 return PerformanceProfile(
@@ -114,8 +129,7 @@ data class PerformanceProfile(
                     primary.gpuMinKHz,
                     stages,
                     gamePolicy,
-                    refreshHz,
-                    powerSaveRefreshHz,
+                    framePolicy,
                 ).takeIf { it.isValid() }
             } else if (parts.size == 7) {
                 return null
@@ -196,9 +210,7 @@ data class PerformanceProfile(
             stages.first().thresholdLevel == TEMP_DEFAULT_LEVEL &&
             stages.all { it.isValid() } &&
             stages.drop(1).map { it.thresholdLevel }.zipWithNext().all { (left, right) -> left < right } &&
-            stages.drop(1).all { it.thresholdLevel in 1..16 } &&
-            (refreshHz == 0 || refreshHz in ZuiControlContract.rates) &&
-            (powerSaveRefreshHz == 0 || powerSaveRefreshHz in POWER_SAVE_REFRESH_RATES)
+            stages.drop(1).all { it.thresholdLevel in 1..16 }
 }
 
 data class PerformanceStage(
@@ -296,4 +308,27 @@ enum class GamePolicyMode(val id: String, val title: String) {
     }
 }
 
-private val POWER_SAVE_REFRESH_RATES = setOf(30, 60, 90, 120, 144, 165)
+enum class FramePolicy(val id: String, val title: String) {
+    DEFAULT("default", "默认 120/60"),
+    FIXED_60("fixed60", "游戏 60/60"),
+    FOLLOW_DISPLAY("follow_display", "跟随刷新率");
+
+    companion object {
+        fun fromId(value: String): FramePolicy? = entries.firstOrNull { it.id == value }
+
+        fun fromLegacy(
+            gamePolicy: GamePolicyMode,
+            refreshHz: Int,
+            powerSaveRefreshHz: Int,
+        ): FramePolicy {
+            if (gamePolicy == GamePolicyMode.DEFAULT) {
+                return DEFAULT
+            }
+            return when {
+                refreshHz == 60 && powerSaveRefreshHz == 60 -> FIXED_60
+                refreshHz > 0 && refreshHz != 120 -> FOLLOW_DISPLAY
+                else -> DEFAULT
+            }
+        }
+    }
+}

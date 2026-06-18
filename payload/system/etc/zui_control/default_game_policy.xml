@@ -48,7 +48,7 @@
             <Attribute name="SpecialBoostConfig">NoBoost NoBoost SavageBoost</Attribute>
             <Attribute name="RefreshRateConfig">120</Attribute>
             <Attribute name="ThermalConfig">200 100 300</Attribute>
-            <Attribute name="PowerSaveRefreshRateConfig">30</Attribute>
+            <Attribute name="PowerSaveRefreshRateConfig">60</Attribute>
             <Attribute name="LimitConfig">-1000:-1001_-1001_-1001_-1001_-1001|-1001:-1002_-1002_-1002_-1002_-1002|-1002:-1003_-1003_-1003_-1003_-1003 -1000:-1004_-1004_-1004_-1004_-1004|-1004:-1005_-1005_-1005_-1005_-1005|-1005:-1006_-1006_-1006_-1006_-1006 -1000:-1007_-1007_-1007_-1007_-1007|-1007:-1008_-1008_-1008_-1008_-1008|-1008:-1009_-1009_-1009_-1009_-1009</Attribute>
         </App>
         <App name="PUBGMHD" pkg="com.tencent.tmgp.pubgmhd">
@@ -69,7 +69,7 @@
             <Attribute name="ThermalConfig">200 100 300</Attribute>
             <Attribute name="RefreshRateConfig">60</Attribute>
             <Attribute name="SpecialBoostConfig">NoBoost NoBoost NoBoost</Attribute>
-            <Attribute name="PowerSaveRefreshRateConfig">30</Attribute>
+            <Attribute name="PowerSaveRefreshRateConfig">60</Attribute>
             <Attribute name="LimitConfig">-1000:412_311_312_418_1006|2:412_311_312_418_1006|4:412_311_312_418_1006|13:309_108_108_107_1209 -1000:108_106_107_107_1206|1:108_106_107_107_1206|3:108_106_107_107_1206|10:105_103_104_104_1209 -1000:1518_1332_529_1235_601|6:1518_1332_529_1235_601|9:1518_1332_529_1235_601|14:1415_108_108_107_1008</Attribute>
         </App>
     </AppList>

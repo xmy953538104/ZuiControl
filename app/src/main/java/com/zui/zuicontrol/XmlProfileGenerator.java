@@ -7,8 +7,8 @@ import org.w3c.dom.NodeList;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -29,6 +29,9 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 
 public final class XmlProfileGenerator {
+    private static final int DEFAULT_REFRESH_HZ = 120;
+    private static final int MIN_REFRESH_HZ = 60;
+
     private static final int[] LITTLE = {
             364800, 460800, 556800, 672000, 787200, 902400, 1017600, 1132800,
             1248000, 1344000, 1459200, 1574400, 1689600, 1804800, 1920000,
@@ -67,17 +70,22 @@ public final class XmlProfileGenerator {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 5) {
+        if (args.length != 5 && args.length != 6) {
             throw new IllegalArgumentException(
-                    "usage: default_game default_perf profiles output_game output_perf");
+                    "usage: default_game default_perf profiles [refresh_profiles] output_game output_perf");
         }
         List<Profile> profiles = readProfiles(new File(args[2]));
+        RefreshRules refreshRules = args.length == 6
+                ? readRefreshRules(new File(args[3]))
+                : RefreshRules.empty();
+        int outputOffset = args.length == 6 ? 4 : 3;
         generate(
                 new File(args[0]),
                 new File(args[1]),
                 profiles,
-                new File(args[3]),
-                new File(args[4])
+                refreshRules,
+                new File(args[outputOffset]),
+                new File(args[outputOffset + 1])
         );
     }
 
@@ -85,6 +93,7 @@ public final class XmlProfileGenerator {
             File defaultGame,
             File defaultPerf,
             List<Profile> profiles,
+            RefreshRules refreshRules,
             File outputGame,
             File outputPerf
     ) throws Exception {
@@ -99,6 +108,7 @@ public final class XmlProfileGenerator {
         if (defaultApp == null) {
             throw new IllegalStateException("default App missing in game_policy.xml");
         }
+        normalizeAppRefreshAttributes(game);
         Map<String, Element> types = gameLimitTypes(perf);
         for (String required : Arrays.asList(
                 "LittleCore", "BigCore", "TitanCore", "MegaCore", "GPU")) {
@@ -108,6 +118,18 @@ public final class XmlProfileGenerator {
         }
 
         List<String> summaries = new ArrayList<>();
+        Map<String, Boolean> packageHasIndependent = new LinkedHashMap<>();
+        for (Profile profile : profiles) {
+            Boolean current = packageHasIndependent.get(profile.pkg);
+            packageHasIndependent.put(profile.pkg,
+                    (current != null && current.booleanValue()) || profile.independentPolicy());
+        }
+        for (Map.Entry<String, Boolean> entry : packageHasIndependent.entrySet()) {
+            if (!entry.getValue().booleanValue() && removeApp(game, entry.getKey())) {
+                summaries.add(entry.getKey() + " policy=default app_entry=removed");
+            }
+        }
+
         for (Profile profile : profiles) {
             List<String> stagedSegments = new ArrayList<>();
             List<String> stageSummaries = new ArrayList<>();
@@ -163,13 +185,9 @@ public final class XmlProfileGenerator {
                 app.setAttribute("pkg", profile.pkg);
                 defaultApp.getParentNode().appendChild(app);
             }
-            if (profile.refreshHz > 0) {
-                upsertAttribute(app, "RefreshRateConfig", Integer.toString(profile.refreshHz));
-            }
-            if (profile.powerSaveRefreshHz > 0) {
-                upsertAttribute(app, "PowerSaveRefreshRateConfig",
-                        Integer.toString(profile.powerSaveRefreshHz));
-            }
+            FrameValue frame = frameValue(profile, refreshRules);
+            upsertAttribute(app, "RefreshRateConfig", Integer.toString(frame.normalHz));
+            upsertAttribute(app, "PowerSaveRefreshRateConfig", Integer.toString(frame.powerSaveHz));
 
             Element limit = findAttribute(app, "LimitConfig");
             if (limit == null) {
@@ -187,8 +205,9 @@ public final class XmlProfileGenerator {
             limit.setTextContent(String.join(" ", modes));
 
             summaries.add(profile.pkg + "/" + profile.mode +
-                    " policy=independent refresh=" + profile.refreshHz +
-                    " powersave=" + profile.powerSaveRefreshHz + " " +
+                    " policy=independent frame=" + profile.framePolicy +
+                    " refresh=" + frame.normalHz +
+                    " powersave=" + frame.powerSaveHz + " " +
                     (profile.staged ? "thermal_stages=" : "legacy=") +
                     String.join("; ", stageSummaries));
         }
@@ -212,11 +231,11 @@ public final class XmlProfileGenerator {
         }
         int lineNumber = 0;
         int skipped = 0;
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+        try (BufferedReader reader = Files.newBufferedReader(file.toPath(), StandardCharsets.UTF_8)) {
             String line;
             while ((line = reader.readLine()) != null) {
                 lineNumber++;
-                line = line.trim();
+                line = stripBom(line.trim());
                 if (line.isEmpty() || line.startsWith("#")) {
                     continue;
                 }
@@ -239,7 +258,25 @@ public final class XmlProfileGenerator {
                     continue;
                 }
                 Profile profile;
-                if (parts.length == 4 || parts.length == 7) {
+                if (parts.length == 6 && "v4".equals(parts[2])) {
+                    String policy = parts[3];
+                    String framePolicy = parts[4];
+                    if (!validPolicy(policy)) {
+                        skipped += skipProfile(lineNumber, "invalid_policy");
+                        continue;
+                    }
+                    if (!validFramePolicy(framePolicy)) {
+                        skipped += skipProfile(lineNumber, "invalid_frame_policy");
+                        continue;
+                    }
+                    List<Stage> stages = parseStages(parts[5]);
+                    if (stages.isEmpty()) {
+                        skipped += skipProfile(lineNumber, "invalid_stage_payload");
+                        continue;
+                    }
+                    profile = new Profile(parts[0], parts[1], modeIndex, stages, true,
+                            policy, framePolicy);
+                } else if (parts.length == 4 || parts.length == 7) {
                     boolean v3 = parts.length == 7;
                     if (v3 && !"v3".equals(parts[2])) {
                         skipped += skipProfile(lineNumber, "invalid_profile_version");
@@ -250,8 +287,7 @@ public final class XmlProfileGenerator {
                         continue;
                     }
                     String policy = "independent";
-                    int refreshHz = 0;
-                    int powerSaveRefreshHz = 0;
+                    String framePolicy = "default";
                     String stagePayload = parts[3];
                     if (v3) {
                         policy = parts[3];
@@ -259,13 +295,14 @@ public final class XmlProfileGenerator {
                             skipped += skipProfile(lineNumber, "invalid_policy");
                             continue;
                         }
-                        refreshHz = parseIntOrMinus(parts[4]);
-                        powerSaveRefreshHz = parseIntOrMinus(parts[5]);
+                        int refreshHz = parseIntOrMinus(parts[4]);
+                        int powerSaveRefreshHz = parseIntOrMinus(parts[5]);
                         if (!validRefreshHz(refreshHz) ||
                                 !validPowerSaveRefreshHz(powerSaveRefreshHz)) {
                             skipped += skipProfile(lineNumber, "invalid_refresh");
                             continue;
                         }
+                        framePolicy = legacyFramePolicy(policy, refreshHz, powerSaveRefreshHz);
                         stagePayload = parts[6];
                     }
                     List<Stage> stages = parseStages(stagePayload);
@@ -274,7 +311,7 @@ public final class XmlProfileGenerator {
                         continue;
                     }
                     profile = new Profile(parts[0], parts[1], modeIndex, stages, true,
-                            policy, refreshHz, powerSaveRefreshHz);
+                            policy, framePolicy);
                 } else {
                     int[] values = parseProfileValues(parts);
                     if (values == null) {
@@ -294,7 +331,7 @@ public final class XmlProfileGenerator {
                                 values[8], values[9]);
                     }
                     profile = new Profile(parts[0], parts[1], modeIndex,
-                            Arrays.asList(stage), false, "independent", 0, 0);
+                            Arrays.asList(stage), false, "independent", "default");
                 }
                 if (!profile.valid()) {
                     skipped += skipProfile(lineNumber, "invalid_range");
@@ -353,6 +390,54 @@ public final class XmlProfileGenerator {
 
     private static boolean validPowerSaveRefreshHz(int value) {
         return validRefreshHz(value) || value == 30;
+    }
+
+    private static boolean validFramePolicy(String value) {
+        return "default".equals(value) || "fixed60".equals(value)
+                || "follow_display".equals(value);
+    }
+
+    private static String legacyFramePolicy(String policy, int refreshHz, int powerSaveRefreshHz) {
+        if (!"independent".equals(policy)) {
+            return "default";
+        }
+        if (refreshHz == 60 && powerSaveRefreshHz == 60) {
+            return "fixed60";
+        }
+        if (refreshHz > 0 && refreshHz != DEFAULT_REFRESH_HZ) {
+            return "follow_display";
+        }
+        return "default";
+    }
+
+    private static RefreshRules readRefreshRules(File file) throws Exception {
+        RefreshRules rules = RefreshRules.empty();
+        if (!file.isFile()) {
+            return rules;
+        }
+        try (BufferedReader reader = Files.newBufferedReader(file.toPath(), StandardCharsets.UTF_8)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = stripBom(line.trim());
+                if (line.isEmpty() || line.startsWith("#") || line.startsWith("version=")) {
+                    continue;
+                }
+                String[] parts = line.split("\\|", -1);
+                if (parts.length == 5 && "default".equals(parts[0])) {
+                    int hz = parseIntOrMinus(parts[2]);
+                    if (validRefreshHz(hz) && hz > 0) {
+                        rules.defaultHz = hz;
+                    }
+                } else if (parts.length == 6 && "pkg".equals(parts[0])) {
+                    String pkg = parts[2].trim();
+                    int hz = parseIntOrMinus(parts[3]);
+                    if (validPackage(pkg) && validRefreshHz(hz) && hz > 0) {
+                        rules.packageHz.put(pkg, hz);
+                    }
+                }
+            }
+        }
+        return rules;
     }
 
     private static List<Stage> parseStages(String payload) {
@@ -557,6 +642,47 @@ public final class XmlProfileGenerator {
         attribute.setTextContent(value);
     }
 
+    private static boolean removeApp(Document document, String pkg) {
+        Element app = findApp(document, pkg);
+        if (app == null || "default".equals(pkg)) {
+            return false;
+        }
+        app.getParentNode().removeChild(app);
+        return true;
+    }
+
+    private static void normalizeAppRefreshAttributes(Document document) {
+        NodeList apps = document.getElementsByTagName("App");
+        for (int i = 0; i < apps.getLength(); i++) {
+            Element app = (Element) apps.item(i);
+            if ("default".equals(app.getAttribute("pkg"))) {
+                upsertAttribute(app, "RefreshRateConfig", Integer.toString(DEFAULT_REFRESH_HZ));
+                upsertAttribute(app, "PowerSaveRefreshRateConfig", Integer.toString(MIN_REFRESH_HZ));
+                continue;
+            }
+            Element refresh = findAttribute(app, "RefreshRateConfig");
+            if (refresh != null && parseIntOrMinus(normalize(refresh.getTextContent())) < MIN_REFRESH_HZ) {
+                refresh.setTextContent(Integer.toString(MIN_REFRESH_HZ));
+            }
+            Element powerSave = findAttribute(app, "PowerSaveRefreshRateConfig");
+            if (powerSave == null ||
+                    parseIntOrMinus(normalize(powerSave.getTextContent())) < MIN_REFRESH_HZ) {
+                upsertAttribute(app, "PowerSaveRefreshRateConfig", Integer.toString(MIN_REFRESH_HZ));
+            }
+        }
+    }
+
+    private static FrameValue frameValue(Profile profile, RefreshRules refreshRules) {
+        if ("fixed60".equals(profile.framePolicy)) {
+            return new FrameValue(MIN_REFRESH_HZ, MIN_REFRESH_HZ);
+        }
+        if ("follow_display".equals(profile.framePolicy)) {
+            int normalHz = refreshRules.refreshFor(profile.pkg);
+            return new FrameValue(normalHz, MIN_REFRESH_HZ);
+        }
+        return new FrameValue(DEFAULT_REFRESH_HZ, MIN_REFRESH_HZ);
+    }
+
     private static Map<String, Element> gameLimitTypes(Document document) {
         Map<String, Element> result = new LinkedHashMap<>();
         NodeList configs = document.getElementsByTagName("GameLimitConfig");
@@ -589,6 +715,10 @@ public final class XmlProfileGenerator {
 
     private static String normalize(String value) {
         return value.trim().replaceAll("\\s+", " ");
+    }
+
+    private static String stripBom(String value) {
+        return value.startsWith("\uFEFF") ? value.substring(1).trim() : value;
     }
 
     private static void writeDocument(Document document, File output) throws Exception {
@@ -647,6 +777,33 @@ public final class XmlProfileGenerator {
         }
     }
 
+    private static final class FrameValue {
+        final int normalHz;
+        final int powerSaveHz;
+
+        FrameValue(int normalHz, int powerSaveHz) {
+            this.normalHz = normalHz;
+            this.powerSaveHz = powerSaveHz;
+        }
+    }
+
+    private static final class RefreshRules {
+        int defaultHz = DEFAULT_REFRESH_HZ;
+        final Map<String, Integer> packageHz = new LinkedHashMap<>();
+
+        static RefreshRules empty() {
+            return new RefreshRules();
+        }
+
+        int refreshFor(String pkg) {
+            Integer value = packageHz.get(pkg);
+            if (value != null && validRefreshHz(value) && value > 0) {
+                return value.intValue();
+            }
+            return validRefreshHz(defaultHz) && defaultHz > 0 ? defaultHz : DEFAULT_REFRESH_HZ;
+        }
+    }
+
     private static final class Profile {
         final String pkg;
         final String mode;
@@ -654,8 +811,7 @@ public final class XmlProfileGenerator {
         final List<Stage> stages;
         final boolean staged;
         final String policy;
-        final int refreshHz;
-        final int powerSaveRefreshHz;
+        final String framePolicy;
 
         Profile(
                 String pkg,
@@ -664,8 +820,7 @@ public final class XmlProfileGenerator {
                 List<Stage> stages,
                 boolean staged,
                 String policy,
-                int refreshHz,
-                int powerSaveRefreshHz
+                String framePolicy
         ) {
             this.pkg = pkg;
             this.mode = mode;
@@ -673,16 +828,14 @@ public final class XmlProfileGenerator {
             this.stages = stages;
             this.staged = staged;
             this.policy = policy;
-            this.refreshHz = refreshHz;
-            this.powerSaveRefreshHz = powerSaveRefreshHz;
+            this.framePolicy = framePolicy;
         }
 
         boolean valid() {
             if (stages.isEmpty()) {
                 return false;
             }
-            if (!validPolicy(policy) || !validRefreshHz(refreshHz)
-                    || !validPowerSaveRefreshHz(powerSaveRefreshHz)) {
+            if (!validPolicy(policy) || !validFramePolicy(framePolicy)) {
                 return false;
             }
             if (stages.get(0).thresholdLevel != -1000) {
