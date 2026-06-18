@@ -471,7 +471,7 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48),
             ))
-            addView(compactNote("每个模式保存三段温区配置；切换温区后填写该温区的 CPU/GPU 上下限。"),
+            addView(compactNote("每个模式保存一套三温区配置；先设置温度起始点，再切换温区填写对应 CPU/GPU 上下限。"),
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -479,7 +479,29 @@ class MainActivity : Activity() {
                     setMargins(0, dp(8), 0, 0)
                 })
 
-            addView(fieldTitle("温区"), fieldMargins())
+            addView(fieldTitle("温度起始点"), fieldMargins())
+            addView(compactNote("低温 < 中温起始点；中温 ≥ 中温起始点 且 < 高温起始点；高温 ≥ 高温起始点。"),
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    setMargins(0, dp(8), 0, 0)
+                })
+
+            warmStartInput = numericField("42", "42")
+            hotStartInput = numericField("48", "48")
+            addView(horizontalRow().apply {
+                background = null
+                setPadding(0, 0, 0, 0)
+                addView(fieldBox("中温起始点 ℃", warmStartInput), LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                addView(fieldBox("高温起始点 ℃", hotStartInput), LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dp(10), 0, 0, 0)
+                })
+            }, fieldMargins())
+
+            addView(fieldTitle("温区频率配置"), fieldMargins())
             thermalZoneSpinner = Spinner(this@MainActivity).apply {
                 adapter = SimpleTextAdapter(ThermalZone.entries.map { it.title })
                 background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
@@ -502,26 +524,6 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48),
             ))
-            addView(compactNote("温区由两个起点决定：低温小于中温起点，中温介于两个起点，高温大于等于高温起点。"),
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    setMargins(0, dp(8), 0, 0)
-                })
-
-            warmStartInput = numericField("42", "42")
-            hotStartInput = numericField("48", "48")
-            addView(horizontalRow().apply {
-                background = null
-                setPadding(0, 0, 0, 0)
-                addView(fieldBox("中温起点 ℃", warmStartInput), LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                addView(fieldBox("高温起点 ℃", hotStartInput), LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    setMargins(dp(10), 0, 0, 0)
-                })
-            }, fieldMargins())
 
             littleMaxInput = numericField("上限 GHz", formatFreq(LITTLE_FREQS.last()))
             littleMinInput = numericField("下限 GHz", formatFreq(LITTLE_FREQS.first()))
@@ -843,7 +845,7 @@ class MainActivity : Activity() {
         }
         val thresholds = parseThermalThresholds(showToast = false)
         if (thresholds == null) {
-            thermalPreview.text = "温区等待有效起点：35-50℃，且中温起点 < 高温起点"
+            thermalPreview.text = "温区等待有效起始点：35-50℃，且中温起始点 < 高温起始点"
             return
         }
         thermalPreview.text = "当前温区：${currentThermalZone.title}（" +
@@ -965,11 +967,11 @@ class MainActivity : Activity() {
     }
 
     private fun parseThermalThresholds(showToast: Boolean): ThermalThresholds? {
-        val warm = parseTempLevel(warmStartInput.text.toString(), "中温起点", showToast) ?: return null
-        val hot = parseTempLevel(hotStartInput.text.toString(), "高温起点", showToast) ?: return null
+        val warm = parseTempLevel(warmStartInput.text.toString(), "中温起始点", showToast) ?: return null
+        val hot = parseTempLevel(hotStartInput.text.toString(), "高温起始点", showToast) ?: return null
         if (warm >= hot) {
             if (showToast) {
-                toast("温度必须递增：中温起点 < 高温起点")
+                toast("温度必须递增：中温起始点 < 高温起始点")
             }
             return null
         }

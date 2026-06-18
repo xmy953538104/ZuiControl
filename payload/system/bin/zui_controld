@@ -19,7 +19,7 @@ LOG_FILE=$LOG_DIR/controld.log
 ASOUL_LOG=$LOG_DIR/asoulopt.log
 STATUS_FILE=$CONTROL_DIR/status.prop
 ADB_REQUEST=$CONTROL_DIR/request.prop
-LAST_REQUEST_FILE=$CONTROL_DIR/last_settings_request_text
+LAST_REQUEST_FILE=$CONTROL_DIR/last_processed_settings_request_text
 
 APP_PACKAGE=com.zui.zuicontrol
 APP_SERVICE_COMPONENT=com.zui.zuicontrol/com.zui.zuicontrol.ZuiControlQuickService
@@ -1450,6 +1450,20 @@ prop_value() {
     sed -n "s/^$key=//p" "$file" 2>/dev/null | tail -n 1 | tr -d '\r'
 }
 
+request_field() {
+    printf '%s\n' "$1" | cut -d '|' -f "$2"
+}
+
+request_field_count() {
+    printf '%s\n' "$1" | awk -F '|' 'NR == 1 { print NF; exit }'
+}
+
+remember_settings_request() {
+    LAST_SETTINGS_REQUEST_TEXT="$1"
+    printf '%s\n' "$1" > "$LAST_REQUEST_FILE"
+    chmod 0664 "$LAST_REQUEST_FILE" 2>/dev/null
+}
+
 handle_request() {
     source="$1"
     cmd="$2"
@@ -1469,15 +1483,16 @@ handle_request() {
     gpu_min="$6"
     log_line "request: $source cmd=$cmd rate=$rate pkg=$pkg mode=$mode"
 
+    result=0
     case "$cmd" in
         status)
             publish_state
             verify_zuipp_mounts >/dev/null 2>&1 || publish_xml_state
             set_status "daemon=running" "last=status"
             ;;
-        set_refresh) set_refresh_rate "$rate" ;;
-        restore_refresh) restore_refresh_rate ;;
-        remove_refresh_rule) remove_refresh_rule "$pkg" ;;
+        set_refresh) set_refresh_rate "$rate"; result=$? ;;
+        restore_refresh) restore_refresh_rate; result=$? ;;
+        remove_refresh_rule) remove_refresh_rule "$pkg"; result=$? ;;
         set_performance_profile)
             set_performance_profile "$pkg" "$mode" \
                 "$little_max" "$little_min" \
@@ -1485,24 +1500,27 @@ handle_request() {
                 "$titan_max" "$titan_min" \
                 "$mega_max" "$mega_min" \
                 "$gpu_max" "$gpu_min"
+            result=$?
             ;;
-        set_performance_profile_staged) set_performance_profile_staged "$pkg" "$mode" "$rate" ;;
-        remove_performance_profile) remove_performance_profile "$pkg" "$mode" ;;
-        apply_performance) apply_performance ;;
-        apply_zuipp) apply_zuipp ;;
-        restore_zuipp) restore_zuipp ;;
-        restore_last_good) restore_last_good_zuipp ;;
-        restore_official_original) restore_official_original_zuipp ;;
-        restart_asoul) restart_asoul ;;
-        apply_asoul) apply_asoul ;;
-        restore_asoul) restore_asoul ;;
-        export_logs) export_logs ;;
+        set_performance_profile_staged) set_performance_profile_staged "$pkg" "$mode" "$rate"; result=$? ;;
+        remove_performance_profile) remove_performance_profile "$pkg" "$mode"; result=$? ;;
+        apply_performance) apply_performance; result=$? ;;
+        apply_zuipp) apply_zuipp; result=$? ;;
+        restore_zuipp) restore_zuipp; result=$? ;;
+        restore_last_good) restore_last_good_zuipp; result=$? ;;
+        restore_official_original) restore_official_original_zuipp; result=$? ;;
+        restart_asoul) restart_asoul; result=$? ;;
+        apply_asoul) apply_asoul; result=$? ;;
+        restore_asoul) restore_asoul; result=$? ;;
+        export_logs) export_logs; result=$? ;;
         *)
             log_line "unknown request: $cmd"
             set_status "daemon=running" "last=unknown_request" "cmd=$cmd"
+            result=1
             ;;
     esac
     trim_log
+    return "$result"
 }
 
 process_request_file() {
@@ -1551,30 +1569,52 @@ process_atomic_settings_request() {
     if [ -z "$request" ] || [ "$request" = "$LAST_SETTINGS_REQUEST_TEXT" ]; then
         return 0
     fi
-    LAST_SETTINGS_REQUEST_TEXT="$request"
-    echo "$request" > "$LAST_REQUEST_FILE"
-    chmod 0664 "$LAST_REQUEST_FILE" 2>/dev/null
 
-    old_ifs="$IFS"
-    IFS='|'
-    read -r id cmd rate pkg mode field6 field7 field8 field9 field10 \
-        field11 field12 field13 field14 field15 extra <<EOF
-$request
-EOF
-    IFS="$old_ifs"
-    [ -n "$id" ] && [ -n "$cmd" ] || return 1
-    if [ -n "$extra" ]; then
+    field_count="$(request_field_count "$request")"
+    id="$(request_field "$request" 1)"
+    cmd="$(request_field "$request" 2)"
+    rate="$(request_field "$request" 3)"
+    pkg="$(request_field "$request" 4)"
+    mode="$(request_field "$request" 5)"
+    field6="$(request_field "$request" 6)"
+    field7="$(request_field "$request" 7)"
+    field8="$(request_field "$request" 8)"
+    field9="$(request_field "$request" 9)"
+    field10="$(request_field "$request" 10)"
+    field11="$(request_field "$request" 11)"
+    field12="$(request_field "$request" 12)"
+    field13="$(request_field "$request" 13)"
+    field14="$(request_field "$request" 14)"
+    field15="$(request_field "$request" 15)"
+
+    if [ -z "$id" ] || [ -z "$cmd" ]; then
+        log_line "invalid atomic request: missing id/cmd"
+        set_status "daemon=running" "last=invalid_request"
+        remember_settings_request "$request"
+        return 1
+    fi
+
+    if [ "$field_count" -gt 15 ]; then
         log_line "invalid atomic request: too many fields cmd=$cmd"
+        set_status "daemon=running" "last=invalid_request" "cmd=$cmd"
+        remember_settings_request "$request"
         return 1
     fi
 
     if [ "$cmd" = "set_performance_profile_staged" ]; then
+        if [ "$field_count" -ne 5 ]; then
+            log_line "invalid staged request: fields=$field_count"
+            set_status "daemon=running" "last=invalid_request" "cmd=$cmd"
+            remember_settings_request "$request"
+            return 1
+        fi
         stage_payload="$rate"
-        [ -n "$stage_payload" ] || stage_payload="$field6"
         handle_request "settings:$id" "$cmd" \
             "$stage_payload" "$pkg" "$mode" \
             "" "" "" "" "" "" "" "" "" ""
-        return 0
+        result=$?
+        remember_settings_request "$request"
+        return "$result"
     fi
 
     if [ "$cmd" = "set_performance_profile" ] &&
@@ -1588,7 +1628,9 @@ EOF
             "$cpu_max" "$cpu_min" \
             "$cpu_max" "$cpu_min" \
             "$field8" "$field9"
-        return 0
+        result=$?
+        remember_settings_request "$request"
+        return "$result"
     fi
     handle_request "settings:$id" "$cmd" \
         "$rate" "$pkg" "$mode" \
@@ -1597,6 +1639,9 @@ EOF
         "$field10" "$field11" \
         "$field12" "$field13" \
         "$field14" "$field15"
+    result=$?
+    remember_settings_request "$request"
+    return "$result"
 }
 
 boot_restore() {
@@ -1609,13 +1654,8 @@ boot_restore() {
 }
 
 init_request_state() {
-    request="$(settings_get_clean "$REQ_TEXT_KEY")"
     if [ -s "$LAST_REQUEST_FILE" ]; then
         LAST_SETTINGS_REQUEST_TEXT="$(cat "$LAST_REQUEST_FILE" 2>/dev/null)"
-    elif [ -n "$request" ]; then
-        echo "$request" > "$LAST_REQUEST_FILE"
-        chmod 0664 "$LAST_REQUEST_FILE" 2>/dev/null
-        LAST_SETTINGS_REQUEST_TEXT="$request"
     fi
 }
 
