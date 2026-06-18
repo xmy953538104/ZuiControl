@@ -83,7 +83,7 @@ GPU_DEFAULT_MAX_PL=0
 GPU_DEFAULT_MIN_KHZ=231000
 GPU_DEFAULT_MAX_KHZ=903000
 TEMP_LEVEL_OFFSET=34
-GPU_REASSERT_INTERVAL=8
+GPU_REASSERT_INTERVAL=30
 LAST_TOP_APP=
 LAST_REFRESH_RATE=
 LAST_GPU_PROFILE=
@@ -1057,19 +1057,32 @@ latest_scene_event_pkg() {
 }
 
 active_scene_pkg() {
-    pkg="$(latest_scene_event_pkg)" && {
-        printf '%s\n' "$pkg"
-        return 0
-    }
     pkg="$(settings_get_clean "$TOP_PACKAGE_KEY")"
     if is_scene_package "$pkg"; then
         printf '%s\n' "$pkg"
         return 0
     fi
+    pkg="$(latest_scene_event_pkg)" && {
+        printf '%s\n' "$pkg"
+        return 0
+    }
     if is_scene_package "$LAST_TOP_APP"; then
         printf '%s\n' "$LAST_TOP_APP"
         return 0
     fi
+    return 1
+}
+
+current_scene_pkg() {
+    pkg="$(settings_get_clean "$TOP_PACKAGE_KEY")"
+    if is_scene_package "$pkg"; then
+        printf '%s\n' "$pkg"
+        return 0
+    fi
+    pkg="$(latest_scene_event_pkg)" && {
+        printf '%s\n' "$pkg"
+        return 0
+    }
     return 1
 }
 
@@ -1097,11 +1110,13 @@ apply_scene_package() {
 
 process_scene_event() {
     event="$(settings_get_clean "$SCENE_EVENT_KEY")"
-    if [ -z "$event" ] || [ "$event" = "$LAST_SCENE_EVENT_TEXT" ]; then
-        return 1
+    if [ -n "$event" ]; then
+        LAST_SCENE_EVENT_TEXT="$event"
     fi
-    LAST_SCENE_EVENT_TEXT="$event"
-    pkg="$(latest_scene_event_pkg)" || return 1
+    pkg="$(current_scene_pkg)" || {
+        restore_gpu_limits
+        return 1
+    }
     apply_scene_package "$pkg" system_server
 }
 
