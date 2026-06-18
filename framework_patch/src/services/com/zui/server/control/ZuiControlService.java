@@ -12,6 +12,7 @@ import android.os.Looper;
 import android.os.Parcel;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.provider.Settings;
 import android.util.AtomicFile;
@@ -40,6 +41,8 @@ public final class ZuiControlService extends Binder {
     private static final String DATA_DIR = "/data/system/zui_control";
     private static final String PROFILE_FILE = DATA_DIR + "/profiles.prop";
     private static final String SETTING_PEAK_REFRESH_RATE = "peak_refresh_rate";
+    private static final String GAME_HELPER_PACKAGE = "com.zui.game.service";
+    private static final long GAME_HELPER_YIELD_MS = 10_000L;
     private static final String RELEASE_CERT =
             "3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94";
     private static final String DEBUG_CERT =
@@ -82,6 +85,8 @@ public final class ZuiControlService extends Binder {
     private int mLastAppliedDisplayId = -1;
     private int mLastAppliedModeId = -1;
     private int mLastAppliedDisplayHz = -1;
+    private boolean mLastAppliedYieldPhysical = false;
+    private long mYieldPhysicalUntilMs = 0L;
     private int mLastSyncedPeakHz = -1;
 
     public ZuiControlService(Context context) {
@@ -133,6 +138,9 @@ public final class ZuiControlService extends Binder {
     private synchronized void handleFocusedApp(String pkg, int uid, int userId, int displayId) {
         mRawFocusedPackage = safe(pkg);
         mCurrentDisplayId = resolveDisplayId(displayId);
+        if (GAME_HELPER_PACKAGE.equals(mRawFocusedPackage)) {
+            noteGameHelperFrameRateOwner();
+        }
         if (APP_PACKAGE.equals(mRawFocusedPackage)) {
             mCurrentUid = uid;
             mCurrentUserId = userId;
@@ -338,34 +346,44 @@ public final class ZuiControlService extends Binder {
                 mLastApply = "failed:" + reason;
                 return;
             }
-            int peakHz = syncPeakRefreshRate(profile.displayHz);
+            boolean yieldPhysical = shouldYieldPhysicalVote(profile.displayHz);
+            int peakHz = yieldPhysical ? Math.round(readPeakRefreshRate())
+                    : syncPeakRefreshRate(profile.displayHz);
+            int appliedModeId = yieldPhysical ? 0 : match.modeId;
             if (mLastAppliedDisplayId == match.displayId
-                    && mLastAppliedModeId == match.modeId
+                    && mLastAppliedModeId == appliedModeId
                     && mLastAppliedDisplayHz == profile.displayHz
+                    && mLastAppliedYieldPhysical == yieldPhysical
                     && !"refreshNow".equals(reason)) {
                 mLastError = "";
-                mLastApply = reason + ":display=" + match.displayId + ":mode=" + match.modeId
-                        + ":" + voteLabel(profile.displayHz) + "=" + profile.displayHz
+                mLastApply = reason + ":display=" + match.displayId + ":mode=" + appliedModeId
+                        + ":" + voteLabel(profile.displayHz, yieldPhysical) + "=" + profile.displayHz
                         + ":peakBridge=" + peakHz
                         + ":skipSame";
                 return;
             }
             boolean hardPhysicalVote = useHardPhysicalVote(profile.displayHz);
-            if (hardPhysicalVote) {
+            if (hardPhysicalVote && !yieldPhysical) {
                 dmi.setDisplayProperties(match.displayId, true, profile.displayHz,
                         match.modeId, profile.displayHz, profile.displayHz, false, false, false);
                 applyPhysicalVote(dmi, match.displayId, profile.displayHz);
             } else {
                 applyRenderVote(dmi, match.displayId, profile.displayHz);
-                dmi.setDisplayProperties(match.displayId, true, profile.displayHz,
-                        match.modeId, 0.0f, profile.displayHz, false, false, false);
+                if (yieldPhysical) {
+                    dmi.setDisplayProperties(match.displayId, true, 0.0f,
+                            0, 0.0f, profile.displayHz, false, false, false);
+                } else {
+                    dmi.setDisplayProperties(match.displayId, true, profile.displayHz,
+                            match.modeId, 0.0f, profile.displayHz, false, false, false);
+                }
             }
             mLastAppliedDisplayId = match.displayId;
-            mLastAppliedModeId = match.modeId;
+            mLastAppliedModeId = appliedModeId;
             mLastAppliedDisplayHz = profile.displayHz;
+            mLastAppliedYieldPhysical = yieldPhysical;
             mLastError = "";
-            mLastApply = reason + ":display=" + match.displayId + ":mode=" + match.modeId
-                    + ":" + voteLabel(profile.displayHz) + "=" + profile.displayHz
+            mLastApply = reason + ":display=" + match.displayId + ":mode=" + appliedModeId
+                    + ":" + voteLabel(profile.displayHz, yieldPhysical) + "=" + profile.displayHz
                     + ":peakBridge=" + peakHz;
         } catch (Throwable t) {
             mLastError = t.getClass().getSimpleName() + ":" + safe(t.getMessage());
@@ -413,6 +431,13 @@ public final class ZuiControlService extends Binder {
                 || SystemProperties.getBoolean("persist.zui_control.refresh.disable", false)) {
             return;
         }
+        if (shouldYieldPhysicalVote(mTargetDisplayHz)) {
+            Profile profile = mAppliedScenePackage.isEmpty()
+                    ? defaultProfile(mCurrentUserId) : profileFor(mAppliedScenePackage, mCurrentUserId);
+            applyProfile(profile, "peakObserverYield");
+            publishState();
+            return;
+        }
         if (!isPeakRefreshRateSynced(mTargetDisplayHz)) {
             int peakHz = syncPeakRefreshRate(mTargetDisplayHz);
             mLastError = "";
@@ -437,6 +462,35 @@ public final class ZuiControlService extends Binder {
         mLastAppliedDisplayId = -1;
         mLastAppliedModeId = -1;
         mLastAppliedDisplayHz = -1;
+        mLastAppliedYieldPhysical = false;
+    }
+
+    private void noteGameHelperFrameRateOwner() {
+        mYieldPhysicalUntilMs = SystemClock.uptimeMillis() + GAME_HELPER_YIELD_MS;
+    }
+
+    private boolean shouldYieldPhysicalVote(int targetHz) {
+        if (!useHardPhysicalVote(targetHz)) {
+            return false;
+        }
+        if (SystemClock.uptimeMillis() < mYieldPhysicalUntilMs) {
+            return true;
+        }
+        float peak = readPeakRefreshRate();
+        return peak > 0.0f && peak + 0.5f < targetHz;
+    }
+
+    private float readPeakRefreshRate() {
+        long token = Binder.clearCallingIdentity();
+        try {
+            String value = Settings.System.getString(mContext.getContentResolver(),
+                    SETTING_PEAK_REFRESH_RATE);
+            return value == null || value.isEmpty() ? 0.0f : Float.parseFloat(value);
+        } catch (Throwable t) {
+            return 0.0f;
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
     }
 
     private Profile profileFor(String pkg, int userId) {
@@ -531,7 +585,10 @@ public final class ZuiControlService extends Binder {
         return hz <= 120;
     }
 
-    private static String voteLabel(int hz) {
+    private static String voteLabel(int hz, boolean yieldPhysical) {
+        if (yieldPhysical) {
+            return "yieldRenderVote";
+        }
         return useHardPhysicalVote(hz) ? "physicalVote" : "softVote";
     }
 
@@ -615,6 +672,7 @@ public final class ZuiControlService extends Binder {
                 + "\nsupportedDisplayHz=" + supportedDisplayHz()
                 + "\nsupportedFpsCaps=" + supportedFpsCaps(mTargetDisplayHz)
                 + "\npeakBridgeHz=" + mLastSyncedPeakHz
+                + "\nphysicalVoteYield=" + (shouldYieldPhysicalVote(mTargetDisplayHz) ? 1 : 0)
                 + "\nprofileCount=" + mProfiles.size()
                 + profileStateLines()
                 + "\nlastApply=" + mLastApply
@@ -791,6 +849,7 @@ public final class ZuiControlService extends Binder {
     private static boolean isTransientPackage(String pkg) {
         String p = safe(pkg).toLowerCase(Locale.US);
         return p.equals("com.android.systemui")
+                || p.equals(GAME_HELPER_PACKAGE)
                 || p.equals(APP_PACKAGE)
                 || p.equals("android")
                 || p.contains("permissioncontroller")
