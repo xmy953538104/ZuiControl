@@ -693,7 +693,6 @@ class MainActivity : Activity() {
         }
         performanceListHost.removeAllViews()
         if (performanceProfiles.isEmpty()) {
-            selectedPackage = null
             performanceListHost.addView(emptyText("暂无性能配置"), matchWrap())
             return
         }
@@ -1333,6 +1332,7 @@ class MainActivity : Activity() {
                 dialog.dismiss()
                 if (onSelected == null) {
                     updatePerformanceForm()
+                    renderPerformanceProfiles()
                 } else {
                     onSelected.invoke(it)
                 }
@@ -1436,12 +1436,7 @@ class MainActivity : Activity() {
     }
 
     private fun ensureSelectedPerformanceProfile() {
-        if (performanceProfiles.isEmpty()) {
-            selectedPackage = null
-            return
-        }
-        val currentKey = selectedPackage?.let { "$it|${selectedMode().id}" }
-        if (currentKey != null && performanceProfiles.containsKey(currentKey)) {
+        if (selectedPackage != null || performanceProfiles.isEmpty()) {
             return
         }
         val profile = performanceProfiles.values.firstOrNull { it.mode == selectedMode() }
