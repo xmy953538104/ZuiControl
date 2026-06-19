@@ -670,7 +670,6 @@ public final class ZuiControlService extends Binder {
                 + "\nsystemServiceAlive=true"
                 + "\ndaemonRefreshDisabled=true"
                 + "\nsupportedDisplayHz=" + supportedDisplayHz()
-                + "\nsupportedFpsCaps=" + supportedFpsCaps(mTargetDisplayHz)
                 + "\npeakBridgeHz=" + mLastSyncedPeakHz
                 + "\nphysicalVoteYield=" + (shouldYieldPhysicalVote(mTargetDisplayHz) ? 1 : 0)
                 + "\nprofileCount=" + mProfiles.size()
@@ -697,8 +696,7 @@ public final class ZuiControlService extends Binder {
 
     private String capabilities() {
         return "ok=1\nsupportedDisplayHz=" + supportedDisplayHz()
-                + "\nsupportedFpsCaps=" + supportedFpsCaps(mTargetDisplayHz)
-                + "\nfpsCapPhase=display_divisors_only";
+                + "\nfpsCapPhase=not_delivered";
     }
 
     private void publishState() {
@@ -831,19 +829,6 @@ public final class ZuiControlService extends Binder {
             return 0;
         }
         return Math.round(display.getMode().getRefreshRate());
-    }
-
-    private String supportedFpsCaps(int displayHz) {
-        StringBuilder sb = new StringBuilder();
-        for (int fps = displayHz; fps >= 24; fps--) {
-            if (displayHz % fps == 0) {
-                if (sb.length() > 0) {
-                    sb.append(',');
-                }
-                sb.append(fps);
-            }
-        }
-        return sb.toString();
     }
 
     private static boolean isTransientPackage(String pkg) {

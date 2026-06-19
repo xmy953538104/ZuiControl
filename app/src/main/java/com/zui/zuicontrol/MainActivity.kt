@@ -779,14 +779,14 @@ class MainActivity : Activity() {
             return "XML 已启用"
         }
         val daemon = setting(ZuiControlContract.KEY_DAEMON_STATUS_TEXT)
-        val errorLine = listOf(xmlState, daemon)
+        val hasError = listOf(xmlState, daemon)
             .flatMap { it.lineSequence() }
-            .firstOrNull {
+            .any {
                 it.contains("failed", ignoreCase = true) ||
                     it.contains("error", ignoreCase = true)
             }
-        if (errorLine != null) {
-            return "XML 异常：$errorLine"
+        if (hasError) {
+            return "XML 异常"
         }
         return "XML 未启用"
     }
@@ -1203,17 +1203,38 @@ class MainActivity : Activity() {
         if (!::systemStatus.isInitialized) {
             return
         }
-        val status = setting(ZuiControlContract.KEY_DAEMON_STATUS_TEXT)
-            .ifBlank { setting(ZuiControlContract.KEY_STATUS_TEXT) }
-        val xml = setting(ZuiControlContract.KEY_XML_STATE).ifBlank { "未挂载" }
         val last = setting(ZuiControlContract.KEY_STATUS_LAST).ifBlank { "无" }
-        val gpu = setting(ZuiControlContract.KEY_GPU_STATE).ifBlank { "KGSL 等待回读" }
-        val daemonRefresh = setting(ZuiControlContract.KEY_DAEMON_REFRESH_STATE)
-            .ifBlank { "refresh_owner=system; daemon refresh disabled" }
-        systemStatus.text = "守护服务 运行中\nXML $xml\nGPU $gpu\n刷新 $daemonRefresh\n最近操作 ${commandName(last)}\n$status"
+        systemStatus.text = "守护服务 运行中\n${conciseXmlState()}\n${conciseGpuState()}\n刷新率 系统接管\n最近操作 ${commandName(last)}"
         asoulStatus.text = setting(ZuiControlContract.KEY_ASOUL_HEALTH)
             .ifBlank { "正在读取 AsoulOpt 状态" }
     }
+
+    private fun conciseXmlState(): String {
+        val xml = setting(ZuiControlContract.KEY_XML_STATE)
+        return when {
+            xml.startsWith("state=mounted") -> "XML 正常"
+            hasErrorLine(xml) ||
+                hasErrorLine(setting(ZuiControlContract.KEY_DAEMON_STATUS_TEXT)) -> "XML 异常"
+            xml.isBlank() -> "XML 未启用"
+            else -> "XML 检查中"
+        }
+    }
+
+    private fun conciseGpuState(): String {
+        val gpu = setting(ZuiControlContract.KEY_GPU_STATE)
+        return when {
+            gpu.isBlank() -> "GPU 等待应用"
+            hasErrorLine(gpu) -> "GPU 异常"
+            gpu.contains("actual_freq=") || gpu.contains("actual_pl=") -> "GPU 已回读"
+            else -> "GPU 已记录"
+        }
+    }
+
+    private fun hasErrorLine(value: String): Boolean =
+        value.lineSequence().any {
+            it.contains("failed", ignoreCase = true) ||
+                it.contains("error", ignoreCase = true)
+        }
 
     private fun exportLogs() {
         sendCommand("正在整理日志", settleDelayMs = EXPORT_COMMAND_DELAY_MS) {

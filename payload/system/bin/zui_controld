@@ -1030,18 +1030,6 @@ restore_official_original_zuipp() {
     promote_staging_with_init "restore_official_original"
 }
 
-restart_asoul() {
-    if trigger_init_action "$PROP_ASOUL" restart; then
-        log_line "AsoulOpt restart requested"
-        sleep 1
-        publish_asoul_health
-        set_status "daemon=running" "last=restart_asoul"
-        return 0
-    fi
-    set_status "daemon=running" "last=restart_asoul_failed"
-    return 1
-}
-
 apply_asoul() {
     [ -s "$WORK_ASOPT" ] || return 1
     if trigger_init_action "$PROP_ASOUL" apply &&
@@ -1061,21 +1049,10 @@ restore_asoul() {
     publish_asoul_health
 }
 
-set_refresh_rate() {
-    rate="$1"
-    valid_refresh_rate "$rate" || {
-        log_line "invalid refresh rate: $rate"
-        set_status "daemon=running" "last=set_refresh_failed" "rate=$rate"
-        return 1
-    }
-    LAST_REFRESH_RATE="$rate"
-    log_line "refresh module disabled: owner=$REFRESH_OWNER rate=$rate"
-    set_status "daemon=running" "last=set_refresh_ignored" "rate=$rate" "refresh_owner=$REFRESH_OWNER"
-    return 0
-}
-
-restore_refresh_rate() {
-    set_status "daemon=running" "last=restore_refresh_ignored" "refresh_owner=$REFRESH_OWNER"
+ignore_legacy_refresh_request() {
+    legacy_cmd="$1"
+    log_line "legacy refresh request ignored: cmd=$legacy_cmd owner=$REFRESH_OWNER"
+    set_status "daemon=running" "last=${legacy_cmd}_ignored" "refresh_owner=$REFRESH_OWNER"
 }
 
 is_overlay_package() {
@@ -1141,13 +1118,6 @@ current_scene_pkg() {
         return 0
     }
     return 1
-}
-
-remove_refresh_rule() {
-    pkg="$1"
-    valid_package_name "$pkg" || return 1
-    publish_refresh_state
-    set_status "daemon=running" "last=remove_refresh_rule_ignored" "package=$pkg" "refresh_owner=$REFRESH_OWNER"
 }
 
 apply_scene_package() {
@@ -1717,9 +1687,10 @@ handle_request() {
             verify_zuipp_mounts >/dev/null 2>&1 || publish_xml_state
             set_status "daemon=running" "last=status"
             ;;
-        set_refresh) set_refresh_rate "$rate"; result=$? ;;
-        restore_refresh) restore_refresh_rate; result=$? ;;
-        remove_refresh_rule) remove_refresh_rule "$pkg"; result=$? ;;
+        set_refresh|restore_refresh|remove_refresh_rule)
+            ignore_legacy_refresh_request "$cmd"
+            result=0
+            ;;
         set_performance_profile)
             set_performance_profile "$pkg" "$mode" \
                 "$little_max" "$little_min" \
@@ -1737,7 +1708,6 @@ handle_request() {
         restore_zuipp) restore_zuipp; result=$? ;;
         restore_last_good) restore_last_good_zuipp; result=$? ;;
         restore_official_original) restore_official_original_zuipp; result=$? ;;
-        restart_asoul) restart_asoul; result=$? ;;
         apply_asoul) apply_asoul; result=$? ;;
         restore_asoul) restore_asoul; result=$? ;;
         export_logs) export_logs; result=$? ;;
