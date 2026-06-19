@@ -26,7 +26,11 @@ function Require-File([string]$Path) {
     }
 }
 
-function Invoke-Checked([string]$Exe, [string[]]$Args) {
+function Invoke-Checked(
+    [string]$Exe,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Args
+) {
     & $Exe @Args
     if ($LASTEXITCODE -ne 0) {
         throw "Command failed: $Exe $($Args -join ' ')"
@@ -69,12 +73,12 @@ try {
     $ExtractDir = Join-Path $WorkDir 'extract'
     New-Item -ItemType Directory -Path $ImageDir, $ExtractDir | Out-Null
 
-    Invoke-Checked $Python @($LpUnpack, $Super, 'ALL', $ImageDir)
+    Invoke-Checked $Python $LpUnpack $Super 'ALL' $ImageDir
 
     foreach ($partition in @('system_a', 'vendor_a')) {
         $image = Join-Path $ImageDir "$partition.img"
         Require-File $image
-        Invoke-Checked $ExtractErofs @('-i', $image, '-o', $ExtractDir, '-x', '-f')
+        Invoke-Checked $ExtractErofs '-i' $image '-o' $ExtractDir '-x' '-f'
     }
 
     $SystemRoot = Join-Path $ExtractDir 'system_a'
