@@ -16,10 +16,13 @@ if (-not $WorkDir) {
 }
 
 $ToolsDir = Join-Path $WorkspaceRoot 'tools'
+$AndroidSdkDir = Join-Path $WorkspaceRoot 'work\android-sdk'
 $Python = Join-Path $ToolsDir 'python-3.8.0\python.exe'
 $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
+$ExpectedVersionCode = '24'
+$ExpectedVersionName = '0.19.5'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -65,9 +68,32 @@ function Find-ApkSigner {
         $cmd = Get-Command 'apksigner' -ErrorAction SilentlyContinue
     }
     if (-not $cmd) {
+        $cmd = Get-ChildItem -LiteralPath (Join-Path $AndroidSdkDir 'build-tools') -Recurse -Filter 'apksigner.bat' -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+    }
+    if (-not $cmd) {
         throw 'Missing apksigner in PATH'
     }
-    return $cmd.Source
+    if ($cmd.Source) { return $cmd.Source }
+    return $cmd.FullName
+}
+
+function Find-Aapt2 {
+    $cmd = Get-Command 'aapt2.exe' -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+        $cmd = Get-Command 'aapt2' -ErrorAction SilentlyContinue
+    }
+    if (-not $cmd) {
+        $cmd = Get-ChildItem -LiteralPath (Join-Path $AndroidSdkDir 'build-tools') -Recurse -Filter 'aapt2.exe' -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+    }
+    if (-not $cmd) {
+        throw 'Missing aapt2 in PATH'
+    }
+    if ($cmd.Source) { return $cmd.Source }
+    return $cmd.FullName
 }
 
 function Assert-ApkReleaseCert([string]$ApkPath, [string]$Label) {
@@ -78,6 +104,24 @@ function Assert-ApkReleaseCert([string]$ApkPath, [string]$Label) {
     }
     if ($text -notmatch [regex]::Escape("Signer #1 certificate SHA-256 digest: $ReleaseCertSha256")) {
         throw "$Label is not signed with the release certificate: $ApkPath"
+    }
+}
+
+function Assert-ZuiControlApkMetadata([string]$ApkPath, [string]$Label) {
+    $aapt2 = Find-Aapt2
+    $badging = & $aapt2 dump badging $ApkPath | Out-String -Width 4096
+    if ($LASTEXITCODE -ne 0) {
+        throw "aapt2 badging failed for $Label`: $ApkPath"
+    }
+    if ($badging -notmatch "package: name='com\.zui\.zuicontrol' versionCode='$ExpectedVersionCode' versionName='$ExpectedVersionName'") {
+        throw "$Label has wrong package or version: expected com.zui.zuicontrol $ExpectedVersionCode/$ExpectedVersionName"
+    }
+    $permissions = & $aapt2 dump permissions $ApkPath | Out-String -Width 4096
+    if ($LASTEXITCODE -ne 0) {
+        throw "aapt2 permissions failed for $Label`: $ApkPath"
+    }
+    if ($permissions -notmatch "uses-permission: name='com\.zui\.performance\.permission\.gamemode'") {
+        throw "$Label is missing com.zui.performance.permission.gamemode"
     }
 }
 
@@ -126,13 +170,15 @@ try {
     $DaemonRc = Join-Path $SystemRoot 'system\etc\init\zui_controld.rc'
     $AsoulRc = Join-Path $SystemRoot 'system\etc\init\zui_asoulopt.rc'
     $ClearPackageCache = Join-Path $SystemRoot 'system\etc\zui_control\clear_package_cache.sh'
+    $PrivAppPermissions = Join-Path $SystemRoot 'system\etc\permissions\privapp-permissions-zui-control.xml'
     $GameTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_game_policy.xml'
     $PerfTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_performanceconfig.xml'
-    foreach ($required in @($AppApk, $Daemon, $DaemonRc, $AsoulRc, $ClearPackageCache, $GameTemplate, $PerfTemplate)) {
+    foreach ($required in @($AppApk, $Daemon, $DaemonRc, $AsoulRc, $ClearPackageCache, $PrivAppPermissions, $GameTemplate, $PerfTemplate)) {
         Require-File $required
     }
     Assert-Contains $DaemonRc 'clear_package_cache.sh' 'ZuiControl package cache clear action'
     Assert-Contains $ClearPackageCache 'ZuiControl-*' 'targeted ZuiControl package cache pattern'
+    Assert-Contains $PrivAppPermissions 'com.zui.performance.permission.gamemode' 'P2-G gamemode privileged permission'
     $daemonText = Get-Content -Raw -LiteralPath $Daemon
     if ($daemonText -like '*chcon u:object_r:system_file:s0*') {
         throw 'daemon still attempts shell-domain active XML chcon'
@@ -140,6 +186,11 @@ try {
     foreach ($legacy in @('/sys/class/kgsl/kgsl-3d0', '/sys/devices/system/cpu/cpufreq', 'zui_control_cpu_state', 'zui_control_gpu_state', 'apply_gpu_limits_for_pkg')) {
         if ($daemonText -like "*$legacy*") {
             throw "daemon still contains direct runtime performance legacy: $legacy"
+        }
+    }
+    foreach ($bridge in @('APPLY_PP_MODE', 'ZuiPpModeReceiver', 'zui_control_pp_mode_state')) {
+        if ($daemonText -notlike "*$bridge*") {
+            throw "daemon is missing P2-G PP mode bridge marker: $bridge"
         }
     }
 
@@ -184,6 +235,9 @@ try {
     Assert-ApkReleaseCert $AppApk 'embedded system APK'
     Assert-ApkReleaseCert $SidecarApk 'sidecar APK'
     Assert-ApkReleaseCert $ReleaseSidecarApk 'release sidecar APK'
+    Assert-ZuiControlApkMetadata $AppApk 'embedded system APK'
+    Assert-ZuiControlApkMetadata $SidecarApk 'sidecar APK'
+    Assert-ZuiControlApkMetadata $ReleaseSidecarApk 'release sidecar APK'
     $ok = $true
     [pscustomobject]@{
         ok = $true
