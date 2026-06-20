@@ -4,8 +4,9 @@ ZuiControl is the v19 system-server refresh-rate and performance control plane.
 
 The app is now a privileged UI/QS/config client. Foreground scene detection and
 refresh-rate policy live in `system_server` through the `zui_control` Binder
-service. The daemon remains for XML generation, bind mounts, GPU/root nodes,
-SafeCenter one-time keepalive, logs, and AsoulOpt orchestration.
+service. The daemon remains for XML generation, bind mounts, controlled ZuiPP
+reload after XML hash verification, SafeCenter one-time keepalive, logs, and
+AsoulOpt orchestration.
 
 ## Runtime Split
 
@@ -13,7 +14,7 @@ SafeCenter one-time keepalive, logs, and AsoulOpt orchestration.
 - `android.zui.ZuiControlManager`: thin framework client used by the app.
 - `zui_control`: Binder service published from `system_server`.
 - `ZuiControlService`: service-side display-mode policy owner.
-- `/system/bin/zui_controld`: root daemon for XML/GPU/asoul/log work only.
+- `/system/bin/zui_controld`: root daemon for XML/ZuiPP reload/asoul/log work only.
 - `/data/system/zui_control/profiles.prop`: refresh scene profiles.
 - `/data/vendor/zui_control/`: daemon runtime state, XML work files, and logs.
 

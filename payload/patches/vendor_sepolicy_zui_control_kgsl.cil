@@ -1,6 +1,0 @@
-;; Allow the root shell-domain daemon to enforce KGSL GPU limits.
-;; The daemon writes max_pwrlevel/min_pwrlevel only when a foreground app has
-;; an explicit ZuiControl performance profile.
-(allow shell_34_0 vendor_sysfs_kgsl (dir (ioctl read getattr lock open search watch watch_reads)))
-(allow shell_34_0 vendor_sysfs_kgsl (file (ioctl read write getattr setattr lock append map open watch watch_reads)))
-(allow shell_34_0 vendor_sysfs_kgsl (lnk_file (ioctl read getattr lock map open watch watch_reads)))

@@ -57,6 +57,8 @@ XML_STATUS_FILE=$ZUI_STATE_DIR/status.prop
 XML_LAST_ERROR_FILE=$ZUI_STATE_DIR/last_error.txt
 XML_ACTIVE_SHA_FILE=$ZUI_STATE_DIR/active.sha256
 XML_VERIFY_FILE=$ZUI_STATE_DIR/verify.txt
+ZUIPP_APPLY_LOCK_DIR=$ZUI_STATE_DIR/apply.lock
+ZUIPP_LAST_RELOADED_HASH_FILE=$ZUI_STATE_DIR/last_reloaded_hash
 ZUI_ENABLED=$ZUI_DIR/enabled.flag
 ASOUL_ENABLED=$ASOUL_DIR/enabled.flag
 
@@ -69,27 +71,15 @@ PERFORMANCE_PROFILES_KEY=zui_control_performance_profiles_text
 PERFORMANCE_SUMMARY_KEY=zui_control_performance_summary
 TOP_PACKAGE_KEY=zui_control_top_package
 SCENE_EVENT_KEY=zui_control_scene_event_text
-GPU_STATE_KEY=zui_control_gpu_state
+ZUIPP_RELOAD_STATE_KEY=zui_control_zuipp_reload_state
 ASOUL_HEALTH_KEY=zui_control_asoul_health
 XML_STATE_KEY=zui_control_xml_state
 LOG_EXPORT_KEY=zui_control_log_export
 
 BASE_REFRESH_RATE=120
 REFRESH_OWNER=system
-GPU_ROOT=/sys/class/kgsl/kgsl-3d0
-GPU_DEVFREQ=$GPU_ROOT/devfreq
-GPU_FREQS_DESC="903000 834000 770000 720000 680000 629000 578000 500000 422000 366000 310000 231000"
-GPU_DEFAULT_MIN_PL=11
-GPU_DEFAULT_MAX_PL=0
-GPU_DEFAULT_MIN_KHZ=231000
-GPU_DEFAULT_MAX_KHZ=903000
-TEMP_LEVEL_OFFSET=34
-GPU_REASSERT_INTERVAL=30
 LAST_TOP_APP=
 LAST_REFRESH_RATE=
-LAST_GPU_PROFILE=
-LAST_GPU_STATE=
-GPU_REASSERT_TICKS=0
 LAST_SETTINGS_REQUEST_TEXT=
 LAST_SCENE_EVENT_TEXT=
 HEALTH_TICKS=0
@@ -247,11 +237,6 @@ write_active_sha() {
 label_active_xml() {
     for file in "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG"; do
         [ -e "$file" ] || continue
-        current_context="$(ls -Z "$file" 2>/dev/null | awk '{print $1}')"
-        if [ "$current_context" != "u:object_r:system_file:s0" ]; then
-            chcon u:object_r:system_file:s0 "$file" >/dev/null 2>&1 ||
-                restorecon "$file" >/dev/null 2>&1 || true
-        fi
         current_mode="$(stat -c %a "$file" 2>/dev/null | head -n 1)"
         if [ "$current_mode" != "664" ]; then
             chmod 0664 "$file" 2>/dev/null || true
@@ -263,7 +248,6 @@ prepare_xml_replace_target() {
     file="$1"
     [ -e "$file" ] || return 0
     chmod 0664 "$file" >/dev/null 2>&1 || true
-    restorecon "$file" >/dev/null 2>&1 || true
 }
 
 copy_xml_pair_to_dir() {
@@ -339,7 +323,7 @@ init_active_xml() {
     if [ ! -s "$ACTIVE_GAME_POLICY" ] || [ ! -s "$ACTIVE_PERF_CONFIG" ]; then
         copy_xml_pair_to_dir "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
             "$ZUI_STAGING_DIR" "active init" || return 1
-        promote_staging_with_init "active_init" || return 1
+        promote_staging_with_lock "active_init" || return 1
         log_line "ZuiPP active XML initialized from baked baseline"
     fi
     validate_xml_pair "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" "active" || return 1
@@ -672,25 +656,11 @@ SELinux：${domain:-未识别}
     settings_put_quiet "$ASOUL_HEALTH_KEY" "$health"
 }
 
-publish_gpu_state() {
-    [ -d "$GPU_ROOT" ] || {
-        settings_put_quiet "$GPU_STATE_KEY" "KGSL not found"
-        return 0
-    }
-    if [ -n "$LAST_GPU_STATE" ]; then
-        settings_put_quiet "$GPU_STATE_KEY" "$LAST_GPU_STATE"
-        return 0
-    fi
-    settings_put_quiet "$GPU_STATE_KEY" \
-        "actual_pl=$(read_file_clean "$GPU_ROOT/min_pwrlevel")-$(read_file_clean "$GPU_ROOT/max_pwrlevel") actual_freq=$(read_file_clean "$GPU_DEVFREQ/min_freq")-$(read_file_clean "$GPU_DEVFREQ/max_freq") cur=$(read_file_clean "$GPU_DEVFREQ/cur_freq")"
-}
-
 publish_state() {
     publish_refresh_state
     publish_performance_state
     publish_xml_state
     publish_asoul_health
-    publish_gpu_state
 }
 
 grant_app_permissions() {
@@ -866,6 +836,124 @@ wait_zuipp_mount_ready() {
     return 1
 }
 
+acquire_zuipp_apply_lock() {
+    tries="${1:-30}"
+    mkdir -p "$ZUI_STATE_DIR"
+    while [ "$tries" -gt 0 ]; do
+        if mkdir "$ZUIPP_APPLY_LOCK_DIR" 2>/dev/null; then
+            printf '%s\n' "$$" > "$ZUIPP_APPLY_LOCK_DIR/pid" 2>/dev/null || true
+            return 0
+        fi
+        lock_pid="$(read_file_clean "$ZUIPP_APPLY_LOCK_DIR/pid")"
+        if [ -n "$lock_pid" ] && [ ! -d "/proc/$lock_pid" ]; then
+            rm -f "$ZUIPP_APPLY_LOCK_DIR/pid" 2>/dev/null || true
+            rmdir "$ZUIPP_APPLY_LOCK_DIR" 2>/dev/null || true
+            continue
+        fi
+        tries=$((tries - 1))
+        sleep 1
+    done
+    set_xml_error "ZuiPP apply lock busy"
+    publish_xml_state
+    set_status "daemon=running" "last=apply_zuipp_failed" "reason=apply_lock_busy"
+    return 1
+}
+
+release_zuipp_apply_lock() {
+    rm -f "$ZUIPP_APPLY_LOCK_DIR/pid" 2>/dev/null || true
+    rmdir "$ZUIPP_APPLY_LOCK_DIR" 2>/dev/null || true
+}
+
+xml_hash_pair() {
+    game_hash="$(file_sha "$ACTIVE_GAME_POLICY")"
+    perf_hash="$(file_sha "$ACTIVE_PERF_CONFIG")"
+    [ -n "$game_hash" ] && [ -n "$perf_hash" ] || return 1
+    printf '%s:%s\n' "$game_hash" "$perf_hash"
+}
+
+publish_zuipp_reload_state() {
+    settings_put_quiet "$ZUIPP_RELOAD_STATE_KEY" "$1"
+    log_line "ZuiPP reload state: $1"
+}
+
+last_reloaded_hash_pair() {
+    [ -s "$ZUIPP_LAST_RELOADED_HASH_FILE" ] || return 1
+    read_file_clean "$ZUIPP_LAST_RELOADED_HASH_FILE"
+}
+
+remember_reloaded_hash_pair() {
+    mkdir -p "$ZUI_STATE_DIR"
+    printf '%s\n' "$1" > "$ZUIPP_LAST_RELOADED_HASH_FILE"
+    chmod 0664 "$ZUIPP_LAST_RELOADED_HASH_FILE" 2>/dev/null
+}
+
+zuipp_pid() {
+    pidof com.zui.pp 2>/dev/null | awk '{print $1}'
+}
+
+proc_cmdline_clean() {
+    tr '\0' '\n' < "/proc/$1/cmdline" 2>/dev/null | head -n 1
+}
+
+proc_start_time() {
+    awk '{print $22}' "/proc/$1/stat" 2>/dev/null
+}
+
+reload_zuipp_if_needed() {
+    reason="${1:-xml_apply}"
+    zuipp_mount_ready || {
+        publish_zuipp_reload_state "state=error;stage=verify_mounted_hash;reason=$reason"
+        return 1
+    }
+
+    hash_pair="$(xml_hash_pair)" || {
+        publish_zuipp_reload_state "state=error;stage=hash_pair;reason=$reason"
+        return 1
+    }
+    game_hash="${hash_pair%%:*}"
+    perf_hash="${hash_pair#*:}"
+    if [ "$hash_pair" = "$(last_reloaded_hash_pair 2>/dev/null)" ]; then
+        publish_zuipp_reload_state "state=skipped;reason=same_hash;game=$game_hash;perf=$perf_hash"
+        return 0
+    fi
+
+    old_pid="$(zuipp_pid)"
+    if [ -z "$old_pid" ]; then
+        remember_reloaded_hash_pair "$hash_pair"
+        publish_zuipp_reload_state "state=skipped;reason=zuipp_not_running;game=$game_hash;perf=$perf_hash"
+        return 0
+    fi
+    if [ "$(proc_cmdline_clean "$old_pid")" != "com.zui.pp" ]; then
+        publish_zuipp_reload_state "state=error;stage=pid_check;reason=cmdline_mismatch;oldPid=$old_pid"
+        return 1
+    fi
+    old_start="$(proc_start_time "$old_pid")"
+
+    if ! kill -TERM "$old_pid" 2>>"$LOG_FILE"; then
+        publish_zuipp_reload_state "state=error;stage=sigterm;oldPid=$old_pid;game=$game_hash;perf=$perf_hash"
+        return 1
+    fi
+
+    tries=20
+    while [ "$tries" -gt 0 ]; do
+        new_pid="$(zuipp_pid)"
+        if [ -n "$new_pid" ] && [ "$(proc_cmdline_clean "$new_pid")" = "com.zui.pp" ]; then
+            new_start="$(proc_start_time "$new_pid")"
+            if [ "$new_pid" != "$old_pid" ] ||
+                { [ -n "$new_start" ] && [ "$new_start" != "$old_start" ]; }; then
+                remember_reloaded_hash_pair "$hash_pair"
+                publish_zuipp_reload_state "state=done;reason=$reason;oldPid=$old_pid;newPid=$new_pid;game=$game_hash;perf=$perf_hash;needsAppReenter=1"
+                return 0
+            fi
+        fi
+        tries=$((tries - 1))
+        sleep 1
+    done
+
+    publish_zuipp_reload_state "state=error;stage=pid_wait;reason=$reason;oldPid=$old_pid;game=$game_hash;perf=$perf_hash"
+    return 1
+}
+
 wait_prop_value() {
     prop="$1"
     expected="$2"
@@ -898,6 +986,7 @@ mark_zuipp_apply_success() {
         "performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")" \
         "source=active"
     publish_xml_state
+    reload_zuipp_if_needed "$reason" || true
     set_status "daemon=running" "last=apply_zuipp_ok" "reason=$reason"
 }
 
@@ -938,6 +1027,24 @@ promote_staging_with_init() {
     return 1
 }
 
+promote_staging_with_lock() {
+    reason="$1"
+    acquire_zuipp_apply_lock || return 1
+    promote_staging_with_init "$reason"
+    result=$?
+    release_zuipp_apply_lock
+    return "$result"
+}
+
+remount_active_with_lock() {
+    reason="$1"
+    acquire_zuipp_apply_lock || return 1
+    remount_active_xml "$reason"
+    result=$?
+    release_zuipp_apply_lock
+    return "$result"
+}
+
 validate_zuipp_files() {
     validate_xml_pair "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" "active"
 }
@@ -963,13 +1070,22 @@ rollback_active_xml() {
 }
 
 promote_staging_to_active() {
-    validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "staging" || return 1
-    backup_active_to_last_good || return 1
+    acquire_zuipp_apply_lock || return 1
+    validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "staging" || {
+        release_zuipp_apply_lock
+        return 1
+    }
+    backup_active_to_last_good || {
+        release_zuipp_apply_lock
+        return 1
+    }
     if promote_staging_with_init "promote_staging"; then
         backup_active_to_last_good
+        release_zuipp_apply_lock
         return 0
     fi
     rollback_active_xml "promote active failed"
+    release_zuipp_apply_lock
     return 1
 }
 
@@ -983,7 +1099,7 @@ apply_zuipp() {
         set_status "daemon=running" "last=apply_zuipp_failed" "reason=validate_failed"
         return 1
     }
-    remount_active_xml "$reason"
+    remount_active_with_lock "$reason"
 }
 
 restore_zuipp() {
@@ -993,7 +1109,7 @@ restore_zuipp() {
         set_status "daemon=running" "last=restore_zuipp_failed" "reason=copy_failed"
         return 1
     }
-    if ! promote_staging_with_init "restore_baked_baseline"; then
+    if ! promote_staging_with_lock "restore_baked_baseline"; then
         rollback_active_xml "restore baked baseline failed"
         set_status "daemon=running" "last=restore_zuipp_failed"
         return 1
@@ -1013,7 +1129,7 @@ restore_last_good_zuipp() {
     fi
     stage_xml_pair_from_pair "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" \
         "restore last_good" || return 1
-    promote_staging_with_init "restore_last_good"
+    promote_staging_with_lock "restore_last_good"
 }
 
 restore_official_original_zuipp() {
@@ -1027,7 +1143,7 @@ restore_official_original_zuipp() {
     backup_active_to_last_good || true
     stage_xml_pair_from_pair "$OFFICIAL_GAME_POLICY" "$OFFICIAL_PERF_CONFIG" \
         "restore official original" || return 1
-    promote_staging_with_init "restore_official_original"
+    promote_staging_with_lock "restore_official_original"
 }
 
 apply_asoul() {
@@ -1127,12 +1243,10 @@ apply_scene_package() {
         return 1
     fi
     if [ "$top" = "$LAST_TOP_APP" ]; then
-        apply_gpu_limits_for_pkg "$top"
         return 0
     fi
     LAST_TOP_APP="$top"
-    apply_gpu_limits_for_pkg "$top"
-    log_line "foreground gpu/profile scene: $top source=$source refresh_owner=$REFRESH_OWNER"
+    log_line "foreground scene observed: $top source=$source refresh_owner=$REFRESH_OWNER"
 }
 
 process_scene_event() {
@@ -1140,227 +1254,8 @@ process_scene_event() {
     if [ -n "$event" ]; then
         LAST_SCENE_EVENT_TEXT="$event"
     fi
-    pkg="$(current_scene_pkg)" || {
-        restore_gpu_limits
-        return 1
-    }
+    pkg="$(current_scene_pkg)" || return 1
     apply_scene_package "$pkg" system_server
-}
-
-khz_to_hz() {
-    printf '%s000\n' "$1"
-}
-
-gpu_pwrlevel_for_khz() {
-    target="$1"
-    index=0
-    for freq in $GPU_FREQS_DESC; do
-        if [ "$freq" = "$target" ]; then
-            printf '%s\n' "$index"
-            return 0
-        fi
-        index=$((index + 1))
-    done
-    return 1
-}
-
-thermal_level() {
-    for type_file in /sys/class/thermal/thermal_zone*/type; do
-        [ -f "$type_file" ] || continue
-        [ "$(read_file_clean "$type_file")" = "user_front_temp" ] || continue
-        temp_milli="$(read_file_clean "${type_file%/type}/temp")"
-        valid_positive_int "$temp_milli" || return 1
-        temp_c=$(((temp_milli + 500) / 1000))
-        printf '%s\n' $((temp_c - TEMP_LEVEL_OFFSET))
-        return 0
-    done
-    return 1
-}
-
-stage_gpu_limits_for_payload() {
-    payload="$1"
-    current_level="$(thermal_level 2>/dev/null)"
-    selected_stage=
-    selected_threshold=-1000
-
-    old_ifs="$IFS"
-    IFS=';'
-    set -- $payload
-    IFS="$old_ifs"
-    for stage in "$@"; do
-        [ -n "$stage" ] || continue
-        threshold="$(printf '%s\n' "$stage" | cut -d ',' -f 1)"
-        case "$threshold" in
-            -1000)
-                if [ -z "$selected_stage" ]; then
-                    selected_stage="$stage"
-                    selected_threshold=-1000
-                fi
-                ;;
-            *)
-                valid_positive_int "$current_level" || continue
-                valid_positive_int "$threshold" || continue
-                if [ "$current_level" -ge "$threshold" ] &&
-                    [ "$threshold" -ge "$selected_threshold" ]; then
-                    selected_stage="$stage"
-                    selected_threshold="$threshold"
-                fi
-                ;;
-        esac
-    done
-
-    [ -n "$selected_stage" ] || return 1
-    line_gpu_max="$(printf '%s\n' "$selected_stage" | cut -d ',' -f 10)"
-    line_gpu_min="$(printf '%s\n' "$selected_stage" | cut -d ',' -f 11)"
-    valid_positive_int "$line_gpu_max" || return 1
-    valid_positive_int "$line_gpu_min" || return 1
-    printf '%s|%s|%s\n' "$line_gpu_max" "$line_gpu_min" "${current_level:-unknown}:$selected_threshold"
-}
-
-profile_gpu_limits_for_app() {
-    pkg="$1"
-    [ -s "$PERFORMANCE_PROFILES" ] || return 1
-    first_match=
-    while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-            ""|\#*) continue ;;
-        esac
-        old_ifs="$IFS"
-        IFS='|'
-        set -- $line
-        IFS="$old_ifs"
-        line_pkg="$1"
-        line_mode="$2"
-        if [ "$3" = "v4" ]; then
-            stage_limits="$(stage_gpu_limits_for_payload "$6")" || continue
-            line_gpu_max="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 1)"
-            line_gpu_min="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 2)"
-            line_thermal="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 3)"
-        elif [ "$3" = "v3" ]; then
-            stage_limits="$(stage_gpu_limits_for_payload "$7")" || continue
-            line_gpu_max="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 1)"
-            line_gpu_min="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 2)"
-            line_thermal="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 3)"
-        elif [ "$3" = "v2" ]; then
-            stage_limits="$(stage_gpu_limits_for_payload "$4")" || continue
-            line_gpu_max="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 1)"
-            line_gpu_min="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 2)"
-            line_thermal="$(printf '%s\n' "$stage_limits" | cut -d '|' -f 3)"
-        elif [ $# -eq 6 ]; then
-            line_gpu_max="$5"
-            line_gpu_min="$6"
-            line_thermal="legacy"
-        else
-            line_gpu_max="${11}"
-            line_gpu_min="${12}"
-            line_thermal="legacy"
-        fi
-        [ "$line_pkg" = "$pkg" ] || continue
-        valid_mode "$line_mode" || continue
-        valid_positive_int "$line_gpu_max" || continue
-        valid_positive_int "$line_gpu_min" || continue
-        if [ -z "$first_match" ]; then
-            first_match="$line_mode|$line_gpu_max|$line_gpu_min|$line_thermal"
-        fi
-        if [ "$line_mode" = "balanced" ]; then
-            printf '%s|%s|%s|%s\n' "$line_mode" "$line_gpu_max" "$line_gpu_min" "$line_thermal"
-            return 0
-        fi
-    done < "$PERFORMANCE_PROFILES"
-    [ -n "$first_match" ] || return 1
-    printf '%s\n' "$first_match"
-}
-
-apply_gpu_limits_for_pkg() {
-    pkg="$1"
-    [ -d "$GPU_ROOT" ] || return 0
-    GPU_REASSERT_TICKS=$((GPU_REASSERT_TICKS + 1))
-    limits="$(profile_gpu_limits_for_app "$pkg")"
-    if [ -z "$limits" ]; then
-        restore_gpu_limits
-        return 0
-    fi
-
-    old_ifs="$IFS"
-    IFS='|'
-    set -- $limits
-    IFS="$old_ifs"
-    mode="$1"
-    gpu_max="$2"
-    gpu_min="$3"
-    thermal_match="$4"
-    max_pl="$(gpu_pwrlevel_for_khz "$gpu_max")" || {
-        log_line "gpu limit skipped: unsupported max $gpu_max for $pkg"
-        return 1
-    }
-    min_pl="$(gpu_pwrlevel_for_khz "$gpu_min")" || {
-        log_line "gpu limit skipped: unsupported min $gpu_min for $pkg"
-        return 1
-    }
-    target="$pkg|$mode|$gpu_max|$gpu_min"
-    target_max_freq="$(khz_to_hz "$gpu_max")"
-    target_min_freq="$(khz_to_hz "$gpu_min")"
-
-    actual_max_pl="$(read_file_clean "$GPU_ROOT/max_pwrlevel")"
-    actual_min_pl="$(read_file_clean "$GPU_ROOT/min_pwrlevel")"
-    actual_max_freq="$(read_file_clean "$GPU_DEVFREQ/max_freq")"
-    actual_min_freq="$(read_file_clean "$GPU_DEVFREQ/min_freq")"
-    if [ "$target" = "$LAST_GPU_PROFILE" ] &&
-        [ "$GPU_REASSERT_TICKS" -lt "$GPU_REASSERT_INTERVAL" ] &&
-        [ "$actual_min_freq" = "$target_min_freq" ] &&
-        [ "$actual_max_freq" = "$target_max_freq" ] &&
-        [ "$actual_min_pl" = "$min_pl" ] &&
-        [ "$actual_max_pl" = "$max_pl" ]; then
-        return 0
-    fi
-    GPU_REASSERT_TICKS=0
-
-    echo "$target_max_freq" > "$GPU_DEVFREQ/max_freq" 2>>"$LOG_FILE" || true
-    echo "$max_pl" > "$GPU_ROOT/max_pwrlevel" 2>>"$LOG_FILE" || true
-    echo "$target_min_freq" > "$GPU_DEVFREQ/min_freq" 2>>"$LOG_FILE" || true
-    echo "$min_pl" > "$GPU_ROOT/min_pwrlevel" 2>>"$LOG_FILE" || true
-
-    actual_max_pl="$(read_file_clean "$GPU_ROOT/max_pwrlevel")"
-    actual_min_pl="$(read_file_clean "$GPU_ROOT/min_pwrlevel")"
-    actual_max_freq="$(read_file_clean "$GPU_DEVFREQ/max_freq")"
-    actual_min_freq="$(read_file_clean "$GPU_DEVFREQ/min_freq")"
-    actual_cur_freq="$(read_file_clean "$GPU_DEVFREQ/cur_freq")"
-    LAST_GPU_STATE="$pkg/$mode thermal=${thermal_match:-unknown} target=${gpu_min}-${gpu_max}kHz pl=${min_pl}-${max_pl} actual_pl=${actual_min_pl}-${actual_max_pl} actual_freq=${actual_min_freq}-${actual_max_freq} cur=${actual_cur_freq}"
-    settings_put_quiet "$GPU_STATE_KEY" "$LAST_GPU_STATE"
-
-    if [ "$actual_min_freq" = "$target_min_freq" ] &&
-        [ "$actual_max_freq" = "$target_max_freq" ] &&
-        [ "$actual_min_pl" = "$min_pl" ] &&
-        [ "$actual_max_pl" = "$max_pl" ]; then
-        LAST_GPU_PROFILE="$target"
-        log_line "gpu limits applied: $LAST_GPU_STATE"
-        return 0
-    fi
-    log_line "gpu limits failed: $LAST_GPU_STATE context=$(cat /proc/self/attr/current 2>/dev/null)"
-    return 1
-}
-
-restore_gpu_limits() {
-    [ -d "$GPU_ROOT" ] || return 0
-    [ -n "$LAST_GPU_PROFILE" ] || return 0
-    target_min_freq="$(khz_to_hz "$GPU_DEFAULT_MIN_KHZ")"
-    target_max_freq="$(khz_to_hz "$GPU_DEFAULT_MAX_KHZ")"
-    echo "$GPU_DEFAULT_MAX_PL" > "$GPU_ROOT/max_pwrlevel" 2>/dev/null || true
-    echo "$GPU_DEFAULT_MIN_PL" > "$GPU_ROOT/min_pwrlevel" 2>/dev/null || true
-    echo "$target_min_freq" > "$GPU_DEVFREQ/min_freq" 2>/dev/null || true
-    echo "$target_max_freq" > "$GPU_DEVFREQ/max_freq" 2>/dev/null || true
-    LAST_GPU_PROFILE=
-    GPU_REASSERT_TICKS=0
-    LAST_GPU_STATE="default actual_pl=$(read_file_clean "$GPU_ROOT/min_pwrlevel")-$(read_file_clean "$GPU_ROOT/max_pwrlevel") actual_freq=$(read_file_clean "$GPU_DEVFREQ/min_freq")-$(read_file_clean "$GPU_DEVFREQ/max_freq")"
-    settings_put_quiet "$GPU_STATE_KEY" "$LAST_GPU_STATE"
-    if [ "$(read_file_clean "$GPU_DEVFREQ/min_freq")" = "$target_min_freq" ] &&
-        [ "$(read_file_clean "$GPU_DEVFREQ/max_freq")" = "$target_max_freq" ] &&
-        [ "$(read_file_clean "$GPU_ROOT/min_pwrlevel")" = "$GPU_DEFAULT_MIN_PL" ] &&
-        [ "$(read_file_clean "$GPU_ROOT/max_pwrlevel")" = "$GPU_DEFAULT_MAX_PL" ]; then
-        log_line "gpu limits restored: $LAST_GPU_STATE"
-    else
-        log_line "gpu restore failed: $LAST_GPU_STATE"
-    fi
 }
 
 scene_event_tick() {
@@ -1410,8 +1305,6 @@ set_performance_profile() {
     log_line "performance profile saved: $profile_pkg/$profile_mode"
     if generate_performance_xml && promote_staging_to_active; then
         publish_performance_state
-        LAST_GPU_PROFILE=
-        apply_gpu_limits_for_pkg "$(active_scene_pkg)"
         set_status "daemon=running" "last=set_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode"
         return 0
@@ -1479,8 +1372,6 @@ set_performance_profile_staged() {
     log_line "staged performance profile saved: $profile_pkg/$profile_mode"
     if generate_performance_xml && promote_staging_to_active; then
         publish_performance_state
-        LAST_GPU_PROFILE=
-        apply_gpu_limits_for_pkg "$(active_scene_pkg)"
         set_status "daemon=running" "last=set_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode" "thermal=staged"
         return 0
@@ -1503,8 +1394,6 @@ remove_performance_profile() {
     log_line "performance profile removed: $profile_pkg/$profile_mode"
     if generate_performance_xml && promote_staging_to_active; then
         publish_performance_state
-        LAST_GPU_PROFILE=
-        apply_gpu_limits_for_pkg "$(active_scene_pkg)"
         set_status "daemon=running" "last=remove_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode"
         return 0
@@ -1595,8 +1484,6 @@ sync_xml_refresh() {
 
 apply_performance() {
     if generate_performance_xml && promote_staging_to_active; then
-        LAST_GPU_PROFILE=
-        apply_gpu_limits_for_pkg "$(active_scene_pkg)"
         set_status "daemon=running" "last=apply_performance_ok"
         return 0
     fi
@@ -1620,6 +1507,9 @@ $(cat "$PERFORMANCE_PROFILES" 2>/dev/null)
 
 [XML 生成摘要]
 $(cat "$PERFORMANCE_SUMMARY" 2>/dev/null)
+
+[ZuiPP 重载]
+$(settings_get_clean "$ZUIPP_RELOAD_STATE_KEY")
 
 [AsoulOpt 健康状态]
 $(settings_get_clean "$ASOUL_HEALTH_KEY")

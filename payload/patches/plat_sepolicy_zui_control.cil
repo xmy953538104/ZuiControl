@@ -1,6 +1,8 @@
 ;; ZuiControl init bind-mount bridge.
 ;; Init performs file bind mounts, then the shell-domain daemon verifies state.
 ;; P2 XML apply only prepares active files and asks init to refresh bind mounts.
+;; After active XML hash closes, the daemon sends SIGTERM to ZuiPP so its Java
+;; config singletons reload the mounted XML. This is not a SIGKILL/crash path.
 (type zui_control_service)
 (typeattributeset service_manager_type (zui_control_service))
 (type zui_control_data_file)
@@ -19,3 +21,6 @@
 (allow init zui_control_data_file (dir (getattr open read search write add_name remove_name create setattr relabelto)))
 (allow init zui_control_data_file (file (getattr open read write create unlink setattr relabelfrom relabelto)))
 (allow init system_file (file (unlink setattr relabelto)))
+(allow shell self (capability (kill)))
+(allow shell system_app (process (signal)))
+(allow shell platform_app (process (signal)))

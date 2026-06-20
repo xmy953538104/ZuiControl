@@ -432,10 +432,17 @@ def patch_plat_sepolicy(unpack, payload, dry_run, report):
 
 
 def patch_vendor_sepolicy(unpack, payload, dry_run, report):
-    patch = payload / "patches" / "vendor_sepolicy_zui_control_kgsl.cil"
     target = unpack / "vendor_a" / "etc" / "selinux" / "vendor_sepolicy.cil"
-    additions = append_unique_lines(target, read_patch_lines(patch), dry_run)
-    report["vendor_sepolicy_added"] = additions
+    obsolete = [
+        ";; Allow the root shell-domain daemon to enforce KGSL GPU limits.",
+        ";; The daemon writes max_pwrlevel/min_pwrlevel only when a foreground app has",
+        ";; an explicit ZuiControl performance profile.",
+        "(allow shell_34_0 vendor_sysfs_kgsl (dir ",
+        "(allow shell_34_0 vendor_sysfs_kgsl (file ",
+        "(allow shell_34_0 vendor_sysfs_kgsl (lnk_file ",
+    ]
+    report["vendor_sepolicy_removed"] = remove_lines_containing(target, obsolete, dry_run)
+    report["vendor_sepolicy_added"] = []
 
 
 def update_plat_mapping_hash(unpack, report):

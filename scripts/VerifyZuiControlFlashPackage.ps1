@@ -19,6 +19,7 @@ $ToolsDir = Join-Path $WorkspaceRoot 'tools'
 $Python = Join-Path $ToolsDir 'python-3.8.0\python.exe'
 $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
+$ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -45,9 +46,39 @@ function Assert-Contains([string]$Path, [string]$Needle, [string]$Label) {
     }
 }
 
+function Assert-NotContains([string]$Path, [string]$Needle, [string]$Label) {
+    Require-File $Path
+    $match = Select-String -LiteralPath $Path -SimpleMatch -Pattern $Needle -Quiet
+    if ($match) {
+        throw "Unexpected $Label in $Path`: $Needle"
+    }
+}
+
 function File-Sha256([string]$Path) {
     Require-File $Path
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+}
+
+function Find-ApkSigner {
+    $cmd = Get-Command 'apksigner.bat' -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+        $cmd = Get-Command 'apksigner' -ErrorAction SilentlyContinue
+    }
+    if (-not $cmd) {
+        throw 'Missing apksigner in PATH'
+    }
+    return $cmd.Source
+}
+
+function Assert-ApkReleaseCert([string]$ApkPath, [string]$Label) {
+    $apkSigner = Find-ApkSigner
+    $text = & $apkSigner verify --print-certs $ApkPath | Out-String -Width 4096
+    if ($LASTEXITCODE -ne 0) {
+        throw "apksigner failed for $Label`: $ApkPath"
+    }
+    if ($text -notmatch [regex]::Escape("Signer #1 certificate SHA-256 digest: $ReleaseCertSha256")) {
+        throw "$Label is not signed with the release certificate: $ApkPath"
+    }
 }
 
 $FlashDir = (Resolve-Path -LiteralPath $FlashDir).Path
@@ -55,6 +86,8 @@ $Super = Join-Path $FlashDir 'super.img'
 $Boot = Join-Path $FlashDir 'boot.img'
 $Vbmeta = Join-Path $FlashDir 'vbmeta.img'
 $VbmetaSystem = Join-Path $FlashDir 'vbmeta_system.img'
+$SidecarApk = Join-Path $FlashDir 'ZuiControl-v19-system.apk'
+$ReleaseSidecarApk = Join-Path $FlashDir 'ZuiControl-v19-release.apk'
 
 Require-File $Python
 Require-File $LpUnpack
@@ -63,6 +96,8 @@ Require-File $Super
 Require-File $Boot
 Require-File $Vbmeta
 Require-File $VbmetaSystem
+Require-File $SidecarApk
+Require-File $ReleaseSidecarApk
 
 $ok = $false
 try {
@@ -90,10 +125,22 @@ try {
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $DaemonRc = Join-Path $SystemRoot 'system\etc\init\zui_controld.rc'
     $AsoulRc = Join-Path $SystemRoot 'system\etc\init\zui_asoulopt.rc'
+    $ClearPackageCache = Join-Path $SystemRoot 'system\etc\zui_control\clear_package_cache.sh'
     $GameTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_game_policy.xml'
     $PerfTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_performanceconfig.xml'
-    foreach ($required in @($AppApk, $Daemon, $DaemonRc, $AsoulRc, $GameTemplate, $PerfTemplate)) {
+    foreach ($required in @($AppApk, $Daemon, $DaemonRc, $AsoulRc, $ClearPackageCache, $GameTemplate, $PerfTemplate)) {
         Require-File $required
+    }
+    Assert-Contains $DaemonRc 'clear_package_cache.sh' 'ZuiControl package cache clear action'
+    Assert-Contains $ClearPackageCache 'ZuiControl-*' 'targeted ZuiControl package cache pattern'
+    $daemonText = Get-Content -Raw -LiteralPath $Daemon
+    if ($daemonText -like '*chcon u:object_r:system_file:s0*') {
+        throw 'daemon still attempts shell-domain active XML chcon'
+    }
+    foreach ($legacy in @('/sys/class/kgsl/kgsl-3d0', '/sys/devices/system/cpu/cpufreq', 'zui_control_cpu_state', 'zui_control_gpu_state', 'apply_gpu_limits_for_pkg')) {
+        if ($daemonText -like "*$legacy*") {
+            throw "daemon still contains direct runtime performance legacy: $legacy"
+        }
     }
 
     Assert-Contains (Join-Path $PlatSelinux 'plat_service_contexts') 'zui_control                               u:object_r:zui_control_service:s0' 'zui_control service_context'
@@ -110,11 +157,14 @@ try {
     Assert-Contains $PlatPolicy '(allow priv_app zui_control_service (service_manager (find)))' 'priv_app service allow'
     Assert-Contains $PlatPolicy '(allow init system_file (file (mounton)))' 'init mounton allow'
     Assert-Contains $PlatPolicy '(allow init zui_control_data_file (file (getattr open read write create unlink setattr relabelfrom relabelto)))' 'init zui data file allow'
+    Assert-Contains $PlatPolicy '(allow shell self (capability (kill)))' 'shell CAP_KILL allow for ZuiPP reload'
+    Assert-Contains $PlatPolicy '(allow shell system_app (process (signal)))' 'shell to system_app SIGTERM allow'
+    Assert-Contains $PlatPolicy '(allow shell platform_app (process (signal)))' 'shell to platform_app SIGTERM allow'
 
     $VendorPolicy = Join-Path $VendorSelinux 'vendor_sepolicy.cil'
-    Assert-Contains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (dir ' 'vendor KGSL dir allow'
-    Assert-Contains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (file ' 'vendor KGSL file allow'
-    Assert-Contains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (lnk_file ' 'vendor KGSL link allow'
+    Assert-NotContains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (dir ' 'legacy vendor KGSL dir allow'
+    Assert-NotContains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (file ' 'legacy vendor KGSL file allow'
+    Assert-NotContains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (lnk_file ' 'legacy vendor KGSL link allow'
 
     $hashes = [ordered]@{
         boot = File-Sha256 $Boot
@@ -122,7 +172,18 @@ try {
         vbmeta = File-Sha256 $Vbmeta
         vbmeta_system = File-Sha256 $VbmetaSystem
         apk = File-Sha256 $AppApk
+        sidecar_apk = File-Sha256 $SidecarApk
+        release_sidecar_apk = File-Sha256 $ReleaseSidecarApk
     }
+    if ($hashes.apk -ne $hashes.sidecar_apk) {
+        throw "Embedded system APK hash does not match sidecar APK: $($hashes.apk) != $($hashes.sidecar_apk)"
+    }
+    if ($hashes.apk -ne $hashes.release_sidecar_apk) {
+        throw "Embedded system APK hash does not match release sidecar APK: $($hashes.apk) != $($hashes.release_sidecar_apk)"
+    }
+    Assert-ApkReleaseCert $AppApk 'embedded system APK'
+    Assert-ApkReleaseCert $SidecarApk 'sidecar APK'
+    Assert-ApkReleaseCert $ReleaseSidecarApk 'release sidecar APK'
     $ok = $true
     [pscustomobject]@{
         ok = $true

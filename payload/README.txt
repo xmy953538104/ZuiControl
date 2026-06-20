@@ -38,8 +38,10 @@ Behavior:
 - Payload default XML files are templates/fallbacks, not automatically labeled as
   official originals. An official-original restore is available only if such a
   pair is explicitly saved under the runtime official_original directory.
-- Daemon keeps XML generation/bind mount, GPU node fallback, SafeCenter one-shot
-  keepalive, asoulOpt preparation, and log export.
+- Daemon keeps XML generation/bind mount, controlled ZuiPP reload after active
+  XML hash verification, SafeCenter one-shot keepalive, asoulOpt preparation,
+  and log export. CPU/GPU runtime scheduling stays with ZuiPP/GameHelper through
+  the mounted XML; the daemon does not write KGSL or cpufreq nodes in production.
 - SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input method,
   and overlays are transient scenes. Launcher is a valid configurable scene.
 - 144/165 are displayHz lock targets only in v19; generic UID FPS cap is a later

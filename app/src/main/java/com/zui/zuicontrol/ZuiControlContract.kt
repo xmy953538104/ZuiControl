@@ -24,7 +24,7 @@ object ZuiControlContract {
     const val KEY_TOP_PACKAGE = "zui_control_top_package"
     const val KEY_ACTIVE_REFRESH = "zui_control_active_refresh"
     const val KEY_SCENE_EVENT_TEXT = "zui_control_scene_event_text"
-    const val KEY_GPU_STATE = "zui_control_gpu_state"
+    const val KEY_ZUIPP_RELOAD_STATE = "zui_control_zuipp_reload_state"
     const val KEY_ASOUL_HEALTH = "zui_control_asoul_health"
     const val KEY_XML_STATE = "zui_control_xml_state"
     const val KEY_LOG_EXPORT = "zui_control_log_export"

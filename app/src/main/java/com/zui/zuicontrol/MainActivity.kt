@@ -1203,7 +1203,7 @@ class MainActivity : Activity() {
             return
         }
         val last = setting(ZuiControlContract.KEY_STATUS_LAST).ifBlank { "无" }
-        systemStatus.text = "守护服务 运行中\n${conciseXmlState()}\n${conciseGpuState()}\n刷新率 系统接管\n最近操作 ${commandName(last)}"
+        systemStatus.text = "守护服务 运行中\n${conciseXmlState()}\n${conciseZuippReloadState()}\n刷新率 系统接管\n最近操作 ${commandName(last)}"
         asoulStatus.text = setting(ZuiControlContract.KEY_ASOUL_HEALTH)
             .ifBlank { "正在读取 AsoulOpt 状态" }
     }
@@ -1219,13 +1219,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun conciseGpuState(): String {
-        val gpu = setting(ZuiControlContract.KEY_GPU_STATE)
+    private fun conciseZuippReloadState(): String {
+        val reload = setting(ZuiControlContract.KEY_ZUIPP_RELOAD_STATE)
         return when {
-            gpu.isBlank() -> "GPU 等待应用"
-            hasErrorLine(gpu) -> "GPU 异常"
-            gpu.contains("actual_freq=") || gpu.contains("actual_pl=") -> "GPU 已回读"
-            else -> "GPU 已记录"
+            reload.isBlank() -> "ZuiPP 等待重载"
+            hasErrorLine(reload) -> "ZuiPP 重载异常"
+            reload.contains("state=done") -> "ZuiPP 已重载"
+            reload.contains("state=skipped") -> "ZuiPP 无需重载"
+            else -> "ZuiPP 重载检查中"
         }
     }
 
