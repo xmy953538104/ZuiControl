@@ -23,6 +23,8 @@ LAST_REQUEST_FILE=$CONTROL_DIR/last_processed_settings_request_text
 
 APP_PACKAGE=com.zui.zuicontrol
 APP_SERVICE_COMPONENT=com.zui.zuicontrol/com.zui.zuicontrol.ZuiControlQuickService
+APP_PP_MODE_COMPONENT=com.zui.zuicontrol/.ZuiPpModeReceiver
+APP_PP_MODE_ACTION=com.zui.zuicontrol.action.APPLY_PP_MODE
 SAFE_CENTER_PACKAGE=com.zui.safecenter
 SAFE_CENTER_DB=/data/user/0/$SAFE_CENTER_PACKAGE/databases/BlackWhite.db
 SAFE_CENTER_KEEPALIVE_FLAG=$DATA_ROOT/safecenter_keepalive_done.flag
@@ -72,6 +74,7 @@ PERFORMANCE_SUMMARY_KEY=zui_control_performance_summary
 TOP_PACKAGE_KEY=zui_control_top_package
 SCENE_EVENT_KEY=zui_control_scene_event_text
 ZUIPP_RELOAD_STATE_KEY=zui_control_zuipp_reload_state
+PP_MODE_STATE_KEY=zui_control_pp_mode_state
 ASOUL_HEALTH_KEY=zui_control_asoul_health
 XML_STATE_KEY=zui_control_xml_state
 LOG_EXPORT_KEY=zui_control_log_export
@@ -80,6 +83,7 @@ BASE_REFRESH_RATE=120
 REFRESH_OWNER=system
 LAST_TOP_APP=
 LAST_REFRESH_RATE=
+LAST_PP_MODE_KEY=
 LAST_SETTINGS_REQUEST_TEXT=
 LAST_SCENE_EVENT_TEXT=
 HEALTH_TICKS=0
@@ -1247,6 +1251,56 @@ apply_scene_package() {
     fi
     LAST_TOP_APP="$top"
     log_line "foreground scene observed: $top source=$source refresh_owner=$REFRESH_OWNER"
+    apply_pp_mode_for_scene "$top"
+}
+
+profile_mode_code_for_pkg() {
+    profile_pkg="$1"
+    [ -s "$PERFORMANCE_PROFILES" ] || return 1
+    fallback=
+    while IFS='|' read -r pkg mode _rest; do
+        [ "$pkg" = "$profile_pkg" ] || continue
+        case "$mode" in
+            balanced) printf '1\n'; return 0 ;;
+            powersave) [ -z "$fallback" ] && fallback=0 ;;
+            savage) [ -z "$fallback" ] && fallback=2 ;;
+        esac
+    done < "$PERFORMANCE_PROFILES"
+    [ -n "$fallback" ] || return 1
+    printf '%s\n' "$fallback"
+}
+
+apply_pp_mode_for_scene() {
+    scene_pkg="$1"
+    force="$2"
+    mode_code="$(profile_mode_code_for_pkg "$scene_pkg")" || return 0
+    mode_key="$scene_pkg:$mode_code"
+    if [ "$force" != "force" ] && [ "$mode_key" = "$LAST_PP_MODE_KEY" ]; then
+        return 0
+    fi
+    settings_put_quiet "$PP_MODE_STATE_KEY" \
+        "time=$(ts);state=requested;package=$scene_pkg;mode=$mode_code"
+    if am broadcast --user 0 --receiver-foreground --include-stopped-packages \
+        -a "$APP_PP_MODE_ACTION" \
+        -n "$APP_PP_MODE_COMPONENT" \
+        --es package "$scene_pkg" \
+        --ei pp_mode "$mode_code" >/dev/null 2>&1; then
+        LAST_PP_MODE_KEY="$mode_key"
+        log_line "requested ZuiPP mode: $scene_pkg mode=$mode_code"
+        return 0
+    fi
+    settings_put_quiet "$PP_MODE_STATE_KEY" \
+        "time=$(ts);state=request_failed;package=$scene_pkg;mode=$mode_code"
+    log_line "request ZuiPP mode failed: $scene_pkg mode=$mode_code"
+    return 1
+}
+
+apply_pp_mode_if_current_scene() {
+    profile_pkg="$1"
+    current="$(current_scene_pkg 2>/dev/null)" || return 0
+    [ "$current" = "$profile_pkg" ] || return 0
+    LAST_PP_MODE_KEY=
+    apply_pp_mode_for_scene "$profile_pkg" force
 }
 
 process_scene_event() {
@@ -1305,6 +1359,7 @@ set_performance_profile() {
     log_line "performance profile saved: $profile_pkg/$profile_mode"
     if generate_performance_xml && promote_staging_to_active; then
         publish_performance_state
+        apply_pp_mode_if_current_scene "$profile_pkg"
         set_status "daemon=running" "last=set_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode"
         return 0
@@ -1372,6 +1427,7 @@ set_performance_profile_staged() {
     log_line "staged performance profile saved: $profile_pkg/$profile_mode"
     if generate_performance_xml && promote_staging_to_active; then
         publish_performance_state
+        apply_pp_mode_if_current_scene "$profile_pkg"
         set_status "daemon=running" "last=set_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode" "thermal=staged"
         return 0
@@ -1394,6 +1450,7 @@ remove_performance_profile() {
     log_line "performance profile removed: $profile_pkg/$profile_mode"
     if generate_performance_xml && promote_staging_to_active; then
         publish_performance_state
+        LAST_PP_MODE_KEY=
         set_status "daemon=running" "last=remove_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode"
         return 0
