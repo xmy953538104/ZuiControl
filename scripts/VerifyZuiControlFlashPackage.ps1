@@ -21,8 +21,8 @@ $Python = Join-Path $ToolsDir 'python-3.8.0\python.exe'
 $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '24'
-$ExpectedVersionName = '0.19.5'
+$ExpectedVersionCode = '25'
+$ExpectedVersionName = '0.19.6'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
