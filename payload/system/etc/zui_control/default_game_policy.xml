@@ -13,17 +13,17 @@
     </AttributeName>
     <AttributeName name = "GameLimitConfig">
         游戏参数配置，用于游戏助手进行CPUGPU限频提频boost。格式如下：
-        temp1:小核_大核_超大核_GPU|temp2:小核_大核_超大核_GPU（最多支持4个temp类，以“|”分割）
+        temp1:LittleCore_BigCore_TitanCore_MegaCore_GPU|temp2:LittleCore_BigCore_TitanCore_MegaCore_GPU（最多支持4个temp类，以“|”分割）
         均衡模式参数 省电模式参数 野兽模式参数（以“ ”分割）
     </AttributeName>
     <AttributeName name = "UPQLimitConfig">
         UPQ游戏参数配置，在应用支持UPQ时替代均衡模式：
-        temp1:小核_大核_超大核_GPU|temp2:小核_大核_超大核_GPU（最多支持4个temp类，以“|”分割）
+        temp1:LittleCore_BigCore_TitanCore_MegaCore_GPU|temp2:LittleCore_BigCore_TitanCore_MegaCore_GPU（最多支持4个temp类，以“|”分割）
         UPQ级别1参数 UPQ级别2参数 UPQ级别3参数 UPQ级别4参数 UPQ级别5参数（以“ ”分割）
     </AttributeName>
     <AttributeName name = "BestImageLimitConfig">
         极致画质游戏参数配置，在应用设置极致画质时替代GameLimitConfig：
-        temp1:小核_大核_超大核_GPU|temp2:小核_大核_超大核_GPU（最多支持4个temp类，以“|”分割）
+        temp1:LittleCore_BigCore_TitanCore_MegaCore_GPU|temp2:LittleCore_BigCore_TitanCore_MegaCore_GPU（最多支持4个temp类，以“|”分割）
         均衡模式参数 省电模式参数 野兽模式参数（以“ ”分割）
     </AttributeName>
     <AttributeName name = "ThermalConfig">
