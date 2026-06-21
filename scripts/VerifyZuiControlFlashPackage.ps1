@@ -255,16 +255,16 @@ try {
         }
     }
     foreach ($staleBridge in @('APPLY_PP_MODE', 'ZuiPpModeReceiver')) {
-        if ($daemonText -like "*$staleBridge*") {
+        if ($daemonText.Contains($staleBridge)) {
             throw "daemon still contains stale P2-G PP broadcast bridge: $staleBridge"
         }
     }
     foreach ($providerDirect in @('GameModeProvider/contact', 'content update --uri "$PP_GAME_MODE_URI"', 'stage=provider_direct', 'zui_control_pp_mode_state')) {
-        if ($daemonText -notlike "*$providerDirect*") {
-            throw "daemon is missing P2-H direct PP provider marker: $providerDirect"
+        if (-not $daemonText.Contains($providerDirect)) {
+            throw "daemon is missing P2-I direct PP provider marker: $providerDirect"
         }
     }
-    Assert-Contains $Daemon 'state=triggered;stage=provider_direct' 'P2-H PP mode direct provider triggered state'
+    Assert-Contains $Daemon 'state=triggered;stage=provider_direct' 'P2-I PP mode direct provider triggered state'
     Assert-NotContains $Daemon 'retry ZuiPP mode after non-done state' 'stale P2-G done-state retry wording'
     Assert-ZuiLimitXml $GameTemplate $PerfTemplate
 
