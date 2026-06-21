@@ -21,8 +21,8 @@ $Python = Join-Path $ToolsDir 'python-3.8.0\python.exe'
 $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '25'
-$ExpectedVersionName = '0.19.6'
+$ExpectedVersionCode = '26'
+$ExpectedVersionName = '0.19.7'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -125,6 +125,72 @@ function Assert-ZuiControlApkMetadata([string]$ApkPath, [string]$Label) {
     }
 }
 
+function Read-XmlDocument([string]$Path) {
+    Require-File $Path
+    $xml = New-Object System.Xml.XmlDocument
+    $xml.PreserveWhitespace = $true
+    $xml.Load($Path)
+    return $xml
+}
+
+function Assert-ZuiLimitXml([string]$GamePath, [string]$PerfPath) {
+    $game = Read-XmlDocument $GamePath
+    $perf = Read-XmlDocument $PerfPath
+    $requiredTypes = @('LittleCore', 'BigCore', 'TitanCore', 'MegaCore', 'GPU')
+    $typeLevels = @{}
+    foreach ($typeName in $requiredTypes) {
+        $type = $perf.SelectSingleNode("//GameLimitConfig/Type[@name='$typeName']")
+        if ($null -eq $type) {
+            throw "performanceconfig.xml is missing GameLimitConfig Type: $typeName"
+        }
+        $levels = New-Object 'System.Collections.Generic.HashSet[string]'
+        foreach ($freq in $type.SelectNodes('./Freq')) {
+            [void]$levels.Add($freq.GetAttribute('level'))
+        }
+        $typeLevels[$typeName] = $levels
+    }
+    foreach ($app in $game.SelectNodes("//AppList[@type='game']/App")) {
+        $pkg = $app.GetAttribute('pkg')
+        if (-not $pkg) {
+            $pkg = $app.GetAttribute('name')
+        }
+        $limit = $app.SelectSingleNode("./Attribute[@name='LimitConfig']")
+        if ($null -eq $limit) {
+            throw "game_policy.xml App is missing LimitConfig: $pkg"
+        }
+        $text = ($limit.InnerText.Trim() -replace '\s+', ' ')
+        $modes = if ($text) { $text -split ' ' } else { @() }
+        if ($modes.Count -ne 3) {
+            throw "LimitConfig mode count invalid for ${pkg}: $($modes.Count)"
+        }
+        for ($modeIndex = 0; $modeIndex -lt $modes.Count; $modeIndex++) {
+            foreach ($segment in ($modes[$modeIndex] -split '\|')) {
+                $parts = $segment -split ':', 2
+                if ($parts.Count -ne 2 -or -not ($parts[0] -match '^-?\d+$')) {
+                    throw "LimitConfig thermal segment invalid for ${pkg}: $segment"
+                }
+                $ids = $parts[1] -split '_'
+                if ($ids.Count -ne 5) {
+                    throw "LimitConfig must have Little/Big/Titan/Mega/GPU ids for ${pkg}: $segment"
+                }
+                for ($i = 0; $i -lt $requiredTypes.Count; $i++) {
+                    $id = $ids[$i]
+                    if (-not ($id -match '^-?\d+$')) {
+                        throw "LimitConfig id is not numeric for ${pkg}: $segment"
+                    }
+                    if ($id.StartsWith('-')) {
+                        continue
+                    }
+                    $typeName = $requiredTypes[$i]
+                    if (-not $typeLevels[$typeName].Contains($id)) {
+                        throw "LimitConfig references missing $typeName level $id for ${pkg}: $segment"
+                    }
+                }
+            }
+        }
+    }
+}
+
 $FlashDir = (Resolve-Path -LiteralPath $FlashDir).Path
 $Super = Join-Path $FlashDir 'super.img'
 $Boot = Join-Path $FlashDir 'boot.img'
@@ -193,6 +259,9 @@ try {
             throw "daemon is missing P2-G PP mode bridge marker: $bridge"
         }
     }
+    Assert-Contains $Daemon 'state=triggered;' 'P2-H PP mode triggered dedupe state'
+    Assert-NotContains $Daemon 'retry ZuiPP mode after non-done state' 'stale P2-G done-state retry wording'
+    Assert-ZuiLimitXml $GameTemplate $PerfTemplate
 
     Assert-Contains (Join-Path $PlatSelinux 'plat_service_contexts') 'zui_control                               u:object_r:zui_control_service:s0' 'zui_control service_context'
     Assert-Contains (Join-Path $PlatSelinux 'plat_property_contexts') 'persist.zui_control. u:object_r:shell_prop:s0' 'persist.zui_control property_context'

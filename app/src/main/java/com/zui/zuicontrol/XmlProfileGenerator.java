@@ -15,10 +15,12 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -64,6 +66,9 @@ public final class XmlProfileGenerator {
     private static final int[] GPU_DESC = {
             903000, 834000, 770000, 720000, 680000, 629000,
             578000, 500000, 422000, 366000, 310000, 231000
+    };
+    private static final String[] LIMIT_TYPES = {
+            "LittleCore", "BigCore", "TitanCore", "MegaCore", "GPU"
     };
 
     private XmlProfileGenerator() {
@@ -111,8 +116,7 @@ public final class XmlProfileGenerator {
         normalizeAppRefreshAttributes(game);
         String[] defaultModes = limitModes(defaultApp, "default");
         Map<String, Element> types = gameLimitTypes(perf);
-        for (String required : Arrays.asList(
-                "LittleCore", "BigCore", "TitanCore", "MegaCore", "GPU")) {
+        for (String required : LIMIT_TYPES) {
             if (!types.containsKey(required)) {
                 throw new IllegalStateException("GameLimitConfig type missing: " + required);
             }
@@ -229,6 +233,7 @@ public final class XmlProfileGenerator {
                     fallbackSummary(fallbackSources));
         }
 
+        validateLimitReferences(game, perf);
         writeDocument(game, outputGame);
         writeDocument(perf, outputPerf);
         System.out.println("profiles=" + profiles.size());
@@ -740,6 +745,75 @@ public final class XmlProfileGenerator {
         return true;
     }
 
+    private static void validateLimitReferences(Document game, Document perf) {
+        Map<String, Element> types = gameLimitTypes(perf);
+        Map<String, Set<String>> levels = new LinkedHashMap<>();
+        for (String typeName : LIMIT_TYPES) {
+            Element type = types.get(typeName);
+            if (type == null) {
+                throw new IllegalStateException("GameLimitConfig type missing: " + typeName);
+            }
+            levels.put(typeName, freqLevels(type));
+        }
+        NodeList apps = game.getElementsByTagName("App");
+        for (int i = 0; i < apps.getLength(); i++) {
+            Element app = (Element) apps.item(i);
+            String label = appLabel(app);
+            String[] modes = limitModes(app, label);
+            for (int mode = 0; mode < modes.length; mode++) {
+                validateLimitModeReferences(modes[mode], label + "/" + modeName(mode), levels);
+            }
+        }
+    }
+
+    private static Set<String> freqLevels(Element type) {
+        Set<String> result = new HashSet<>();
+        NodeList children = type.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node node = children.item(i);
+            if (node instanceof Element) {
+                Element element = (Element) node;
+                if ("Freq".equals(element.getTagName())) {
+                    result.add(element.getAttribute("level"));
+                }
+            }
+        }
+        return result;
+    }
+
+    private static void validateLimitModeReferences(
+            String block,
+            String label,
+            Map<String, Set<String>> levels
+    ) {
+        String[] segments = normalize(block).split("\\|", -1);
+        for (String segment : segments) {
+            int separator = segment.indexOf(':');
+            String[] ids = segment.substring(separator + 1).split("_", -1);
+            for (int i = 0; i < LIMIT_TYPES.length; i++) {
+                String id = ids[i];
+                if (id.startsWith("-")) {
+                    continue;
+                }
+                String typeName = LIMIT_TYPES[i];
+                if (!levels.get(typeName).contains(id)) {
+                    throw new IllegalStateException(
+                            "LimitConfig reference missing for " + label + ": "
+                                    + typeName + " level " + id);
+                }
+            }
+        }
+    }
+
+    private static String appLabel(Element app) {
+        String pkg = app.getAttribute("pkg");
+        if (pkg != null && !pkg.isEmpty()) {
+            return pkg;
+        }
+        String name = app.getAttribute("name");
+        return name == null || name.isEmpty() ? "App" : name;
+    }
+
     private static boolean isInteger(String value) {
         if (value == null || value.isEmpty()) {
             return false;
@@ -828,8 +902,7 @@ public final class XmlProfileGenerator {
 
     private static String replaceActiveLevels(String block, String ids) {
         String[] segments = block.split("\\|");
-        int activeCount = Math.max(1, segments.length - 1);
-        for (int i = 0; i < activeCount; i++) {
+        for (int i = 0; i < segments.length; i++) {
             int separator = segments[i].indexOf(':');
             String threshold = separator >= 0 ? segments[i].substring(0, separator) : "-1000";
             segments[i] = threshold + ":" + ids;

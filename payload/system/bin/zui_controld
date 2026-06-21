@@ -1278,9 +1278,10 @@ apply_pp_mode_for_scene() {
     if [ "$force" != "force" ] && [ "$mode_key" = "$LAST_PP_MODE_KEY" ]; then
         pp_state="$(settings_get_clean "$PP_MODE_STATE_KEY")"
         case "$pp_state" in
+            *"state=triggered;"*"package=$scene_pkg;"*"mode=$mode_code"*) return 0 ;;
             *"state=done;"*"package=$scene_pkg;"*"mode=$mode_code"*) return 0 ;;
         esac
-        log_line "retry ZuiPP mode after non-done state: $scene_pkg mode=$mode_code"
+        log_line "retry ZuiPP mode after unresolved state: $scene_pkg mode=$mode_code"
     fi
     settings_put_quiet "$PP_MODE_STATE_KEY" \
         "time=$(ts);state=requested;package=$scene_pkg;mode=$mode_code"

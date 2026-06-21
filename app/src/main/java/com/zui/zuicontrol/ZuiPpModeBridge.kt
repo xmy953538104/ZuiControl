@@ -20,8 +20,13 @@ object ZuiPpModeBridge {
                 null,
                 null,
             )
-            publish(context, "state=done;package=$packageName;mode=$mode;rows=$rows")
-            true
+            if (rows > 0) {
+                publish(context, "state=triggered;stage=provider;package=$packageName;mode=$mode;provider_rows=$rows")
+                true
+            } else {
+                publish(context, "state=not_applied;stage=provider;package=$packageName;mode=$mode;provider_rows=$rows")
+                false
+            }
         }.getOrElse {
             publish(context, "state=failed;package=$packageName;mode=$mode;error=${it.cleanMessage()}")
             false
