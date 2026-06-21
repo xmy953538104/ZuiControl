@@ -23,8 +23,7 @@ LAST_REQUEST_FILE=$CONTROL_DIR/last_processed_settings_request_text
 
 APP_PACKAGE=com.zui.zuicontrol
 APP_SERVICE_COMPONENT=com.zui.zuicontrol/com.zui.zuicontrol.ZuiControlQuickService
-APP_PP_MODE_COMPONENT=com.zui.zuicontrol/.ZuiPpModeReceiver
-APP_PP_MODE_ACTION=com.zui.zuicontrol.action.APPLY_PP_MODE
+PP_GAME_MODE_URI=content://com.zui.performance.utils.GameModeProvider/contact
 SAFE_CENTER_PACKAGE=com.zui.safecenter
 SAFE_CENTER_DB=/data/user/0/$SAFE_CENTER_PACKAGE/databases/BlackWhite.db
 SAFE_CENTER_KEEPALIVE_FLAG=$DATA_ROOT/safecenter_keepalive_done.flag
@@ -1284,19 +1283,19 @@ apply_pp_mode_for_scene() {
         log_line "retry ZuiPP mode after unresolved state: $scene_pkg mode=$mode_code"
     fi
     settings_put_quiet "$PP_MODE_STATE_KEY" \
-        "time=$(ts);state=requested;package=$scene_pkg;mode=$mode_code"
-    if am broadcast --user 0 --receiver-foreground --include-stopped-packages \
-        -a "$APP_PP_MODE_ACTION" \
-        -n "$APP_PP_MODE_COMPONENT" \
-        --es package "$scene_pkg" \
-        --ei pp_mode "$mode_code" >/dev/null 2>&1; then
+        "time=$(ts);state=requested;stage=provider_direct;package=$scene_pkg;mode=$mode_code"
+    result="$(content update --uri "$PP_GAME_MODE_URI" --bind "gameMode:s:$mode_code" 2>&1)"
+    if [ "$?" = "0" ]; then
         LAST_PP_MODE_KEY="$mode_key"
-        log_line "requested ZuiPP mode: $scene_pkg mode=$mode_code"
+        settings_put_quiet "$PP_MODE_STATE_KEY" \
+            "time=$(ts);state=triggered;stage=provider_direct;package=$scene_pkg;mode=$mode_code"
+        log_line "triggered ZuiPP provider: $scene_pkg mode=$mode_code stage=provider_direct"
         return 0
     fi
+    result="$(printf '%s' "$result" | tr '\n;|' '   ' | cut -c 1-160)"
     settings_put_quiet "$PP_MODE_STATE_KEY" \
-        "time=$(ts);state=request_failed;package=$scene_pkg;mode=$mode_code"
-    log_line "request ZuiPP mode failed: $scene_pkg mode=$mode_code"
+        "time=$(ts);state=failed;stage=provider_direct;package=$scene_pkg;mode=$mode_code;error=$result"
+    log_line "trigger ZuiPP provider failed: $scene_pkg mode=$mode_code error=$result"
     return 1
 }
 

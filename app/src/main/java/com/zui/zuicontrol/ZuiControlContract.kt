@@ -30,7 +30,6 @@ object ZuiControlContract {
     const val KEY_XML_STATE = "zui_control_xml_state"
     const val KEY_LOG_EXPORT = "zui_control_log_export"
 
-    const val ACTION_APPLY_PP_MODE = "com.zui.zuicontrol.action.APPLY_PP_MODE"
     const val ACTION_REFRESH_NOTIFICATION = "com.zui.zuicontrol.action.REFRESH_NOTIFICATION"
     const val ACTION_SET_60 = "com.zui.zuicontrol.action.SET_60"
     const val ACTION_SET_90 = "com.zui.zuicontrol.action.SET_90"
@@ -38,8 +37,6 @@ object ZuiControlContract {
     const val ACTION_SET_144 = "com.zui.zuicontrol.action.SET_144"
     const val ACTION_SET_165 = "com.zui.zuicontrol.action.SET_165"
     const val EXTRA_RATE = "rate"
-    const val EXTRA_PACKAGE = "package"
-    const val EXTRA_PP_MODE = "pp_mode"
 
     val rates = listOf(60, 90, 120, 144, 165)
 }

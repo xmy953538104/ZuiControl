@@ -7,6 +7,5 @@
         <permission name="android.permission.FOREGROUND_SERVICE"/>
         <permission name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
         <permission name="android.permission.POST_NOTIFICATIONS"/>
-        <permission name="com.zui.performance.permission.gamemode"/>
     </privapp-permissions>
 </permissions>

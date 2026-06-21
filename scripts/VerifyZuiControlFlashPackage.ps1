@@ -21,8 +21,8 @@ $Python = Join-Path $ToolsDir 'python-3.8.0\python.exe'
 $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '26'
-$ExpectedVersionName = '0.19.7'
+$ExpectedVersionCode = '27'
+$ExpectedVersionName = '0.19.8'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -120,8 +120,8 @@ function Assert-ZuiControlApkMetadata([string]$ApkPath, [string]$Label) {
     if ($LASTEXITCODE -ne 0) {
         throw "aapt2 permissions failed for $Label`: $ApkPath"
     }
-    if ($permissions -notmatch "uses-permission: name='com\.zui\.performance\.permission\.gamemode'") {
-        throw "$Label is missing com.zui.performance.permission.gamemode"
+    if ($permissions -match "uses-permission: name='com\.zui\.performance\.permission\.gamemode'") {
+        throw "$Label still requests stale com.zui.performance.permission.gamemode"
     }
 }
 
@@ -244,7 +244,7 @@ try {
     }
     Assert-Contains $DaemonRc 'clear_package_cache.sh' 'ZuiControl package cache clear action'
     Assert-Contains $ClearPackageCache 'ZuiControl-*' 'targeted ZuiControl package cache pattern'
-    Assert-Contains $PrivAppPermissions 'com.zui.performance.permission.gamemode' 'P2-G gamemode privileged permission'
+    Assert-NotContains $PrivAppPermissions 'com.zui.performance.permission.gamemode' 'stale P2-G gamemode privileged permission'
     $daemonText = Get-Content -Raw -LiteralPath $Daemon
     if ($daemonText -like '*chcon u:object_r:system_file:s0*') {
         throw 'daemon still attempts shell-domain active XML chcon'
@@ -254,12 +254,17 @@ try {
             throw "daemon still contains direct runtime performance legacy: $legacy"
         }
     }
-    foreach ($bridge in @('APPLY_PP_MODE', 'ZuiPpModeReceiver', 'zui_control_pp_mode_state')) {
-        if ($daemonText -notlike "*$bridge*") {
-            throw "daemon is missing P2-G PP mode bridge marker: $bridge"
+    foreach ($staleBridge in @('APPLY_PP_MODE', 'ZuiPpModeReceiver')) {
+        if ($daemonText -like "*$staleBridge*") {
+            throw "daemon still contains stale P2-G PP broadcast bridge: $staleBridge"
         }
     }
-    Assert-Contains $Daemon 'state=triggered;' 'P2-H PP mode triggered dedupe state'
+    foreach ($providerDirect in @('GameModeProvider/contact', 'content update --uri "$PP_GAME_MODE_URI"', 'stage=provider_direct', 'zui_control_pp_mode_state')) {
+        if ($daemonText -notlike "*$providerDirect*") {
+            throw "daemon is missing P2-H direct PP provider marker: $providerDirect"
+        }
+    }
+    Assert-Contains $Daemon 'state=triggered;stage=provider_direct' 'P2-H PP mode direct provider triggered state'
     Assert-NotContains $Daemon 'retry ZuiPP mode after non-done state' 'stale P2-G done-state retry wording'
     Assert-ZuiLimitXml $GameTemplate $PerfTemplate
 
