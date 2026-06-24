@@ -18,4 +18,6 @@
 
 payload/system/bin/zui_controld text eol=lf
 payload/system/bin/AsoulOpt binary
+payload/system/bin/AppOpt binary
+payload/system/etc/hosts text eol=lf
 *.apk binary

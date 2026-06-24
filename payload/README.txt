@@ -3,9 +3,9 @@ ZuiControl v19 payload
 System components:
 - /system/priv-app/ZuiControl/ZuiControl.apk
 - /system/bin/zui_controld
-- /system/bin/AsoulOpt
+- /system/bin/AppOpt
 - /system/etc/init/zui_controld.rc
-- /system/etc/init/zui_asoulopt.rc
+- /system/etc/init/zui_appopt.rc
 
 Framework patch:
 - scripts/ApplyZuiControlPayload.py calls scripts/PatchZuiControlFramework.py.
@@ -22,8 +22,12 @@ Runtime data:
 - /data/vendor/zui_control/zuipp/staging/
 - /data/vendor/zui_control/zuipp/last_good/
 - /data/vendor/zui_control/zuipp/state/
+- /data/vendor/zui_control/appopt/applist.conf
+- /data/vendor/zui_control/cloud/status.txt
+- /data/vendor/zui_control/cloud/domain_block.txt
 - /data/vendor/zui_control/log/controld.log
-- /data/vendor/zui_control/log/asoulopt.log
+- /data/vendor/zui_control/log/appopt.log
+- /data/vendor/zui_control/log/cloud_block.log
 
 Behavior:
 - Refresh owner is system_server through the zui_control Binder service.
@@ -39,9 +43,12 @@ Behavior:
   official originals. An official-original restore is available only if such a
   pair is explicitly saved under the runtime official_original directory.
 - Daemon keeps XML generation/bind mount, controlled ZuiPP reload after active
-  XML hash verification, SafeCenter one-shot keepalive, asoulOpt preparation,
-  and log export. CPU/GPU runtime scheduling stays with ZuiPP/GameHelper through
-  the mounted XML; the daemon does not write KGSL or cpufreq nodes in production.
+  XML hash verification, SafeCenter one-shot keepalive, AppOpt preparation,
+  cloud-control network blocking, and log export. Known Lenovo/ZUI cloud domains
+  are blocked statically through /system/etc/hosts; the boot script records the
+  domain-block status and applies only independent-UID firewall rules. CPU/GPU
+  runtime scheduling stays with ZuiPP/GameHelper through the mounted XML; the
+  daemon does not write KGSL or cpufreq nodes in production.
 - SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input method,
   and overlays are transient scenes. Launcher is a valid configurable scene.
 - 144/165 are displayHz lock targets only in v19; generic UID FPS cap is a later

@@ -72,19 +72,19 @@ def file_context_regex(path):
 def mode_for(rel, is_dir):
     if is_dir:
         return "0755"
-    if rel in ["system_a/system/bin/zui_controld", "system_a/system/bin/AsoulOpt"]:
+    if rel in ["system_a/system/bin/zui_controld", "system_a/system/bin/AppOpt"]:
         return "0755"
     return "0644"
 
 
 def owner_group_for(rel):
-    if rel == "system_a/system/bin/AsoulOpt":
+    if rel == "system_a/system/bin/AppOpt":
         return "0 2000"
     return "0 0"
 
 
 def context_for(rel):
-    if rel == "system_a/system/bin/AsoulOpt":
+    if rel == "system_a/system/bin/AppOpt":
         return "u:object_r:performanced_exec:s0"
     return "u:object_r:system_file:s0"
 
@@ -123,6 +123,12 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/etc/zui_perfctl",
         "system_a/system/etc/permissions/privapp-permissions-zui-perfctl.xml",
         "system_a/system/etc/default-permissions/default-permissions-zui-zuiperfctl.xml",
+        "system_a/system/bin/AsoulOpt",
+        "system_a/system/etc/init/zui_asoulopt.rc",
+        "system_a/system/etc/zui_control/zui_asoulopt.sh",
+        "system_a/system/etc/zui_control/default_asopt.conf",
+        "system_a/system/etc/zui_control/asopt.conf",
+        "system_a/system/etc/asopt.conf",
     ]
     for rel in legacy:
         remove_path(unpack / rel, dry_run, removed)
@@ -136,6 +142,9 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "ZuiperfCtl",
         "zuiperfctl",
         "zui-perfctl",
+        "AsoulOpt",
+        "zui_asoulopt",
+        "asopt.conf",
     ]
     targets = [
         unpack / "config" / "system_a_fs_config",

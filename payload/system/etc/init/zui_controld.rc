@@ -7,6 +7,8 @@ on post-fs-data
     mkdir /data/vendor/zui_control/zuipp/staging 0775 root shell
     mkdir /data/vendor/zui_control/zuipp/last_good 0775 root shell
     mkdir /data/vendor/zui_control/zuipp/state 0775 root shell
+    mkdir /data/vendor/zui_control/appopt 0775 root shell
+    mkdir /data/vendor/zui_control/cloud 0775 root shell
     mkdir /data/vendor/zui_control/log 0775 root shell
     restorecon_recursive /data/vendor/zui_control
 
@@ -41,21 +43,6 @@ on property:zui_control.zuipp=promote_active
     chmod 0664 /data/vendor/zui_control/zuipp/active/game_policy.xml
     chmod 0664 /data/vendor/zui_control/zuipp/active/performanceconfig.xml
     setprop zui_control.zuipp done
-
-on property:zui_control.asoul=apply
-    umount /system/etc/asopt.conf
-    mount none /data/vendor/zui_control/asoul/asopt.conf /system/etc/asopt.conf bind
-    restart zui_asoulopt
-    setprop zui_control.asoul done
-
-on property:zui_control.asoul=restore
-    umount /system/etc/asopt.conf
-    restart zui_asoulopt
-    setprop zui_control.asoul restored
-
-on property:zui_control.asoul=restart
-    restart zui_asoulopt
-    setprop zui_control.asoul restarted
 
 service zui_controld /system/bin/sh /system/bin/zui_controld
     class late_start

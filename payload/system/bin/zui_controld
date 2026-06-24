@@ -10,13 +10,15 @@ ZUI_STAGING_DIR=$ZUI_DIR/staging
 ZUI_LAST_GOOD_DIR=$ZUI_DIR/last_good
 ZUI_STATE_DIR=$ZUI_DIR/state
 ZUI_OFFICIAL_DIR=$ZUI_DIR/official_original
-ASOUL_DIR=$DATA_ROOT/asoul
+APPOPT_DIR=$DATA_ROOT/appopt
+CLOUD_DIR=$DATA_ROOT/cloud
 REFRESH_DIR=$DATA_ROOT/refresh
 PERFORMANCE_DIR=$DATA_ROOT/performance
 LOG_DIR=$DATA_ROOT/log
 
 LOG_FILE=$LOG_DIR/controld.log
-ASOUL_LOG=$LOG_DIR/asoulopt.log
+APPOPT_LOG=$LOG_DIR/appopt.log
+CLOUD_LOG=$LOG_DIR/cloud_block.log
 STATUS_FILE=$CONTROL_DIR/status.prop
 ADB_REQUEST=$CONTROL_DIR/request.prop
 LAST_REQUEST_FILE=$CONTROL_DIR/last_processed_settings_request_text
@@ -30,14 +32,14 @@ SAFE_CENTER_KEEPALIVE_FLAG=$DATA_ROOT/safecenter_keepalive_done.flag
 SAFE_CENTER_KEEPALIVE_BACKUP_FLAG=$DATA_ROOT/safecenter_keepalive_backup.flag
 SAFE_CENTER_KEEPALIVE_LOG=$LOG_DIR/safecenter_keepalive.log
 PROP_ZUIPP=zui_control.zuipp
-PROP_ASOUL=zui_control.asoul
+PROP_APPOPT=zui_control.appopt
+PROP_CLOUD_BLOCK=zui_control.cloud_block
 
 SYSTEM_GAME_POLICY=/system/etc/game_policy.xml
 SYSTEM_PERF_CONFIG=/system/etc/performanceconfig.xml
-SYSTEM_ASOPT=/system/etc/asopt.conf
 DEFAULT_GAME_POLICY=/system/etc/zui_control/default_game_policy.xml
 DEFAULT_PERF_CONFIG=/system/etc/zui_control/default_performanceconfig.xml
-DEFAULT_ASOPT=/system/etc/zui_control/default_asopt.conf
+DEFAULT_APPLIST=/system/etc/zui_control/default_applist.conf
 
 BAKED_GAME_POLICY=$ZUI_BAKED_DIR/game_policy.xml
 BAKED_PERF_CONFIG=$ZUI_BAKED_DIR/performanceconfig.xml
@@ -49,7 +51,8 @@ LAST_GOOD_GAME_POLICY=$ZUI_LAST_GOOD_DIR/game_policy.xml
 LAST_GOOD_PERF_CONFIG=$ZUI_LAST_GOOD_DIR/performanceconfig.xml
 OFFICIAL_GAME_POLICY=$ZUI_OFFICIAL_DIR/game_policy.xml
 OFFICIAL_PERF_CONFIG=$ZUI_OFFICIAL_DIR/performanceconfig.xml
-WORK_ASOPT=$ASOUL_DIR/asopt.conf
+APPOPT_CONFIG=$APPOPT_DIR/applist.conf
+APPOPT_ENABLED=$APPOPT_DIR/enabled.flag
 REFRESH_RULES=$REFRESH_DIR/rules.prop
 SYSTEM_REFRESH_PROFILES=/data/system/zui_control/profiles.prop
 PERFORMANCE_PROFILES=$PERFORMANCE_DIR/profiles.prop
@@ -61,7 +64,6 @@ XML_VERIFY_FILE=$ZUI_STATE_DIR/verify.txt
 ZUIPP_APPLY_LOCK_DIR=$ZUI_STATE_DIR/apply.lock
 ZUIPP_LAST_RELOADED_HASH_FILE=$ZUI_STATE_DIR/last_reloaded_hash
 ZUI_ENABLED=$ZUI_DIR/enabled.flag
-ASOUL_ENABLED=$ASOUL_DIR/enabled.flag
 
 REQ_TEXT_KEY=zui_control_request_text
 STATUS_TIME_KEY=zui_control_status_time
@@ -235,6 +237,14 @@ write_active_sha() {
         echo "performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")"
     } > "$XML_ACTIVE_SHA_FILE"
     chmod 0664 "$XML_ACTIVE_SHA_FILE" 2>/dev/null
+}
+
+active_xml_stamp() {
+    game_sha="$(sed -n 's/^game_policy=//p' "$XML_ACTIVE_SHA_FILE" 2>/dev/null | head -n 1)"
+    perf_sha="$(sed -n 's/^performanceconfig=//p' "$XML_ACTIVE_SHA_FILE" 2>/dev/null | head -n 1)"
+    [ -n "$game_sha" ] || game_sha="$(file_sha "$ACTIVE_GAME_POLICY")"
+    [ -n "$perf_sha" ] || perf_sha="$(file_sha "$ACTIVE_PERF_CONFIG")"
+    printf '%s:%s\n' "${game_sha:-none}" "${perf_sha:-none}"
 }
 
 label_active_xml() {
@@ -644,17 +654,26 @@ publish_xml_state() {
 }
 
 publish_asoul_health() {
-    service_state="$(getprop init.svc.zui_asoulopt 2>/dev/null)"
-    pid="$(pidof AsoulOpt 2>/dev/null | awk '{print $1}')"
+    service_state="$(getprop init.svc.zui_appopt 2>/dev/null)"
+    pid="$(pidof AppOpt 2>/dev/null | awk '{print $1}')"
     domain=
     if [ -n "$pid" ]; then
         domain="$(ps -AZ 2>/dev/null | awk -v wanted="$pid" '$3 == wanted {print $1; exit}')"
     fi
     log_size=0
-    [ -f "$ASOUL_LOG" ] && log_size="$(wc -c < "$ASOUL_LOG" 2>/dev/null)"
-    health="服务：${service_state:-unknown}
+    [ -f "$APPOPT_LOG" ] && log_size="$(wc -c < "$APPOPT_LOG" 2>/dev/null)"
+    rules_count=0
+    if [ -s "$APPOPT_CONFIG" ]; then
+        rules_count="$(grep -v '^[[:space:]]*#' "$APPOPT_CONFIG" 2>/dev/null |
+            grep -v '^[[:space:]]*$' 2>/dev/null |
+            grep -c '=' 2>/dev/null)"
+    fi
+    health="后端：AppOpt
+服务：${service_state:-unknown}
 进程：${pid:-未运行}
 SELinux：${domain:-未识别}
+配置：$APPOPT_CONFIG
+规则：${rules_count:-0} 条
 日志：${log_size:-0} 字节"
     settings_put_quiet "$ASOUL_HEALTH_KEY" "$health"
 }
@@ -771,18 +790,18 @@ maybe_patch_safecenter_keepalive() {
 init_dirs() {
     mkdir -p "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" "$ZUI_BAKED_DIR" \
         "$ZUI_ACTIVE_DIR" "$ZUI_STAGING_DIR" "$ZUI_LAST_GOOD_DIR" \
-        "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR" "$ASOUL_DIR" \
+        "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR" "$APPOPT_DIR" "$CLOUD_DIR" \
         "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR"
     chmod 0775 "$DATA_ROOT" "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" \
         "$ZUI_BAKED_DIR" "$ZUI_ACTIVE_DIR" "$ZUI_STAGING_DIR" \
         "$ZUI_LAST_GOOD_DIR" "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR" \
-        "$ASOUL_DIR" "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR" 2>/dev/null
+        "$APPOPT_DIR" "$CLOUD_DIR" "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR" 2>/dev/null
     restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
     init_active_xml || log_line "ZuiPP XML init failed"
-    copy_if_missing "$DEFAULT_ASOPT" "$WORK_ASOPT"
+    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
     [ -e "$REFRESH_RULES" ] || : > "$REFRESH_RULES"
     [ -e "$PERFORMANCE_PROFILES" ] || : > "$PERFORMANCE_PROFILES"
-    chmod 0664 "$REFRESH_RULES" "$PERFORMANCE_PROFILES" 2>/dev/null
+    chmod 0664 "$APPOPT_CONFIG" "$REFRESH_RULES" "$PERFORMANCE_PROFILES" 2>/dev/null
     migrate_refresh_rules
     rm -f "$REFRESH_DIR/enabled.flag"
     grant_app_permissions
@@ -1150,11 +1169,11 @@ restore_official_original_zuipp() {
 }
 
 apply_asoul() {
-    [ -s "$WORK_ASOPT" ] || return 1
-    if trigger_init_action "$PROP_ASOUL" apply &&
-        wait_mount_state mounted "$SYSTEM_ASOPT"; then
-        touch "$ASOUL_ENABLED"
-        chmod 0664 "$ASOUL_ENABLED" 2>/dev/null
+    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
+    [ -s "$APPOPT_CONFIG" ] || return 1
+    if trigger_init_action "$PROP_APPOPT" restart; then
+        touch "$APPOPT_ENABLED"
+        chmod 0664 "$APPOPT_ENABLED" 2>/dev/null
         publish_asoul_health
         return 0
     fi
@@ -1162,9 +1181,8 @@ apply_asoul() {
 }
 
 restore_asoul() {
-    trigger_init_action "$PROP_ASOUL" restore
-    wait_mount_state unmounted "$SYSTEM_ASOPT" || true
-    rm -f "$ASOUL_ENABLED"
+    trigger_init_action "$PROP_APPOPT" stop
+    rm -f "$APPOPT_ENABLED"
     publish_asoul_health
 }
 
@@ -1260,8 +1278,8 @@ profile_mode_code_for_pkg() {
     while IFS='|' read -r pkg mode _rest; do
         [ "$pkg" = "$profile_pkg" ] || continue
         case "$mode" in
-            balanced) printf '1\n'; return 0 ;;
-            powersave) [ -z "$fallback" ] && fallback=0 ;;
+            balanced) printf '0\n'; return 0 ;;
+            powersave) [ -z "$fallback" ] && fallback=1 ;;
             savage) [ -z "$fallback" ] && fallback=2 ;;
         esac
     done < "$PERFORMANCE_PROFILES"
@@ -1273,28 +1291,29 @@ apply_pp_mode_for_scene() {
     scene_pkg="$1"
     force="$2"
     mode_code="$(profile_mode_code_for_pkg "$scene_pkg")" || return 0
-    mode_key="$scene_pkg:$mode_code"
+    xml_stamp="$(active_xml_stamp)"
+    mode_key="$scene_pkg:$mode_code:$xml_stamp"
     if [ "$force" != "force" ] && [ "$mode_key" = "$LAST_PP_MODE_KEY" ]; then
         pp_state="$(settings_get_clean "$PP_MODE_STATE_KEY")"
         case "$pp_state" in
-            *"state=triggered;"*"package=$scene_pkg;"*"mode=$mode_code"*) return 0 ;;
-            *"state=done;"*"package=$scene_pkg;"*"mode=$mode_code"*) return 0 ;;
+            *"state=triggered;"*"package=$scene_pkg;"*"mode=$mode_code;"*"xml=$xml_stamp"*) return 0 ;;
+            *"state=done;"*"package=$scene_pkg;"*"mode=$mode_code;"*"xml=$xml_stamp"*) return 0 ;;
         esac
         log_line "retry ZuiPP mode after unresolved state: $scene_pkg mode=$mode_code"
     fi
     settings_put_quiet "$PP_MODE_STATE_KEY" \
-        "time=$(ts);state=requested;stage=provider_direct;package=$scene_pkg;mode=$mode_code"
+        "time=$(ts);state=requested;stage=provider_direct;package=$scene_pkg;mode=$mode_code;xml=$xml_stamp"
     result="$(content update --uri "$PP_GAME_MODE_URI" --bind "gameMode:s:$mode_code" 2>&1)"
     if [ "$?" = "0" ]; then
         LAST_PP_MODE_KEY="$mode_key"
         settings_put_quiet "$PP_MODE_STATE_KEY" \
-            "time=$(ts);state=triggered;stage=provider_direct;package=$scene_pkg;mode=$mode_code"
-        log_line "triggered ZuiPP provider: $scene_pkg mode=$mode_code stage=provider_direct"
+            "time=$(ts);state=triggered;stage=provider_direct;package=$scene_pkg;mode=$mode_code;xml=$xml_stamp"
+        log_line "triggered ZuiPP provider: $scene_pkg mode=$mode_code xml=$xml_stamp stage=provider_direct"
         return 0
     fi
     result="$(printf '%s' "$result" | tr '\n;|' '   ' | cut -c 1-160)"
     settings_put_quiet "$PP_MODE_STATE_KEY" \
-        "time=$(ts);state=failed;stage=provider_direct;package=$scene_pkg;mode=$mode_code;error=$result"
+        "time=$(ts);state=failed;stage=provider_direct;package=$scene_pkg;mode=$mode_code;xml=$xml_stamp;error=$result"
     log_line "trigger ZuiPP provider failed: $scene_pkg mode=$mode_code error=$result"
     return 1
 }
@@ -1572,14 +1591,17 @@ $(cat "$PERFORMANCE_SUMMARY" 2>/dev/null)
 [ZuiPP 重载]
 $(settings_get_clean "$ZUIPP_RELOAD_STATE_KEY")
 
-[AsoulOpt 健康状态]
+[AppOpt 健康状态]
 $(settings_get_clean "$ASOUL_HEALTH_KEY")
 
 [守护服务日志末尾]
 $(tail -n 120 "$LOG_FILE" 2>/dev/null)
 
-[AsoulOpt 日志末尾]
-$(tail -n 80 "$ASOUL_LOG" 2>/dev/null)"
+[AppOpt 日志末尾]
+$(tail -n 80 "$APPOPT_LOG" 2>/dev/null)
+
+[云控网络阻断日志末尾]
+$(tail -n 80 "$CLOUD_LOG" 2>/dev/null)"
     settings_put_quiet "$LOG_EXPORT_KEY" "$export_text"
     set_status "daemon=running" "last=export_logs"
 }
@@ -1807,8 +1829,8 @@ process_atomic_settings_request() {
 boot_restore() {
     log_line "mounting active ZuiPP XML at boot"
     apply_zuipp "boot_active"
-    if [ -f "$ASOUL_ENABLED" ]; then
-        log_line "restoring enabled AsoulOpt config bind"
+    if [ -f "$APPOPT_ENABLED" ]; then
+        log_line "restoring enabled AppOpt service"
         apply_asoul
     fi
 }

@@ -1,9 +1,0 @@
-on property:sys.boot_completed=1
-    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_asoulopt.sh
-    start zui_asoulopt
-
-service zui_asoulopt /system/bin/AsoulOpt
-    class late_start
-    disabled
-    user root
-    group root system readproc

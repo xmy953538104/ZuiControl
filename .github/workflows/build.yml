@@ -43,7 +43,8 @@ jobs:
           bash -n payload/system/bin/zui_controld
           bash -n payload/system/etc/zui_control/clear_package_cache.sh
           bash -n payload/system/etc/zui_control/promote_zuipp_xml.sh
-          bash -n payload/system/etc/zui_control/zui_asoulopt.sh
+          bash -n payload/system/etc/zui_control/zui_appopt_prepare.sh
+          bash -n payload/system/etc/zui_control/zui_cloud_block.sh
 
       - name: Decode release keystore
         run: |
