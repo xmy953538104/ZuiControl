@@ -1,5 +1,63 @@
 # ZuiControl 2026-06-24 交接：P3 AppOpt + 云控域名屏蔽 + P2 鸣潮 XML 修复
 
+## 0.1 2026-06-24 17:05 覆盖更新
+
+本段覆盖下方旧结论。下方 `0. 本次结论` 里的 `4d351b6 / run=28082837934 / apk_sha256=4a6a... / super_sha256=61d...` 是上一版刷机包；该包刷后确认 P1/P2 基础可用，但暴露两个真实问题：
+
+- AppOpt 服务反复重启：`performanced` 域无法读取 `/data/vendor/zui_control/appopt/applist.conf`，AVC 包含 `dac_override` 和 `zui_control_data_file search`。
+- 云控脚本不能由 property 自动触发：rc 用 `u:r:init:s0` 执行 `/system/bin/sh`，设备侧出现 `init execute_no_trans shell_exec` AVC；手动 `su -c sh zui_cloud_block.sh apply` 可以成功。
+
+已修复并重新生成刷机包。当前应刷入的包仍在：
+
+```text
+D:\3.VScode\Mi\【B刷机】187
+```
+
+当前有效源码提交：
+
+```text
+3460dfa Fix AppOpt and cloud-block SELinux startup
+```
+
+当前有效 GitHub Actions：
+
+```text
+run=28086640070
+artifact=ZuiControl-release-apk
+artifact=zui-control-v19-payload
+```
+
+当前有效最终包反抽验证：
+
+```text
+VerifyZuiControlFlashPackage.ps1 -FlashDir D:\3.VScode\Mi\【B刷机】187
+ok=true
+apk_sha256=64244b25de3908c355f9759dd3bd437e08bef748c0a34f8cc7f987d6a0045680
+boot_sha256=5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b
+super_sha256=bf584660338c66b96584123e436b63bcc20095d52528983276f80a0c3a52d39a
+vbmeta_sha256=9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5
+vbmeta_system_sha256=a25d4e43e5974e393b4741663f415d6af4c823a6ee6dc89aa168a6041be25884
+```
+
+本次新增修复点：
+
+- `zui_appopt.rc` 中 cloud block 的 `apply/restore/boot` 改为 `exec u:r:shell:s0 root shell -- /system/bin/sh ...`。
+- `zui_controld.rc` 中 `clear_package_cache.sh` 改为 `exec u:r:shell:s0 root shell -- /system/bin/sh ...`。
+- `/system/bin/AppOpt` 增加 `u:object_r:performanced_exec:s0` file_context。
+- `performanced` 增加读取 `/data/vendor/zui_control/appopt` 所需的 `dac_override` 和 `zui_control_data_file` 读/search/map 权限。
+- `zui_appopt_prepare.sh` 去掉 `[ -x /system/bin/AppOpt ]` 误判，只负责准备运行目录和配置。
+- `VerifyZuiControlFlashPackage.ps1` 已增加这些规则的最终 super 反抽检查。
+
+刷后优先确认：
+
+```powershell
+adb shell getprop init.svc.zui_appopt
+adb shell settings get system zui_control_cloud_block_state
+adb shell su -c "cat /data/vendor/zui_control/cloud/status.txt"
+adb shell su -c "ip6tables -w -S zui_cloud_block; iptables -w -S zui_cloud_block"
+adb shell su -c "dmesg | grep -i 'avc: denied' | grep -Ei 'AppOpt|zui_appopt|zui_cloud|zui_controld|zui_control'"
+```
+
 ## 0. 本次结论
 
 已生成可刷测试包，位于：
