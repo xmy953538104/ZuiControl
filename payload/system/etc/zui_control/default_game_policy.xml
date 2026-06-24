@@ -66,7 +66,7 @@
             <Attribute name="LimitConfig">-1000:712_614_515_619_704|2:712_614_515_619_704|4:712_614_515_619_704|13:410_108_108_107_1108 -1000:108_105_105_110_1207|2:108_105_105_110_1207|3:108_105_105_110_1207|10:107_104_104_106_1209 -1000:718_932_729_2735_901|3:718_932_729_2731_901|5:718_932_729_2731_901|14:513_108_108_107_1007</Attribute>
         </App>
         <App name="WutheringWaves" pkg="com.kurogame.mingchao">
-            <Attribute name="ThermalConfig">200 100 300</Attribute>
+            <Attribute name="ThermalConfig">0 0 0</Attribute>
             <Attribute name="RefreshRateConfig">60</Attribute>
             <Attribute name="SpecialBoostConfig">NoBoost NoBoost NoBoost</Attribute>
             <Attribute name="PowerSaveRefreshRateConfig">60</Attribute>

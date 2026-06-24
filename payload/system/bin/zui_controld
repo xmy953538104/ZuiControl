@@ -1268,7 +1268,7 @@ apply_scene_package() {
     fi
     LAST_TOP_APP="$top"
     log_line "foreground scene observed: $top source=$source refresh_owner=$REFRESH_OWNER"
-    apply_pp_mode_for_scene "$top"
+    apply_pp_mode_for_scene "$top" force
 }
 
 profile_mode_code_for_pkg() {

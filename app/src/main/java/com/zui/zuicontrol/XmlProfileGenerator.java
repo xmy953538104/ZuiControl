@@ -70,6 +70,7 @@ public final class XmlProfileGenerator {
     private static final String[] LIMIT_TYPES = {
             "LittleCore", "BigCore", "TitanCore", "MegaCore", "GPU"
     };
+    private static final String GENERATED_APP_THERMAL_CONFIG = "0 0 0";
 
     private XmlProfileGenerator() {
     }
@@ -205,6 +206,7 @@ public final class XmlProfileGenerator {
             FrameValue frame = frameValue(profile, refreshRules);
             upsertAttribute(app, "RefreshRateConfig", Integer.toString(frame.normalHz));
             upsertAttribute(app, "PowerSaveRefreshRateConfig", Integer.toString(frame.powerSaveHz));
+            upsertAttribute(app, "ThermalConfig", GENERATED_APP_THERMAL_CONFIG);
 
             Element limit = findAttribute(app, "LimitConfig");
             if (limit == null) {

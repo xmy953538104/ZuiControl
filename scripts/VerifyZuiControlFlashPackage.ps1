@@ -333,8 +333,18 @@ try {
     Assert-Contains $Daemon 'savage) [ -z "$fallback" ] && fallback=2 ;;' 'P2 PP savage mode maps to ZuiPP gameMode 2'
     Assert-Contains $Daemon 'xml=$xml_stamp' 'P2 PP mode state includes active XML stamp'
     Assert-Contains $Daemon 'state=triggered;stage=provider_direct' 'P2-I PP mode direct provider triggered state'
+    Assert-Contains $Daemon 'apply_pp_mode_for_scene "$top" force' 'P2 PP mode re-applies on foreground scene enter'
     Assert-NotContains $Daemon 'retry ZuiPP mode after non-done state' 'stale P2-G done-state retry wording'
     Assert-ZuiLimitXml $GameTemplate $PerfTemplate
+    $gameXml = Read-XmlDocument $GameTemplate
+    $mingchao = $gameXml.SelectSingleNode("//AppList[@type='game']/App[@pkg='com.kurogame.mingchao']")
+    if ($null -eq $mingchao) {
+        throw 'default_game_policy.xml is missing WutheringWaves App entry'
+    }
+    $mingchaoThermal = $mingchao.SelectSingleNode("./Attribute[@name='ThermalConfig']")
+    if ($null -eq $mingchaoThermal -or (($mingchaoThermal.InnerText.Trim() -replace '\s+', ' ') -ne '0 0 0')) {
+        throw 'WutheringWaves ThermalConfig must stay 0 0 0 to avoid vendor thermal user-case GPU caps'
+    }
 
     Assert-Contains (Join-Path $PlatSelinux 'plat_service_contexts') 'zui_control                               u:object_r:zui_control_service:s0' 'zui_control service_context'
     Assert-Contains (Join-Path $PlatSelinux 'plat_property_contexts') 'persist.zui_control. u:object_r:shell_prop:s0' 'persist.zui_control property_context'
