@@ -42,8 +42,4 @@ if command -v killall >/dev/null 2>&1; then
 fi
 umount /system/etc/asopt.conf >/dev/null 2>&1 || true
 
-if [ -x /system/bin/AppOpt ]; then
-    log_msg "prepared AppOpt runtime: cfg=$CFG"
-else
-    log_msg "AppOpt binary missing: /system/bin/AppOpt"
-fi
+log_msg "prepared AppOpt runtime: cfg=$CFG"

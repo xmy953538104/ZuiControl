@@ -1,6 +1,6 @@
 on property:sys.boot_completed=1
     exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_appopt_prepare.sh
-    exec u:r:init:s0 root root -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh apply
+    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh apply
     start zui_appopt
 
 on property:zui_control.appopt=restart
@@ -13,11 +13,11 @@ on property:zui_control.appopt=stop
     setprop zui_control.appopt stopped
 
 on property:zui_control.cloud_block=apply
-    exec u:r:init:s0 root root -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh apply
+    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh apply
     setprop zui_control.cloud_block done
 
 on property:zui_control.cloud_block=restore
-    exec u:r:init:s0 root root -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh restore
+    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh restore
     setprop zui_control.cloud_block restored
 
 service zui_appopt /system/bin/AppOpt -c /data/vendor/zui_control/appopt/applist.conf -s 2
