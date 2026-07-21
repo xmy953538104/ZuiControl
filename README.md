@@ -1,12 +1,17 @@
 # ZuiControl
 
+## Current Handoff
+
+- `docs/ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md`: current project state, package identity, boundaries, and post-flash verification order.
+- `docs/ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md`: P2 XML structure, `ThermalConfig` values, and the full ZuiPP application path.
+
 ZuiControl is the v19 system-server refresh-rate and performance control plane.
 
 The app is now a privileged UI/QS/config client. Foreground scene detection and
 refresh-rate policy live in `system_server` through the `zui_control` Binder
 service. The daemon remains for XML generation, bind mounts, controlled ZuiPP
 reload after XML hash verification, SafeCenter one-time keepalive, logs, and
-AsoulOpt orchestration.
+AppOpt thread-placement orchestration.
 
 ## Runtime Split
 
@@ -14,7 +19,7 @@ AsoulOpt orchestration.
 - `android.zui.ZuiControlManager`: thin framework client used by the app.
 - `zui_control`: Binder service published from `system_server`.
 - `ZuiControlService`: service-side display-mode policy owner.
-- `/system/bin/zui_controld`: root daemon for XML/ZuiPP reload/asoul/log work only.
+- `/system/bin/zui_controld`: root daemon for XML/ZuiPP reload/AppOpt/log work only.
 - `/data/system/zui_control/profiles.prop`: refresh scene profiles.
 - `/data/vendor/zui_control/`: daemon runtime state, XML work files, and logs.
 
@@ -63,7 +68,7 @@ python scripts/ApplyZuiControlPayload.py --unpack /path/to/work/unpack
 Runtime logs on device:
 
 - `/data/vendor/zui_control/log/zuicontrold.log`
-- `/data/vendor/zui_control/log/asoulopt.log`
+- `/data/vendor/zui_control/log/appopt.log`
 
 ## Validation Anchors
 

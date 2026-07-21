@@ -1,0 +1,295 @@
+# ZuiControl 新聊天完整交接 - 2026-07-21
+
+## 0. 权威入口
+
+新聊天按以下顺序读取：
+
+1. `D:\3.VScode\Mi\AGENTS.md`
+2. 本文件
+3. 需要理解 P2 XML 时读取 `docs/ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md`
+4. 需要追溯实测证据时读取：
+   - `docs/ZuiControl_HANDOFF_P3_APPOPT_CLOUD_P2FIX_2026-06-24.md`
+   - `docs/ZuiControl_HANDOFF_P2_MINGCHAO_XML_FIX_2026-06-24.md`
+
+旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
+
+## 1. 当前快照
+
+```text
+工作区：D:\3.VScode\Mi
+当前 App 仓库：D:\3.VScode\Mi\ZuiControl
+历史旧仓库：D:\3.VScode\Mi\ZuiperfCtl（不要作为当前代码入口）
+设备/系统：TB321FU / ZUI 16.1.11.187
+分支：main
+remote：git@github.com:xmy953538104/ZuiControl.git
+仓库交接前 HEAD：7195c2651eb38da9b3fecd7178298be7957e0092
+当前 App：versionCode=28 / versionName=0.19.9
+```
+
+2026-07-21 整理交接时设备未连接，因此本文件没有把 2026-06-24 的最终镜像冒充成“已经刷后验证通过”。最新镜像已完成本地构建、签名、PackSuper 和 final super 反抽验证；刷后实机状态仍需新窗口重新确认。
+
+## 2. 当前最终刷机包
+
+目录：
+
+```text
+D:\3.VScode\Mi\【B刷机】187
+```
+
+最新功能代码提交：
+
+```text
+6e698a1 Fix Mingchao XML thermal application
+```
+
+后续文档提交：
+
+```text
+7195c26 Document Mingchao XML thermal fix
+```
+
+GitHub Actions：
+
+```text
+run_id=28089289333
+workflow=Build ZuiControl
+head=6e698a1693e64e457c66e289a7ab032149e0fd5e
+status=success
+artifact_dir=D:\3.VScode\Mi\work\ci_artifacts\zuicontrol_28089289333
+```
+
+APK：
+
+```text
+package=com.zui.zuicontrol
+versionCode=28
+versionName=0.19.9
+release cert SHA-256=3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94
+```
+
+最终 SHA256：
+
+```text
+5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b  boot.img
+4d0d7fe55d8ed37d7fbf1220a39c3baed6631c77e5d5955b61f3936d3eb4f82d  super.img
+9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5  vbmeta.img
+f3caa64f53a130ddafcf31d09e03c5ad9d33988ccc318ba0c6b7df5d0d364762  vbmeta_system.img
+89293b21225588e5b9ae8c6d4cec1d8b99b6b89fbdde07a6564cd234bb426aea  ZuiControl-v19-system.apk
+89293b21225588e5b9ae8c6d4cec1d8b99b6b89fbdde07a6564cd234bb426aea  ZuiControl-v19-release.apk
+```
+
+最终验证：
+
+```text
+VerifyZuiControlFlashPackage.ps1 -FlashDir "D:\3.VScode\Mi\【B刷机】187"
+ok=true
+```
+
+验证器已从最终 `super.img` 反抽真实 system/vendor 内容，不只是检查源码或 `work/unpack`。
+
+## 3. P1 刷新率状态
+
+P1 已经完成 system_server ownership 迁移并经过旧包实机验证。本轮交接没有修改 P1。
+
+主链路：
+
+```text
+DisplayContent.setFocusedApp(ActivityRecord)
+-> ZuiControlHooks.onFocusedAppChanged(record, displayId)
+-> ZuiControlService
+-> /data/system/zui_control/profiles.prop + 内存 profile
+-> DisplayManagerInternal display vote
+-> active display mode
+```
+
+必须保持：
+
+- `system_server` 是唯一刷新率 owner。
+- 未配置场景默认 120Hz。
+- QS 修改 `lastNonTransientScenePackage`，不能学习 SystemUI。
+- daemon 不恢复 `refresh_tick`、`learn_refresh`、peak/min settings 抢写或开机强写 120。
+- v19 只承诺 displayHz lock，不把 FPS cap 当作已交付能力。
+
+## 4. P2 XML 当前实现
+
+生产主链路：
+
+```text
+ZuiControl 保存性能 profile
+-> zui_controld 写 /data/vendor/zui_control/performance/profiles.prop
+-> XmlProfileGenerator 生成 staging game_policy.xml/performanceconfig.xml
+-> 校验并 promote 到 /data/vendor/zui_control/zuipp/active/
+-> bind mount 到 /system/etc/game_policy.xml 和 performanceconfig.xml
+-> hash 闭合后受控 reload com.zui.pp
+-> system_server 场景事件进入目标 App
+-> daemon 直接 content update ZuiPP GameModeProvider/contact
+-> ZuiPP 按当前 gameMode 重新应用 XML LimitConfig
+```
+
+边界：
+
+- CPU/GPU 都走 XML + ZuiPP/GameHelper 原厂链路。
+- daemon 不生产直写 CPU cpufreq 或 KGSL GPU sysfs。
+- `balanced=0`、`powersave=1`、`savage=2`。
+- 每次重新进入有 profile 的 App，`apply_pp_mode_for_scene "$top" force` 重发一次 provider；不常驻轮询。
+
+### 鸣潮最新修复
+
+鸣潮包名：
+
+```text
+com.kurogame.mingchao
+```
+
+已确认旧问题不是 XML 没生成或 bind mount 失败。ZuiPP 已读到用户 `LimitConfig`，但同一 App 条目的 `ThermalConfig=200 100 300` 会选择 vendor thermal user case；现场 `200 -> battery_2/gpu_0` 后，KGSL 曾被压到约 `thermal_pwrlevel=10`、`max_gpuclk=310000000`。
+
+当前修复：
+
+- `XmlProfileGenerator` 对用户生成的独立游戏条目统一写 `ThermalConfig=0 0 0`。
+- 默认模板中鸣潮条目也是 `ThermalConfig=0 0 0`。
+- 这只避免主动切到 100/200/300 游戏热控 user case，不关闭系统全局过热保护。
+- final verifier 会拒绝鸣潮模板不是 `0 0 0` 的刷机包。
+
+2026-06-24 现场临时验证：改为 `0 0 0` 并 reload 后，观察到 `thermal_pwrlevel=0`、`max_gpuclk=903000000`。这证明旧 user case 是冲突源，但最终 2026-06-24 镜像仍需刷后重新验证完整自动链路。
+
+## 5. P3 线程放置当前实现
+
+AGENTS.md 把产品功能称为 `asoulOpt` 线程放置/亲合度模块；当前实际系统后端已经替换为 AppOpt。新窗口必须区分“功能名/兼容命令名”和“真实运行二进制”。
+
+当前真实后端：
+
+```text
+/system/bin/AppOpt
+/system/etc/init/zui_appopt.rc
+/system/etc/zui_control/default_applist.conf
+/system/etc/zui_control/zui_appopt_prepare.sh
+/data/vendor/zui_control/appopt/applist.conf
+service=zui_appopt
+```
+
+已从镜像删除旧项：
+
+```text
+/system/bin/AsoulOpt
+/system/etc/asopt.conf
+/system/etc/init/zui_asoulopt.rc
+/system/etc/zui_control/asopt.conf
+/system/etc/zui_control/default_asopt.conf
+/system/etc/zui_control/zui_asoulopt.sh
+```
+
+兼容遗留：
+
+- daemon 请求名仍有 `apply_asoul` / `restore_asoul`，实际操作 AppOpt。
+- UI 仍有 `AsoulOpt` 文案，状态正文会显示“后端：AppOpt”。
+- `zui_appopt_prepare.sh` 会清理可能残留的旧 `AsoulOpt` 进程。
+- 不要因为兼容名字重新把旧 AsoulOpt 二进制和三份 conf 加回来。
+
+当前 SELinux 修复：
+
+- `/system/bin/AppOpt` 标记为 `performanced_exec`。
+- `performanced` 获得读取 `/data/vendor/zui_control/appopt/applist.conf` 所需的目录/file 权限和 `dac_override`。
+- Windows 侧没有 `secilc` 完整编译验证，刷后仍必须检查 AVC。
+
+## 6. 云控屏蔽当前实现
+
+当前不再一刀切 UID1000，也不冻结 `com.zui.pp`。
+
+两层实现：
+
+1. `/system/etc/hosts` 静态屏蔽已知 Lenovo/ZUI 云控域名。
+2. `zui_cloud_block.sh` 用 iptables/ip6tables 阻断少数独立 UID 云控包。
+
+独立 UID 目标包括：
+
+```text
+com.zui.game.service
+com.zui.engine
+com.lenovo.tbengine
+com.lenovo.leos.cloud.sync
+com.tblenovo.tabpushout
+com.tblenovo.center
+```
+
+明确边界：
+
+- 不含 `--uid-owner 1000`。
+- `com.zui.pp`、`com.zui.cores`、`com.zui.safecenter` 不被共享 UID 一刀切。
+- hosts 是静态规则，不做后台抓包或持续网络扫描。
+- hosts 只匹配明确域名，不支持通配所有未来子域名或硬编码 IP。
+
+## 7. 新窗口唯一正确的下一步
+
+先确认设备是否已经刷入上述最终包，再做刷后验证。2026-07-21 当前设备未连接，不能跳过这一步。
+
+连接设备后先运行：
+
+```powershell
+$adb = "D:\3.VScode\Mi\tools\adb\adb.exe"
+& $adb get-state
+& $adb shell su -c id
+& $adb shell dumpsys package com.zui.zuicontrol | findstr "versionCode versionName"
+& $adb shell service list | findstr zui_control
+& $adb shell dumpsys zui_control
+```
+
+预期 App 为 `28 / 0.19.9`。如果不是，不要拿旧包状态判断新修复，应先刷 `D:\3.VScode\Mi\【B刷机】187`。
+
+刷后按顺序验证：
+
+1. P1：`zui_control` 存在，`refreshOwner=system`，`daemonRefreshDisabled=true`，场景切换仍正常。
+2. P3：`init.svc.zui_appopt=running`，`pidof AppOpt` 有 PID，配置可读，无 AppOpt/performanced AVC。
+3. 云控：状态键、hosts 和 iptables/ip6tables 链存在，确认没有 UID1000 全断规则。
+4. P2：active XML 与 `/system/etc` hash 一致，鸣潮条目 `ThermalConfig=0 0 0`。
+5. 进入鸣潮：`zui_control_pp_mode_state` 更新为当前时间、`state=triggered;stage=provider_direct;package=com.kurogame.mingchao;mode=0;xml=...`。
+6. 退出再进鸣潮：时间戳再次更新，证明 scene-enter force retrigger 生效。
+7. 读取 ZuiPP/Thermal/KGSL 日志和节点，区分 XML 没应用、vendor user case 限制和真实高温全局降频。
+8. 检查 `dmesg/logcat` 中与 zui_control、AppOpt、cloud block、ZuiPP 相关的 AVC。
+
+未完成上述刷后验证前：
+
+- 不进入 FPS cap。
+- 不修改 P1。
+- 不恢复 direct CPU/GPU sysfs。
+- 不重新引入旧 AsoulOpt 二进制/conf。
+- 不根据旧 0.19.8/P2-I 文档判断当前 0.19.9 包。
+
+## 8. 关键代码入口
+
+```text
+P1 system_server:
+ZuiControl/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
+ZuiControl/framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java
+
+P2:
+ZuiControl/app/src/main/java/com/zui/zuicontrol/XmlProfileGenerator.java
+ZuiControl/app/src/main/java/com/zui/zuicontrol/PerformanceProfile.kt
+ZuiControl/payload/system/bin/zui_controld
+ZuiControl/payload/system/etc/zui_control/default_game_policy.xml
+ZuiControl/payload/system/etc/zui_control/default_performanceconfig.xml
+
+P3/AppOpt:
+ZuiControl/payload/system/bin/AppOpt
+ZuiControl/payload/system/etc/init/zui_appopt.rc
+ZuiControl/payload/system/etc/zui_control/zui_appopt_prepare.sh
+ZuiControl/payload/system/etc/zui_control/default_applist.conf
+
+云控：
+ZuiControl/payload/system/etc/zui_control/zui_cloud_block.sh
+ZuiControl/payload/system/etc/hosts
+
+打包/验证：
+ZuiControl/scripts/ApplyZuiControlPayload.py
+ZuiControl/scripts/VerifyZuiControlFlashPackage.ps1
+```
+
+## 9. 新聊天首条消息
+
+复制以下内容给新窗口：
+
+```text
+请先完整读取 D:\3.VScode\Mi\AGENTS.md 和 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；涉及 P2 XML/ThermalConfig 时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md。旧的 2026-06-21 P2-I/asoulOpt 入口和大篇历史文档只作历史，若与 2026-07-21 主交接冲突，以 AGENTS.md 和新主交接为准。
+
+当前工作区是 D:\3.VScode\Mi，当前仓库是 D:\3.VScode\Mi\ZuiControl。最新待刷后验证包在 D:\3.VScode\Mi\【B刷机】187，App 应为 versionCode 28 / versionName 0.19.9。当前不要进入 FPS cap，也不要改 P1、恢复 direct CPU/GPU sysfs 或重新引入旧 AsoulOpt。先只读确认设备是否已刷最新包；若 adb/su 可用，按主交接第 7 节完整验证 P1、P2 鸣潮 ThermalConfig/provider 重入、AppOpt、云控和 AVC，然后先报告真实结果、风险和最短修复路径。
+```
+
