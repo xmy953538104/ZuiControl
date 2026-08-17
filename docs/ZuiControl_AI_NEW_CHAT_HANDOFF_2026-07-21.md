@@ -13,6 +13,134 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
+### 0.1 2026-08-17 最新覆盖说明
+
+本节是当前最新事实，覆盖本文后面 2026-07-21 快照中关于 P1 未修改、AppOpt 应默认运行、推荐包 hash 和“下一步”的旧描述。其余 P2、云控、命名和禁止回退规则继续有效。
+
+#### 设备实际状态
+
+2026-08-17 已连接 TB321FU，ADB 已授权，`su` 可用且 SELinux 为 Enforcing。设备 App 虽然显示 `versionCode=28` / `versionName=0.19.9`，但系统内嵌 APK SHA256 是：
+
+```text
+4a6a48a92a32c64721b16b3e3069a826eed5a73918125e59260db76bad6449f6
+```
+
+它来自 2026-06-24 的旧构建，不是当时 2026-07-21 推荐包，也不是本节下面的新修复包。以后不能只用版本号判断是否刷到最新包，必须同时比较 APK 或 `super.img` hash。
+
+旧设备上的只读检查结果：
+
+- `zui_control` 存在；P1 状态为 `refreshOwner=system`、`daemonRefreshDisabled=true`，桌面目标和实际刷新率为 120Hz。
+- P2 active XML 与 `/system/etc` 当前 bind 内容 hash 相同；鸣潮 active 条目已经是 `ThermalConfig=0 0 0`，但 system 默认模板仍是旧的 `200 100 300`，说明当前设备不是最新自动修复镜像。
+- AppOpt 配置只有注释和示例，活动规则数为 0；旧 init 仍每约 5 秒重启 AppOpt，实际被 SELinux 拒绝 `dac_override` 及读取 `zui_control_data_file` 后退出。
+- 已通过项目已有可逆开关执行 `setprop zui_control.appopt stop`，确认 `init.svc.zui_appopt=stopped` 且无 AppOpt PID。没有改 P1、P2 或用户 AppOpt 配置。
+
+#### 相机导致“重启”的已确认根因
+
+`/data/tombstones` 中至少有两组 2026-06-30 的相同崩溃链。真正先崩的是 SurfaceFlinger，不是相机：
+
+```text
+No matching frame rate modes for primary range.
+physical=[120.00 Hz, 120.00 Hz]
+render=[30.00 Hz, 60.00 Hz]
+```
+
+调用栈位于：
+
+```text
+RefreshRateSelector::constructAvailableRefreshRates
+-> RefreshRateSelector::setPolicy
+-> SurfaceFlinger::setDesiredDisplayModeSpecsInternal
+-> abort
+```
+
+随后 CameraProvider 因 SurfaceFlinger Binder 死亡而以 `DEAD_OBJECT` 退出。因此“打开相机就重启”是 P1 刷新率硬投票制造无交集策略导致的系统图形栈崩溃，相机只是触发了 30–60 FPS 的合法约束。其他会提出不同渲染区间的 App 也可能触发同类问题。
+
+旧实现还存在两个结构性问题：
+
+1. 在优先级 8（ZUI 名称实际是 `PRIORITY_AUTH_OPTIMIZER_RENDER_FRAME_RATE`）写入了 `Vote.forPhysicalRefreshRates(hz, hz)`，投票类型与优先级语义不匹配。
+2. `DisplayContent.setFocusedApp` 的同步 hook 直接执行 profile、Settings、反射和显示服务调用，违反焦点路径只能轻量上报事件的规则，也解释了除刷新率表面切换外其他联动显得慢和不稳定。
+
+#### 2026-08-17 P1/AppOpt 修复
+
+代码提交：
+
+```text
+61a4b26 Fix refresh vote crash and gate empty AppOpt
+```
+
+P1 只做根因级最小修复，没有进入 FPS cap：
+
+- 删除 `forPhysicalRefreshRates(hz, hz)` 和 GameHelper 十秒 yield 补丁逻辑。
+- 统一使用 `Vote.forRenderFrameRates(0, targetHz)`，配合 ROM 的目标 mode 和 `max=targetHz`；允许相机/视频的 30–60 render 约束与 120Hz 物理显示共存。
+- `onFocusedAppChanged` 只提取 package/uid/user/display 原始值并投递到独立 `HandlerThread("ZuiControl")`；profile I/O、Settings、反射和 apply 不再阻塞 WM 焦点关键路径。
+- 状态新增 `displayVote=adaptiveRender`。
+
+稳定性优先带来的明确边界：新策略是“目标 mode + render 上限/偏好”，不再承诺在所有相机、视频、热控或系统冲突场景中物理面板绝对硬锁。60/90/120/144/165 的真实 active mode 仍需刷后逐项验证。
+
+AppOpt 当前没有源码和 UI 规则编辑器，不应冒充完整交付。新包的默认行为改为：
+
+- boot completed 只准备配置，不再无条件 `start zui_appopt`。
+- daemon 统计有效 `key=value` 规则；0 条规则时拒绝启动、清理 enabled 标记并发布明确状态。
+- 有规则时启动后必须连续确认 init 状态为 running 且 PID 存在，失败则停止服务并清理 enabled 标记。
+- 外部兼容命令仍叫 `apply_asoul` / `restore_asoul`，内部实际函数和状态统一按 AppOpt 命名；不恢复旧 AsoulOpt。
+
+#### 2026-08-17 最新待刷包
+
+GitHub Actions：
+
+```text
+run_id=32013336830
+workflow=Build ZuiControl
+head=61a4b2622d7579036fdd2a7b04faa8983986bccc
+status=success
+artifact_dir=D:\3.VScode\Mi\work\ci_artifacts\zuicontrol_32013336830
+package=com.zui.zuicontrol
+versionCode=28
+versionName=0.19.9
+release_cert_sha256=3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94
+```
+
+最终刷机目录：
+
+```text
+D:\3.VScode\Mi\【B刷机】187
+```
+
+最终 SHA256：
+
+```text
+5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b  boot.img
+34de9656be5f7473ffef6ec81070a8c5a409b3ad6a18af9a715eebed290adf2d  super.img
+9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5  vbmeta.img
+6d5bc0db0d9ed46aeef05b25c58b496e93e8569980189dbdd40af0b0aa1eab6f  vbmeta_system.img
+3f6f09ca6452cd8b881fdd1ebf335405b9a1e9d8ad126783107d5f2f70113e5c  ZuiControl-v19-system.apk
+3f6f09ca6452cd8b881fdd1ebf335405b9a1e9d8ad126783107d5f2f70113e5c  ZuiControl-v19-release.apk
+```
+
+发布过程只使用上述 CI release APK/payload；重建 `system_a` 后执行 `SignNoFec`，签名后重新执行 `PackSuper`。最终 verifier 已从成品 `super.img` 反抽 system/vendor 并得到 `ok=true`，还解码了成品 `services.jar`，确认：
+
+- 存在 `HandlerThread`、`forRenderFrameRates`、`displayVote=adaptiveRender`。
+- 不存在 `forPhysicalRefreshRates`。
+- AppOpt init 不再无条件启动，daemon 含 0 规则门槛。
+- APK 内嵌/两个 sidecar hash 一致，版本为 28/0.19.9 且为 release 签名。
+- P2 鸣潮模板仍为 `ThermalConfig=0 0 0`，XML 五段引用、SELinux/context 和无 direct CPU/GPU sysfs 规则继续通过。
+
+#### 唯一正确的下一步
+
+新包尚未刷到真实设备，不能把“最终镜像静态通过”写成“相机问题实机已修复”。下一步只刷上述 hash 的包，然后按以下顺序验证：
+
+1. 先比较设备 `/system/priv-app/ZuiControl/ZuiControl.apk` SHA256 必须为 `3f6f09...13e5c`，再确认 28/0.19.9。
+2. 开机稳定性：确认 SystemUI/SurfaceFlinger/system_server 无崩溃循环，`zui_control` 存在，状态含 `displayVote=adaptiveRender`、`refreshOwner=system`、`daemonRefreshDisabled=true`。
+3. P1：桌面和多个普通 App 默认 120；分别保存并测试 60/90/120/144/165，观察 target、actual active mode 和重复 apply 防抖。
+4. 相机：先打开系统相机，再从第三方 App 调用相机；全程同步抓 SurfaceFlinger/CameraProvider tombstone、logcat 和 active mode，确认没有 `No matching frame rate modes`。
+5. QS/SystemUI：下拉 QS 修改上一个真实场景，确认不会生成 SystemUI profile。
+6. AppOpt：默认 0 规则时应为 stopped 且无重启/AVC；只有写入真实有效规则并明确启用后才应 running。由于暂无 UI 编辑器和源代码，先只验证门槛和稳定性，不宣称调度效果已交付。
+7. P2：核对 active XML 与 `/system/etc` hash、鸣潮 `ThermalConfig=0 0 0`；进入、退出、再进入鸣潮，provider_direct 时间戳每次更新，并结合 ZuiPP/Thermal/KGSL 日志判断实际应用。
+8. 云控：核对 hosts、iptables/ip6tables 独立 UID 规则，确认无 UID1000 全断规则。
+9. AVC：检查 zui_control、system_server、AppOpt/performanced、shell/init、ZuiPP 和云控相关 denial。
+
+上述验证通过前，不再改 P1，不进入 FPS cap，不恢复 direct CPU/GPU sysfs，也不重新引入旧 AsoulOpt。
+
 ## 1. 当前快照
 
 ```text
@@ -290,6 +418,5 @@ ZuiControl/scripts/VerifyZuiControlFlashPackage.ps1
 ```text
 请先完整读取 D:\3.VScode\Mi\AGENTS.md 和 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；涉及 P2 XML/ThermalConfig 时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md。旧的 2026-06-21 P2-I/asoulOpt 入口和大篇历史文档只作历史，若与 2026-07-21 主交接冲突，以 AGENTS.md 和新主交接为准。
 
-当前工作区是 D:\3.VScode\Mi，当前仓库是 D:\3.VScode\Mi\ZuiControl。最新待刷后验证包在 D:\3.VScode\Mi\【B刷机】187，App 应为 versionCode 28 / versionName 0.19.9。当前不要进入 FPS cap，也不要改 P1、恢复 direct CPU/GPU sysfs 或重新引入旧 AsoulOpt。先只读确认设备是否已刷最新包；若 adb/su 可用，按主交接第 7 节完整验证 P1、P2 鸣潮 ThermalConfig/provider 重入、AppOpt、云控和 AVC，然后先报告真实结果、风险和最短修复路径。
+当前工作区是 D:\3.VScode\Mi，当前仓库是 D:\3.VScode\Mi\ZuiControl。先读本文件第 0.1 节的 2026-08-17 最新覆盖说明；后面的 2026-07-21 包 hash、P1 未修改和 AppOpt 默认运行描述已经被覆盖。最新待刷包在 D:\3.VScode\Mi\【B刷机】187，super SHA256 应为 34de9656be5f7473ffef6ec81070a8c5a409b3ad6a18af9a715eebed290adf2d，内嵌 APK 应为 3f6f09ca6452cd8b881fdd1ebf335405b9a1e9d8ad126783107d5f2f70113e5c（28/0.19.9）。设备当前仍是同版本号但不同 hash 的旧包。刷后按第 0.1 节顺序验证 P1 相机/active mode、P2 鸣潮 ThermalConfig/provider 重入、AppOpt 空规则门槛、云控和 AVC；通过前不进入 FPS cap、不再改 P1、不恢复 direct CPU/GPU sysfs，也不重新引入旧 AsoulOpt。
 ```
-
