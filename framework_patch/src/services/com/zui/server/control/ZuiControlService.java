@@ -8,11 +8,10 @@ import android.hardware.display.DisplayManager;
 import android.hardware.display.DisplayManagerInternal;
 import android.os.Binder;
 import android.os.Handler;
-import android.os.Looper;
+import android.os.HandlerThread;
 import android.os.Parcel;
 import android.os.RemoteException;
 import android.os.ServiceManager;
-import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.provider.Settings;
 import android.util.AtomicFile;
@@ -42,7 +41,6 @@ public final class ZuiControlService extends Binder {
     private static final String PROFILE_FILE = DATA_DIR + "/profiles.prop";
     private static final String SETTING_PEAK_REFRESH_RATE = "peak_refresh_rate";
     private static final String GAME_HELPER_PACKAGE = "com.zui.game.service";
-    private static final long GAME_HELPER_YIELD_MS = 10_000L;
     private static final String RELEASE_CERT =
             "3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94";
     private static final String DEBUG_CERT =
@@ -59,7 +57,7 @@ public final class ZuiControlService extends Binder {
     private static final int TX_REFRESH_NOW = 9;
     private static final int TX_SET_MODULE_ENABLED = 10;
     private static final int TX_EXPORT_LOG = 11;
-    private static final int PRIORITY_ZUI_CONTROL_PHYSICAL = 8; // PRIORITY_AUTH_OPTIMIZER_RENDER_FRAME_RATE
+    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8; // PRIORITY_AUTH_OPTIMIZER_RENDER_FRAME_RATE
 
     private static final int[] DISPLAY_HZ = new int[] {60, 90, 120, 144, 165};
     private static volatile ZuiControlService sInstance;
@@ -68,6 +66,7 @@ public final class ZuiControlService extends Binder {
     private final PackageManager mPm;
     private final DisplayManager mDisplayManager;
     private final AtomicFile mProfileFile;
+    private final Handler mWorker;
     private final Map<String, Profile> mProfiles = new HashMap<>();
 
     private String mRawFocusedPackage = "";
@@ -85,14 +84,15 @@ public final class ZuiControlService extends Binder {
     private int mLastAppliedDisplayId = -1;
     private int mLastAppliedModeId = -1;
     private int mLastAppliedDisplayHz = -1;
-    private boolean mLastAppliedYieldPhysical = false;
-    private long mYieldPhysicalUntilMs = 0L;
     private int mLastSyncedPeakHz = -1;
 
     public ZuiControlService(Context context) {
         mContext = context;
         mPm = context.getPackageManager();
         mDisplayManager = (DisplayManager) context.getSystemService(DisplayManager.class);
+        HandlerThread workerThread = new HandlerThread("ZuiControl");
+        workerThread.start();
+        mWorker = new Handler(workerThread.getLooper());
         File dir = new File(DATA_DIR);
         if (!dir.exists() && !dir.mkdirs()) {
             Log.w(TAG, "failed to create " + DATA_DIR);
@@ -132,15 +132,17 @@ public final class ZuiControlService extends Binder {
                     ? record.info.applicationInfo.uid : -1;
             userId = record.mUserId;
         }
-        handleFocusedApp(pkg, uid, userId, displayId);
+        mWorker.post(new Runnable() {
+            @Override
+            public void run() {
+                handleFocusedApp(pkg, uid, userId, displayId);
+            }
+        });
     }
 
     private synchronized void handleFocusedApp(String pkg, int uid, int userId, int displayId) {
         mRawFocusedPackage = safe(pkg);
         mCurrentDisplayId = resolveDisplayId(displayId);
-        if (GAME_HELPER_PACKAGE.equals(mRawFocusedPackage)) {
-            noteGameHelperFrameRateOwner();
-        }
         if (APP_PACKAGE.equals(mRawFocusedPackage)) {
             mCurrentUid = uid;
             mCurrentUserId = userId;
@@ -327,7 +329,7 @@ public final class ZuiControlService extends Binder {
         mTargetMode = profile.mode;
         if (SystemProperties.getBoolean("persist.zui_control.disable", false)
                 || SystemProperties.getBoolean("persist.zui_control.refresh.disable", false)) {
-            clearPhysicalVote(mCurrentDisplayId);
+            clearDisplayVote(mCurrentDisplayId);
             syncPeakRefreshRate(120);
             resetLastApplied();
             mLastApply = "disabled:" + reason;
@@ -346,44 +348,27 @@ public final class ZuiControlService extends Binder {
                 mLastApply = "failed:" + reason;
                 return;
             }
-            boolean yieldPhysical = shouldYieldPhysicalVote(profile.displayHz);
-            int peakHz = yieldPhysical ? Math.round(readPeakRefreshRate())
-                    : syncPeakRefreshRate(profile.displayHz);
-            int appliedModeId = yieldPhysical ? 0 : match.modeId;
+            int peakHz = syncPeakRefreshRate(profile.displayHz);
             if (mLastAppliedDisplayId == match.displayId
-                    && mLastAppliedModeId == appliedModeId
+                    && mLastAppliedModeId == match.modeId
                     && mLastAppliedDisplayHz == profile.displayHz
-                    && mLastAppliedYieldPhysical == yieldPhysical
                     && !"refreshNow".equals(reason)) {
                 mLastError = "";
-                mLastApply = reason + ":display=" + match.displayId + ":mode=" + appliedModeId
-                        + ":" + voteLabel(profile.displayHz, yieldPhysical) + "=" + profile.displayHz
+                mLastApply = reason + ":display=" + match.displayId + ":mode=" + match.modeId
+                        + ":renderVoteMax=" + profile.displayHz
                         + ":peakBridge=" + peakHz
                         + ":skipSame";
                 return;
             }
-            boolean hardPhysicalVote = useHardPhysicalVote(profile.displayHz);
-            if (hardPhysicalVote && !yieldPhysical) {
-                dmi.setDisplayProperties(match.displayId, true, profile.displayHz,
-                        match.modeId, profile.displayHz, profile.displayHz, false, false, false);
-                applyPhysicalVote(dmi, match.displayId, profile.displayHz);
-            } else {
-                applyRenderVote(dmi, match.displayId, profile.displayHz);
-                if (yieldPhysical) {
-                    dmi.setDisplayProperties(match.displayId, true, 0.0f,
-                            0, 0.0f, profile.displayHz, false, false, false);
-                } else {
-                    dmi.setDisplayProperties(match.displayId, true, profile.displayHz,
-                            match.modeId, 0.0f, profile.displayHz, false, false, false);
-                }
-            }
+            applyRenderVote(dmi, match.displayId, profile.displayHz);
+            dmi.setDisplayProperties(match.displayId, true, profile.displayHz,
+                    match.modeId, 0.0f, profile.displayHz, false, false, false);
             mLastAppliedDisplayId = match.displayId;
-            mLastAppliedModeId = appliedModeId;
+            mLastAppliedModeId = match.modeId;
             mLastAppliedDisplayHz = profile.displayHz;
-            mLastAppliedYieldPhysical = yieldPhysical;
             mLastError = "";
-            mLastApply = reason + ":display=" + match.displayId + ":mode=" + appliedModeId
-                    + ":" + voteLabel(profile.displayHz, yieldPhysical) + "=" + profile.displayHz
+            mLastApply = reason + ":display=" + match.displayId + ":mode=" + match.modeId
+                    + ":renderVoteMax=" + profile.displayHz
                     + ":peakBridge=" + peakHz;
         } catch (Throwable t) {
             mLastError = t.getClass().getSimpleName() + ":" + safe(t.getMessage());
@@ -415,7 +400,7 @@ public final class ZuiControlService extends Binder {
             mContext.getContentResolver().registerContentObserver(
                     Settings.System.getUriFor(SETTING_PEAK_REFRESH_RATE),
                     false,
-                    new ContentObserver(new Handler(Looper.getMainLooper())) {
+                    new ContentObserver(mWorker) {
                         @Override
                         public void onChange(boolean selfChange) {
                             onPeakRefreshRateChanged();
@@ -429,13 +414,6 @@ public final class ZuiControlService extends Binder {
     private synchronized void onPeakRefreshRateChanged() {
         if (SystemProperties.getBoolean("persist.zui_control.disable", false)
                 || SystemProperties.getBoolean("persist.zui_control.refresh.disable", false)) {
-            return;
-        }
-        if (shouldYieldPhysicalVote(mTargetDisplayHz)) {
-            Profile profile = mAppliedScenePackage.isEmpty()
-                    ? defaultProfile(mCurrentUserId) : profileFor(mAppliedScenePackage, mCurrentUserId);
-            applyProfile(profile, "peakObserverYield");
-            publishState();
             return;
         }
         if (!isPeakRefreshRateSynced(mTargetDisplayHz)) {
@@ -462,35 +440,6 @@ public final class ZuiControlService extends Binder {
         mLastAppliedDisplayId = -1;
         mLastAppliedModeId = -1;
         mLastAppliedDisplayHz = -1;
-        mLastAppliedYieldPhysical = false;
-    }
-
-    private void noteGameHelperFrameRateOwner() {
-        mYieldPhysicalUntilMs = SystemClock.uptimeMillis() + GAME_HELPER_YIELD_MS;
-    }
-
-    private boolean shouldYieldPhysicalVote(int targetHz) {
-        if (!useHardPhysicalVote(targetHz)) {
-            return false;
-        }
-        if (SystemClock.uptimeMillis() < mYieldPhysicalUntilMs) {
-            return true;
-        }
-        float peak = readPeakRefreshRate();
-        return peak > 0.0f && peak + 0.5f < targetHz;
-    }
-
-    private float readPeakRefreshRate() {
-        long token = Binder.clearCallingIdentity();
-        try {
-            String value = Settings.System.getString(mContext.getContentResolver(),
-                    SETTING_PEAK_REFRESH_RATE);
-            return value == null || value.isEmpty() ? 0.0f : Float.parseFloat(value);
-        } catch (Throwable t) {
-            return 0.0f;
-        } finally {
-            Binder.restoreCallingIdentity(token);
-        }
     }
 
     private Profile profileFor(String pkg, int userId) {
@@ -573,54 +522,20 @@ public final class ZuiControlService extends Binder {
         }
     }
 
-    private void applyPhysicalVote(DisplayManagerInternal dmi, int displayId, int hz) throws Exception {
-        updatePhysicalVote(dmi, displayId, Float.valueOf(hz));
-    }
-
     private void applyRenderVote(DisplayManagerInternal dmi, int displayId, int hz) throws Exception {
         updateRenderVote(dmi, displayId, Float.valueOf(hz));
     }
 
-    private static boolean useHardPhysicalVote(int hz) {
-        return hz <= 120;
-    }
-
-    private static String voteLabel(int hz, boolean yieldPhysical) {
-        if (yieldPhysical) {
-            return "yieldRenderVote";
-        }
-        return useHardPhysicalVote(hz) ? "physicalVote" : "softVote";
-    }
-
-    private void clearPhysicalVote(int displayId) {
+    private void clearDisplayVote(int displayId) {
         try {
             DisplayManagerInternal dmi = LocalServices.getService(DisplayManagerInternal.class);
             if (dmi != null) {
-                updatePhysicalVote(dmi, displayId, null);
+                updateRenderVote(dmi, displayId, null);
             }
             resetLastApplied();
         } catch (Throwable t) {
-            Log.w(TAG, "clear physical vote failed", t);
+            Log.w(TAG, "clear display vote failed", t);
         }
-    }
-
-    private void updatePhysicalVote(DisplayManagerInternal dmi, int displayId, Float hz)
-            throws Exception {
-        Object displayManagerService = readField(dmi, "this$0");
-        Object director = readField(displayManagerService, "mDisplayModeDirector");
-        Object votesStorage = readField(director, "mVotesStorage");
-        Class<?> voteClass = Class.forName("com.android.server.display.mode.Vote");
-        Object vote = null;
-        if (hz != null) {
-            Method forPhysical = voteClass.getDeclaredMethod("forPhysicalRefreshRates",
-                    float.class, float.class);
-            forPhysical.setAccessible(true);
-            vote = forPhysical.invoke(null, hz.floatValue(), hz.floatValue());
-        }
-        Method updateVote = votesStorage.getClass().getDeclaredMethod("updateVote",
-                int.class, int.class, voteClass);
-        updateVote.setAccessible(true);
-        updateVote.invoke(votesStorage, displayId, PRIORITY_ZUI_CONTROL_PHYSICAL, vote);
     }
 
     private void updateRenderVote(DisplayManagerInternal dmi, int displayId, Float hz)
@@ -639,7 +554,7 @@ public final class ZuiControlService extends Binder {
         Method updateVote = votesStorage.getClass().getDeclaredMethod("updateVote",
                 int.class, int.class, voteClass);
         updateVote.setAccessible(true);
-        updateVote.invoke(votesStorage, displayId, PRIORITY_ZUI_CONTROL_PHYSICAL, vote);
+        updateVote.invoke(votesStorage, displayId, PRIORITY_ZUI_CONTROL_RENDER, vote);
     }
 
     private static Object readField(Object target, String name) throws Exception {
@@ -671,7 +586,7 @@ public final class ZuiControlService extends Binder {
                 + "\ndaemonRefreshDisabled=true"
                 + "\nsupportedDisplayHz=" + supportedDisplayHz()
                 + "\npeakBridgeHz=" + mLastSyncedPeakHz
-                + "\nphysicalVoteYield=" + (shouldYieldPhysicalVote(mTargetDisplayHz) ? 1 : 0)
+                + "\ndisplayVote=adaptiveRender"
                 + "\nprofileCount=" + mProfiles.size()
                 + profileStateLines()
                 + "\nlastApply=" + mLastApply

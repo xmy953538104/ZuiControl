@@ -20,6 +20,7 @@ $AndroidSdkDir = Join-Path $WorkspaceRoot 'work\android-sdk'
 $Python = Join-Path $ToolsDir 'python-3.8.0\python.exe'
 $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
+$Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
 $ExpectedVersionCode = '28'
 $ExpectedVersionName = '0.19.9'
@@ -208,6 +209,7 @@ $ReleaseSidecarApk = Join-Path $FlashDir 'ZuiControl-v19-release.apk'
 Require-File $Python
 Require-File $LpUnpack
 Require-File $ExtractErofs
+Require-File $Apktool
 Require-File $Super
 Require-File $Boot
 Require-File $Vbmeta
@@ -236,6 +238,27 @@ try {
     $VendorRoot = Join-Path $ExtractDir 'vendor_a'
     $PlatSelinux = Join-Path $SystemRoot 'system\etc\selinux'
     $VendorSelinux = Join-Path $VendorRoot 'etc\selinux'
+
+    $Java = Get-Command 'java.exe' -ErrorAction SilentlyContinue
+    if (-not $Java) {
+        $Java = Get-Command 'java' -ErrorAction SilentlyContinue
+    }
+    if (-not $Java) {
+        throw 'Missing java in PATH'
+    }
+    $ServicesJar = Join-Path $SystemRoot 'system\framework\services.jar'
+    $ServicesDecode = Join-Path $WorkDir 'services_decode'
+    Require-File $ServicesJar
+    Invoke-Checked $Java.Source '-jar' $Apktool 'd' '-f' '-o' $ServicesDecode $ServicesJar
+    $ZuiServiceSmali = @(Get-ChildItem -LiteralPath $ServicesDecode -Recurse -File -Filter 'ZuiControlService.smali')
+    if ($ZuiServiceSmali.Count -ne 1) {
+        throw "Expected one decoded ZuiControlService.smali, found $($ZuiServiceSmali.Count)"
+    }
+    $ZuiServiceSmali = $ZuiServiceSmali[0].FullName
+    Assert-Contains $ZuiServiceSmali 'Landroid/os/HandlerThread;' 'asynchronous focus worker'
+    Assert-Contains $ZuiServiceSmali 'forRenderFrameRates' 'adaptive render refresh vote'
+    Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
+    Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
     $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControl\ZuiControl.apk'
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
@@ -269,6 +292,7 @@ try {
     Assert-Contains $DaemonRc '/data/vendor/zui_control/appopt' 'AppOpt runtime directory'
     Assert-Contains $DaemonRc '/data/vendor/zui_control/cloud' 'cloud-block runtime directory'
     Assert-Contains $AppOptRc 'service zui_appopt /system/bin/AppOpt -c /data/vendor/zui_control/appopt/applist.conf -s 2' 'AppOpt init service'
+    Assert-NotContains $AppOptRc '    start zui_appopt' 'unconditional AppOpt boot start'
     Assert-Contains $AppOptRc 'zui_cloud_block.sh apply' 'cloud-block boot apply action'
     Assert-Contains $AppOptRc 'exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh apply' 'cloud-block shell-domain apply action'
     Assert-Contains $AppOptRc 'exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh restore' 'cloud-block shell-domain restore action'
@@ -317,7 +341,7 @@ try {
             throw "daemon still contains stale asoulOpt runtime marker: $staleAsoul"
         }
     }
-    foreach ($appOptMarker in @('APPOPT_DIR=$DATA_ROOT/appopt', 'APPOPT_CONFIG=$APPOPT_DIR/applist.conf', 'init.svc.zui_appopt', 'pidof AppOpt', '后端：AppOpt')) {
+    foreach ($appOptMarker in @('APPOPT_DIR=$DATA_ROOT/appopt', 'APPOPT_CONFIG=$APPOPT_DIR/applist.conf', 'init.svc.zui_appopt', 'pidof AppOpt', 'appopt_rules_count()', 'AppOpt not started: no active rules', '后端：AppOpt')) {
         if (-not $daemonText.Contains($appOptMarker)) {
             throw "daemon is missing AppOpt marker: $appOptMarker"
         }

@@ -653,7 +653,7 @@ publish_xml_state() {
     fi
 }
 
-publish_asoul_health() {
+publish_appopt_health() {
     service_state="$(getprop init.svc.zui_appopt 2>/dev/null)"
     pid="$(pidof AppOpt 2>/dev/null | awk '{print $1}')"
     domain=
@@ -662,12 +662,7 @@ publish_asoul_health() {
     fi
     log_size=0
     [ -f "$APPOPT_LOG" ] && log_size="$(wc -c < "$APPOPT_LOG" 2>/dev/null)"
-    rules_count=0
-    if [ -s "$APPOPT_CONFIG" ]; then
-        rules_count="$(grep -v '^[[:space:]]*#' "$APPOPT_CONFIG" 2>/dev/null |
-            grep -v '^[[:space:]]*$' 2>/dev/null |
-            grep -c '=' 2>/dev/null)"
-    fi
+    rules_count="$(appopt_rules_count)"
     health="后端：AppOpt
 服务：${service_state:-unknown}
 进程：${pid:-未运行}
@@ -682,7 +677,7 @@ publish_state() {
     publish_refresh_state
     publish_performance_state
     publish_xml_state
-    publish_asoul_health
+    publish_appopt_health
 }
 
 grant_app_permissions() {
@@ -1168,22 +1163,60 @@ restore_official_original_zuipp() {
     promote_staging_with_lock "restore_official_original"
 }
 
-apply_asoul() {
-    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
-    [ -s "$APPOPT_CONFIG" ] || return 1
-    if trigger_init_action "$PROP_APPOPT" restart; then
-        touch "$APPOPT_ENABLED"
-        chmod 0664 "$APPOPT_ENABLED" 2>/dev/null
-        publish_asoul_health
-        return 0
+appopt_rules_count() {
+    if [ ! -s "$APPOPT_CONFIG" ]; then
+        printf '0\n'
+        return
     fi
+    grep -v '^[[:space:]]*#' "$APPOPT_CONFIG" 2>/dev/null |
+        grep -v '^[[:space:]]*$' 2>/dev/null |
+        grep -c '=' 2>/dev/null
+}
+
+wait_appopt_running() {
+    tries=3
+    while [ "$tries" -gt 0 ]; do
+        if [ "$(getprop init.svc.zui_appopt 2>/dev/null)" = "running" ] &&
+            [ -n "$(pidof AppOpt 2>/dev/null)" ]; then
+            return 0
+        fi
+        tries=$((tries - 1))
+        sleep 1
+    done
     return 1
 }
 
-restore_asoul() {
+apply_appopt() {
+    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
+    rules_count="$(appopt_rules_count)"
+    if [ "${rules_count:-0}" -le 0 ]; then
+        if [ "$(getprop init.svc.zui_appopt 2>/dev/null)" != "stopped" ]; then
+            trigger_init_action "$PROP_APPOPT" stop || true
+        fi
+        rm -f "$APPOPT_ENABLED"
+        log_line "AppOpt not started: no active rules"
+        set_status "daemon=running" "last=apply_appopt_skipped" "reason=no_active_rules"
+        publish_appopt_health
+        return 1
+    fi
+    if trigger_init_action "$PROP_APPOPT" restart && wait_appopt_running; then
+        touch "$APPOPT_ENABLED"
+        chmod 0664 "$APPOPT_ENABLED" 2>/dev/null
+        publish_appopt_health
+        return 0
+    fi
+    trigger_init_action "$PROP_APPOPT" stop || true
+    rm -f "$APPOPT_ENABLED"
+    log_line "AppOpt failed to stay running"
+    set_status "daemon=running" "last=apply_appopt_failed" "reason=service_not_running"
+    publish_appopt_health
+    return 1
+}
+
+stop_appopt() {
     trigger_init_action "$PROP_APPOPT" stop
     rm -f "$APPOPT_ENABLED"
-    publish_asoul_health
+    publish_appopt_health
 }
 
 ignore_legacy_refresh_request() {
@@ -1681,8 +1714,8 @@ handle_request() {
         restore_zuipp) restore_zuipp; result=$? ;;
         restore_last_good) restore_last_good_zuipp; result=$? ;;
         restore_official_original) restore_official_original_zuipp; result=$? ;;
-        apply_asoul) apply_asoul; result=$? ;;
-        restore_asoul) restore_asoul; result=$? ;;
+        apply_asoul) apply_appopt; result=$? ;;
+        restore_asoul) stop_appopt; result=$? ;;
         export_logs) export_logs; result=$? ;;
         *)
             log_line "unknown request: $cmd"
@@ -1831,7 +1864,7 @@ boot_restore() {
     apply_zuipp "boot_active"
     if [ -f "$APPOPT_ENABLED" ]; then
         log_line "restoring enabled AppOpt service"
-        apply_asoul
+        apply_appopt
     fi
 }
 
@@ -1866,7 +1899,7 @@ main_loop() {
         fi
         HEALTH_TICKS=$((HEALTH_TICKS + 1))
         if [ "$HEALTH_TICKS" -ge 20 ]; then
-            publish_asoul_health
+            publish_appopt_health
             publish_xml_state
             HEALTH_TICKS=0
         fi

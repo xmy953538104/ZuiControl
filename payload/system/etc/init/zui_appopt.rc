@@ -1,7 +1,6 @@
 on property:sys.boot_completed=1
     exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_appopt_prepare.sh
     exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh apply
-    start zui_appopt
 
 on property:zui_control.appopt=restart
     exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_appopt_prepare.sh
