@@ -31,11 +31,33 @@
 - baked baseline 使用 payload 模板双 SHA256 版本戳；模板变化会刷新旧 baseline 并自动用保留的用户 profiles 重建 active XML，修复升级后继续沿用旧 `200 100 300` baseline 的问题。
 - 正常 promote 前先备份旧 active 到 `last_good`，成功后不再用新 active 覆盖它；回滚点现在确实代表上一次配置。
 
-针对生成器新增可执行测试 `scripts/TestXmlProfileGenerator.py`，会验证旧多模式数据只选一份、三个 OEM mode block 完全相同、四个 CPU ID 相同且各 Type 频率值正确。最终 CI/run、commit、刷机包和 SHA256 在本轮发布完成后补到本节。
+针对生成器新增可执行测试 `scripts/TestXmlProfileGenerator.py`，会验证旧多模式数据只选一份、三个 OEM mode block 完全相同、四个 CPU ID 相同且各 Type 频率值正确。
+
+#### 0.20.0 发布事实
+
+- 生产代码 commit：`28f1f8b56628ebbaf5cdbb570fe10e1b250e5b6f`
+- GitHub Actions run：`32036170577`，结论 `success`：<https://github.com/xmy953538104/ZuiControl/actions/runs/32036170577>
+- 下载并用于 payload 的 CI artifact：`D:\3.VScode\Mi\work\ci_artifacts\zuicontrol_32036170577`
+- CI release APK 与最终 system 内嵌 APK：`versionCode=29` / `versionName=0.20.0`
+- release 证书 SHA-256：`3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94`
+- 最终刷机目录：`D:\3.VScode\Mi\【B刷机】187`
+
+```text
+5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b  boot.img
+ddfa388d1df10f6b609337af4b07ed5ca52a6d4602aebaab1ba88fec0a3970ef  super.img
+9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5  vbmeta.img
+16b41e21917b6f8168570ebf1d788fe8ef6ff3b2673dbc9f2fdb1a94d4b4b19a  vbmeta_system.img
+66488caf0f2570770f0a6b50d3d74efded47dd172f4334c2469c996495590ee6  ZuiControl-v19-system.apk
+66488caf0f2570770f0a6b50d3d74efded47dd172f4334c2469c996495590ee6  ZuiControl-v19-release.apk
+```
+
+发布只使用上述 CI release artifact。重建 `system_a.img` 后执行 `SignNoFec`，签名后重新执行 `PackSuper`。最终 verifier 从成品 `super.img` 反抽 system/vendor、解码成品 `services.jar` 并返回 `ok=true`；官方 hosts、云控脚本缺失、版本/证书、P1 注入、P2 daemon 标记和 SELinux/context 静态检查均命中。Windows 侧仍未进行 `secilc` 编译级验证，刷后必须检查真实 AVC。
+
+这仍是待刷包：在真实设备完成刷后验证前，不得把相机、P1、P2 或 AVC 写成实机通过。此前 28/0.19.9 和旧 hash 仅作历史。
 
 ### 0.1 2026-08-17 P1/AppOpt 覆盖说明（已被 0.2 的包版本覆盖）
 
-本节是当前最新事实，覆盖本文后面 2026-07-21 快照中关于 P1 未修改、AppOpt 应默认运行、推荐包 hash 和“下一步”的旧描述。其余 P2、云控、命名和禁止回退规则继续有效。
+本节记录 0.19.9 阶段的 P1/AppOpt 修复事实；其包版本、hash、旧 P2/provider、云控和下一步均已被 0.2 覆盖。P1 相机修复思路和 AppOpt 空规则门槛由 0.20.0 继续保留。
 
 #### 设备实际状态
 
@@ -161,7 +183,9 @@ D:\3.VScode\Mi\【B刷机】187
 
 上述验证通过前，不再改 P1，不进入 FPS cap，不恢复 direct CPU/GPU sysfs，也不重新引入旧 AsoulOpt。
 
-## 1. 当前快照
+> **历史区提示：** 以下第 1～8 节保留 2026-07-21/0.19.9 的调查证据和旧实现说明。凡涉及当前包、P2 三模式/provider、云控或下一步，不得直接执行，必须以第 0.2 节为准。
+
+## 1. 2026-07-21 历史快照
 
 ```text
 工作区：D:\3.VScode\Mi
@@ -176,7 +200,7 @@ remote：git@github.com:xmy953538104/ZuiControl.git
 
 2026-07-21 整理交接时设备未连接，因此本文件没有把 2026-06-24 的最终镜像冒充成“已经刷后验证通过”。最新镜像已完成本地构建、签名、PackSuper 和 final super 反抽验证；刷后实机状态仍需新窗口重新确认。
 
-## 2. 当前最终刷机包
+## 2. 历史刷机包（已被 0.20.0 替代）
 
 目录：
 
@@ -339,7 +363,7 @@ service=zui_appopt
 - `performanced` 获得读取 `/data/vendor/zui_control/appopt/applist.conf` 所需的目录/file 权限和 `dac_override`。
 - Windows 侧没有 `secilc` 完整编译验证，刷后仍必须检查 AVC。
 
-## 6. 云控屏蔽当前实现
+## 6. 云控屏蔽历史实现（0.20.0 已删除）
 
 当前不再一刀切 UID1000，也不冻结 `com.zui.pp`。
 
@@ -366,7 +390,7 @@ com.tblenovo.center
 - hosts 是静态规则，不做后台抓包或持续网络扫描。
 - hosts 只匹配明确域名，不支持通配所有未来子域名或硬编码 IP。
 
-## 7. 新窗口唯一正确的下一步
+## 7. 0.19.9 历史验证步骤（不要用于 0.20.0）
 
 先确认设备是否已经刷入上述最终包，再做刷后验证。2026-07-21 当前设备未连接，不能跳过这一步。
 
@@ -436,7 +460,7 @@ ZuiControl/scripts/VerifyZuiControlFlashPackage.ps1
 复制以下内容给新窗口：
 
 ```text
-请先完整读取 D:\3.VScode\Mi\AGENTS.md 和 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；涉及 P2 XML/ThermalConfig 时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md。旧的 2026-06-21 P2-I/asoulOpt 入口和大篇历史文档只作历史，若与 2026-07-21 主交接冲突，以 AGENTS.md 和新主交接为准。
+请先完整读取 D:\3.VScode\Mi\AGENTS.md 和 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；涉及 P2 XML/ThermalConfig 时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md。旧的 2026-06-21 P2-I/asoulOpt 入口和大篇历史文档只作历史，若与主交接冲突，以 AGENTS.md 和主交接第 0.2 节为准。
 
-当前工作区是 D:\3.VScode\Mi，当前仓库是 D:\3.VScode\Mi\ZuiControl。先读本文件第 0.1 节的 2026-08-17 最新覆盖说明；后面的 2026-07-21 包 hash、P1 未修改和 AppOpt 默认运行描述已经被覆盖。最新待刷包在 D:\3.VScode\Mi\【B刷机】187，super SHA256 应为 34de9656be5f7473ffef6ec81070a8c5a409b3ad6a18af9a715eebed290adf2d，内嵌 APK 应为 3f6f09ca6452cd8b881fdd1ebf335405b9a1e9d8ad126783107d5f2f70113e5c（28/0.19.9）。设备当前仍是同版本号但不同 hash 的旧包。刷后按第 0.1 节顺序验证 P1 相机/active mode、P2 鸣潮 ThermalConfig/provider 重入、AppOpt 空规则门槛、云控和 AVC；通过前不进入 FPS cap、不再改 P1、不恢复 direct CPU/GPU sysfs，也不重新引入旧 AsoulOpt。
+当前工作区是 D:\3.VScode\Mi，当前仓库是 D:\3.VScode\Mi\ZuiControl。先读本文件第 0.2 节的 2026-08-17 最新覆盖说明；后面的 2026-07-21 和 0.1 中的三模式/provider、云控、28/0.19.9 包 hash 与验证步骤均已被覆盖。最新待刷包在 D:\3.VScode\Mi\【B刷机】187，super SHA256 应为 ddfa388d1df10f6b609337af4b07ed5ca52a6d4602aebaab1ba88fec0a3970ef，内嵌 APK 应为 66488caf0f2570770f0a6b50d3d74efded47dd172f4334c2469c996495590ee6（29/0.20.0）。先只读确认设备是否已经刷入该包。刷后完整验证 P1 相机/active mode、P2 鸣潮单 profile/三槽镜像/共享 CPU ID/ZuiPP 稳定重启和退出重入、AppOpt 空规则门槛、系统默认 hosts/旧云控残留清理及 AVC；不要再测试已删除的 provider_direct/云控链。通过前不进入 FPS cap、不再改 P1、不恢复 direct CPU/GPU sysfs，也不重新引入旧 AsoulOpt。
 ```

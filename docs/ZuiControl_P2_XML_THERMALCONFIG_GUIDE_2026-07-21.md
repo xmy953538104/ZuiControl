@@ -4,6 +4,8 @@
 
 本节覆盖本文后面关于“三个用户 profile、daemon 选择 gameMode、GameModeProvider 重入”的旧说明；后文 XML 字段、ThermalConfig 和原厂热控原理仍有效。
 
+该模型已进入 `versionCode=29` / `versionName=0.20.0`，生产代码 commit 为 `28f1f8b56628ebbaf5cdbb570fe10e1b250e5b6f`。对应待刷 `super.img` SHA256 为 `ddfa388d1df10f6b609337af4b07ed5ca52a6d4602aebaab1ba88fec0a3970ef`。
+
 当前生产模型：
 
 ```text
