@@ -7,4 +7,5 @@ local.properties
 *.dex
 *.class
 *.log
+__pycache__/
 work/

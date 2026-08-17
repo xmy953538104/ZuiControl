@@ -11,21 +11,18 @@ ZUI_LAST_GOOD_DIR=$ZUI_DIR/last_good
 ZUI_STATE_DIR=$ZUI_DIR/state
 ZUI_OFFICIAL_DIR=$ZUI_DIR/official_original
 APPOPT_DIR=$DATA_ROOT/appopt
-CLOUD_DIR=$DATA_ROOT/cloud
 REFRESH_DIR=$DATA_ROOT/refresh
 PERFORMANCE_DIR=$DATA_ROOT/performance
 LOG_DIR=$DATA_ROOT/log
 
 LOG_FILE=$LOG_DIR/controld.log
 APPOPT_LOG=$LOG_DIR/appopt.log
-CLOUD_LOG=$LOG_DIR/cloud_block.log
 STATUS_FILE=$CONTROL_DIR/status.prop
 ADB_REQUEST=$CONTROL_DIR/request.prop
 LAST_REQUEST_FILE=$CONTROL_DIR/last_processed_settings_request_text
 
 APP_PACKAGE=com.zui.zuicontrol
 APP_SERVICE_COMPONENT=com.zui.zuicontrol/com.zui.zuicontrol.ZuiControlQuickService
-PP_GAME_MODE_URI=content://com.zui.performance.utils.GameModeProvider/contact
 SAFE_CENTER_PACKAGE=com.zui.safecenter
 SAFE_CENTER_DB=/data/user/0/$SAFE_CENTER_PACKAGE/databases/BlackWhite.db
 SAFE_CENTER_KEEPALIVE_FLAG=$DATA_ROOT/safecenter_keepalive_done.flag
@@ -33,7 +30,6 @@ SAFE_CENTER_KEEPALIVE_BACKUP_FLAG=$DATA_ROOT/safecenter_keepalive_backup.flag
 SAFE_CENTER_KEEPALIVE_LOG=$LOG_DIR/safecenter_keepalive.log
 PROP_ZUIPP=zui_control.zuipp
 PROP_APPOPT=zui_control.appopt
-PROP_CLOUD_BLOCK=zui_control.cloud_block
 
 SYSTEM_GAME_POLICY=/system/etc/game_policy.xml
 SYSTEM_PERF_CONFIG=/system/etc/performanceconfig.xml
@@ -63,6 +59,8 @@ XML_ACTIVE_SHA_FILE=$ZUI_STATE_DIR/active.sha256
 XML_VERIFY_FILE=$ZUI_STATE_DIR/verify.txt
 ZUIPP_APPLY_LOCK_DIR=$ZUI_STATE_DIR/apply.lock
 ZUIPP_LAST_RELOADED_HASH_FILE=$ZUI_STATE_DIR/last_reloaded_hash
+BAKED_TEMPLATE_SHA_FILE=$ZUI_BAKED_DIR/template.sha256
+BAKED_REFRESH_REQUIRED=$ZUI_STATE_DIR/baseline_refresh_required
 ZUI_ENABLED=$ZUI_DIR/enabled.flag
 
 REQ_TEXT_KEY=zui_control_request_text
@@ -72,27 +70,20 @@ STATUS_TEXT_KEY=zui_control_daemon_status_text
 DAEMON_REFRESH_STATE_KEY=zui_control_daemon_refresh_state
 PERFORMANCE_PROFILES_KEY=zui_control_performance_profiles_text
 PERFORMANCE_SUMMARY_KEY=zui_control_performance_summary
-TOP_PACKAGE_KEY=zui_control_top_package
-SCENE_EVENT_KEY=zui_control_scene_event_text
 ZUIPP_RELOAD_STATE_KEY=zui_control_zuipp_reload_state
-PP_MODE_STATE_KEY=zui_control_pp_mode_state
 ASOUL_HEALTH_KEY=zui_control_asoul_health
 XML_STATE_KEY=zui_control_xml_state
 LOG_EXPORT_KEY=zui_control_log_export
 
 BASE_REFRESH_RATE=120
 REFRESH_OWNER=system
-LAST_TOP_APP=
 LAST_REFRESH_RATE=
-LAST_PP_MODE_KEY=
 LAST_SETTINGS_REQUEST_TEXT=
-LAST_SCENE_EVENT_TEXT=
 HEALTH_TICKS=0
 SAFE_CENTER_KEEPALIVE_TICKS=0
 SAFE_CENTER_KEEPALIVE_ATTEMPTS=0
 SAFE_CENTER_KEEPALIVE_MAX_ATTEMPTS=60
 SAFE_CENTER_KEEPALIVE_DONE=0
-SCENE_TTL_SECONDS=60
 LOOP_SLEEP_SECONDS=1
 
 ts() {
@@ -239,14 +230,6 @@ write_active_sha() {
     chmod 0664 "$XML_ACTIVE_SHA_FILE" 2>/dev/null
 }
 
-active_xml_stamp() {
-    game_sha="$(sed -n 's/^game_policy=//p' "$XML_ACTIVE_SHA_FILE" 2>/dev/null | head -n 1)"
-    perf_sha="$(sed -n 's/^performanceconfig=//p' "$XML_ACTIVE_SHA_FILE" 2>/dev/null | head -n 1)"
-    [ -n "$game_sha" ] || game_sha="$(file_sha "$ACTIVE_GAME_POLICY")"
-    [ -n "$perf_sha" ] || perf_sha="$(file_sha "$ACTIVE_PERF_CONFIG")"
-    printf '%s:%s\n' "${game_sha:-none}" "${perf_sha:-none}"
-}
-
 label_active_xml() {
     for file in "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG"; do
         [ -e "$file" ] || continue
@@ -312,18 +295,27 @@ validate_xml_pair() {
 }
 
 init_baked_baseline_xml() {
-    mkdir -p "$ZUI_BAKED_DIR"
-    if [ -s "$BAKED_GAME_POLICY" ] && [ -s "$BAKED_PERF_CONFIG" ]; then
-        return 0
-    fi
-    if copy_xml_pair_to_dir "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG" \
-        "$ZUI_BAKED_DIR" "baked baseline"; then
-        log_line "ZuiPP baked baseline initialized from current /system/etc"
+    mkdir -p "$ZUI_BAKED_DIR" "$ZUI_STATE_DIR"
+    template_game_sha="$(file_sha "$DEFAULT_GAME_POLICY")"
+    template_perf_sha="$(file_sha "$DEFAULT_PERF_CONFIG")"
+    [ -n "$template_game_sha" ] && [ -n "$template_perf_sha" ] || {
+        set_xml_error "payload baseline template hash failed"
+        return 1
+    }
+    template_stamp="$template_game_sha:$template_perf_sha"
+    saved_stamp="$(read_file_clean "$BAKED_TEMPLATE_SHA_FILE")"
+    if [ -n "$template_stamp" ] && [ "$saved_stamp" = "$template_stamp" ] &&
+        [ -s "$BAKED_GAME_POLICY" ] && [ -s "$BAKED_PERF_CONFIG" ]; then
         return 0
     fi
     if copy_xml_pair_to_dir "$DEFAULT_GAME_POLICY" "$DEFAULT_PERF_CONFIG" \
-        "$ZUI_BAKED_DIR" "baked baseline fallback"; then
-        log_line "ZuiPP baked baseline initialized from payload template"
+        "$ZUI_BAKED_DIR" "baked baseline"; then
+        printf '%s\n' "$template_stamp" > "$BAKED_TEMPLATE_SHA_FILE.tmp"
+        chmod 0664 "$BAKED_TEMPLATE_SHA_FILE.tmp" 2>/dev/null
+        mv "$BAKED_TEMPLATE_SHA_FILE.tmp" "$BAKED_TEMPLATE_SHA_FILE"
+        touch "$BAKED_REFRESH_REQUIRED"
+        chmod 0664 "$BAKED_REFRESH_REQUIRED" 2>/dev/null
+        log_line "ZuiPP baked baseline refreshed from payload template: $template_stamp"
         return 0
     fi
     return 1
@@ -474,9 +466,8 @@ valid_positive_int() {
     [ "$1" -gt 0 ]
 }
 
-rewrite_performance_without_key() {
+rewrite_performance_without_package() {
     pkg="$1"
-    mode="$2"
     tmp="$PERFORMANCE_PROFILES.tmp"
     : > "$tmp"
     if [ -s "$PERFORMANCE_PROFILES" ]; then
@@ -486,8 +477,7 @@ rewrite_performance_without_key() {
             set -- $line
             IFS="$old_ifs"
             line_pkg="$1"
-            line_mode="$2"
-            if [ "$line_pkg" = "$pkg" ] && [ "$line_mode" = "$mode" ]; then
+            if [ "$line_pkg" = "$pkg" ]; then
                 continue
             fi
             echo "$line" >> "$tmp"
@@ -495,6 +485,40 @@ rewrite_performance_without_key() {
     fi
     mv "$tmp" "$PERFORMANCE_PROFILES"
     chmod 0664 "$PERFORMANCE_PROFILES" 2>/dev/null
+}
+
+migrate_performance_profiles() {
+    tmp="$PERFORMANCE_PROFILES.migrate"
+    before="$(file_sha "$PERFORMANCE_PROFILES")"
+    awk -F '|' 'BEGIN { OFS="|" }
+        NF == 4 || NF == 6 || NF == 7 || NF == 12 {
+            pkg=$1
+            mode=$2
+            if (pkg !~ /^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+$/ ||
+                (mode != "balanced" && mode != "powersave" && mode != "savage")) {
+                next
+            }
+            if (!(pkg in chosen)) {
+                order[++count]=pkg
+            }
+            if (!(pkg in chosen) || mode == "balanced") {
+                $2="balanced"
+                chosen[pkg]=$0
+            }
+        }
+        END {
+            for (i=1; i<=count; i++) {
+                pkg=order[i]
+                if (pkg in chosen) print chosen[pkg]
+            }
+        }
+    ' "$PERFORMANCE_PROFILES" > "$tmp"
+    chmod 0664 "$tmp" 2>/dev/null
+    mv "$tmp" "$PERFORMANCE_PROFILES"
+    after="$(file_sha "$PERFORMANCE_PROFILES")"
+    if [ "$before" != "$after" ]; then
+        log_line "performance profiles migrated to one canonical profile per package"
+    fi
 }
 
 migrate_refresh_rules() {
@@ -785,18 +809,27 @@ maybe_patch_safecenter_keepalive() {
 init_dirs() {
     mkdir -p "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" "$ZUI_BAKED_DIR" \
         "$ZUI_ACTIVE_DIR" "$ZUI_STAGING_DIR" "$ZUI_LAST_GOOD_DIR" \
-        "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR" "$APPOPT_DIR" "$CLOUD_DIR" \
+        "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR" "$APPOPT_DIR" \
         "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR"
     chmod 0775 "$DATA_ROOT" "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" \
         "$ZUI_BAKED_DIR" "$ZUI_ACTIVE_DIR" "$ZUI_STAGING_DIR" \
         "$ZUI_LAST_GOOD_DIR" "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR" \
-        "$APPOPT_DIR" "$CLOUD_DIR" "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR" 2>/dev/null
+        "$APPOPT_DIR" "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR" 2>/dev/null
     restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
-    init_active_xml || log_line "ZuiPP XML init failed"
     copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
     [ -e "$REFRESH_RULES" ] || : > "$REFRESH_RULES"
     [ -e "$PERFORMANCE_PROFILES" ] || : > "$PERFORMANCE_PROFILES"
     chmod 0664 "$APPOPT_CONFIG" "$REFRESH_RULES" "$PERFORMANCE_PROFILES" 2>/dev/null
+    migrate_performance_profiles
+    init_active_xml || log_line "ZuiPP XML init failed"
+    if [ -f "$BAKED_REFRESH_REQUIRED" ]; then
+        if generate_performance_xml && promote_staging_to_active; then
+            rm -f "$BAKED_REFRESH_REQUIRED"
+            log_line "ZuiPP active XML regenerated after payload baseline refresh"
+        else
+            log_line "ZuiPP baseline refresh pending: active XML regeneration failed"
+        fi
+    fi
     migrate_refresh_rules
     rm -f "$REFRESH_DIR/enabled.flag"
     grant_app_permissions
@@ -951,17 +984,31 @@ reload_zuipp_if_needed() {
         return 1
     fi
 
-    tries=20
+    candidate_key=
+    stable_ticks=0
+    tries=30
     while [ "$tries" -gt 0 ]; do
         new_pid="$(zuipp_pid)"
         if [ -n "$new_pid" ] && [ "$(proc_cmdline_clean "$new_pid")" = "com.zui.pp" ]; then
             new_start="$(proc_start_time "$new_pid")"
             if [ "$new_pid" != "$old_pid" ] ||
                 { [ -n "$new_start" ] && [ "$new_start" != "$old_start" ]; }; then
-                remember_reloaded_hash_pair "$hash_pair"
-                publish_zuipp_reload_state "state=done;reason=$reason;oldPid=$old_pid;newPid=$new_pid;game=$game_hash;perf=$perf_hash;needsAppReenter=1"
-                return 0
+                current_key="$new_pid:$new_start"
+                if [ "$current_key" = "$candidate_key" ]; then
+                    stable_ticks=$((stable_ticks + 1))
+                else
+                    candidate_key="$current_key"
+                    stable_ticks=1
+                fi
+                if [ "$stable_ticks" -ge 10 ]; then
+                    remember_reloaded_hash_pair "$hash_pair"
+                    publish_zuipp_reload_state "state=done;reason=$reason;oldPid=$old_pid;newPid=$new_pid;stableSeconds=10;game=$game_hash;perf=$perf_hash;needsAppReenter=1"
+                    return 0
+                fi
             fi
+        else
+            candidate_key=
+            stable_ticks=0
         fi
         tries=$((tries - 1))
         sleep 1
@@ -1097,7 +1144,6 @@ promote_staging_to_active() {
         return 1
     }
     if promote_staging_with_init "promote_staging"; then
-        backup_active_to_last_good
         release_zuipp_apply_lock
         return 0
     fi
@@ -1225,153 +1271,6 @@ ignore_legacy_refresh_request() {
     set_status "daemon=running" "last=${legacy_cmd}_ignored" "refresh_owner=$REFRESH_OWNER"
 }
 
-is_overlay_package() {
-    case "$1" in
-        com.android.systemui) return 0 ;;
-    esac
-    return 1
-}
-
-is_self_package() {
-    [ "$1" = "$APP_PACKAGE" ]
-}
-
-is_scene_package() {
-    pkg="$1"
-    valid_package_name "$pkg" || return 1
-    is_overlay_package "$pkg" && return 1
-    is_self_package "$pkg" && return 1
-    return 0
-}
-
-latest_scene_event_pkg() {
-    event="$(settings_get_clean "$SCENE_EVENT_KEY")"
-    [ -n "$event" ] || return 1
-    event_time="${event%%|*}"
-    pkg="${event#*|}"
-    [ "$pkg" != "$event" ] || return 1
-    valid_positive_int "$event_time" || return 1
-    is_scene_package "$pkg" || return 1
-    event_sec=$((event_time / 1000000000))
-    now_boot="$(uptime_seconds)"
-    valid_positive_int "$now_boot" || return 1
-    age=$((now_boot - event_sec))
-    [ "$age" -ge 0 ] && [ "$age" -le "$SCENE_TTL_SECONDS" ] || return 1
-    printf '%s\n' "$pkg"
-}
-
-active_scene_pkg() {
-    pkg="$(settings_get_clean "$TOP_PACKAGE_KEY")"
-    if is_scene_package "$pkg"; then
-        printf '%s\n' "$pkg"
-        return 0
-    fi
-    pkg="$(latest_scene_event_pkg)" && {
-        printf '%s\n' "$pkg"
-        return 0
-    }
-    if is_scene_package "$LAST_TOP_APP"; then
-        printf '%s\n' "$LAST_TOP_APP"
-        return 0
-    fi
-    return 1
-}
-
-current_scene_pkg() {
-    pkg="$(settings_get_clean "$TOP_PACKAGE_KEY")"
-    if is_scene_package "$pkg"; then
-        printf '%s\n' "$pkg"
-        return 0
-    fi
-    pkg="$(latest_scene_event_pkg)" && {
-        printf '%s\n' "$pkg"
-        return 0
-    }
-    return 1
-}
-
-apply_scene_package() {
-    top="$1"
-    source="$2"
-    if ! is_scene_package "$top"; then
-        return 1
-    fi
-    if [ "$top" = "$LAST_TOP_APP" ]; then
-        return 0
-    fi
-    LAST_TOP_APP="$top"
-    log_line "foreground scene observed: $top source=$source refresh_owner=$REFRESH_OWNER"
-    apply_pp_mode_for_scene "$top" force
-}
-
-profile_mode_code_for_pkg() {
-    profile_pkg="$1"
-    [ -s "$PERFORMANCE_PROFILES" ] || return 1
-    fallback=
-    while IFS='|' read -r pkg mode _rest; do
-        [ "$pkg" = "$profile_pkg" ] || continue
-        case "$mode" in
-            balanced) printf '0\n'; return 0 ;;
-            powersave) [ -z "$fallback" ] && fallback=1 ;;
-            savage) [ -z "$fallback" ] && fallback=2 ;;
-        esac
-    done < "$PERFORMANCE_PROFILES"
-    [ -n "$fallback" ] || return 1
-    printf '%s\n' "$fallback"
-}
-
-apply_pp_mode_for_scene() {
-    scene_pkg="$1"
-    force="$2"
-    mode_code="$(profile_mode_code_for_pkg "$scene_pkg")" || return 0
-    xml_stamp="$(active_xml_stamp)"
-    mode_key="$scene_pkg:$mode_code:$xml_stamp"
-    if [ "$force" != "force" ] && [ "$mode_key" = "$LAST_PP_MODE_KEY" ]; then
-        pp_state="$(settings_get_clean "$PP_MODE_STATE_KEY")"
-        case "$pp_state" in
-            *"state=triggered;"*"package=$scene_pkg;"*"mode=$mode_code;"*"xml=$xml_stamp"*) return 0 ;;
-            *"state=done;"*"package=$scene_pkg;"*"mode=$mode_code;"*"xml=$xml_stamp"*) return 0 ;;
-        esac
-        log_line "retry ZuiPP mode after unresolved state: $scene_pkg mode=$mode_code"
-    fi
-    settings_put_quiet "$PP_MODE_STATE_KEY" \
-        "time=$(ts);state=requested;stage=provider_direct;package=$scene_pkg;mode=$mode_code;xml=$xml_stamp"
-    result="$(content update --uri "$PP_GAME_MODE_URI" --bind "gameMode:s:$mode_code" 2>&1)"
-    if [ "$?" = "0" ]; then
-        LAST_PP_MODE_KEY="$mode_key"
-        settings_put_quiet "$PP_MODE_STATE_KEY" \
-            "time=$(ts);state=triggered;stage=provider_direct;package=$scene_pkg;mode=$mode_code;xml=$xml_stamp"
-        log_line "triggered ZuiPP provider: $scene_pkg mode=$mode_code xml=$xml_stamp stage=provider_direct"
-        return 0
-    fi
-    result="$(printf '%s' "$result" | tr '\n;|' '   ' | cut -c 1-160)"
-    settings_put_quiet "$PP_MODE_STATE_KEY" \
-        "time=$(ts);state=failed;stage=provider_direct;package=$scene_pkg;mode=$mode_code;xml=$xml_stamp;error=$result"
-    log_line "trigger ZuiPP provider failed: $scene_pkg mode=$mode_code error=$result"
-    return 1
-}
-
-apply_pp_mode_if_current_scene() {
-    profile_pkg="$1"
-    current="$(current_scene_pkg 2>/dev/null)" || return 0
-    [ "$current" = "$profile_pkg" ] || return 0
-    LAST_PP_MODE_KEY=
-    apply_pp_mode_for_scene "$profile_pkg" force
-}
-
-process_scene_event() {
-    event="$(settings_get_clean "$SCENE_EVENT_KEY")"
-    if [ -n "$event" ]; then
-        LAST_SCENE_EVENT_TEXT="$event"
-    fi
-    pkg="$(current_scene_pkg)" || return 1
-    apply_scene_package "$pkg" system_server
-}
-
-scene_event_tick() {
-    process_scene_event >/dev/null 2>&1 || true
-}
-
 set_performance_profile() {
     profile_pkg="$1"
     profile_mode="$2"
@@ -1401,7 +1300,8 @@ set_performance_profile() {
         set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg"
         return 1
     fi
-    rewrite_performance_without_key "$profile_pkg" "$profile_mode"
+    profile_mode=balanced
+    rewrite_performance_without_package "$profile_pkg"
     printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
         "$profile_pkg" "$profile_mode" \
         "$little_max" "$little_min" \
@@ -1415,7 +1315,6 @@ set_performance_profile() {
     log_line "performance profile saved: $profile_pkg/$profile_mode"
     if generate_performance_xml && promote_staging_to_active; then
         publish_performance_state
-        apply_pp_mode_if_current_scene "$profile_pkg"
         set_status "daemon=running" "last=set_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode"
         return 0
@@ -1468,7 +1367,8 @@ set_performance_profile_staged() {
         fi
         [ "$profile_policy" = "default" ] && profile_frame_policy=default
     fi
-    rewrite_performance_without_key "$profile_pkg" "$profile_mode"
+    profile_mode=balanced
+    rewrite_performance_without_package "$profile_pkg"
     if [ -n "$profile_policy$profile_frame_policy" ]; then
         printf '%s|%s|v4|%s|%s|%s\n' \
             "$profile_pkg" "$profile_mode" "$profile_policy" \
@@ -1483,7 +1383,6 @@ set_performance_profile_staged() {
     log_line "staged performance profile saved: $profile_pkg/$profile_mode"
     if generate_performance_xml && promote_staging_to_active; then
         publish_performance_state
-        apply_pp_mode_if_current_scene "$profile_pkg"
         set_status "daemon=running" "last=set_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode" "thermal=staged"
         return 0
@@ -1501,12 +1400,11 @@ remove_performance_profile() {
         set_status "daemon=running" "last=remove_performance_profile_failed"
         return 1
     fi
-    rewrite_performance_without_key "$profile_pkg" "$profile_mode"
+    rewrite_performance_without_package "$profile_pkg"
     clear_performance_summary
-    log_line "performance profile removed: $profile_pkg/$profile_mode"
+    log_line "performance profile removed: $profile_pkg"
     if generate_performance_xml && promote_staging_to_active; then
         publish_performance_state
-        LAST_PP_MODE_KEY=
         set_status "daemon=running" "last=remove_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode"
         return 0
@@ -1631,10 +1529,7 @@ $(settings_get_clean "$ASOUL_HEALTH_KEY")
 $(tail -n 120 "$LOG_FILE" 2>/dev/null)
 
 [AppOpt 日志末尾]
-$(tail -n 80 "$APPOPT_LOG" 2>/dev/null)
-
-[云控网络阻断日志末尾]
-$(tail -n 80 "$CLOUD_LOG" 2>/dev/null)"
+$(tail -n 80 "$APPOPT_LOG" 2>/dev/null)"
     settings_put_quiet "$LOG_EXPORT_KEY" "$export_text"
     set_status "daemon=running" "last=export_logs"
 }
@@ -1889,7 +1784,6 @@ main_loop() {
     while true; do
         process_atomic_settings_request
         process_request_file "$ADB_REQUEST"
-        scene_event_tick
         if [ "$SAFE_CENTER_KEEPALIVE_DONE" != "1" ]; then
             SAFE_CENTER_KEEPALIVE_TICKS=$((SAFE_CENTER_KEEPALIVE_TICKS + 1))
             if [ "$SAFE_CENTER_KEEPALIVE_TICKS" -ge 20 ]; then

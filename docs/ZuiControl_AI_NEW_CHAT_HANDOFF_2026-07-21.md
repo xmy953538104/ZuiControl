@@ -13,7 +13,27 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.1 2026-08-17 最新覆盖说明
+### 0.2 2026-08-17 P2/云控重构（当前最新）
+
+本节覆盖后面的旧 P2 三模式/provider 重入、云控实现、28/0.19.9 推荐包和对应验证步骤。P1 相机崩溃修复保持不变，没有进入 FPS cap。
+
+当前目标 App 为 `versionCode=29` / `versionName=0.20.0`。本轮依据设备实测完成以下收敛：
+
+- 云控功能删除。`/system/etc/hosts` 恢复为从官方 ZUI 16.1.11.187 `system_a.img` 抽出的 56 字节默认文件；删除 boot/property 触发、iptables 脚本、daemon cloud 目录和日志导出。升级脚本只做一次旧 setting/runtime 清理。
+- 每个 package 只保存一份当前性能 profile；旧数据迁移时优先采用 `balanced`，没有 balanced 才采用第一份旧 profile。新保存统一写 canonical `balanced` 记录。
+- 生成的同一份 LimitConfig 镜像到 balanced/powersave/savage 三个原厂槽位，因此不再由 daemon 猜当前 GameMode，也不存在 balanced 抢优先级。
+- 每个温区的 Little/Big/Titan/Mega 使用同一个 synthetic CPU level ID（从 900000 起），但四个 Type 下分别保存该簇自己的频率值。这是针对设备实测 ZuiPP HashMap 读取顺序 `LittleCore, MegaCore, BigCore, TitanCore, GPU` 的兼容修复，避免 CPU Type/level 错配导致整条 TAssistant policy 中止。
+- 删除 daemon 的 `GameModeProvider/contact` 直接调用和场景轮询。Provider 曾能返回成功但并不证明 ZuiPP 已有目标 game state，属于假成功源。
+- 保存并完成 XML promote/ZuiPP 稳定重启后，用户需要退出并重新进入游戏，由原厂 `onGameAppStart` 链路应用 XML。三个模式内容相同，所以原厂选择哪个模式都得到同一配置。
+- 只对 ZUI/GameHelper 已识别为游戏的应用承诺触发；给普通 App 生成 XML 条目不等于原厂会触发游戏链路。App UI 已明确提示此边界。
+- CPU/GPU 是原厂性能 profile 请求，不是硬 cap。厂商热控或其他更高优先级请求仍可进一步压低或覆盖；禁止因此恢复 direct cpufreq/KGSL sysfs。
+- ZuiPP reload 在新 PID 出现后连续稳定 10 秒才发布 done，若进程重启则重新计时；状态继续带 `needsAppReenter=1`。
+- baked baseline 使用 payload 模板双 SHA256 版本戳；模板变化会刷新旧 baseline 并自动用保留的用户 profiles 重建 active XML，修复升级后继续沿用旧 `200 100 300` baseline 的问题。
+- 正常 promote 前先备份旧 active 到 `last_good`，成功后不再用新 active 覆盖它；回滚点现在确实代表上一次配置。
+
+针对生成器新增可执行测试 `scripts/TestXmlProfileGenerator.py`，会验证旧多模式数据只选一份、三个 OEM mode block 完全相同、四个 CPU ID 相同且各 Type 频率值正确。最终 CI/run、commit、刷机包和 SHA256 在本轮发布完成后补到本节。
+
+### 0.1 2026-08-17 P1/AppOpt 覆盖说明（已被 0.2 的包版本覆盖）
 
 本节是当前最新事实，覆盖本文后面 2026-07-21 快照中关于 P1 未修改、AppOpt 应默认运行、推荐包 hash 和“下一步”的旧描述。其余 P2、云控、命名和禁止回退规则继续有效。
 

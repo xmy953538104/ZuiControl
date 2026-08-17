@@ -42,4 +42,9 @@ if command -v killall >/dev/null 2>&1; then
 fi
 umount /system/etc/asopt.conf >/dev/null 2>&1 || true
 
+# One-way cleanup for images that previously shipped ZuiControl cloud blocking.
+settings delete system zui_control_cloud_block_state >/dev/null 2>&1 || true
+rm -rf "$DATA_ROOT/cloud"
+rm -f "$LOG_DIR/cloud_block.log"
+
 log_msg "prepared AppOpt runtime: cfg=$CFG"

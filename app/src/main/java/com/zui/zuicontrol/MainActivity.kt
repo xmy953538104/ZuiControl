@@ -47,7 +47,6 @@ class MainActivity : Activity() {
     private lateinit var performanceListHost: LinearLayout
     private lateinit var selectedAppTitle: TextView
     private lateinit var selectedPackageView: TextView
-    private lateinit var modeSpinner: Spinner
     private lateinit var policySpinner: Spinner
     private lateinit var framePolicySpinner: Spinner
     private lateinit var policySummary: TextView
@@ -459,33 +458,7 @@ class MainActivity : Activity() {
             addView(selectedAppTitle)
             addView(selectedPackageView)
 
-            addView(fieldTitle("运行模式"), fieldMargins())
-            modeSpinner = Spinner(this@MainActivity).apply {
-                adapter = SimpleTextAdapter(PerformanceMode.entries.map { it.title })
-                background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
-                setPadding(dp(4), 0, dp(4), 0)
-                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-                    override fun onItemSelected(
-                        parent: AdapterView<*>?,
-                        view: View?,
-                        position: Int,
-                        id: Long,
-                    ) {
-                        if (::performanceSummary.isInitialized) {
-                            updatePerformanceForm()
-                            renderPerformanceProfiles()
-                        } else {
-                            loadSelectedProfile()
-                        }
-                    }
-                }
-            }
-            addView(modeSpinner, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48),
-            ))
-            addView(compactNote("每个模式保存一套三温区配置；先设置温度起始点，再切换温区填写对应 CPU/GPU 上下限。"),
+            addView(compactNote("每个游戏只保存一套三温区配置，并同步到原厂均衡/省电/野兽三个模式。仅 ZUI 已识别为游戏的应用会由原厂链路应用；保存完成后请退出并重新进入游戏。CPU/GPU 数值是原厂性能请求，仍可能被系统温控进一步压低或覆盖。"),
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -698,8 +671,7 @@ class MainActivity : Activity() {
         }
         ensureSelectedPerformanceProfile()
         performanceProfiles.values.forEach { profile ->
-            val selected = profile.packageName == selectedPackage &&
-                profile.mode == selectedMode()
+            val selected = profile.packageName == selectedPackage
             val row = vertical().apply {
                 setPadding(dp(12), dp(10), dp(12), dp(10))
                 background = rounded(
@@ -708,7 +680,7 @@ class MainActivity : Activity() {
                     if (selected) COLOR_ACCENT else COLOR_STROKE,
                 )
                 addView(label(
-                    "${labelForPackage(profile.packageName)} · ${profile.mode.title}",
+                    labelForPackage(profile.packageName),
                     14f,
                     COLOR_TEXT,
                     Typeface.BOLD,
@@ -742,12 +714,8 @@ class MainActivity : Activity() {
                 ))
                 setOnClickListener {
                     selectedPackage = profile.packageName
-                    if (modeSpinner.selectedItemPosition == profile.mode.ordinal) {
-                        updatePerformanceForm()
-                        renderPerformanceProfiles()
-                    } else {
-                        modeSpinner.setSelection(profile.mode.ordinal)
-                    }
+                    updatePerformanceForm()
+                    renderPerformanceProfiles()
                 }
             }
             performanceListHost.addView(row, LinearLayout.LayoutParams(
@@ -766,7 +734,7 @@ class MainActivity : Activity() {
         ensureSelectedPerformanceProfile()
         val pkg = selectedPackage
         selectedAppTitle.text = pkg?.let { labelForPackage(it) } ?: "选择或添加应用"
-        selectedPackageView.text = pkg?.let { "$it · ${selectedMode().title}" } ?: "未选择应用"
+        selectedPackageView.text = pkg ?: "未选择应用"
         loadSelectedProfile()
         updatePolicySummary()
         performanceSummary.text = performanceXmlStatusText()
@@ -775,7 +743,7 @@ class MainActivity : Activity() {
     private fun performanceXmlStatusText(): String {
         val xmlState = setting(ZuiControlContract.KEY_XML_STATE)
         if (xmlState.startsWith("state=mounted")) {
-            return "XML 已启用"
+            return "XML 已挂载；配置会在重新进入 ZUI 已识别的游戏时生效"
         }
         val daemon = setting(ZuiControlContract.KEY_DAEMON_STATUS_TEXT)
         val hasError = listOf(xmlState, daemon)
@@ -795,7 +763,7 @@ class MainActivity : Activity() {
             return
         }
         val pkg = selectedPackage ?: return
-        val profile = performanceProfiles["$pkg|${selectedMode().id}"]
+        val profile = performanceProfiles.values.firstOrNull { it.packageName == pkg }
         loadingPerformanceForm = true
         try {
             if (profile == null) {
@@ -825,7 +793,7 @@ class MainActivity : Activity() {
         }
         val profile = PerformanceProfile(
             pkg,
-            selectedMode(),
+            PerformanceMode.BALANCED,
             base.littleMaxKHz,
             base.littleMinKHz,
             base.bigMaxKHz,
@@ -840,10 +808,11 @@ class MainActivity : Activity() {
             gamePolicy,
             framePolicy,
         )
+        performanceProfiles.entries.removeAll { it.value.packageName == pkg }
         performanceProfiles[profile.key] = profile
         renderPerformanceProfiles()
         updatePolicySummary()
-        sendCommand("正在保存并应用", settleDelayMs = LONG_COMMAND_DELAY_MS) {
+        sendCommand("正在保存；完成后请重新进入游戏", settleDelayMs = LONG_COMMAND_DELAY_MS) {
             ZuiControlRequest.send(
                 this,
                 ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE_STAGED,
@@ -1153,8 +1122,7 @@ class MainActivity : Activity() {
 
     private fun removePerformanceProfile() {
         val pkg = selectedPackage ?: return toast("请先选择应用")
-        val key = "$pkg|${selectedMode().id}"
-        performanceProfiles.remove(key)
+        performanceProfiles.entries.removeAll { it.value.packageName == pkg }
         renderPerformanceProfiles()
         updatePerformanceForm()
         sendCommand("正在删除性能配置") {
@@ -1162,7 +1130,7 @@ class MainActivity : Activity() {
                 this,
                 ZuiControlContract.CMD_REMOVE_PERFORMANCE_PROFILE,
                 pkg = pkg,
-                mode = selectedMode().id,
+                mode = PerformanceMode.BALANCED.id,
             )
         }
     }
@@ -1375,9 +1343,15 @@ class MainActivity : Activity() {
         refreshRules.clear()
         reloadRefreshProfiles()
         performanceProfiles.clear()
-        setting(ZuiControlContract.KEY_PERFORMANCE_PROFILES_TEXT).lineSequence()
+        val parsed = setting(ZuiControlContract.KEY_PERFORMANCE_PROFILES_TEXT).lineSequence()
             .mapNotNull { PerformanceProfile.parse(it) }
-            .forEach { performanceProfiles[it.key] = it }
+            .toList()
+        parsed.groupBy { it.packageName }.forEach { (_, profiles) ->
+            val selected = profiles.firstOrNull { it.mode == PerformanceMode.BALANCED }
+                ?: profiles.first()
+            val canonical = selected.copy(mode = PerformanceMode.BALANCED)
+            performanceProfiles[canonical.key] = canonical
+        }
     }
 
     private fun reloadRefreshProfiles() {
@@ -1431,21 +1405,12 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun selectedMode(): PerformanceMode {
-        val position = if (::modeSpinner.isInitialized) modeSpinner.selectedItemPosition else 0
-        return PerformanceMode.entries.getOrElse(position) { PerformanceMode.BALANCED }
-    }
-
     private fun ensureSelectedPerformanceProfile() {
         if (selectedPackage != null || performanceProfiles.isEmpty()) {
             return
         }
-        val profile = performanceProfiles.values.firstOrNull { it.mode == selectedMode() }
-            ?: performanceProfiles.values.first()
+        val profile = performanceProfiles.values.first()
         selectedPackage = profile.packageName
-        if (::modeSpinner.isInitialized && modeSpinner.selectedItemPosition != profile.mode.ordinal) {
-            modeSpinner.setSelection(profile.mode.ordinal)
-        }
     }
 
     private fun selectedGamePolicy(): GamePolicyMode {
@@ -1912,7 +1877,7 @@ class MainActivity : Activity() {
     companion object {
         private const val REQUEST_EXPORT_LOG = 901
         private const val SHORT_COMMAND_DELAY_MS = 720L
-        private const val LONG_COMMAND_DELAY_MS = 6500L
+        private const val LONG_COMMAND_DELAY_MS = 13000L
         private const val EXPORT_COMMAND_DELAY_MS = 1800L
         private val COLOR_BG = Color.rgb(244, 247, 250)
         private val COLOR_FIELD = Color.rgb(238, 242, 246)

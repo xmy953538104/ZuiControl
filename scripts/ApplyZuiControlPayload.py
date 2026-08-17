@@ -129,6 +129,7 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/etc/zui_control/default_asopt.conf",
         "system_a/system/etc/zui_control/asopt.conf",
         "system_a/system/etc/asopt.conf",
+        "system_a/system/etc/zui_control/zui_cloud_block.sh",
     ]
     for rel in legacy:
         remove_path(unpack / rel, dry_run, removed)
@@ -145,6 +146,7 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "AsoulOpt",
         "zui_asoulopt",
         "asopt.conf",
+        "zui_cloud_block",
     ]
     targets = [
         unpack / "config" / "system_a_fs_config",
@@ -507,9 +509,9 @@ def main():
         "warnings": [],
     }
     report["zuipp_xml_baseline_model"] = {
-        "baked_baseline": "/system/etc/game_policy.xml and /system/etc/performanceconfig.xml as shipped in the built image; they may already be ZuiControl custom tables.",
+        "baked_baseline": "Versioned copies of /system/etc/zui_control/default_game_policy.xml and default_performanceconfig.xml, keyed by their SHA256 pair.",
         "active_runtime": "/data/vendor/zui_control/zuipp/active/ is bind-mounted to /system/etc at boot and after each XML apply.",
-        "payload_templates": "/system/etc/zui_control/default_game_policy.xml and default_performanceconfig.xml are templates/fallback inputs, not automatically treated as official originals.",
+        "payload_templates": "A template SHA change refreshes baked_baseline and regenerates active XML from preserved user profiles.",
         "official_original": "Only expose an official-original restore path when an original pair was explicitly captured under /data/vendor/zui_control/zuipp/official_original/.",
     }
 

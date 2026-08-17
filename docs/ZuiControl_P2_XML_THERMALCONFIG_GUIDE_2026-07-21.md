@@ -1,5 +1,42 @@
 # ZuiControl P2 XML 与 ThermalConfig 读法 - 2026-07-21
 
+## 0. 2026-08-17 当前生产规则
+
+本节覆盖本文后面关于“三个用户 profile、daemon 选择 gameMode、GameModeProvider 重入”的旧说明；后文 XML 字段、ThermalConfig 和原厂热控原理仍有效。
+
+当前生产模型：
+
+```text
+每个 package 一份用户 profile
+-> 每个温区分配一个共享 CPU level ID
+-> Little/Big/Titan/Mega 四个 Type 用同一 ID、各存自己的频率值
+-> 同一 LimitConfig 镜像到 balanced / powersave / savage
+-> 校验、promote、bind active XML
+-> hash 变化时受控重启 ZuiPP，并等待新进程稳定 10 秒
+-> 用户退出并重新进入 ZUI 已识别的游戏
+-> 原厂 onGameAppStart 选择任一模式，得到相同配置
+```
+
+原因和边界：
+
+- 设备实测 ZuiPP 的 CPU Type 读取顺序不是 XML 文档顺序。旧版为四簇分配不同 level ID 时，错误 Type 查找可能缺少 level，TAssistant 会放弃整条策略。共享 CPU ID 消除了顺序依赖。
+- daemon 直接调用 `GameModeProvider/contact` 会出现“命令成功但 ZuiPP 没有目标游戏状态”的假成功，现已删除。
+- 普通 App 即使被写入 XML，也可能没有 GameHelper/ZuiPP 的 `onGameAppStart`，因此只承诺 ZUI 已识别的游戏。
+- XML 的 CPU/GPU 上下限是 OEM 性能请求，不是不可被覆盖的硬上限。全局 thermal、厂商性能服务或更高优先级请求仍可能改变最终节点值。
+- `last_good` 保存 promote 前的旧 active；成功后不会再被新 active 覆盖，因此失败回滚和手动恢复有真实的上一版本。
+- 不恢复 daemon direct cpufreq/KGSL sysfs，不进入 FPS cap。
+
+当前排查顺序：
+
+1. profiles.prop 中每个 package 是否只有一条 canonical `balanced` 记录。
+2. active 与 `/system/etc` 是否同 hash 且已 bind mount。
+3. 目标 App 的三个 LimitConfig mode block 是否完全一致。
+4. 每个温区 Little/Big/Titan/Mega 四个 ID 是否相同，并在四个 Type 中都存在。
+5. ZuiPP reload 是否 `state=done`、`stableSeconds=10`、`needsAppReenter=1`。
+6. 退出并重新进入 ZUI 已识别的游戏，检查原厂 `onGameAppStart`、TAssistant/LimitConfig 日志。
+7. 再读 CPU/GPU 最终节点，并区分用户请求、厂商覆盖和真实高温降频。
+8. 检查相关 AVC。
+
 ## 1. 两份 XML 各负责什么
 
 `game_policy.xml` 是“游戏条目和策略选择表”：
@@ -259,4 +296,3 @@ quiet-therm 30/32/34/36/38/40C
 10. 当前是否是真实高温导致的全局降频，或存在 AVC 阻断。
 
 不要在第 3 步通过后就直接宣布成功，也不要在第 9 步不符合预期时立刻回退到 daemon 直写 sysfs。
-

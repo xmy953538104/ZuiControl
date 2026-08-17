@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '28'
-$ExpectedVersionName = '0.19.9'
+$ExpectedVersionCode = '29'
+$ExpectedVersionName = '0.20.0'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -273,9 +273,10 @@ try {
     $PrivAppPermissions = Join-Path $SystemRoot 'system\etc\permissions\privapp-permissions-zui-control.xml'
     $GameTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_game_policy.xml'
     $PerfTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_performanceconfig.xml'
-    foreach ($required in @($AppApk, $Daemon, $AppOpt, $DaemonRc, $AppOptRc, $ClearPackageCache, $AppOptPrepare, $CloudBlock, $Hosts, $DefaultAppList, $PrivAppPermissions, $GameTemplate, $PerfTemplate)) {
+    foreach ($required in @($AppApk, $Daemon, $AppOpt, $DaemonRc, $AppOptRc, $ClearPackageCache, $AppOptPrepare, $Hosts, $DefaultAppList, $PrivAppPermissions, $GameTemplate, $PerfTemplate)) {
         Require-File $required
     }
+    Assert-MissingFile $CloudBlock 'removed cloud-block script'
     foreach ($legacyPath in @(
         (Join-Path $SystemRoot 'system\bin\AsoulOpt'),
         (Join-Path $SystemRoot 'system\etc\init\zui_asoulopt.rc'),
@@ -290,35 +291,14 @@ try {
     Assert-Contains $DaemonRc 'exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/clear_package_cache.sh' 'package cache clear shell-domain action'
     Assert-NotContains $DaemonRc 'exec u:r:init:s0 root root -- /system/bin/sh /system/etc/zui_control/clear_package_cache.sh' 'package cache clear init-domain shell action'
     Assert-Contains $DaemonRc '/data/vendor/zui_control/appopt' 'AppOpt runtime directory'
-    Assert-Contains $DaemonRc '/data/vendor/zui_control/cloud' 'cloud-block runtime directory'
+    Assert-NotContains $DaemonRc '/data/vendor/zui_control/cloud' 'removed cloud-block runtime directory'
     Assert-Contains $AppOptRc 'service zui_appopt /system/bin/AppOpt -c /data/vendor/zui_control/appopt/applist.conf -s 2' 'AppOpt init service'
     Assert-NotContains $AppOptRc '    start zui_appopt' 'unconditional AppOpt boot start'
-    Assert-Contains $AppOptRc 'zui_cloud_block.sh apply' 'cloud-block boot apply action'
-    Assert-Contains $AppOptRc 'exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh apply' 'cloud-block shell-domain apply action'
-    Assert-Contains $AppOptRc 'exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh restore' 'cloud-block shell-domain restore action'
-    Assert-NotContains $AppOptRc 'exec u:r:init:s0 root root -- /system/bin/sh /system/etc/zui_control/zui_cloud_block.sh' 'cloud-block init-domain shell action'
+    Assert-NotContains $AppOptRc 'zui_cloud_block' 'removed cloud-block init action'
     Assert-Contains $AppOptPrepare 'killall -15 AsoulOpt' 'legacy AsoulOpt cleanup'
-    Assert-Contains $CloudBlock 'com.zui.game.service' 'GameHelper cloud-block target'
-    Assert-Contains $CloudBlock 'com.zui.engine' 'ZuiServiceEngine cloud-block target'
-    Assert-Contains $CloudBlock 'com.lenovo.tbengine' 'UDSEngine cloud-block target'
-    Assert-Contains $CloudBlock 'com.zui.pp' 'ZuiPP uid1000 safety note'
-    Assert-Contains $CloudBlock 'uid1000_safety_boundary' 'uid1000 safety boundary'
-    Assert-Contains $CloudBlock 'cloud_domains()' 'cloud domain block list'
-    Assert-Contains $CloudBlock 'hosts_domains_present' 'cloud domain hosts status'
-    Assert-NotContains $CloudBlock '--uid-owner 1000' 'cloud-block shared system UID reject'
-    Assert-NotContains $CloudBlock 'com.zui.pp)' 'ZuiPP static block case'
-    foreach ($domainLine in @(
-        '0.0.0.0 zui.lenovo.com',
-        '0.0.0.0 zui-test.lenovo.com',
-        '0.0.0.0 apizui.lenovomm.com',
-        '0.0.0.0 susapi.lenovomm.com',
-        '0.0.0.0 passport.lenovo.com',
-        '0.0.0.0 fw.zui.com',
-        '0.0.0.0 push-rest.zui.com',
-        ':: zui.lenovo.com',
-        ':: apizui.lenovomm.com'
-    )) {
-        Assert-Contains $Hosts $domainLine 'static hosts cloud-domain block'
+    Assert-Contains $AppOptPrepare 'settings delete system zui_control_cloud_block_state' 'one-way cloud state cleanup'
+    if ((File-Sha256 $Hosts) -ne '425c3e713d5bae19b031bc8639c20c6a23e311a54647ba1824cbf45969a11ff4') {
+        throw 'system hosts does not match the official ZUI 16.1.11.187 default'
     }
     Assert-Contains $ClearPackageCache 'ZuiControl-*' 'targeted ZuiControl package cache pattern'
     Assert-NotContains $PrivAppPermissions 'com.zui.performance.permission.gamemode' 'stale P2-G gamemode privileged permission'
@@ -346,19 +326,20 @@ try {
             throw "daemon is missing AppOpt marker: $appOptMarker"
         }
     }
-    foreach ($providerDirect in @('GameModeProvider/contact', 'content update --uri "$PP_GAME_MODE_URI"', 'stage=provider_direct', 'zui_control_pp_mode_state')) {
-        if (-not $daemonText.Contains($providerDirect)) {
-            throw "daemon is missing P2-I direct PP provider marker: $providerDirect"
+    foreach ($removedMarker in @('GameModeProvider/contact', 'content update --uri "$PP_GAME_MODE_URI"', 'stage=provider_direct', 'zui_control_pp_mode_state', 'scene_event_tick', 'zui_control.cloud_block', 'CLOUD_DIR=', 'cloud_block.log')) {
+        if ($daemonText.Contains($removedMarker)) {
+            throw "daemon still contains removed cloud/provider marker: $removedMarker"
         }
     }
-    Assert-Contains $Daemon 'active_xml_stamp()' 'P2 PP mode active XML stamp helper'
-    Assert-Contains $Daemon 'balanced) printf ''0\n''; return 0 ;;' 'P2 PP balanced mode maps to ZuiPP gameMode 0'
-    Assert-Contains $Daemon 'powersave) [ -z "$fallback" ] && fallback=1 ;;' 'P2 PP powersave mode maps to ZuiPP gameMode 1'
-    Assert-Contains $Daemon 'savage) [ -z "$fallback" ] && fallback=2 ;;' 'P2 PP savage mode maps to ZuiPP gameMode 2'
-    Assert-Contains $Daemon 'xml=$xml_stamp' 'P2 PP mode state includes active XML stamp'
-    Assert-Contains $Daemon 'state=triggered;stage=provider_direct' 'P2-I PP mode direct provider triggered state'
-    Assert-Contains $Daemon 'apply_pp_mode_for_scene "$top" force' 'P2 PP mode re-applies on foreground scene enter'
-    Assert-NotContains $Daemon 'retry ZuiPP mode after non-done state' 'stale P2-G done-state retry wording'
+    Assert-Contains $Daemon 'profile_mode=balanced' 'single active performance profile canonical mode'
+    Assert-Contains $Daemon 'rewrite_performance_without_package "$profile_pkg"' 'single performance profile per package rewrite'
+    Assert-Contains $Daemon 'performance profiles migrated to one canonical profile per package' 'legacy multi-mode profile migration'
+    Assert-Contains $Daemon 'stableSeconds=10' 'stable ZuiPP restart readiness marker'
+    Assert-Contains $Daemon 'BAKED_TEMPLATE_SHA_FILE=$ZUI_BAKED_DIR/template.sha256' 'versioned payload baseline stamp'
+    Assert-Contains $Daemon 'ZuiPP active XML regenerated after payload baseline refresh' 'payload baseline upgrade regeneration'
+    if ($daemonText -match 'if promote_staging_with_init "promote_staging"; then\s+backup_active_to_last_good') {
+        throw 'daemon overwrites last_good with the new active XML after successful promote'
+    }
     Assert-ZuiLimitXml $GameTemplate $PerfTemplate
     $gameXml = Read-XmlDocument $GameTemplate
     $mingchao = $gameXml.SelectSingleNode("//AppList[@type='game']/App[@pkg='com.kurogame.mingchao']")

@@ -115,7 +115,7 @@ public final class XmlProfileGenerator {
             throw new IllegalStateException("default App missing in game_policy.xml");
         }
         normalizeAppRefreshAttributes(game);
-        String[] defaultModes = limitModes(defaultApp, "default");
+        limitModes(defaultApp, "default");
         Map<String, Element> types = gameLimitTypes(perf);
         for (String required : LIMIT_TYPES) {
             if (!types.containsKey(required)) {
@@ -124,24 +124,10 @@ public final class XmlProfileGenerator {
         }
 
         List<String> summaries = new ArrayList<>();
-        Map<String, Boolean> packageHasIndependent = new LinkedHashMap<>();
-        Map<String, boolean[]> configuredIndependentModes = new LinkedHashMap<>();
+        Map<String, Integer> sharedCpuLevels = new LinkedHashMap<>();
         for (Profile profile : profiles) {
-            Boolean current = packageHasIndependent.get(profile.pkg);
-            packageHasIndependent.put(profile.pkg,
-                    (current != null && current.booleanValue()) || profile.independentPolicy());
-            if (profile.independentPolicy()) {
-                boolean[] configuredModes = configuredIndependentModes.get(profile.pkg);
-                if (configuredModes == null) {
-                    configuredModes = new boolean[3];
-                    configuredIndependentModes.put(profile.pkg, configuredModes);
-                }
-                configuredModes[profile.modeIndex] = true;
-            }
-        }
-        for (Map.Entry<String, Boolean> entry : packageHasIndependent.entrySet()) {
-            if (!entry.getValue().booleanValue() && removeApp(game, entry.getKey())) {
-                summaries.add(entry.getKey() + " policy=default app_entry=removed");
+            if (!profile.independentPolicy() && removeApp(game, profile.pkg)) {
+                summaries.add(profile.pkg + " policy=default app_entry=removed");
             }
         }
 
@@ -155,6 +141,18 @@ public final class XmlProfileGenerator {
                 LevelValue titan = cpuLevel(TITAN, stage.titanMax, stage.titanMin);
                 LevelValue mega = cpuLevel(MEGA, stage.megaMax, stage.megaMin);
                 LevelValue gpu = gpuLevel(stage.gpuMax, stage.gpuMin);
+
+                String cpuTuple = little.value + "|" + big.value + "|"
+                        + titan.value + "|" + mega.value;
+                Integer sharedCpuLevel = sharedCpuLevels.get(cpuTuple);
+                if (sharedCpuLevel == null) {
+                    sharedCpuLevel = 900000 + sharedCpuLevels.size();
+                    sharedCpuLevels.put(cpuTuple, sharedCpuLevel);
+                }
+                little = little.withLevel(sharedCpuLevel);
+                big = big.withLevel(sharedCpuLevel);
+                titan = titan.withLevel(sharedCpuLevel);
+                mega = mega.withLevel(sharedCpuLevel);
 
                 upsertFreq(perf, types.get("LittleCore"), little);
                 upsertFreq(perf, types.get("BigCore"), big);
@@ -213,26 +211,19 @@ public final class XmlProfileGenerator {
                 throw new IllegalStateException("LimitConfig missing for " + profile.pkg);
             }
             String[] modes = limitModes(app, profile.pkg, false);
-            if (profile.staged) {
-                modes[profile.modeIndex] = String.join("|", stagedSegments);
-            } else {
-                modes[profile.modeIndex] = replaceActiveLevels(modes[profile.modeIndex], firstIds);
-            }
-            String[] fallbackSources = stabilizeModes(
-                    modes,
-                    defaultModes,
-                    configuredIndependentModes.get(profile.pkg),
-                    profile.modeIndex
-            );
+            String activeBlock = profile.staged
+                    ? String.join("|", stagedSegments)
+                    : replaceActiveLevels(modes[profile.modeIndex], firstIds);
+            Arrays.fill(modes, activeBlock);
             limit.setTextContent(String.join(" ", modes));
 
             summaries.add(profile.pkg + "/" + profile.mode +
+                    " mirrored_modes=balanced,powersave,savage" +
                     " policy=independent frame=" + profile.framePolicy +
                     " refresh=" + frame.normalHz +
                     " powersave=" + frame.powerSaveHz + " " +
                     (profile.staged ? "thermal_stages=" : "legacy=") +
-                    String.join("; ", stageSummaries) +
-                    fallbackSummary(fallbackSources));
+                    String.join("; ", stageSummaries));
         }
 
         validateLimitReferences(game, perf);
@@ -367,7 +358,16 @@ public final class XmlProfileGenerator {
         if (skipped > 0) {
             System.out.println("skipped_profiles=" + skipped);
         }
-        return new ArrayList<>(result.values());
+        LinkedHashMap<String, Profile> selectedByPackage = new LinkedHashMap<>();
+        for (Profile profile : result.values()) {
+            Profile selected = selectedByPackage.get(profile.pkg);
+            if (selected == null || "balanced".equals(profile.mode)) {
+                selectedByPackage.put(profile.pkg, profile);
+            }
+        }
+        List<Profile> selected = new ArrayList<>(selectedByPackage.values());
+        selected.sort((left, right) -> left.pkg.compareTo(right.pkg));
+        return selected;
     }
 
     private static int modeIndexOrMinus(String mode) {
@@ -682,41 +682,6 @@ public final class XmlProfileGenerator {
         return modes;
     }
 
-    private static String[] stabilizeModes(
-            String[] modes,
-            String[] defaultModes,
-            boolean[] configuredModes,
-            int currentModeIndex
-    ) {
-        String[] fallbackSources = new String[3];
-        for (int i = 0; i < modes.length; i++) {
-            boolean configured = configuredModes != null && configuredModes[i];
-            if (!configured || !validLimitModeBlock(modes[i])) {
-                FallbackBlock fallback = fallbackModeBlock(defaultModes, modes, currentModeIndex, i);
-                modes[i] = fallback.block;
-                fallbackSources[i] = (!configured ? "" : "repair:") + fallback.source;
-            }
-        }
-        return fallbackSources;
-    }
-
-    private static FallbackBlock fallbackModeBlock(
-            String[] defaultModes,
-            String[] modes,
-            int currentModeIndex,
-            int modeIndex
-    ) {
-        if (modeIndex >= 0 && modeIndex < defaultModes.length &&
-                validLimitModeBlock(defaultModes[modeIndex])) {
-            return new FallbackBlock(defaultModes[modeIndex], "default");
-        }
-        if (currentModeIndex >= 0 && currentModeIndex < modes.length &&
-                validLimitModeBlock(modes[currentModeIndex])) {
-            return new FallbackBlock(modes[currentModeIndex], modeName(currentModeIndex));
-        }
-        throw new IllegalStateException("no safe LimitConfig fallback for " + modeName(modeIndex));
-    }
-
     private static boolean validLimitModeBlock(String block) {
         if (block == null) {
             return false;
@@ -912,16 +877,6 @@ public final class XmlProfileGenerator {
         return String.join("|", segments);
     }
 
-    private static String fallbackSummary(String[] fallbackSources) {
-        List<String> items = new ArrayList<>();
-        for (int i = 0; i < fallbackSources.length; i++) {
-            if (fallbackSources[i] != null) {
-                items.add(modeName(i) + ":" + fallbackSources[i]);
-            }
-        }
-        return items.isEmpty() ? "" : " fallback=" + String.join(",", items);
-    }
-
     private static String modeName(int index) {
         switch (index) {
             case 0:
@@ -998,6 +953,10 @@ public final class XmlProfileGenerator {
             this.max = max;
             this.min = min;
         }
+
+        LevelValue withLevel(int sharedLevel) {
+            return new LevelValue(sharedLevel, value, max, min);
+        }
     }
 
     private static final class FrameValue {
@@ -1024,16 +983,6 @@ public final class XmlProfileGenerator {
                 return value.intValue();
             }
             return validRefreshHz(defaultHz) && defaultHz > 0 ? defaultHz : DEFAULT_REFRESH_HZ;
-        }
-    }
-
-    private static final class FallbackBlock {
-        final String block;
-        final String source;
-
-        FallbackBlock(String block, String source) {
-            this.block = block;
-            this.source = source;
         }
     }
 
