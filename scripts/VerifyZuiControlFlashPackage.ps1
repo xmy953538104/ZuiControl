@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '32'
-$ExpectedVersionName = '0.20.3'
+$ExpectedVersionCode = '33'
+$ExpectedVersionName = '0.20.4'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -260,9 +260,13 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV32\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV33\ZuiControl.apk'
     $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
-    $PreviousAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControlV31'
+    $PreviousAppDirs = @(
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV30'),
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV31'),
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV32')
+    )
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
     $DaemonRc = Join-Path $SystemRoot 'system\etc\init\zui_controld.rc'
@@ -279,7 +283,9 @@ try {
         Require-File $required
     }
     Assert-MissingFile $LegacyAppDir 'legacy ZuiControl priv-app directory'
-    Assert-MissingFile $PreviousAppDir 'previous ZuiControl V30 priv-app directory'
+    foreach ($PreviousAppDir in $PreviousAppDirs) {
+        Assert-MissingFile $PreviousAppDir 'previous ZuiControl versioned priv-app directory'
+    }
     Assert-MissingFile $ClearPackageCache 'obsolete package-cache helper'
     Assert-MissingFile $CloudBlock 'removed cloud-block script'
     foreach ($legacyPath in @(
@@ -354,6 +360,8 @@ try {
     Assert-Contains $Daemon 'stableSeconds=10' 'stable ZuiPP restart readiness marker'
     Assert-Contains $Daemon 'stop_zuipp_services_for_reload' 'graceful ZuiPP service shutdown before process reload'
     Assert-Contains $Daemon 'com.zui.pp/com.zui.power.overheat.OverHeatCleanService' 'OverHeatCleanService null-Intent crash prevention'
+    Assert-Contains $Daemon 'Service not stopped: was not running.' 'ZUI am stop-service successful no-op handling'
+    Assert-Contains $Daemon 'attempts=5' 'transient boot Binder stop-service retry'
     Assert-Contains $Daemon 'state=error;stage=stop_services' 'ZuiPP service shutdown failure state'
     Assert-Contains $Daemon 'invalidate_zuipp_reload_receipt_on_start || return 1' 'boot-time ZuiPP reload receipt invalidation'
     Assert-Contains $Daemon 'LAST_REQUEST_RECEIPT_FILE=$CONTROL_DIR/last_processed_settings_request_receipt' 'persistent request receipt'

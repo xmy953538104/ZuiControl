@@ -14,9 +14,9 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $project = Join-Path $root $ProjectDir
 $payload = Join-Path $root $PayloadDir
 $privAppDir = Join-Path $payload "system/priv-app"
-$apkOutDir = Join-Path $privAppDir "ZuiControlV32"
+$apkOutDir = Join-Path $privAppDir "ZuiControlV33"
 $legacyApkOutDir = Join-Path $privAppDir "ZuiControl"
-$previousApkOutDir = Join-Path $privAppDir "ZuiControlV31"
+$previousApkOutDir = Join-Path $privAppDir "ZuiControlV32"
 
 if (-not (Test-Path $project)) {
     throw "Missing project directory: $project"

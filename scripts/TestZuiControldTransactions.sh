@@ -186,7 +186,10 @@ test_reload_invalidates_remembered_hash() (
     zuipp_pid() { printf '123\n'; }
     proc_cmdline_clean() { printf 'com.zui.pp\n'; }
     proc_start_time() { printf '1\n'; }
-    am() { return 0; }
+    am() {
+        printf 'Service stopped\n'
+        return 255
+    }
     kill() { return 1; }
     publish_zuipp_reload_state() { :; }
     reload_zuipp_if_needed test && fail 'simulated SIGTERM failure unexpectedly succeeded'
@@ -224,8 +227,16 @@ test_daemon_start_forces_same_hash_reload() (
         if [ "$1" = 456 ]; then printf '2\n'; else printf '1\n'; fi
     }
     am() {
+        call_count="$(wc -l < "$TEST_ROOT/am_calls")"
         printf '%s\n' "$*" >> "$TEST_ROOT/am_calls"
-        return 0
+        if [ "$call_count" = 0 ]; then
+            printf 'cmd: Failure calling service activity: Failed transaction (2147483646)\n'
+        elif [[ "$*" == *OverHeatCleanService* ]]; then
+            printf 'Service not stopped: was not running.\n'
+        else
+            printf 'Service stopped\n'
+        fi
+        return 255
     }
     kill() {
         KILL_CALLS=$((KILL_CALLS + 1))
@@ -238,8 +249,8 @@ test_daemon_start_forces_same_hash_reload() (
     reload_zuipp_if_needed boot_active ||
         fail 'same-hash XML was not reloaded after daemon start'
     [[ "$KILL_CALLS" = 1 ]] || fail 'same-hash boot reload did not signal ZuiPP'
-    [[ "$(wc -l < "$TEST_ROOT/am_calls")" = 4 ]] ||
-        fail 'same-hash boot reload did not stop all ZuiPP services first'
+    [[ "$(wc -l < "$TEST_ROOT/am_calls")" = 5 ]] ||
+        fail 'same-hash boot reload did not retry a transient stop then stop all ZuiPP services'
     [[ "$(tail -n 1 "$TEST_ROOT/am_calls")" == *'com.zui.pp/.service.MainService' ]] ||
         fail 'same-hash boot reload did not stop MainService last'
     [[ "$(last_reloaded_hash_pair)" == "$previous_hash" ]] ||
@@ -258,7 +269,11 @@ test_reload_stop_service_failure_prevents_signal() (
     zuipp_pid() { printf '123\n'; }
     proc_cmdline_clean() { printf 'com.zui.pp\n'; }
     proc_start_time() { printf '1\n'; }
-    am() { return 1; }
+    am() {
+        printf 'cmd: Failure calling service activity: Failed transaction (2147483646)\n'
+        return 255
+    }
+    sleep() { :; }
     KILL_CALLS=0
     kill() {
         KILL_CALLS=$((KILL_CALLS + 1))

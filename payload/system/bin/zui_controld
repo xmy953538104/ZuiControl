@@ -1020,7 +1020,21 @@ stop_zuipp_services_for_reload() {
         com.zui.pp/com.zui.power.overheat.OverHeatCleanService \
         com.zui.pp/com.zui.power.overheat.StubbornStatsService \
         com.zui.pp/.service.MainService; do
-        if ! am stop-service --user 0 -n "$component" >>"$LOG_FILE" 2>&1; then
+        attempts=5
+        stopped=0
+        while [ "$attempts" -gt 0 ]; do
+            stop_output="$(am stop-service --user 0 -n "$component" 2>&1)"
+            printf '%s\n' "$stop_output" >> "$LOG_FILE"
+            case "$stop_output" in
+                *"Service stopped"*|*"Service not stopped: was not running."*)
+                    stopped=1
+                    break
+                    ;;
+            esac
+            attempts=$((attempts - 1))
+            [ "$attempts" -gt 0 ] && sleep 1
+        done
+        if [ "$stopped" != 1 ]; then
             log_line "cannot stop ZuiPP service before reload: $component"
             return 1
         fi
