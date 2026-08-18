@@ -13,7 +13,66 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.2 2026-08-17 P2/云控重构（当前最新）
+### 0.3 2026-08-18 实机闭环与 0.20.1 待刷包（当前最新）
+
+本节覆盖 0.2 的包版本、hash、发布事实和“下一步”，也覆盖后文旧 provider_direct、云控、AppOpt 只读状态与固定延时请求流程。P1 没有进入 FPS cap，也没有恢复 direct CPU/GPU sysfs 或旧 AsoulOpt。
+
+#### 已在 0.20.0 设备上得到的真实结果
+
+TB321FU 已连接，ADB、`su` 可用且 SELinux 为 Enforcing。对当时已刷的 0.20.0 做完了只读与可逆实测：
+
+- P1/Binder/QS/刷新率链路通过。`zui_control` 存在，system_server 是唯一刷新率 owner，daemon 显示 refresh disabled；未授权 shell Binder 调用被拒绝，真实场景/current/last、profile 记忆、QS 不学习 SystemUI、目标与实际 mode 均闭合。
+- 相机连续执行 8 轮系统相机和外部 capture 入口，没有设备重启，没有 SurfaceFlinger/cameraserver PID 起始时间变化，没有新增 tombstone，也没有再出现 `No matching frame rate modes`。因此 61a4b26 的 adaptive render vote 根因修复已被实机确认；本轮不再改 P1。
+- 云控删除实机通过：hosts 是官方 56 字节两行 localhost 文件；没有旧脚本、runtime 目录、setting、iptables/ip6tables chain 或 jump。云控不再是产品功能，不恢复旧链。
+- P2 active XML 与 `/system/etc` bind 内容 hash 一致，鸣潮三槽、`ThermalConfig=0 0 0`、共享 CPU level ID 和四簇频率字典均通过结构检查。保存后“数值不响应”不是一个单点：旧 App 会在固定 13 秒后解锁且共享单槽可被覆盖；XML promote 成功也可能吞掉 ZuiPP reload 失败；而 ZuiPP 重启后，TAssistant/原厂 game state 必须等下一次真实 `onGameAppStart` 才重新连接。所以必须等待真实终态，再彻底退出并重进游戏。
+- AppOpt 用临时 live SELinux 规则对用户 App `com.xmy.ap` 验证了四个整包预设：`0-7`、`0-4`、`5-7`、`0-1` 均使目标进程全部线程落到对应 CPU 集合，没有新增相关 AVC。测试后已恢复 0 条规则、service stopped、无 PID。线程名规则和自由文本没有验证，不交付。
+- 设备 system APK 已是 0.20.0，但 PackageManager 仍报告 28/0.19.9，根因是同一 `/system/priv-app/ZuiControl` codePath 的旧扫描状态，并非 APK 内容错误。0.20.1 改用新目录 `ZuiControlV30`，同时删除旧目录；禁止通过删除 PackageManager cache 解决。
+
+#### 0.20.1 的最小修复
+
+当前 App 为 `versionCode=30` / `versionName=0.20.1`：
+
+- App 删除 `onCreate` 自动写 `status`，不再用 720ms/13s 定时器或乐观修改列表。每个请求使用唯一 ID，并只接受同 ID、同 command 的四字段终态 ACK：`id|done|cmd|detail` 或 `id|failed|cmd|reason`；等待上限 120 秒，pending 请求不能被新请求覆盖。
+- daemon 将请求和终态 ACK 作为两行原子 receipt 持久化，重启可安全 replay；旧单行 receipt 只迁移为失败，不会把历史命令再执行一次。
+- P2 profile、active XML、bind/reload 成为一笔可恢复事务。生成、promote、mount 或 ZuiPP 稳定重载任一步失败，都会恢复旧 profile、旧 active 和旧 runtime；reload 失败不再被 `|| true` 吞掉。
+- daemon 每次启动都先使旧 `last_reloaded_hash` 失效。即使 XML hash 与上次开机相同，boot bind 后若 ZuiPP 正在运行，仍会真实重启并确认新 PID 稳定 10 秒；若 ZuiPP 尚未运行，允许终态 `skipped;reason=zuipp_not_running`，其首次启动会读取已经 bind 的 active XML。这样不会让旧跨开机 receipt 跳过一次本应执行的 reload。
+- 不恢复自建 GameModeProvider bridge。保存成功后由原厂 GameHelper 在真实游戏重入时调用 provider；provider 返回 rows=1 只表示模式值被接纳，不能冒充 XML 已应用。
+- AppOpt 增加最小 UI：只可选择已安装用户 App，只提供 `0-7`、`0-4`、`5-7`、`0-1` 四个整包预设，可修改、删除或全局停止。set 严格要求 `/data/app`；删除允许清理已卸载的 stale 规则，并具备崩溃重放幂等性。默认配置 0 条活动规则，service stopped。
+- AppOpt SELinux 只加入实机证明需要的 `dac_override kill`、配置文件 `watch/watch_reads`、目标进程 `getsched/signull` 和目录探测 dontaudit；成品 verifier 拒绝更宽的 signal/sigkill 或额外 performanced 调度授权。
+- App 安装路径改为 `/system/priv-app/ZuiControlV30/ZuiControl.apk`；成品中必须不存在旧 `ZuiControl` 目录、`clear_package_cache.sh` 及 rc cache mutation。
+
+#### 0.20.1 发布事实
+
+- 生产代码 commit：`767a4f964d7e3530bd1e05cdd97ca94a5a234f17`
+- GitHub Actions run：`32119890097`，结论 `success`：<https://github.com/xmy953538104/ZuiControl/actions/runs/32119890097>
+- CI artifact：`D:\3.VScode\Mi\work\ci_artifacts\zuicontrol_32119890097`
+- package：`com.zui.zuicontrol`；版本：30/0.20.1
+- release 证书 SHA-256：`3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94`
+- CI APK 与 payload/最终 system APK SHA-256：`7e60f25103ec29521652c6b3e827dc05e7a6150d9836aa1c5d808fd37bebeac8`
+- 最终刷机目录：`D:\3.VScode\Mi\【B刷机】187`
+
+```text
+5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b  boot.img
+e755cb3544314cef8ecc764dc2325cd2b0fa45d523d499c721afe2a096d99b2d  super.img
+9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5  vbmeta.img
+e47c5a7973e3d89e2d96e2827869c3953f3582ffad907cfb967c18d9d5ccc064  vbmeta_system.img
+7e60f25103ec29521652c6b3e827dc05e7a6150d9836aa1c5d808fd37bebeac8  ZuiControl-v19-system.apk
+7e60f25103ec29521652c6b3e827dc05e7a6150d9836aa1c5d808fd37bebeac8  ZuiControl-v19-release.apk
+```
+
+发布只使用上述同一 CI run 的 release APK/payload。实际执行顺序是 Apply payload → 重建 `system_a.img` → `SignNoFecDryRun` → `SignNoFec` → 签名后重新 `PackSuper`。最终 `VerifyZuiControlFlashPackage.ps1` 已从成品 super 反抽全部动态分区和 system EROFS、解码成品 `services.jar`，并返回 `ok=true`。Windows 仍没有完成完整 `secilc` 编译；新包尚未刷入，因此 0.20.1 的持久 SELinux 和开机/runtime 行为仍需刷后验证，不能把静态通过写成新包实机通过。
+
+#### 用户操作与刷后最短验证
+
+1. 刷后先确认 PackageManager 与 `/system/priv-app/ZuiControlV30/ZuiControl.apk` 都是 30/0.20.1，旧 `/system/priv-app/ZuiControl` 不存在。
+2. 刷新率：在“刷新率”页选择 App 和 60/90/120/144/165；120 表示默认并删除显式规则。QS 修改上一个真实场景，不要把 fpsCap 字段当成已交付能力。
+3. P2：选择 ZUI 已识别的游戏，设置各温区后保存；必须等 UI 明确显示请求 done、XML mounted 和 reload 终态。若 ZuiPP 正在运行，终态应有 `stableSeconds=10`；若当时未运行，允许 `skipped;reason=zuipp_not_running`，首次游戏启动会读取已 bind 的 active XML。随后完全强停/退出目标游戏并重新进入。节点值是 OEM 请求结果证据，不要求瞬时严格等于输入值。
+4. AppOpt：系统页添加用户 App，选择四个预设之一并等待 done；随后强停并重开目标 App。修改、删除规则或“全局停止”后也要重启目标 App，旧进程线程不会自动重建。默认 0 规则时保持 stopped。
+5. 刷后检查 dmesg 与全 buffer logcat 的 AVC，并复测 P1/相机、P2 失败回滚/开机同 hash reload、AppOpt 四预设与停止。不要测试已经删除的云控/provider_direct 链。
+
+剩余边界：P2 依赖原厂识别游戏和 GameHelper/TAssistant 链，厂商热控或更高优先级请求仍可覆盖，因而不是硬 cap；Settings.System 仍是高权限单请求槽，App 已用精确 ACK 串行化，但长期可考虑收口到签名校验 Binder；AppOpt 只交付整包 CPU 集合，不交付线程名规则。以上边界不构成本轮恢复 direct sysfs/provider 或扩大 SELinux 权限的理由。
+
+### 0.2 2026-08-17 P2/云控重构（历史，已被 0.3 覆盖）
 
 本节覆盖后面的旧 P2 三模式/provider 重入、云控实现、28/0.19.9 推荐包和对应验证步骤。P1 相机崩溃修复保持不变，没有进入 FPS cap。
 
@@ -53,7 +112,7 @@ ddfa388d1df10f6b609337af4b07ed5ca52a6d4602aebaab1ba88fec0a3970ef  super.img
 
 发布只使用上述 CI release artifact。重建 `system_a.img` 后执行 `SignNoFec`，签名后重新执行 `PackSuper`。最终 verifier 从成品 `super.img` 反抽 system/vendor、解码成品 `services.jar` 并返回 `ok=true`；官方 hosts、云控脚本缺失、版本/证书、P1 注入、P2 daemon 标记和 SELinux/context 静态检查均命中。Windows 侧仍未进行 `secilc` 编译级验证，刷后必须检查真实 AVC。
 
-这仍是待刷包：在真实设备完成刷后验证前，不得把相机、P1、P2 或 AVC 写成实机通过。此前 28/0.19.9 和旧 hash 仅作历史。
+这在 2026-08-17 当时仍是待刷包（历史）：当时不得把相机、P1、P2 或 AVC 写成实机通过。此后的真实结果和当前 0.20.1 待刷包以第 0.3 节为准。
 
 ### 0.1 2026-08-17 P1/AppOpt 覆盖说明（已被 0.2 的包版本覆盖）
 
@@ -126,7 +185,7 @@ AppOpt 当前没有源码和 UI 规则编辑器，不应冒充完整交付。新
 - 有规则时启动后必须连续确认 init 状态为 running 且 PID 存在，失败则停止服务并清理 enabled 标记。
 - 外部兼容命令仍叫 `apply_asoul` / `restore_asoul`，内部实际函数和状态统一按 AppOpt 命名；不恢复旧 AsoulOpt。
 
-#### 2026-08-17 最新待刷包
+#### 2026-08-17 当时待刷包（历史）
 
 GitHub Actions：
 
@@ -167,7 +226,7 @@ D:\3.VScode\Mi\【B刷机】187
 - APK 内嵌/两个 sidecar hash 一致，版本为 28/0.19.9 且为 release 签名。
 - P2 鸣潮模板仍为 `ThermalConfig=0 0 0`，XML 五段引用、SELinux/context 和无 direct CPU/GPU sysfs 规则继续通过。
 
-#### 唯一正确的下一步
+#### 2026-08-17 当时的下一步（历史）
 
 新包尚未刷到真实设备，不能把“最终镜像静态通过”写成“相机问题实机已修复”。下一步只刷上述 hash 的包，然后按以下顺序验证：
 
@@ -183,7 +242,7 @@ D:\3.VScode\Mi\【B刷机】187
 
 上述验证通过前，不再改 P1，不进入 FPS cap，不恢复 direct CPU/GPU sysfs，也不重新引入旧 AsoulOpt。
 
-> **历史区提示：** 以下第 1～8 节保留 2026-07-21/0.19.9 的调查证据和旧实现说明。凡涉及当前包、P2 三模式/provider、云控或下一步，不得直接执行，必须以第 0.2 节为准。
+> **历史区提示：** 以下第 1～8 节保留 2026-07-21/0.19.9 的调查证据和旧实现说明。凡涉及当前包、P2 三模式/provider、云控或下一步，不得直接执行，必须以第 0.3 节为准。
 
 ## 1. 2026-07-21 历史快照
 
@@ -446,8 +505,7 @@ ZuiControl/payload/system/etc/init/zui_appopt.rc
 ZuiControl/payload/system/etc/zui_control/zui_appopt_prepare.sh
 ZuiControl/payload/system/etc/zui_control/default_applist.conf
 
-云控：
-ZuiControl/payload/system/etc/zui_control/zui_cloud_block.sh
+云控已删除；只保留官方默认文件：
 ZuiControl/payload/system/etc/hosts
 
 打包/验证：
@@ -460,7 +518,7 @@ ZuiControl/scripts/VerifyZuiControlFlashPackage.ps1
 复制以下内容给新窗口：
 
 ```text
-请先完整读取 D:\3.VScode\Mi\AGENTS.md 和 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；涉及 P2 XML/ThermalConfig 时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md。旧的 2026-06-21 P2-I/asoulOpt 入口和大篇历史文档只作历史，若与主交接冲突，以 AGENTS.md 和主交接第 0.2 节为准。
+请先完整读取 D:\3.VScode\Mi\AGENTS.md 和 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；涉及 P2 XML/ThermalConfig 时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md。旧的 2026-06-21 P2-I/asoulOpt 入口和大篇历史文档只作历史，若与主交接冲突，以 AGENTS.md 和主交接第 0.3 节为准。
 
-当前工作区是 D:\3.VScode\Mi，当前仓库是 D:\3.VScode\Mi\ZuiControl。先读本文件第 0.2 节的 2026-08-17 最新覆盖说明；后面的 2026-07-21 和 0.1 中的三模式/provider、云控、28/0.19.9 包 hash 与验证步骤均已被覆盖。最新待刷包在 D:\3.VScode\Mi\【B刷机】187，super SHA256 应为 ddfa388d1df10f6b609337af4b07ed5ca52a6d4602aebaab1ba88fec0a3970ef，内嵌 APK 应为 66488caf0f2570770f0a6b50d3d74efded47dd172f4334c2469c996495590ee6（29/0.20.0）。先只读确认设备是否已经刷入该包。刷后完整验证 P1 相机/active mode、P2 鸣潮单 profile/三槽镜像/共享 CPU ID/ZuiPP 稳定重启和退出重入、AppOpt 空规则门槛、系统默认 hosts/旧云控残留清理及 AVC；不要再测试已删除的 provider_direct/云控链。通过前不进入 FPS cap、不再改 P1、不恢复 direct CPU/GPU sysfs，也不重新引入旧 AsoulOpt。
+当前工作区是 D:\3.VScode\Mi，当前仓库是 D:\3.VScode\Mi\ZuiControl。先读本文件第 0.3 节；后面的旧 provider、云控、AppOpt 只读状态和 29/0.20.0 及更早包 hash 均已被覆盖。最新待刷包在 D:\3.VScode\Mi\【B刷机】187，super SHA256 应为 e755cb3544314cef8ecc764dc2325cd2b0fa45d523d499c721afe2a096d99b2d，内嵌 APK 应为 7e60f25103ec29521652c6b3e827dc05e7a6150d9836aa1c5d808fd37bebeac8（30/0.20.1，路径 ZuiControlV30）。先只读确认设备是否已经刷入该包。刷后完整验证 P1 相机/active mode、P2 精确 ACK/失败回滚/开机同 hash reload/退出重入、AppOpt 四预设与停止、官方 hosts/旧云控残留清理及 AVC；不要测试已删除的 provider_direct/云控链。通过前不进入 FPS cap、不再改 P1、不恢复 direct CPU/GPU sysfs，也不重新引入旧 AsoulOpt。
 ```
