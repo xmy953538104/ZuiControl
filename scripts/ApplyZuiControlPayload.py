@@ -11,7 +11,7 @@ from datetime import datetime
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
-APP_APK_PATH = "system/priv-app/ZuiControlV30/ZuiControl.apk"
+APP_APK_PATH = "system/priv-app/ZuiControlV31/ZuiControl.apk"
 LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -120,6 +120,7 @@ def cleanup_legacy_payload(unpack, dry_run, report):
     removed = []
     legacy = [
         "system_a/system/priv-app/ZuiControl",
+        "system_a/system/priv-app/ZuiControlV30",
         "system_a/system/priv-app/ZuiperfCtl",
         "system_a/system/bin/zui_perfctld",
         "system_a/system/etc/init/zui_perfctld.rc",
@@ -153,6 +154,7 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "zui_cloud_block",
         "system_a/system/priv-app/ZuiControl ",
         "system_a/system/priv-app/ZuiControl/ZuiControl",
+        "system_a/system/priv-app/ZuiControlV30",
         "system_a/system/etc/zui_control/clear_package_cache",
     ]
     targets = [

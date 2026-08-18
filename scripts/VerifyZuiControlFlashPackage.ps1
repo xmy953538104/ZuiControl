@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '30'
-$ExpectedVersionName = '0.20.1'
+$ExpectedVersionCode = '31'
+$ExpectedVersionName = '0.20.2'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -260,8 +260,9 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV30\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV31\ZuiControl.apk'
     $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
+    $PreviousAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControlV30'
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
     $DaemonRc = Join-Path $SystemRoot 'system\etc\init\zui_controld.rc'
@@ -278,6 +279,7 @@ try {
         Require-File $required
     }
     Assert-MissingFile $LegacyAppDir 'legacy ZuiControl priv-app directory'
+    Assert-MissingFile $PreviousAppDir 'previous ZuiControl V30 priv-app directory'
     Assert-MissingFile $ClearPackageCache 'obsolete package-cache helper'
     Assert-MissingFile $CloudBlock 'removed cloud-block script'
     foreach ($legacyPath in @(
@@ -297,7 +299,9 @@ try {
     Assert-Contains $AppOptRc 'service zui_appopt /system/bin/AppOpt -c /data/vendor/zui_control/appopt/applist.conf -s 2' 'AppOpt init service'
     Assert-NotContains $AppOptRc '    start zui_appopt' 'unconditional AppOpt boot start'
     Assert-NotContains $AppOptRc 'zui_cloud_block' 'removed cloud-block init action'
+    Assert-Contains $Daemon 'pm path "$1" </dev/null' 'AppOpt PackageManager stdin isolation'
     Assert-Contains $AppOptPrepare 'killall -15 AsoulOpt' 'legacy AsoulOpt cleanup'
+    Assert-Contains $AppOptPrepare "grep -q '^[[:space:]]*[^#[:space:]]'" 'zero-rule AppOpt template migration'
     Assert-Contains $AppOptPrepare 'settings delete system zui_control_cloud_block_state' 'one-way cloud state cleanup'
     Assert-Contains $AppOptPrepare 'settings delete system zui_control_pp_mode_state' 'one-way stale PP mode state cleanup'
     $ActiveDefaultAppOptRules = @(

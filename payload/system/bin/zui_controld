@@ -724,6 +724,7 @@ publish_xml_state() {
 
 publish_appopt_health() {
     service_state="$(getprop init.svc.zui_appopt 2>/dev/null)"
+    [ -n "$service_state" ] || service_state=stopped
     pid="$(pidof AppOpt 2>/dev/null | awk '{print $1}')"
     domain=
     if [ -n "$pid" ]; then
@@ -1318,7 +1319,9 @@ valid_appopt_preset() {
 }
 
 appopt_package_apk_path() {
-    pm path "$1" 2>/dev/null | sed -n 's/^package://p' | head -n 1
+    # Avoid passing applist.conf as stdin to PackageManager when validation
+    # runs inside a "while ... done < applist.conf" loop.
+    pm path "$1" </dev/null 2>/dev/null | sed -n 's/^package://p' | head -n 1
 }
 
 appopt_package_is_user_app() {

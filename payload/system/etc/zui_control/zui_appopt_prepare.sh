@@ -35,6 +35,9 @@ chmod 0775 "$DATA_ROOT" "$APPOPT_DIR" "$LOG_DIR" 2>/dev/null || true
 restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
 
 copy_if_missing "$DEFAULT_CFG" "$CFG"
+if ! grep -q '^[[:space:]]*[^#[:space:]]' "$CFG" 2>/dev/null; then
+    cp "$DEFAULT_CFG" "$CFG" || exit 1
+fi
 chmod 0664 "$CFG" 2>/dev/null || true
 
 if command -v killall >/dev/null 2>&1; then

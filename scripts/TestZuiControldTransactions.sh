@@ -487,6 +487,8 @@ test_appopt_rule_commands() (
     setup_test_state
     trap 'rm -rf "$TEST_ROOT"' EXIT
     pm() {
+        [[ "$(readlink /proc/self/fd/0)" == /dev/null ]] ||
+            fail 'PackageManager inherited protected AppOpt config stdin'
         [[ "$1" == path ]] || return 1
         case "$2" in
             com.example.user|com.example.other)
@@ -540,6 +542,8 @@ test_appopt_update_rollback() (
     printf 'com.example.user=0-7\n' >> "$APPOPT_CONFIG"
     cp "$APPOPT_CONFIG" "$TEST_ROOT/original_appopt"
     pm() {
+        [[ "$(readlink /proc/self/fd/0)" == /dev/null ]] ||
+            fail 'PackageManager inherited protected AppOpt config stdin'
         printf 'package:/data/app/%s/base.apk\n' "$2"
     }
     apply_appopt() { return 1; }
@@ -556,6 +560,8 @@ test_appopt_stale_rule_removal() (
     setup_test_state
     trap 'rm -rf "$TEST_ROOT"' EXIT
     pm() {
+        [[ "$(readlink /proc/self/fd/0)" == /dev/null ]] ||
+            fail 'PackageManager inherited protected AppOpt config stdin'
         if [ "$2" = com.example.user ]; then
             printf 'package:/data/app/com.example.user/base.apk\n'
             return 0

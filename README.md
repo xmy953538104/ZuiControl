@@ -51,7 +51,7 @@ Run the `Build ZuiControl` workflow manually. It will:
 2. Run Android unit tests and lint.
 3. Decode the release keystore from GitHub Actions secrets.
 4. Build signed `app-release.apk`.
-5. Stage it into `payload/system/priv-app/ZuiControlV30/ZuiControl.apk`.
+5. Stage it into `payload/system/priv-app/ZuiControlV31/ZuiControl.apk`.
 6. Upload both the APK and staged payload as artifacts.
 
 Required repository secrets:
@@ -63,7 +63,7 @@ Required repository secrets:
 
 ## Payload Usage
 
-After the APK exists in `payload/system/priv-app/ZuiControlV30/ZuiControl.apk`,
+After the APK exists in `payload/system/priv-app/ZuiControlV31/ZuiControl.apk`,
 apply the payload to an unpacked image tree:
 
 ```bash
