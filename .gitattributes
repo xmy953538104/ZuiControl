@@ -11,6 +11,7 @@
 *.sh text eol=lf
 *.rc text eol=lf
 *.cil text eol=lf
+*.conf text eol=lf
 *.prop text eol=lf
 *.txt text eol=lf
 *.md text eol=lf

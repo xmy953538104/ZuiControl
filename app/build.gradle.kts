@@ -10,8 +10,8 @@ android {
         applicationId = "com.zui.zuicontrol"
         minSdk = 29
         targetSdk = 35
-        versionCode = 29
-        versionName = "0.20.0"
+        versionCode = 30
+        versionName = "0.20.1"
     }
 
     signingConfigs {
@@ -49,4 +49,5 @@ android {
 
 dependencies {
     compileOnly(project(":framework-stubs"))
+    testImplementation("junit:junit:4.13.2")
 }

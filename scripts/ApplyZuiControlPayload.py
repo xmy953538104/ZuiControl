@@ -11,6 +11,8 @@ from datetime import datetime
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
+APP_APK_PATH = "system/priv-app/ZuiControlV30/ZuiControl.apk"
+LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -117,6 +119,7 @@ def remove_lines_containing(path, needles, dry_run):
 def cleanup_legacy_payload(unpack, dry_run, report):
     removed = []
     legacy = [
+        "system_a/system/priv-app/ZuiControl",
         "system_a/system/priv-app/ZuiperfCtl",
         "system_a/system/bin/zui_perfctld",
         "system_a/system/etc/init/zui_perfctld.rc",
@@ -130,6 +133,7 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/etc/zui_control/asopt.conf",
         "system_a/system/etc/asopt.conf",
         "system_a/system/etc/zui_control/zui_cloud_block.sh",
+        "system_a/system/etc/zui_control/clear_package_cache.sh",
     ]
     for rel in legacy:
         remove_path(unpack / rel, dry_run, removed)
@@ -147,6 +151,9 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "zui_asoulopt",
         "asopt.conf",
         "zui_cloud_block",
+        "system_a/system/priv-app/ZuiControl ",
+        "system_a/system/priv-app/ZuiControl/ZuiControl",
+        "system_a/system/etc/zui_control/clear_package_cache",
     ]
     targets = [
         unpack / "config" / "system_a_fs_config",
@@ -173,6 +180,8 @@ def copy_payload(payload, unpack, dry_run, report):
     for src in sorted(payload.rglob("*")):
         rel_payload = src.relative_to(payload).as_posix()
         if not rel_payload.startswith("system/"):
+            continue
+        if rel_payload == LEGACY_APP_PAYLOAD_PATH or rel_payload.startswith(LEGACY_APP_PAYLOAD_PATH + "/"):
             continue
         dst_rel = f"system_a/{rel_payload}"
         dst = unpack / dst_rel
@@ -515,9 +524,9 @@ def main():
         "official_original": "Only expose an official-original restore path when an original pair was explicitly captured under /data/vendor/zui_control/zuipp/official_original/.",
     }
 
-    apk = payload / "system" / "priv-app" / "ZuiControl" / "ZuiControl.apk"
+    apk = payload.joinpath(*APP_APK_PATH.split("/"))
     if not apk.exists():
-        report["warnings"].append("ZuiControl.apk is missing. Run scripts/BuildZuiControl.ps1 before packing a bootable image with the app.")
+        raise SystemExit(f"Missing {APP_APK_PATH}. Run scripts/BuildZuiControl.ps1 before applying the payload.")
 
     cleanup_legacy_payload(unpack, args.dry_run, report)
     cleanup_legacy_metadata(image_root, unpack, args.dry_run, report)

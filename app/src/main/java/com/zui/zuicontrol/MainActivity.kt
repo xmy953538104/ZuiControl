@@ -36,6 +36,7 @@ import java.util.Locale
 class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val performanceProfiles = linkedMapOf<String, PerformanceProfile>()
+    private val appOptRules = linkedMapOf<String, AppOptRule>()
     private val refreshRules = linkedMapOf<String, Int>()
     private val labelCache = linkedMapOf<String, String>()
 
@@ -66,7 +67,8 @@ class MainActivity : Activity() {
     private lateinit var thermalPreview: TextView
     private lateinit var performanceSummary: TextView
     private lateinit var systemStatus: TextView
-    private lateinit var asoulStatus: TextView
+    private lateinit var appOptStatus: TextView
+    private lateinit var appOptRulesHost: LinearLayout
 
     private var currentPage = Page.REFRESH
     private var selectedPackage: String? = null
@@ -83,9 +85,6 @@ class MainActivity : Activity() {
         setContentView(buildRoot())
         showPage(Page.REFRESH)
         handler.postDelayed({ ZuiControlQuickService.start(this) }, 250)
-        sendCommand(null, refreshNotification = true) {
-            ZuiControlRequest.send(this, ZuiControlContract.CMD_STATUS)
-        }
     }
 
     override fun onResume() {
@@ -576,8 +575,8 @@ class MainActivity : Activity() {
 
             gpuMaxInput = numericField("上限 GHz", formatFreq(GPU_FREQS.first()))
             gpuMinInput = numericField("下限 GHz", formatFreq(GPU_FREQS.last()))
-            val littleRow = freqRow("Little cpu0-cpu2", littleMaxInput, littleMinInput, LITTLE_FREQS)
-            val bigRow = freqRow("Big cpu3-cpu4", bigMaxInput, bigMinInput, BIG_FREQS)
+            val littleRow = freqRow("Little cpu0-cpu1", littleMaxInput, littleMinInput, LITTLE_FREQS)
+            val bigRow = freqRow("Big cpu2-cpu4", bigMaxInput, bigMinInput, BIG_FREQS)
             val titanRow = freqRow("Titan cpu5-cpu6", titanMaxInput, titanMinInput, TITAN_FREQS)
             val megaRow = freqRow("Mega cpu7", megaMaxInput, megaMinInput, MEGA_FREQS)
             val gpuRow = freqRow("GPU", gpuMaxInput, gpuMinInput, GPU_FREQS)
@@ -615,7 +614,7 @@ class MainActivity : Activity() {
             ), buttonMargins())
             addView(actionPair(
                 primaryButton("生成并应用调度") {
-                    sendCommand("正在生成并应用", settleDelayMs = LONG_COMMAND_DELAY_MS) {
+                    sendCommand("正在生成并应用") {
                         ZuiControlRequest.send(
                             this@MainActivity,
                             ZuiControlContract.CMD_APPLY_PERFORMANCE,
@@ -623,7 +622,7 @@ class MainActivity : Activity() {
                     }
                 },
                 commandButton("恢复基线调度") {
-                    sendCommand("正在恢复基线调度", settleDelayMs = LONG_COMMAND_DELAY_MS) {
+                    sendCommand("正在恢复基线调度") {
                         ZuiControlRequest.send(
                             this@MainActivity,
                             ZuiControlContract.CMD_RESTORE_ZUIPP,
@@ -742,11 +741,23 @@ class MainActivity : Activity() {
 
     private fun performanceXmlStatusText(): String {
         val xmlState = setting(ZuiControlContract.KEY_XML_STATE)
-        if (xmlState.startsWith("state=mounted")) {
-            return "XML 已挂载；配置会在重新进入 ZUI 已识别的游戏时生效"
-        }
+        val reloadState = setting(ZuiControlContract.KEY_ZUIPP_RELOAD_STATE)
         val daemon = setting(ZuiControlContract.KEY_DAEMON_STATUS_TEXT)
-        val hasError = listOf(xmlState, daemon)
+        val requestText = setting(ZuiControlContract.KEY_REQUEST_TEXT)
+        val requestAckText = setting(ZuiControlContract.KEY_REQUEST_ACK)
+        val requestAck = ZuiControlRequest.parseAck(requestAckText)
+        val requestId = ZuiControlRequest.requestIdFromText(requestText)
+        val requestCommand = ZuiControlRequest.requestCommandFromText(requestText).orEmpty()
+        if (isPerformanceCommand(requestCommand) && requestId != null &&
+            requestAck?.requestId == requestId &&
+            requestAck.state == "failed") {
+            return "操作失败${requestAck.detail.takeIf { it.isNotBlank() }?.let { "：$it" }.orEmpty()}"
+        }
+        if (isPerformanceCommand(requestCommand) &&
+            ZuiControlRequest.hasPendingRequest(requestText, requestAckText)) {
+            return "操作处理中；正在等待 XML 生成和 ZuiPP 重载"
+        }
+        val hasError = listOf(xmlState, daemon, reloadState)
             .flatMap { it.lineSequence() }
             .any {
                 it.contains("failed", ignoreCase = true) ||
@@ -754,6 +765,19 @@ class MainActivity : Activity() {
             }
         if (hasError) {
             return "XML 异常"
+        }
+        if (xmlState.startsWith("state=mounted")) {
+            return when {
+                reloadState.contains("state=done") ->
+                    "XML 已挂载，ZuiPP 已稳定重载；请退出并重新进入游戏"
+                reloadState.contains("state=skipped;reason=same_hash") ->
+                    "XML 已挂载且内容未变化；请退出并重新进入游戏"
+                reloadState.contains("state=skipped;reason=zuipp_not_running") ->
+                    "XML 已挂载，ZuiPP 当前未运行；启动游戏后将重新读取"
+                reloadState.contains("state=skipped") ->
+                    "XML 已挂载，ZuiPP 当前无需重载；请重新进入游戏"
+                else -> "XML 已挂载；正在等待 ZuiPP 重载终态"
+            }
         }
         return "XML 未启用"
     }
@@ -808,11 +832,7 @@ class MainActivity : Activity() {
             gamePolicy,
             framePolicy,
         )
-        performanceProfiles.entries.removeAll { it.value.packageName == pkg }
-        performanceProfiles[profile.key] = profile
-        renderPerformanceProfiles()
-        updatePolicySummary()
-        sendCommand("正在保存；完成后请重新进入游戏", settleDelayMs = LONG_COMMAND_DELAY_MS) {
+        sendCommand("正在保存；完成后请重新进入游戏") {
             ZuiControlRequest.send(
                 this,
                 ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE_STAGED,
@@ -1122,9 +1142,6 @@ class MainActivity : Activity() {
 
     private fun removePerformanceProfile() {
         val pkg = selectedPackage ?: return toast("请先选择应用")
-        performanceProfiles.entries.removeAll { it.value.packageName == pkg }
-        renderPerformanceProfiles()
-        updatePerformanceForm()
         sendCommand("正在删除性能配置") {
             ZuiControlRequest.send(
                 this,
@@ -1144,10 +1161,34 @@ class MainActivity : Activity() {
         systemStatus = infoPanel()
         root.addView(systemStatus, fieldMargins())
 
-        root.addView(sectionTitle("AsoulOpt"), sectionMargins())
-        asoulStatus = infoPanel()
-        root.addView(asoulStatus, fieldMargins())
+        root.addView(sectionTitle("AppOpt 线程放置"), sectionMargins())
+        appOptStatus = infoPanel()
+        root.addView(appOptStatus, fieldMargins())
+        root.addView(compactNote(
+            "仅支持整包 CPU 预设，不支持线程名或自由输入。规则会限制目标 App 的全部线程；保存、删除或停止 AppOpt 后，都请强制停止并重新打开目标 App。",
+        ), fieldMargins())
 
+        appOptRulesHost = vertical()
+        root.addView(appOptRulesHost, fieldMargins())
+
+        val appOptActions = horizontalRow().apply {
+            background = null
+            setPadding(0, 0, 0, 0)
+            addView(primaryButton("添加用户 App") {
+                showPackagePicker(
+                    title = "选择 AppOpt 用户应用",
+                    onSelected = { entry -> showAppOptPresetDialog(entry.info.packageName) },
+                    userAppsOnly = true,
+                )
+            }, LinearLayout.LayoutParams(0, dp(44), 1f))
+            addView(commandButton("停止 AppOpt") { confirmStopAppOpt() },
+                LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                    setMargins(dp(8), 0, 0, 0)
+                })
+        }
+        root.addView(appOptActions, buttonMargins())
+
+        root.addView(sectionTitle("工具"), sectionMargins())
         val row = horizontalRow().apply {
             background = null
             setPadding(0, 0, 0, 0)
@@ -1172,9 +1213,131 @@ class MainActivity : Activity() {
         }
         val last = setting(ZuiControlContract.KEY_STATUS_LAST).ifBlank { "无" }
         systemStatus.text = "守护服务 运行中\n${conciseXmlState()}\n${conciseZuippReloadState()}\n刷新率 系统接管\n最近操作 ${commandName(last)}"
-        asoulStatus.text = setting(ZuiControlContract.KEY_ASOUL_HEALTH)
-            .ifBlank { "正在读取 AsoulOpt 状态" }
+        appOptStatus.text = setting(ZuiControlContract.KEY_APPOPT_HEALTH)
+            .ifBlank { "正在读取 AppOpt 状态" }
+        renderAppOptRules()
     }
+
+    private fun renderAppOptRules() {
+        if (!::appOptRulesHost.isInitialized) {
+            return
+        }
+        appOptRulesHost.removeAllViews()
+        if (appOptRules.isEmpty()) {
+            appOptRulesHost.addView(emptyText("暂无 AppOpt 规则；服务应保持停止"), matchWrap())
+            return
+        }
+        appOptRules.values.forEach { rule ->
+            val userApp = isInstalledUserApp(rule.packageName)
+            val card = vertical().apply {
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = rounded(Color.WHITE, dp(8), COLOR_STROKE)
+                addView(horizontalRow().apply {
+                    background = null
+                    setPadding(0, 0, 0, 0)
+                    addView(vertical().apply {
+                        addView(label(
+                            labelForPackage(rule.packageName),
+                            14f,
+                            COLOR_TEXT,
+                            Typeface.BOLD,
+                        ))
+                        addView(label(rule.packageName, 11f, COLOR_SUBTLE, Typeface.NORMAL))
+                    }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    addView(rateBadge(rule.preset.displayName).apply {
+                        if (userApp) {
+                            setOnClickListener {
+                                showAppOptPresetDialog(rule.packageName, rule.preset)
+                            }
+                        }
+                    }, LinearLayout.LayoutParams(dp(112), dp(38)))
+                    addView(commandButton("删除") { confirmRemoveAppOptRule(rule) },
+                        LinearLayout.LayoutParams(dp(72), dp(38)).apply {
+                            setMargins(dp(8), 0, 0, 0)
+                        })
+                }, matchWrap())
+                addView(label(
+                    if (userApp) "修改后请强制停止并重新打开此 App" else "不是已安装用户 App，仅允许删除",
+                    11f,
+                    COLOR_SUBTLE,
+                    Typeface.NORMAL,
+                ))
+            }
+            appOptRulesHost.addView(card, cardMargins())
+        }
+    }
+
+    private fun showAppOptPresetDialog(
+        pkg: String,
+        current: AppOptPreset? = appOptRules[pkg]?.preset,
+    ) {
+        if (!isInstalledUserApp(pkg)) {
+            toast("AppOpt 只允许已安装用户 App")
+            return
+        }
+        val presets = AppOptPreset.entries
+        var selected = current?.ordinal ?: AppOptPreset.ALL.ordinal
+        AlertDialog.Builder(this)
+            .setTitle(labelForPackage(pkg))
+            .setMessage("$pkg\n规则会限制此 App 的全部线程。保存后请强制停止并重新打开。")
+            .setSingleChoiceItems(
+                presets.map { it.displayName }.toTypedArray(),
+                selected,
+            ) { _, which -> selected = which }
+            .setPositiveButton("保存") { _, _ ->
+                setAppOptRule(pkg, presets[selected])
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun setAppOptRule(pkg: String, preset: AppOptPreset) {
+        sendCommand("正在保存 AppOpt 规则") {
+            ZuiControlRequest.send(
+                this,
+                ZuiControlContract.CMD_SET_APPOPT_RULE,
+                pkg = pkg,
+                mode = preset.cpuSet,
+            )
+        }
+    }
+
+    private fun confirmRemoveAppOptRule(rule: AppOptRule) {
+        AlertDialog.Builder(this)
+            .setTitle("删除 AppOpt 规则")
+            .setMessage("${labelForPackage(rule.packageName)}\n删除后请强制停止并重新打开目标 App，已有 affinity 才会恢复。")
+            .setPositiveButton("删除") { _, _ ->
+                sendCommand("正在删除 AppOpt 规则") {
+                    ZuiControlRequest.send(
+                        this,
+                        ZuiControlContract.CMD_REMOVE_APPOPT_RULE,
+                        pkg = rule.packageName,
+                    )
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun confirmStopAppOpt() {
+        AlertDialog.Builder(this)
+            .setTitle("停止 AppOpt")
+            .setMessage("停止不会删除规则，也不会立即恢复已运行 App 的 affinity。停止后请强制停止并重新打开目标 App；重新保存任一规则可再次启动 AppOpt。")
+            .setPositiveButton("停止") { _, _ ->
+                sendCommand("正在停止 AppOpt") {
+                    ZuiControlRequest.send(this, ZuiControlContract.CMD_STOP_APPOPT)
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun isInstalledUserApp(pkg: String): Boolean = runCatching {
+        @Suppress("DEPRECATION")
+        val info = packageManager.getApplicationInfo(pkg, 0)
+        info.flags and ApplicationInfo.FLAG_SYSTEM == 0 &&
+            info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0
+    }.getOrDefault(false)
 
     private fun conciseXmlState(): String {
         val xml = setting(ZuiControlContract.KEY_XML_STATE)
@@ -1205,25 +1368,30 @@ class MainActivity : Activity() {
         }
 
     private fun exportLogs() {
-        sendCommand("正在整理日志", settleDelayMs = EXPORT_COMMAND_DELAY_MS) {
+        sendCommand("正在整理日志", onTerminal = { ack ->
+            if (ack.succeeded) {
+                openExportDocument()
+            }
+        }) {
             ZuiControlRequest.send(this, ZuiControlContract.CMD_EXPORT_LOGS)
         }
-        handler.postDelayed({
-            pendingExportText = setting(ZuiControlContract.KEY_LOG_EXPORT)
-            if (pendingExportText.isBlank()) {
-                toast("日志尚未准备好")
-                return@postDelayed
-            }
-            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            startActivityForResult(
-                Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TITLE, "ZuiControl_logs_$stamp.txt")
-                },
-                REQUEST_EXPORT_LOG,
-            )
-        }, EXPORT_COMMAND_DELAY_MS + 300)
+    }
+
+    private fun openExportDocument() {
+        pendingExportText = setting(ZuiControlContract.KEY_LOG_EXPORT)
+        if (pendingExportText.isBlank()) {
+            toast("日志尚未准备好")
+            return
+        }
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        startActivityForResult(
+            Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TITLE, "ZuiControl_logs_$stamp.txt")
+            },
+            REQUEST_EXPORT_LOG,
+        )
     }
 
     @Deprecated("Deprecated in Java")
@@ -1246,6 +1414,7 @@ class MainActivity : Activity() {
 
     private fun showPackagePicker(
         title: String = "选择应用",
+        userAppsOnly: Boolean = false,
         onSelected: ((PackageEntry) -> Unit)? = null,
     ) {
         val root = vertical().apply {
@@ -1257,9 +1426,11 @@ class MainActivity : Activity() {
         val userTab = chip("用户应用")
         val systemTab = chip("系统应用")
         tabs.addView(userTab, LinearLayout.LayoutParams(0, dp(40), 1f))
-        tabs.addView(systemTab, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-            setMargins(dp(8), 0, 0, 0)
-        })
+        if (!userAppsOnly) {
+            tabs.addView(systemTab, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                setMargins(dp(8), 0, 0, 0)
+            })
+        }
         root.addView(tabs)
 
         val search = EditText(this).apply {
@@ -1308,13 +1479,18 @@ class MainActivity : Activity() {
             }
         }
         fun selectSystem(system: Boolean) {
+            if (userAppsOnly && system) {
+                return
+            }
             adapter.systemApps = system
             adapter.applyFilter(search.text.toString())
             styleChip(userTab, !system)
             styleChip(systemTab, system)
         }
         userTab.setOnClickListener { selectSystem(false) }
-        systemTab.setOnClickListener { selectSystem(true) }
+        if (!userAppsOnly) {
+            systemTab.setOnClickListener { selectSystem(true) }
+        }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun afterTextChanged(s: Editable?) = Unit
@@ -1330,6 +1506,7 @@ class MainActivity : Activity() {
                 .asSequence()
                 .filter { it.packageName != packageName }
                 .map { PackageEntry(it) }
+                .filter { !userAppsOnly || !it.system }
                 .sortedBy { it.info.packageName.lowercase(Locale.ROOT) }
                 .toList()
             handler.post {
@@ -1342,6 +1519,10 @@ class MainActivity : Activity() {
     private fun reloadState() {
         refreshRules.clear()
         reloadRefreshProfiles()
+        appOptRules.clear()
+        appOptRules.putAll(AppOptRules.parse(
+            setting(ZuiControlContract.KEY_APPOPT_RULES_TEXT),
+        ))
         performanceProfiles.clear()
         val parsed = setting(ZuiControlContract.KEY_PERFORMANCE_PROFILES_TEXT).lineSequence()
             .mapNotNull { PerformanceProfile.parse(it) }
@@ -1375,9 +1556,9 @@ class MainActivity : Activity() {
 
     private fun sendCommand(
         message: String?,
-        settleDelayMs: Long = SHORT_COMMAND_DELAY_MS,
         refreshNotification: Boolean = false,
-        block: () -> Unit,
+        onTerminal: ((ZuiControlRequest.Ack) -> Unit)? = null,
+        block: () -> String,
     ) {
         val now = SystemClock.elapsedRealtime()
         if (commandInFlight || now - lastCommandAt < 180) {
@@ -1388,19 +1569,28 @@ class MainActivity : Activity() {
         lastCommandAt = now
         if (message != null) toast(message)
         Thread {
-            val result = runCatching { block() }
+            val result = runCatching {
+                val requestId = block()
+                ZuiControlRequest.awaitTerminalAck(this, requestId)
+            }
             handler.post {
-                handler.postDelayed({
-                    commandInFlight = false
-                    if (result.isFailure && message != null) {
-                        toast("命令发送失败")
-                    }
-                    reloadState()
-                    renderCurrentPage()
-                    if (refreshNotification) {
-                        ZuiControlQuickService.start(this)
-                    }
-                }, settleDelayMs)
+                commandInFlight = false
+                val ack = result.getOrNull()
+                when {
+                    result.isFailure && message != null ->
+                        toast(result.exceptionOrNull()?.message ?: "命令发送失败")
+                    ack != null && !ack.succeeded ->
+                        toast("操作失败${ack.detail.takeIf { it.isNotBlank() }?.let { "：$it" }.orEmpty()}")
+                    message != null -> toast("操作完成")
+                }
+                reloadState()
+                renderCurrentPage()
+                if (ack?.succeeded == true && refreshNotification) {
+                    ZuiControlQuickService.start(this)
+                }
+                if (ack != null) {
+                    onTerminal?.invoke(ack)
+                }
             }
         }.start()
     }
@@ -1559,11 +1749,31 @@ class MainActivity : Activity() {
         ZuiControlContract.CMD_RESTORE_ZUIPP -> "恢复基线调度"
         ZuiControlContract.CMD_RESTORE_LAST_GOOD -> "恢复 last_good"
         ZuiControlContract.CMD_RESTORE_OFFICIAL_ORIGINAL -> "恢复官方原始表"
+        ZuiControlContract.CMD_SET_APPOPT_RULE -> "保存 AppOpt 规则"
+        ZuiControlContract.CMD_REMOVE_APPOPT_RULE -> "删除 AppOpt 规则"
+        ZuiControlContract.CMD_STOP_APPOPT -> "停止 AppOpt"
+        "set_appopt_rule_applied" -> "AppOpt 规则已保存"
+        "remove_appopt_rule_applied" -> "AppOpt 规则已删除"
+        "restore_appopt" -> "AppOpt 已停止"
+        "restore_appopt_failed" -> "AppOpt 停止失败"
         "restore_baked_baseline" -> "恢复基线调度"
         ZuiControlContract.CMD_EXPORT_LOGS -> "导出日志"
         ZuiControlContract.CMD_STATUS -> "刷新状态"
         "init" -> "初始化"
         else -> value
+    }
+
+    private fun isPerformanceCommand(value: String): Boolean = when (value) {
+        ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE,
+        ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE_STAGED,
+        ZuiControlContract.CMD_REMOVE_PERFORMANCE_PROFILE,
+        ZuiControlContract.CMD_APPLY_PERFORMANCE,
+        ZuiControlContract.CMD_SYNC_XML_REFRESH,
+        ZuiControlContract.CMD_APPLY_ZUIPP,
+        ZuiControlContract.CMD_RESTORE_ZUIPP,
+        ZuiControlContract.CMD_RESTORE_LAST_GOOD,
+        ZuiControlContract.CMD_RESTORE_OFFICIAL_ORIGINAL -> true
+        else -> false
     }
 
     private fun vertical() = LinearLayout(this).apply {
@@ -1876,9 +2086,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_EXPORT_LOG = 901
-        private const val SHORT_COMMAND_DELAY_MS = 720L
-        private const val LONG_COMMAND_DELAY_MS = 13000L
-        private const val EXPORT_COMMAND_DELAY_MS = 1800L
         private val COLOR_BG = Color.rgb(244, 247, 250)
         private val COLOR_FIELD = Color.rgb(238, 242, 246)
         private val COLOR_NOTE = Color.rgb(250, 252, 244)

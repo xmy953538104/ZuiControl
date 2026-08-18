@@ -11,9 +11,13 @@ object ZuiControlContract {
     const val CMD_REMOVE_PERFORMANCE_PROFILE = "remove_performance_profile"
     const val CMD_APPLY_PERFORMANCE = "apply_performance"
     const val CMD_SYNC_XML_REFRESH = "sync_xml_refresh"
+    const val CMD_SET_APPOPT_RULE = "set_appopt_rule"
+    const val CMD_REMOVE_APPOPT_RULE = "remove_appopt_rule"
+    const val CMD_STOP_APPOPT = "restore_asoul"
     const val CMD_EXPORT_LOGS = "export_logs"
 
     const val KEY_REQUEST_TEXT = "zui_control_request_text"
+    const val KEY_REQUEST_ACK = "zui_control_request_ack"
     const val KEY_STATUS_TIME = "zui_control_status_time"
     const val KEY_STATUS_LAST = "zui_control_status_last"
     const val KEY_STATUS_TEXT = "zui_control_status_text"
@@ -25,7 +29,8 @@ object ZuiControlContract {
     const val KEY_ACTIVE_REFRESH = "zui_control_active_refresh"
     const val KEY_SCENE_EVENT_TEXT = "zui_control_scene_event_text"
     const val KEY_ZUIPP_RELOAD_STATE = "zui_control_zuipp_reload_state"
-    const val KEY_ASOUL_HEALTH = "zui_control_asoul_health"
+    const val KEY_APPOPT_HEALTH = "zui_control_asoul_health"
+    const val KEY_APPOPT_RULES_TEXT = "zui_control_appopt_rules_text"
     const val KEY_XML_STATE = "zui_control_xml_state"
     const val KEY_LOG_EXPORT = "zui_control_log_export"
 

@@ -1,7 +1,7 @@
 ZuiControl v19 payload
 
 System components:
-- /system/priv-app/ZuiControl/ZuiControl.apk
+- /system/priv-app/ZuiControlV30/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/AppOpt
 - /system/etc/init/zui_controld.rc
@@ -50,6 +50,12 @@ Behavior:
   log export. Cloud blocking is removed and /system/etc/hosts matches the
   official ZUI 16.1.11.187 default. The daemon does not write KGSL or cpufreq
   nodes in production.
+- AppOpt stays in the OEM performanced domain. Added SELinux access is limited
+  to config file watching, process getsched/signull probes, dac_override/kill,
+  and a directory-getattr dontaudit; it adds no setsched or stronger appdomain
+  signal permission.
+- The shipped AppOpt default contains only commented package-wide preset
+  examples. It enables no rule and contains no thread-name rule syntax.
 - SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input method,
   and overlays are transient scenes. Launcher is a valid configurable scene.
 - 144/165 are displayHz lock targets only in v19; generic UID FPS cap is a later

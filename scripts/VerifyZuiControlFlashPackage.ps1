@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '29'
-$ExpectedVersionName = '0.20.0'
+$ExpectedVersionCode = '30'
+$ExpectedVersionName = '0.20.1'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -260,7 +260,8 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControl\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV30\ZuiControl.apk'
+    $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
     $DaemonRc = Join-Path $SystemRoot 'system\etc\init\zui_controld.rc'
@@ -273,9 +274,11 @@ try {
     $PrivAppPermissions = Join-Path $SystemRoot 'system\etc\permissions\privapp-permissions-zui-control.xml'
     $GameTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_game_policy.xml'
     $PerfTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_performanceconfig.xml'
-    foreach ($required in @($AppApk, $Daemon, $AppOpt, $DaemonRc, $AppOptRc, $ClearPackageCache, $AppOptPrepare, $Hosts, $DefaultAppList, $PrivAppPermissions, $GameTemplate, $PerfTemplate)) {
+    foreach ($required in @($AppApk, $Daemon, $AppOpt, $DaemonRc, $AppOptRc, $AppOptPrepare, $Hosts, $DefaultAppList, $PrivAppPermissions, $GameTemplate, $PerfTemplate)) {
         Require-File $required
     }
+    Assert-MissingFile $LegacyAppDir 'legacy ZuiControl priv-app directory'
+    Assert-MissingFile $ClearPackageCache 'obsolete package-cache helper'
     Assert-MissingFile $CloudBlock 'removed cloud-block script'
     foreach ($legacyPath in @(
         (Join-Path $SystemRoot 'system\bin\AsoulOpt'),
@@ -287,9 +290,8 @@ try {
     )) {
         Assert-MissingFile $legacyPath 'asoulOpt legacy file'
     }
-    Assert-Contains $DaemonRc 'clear_package_cache.sh' 'ZuiControl package cache clear action'
-    Assert-Contains $DaemonRc 'exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/clear_package_cache.sh' 'package cache clear shell-domain action'
-    Assert-NotContains $DaemonRc 'exec u:r:init:s0 root root -- /system/bin/sh /system/etc/zui_control/clear_package_cache.sh' 'package cache clear init-domain shell action'
+    Assert-NotContains $DaemonRc 'clear_package_cache.sh' 'obsolete package cache clear action'
+    Assert-NotContains $DaemonRc '/data/system/package_cache' 'package cache mutation'
     Assert-Contains $DaemonRc '/data/vendor/zui_control/appopt' 'AppOpt runtime directory'
     Assert-NotContains $DaemonRc '/data/vendor/zui_control/cloud' 'removed cloud-block runtime directory'
     Assert-Contains $AppOptRc 'service zui_appopt /system/bin/AppOpt -c /data/vendor/zui_control/appopt/applist.conf -s 2' 'AppOpt init service'
@@ -297,10 +299,21 @@ try {
     Assert-NotContains $AppOptRc 'zui_cloud_block' 'removed cloud-block init action'
     Assert-Contains $AppOptPrepare 'killall -15 AsoulOpt' 'legacy AsoulOpt cleanup'
     Assert-Contains $AppOptPrepare 'settings delete system zui_control_cloud_block_state' 'one-way cloud state cleanup'
+    Assert-Contains $AppOptPrepare 'settings delete system zui_control_pp_mode_state' 'one-way stale PP mode state cleanup'
+    $ActiveDefaultAppOptRules = @(
+        Get-Content -LiteralPath $DefaultAppList |
+            Where-Object { $_.Trim() -and -not $_.Trim().StartsWith('#') }
+    )
+    if ($ActiveDefaultAppOptRules.Count -ne 0) {
+        throw "Default AppOpt config must not contain active rules: $($ActiveDefaultAppOptRules -join '; ')"
+    }
+    Assert-Contains $DefaultAppList '# Supported values: 0-7, 0-4, 5-7, 0-1' 'four package-wide AppOpt presets'
+    foreach ($legacyThreadRule in @('{', '}', 'UnityMain', 'RenderThread', 'RHIThread')) {
+        Assert-NotContains $DefaultAppList $legacyThreadRule 'legacy AppOpt thread rule syntax'
+    }
     if ((File-Sha256 $Hosts) -ne '425c3e713d5bae19b031bc8639c20c6a23e311a54647ba1824cbf45969a11ff4') {
         throw 'system hosts does not match the official ZUI 16.1.11.187 default'
     }
-    Assert-Contains $ClearPackageCache 'ZuiControl-*' 'targeted ZuiControl package cache pattern'
     Assert-NotContains $PrivAppPermissions 'com.zui.performance.permission.gamemode' 'stale P2-G gamemode privileged permission'
     $daemonText = Get-Content -Raw -LiteralPath $Daemon
     if ($daemonText -like '*chcon u:object_r:system_file:s0*') {
@@ -335,6 +348,10 @@ try {
     Assert-Contains $Daemon 'rewrite_performance_without_package "$profile_pkg"' 'single performance profile per package rewrite'
     Assert-Contains $Daemon 'performance profiles migrated to one canonical profile per package' 'legacy multi-mode profile migration'
     Assert-Contains $Daemon 'stableSeconds=10' 'stable ZuiPP restart readiness marker'
+    Assert-Contains $Daemon 'invalidate_zuipp_reload_receipt_on_start || return 1' 'boot-time ZuiPP reload receipt invalidation'
+    Assert-Contains $Daemon 'LAST_REQUEST_RECEIPT_FILE=$CONTROL_DIR/last_processed_settings_request_receipt' 'persistent request receipt'
+    Assert-Contains $Daemon 'REQUEST_ACK_KEY=zui_control_request_ack' 'exact terminal request acknowledgement'
+    Assert-Contains $Daemon 'PERFORMANCE_TXN_MARKER=$PERFORMANCE_DIR/profile_txn.prop' 'recoverable performance transaction marker'
     Assert-Contains $Daemon 'BAKED_TEMPLATE_SHA_FILE=$ZUI_BAKED_DIR/template.sha256' 'versioned payload baseline stamp'
     Assert-Contains $Daemon 'ZuiPP active XML regenerated after payload baseline refresh' 'payload baseline upgrade regeneration'
     if ($daemonText -match 'if promote_staging_with_init "promote_staging"; then\s+backup_active_to_last_good') {
@@ -369,9 +386,43 @@ try {
     Assert-Contains $PlatPolicy '(allow shell self (capability (kill)))' 'shell CAP_KILL allow for ZuiPP reload'
     Assert-Contains $PlatPolicy '(allow shell system_app (process (signal)))' 'shell to system_app SIGTERM allow'
     Assert-Contains $PlatPolicy '(allow shell platform_app (process (signal)))' 'shell to platform_app SIGTERM allow'
-    Assert-Contains $PlatPolicy '(allow performanced self (capability (dac_override)))' 'AppOpt performanced dac_override allow'
+    Assert-Contains $PlatPolicy '(allow performanced self (capability (dac_override kill)))' 'AppOpt performanced dac_override and kill allow'
     Assert-Contains $PlatPolicy '(allow performanced zui_control_data_file (dir (getattr open read search)))' 'AppOpt zui_control data dir read allow'
-    Assert-Contains $PlatPolicy '(allow performanced zui_control_data_file (file (getattr open read map)))' 'AppOpt zui_control data file read allow'
+    Assert-Contains $PlatPolicy '(allow performanced zui_control_data_file (file (getattr open read map watch watch_reads)))' 'AppOpt zui_control data file read and watch allow'
+    Assert-Contains $PlatPolicy '(allow performanced appdomain (process (getsched signull)))' 'AppOpt minimal app process probe allow'
+    Assert-Contains $PlatPolicy '(dontaudit performanced domain (dir (getattr)))' 'AppOpt process scan getattr dontaudit'
+
+    $OemPerformancedSetSchedRules = @(
+        '(allow performanced appdomain (process (setsched)))',
+        '(allow performanced bufferhubd (process (setsched)))',
+        '(allow performanced kernel (process (setsched)))',
+        '(allow performanced surfaceflinger (process (setsched)))'
+    )
+    foreach ($rule in $OemPerformancedSetSchedRules) {
+        Assert-Contains $PlatPolicy $rule 'existing OEM AppOpt setsched allow'
+    }
+    $AppDomainProcessRules = @(
+        Get-Content -LiteralPath $PlatPolicy |
+            Where-Object { $_ -match '^\(allow performanced appdomain \(process \([^)]*\)\)\)\s*$' } |
+            ForEach-Object { $_.Trim() }
+    )
+    $AllowedAppDomainProcessRules = @(
+        $OemPerformancedSetSchedRules[0],
+        '(allow performanced appdomain (process (getsched signull)))'
+    )
+    $UnexpectedAppDomainProcessRules = @($AppDomainProcessRules | Where-Object { $_ -notin $AllowedAppDomainProcessRules })
+    if ($AppDomainProcessRules.Count -ne $AllowedAppDomainProcessRules.Count -or $UnexpectedAppDomainProcessRules.Count -ne 0) {
+        throw "Unexpected AppOpt appdomain process permissions: $($AppDomainProcessRules -join '; ')"
+    }
+    $PerformancedSetSchedRules = @(
+        Get-Content -LiteralPath $PlatPolicy |
+            Where-Object { $_ -match '^\(allow performanced \S+ \(process \([^)]*\bsetsched\b[^)]*\)\)\)\s*$' } |
+            ForEach-Object { $_.Trim() }
+    )
+    $UnexpectedSetSchedRules = @($PerformancedSetSchedRules | Where-Object { $_ -notin $OemPerformancedSetSchedRules })
+    if ($PerformancedSetSchedRules.Count -ne $OemPerformancedSetSchedRules.Count -or $UnexpectedSetSchedRules.Count -ne 0) {
+        throw "Unexpected new AppOpt setsched permission: $($PerformancedSetSchedRules -join '; ')"
+    }
 
     $VendorPolicy = Join-Path $VendorSelinux 'vendor_sepolicy.cil'
     Assert-NotContains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (dir ' 'legacy vendor KGSL dir allow'

@@ -23,6 +23,10 @@ AppOpt thread-placement orchestration.
 - `/data/system/zui_control/profiles.prop`: refresh scene profiles.
 - `/data/vendor/zui_control/`: daemon runtime state, XML work files, and logs.
 
+AppOpt is exposed only as four package-wide presets (`0-7`, `0-4`, `5-7`,
+`0-1`) for installed user apps. Thread-name rules, free-form CPU sets, and
+system-app targets are deliberately not exposed.
+
 Refresh-rate ownership is intentionally not shared: notification clicks call
 `zui_control`; the daemon does not learn refresh rules, restore 120Hz, or write
 `peak_refresh_rate` / `min_refresh_rate`.
@@ -43,11 +47,12 @@ Refresh-rate ownership is intentionally not shared: notification clicks call
 
 Run the `Build ZuiControl` workflow manually. It will:
 
-1. Check Python and shell scripts.
-2. Decode the release keystore from GitHub Actions secrets.
-3. Build signed `app-release.apk`.
-4. Stage it into `payload/system/priv-app/ZuiControl/ZuiControl.apk`.
-5. Upload both the APK and staged payload as artifacts.
+1. Run the XML/daemon tests and script syntax checks.
+2. Run Android unit tests and lint.
+3. Decode the release keystore from GitHub Actions secrets.
+4. Build signed `app-release.apk`.
+5. Stage it into `payload/system/priv-app/ZuiControlV30/ZuiControl.apk`.
+6. Upload both the APK and staged payload as artifacts.
 
 Required repository secrets:
 
@@ -58,7 +63,7 @@ Required repository secrets:
 
 ## Payload Usage
 
-After the APK exists in `payload/system/priv-app/ZuiControl/ZuiControl.apk`,
+After the APK exists in `payload/system/priv-app/ZuiControlV30/ZuiControl.apk`,
 apply the payload to an unpacked image tree:
 
 ```bash
@@ -67,7 +72,7 @@ python scripts/ApplyZuiControlPayload.py --unpack /path/to/work/unpack
 
 Runtime logs on device:
 
-- `/data/vendor/zui_control/log/zuicontrold.log`
+- `/data/vendor/zui_control/log/controld.log`
 - `/data/vendor/zui_control/log/appopt.log`
 
 ## Validation Anchors
@@ -79,5 +84,5 @@ Runtime logs on device:
 - `dumpsys display` active mode versus the selected scene profile
 - `logcat -b all | grep -i ZuiControl`
 
-The expected steady state is `refreshOwner=system_server` and
+The expected steady state is `refreshOwner=system` and
 `daemonRefreshDisabled=true`.

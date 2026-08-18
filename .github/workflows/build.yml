@@ -42,13 +42,16 @@ jobs:
           python3 -m py_compile scripts/PatchZuiControlFramework.py
           python3 scripts/TestXmlProfileGenerator.py
           bash -n payload/system/bin/zui_controld
-          bash -n payload/system/etc/zui_control/clear_package_cache.sh
+          bash scripts/TestZuiControldTransactions.sh
           bash -n payload/system/etc/zui_control/promote_zuipp_xml.sh
           bash -n payload/system/etc/zui_control/zui_appopt_prepare.sh
 
       - name: Decode release keystore
         run: |
           printf '%s' "${{ secrets.KEYSTORE }}" | base64 -d > "$RUNNER_TEMP/ZuiControl-release.jks"
+
+      - name: Test app
+        run: gradle -p . :app:testDebugUnitTest :app:lintDebug
 
       - name: Build release APK
         run: |
@@ -60,9 +63,10 @@ jobs:
 
       - name: Stage payload APK
         run: |
-          mkdir -p payload/system/priv-app/ZuiControl
+          rm -rf payload/system/priv-app/ZuiControl
+          mkdir -p payload/system/priv-app/ZuiControlV30
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControl/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV30/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

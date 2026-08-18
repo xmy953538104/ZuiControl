@@ -13,7 +13,9 @@ $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $project = Join-Path $root $ProjectDir
 $payload = Join-Path $root $PayloadDir
-$apkOutDir = Join-Path $payload "system/priv-app/ZuiControl"
+$privAppDir = Join-Path $payload "system/priv-app"
+$apkOutDir = Join-Path $privAppDir "ZuiControlV30"
+$legacyApkOutDir = Join-Path $privAppDir "ZuiControl"
 
 if (-not (Test-Path $project)) {
     throw "Missing project directory: $project"
@@ -68,6 +70,9 @@ if (-not (Test-Path $builtApk)) {
     throw "Built APK not found: $builtApk"
 }
 
+if (Test-Path -LiteralPath $legacyApkOutDir) {
+    Remove-Item -LiteralPath $legacyApkOutDir -Recurse -Force
+}
 New-Item -ItemType Directory -Force -Path $apkOutDir | Out-Null
 Copy-Item -LiteralPath $builtApk -Destination (Join-Path $apkOutDir "ZuiControl.apk") -Force
 Write-Host "Copied APK to $apkOutDir/ZuiControl.apk"

@@ -20,6 +20,7 @@ APPOPT_LOG=$LOG_DIR/appopt.log
 STATUS_FILE=$CONTROL_DIR/status.prop
 ADB_REQUEST=$CONTROL_DIR/request.prop
 LAST_REQUEST_FILE=$CONTROL_DIR/last_processed_settings_request_text
+LAST_REQUEST_RECEIPT_FILE=$CONTROL_DIR/last_processed_settings_request_receipt
 
 APP_PACKAGE=com.zui.zuicontrol
 APP_SERVICE_COMPONENT=com.zui.zuicontrol/com.zui.zuicontrol.ZuiControlQuickService
@@ -49,10 +50,13 @@ OFFICIAL_GAME_POLICY=$ZUI_OFFICIAL_DIR/game_policy.xml
 OFFICIAL_PERF_CONFIG=$ZUI_OFFICIAL_DIR/performanceconfig.xml
 APPOPT_CONFIG=$APPOPT_DIR/applist.conf
 APPOPT_ENABLED=$APPOPT_DIR/enabled.flag
+APPOPT_UPDATE_BACKUP=$APPOPT_DIR/applist.conf.update_backup
 REFRESH_RULES=$REFRESH_DIR/rules.prop
 SYSTEM_REFRESH_PROFILES=/data/system/zui_control/profiles.prop
 PERFORMANCE_PROFILES=$PERFORMANCE_DIR/profiles.prop
 PERFORMANCE_SUMMARY=$PERFORMANCE_DIR/summary.txt
+PERFORMANCE_TXN_BACKUP=$PERFORMANCE_DIR/profiles.prop.txn_backup
+PERFORMANCE_TXN_MARKER=$PERFORMANCE_DIR/profile_txn.prop
 XML_STATUS_FILE=$ZUI_STATE_DIR/status.prop
 XML_LAST_ERROR_FILE=$ZUI_STATE_DIR/last_error.txt
 XML_ACTIVE_SHA_FILE=$ZUI_STATE_DIR/active.sha256
@@ -64,6 +68,7 @@ BAKED_REFRESH_REQUIRED=$ZUI_STATE_DIR/baseline_refresh_required
 ZUI_ENABLED=$ZUI_DIR/enabled.flag
 
 REQ_TEXT_KEY=zui_control_request_text
+REQUEST_ACK_KEY=zui_control_request_ack
 STATUS_TIME_KEY=zui_control_status_time
 STATUS_LAST_KEY=zui_control_status_last
 STATUS_TEXT_KEY=zui_control_daemon_status_text
@@ -72,6 +77,7 @@ PERFORMANCE_PROFILES_KEY=zui_control_performance_profiles_text
 PERFORMANCE_SUMMARY_KEY=zui_control_performance_summary
 ZUIPP_RELOAD_STATE_KEY=zui_control_zuipp_reload_state
 ASOUL_HEALTH_KEY=zui_control_asoul_health
+APPOPT_RULES_KEY=zui_control_appopt_rules_text
 XML_STATE_KEY=zui_control_xml_state
 LOG_EXPORT_KEY=zui_control_log_export
 
@@ -124,6 +130,35 @@ settings_put_secure_quiet() {
 
 read_file_clean() {
     cat "$1" 2>/dev/null | tr -d '\r\n'
+}
+
+atomic_write_text() {
+    target="$1"
+    value="$2"
+    tmp="$target.tmp"
+    rm -f "$tmp"
+    if printf '%s\n' "$value" > "$tmp" &&
+        chmod 0664 "$tmp" &&
+        mv "$tmp" "$target"; then
+        return 0
+    fi
+    rm -f "$tmp"
+    return 1
+}
+
+atomic_copy_file() {
+    source_file="$1"
+    target="$2"
+    tmp="$target.tmp"
+    [ -e "$source_file" ] || return 1
+    rm -f "$tmp"
+    if cp "$source_file" "$tmp" &&
+        chmod 0664 "$tmp" &&
+        mv "$tmp" "$target"; then
+        return 0
+    fi
+    rm -f "$tmp"
+    return 1
 }
 
 log_line() {
@@ -469,7 +504,8 @@ valid_positive_int() {
 rewrite_performance_without_package() {
     pkg="$1"
     tmp="$PERFORMANCE_PROFILES.tmp"
-    : > "$tmp"
+    rm -f "$tmp"
+    : > "$tmp" || return 1
     if [ -s "$PERFORMANCE_PROFILES" ]; then
         while IFS= read -r line || [ -n "$line" ]; do
             old_ifs="$IFS"
@@ -480,11 +516,20 @@ rewrite_performance_without_package() {
             if [ "$line_pkg" = "$pkg" ]; then
                 continue
             fi
-            echo "$line" >> "$tmp"
-        done < "$PERFORMANCE_PROFILES"
+            printf '%s\n' "$line" >> "$tmp" || {
+                rm -f "$tmp"
+                return 1
+            }
+        done < "$PERFORMANCE_PROFILES" || {
+            rm -f "$tmp"
+            return 1
+        }
     fi
-    mv "$tmp" "$PERFORMANCE_PROFILES"
-    chmod 0664 "$PERFORMANCE_PROFILES" 2>/dev/null
+    if chmod 0664 "$tmp" && mv "$tmp" "$PERFORMANCE_PROFILES"; then
+        return 0
+    fi
+    rm -f "$tmp"
+    return 1
 }
 
 migrate_performance_profiles() {
@@ -695,6 +740,7 @@ SELinux：${domain:-未识别}
 规则：${rules_count:-0} 条
 日志：${log_size:-0} 字节"
     settings_put_quiet "$ASOUL_HEALTH_KEY" "$health"
+    publish_appopt_rules_state
 }
 
 publish_state() {
@@ -816,10 +862,16 @@ init_dirs() {
         "$ZUI_LAST_GOOD_DIR" "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR" \
         "$APPOPT_DIR" "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR" 2>/dev/null
     restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
+    invalidate_zuipp_reload_receipt_on_start || return 1
     copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
     [ -e "$REFRESH_RULES" ] || : > "$REFRESH_RULES"
     [ -e "$PERFORMANCE_PROFILES" ] || : > "$PERFORMANCE_PROFILES"
     chmod 0664 "$APPOPT_CONFIG" "$REFRESH_RULES" "$PERFORMANCE_PROFILES" 2>/dev/null
+    init_baked_baseline_xml || return 1
+    if ! recover_performance_transaction; then
+        set_status "daemon=error" "last=performance_transaction_recovery_failed"
+        return 1
+    fi
     migrate_performance_profiles
     init_active_xml || log_line "ZuiPP XML init failed"
     if [ -f "$BAKED_REFRESH_REQUIRED" ]; then
@@ -914,11 +966,17 @@ release_zuipp_apply_lock() {
     rmdir "$ZUIPP_APPLY_LOCK_DIR" 2>/dev/null || true
 }
 
-xml_hash_pair() {
-    game_hash="$(file_sha "$ACTIVE_GAME_POLICY")"
-    perf_hash="$(file_sha "$ACTIVE_PERF_CONFIG")"
+xml_hash_pair_for_files() {
+    pair_game_file="$1"
+    pair_perf_file="$2"
+    game_hash="$(file_sha "$pair_game_file")"
+    perf_hash="$(file_sha "$pair_perf_file")"
     [ -n "$game_hash" ] && [ -n "$perf_hash" ] || return 1
     printf '%s:%s\n' "$game_hash" "$perf_hash"
+}
+
+xml_hash_pair() {
+    xml_hash_pair_for_files "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG"
 }
 
 publish_zuipp_reload_state() {
@@ -929,6 +987,16 @@ publish_zuipp_reload_state() {
 last_reloaded_hash_pair() {
     [ -s "$ZUIPP_LAST_RELOADED_HASH_FILE" ] || return 1
     read_file_clean "$ZUIPP_LAST_RELOADED_HASH_FILE"
+}
+
+invalidate_zuipp_reload_receipt_on_start() {
+    if [ -e "$ZUIPP_LAST_RELOADED_HASH_FILE" ] &&
+        ! rm -f "$ZUIPP_LAST_RELOADED_HASH_FILE"; then
+        log_line "cannot invalidate ZuiPP reload receipt on daemon start"
+        return 1
+    fi
+    log_line "ZuiPP reload receipt invalidated on daemon start"
+    return 0
 }
 
 remember_reloaded_hash_pair() {
@@ -966,6 +1034,13 @@ reload_zuipp_if_needed() {
         publish_zuipp_reload_state "state=skipped;reason=same_hash;game=$game_hash;perf=$perf_hash"
         return 0
     fi
+
+    # Until a new process is confirmed stable, the remembered hash must not
+    # let a rollback skip reloading the previous XML.
+    rm -f "$ZUIPP_LAST_RELOADED_HASH_FILE" || {
+        publish_zuipp_reload_state "state=error;stage=invalidate_hash;reason=$reason"
+        return 1
+    }
 
     old_pid="$(zuipp_pid)"
     if [ -z "$old_pid" ]; then
@@ -1040,6 +1115,19 @@ stage_xml_pair_from_pair() {
 
 mark_zuipp_apply_success() {
     reason="$1"
+    if ! reload_zuipp_if_needed "$reason"; then
+        set_xml_error "ZuiPP reload failed: $reason"
+        write_xml_status_file \
+            "mounted=true" \
+            "reload=false" \
+            "game_policy=$(file_sha "$ACTIVE_GAME_POLICY")" \
+            "performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")" \
+            "source=active"
+        publish_xml_state
+        set_status "daemon=running" "last=apply_zuipp_failed" \
+            "reason=reload_failed"
+        return 1
+    fi
     touch "$ZUI_ENABLED"
     chmod 0664 "$ZUI_ENABLED" 2>/dev/null
     clear_xml_error
@@ -1050,8 +1138,8 @@ mark_zuipp_apply_success() {
         "performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")" \
         "source=active"
     publish_xml_state
-    reload_zuipp_if_needed "$reason" || true
     set_status "daemon=running" "last=apply_zuipp_ok" "reason=$reason"
+    return 0
 }
 
 remount_active_xml() {
@@ -1066,8 +1154,10 @@ remount_active_xml() {
         wait_zuipp_mount_ready 10 &&
         verify_zuipp_mount_core &&
         verify_system_xml_contexts; then
-        mark_zuipp_apply_success "$reason"
-        return 0
+        if mark_zuipp_apply_success "$reason"; then
+            return 0
+        fi
+        return 1
     fi
     set_xml_error "active bind mount verification failed"
     log_line "ZuiPP active remount failed: prop=$(getprop "$PROP_ZUIPP" 2>/dev/null)"
@@ -1147,7 +1237,14 @@ promote_staging_to_active() {
         release_zuipp_apply_lock
         return 0
     fi
-    rollback_active_xml "promote active failed"
+    if rollback_active_xml "promote active failed"; then
+        set_xml_error "promote/reload failed; active rollback completed"
+        log_line "ZuiPP promote failed; active rollback completed"
+    else
+        set_xml_error "promote/reload failed; active rollback failed"
+        log_line "ZuiPP promote failed; active rollback failed"
+    fi
+    publish_xml_state
     release_zuipp_apply_lock
     return 1
 }
@@ -1209,66 +1306,506 @@ restore_official_original_zuipp() {
     promote_staging_with_lock "restore_official_original"
 }
 
+valid_appopt_package_name() {
+    printf '%s\n' "$1" | grep -Eq '^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+$'
+}
+
+valid_appopt_preset() {
+    case "$1" in
+        0-7|0-4|5-7|0-1) return 0 ;;
+    esac
+    return 1
+}
+
+appopt_package_apk_path() {
+    pm path "$1" 2>/dev/null | sed -n 's/^package://p' | head -n 1
+}
+
+appopt_package_is_user_app() {
+    appopt_apk="$(appopt_package_apk_path "$1")"
+    case "$appopt_apk" in
+        /data/app/*) return 0 ;;
+    esac
+    return 1
+}
+
+valid_appopt_rule_line() {
+    appopt_line="$1"
+    appopt_check_package="$2"
+    case "$appopt_line" in
+        *'{'*|*'}'*|*=*=*) return 1 ;;
+    esac
+    appopt_rule_pkg="${appopt_line%%=*}"
+    appopt_rule_preset="${appopt_line#*=}"
+    [ "$appopt_rule_pkg" != "$appopt_line" ] || return 1
+    valid_appopt_package_name "$appopt_rule_pkg" || return 1
+    valid_appopt_preset "$appopt_rule_preset" || return 1
+    if [ "$appopt_check_package" = "1" ]; then
+        appopt_package_is_user_app "$appopt_rule_pkg" || return 1
+    fi
+    return 0
+}
+
+validate_appopt_config_syntax() {
+    [ -e "$APPOPT_CONFIG" ] || return 1
+    while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
+        appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
+        case "$appopt_line" in
+            ""|'#'*) continue ;;
+        esac
+        valid_appopt_rule_line "$appopt_line" 0 || {
+            log_line "invalid AppOpt rule rejected: $appopt_line"
+            return 1
+        }
+    done < "$APPOPT_CONFIG"
+    return 0
+}
+
+validate_appopt_config() {
+    validate_appopt_config_syntax || return 1
+    while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
+        appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
+        case "$appopt_line" in
+            ""|'#'*) continue ;;
+        esac
+        valid_appopt_rule_line "$appopt_line" 0 || return 1
+        appopt_package_is_user_app "$appopt_rule_pkg" || {
+            log_line "non-user AppOpt package rejected: $appopt_rule_pkg"
+            return 1
+        }
+    done < "$APPOPT_CONFIG"
+    return 0
+}
+
+appopt_config_has_package() {
+    wanted_appopt_pkg="$1"
+    [ -e "$APPOPT_CONFIG" ] || return 1
+    while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
+        appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
+        case "$appopt_line" in
+            ""|'#'*) continue ;;
+        esac
+        valid_appopt_rule_line "$appopt_line" 0 || return 1
+        [ "$appopt_rule_pkg" = "$wanted_appopt_pkg" ] && return 0
+    done < "$APPOPT_CONFIG"
+    return 1
+}
+
 appopt_rules_count() {
-    if [ ! -s "$APPOPT_CONFIG" ]; then
+    appopt_count=0
+    [ -e "$APPOPT_CONFIG" ] || {
         printf '0\n'
         return
+    }
+    while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
+        appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
+        case "$appopt_line" in
+            ""|'#'*) continue ;;
+        esac
+        if valid_appopt_rule_line "$appopt_line" 0; then
+            appopt_count=$((appopt_count + 1))
+        fi
+    done < "$APPOPT_CONFIG"
+    printf '%s\n' "$appopt_count"
+}
+
+publish_appopt_rules_state() {
+    appopt_rules_text=
+    if [ -e "$APPOPT_CONFIG" ]; then
+        while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
+            appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
+            case "$appopt_line" in
+                ""|'#'*) continue ;;
+            esac
+            if valid_appopt_rule_line "$appopt_line" 0; then
+                appopt_rule_text="$appopt_rule_pkg|$appopt_rule_preset"
+                if [ -n "$appopt_rules_text" ]; then
+                    appopt_rules_text="$appopt_rules_text
+$appopt_rule_text"
+                else
+                    appopt_rules_text="$appopt_rule_text"
+                fi
+            fi
+        done < "$APPOPT_CONFIG"
     fi
-    grep -v '^[[:space:]]*#' "$APPOPT_CONFIG" 2>/dev/null |
-        grep -v '^[[:space:]]*$' 2>/dev/null |
-        grep -c '=' 2>/dev/null
+    settings_put_quiet "$APPOPT_RULES_KEY" "$appopt_rules_text"
+}
+
+rewrite_appopt_rule() {
+    requested_pkg="$1"
+    requested_preset="$2"
+    appopt_tmp="$APPOPT_CONFIG.tmp"
+    rm -f "$appopt_tmp"
+    : > "$appopt_tmp" || return 1
+    if [ -e "$APPOPT_CONFIG" ]; then
+        while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
+            appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
+            case "$appopt_line" in
+                ""|'#'*)
+                    printf '%s\n' "$appopt_line" >> "$appopt_tmp" || {
+                        rm -f "$appopt_tmp"
+                        return 1
+                    }
+                    continue
+                    ;;
+            esac
+            valid_appopt_rule_line "$appopt_line" 0 || {
+                rm -f "$appopt_tmp"
+                return 1
+            }
+            [ "$appopt_rule_pkg" = "$requested_pkg" ] && continue
+            printf '%s\n' "$appopt_line" >> "$appopt_tmp" || {
+                rm -f "$appopt_tmp"
+                return 1
+            }
+        done < "$APPOPT_CONFIG" || {
+            rm -f "$appopt_tmp"
+            return 1
+        }
+    fi
+    if [ -n "$requested_preset" ]; then
+        printf '%s=%s\n' "$requested_pkg" "$requested_preset" >> "$appopt_tmp" || {
+            rm -f "$appopt_tmp"
+            return 1
+        }
+    fi
+    if chmod 0664 "$appopt_tmp" && mv "$appopt_tmp" "$APPOPT_CONFIG"; then
+        return 0
+    fi
+    rm -f "$appopt_tmp"
+    return 1
 }
 
 wait_appopt_running() {
-    tries=3
+    appopt_candidate_pid=
+    appopt_stable_ticks=0
+    tries=30
     while [ "$tries" -gt 0 ]; do
+        sleep 1
+        appopt_pid="$(pidof AppOpt 2>/dev/null | awk '{print $1}')"
         if [ "$(getprop init.svc.zui_appopt 2>/dev/null)" = "running" ] &&
-            [ -n "$(pidof AppOpt 2>/dev/null)" ]; then
+            [ -n "$appopt_pid" ]; then
+            if [ "$appopt_pid" = "$appopt_candidate_pid" ]; then
+                appopt_stable_ticks=$((appopt_stable_ticks + 1))
+            else
+                appopt_candidate_pid="$appopt_pid"
+                appopt_stable_ticks=1
+            fi
+            [ "$appopt_stable_ticks" -ge 10 ] && return 0
+        else
+            appopt_candidate_pid=
+            appopt_stable_ticks=0
+        fi
+        tries=$((tries - 1))
+    done
+    return 1
+}
+
+wait_appopt_stopped() {
+    tries=10
+    while [ "$tries" -gt 0 ]; do
+        sleep 1
+        if [ "$(getprop init.svc.zui_appopt 2>/dev/null)" = "stopped" ] &&
+            [ -z "$(pidof AppOpt 2>/dev/null)" ]; then
             return 0
         fi
         tries=$((tries - 1))
-        sleep 1
     done
     return 1
 }
 
 apply_appopt() {
     copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
+    if ! validate_appopt_config; then
+        trigger_init_action "$PROP_APPOPT" stop || true
+        wait_appopt_stopped || true
+        rm -f "$APPOPT_ENABLED"
+        set_status "daemon=running" "last=apply_appopt_failed" \
+            "reason=invalid_rules"
+        publish_appopt_health
+        return 1
+    fi
     rules_count="$(appopt_rules_count)"
     if [ "${rules_count:-0}" -le 0 ]; then
-        if [ "$(getprop init.svc.zui_appopt 2>/dev/null)" != "stopped" ]; then
-            trigger_init_action "$PROP_APPOPT" stop || true
-        fi
-        rm -f "$APPOPT_ENABLED"
+        stop_appopt || true
         log_line "AppOpt not started: no active rules"
         set_status "daemon=running" "last=apply_appopt_skipped" "reason=no_active_rules"
         publish_appopt_health
         return 1
     fi
-    if trigger_init_action "$PROP_APPOPT" restart && wait_appopt_running; then
-        touch "$APPOPT_ENABLED"
-        chmod 0664 "$APPOPT_ENABLED" 2>/dev/null
+    if trigger_init_action "$PROP_APPOPT" restart && wait_appopt_running &&
+        touch "$APPOPT_ENABLED" && chmod 0664 "$APPOPT_ENABLED"; then
         publish_appopt_health
         return 0
     fi
     trigger_init_action "$PROP_APPOPT" stop || true
+    wait_appopt_stopped || true
     rm -f "$APPOPT_ENABLED"
-    log_line "AppOpt failed to stay running"
-    set_status "daemon=running" "last=apply_appopt_failed" "reason=service_not_running"
+    log_line "AppOpt failed to stay on one PID for 10 seconds"
+    set_status "daemon=running" "last=apply_appopt_failed" "reason=service_not_stable"
     publish_appopt_health
     return 1
 }
 
 stop_appopt() {
-    trigger_init_action "$PROP_APPOPT" stop
+    if trigger_init_action "$PROP_APPOPT" stop && wait_appopt_stopped; then
+        rm -f "$APPOPT_ENABLED"
+        publish_appopt_health
+        set_status "daemon=running" "last=restore_appopt" "state=stopped"
+        return 0
+    fi
     rm -f "$APPOPT_ENABLED"
     publish_appopt_health
+    set_status "daemon=running" "last=restore_appopt_failed" "reason=process_alive"
+    return 1
+}
+
+restore_appopt_update_backup() {
+    old_appopt_enabled="$1"
+    atomic_copy_file "$APPOPT_UPDATE_BACKUP" "$APPOPT_CONFIG" || return 1
+    if [ "$old_appopt_enabled" = "1" ] && [ "$(appopt_rules_count)" -gt 0 ]; then
+        apply_appopt || return 1
+    else
+        stop_appopt || return 1
+    fi
+    publish_appopt_rules_state
+    return 0
+}
+
+set_appopt_rule() {
+    requested_pkg="$1"
+    requested_preset="$2"
+    if ! valid_appopt_package_name "$requested_pkg" ||
+        ! valid_appopt_preset "$requested_preset" ||
+        ! appopt_package_is_user_app "$requested_pkg"; then
+        set_status "daemon=running" "last=set_appopt_rule_failed" \
+            "package=$requested_pkg" "reason=invalid_or_system_package"
+        return 1
+    fi
+    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
+    validate_appopt_config || {
+        set_status "daemon=running" "last=set_appopt_rule_failed" \
+            "package=$requested_pkg" "reason=invalid_existing_rules"
+        return 1
+    }
+    old_appopt_enabled=0
+    [ -f "$APPOPT_ENABLED" ] && old_appopt_enabled=1
+    atomic_copy_file "$APPOPT_CONFIG" "$APPOPT_UPDATE_BACKUP" || return 1
+    if rewrite_appopt_rule "$requested_pkg" "$requested_preset" && apply_appopt; then
+        rm -f "$APPOPT_UPDATE_BACKUP"
+        publish_appopt_rules_state
+        set_status "daemon=running" "last=set_appopt_rule_applied" \
+            "package=$requested_pkg" "preset=$requested_preset"
+        return 0
+    fi
+    if restore_appopt_update_backup "$old_appopt_enabled"; then
+        rm -f "$APPOPT_UPDATE_BACKUP"
+    else
+        log_line "AppOpt rule rollback failed: package=$requested_pkg"
+    fi
+    set_status "daemon=running" "last=set_appopt_rule_failed" \
+        "package=$requested_pkg" "reason=apply_failed"
+    return 1
+}
+
+remove_appopt_rule() {
+    requested_pkg="$1"
+    if ! valid_appopt_package_name "$requested_pkg"; then
+        set_status "daemon=running" "last=remove_appopt_rule_failed" \
+            "package=$requested_pkg" "reason=invalid_package"
+        return 1
+    fi
+    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
+    if ! validate_appopt_config_syntax; then
+        set_status "daemon=running" "last=remove_appopt_rule_failed" \
+            "package=$requested_pkg" "reason=invalid_existing_rules"
+        return 1
+    fi
+    if ! appopt_config_has_package "$requested_pkg"; then
+        if [ "$(appopt_rules_count)" -gt 0 ] && validate_appopt_config; then
+            apply_appopt
+        else
+            stop_appopt
+        fi
+        appopt_reconcile_result=$?
+        if [ "$appopt_reconcile_result" = "0" ]; then
+            rm -f "$APPOPT_UPDATE_BACKUP"
+            publish_appopt_rules_state
+            REQUEST_RESULT_DETAIL=already_absent_reconciled
+            set_status "daemon=running" "last=remove_appopt_rule_applied" \
+                "package=$requested_pkg" "detail=$REQUEST_RESULT_DETAIL"
+            return 0
+        fi
+        set_status "daemon=running" "last=remove_appopt_rule_failed" \
+            "package=$requested_pkg" "reason=reconcile_failed"
+        return 1
+    fi
+    old_appopt_enabled=0
+    [ -f "$APPOPT_ENABLED" ] && old_appopt_enabled=1
+    atomic_copy_file "$APPOPT_CONFIG" "$APPOPT_UPDATE_BACKUP" || return 1
+    appopt_update_result=
+    if rewrite_appopt_rule "$requested_pkg" ""; then
+        if [ "$(appopt_rules_count)" -gt 0 ]; then
+            if validate_appopt_config; then
+                apply_appopt
+                appopt_update_result=$?
+            else
+                stop_appopt
+                appopt_update_result=$?
+                if [ "$appopt_update_result" = "0" ]; then
+                    REQUEST_RESULT_DETAIL=remaining_invalid_stopped
+                fi
+            fi
+        else
+            stop_appopt
+            appopt_update_result=$?
+        fi
+        if [ "$appopt_update_result" = "0" ]; then
+            rm -f "$APPOPT_UPDATE_BACKUP"
+            publish_appopt_rules_state
+            set_status "daemon=running" "last=remove_appopt_rule_applied" \
+                "package=$requested_pkg" \
+                "detail=${REQUEST_RESULT_DETAIL:-ok}"
+            return 0
+        fi
+    fi
+    if restore_appopt_update_backup "$old_appopt_enabled"; then
+        rm -f "$APPOPT_UPDATE_BACKUP"
+    else
+        log_line "AppOpt rule removal rollback failed: package=$requested_pkg"
+    fi
+    set_status "daemon=running" "last=remove_appopt_rule_failed" \
+        "package=$requested_pkg" "reason=apply_failed"
+    return 1
 }
 
 ignore_legacy_refresh_request() {
     legacy_cmd="$1"
     log_line "legacy refresh request ignored: cmd=$legacy_cmd owner=$REFRESH_OWNER"
     set_status "daemon=running" "last=${legacy_cmd}_ignored" "refresh_owner=$REFRESH_OWNER"
+}
+
+performance_transaction_old_active() {
+    sed -n 's/^old_active=//p' "$PERFORMANCE_TXN_MARKER" 2>/dev/null |
+        tail -n 1 | tr -d '\r\n'
+}
+
+begin_performance_transaction() {
+    if [ -e "$PERFORMANCE_TXN_MARKER" ]; then
+        recover_performance_transaction || return 1
+    else
+        rm -f "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_BACKUP.tmp" \
+            "$PERFORMANCE_TXN_MARKER.tmp"
+    fi
+
+    transaction_old_active="$(xml_hash_pair)" || {
+        set_xml_error "performance transaction cannot hash active XML"
+        return 1
+    }
+    atomic_copy_file "$PERFORMANCE_PROFILES" "$PERFORMANCE_TXN_BACKUP" || {
+        set_xml_error "performance transaction profile backup failed"
+        return 1
+    }
+    if ! atomic_write_text "$PERFORMANCE_TXN_MARKER" \
+        "old_active=$transaction_old_active"; then
+        rm -f "$PERFORMANCE_TXN_BACKUP"
+        set_xml_error "performance transaction marker write failed"
+        return 1
+    fi
+    sync >/dev/null 2>&1 || {
+        set_xml_error "performance transaction sync failed"
+        return 1
+    }
+    return 0
+}
+
+commit_performance_transaction() {
+    sync >/dev/null 2>&1 || return 1
+    rm -f "$PERFORMANCE_TXN_MARKER" || return 1
+    # Marker removal is the commit point. A later sync/cleanup failure must not
+    # report a rollbackable failure after the rollback record is already gone.
+    sync >/dev/null 2>&1 || log_line \
+        "performance transaction commit marker sync deferred"
+    rm -f "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_BACKUP.tmp" \
+        "$PERFORMANCE_TXN_MARKER.tmp" || log_line \
+        "performance transaction committed with stale backup"
+    return 0
+}
+
+rollback_performance_transaction() {
+    [ -e "$PERFORMANCE_TXN_MARKER" ] || return 0
+    transaction_old_active="$(performance_transaction_old_active)"
+    [ -n "$transaction_old_active" ] || {
+        set_xml_error "performance transaction marker is invalid"
+        return 1
+    }
+    [ -e "$PERFORMANCE_TXN_BACKUP" ] || {
+        set_xml_error "performance transaction profile backup is missing"
+        return 1
+    }
+    atomic_copy_file "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_PROFILES" || {
+        set_xml_error "performance transaction profile restore failed"
+        return 1
+    }
+
+    transaction_current_active="$(xml_hash_pair 2>/dev/null)"
+    if [ "$transaction_current_active" != "$transaction_old_active" ]; then
+        transaction_last_good="$(xml_hash_pair_for_files \
+            "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" 2>/dev/null)"
+        if [ "$transaction_last_good" != "$transaction_old_active" ]; then
+            set_xml_error "performance transaction last_good hash mismatch"
+            return 1
+        fi
+        stage_xml_pair_from_pair "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" \
+            "performance transaction rollback" || return 1
+        promote_staging_with_lock "performance_transaction_rollback" || return 1
+    elif [ "$(last_reloaded_hash_pair 2>/dev/null)" != "$transaction_old_active" ]; then
+        remount_active_with_lock "performance_transaction_runtime_rollback" || return 1
+    fi
+
+    [ "$(xml_hash_pair 2>/dev/null)" = "$transaction_old_active" ] || {
+        set_xml_error "performance transaction active rollback hash mismatch"
+        return 1
+    }
+    clear_performance_summary
+    publish_performance_state
+    sync >/dev/null 2>&1 || return 1
+    rm -f "$PERFORMANCE_TXN_MARKER" || return 1
+    # The old state is restored once the marker is removed. Cleanup is
+    # repeatable on the next start and cannot turn a completed rollback into a
+    # false failure.
+    sync >/dev/null 2>&1 || log_line \
+        "performance transaction rollback marker sync deferred"
+    rm -f "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_BACKUP.tmp" \
+        "$PERFORMANCE_TXN_MARKER.tmp" || log_line \
+        "performance transaction rolled back with stale backup"
+    log_line "performance transaction rolled back"
+    return 0
+}
+
+recover_performance_transaction() {
+    if [ ! -e "$PERFORMANCE_TXN_MARKER" ]; then
+        rm -f "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_BACKUP.tmp" \
+            "$PERFORMANCE_TXN_MARKER.tmp"
+        return 0
+    fi
+    log_line "recovering interrupted performance transaction"
+    rollback_performance_transaction
+}
+
+complete_performance_transaction() {
+    if generate_performance_xml && promote_staging_to_active; then
+        if commit_performance_transaction; then
+            return 0
+        fi
+        set_xml_error "performance transaction commit failed"
+    fi
+    if ! rollback_performance_transaction; then
+        set_xml_error "performance transaction rollback failed"
+        publish_xml_state
+        log_line "performance transaction rollback failed"
+    fi
+    return 1
 }
 
 set_performance_profile() {
@@ -1301,19 +1838,29 @@ set_performance_profile() {
         return 1
     fi
     profile_mode=balanced
-    rewrite_performance_without_package "$profile_pkg"
-    printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+    begin_performance_transaction || {
+        set_status "daemon=running" "last=set_performance_profile_failed" \
+            "package=$profile_pkg" "reason=transaction_begin_failed"
+        return 1
+    }
+    if ! rewrite_performance_without_package "$profile_pkg" ||
+        ! printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
         "$profile_pkg" "$profile_mode" \
         "$little_max" "$little_min" \
         "$big_max" "$big_min" \
         "$titan_max" "$titan_min" \
         "$mega_max" "$mega_min" \
         "$gpu_max" "$gpu_min" \
-        >> "$PERFORMANCE_PROFILES"
-    chmod 0664 "$PERFORMANCE_PROFILES" 2>/dev/null
+        >> "$PERFORMANCE_PROFILES" ||
+        ! chmod 0664 "$PERFORMANCE_PROFILES"; then
+        rollback_performance_transaction || true
+        set_status "daemon=running" "last=set_performance_profile_failed" \
+            "package=$profile_pkg" "reason=profile_write_failed"
+        return 1
+    fi
     clear_performance_summary
     log_line "performance profile saved: $profile_pkg/$profile_mode"
-    if generate_performance_xml && promote_staging_to_active; then
+    if complete_performance_transaction; then
         publish_performance_state
         set_status "daemon=running" "last=set_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode"
@@ -1368,20 +1915,45 @@ set_performance_profile_staged() {
         [ "$profile_policy" = "default" ] && profile_frame_policy=default
     fi
     profile_mode=balanced
-    rewrite_performance_without_package "$profile_pkg"
+    begin_performance_transaction || {
+        set_status "daemon=running" "last=set_performance_profile_failed" \
+            "package=$profile_pkg" "reason=transaction_begin_failed"
+        return 1
+    }
+    if ! rewrite_performance_without_package "$profile_pkg"; then
+        rollback_performance_transaction || true
+        set_status "daemon=running" "last=set_performance_profile_failed" \
+            "package=$profile_pkg" "reason=profile_write_failed"
+        return 1
+    fi
     if [ -n "$profile_policy$profile_frame_policy" ]; then
-        printf '%s|%s|v4|%s|%s|%s\n' \
+        if ! printf '%s|%s|v4|%s|%s|%s\n' \
             "$profile_pkg" "$profile_mode" "$profile_policy" \
             "$profile_frame_policy" "$stage_payload" \
-            >> "$PERFORMANCE_PROFILES"
+            >> "$PERFORMANCE_PROFILES"; then
+            rollback_performance_transaction || true
+            set_status "daemon=running" "last=set_performance_profile_failed" \
+                "package=$profile_pkg" "reason=profile_write_failed"
+            return 1
+        fi
     else
-        printf '%s|%s|v2|%s\n' "$profile_pkg" "$profile_mode" "$stage_payload" \
-            >> "$PERFORMANCE_PROFILES"
+        if ! printf '%s|%s|v2|%s\n' "$profile_pkg" "$profile_mode" "$stage_payload" \
+            >> "$PERFORMANCE_PROFILES"; then
+            rollback_performance_transaction || true
+            set_status "daemon=running" "last=set_performance_profile_failed" \
+                "package=$profile_pkg" "reason=profile_write_failed"
+            return 1
+        fi
     fi
-    chmod 0664 "$PERFORMANCE_PROFILES" 2>/dev/null
+    if ! chmod 0664 "$PERFORMANCE_PROFILES"; then
+        rollback_performance_transaction || true
+        set_status "daemon=running" "last=set_performance_profile_failed" \
+            "package=$profile_pkg" "reason=profile_write_failed"
+        return 1
+    fi
     clear_performance_summary
     log_line "staged performance profile saved: $profile_pkg/$profile_mode"
-    if generate_performance_xml && promote_staging_to_active; then
+    if complete_performance_transaction; then
         publish_performance_state
         set_status "daemon=running" "last=set_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode" "thermal=staged"
@@ -1400,10 +1972,20 @@ remove_performance_profile() {
         set_status "daemon=running" "last=remove_performance_profile_failed"
         return 1
     fi
-    rewrite_performance_without_package "$profile_pkg"
+    begin_performance_transaction || {
+        set_status "daemon=running" "last=remove_performance_profile_failed" \
+            "package=$profile_pkg" "reason=transaction_begin_failed"
+        return 1
+    }
+    if ! rewrite_performance_without_package "$profile_pkg"; then
+        rollback_performance_transaction || true
+        set_status "daemon=running" "last=remove_performance_profile_failed" \
+            "package=$profile_pkg" "reason=profile_write_failed"
+        return 1
+    fi
     clear_performance_summary
     log_line "performance profile removed: $profile_pkg"
-    if generate_performance_xml && promote_staging_to_active; then
+    if complete_performance_transaction; then
         publish_performance_state
         set_status "daemon=running" "last=remove_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode"
@@ -1556,10 +2138,88 @@ request_field_count() {
     printf '%s\n' "$1" | awk -F '|' 'NR == 1 { print NF; exit }'
 }
 
-remember_settings_request() {
-    LAST_SETTINGS_REQUEST_TEXT="$1"
-    printf '%s\n' "$1" > "$LAST_REQUEST_FILE"
-    chmod 0664 "$LAST_REQUEST_FILE" 2>/dev/null
+sanitize_request_ack_field() {
+    printf '%s' "$1" | tr '|\r\n' '   '
+}
+
+request_ack_text() {
+    ack_id="$(sanitize_request_ack_field "$1")"
+    ack_state="$(sanitize_request_ack_field "$2")"
+    ack_cmd="$(sanitize_request_ack_field "$3")"
+    ack_detail="$(sanitize_request_ack_field "$4")"
+    printf '%s|%s|%s|%s\n' "$ack_id" "$ack_state" "$ack_cmd" "$ack_detail"
+}
+
+publish_request_ack() {
+    ack_text="$(request_ack_text "$1" "$2" "$3" "$4")"
+    settings_put_quiet "$REQUEST_ACK_KEY" "$ack_text"
+}
+
+persist_settings_request_completion() {
+    completed_request="$1"
+    completed_ack="$2"
+    completed_receipt="$completed_request
+$completed_ack"
+    atomic_write_text "$LAST_REQUEST_RECEIPT_FILE" "$completed_receipt" || return 1
+    sync >/dev/null 2>&1 || return 1
+    LAST_SETTINGS_REQUEST_TEXT="$completed_request"
+    rm -f "$LAST_REQUEST_FILE"
+    return 0
+}
+
+load_last_request_receipt() {
+    [ -s "$LAST_REQUEST_RECEIPT_FILE" ] || return 1
+    [ "$(sed -n '$=' "$LAST_REQUEST_RECEIPT_FILE" 2>/dev/null)" = "2" ] || return 1
+    replay_request="$(sed -n '1p' "$LAST_REQUEST_RECEIPT_FILE" 2>/dev/null | tr -d '\r')"
+    replay_ack="$(sed -n '2p' "$LAST_REQUEST_RECEIPT_FILE" 2>/dev/null | tr -d '\r')"
+    replay_request_id="$(request_field "$replay_request" 1)"
+    replay_request_cmd="$(request_field "$replay_request" 2)"
+    replay_ack_id="$(request_field "$replay_ack" 1)"
+    replay_ack_state="$(request_field "$replay_ack" 2)"
+    replay_ack_cmd="$(request_field "$replay_ack" 3)"
+    [ "$(request_field_count "$replay_ack")" = "4" ] || return 1
+    [ -n "$replay_request_id" ] && [ -n "$replay_request_cmd" ] &&
+        [ "$replay_request_id" = "$replay_ack_id" ] &&
+        [ "$replay_request_cmd" = "$replay_ack_cmd" ] || return 1
+    case "$replay_ack_state" in
+        done|failed) ;;
+        *) return 1 ;;
+    esac
+    return 0
+}
+
+replay_last_request_ack() {
+    load_last_request_receipt || return 0
+    if [ "$(settings_get_clean "$REQUEST_ACK_KEY")" != "$replay_ack" ]; then
+        settings_put_quiet "$REQUEST_ACK_KEY" "$replay_ack"
+    fi
+}
+
+finish_atomic_settings_request() {
+    completed_request="$1"
+    completed_id="$2"
+    completed_cmd="$3"
+    completed_result="$4"
+    completed_detail="$5"
+    if [ "$completed_result" = "0" ]; then
+        completed_state=done
+        completed_detail="${completed_detail:-ok}"
+    else
+        completed_state=failed
+        completed_detail="${completed_detail:-command_failed}"
+    fi
+    completed_ack="$(request_ack_text "$completed_id" "$completed_state" \
+        "$completed_cmd" "$completed_detail")"
+    if ! persist_settings_request_completion "$completed_request" "$completed_ack"; then
+        log_line "request completion persistence failed: id=$completed_id cmd=$completed_cmd"
+        set_status "daemon=running" "last=request_ack_persist_failed" \
+            "cmd=$completed_cmd"
+        return 1
+    fi
+    if ! settings_put_quiet "$REQUEST_ACK_KEY" "$completed_ack"; then
+        log_line "request terminal ACK publish deferred: id=$completed_id cmd=$completed_cmd"
+    fi
+    return "$completed_result"
 }
 
 handle_request() {
@@ -1609,6 +2269,8 @@ handle_request() {
         restore_zuipp) restore_zuipp; result=$? ;;
         restore_last_good) restore_last_good_zuipp; result=$? ;;
         restore_official_original) restore_official_original_zuipp; result=$? ;;
+        set_appopt_rule) set_appopt_rule "$pkg" "$mode"; result=$? ;;
+        remove_appopt_rule) remove_appopt_rule "$pkg"; result=$? ;;
         apply_asoul) apply_appopt; result=$? ;;
         restore_asoul) stop_appopt; result=$? ;;
         export_logs) export_logs; result=$? ;;
@@ -1665,7 +2327,11 @@ process_request_file() {
 
 process_atomic_settings_request() {
     request="$(settings_get_clean "$REQ_TEXT_KEY")"
-    if [ -z "$request" ] || [ "$request" = "$LAST_SETTINGS_REQUEST_TEXT" ]; then
+    if [ -z "$request" ]; then
+        return 0
+    fi
+    if [ "$request" = "$LAST_SETTINGS_REQUEST_TEXT" ]; then
+        replay_last_request_ack
         return 0
     fi
 
@@ -1685,28 +2351,32 @@ process_atomic_settings_request() {
     field13="$(request_field "$request" 13)"
     field14="$(request_field "$request" 14)"
     field15="$(request_field "$request" 15)"
+    REQUEST_RESULT_DETAIL=
 
     if [ -z "$id" ] || [ -z "$cmd" ]; then
         log_line "invalid atomic request: missing id/cmd"
         set_status "daemon=running" "last=invalid_request"
-        remember_settings_request "$request"
-        return 1
+        finish_atomic_settings_request "$request" "${id:-invalid}" \
+            "${cmd:-invalid}" 1 "invalid_request"
+        return $?
     fi
 
     if [ "$field_count" -gt 15 ]; then
         log_line "invalid atomic request: too many fields cmd=$cmd"
         set_status "daemon=running" "last=invalid_request" "cmd=$cmd"
-        remember_settings_request "$request"
-        return 1
+        finish_atomic_settings_request "$request" "$id" "$cmd" 1 "invalid_request"
+        return $?
     fi
 
     if [ "$cmd" = "set_performance_profile_staged" ]; then
         if [ "$field_count" -ne 5 ] && [ "$field_count" -ne 7 ] && [ "$field_count" -ne 8 ]; then
             log_line "invalid staged request: fields=$field_count"
             set_status "daemon=running" "last=invalid_request" "cmd=$cmd"
-            remember_settings_request "$request"
-            return 1
+            finish_atomic_settings_request "$request" "$id" "$cmd" 1 "invalid_request"
+            return $?
         fi
+        publish_request_ack "$id" processing "$cmd" "" ||
+            log_line "request processing ACK publish failed: id=$id cmd=$cmd"
         stage_payload="$rate"
         if [ "$field_count" -eq 7 ]; then
             log_line "request: settings:$id cmd=$cmd pkg=$pkg mode=$mode policy=$field6 frame=$field7"
@@ -1723,10 +2393,13 @@ process_atomic_settings_request() {
         fi
         result=$?
         trim_log
-        remember_settings_request "$request"
-        return "$result"
+        finish_atomic_settings_request "$request" "$id" "$cmd" "$result" \
+            "${REQUEST_RESULT_DETAIL:-$([ "$result" = "0" ] && printf 'ok' || printf 'command_failed')}"
+        return $?
     fi
 
+    publish_request_ack "$id" processing "$cmd" "" ||
+        log_line "request processing ACK publish failed: id=$id cmd=$cmd"
     if [ "$cmd" = "set_performance_profile" ] &&
         [ -z "$field10$field11$field12$field13$field14$field15" ]; then
         cpu_max="$field6"
@@ -1739,8 +2412,9 @@ process_atomic_settings_request() {
             "$cpu_max" "$cpu_min" \
             "$field8" "$field9"
         result=$?
-        remember_settings_request "$request"
-        return "$result"
+        finish_atomic_settings_request "$request" "$id" "$cmd" "$result" \
+            "${REQUEST_RESULT_DETAIL:-$([ "$result" = "0" ] && printf 'ok' || printf 'command_failed')}"
+        return $?
     fi
     handle_request "settings:$id" "$cmd" \
         "$rate" "$pkg" "$mode" \
@@ -1750,8 +2424,9 @@ process_atomic_settings_request() {
         "$field12" "$field13" \
         "$field14" "$field15"
     result=$?
-    remember_settings_request "$request"
-    return "$result"
+    finish_atomic_settings_request "$request" "$id" "$cmd" "$result" \
+        "${REQUEST_RESULT_DETAIL:-$([ "$result" = "0" ] && printf 'ok' || printf 'command_failed')}"
+    return $?
 }
 
 boot_restore() {
@@ -1764,14 +2439,44 @@ boot_restore() {
 }
 
 init_request_state() {
-    if [ -s "$LAST_REQUEST_FILE" ]; then
-        LAST_SETTINGS_REQUEST_TEXT="$(cat "$LAST_REQUEST_FILE" 2>/dev/null)"
+    LAST_SETTINGS_REQUEST_TEXT=
+    if load_last_request_receipt; then
+        LAST_SETTINGS_REQUEST_TEXT="$replay_request"
+        rm -f "$LAST_REQUEST_FILE"
+        replay_last_request_ack
+        return 0
     fi
+
+    if [ -s "$LAST_REQUEST_FILE" ]; then
+        legacy_request="$(cat "$LAST_REQUEST_FILE" 2>/dev/null)"
+        legacy_id="$(request_field "$legacy_request" 1)"
+        legacy_cmd="$(request_field "$legacy_request" 2)"
+        if [ -n "$legacy_id" ] && [ -n "$legacy_cmd" ]; then
+            legacy_ack="$(request_ack_text "$legacy_id" failed "$legacy_cmd" \
+                migrated_legacy)"
+            persist_settings_request_completion "$legacy_request" "$legacy_ack" || {
+                log_line "legacy request receipt migration failed: id=$legacy_id"
+                return 1
+            }
+            settings_put_quiet "$REQUEST_ACK_KEY" "$legacy_ack" || true
+            log_line "legacy request migrated to terminal receipt: id=$legacy_id cmd=$legacy_cmd"
+            return 0
+        fi
+        rm -f "$LAST_REQUEST_FILE"
+    fi
+    rm -f "$LAST_REQUEST_RECEIPT_FILE"
+    return 0
 }
 
 main_loop() {
-    init_dirs
-    init_request_state
+    init_dirs || {
+        log_line "zui_controld initialization failed"
+        return 1
+    }
+    init_request_state || {
+        log_line "zui_controld request receipt initialization failed"
+        return 1
+    }
     log_line "zui_controld v19 start"
     boot_restore
     LAST_REFRESH_RATE="$BASE_REFRESH_RATE"
@@ -1801,4 +2506,6 @@ main_loop() {
     done
 }
 
-main_loop
+if [ "${ZUI_CONTROLD_TEST_MODE:-0}" != "1" ]; then
+    main_loop
+fi
