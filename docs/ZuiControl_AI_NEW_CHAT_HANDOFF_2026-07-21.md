@@ -13,7 +13,65 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.3 2026-08-18 实机闭环与 0.20.1 待刷包（当前最新）
+### 0.4 2026-08-18 0.20.1 实机闭环与 0.20.2 AppOpt 修复包（当前最新）
+
+本节覆盖 0.3 的“待刷”状态、版本、hash 和下一步。当前设备已刷并完整验证 30/0.20.1；由实测发现的 AppOpt 包校验问题已经修复为 31/0.20.2，并完成 CI 签名、镜像重建和最终 super 反向抽查。0.20.2 尚未刷入，不能把临时 bind 验证写成新镜像的持久实机验证。
+
+#### 30/0.20.1 的真实刷后结果
+
+- 身份闭合：PackageManager 与 `/system/priv-app/ZuiControlV30/ZuiControl.apk` 均为 30/0.20.1，APK SHA-256 为 `7e60f25103ec29521652c6b3e827dc05e7a6150d9836aa1c5d808fd37bebeac8`；旧 `/system/priv-app/ZuiControl` 和旧 cache helper 均不存在。ADB、`su` 可用，SELinux 为 Enforcing。
+- P1 通过：`raw/current/last/applied`、默认 120、system owner、daemon refresh disabled、adaptive render 均正确；未授权 shell Binder 调用被拒绝。用 system UID 可逆测试 60Hz 时 target、actual 和 active mode 一致，删除测试规则后已恢复默认 120；没有生成 SystemUI profile。
+- 相机通过：分别启动系统相机、外部 `IMAGE_CAPTURE` 和 `VIDEO_CAPTURE`，boot ID、SurfaceFlinger/cameraserver PID 与 starttime 均未变化，没有新增 tombstone、`No matching frame rate modes`、`DEAD_OBJECT` 或 fatal。旧“点相机像重启”的 SurfaceFlinger 崩溃链未复现。
+- P2 事务和运行链通过：鸣潮原 profile、active XML 与 `/system/etc` bind hash 先保存；把首温区 GPU 请求从 720000 改到 710000 后，exact ACK done、profile 和两份 XML hash 同步变化、LimitConfig ID 变化、ZuiPP PID 更新并稳定 10 秒。强停并重进鸣潮后看到真实 `onGameAppStart`、GameHelper/provider 连接及 ZuiPP 游戏态；随后恢复原 profile 和原 hash。畸形请求返回 failed，profile/XML hash 不变。再次重启设备时，即使 hash 未变，boot bind 后仍将 ZuiPP 从旧 PID 4730 重载到新 PID 6978，并得到 `state=done;reason=boot_active;stableSeconds=10`。
+- P2 的 CPU max 节点能反映请求；测试时 GPU 因约 70°C、`thermal_pwrlevel=7` 被原厂热控压到 500MHz，因此节点不严格等于输入不能单独判失败。这里交付的是 XML/OEM 性能请求，不是 direct sysfs 硬 cap，也不恢复自建 provider bridge。
+- 云控删除继续通过：hosts 为官方 56 字节两行 localhost，旧脚本、runtime、setting 和 iptables/ip6tables 链均不存在。
+
+#### AppOpt 实机发现、根因与修复
+
+0.20.1 首次给用户 App `com.xmy.ap` 保存 `0-1` 时，ACK 正确从 processing 进入 failed，配置回滚也正确，但规则无法生效。根因不是亲和度二进制，而是 daemon 在读取 `applist.conf` 的 `while ... done < file` 循环中调用 `pm path`：PackageManager 子进程继承了受保护配置文件作为标准输入，触发 system_server 对 `/data/vendor/zui_control/appopt/applist.conf` 的 SELinux 读取拒绝，最终把正常用户 App 误判为不允许。
+
+最小修复为 `pm path "$1" </dev/null`，切断无关文件描述符继承；没有扩大 SELinux 权限，也没有放宽 set 的“已安装 `/data/app` 用户 App”门槛。同时把空的 `init.svc.zui_appopt` 健康值规范为 stopped，并让 0 活动规则升级时恢复当前安全的仅注释模板。
+
+在 0.20.1 设备上用重启即失效的临时 bind 替换修复版 daemon/prepare 后，已真实验证：
+
+- `0-1`：采样 34 个线程，全部落在 CPU 0-1；
+- `0-4`：稳定重采样 28 个线程，全部落在 CPU 0-4；
+- `5-7`：采样 36 个线程，全部落在 CPU 5-7；
+- `0-7`：采样 39 个线程，全部落在 CPU 0-7；
+- AppOpt 运行域为 `u:r:performanced:s0`，没有新增 AppOpt AVC；系统 App set 被拒绝且原规则不变；删除最后规则及重复删除均 done；最终已恢复 0 规则、service stopped、无 PID、无 enabled flag。
+
+第一次 `0-4` 采样中有一个线程恰好退出，导致单次线程数变化；目标进程稳定后重采样全部符合。这是 `/proc` 线程生命周期采样竞争，不是规则越界。
+
+#### 31/0.20.2 发布事实
+
+- 生产代码 commit：`259ab36314d580be63f3382f388c6f99e85cf297`
+- GitHub Actions run：`32134948150`，结论 `success`：<https://github.com/xmy953538104/ZuiControl/actions/runs/32134948150>
+- 下载并用于 payload 的 CI artifact：`D:\3.VScode\Mi\work\release_0.20.2_32134948150`
+- package：`com.zui.zuicontrol`；版本：31/0.20.2；system 路径：`/system/priv-app/ZuiControlV31/ZuiControl.apk`
+- release 证书 SHA-256：`3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94`
+- CI APK、payload APK、最终 system 内嵌 APK和两个旁载 APK SHA-256：`b59b4d0bba284bbb4416ef2f854ddf9e9680601c1c09ce6b10e87b1e456fa374`
+- 最终刷机目录：`D:\3.VScode\Mi\【B刷机】187`
+
+```text
+5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b  boot.img
+78de34e36e3244c2c188e8547de164165f6c956e222efc0a4be7a209ecd78ce1  super.img
+9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5  vbmeta.img
+88811d64351dd449b8addad4775b045e44e48352fa8893a7e9ac910c7d784002  vbmeta_system.img
+b59b4d0bba284bbb4416ef2f854ddf9e9680601c1c09ce6b10e87b1e456fa374  ZuiControl-v19-system.apk
+b59b4d0bba284bbb4416ef2f854ddf9e9680601c1c09ce6b10e87b1e456fa374  ZuiControl-v19-release.apk
+```
+
+实际发布顺序为：下载同一 run 的 release APK/payload → Apply payload → 重建 `system_a.img` → `SignNoFecDryRun` → `SignNoFec` → 签名后重新 `PackSuper`。最终 `VerifyZuiControlFlashPackage.ps1` 从刷机目录的成品 super 反抽动态分区和 system EROFS、解码成品 `services.jar`，返回 `ok=true`；V31 版本/签名、daemon 修复、AppOpt 默认配置和权限边界、P1/P2 生产标记、AVB 镜像均通过，旧 V30/旧 app 目录和 cache helper 被拒绝。
+
+#### 刷入 0.20.2 后只需完成的持久确认
+
+1. 确认 PackageManager 和 `/system/priv-app/ZuiControlV31/ZuiControl.apk` 为 31/0.20.2，旧 V30 与旧 `ZuiControl` 目录不存在。
+2. 在 AppOpt 中对普通用户 App 依次保存 `0-1`、`0-4`、`5-7`、`0-7`；每次等 exact ACK done，强停并重开目标 App，再抽查全部存活线程的 affinity。系统 App必须继续被拒绝。最后删除规则，确认 stopped、无 PID、0 规则和无新增 AVC。
+3. P1/相机和 P2 已在相同 0.20.1 基线完整通过；0.20.2 未改这些架构，只做回归抽查即可。仍应查看 dmesg 和全 buffer logcat AVC，以确认修复持久落盘后的设备策略表现。
+
+Windows 侧仍没有单独完成完整 `secilc` 编译；最终镜像策略已被 verifier 反抽检查，0.20.1 live SELinux 也通过，但 0.20.2 的最终结论仍以刷后 AVC 为准。
+
+### 0.3 2026-08-18 实机闭环与 0.20.1 待刷包（历史，已被 0.4 覆盖）
 
 本节覆盖 0.2 的包版本、hash、发布事实和“下一步”，也覆盖后文旧 provider_direct、云控、AppOpt 只读状态与固定延时请求流程。P1 没有进入 FPS cap，也没有恢复 direct CPU/GPU sysfs 或旧 AsoulOpt。
 

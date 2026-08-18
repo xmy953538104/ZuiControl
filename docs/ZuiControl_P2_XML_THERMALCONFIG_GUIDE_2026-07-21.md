@@ -4,7 +4,7 @@
 
 本节覆盖本文后面关于“三个用户 profile、daemon 选择 gameMode、GameModeProvider 重入”和旧固定延时保存流程的说明；后文 XML 字段、ThermalConfig 和原厂热控原理仍有效。
 
-当前待刷 App 为 `versionCode=30` / `versionName=0.20.1`，生产代码 commit 为 `767a4f964d7e3530bd1e05cdd97ca94a5a234f17`，GitHub Actions run 为 `32119890097`。最终 `super.img` SHA256 为 `e755cb3544314cef8ecc764dc2325cd2b0fa45d523d499c721afe2a096d99b2d`，成品反抽 verifier 已返回 `ok=true`；0.20.1 runtime 仍需刷后验证。
+当前待刷 App 为 `versionCode=31` / `versionName=0.20.2`，生产代码 commit 为 `259ab36314d580be63f3382f388c6f99e85cf297`，GitHub Actions run 为 `32134948150`。最终 `super.img` SHA256 为 `78de34e36e3244c2c188e8547de164165f6c956e222efc0a4be7a209ecd78ce1`，成品反抽 verifier 已返回 `ok=true`。P2 已在 0.20.1 实机完成 exact ACK、成功变更、失败不变、原配置恢复、真实游戏重入和开机同 hash reload；0.20.2 只修 AppOpt 包校验，P2 只需刷后回归抽查。
 
 当前生产模型：
 
@@ -22,7 +22,7 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 -> 原厂 onGameAppStart / GameHelper 选择任一模式，得到相同配置
 ```
 
-0.20.1 新增的可靠性规则：
+0.20.1 起沿用的可靠性规则：
 
 - App 不再用 720ms/13s 定时器猜完成，也不乐观改 UI 列表。ACK 固定为四段：`id|processing|cmd|`、`id|done|cmd|detail`、`id|failed|cmd|reason`；只有 exact terminal ACK 才允许下一条请求覆盖 Settings.System 单槽。
 - daemon 把原请求和终态 ACK 写成两行原子 receipt，可在重启后 replay；profile、active XML、mount/reload 是一笔事务。任何阶段失败都必须恢复旧 profile、旧 active 并真实 reload 旧 runtime，不能只报错却留下三层不一致。
