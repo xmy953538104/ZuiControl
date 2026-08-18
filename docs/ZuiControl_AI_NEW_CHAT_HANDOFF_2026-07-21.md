@@ -13,7 +13,63 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.4 2026-08-18 0.20.1 实机闭环与 0.20.2 AppOpt 修复包（当前最新）
+### 0.5 2026-08-18 0.20.2 实机全功能闭环与 0.20.3 P2 reload 修复包（当前最新）
+
+本节覆盖 0.4 的“待刷”状态、版本、hash 和下一步。设备已经刷入并完整验证 31/0.20.2；本轮唯一新增的真实缺陷是 ZuiPP XML reload 会让原厂 `OverHeatCleanService` 以空 Intent 重启并崩溃一次。该问题已用实机对照实验定位并修复为 32/0.20.3。0.20.3 已完成 CI、签名、重封和最终 super 反向校验，但尚未刷入，所以不能提前宣称新 reload 路径已持久实机通过。
+
+#### 31/0.20.2 的真实刷后结果
+
+- 身份与安全状态通过：PackageManager 和 `/system/priv-app/ZuiControlV31/ZuiControl.apk` 均为 31/0.20.2；ADB、`su` 可用，SELinux Enforcing；旧 V30、旧 `ZuiControl` 目录和 cache helper 不存在。
+- P1 完整通过：未授权 Binder 调用被拒绝；system_server 是唯一刷新率 owner，daemon refresh disabled，场景 `raw/current/last/applied` 与 profile 记忆正确；60/90/120 的目标和物理 mode 一致。144/165 在持续触控/渲染时能达到目标，空闲时会被 adaptive display 降回较低 mode，这是“目标/上限”语义，不是规则失效。测试后已恢复默认 120，未生成 SystemUI profile。
+- 相机完整通过：系统相机、外部 `IMAGE_CAPTURE` 和 `VIDEO_CAPTURE` 均没有设备重启；SurfaceFlinger/cameraserver PID 与 starttime 不变，无新增 tombstone、`No matching frame rate modes`、CameraProvider `DEAD_OBJECT` 或 fatal。
+- P2 事务与运行链通过：对鸣潮把 GPU 首温区请求 720000 改为 710000，exact ACK、profile、active XML、bind hash、共享 CPU level ID、ZuiPP 新 PID 稳定 10 秒均闭合；重新进入鸣潮后看到真实 system game-start 和 ZuiPP 游戏识别；随后已恢复原 profile 和原 XML hash。畸形请求失败且旧配置保持不变。CPU/GPU 是 OEM 请求，不是 hard cap；热控仍可把运行值压低。
+- AppOpt 完整通过：测试用户 App 的 `0-1`、`0-4`、`5-7`、`0-7` 四个预设均在强停重开后使全部存活线程落入对应 CPU 集合；系统 App 和非法 preset 被拒绝；修改、删除、重复删除、全局停止和再次启动均正确。最终已恢复 0 规则、service stopped、无 PID、无 enabled flag。
+- 云控删除继续通过：官方 hosts 为 56 字节两行 localhost，旧脚本、runtime、setting 和 iptables/ip6tables 链均不存在。
+- 项目相关 AVC 为零。相机日志仍有原厂 `cameraserver` 查询 `vendor_display_prop` 的 denial，但不属于 ZuiControl、没有造成相机故障，禁止为此扩大项目 SELinux 权限。
+
+#### 实机发现的 ZuiPP reload 缺陷和最小修复
+
+0.20.2 每次 P2 保存会直接向 `com.zui.pp` 发送 SIGTERM。原厂 persistent 进程重启时，`OverHeatCleanService` 收到空 Intent 并在 `OverHeatCleanService.java:139` 触发一次 NPE；系统随后再次拉起进程并稳定，因此最终 P2 看似成功，但中间存在一次真实应用崩溃和额外重启。
+
+实机对照结果：只停 `OverHeatCleanService` 仍会复现；在 SIGTERM 前依次停止下列四个原厂 service，则 ZuiPP 只发生一次干净 PID 切换，无 fatal，并重新读取 PerformanceConfig：
+
+1. `com.zui.pp/com.zui.power.overheat.OverHeatStatsService`
+2. `com.zui.pp/com.zui.power.overheat.OverHeatCleanService`
+3. `com.zui.pp/com.zui.power.overheat.StubbornStatsService`
+4. `com.zui.pp/.service.MainService`
+
+0.20.3 因而只在既有 reload 前加入这四个精确 `am stopservice`。任一步停止失败都会发布 `state=error;stage=stop_services` 并禁止发送 SIGTERM；没有恢复 provider_direct、direct CPU/GPU sysfs、daemon 刷新率或 FPS cap，也没有修改 P1。
+
+#### 32/0.20.3 发布事实
+
+- 生产代码 commit：`8c4ae5327af59006a738a13d41103c80f82d40c3`
+- GitHub Actions run：`32141595553`，结论 `success`：<https://github.com/xmy953538104/ZuiControl/actions/runs/32141595553>
+- 下载并用于 payload 的 CI artifact：`D:\3.VScode\Mi\work\release_0.20.3_32141595553`
+- package：`com.zui.zuicontrol`；版本：32/0.20.3；system 路径：`/system/priv-app/ZuiControlV32/ZuiControl.apk`
+- release 证书 SHA-256：`3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94`
+- CI APK、payload APK、最终 system 内嵌 APK 和两个旁载 APK SHA-256：`9c5c7f104607cda4f38c4a1930a139d33a22d60966c1154d0b40e0f74370a985`
+- 最终刷机目录：`D:\3.VScode\Mi\【B刷机】187`
+
+```text
+5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b  boot.img
+58342f892641faa1e1a80535a5ab67b131bdcc60876505f32c255222b30ffcc2  super.img
+9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5  vbmeta.img
+4f228e1987403b9aaec46eadf2bce28b8fb1eea4a49945646423affae1938550  vbmeta_system.img
+9c5c7f104607cda4f38c4a1930a139d33a22d60966c1154d0b40e0f74370a985  ZuiControl-v19-system.apk
+9c5c7f104607cda4f38c4a1930a139d33a22d60966c1154d0b40e0f74370a985  ZuiControl-v19-release.apk
+```
+
+发布顺序为：下载同一 CI run 的 release APK/payload → Apply payload → 重建 `system_a.img` → `SignNoFecDryRun` → `SignNoFec` → 签名后重新 `PackSuper`。最终 `VerifyZuiControlFlashPackage.ps1` 从刷机目录的成品 super 反抽动态分区/system EROFS、解码成品 `services.jar`，返回 `ok=true`；V32、签名、四个 graceful stop 组件和失败门禁、P1/P2/AppOpt/SELinux 边界、AVB 镜像均通过。
+
+#### 刷入 0.20.3 后只需完成的最终确认
+
+1. 确认 PackageManager 和 `/system/priv-app/ZuiControlV32/ZuiControl.apk` 为 32/0.20.3，旧 V31/V30/旧 `ZuiControl` 目录不存在。
+2. 做一次可恢复的 P2 保存：要求 exact ACK done、四个 service stop 成功、ZuiPP 只有一次新 PID 切换并稳定 10 秒；全 buffer logcat 中不得再出现 `OverHeatCleanService` fatal/NPE。随后强停并重进游戏，确认原厂 game-start/ZuiPP 识别，再恢复原 profile。
+3. 快速回归 P1 目标/actual、相机一次和 AppOpt 一个预设，并检查项目相关 AVC。0.20.3 没改这些链路，0.20.2 的完整结果仍是有效基线。
+
+当前明确边界：FPS cap 未交付；144/165 是 adaptive display 目标/上限，空闲会降频；P2 是原厂 XML/OEM 请求而不是硬 cap，只对 ZUI 识别的游戏承诺重入链；AppOpt 只支持普通用户 App 的整包 CPU 预设，修改后必须强停重开目标 App；云控已删除且无用户操作入口。
+
+### 0.4 2026-08-18 0.20.1 实机闭环与 0.20.2 AppOpt 修复包（历史，已被 0.5 覆盖）
 
 本节覆盖 0.3 的“待刷”状态、版本、hash 和下一步。当前设备已刷并完整验证 30/0.20.1；由实测发现的 AppOpt 包校验问题已经修复为 31/0.20.2，并完成 CI 签名、镜像重建和最终 super 反向抽查。0.20.2 尚未刷入，不能把临时 bind 验证写成新镜像的持久实机验证。
 

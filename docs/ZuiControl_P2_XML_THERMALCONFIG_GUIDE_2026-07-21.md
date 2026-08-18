@@ -4,7 +4,7 @@
 
 本节覆盖本文后面关于“三个用户 profile、daemon 选择 gameMode、GameModeProvider 重入”和旧固定延时保存流程的说明；后文 XML 字段、ThermalConfig 和原厂热控原理仍有效。
 
-当前待刷 App 为 `versionCode=31` / `versionName=0.20.2`，生产代码 commit 为 `259ab36314d580be63f3382f388c6f99e85cf297`，GitHub Actions run 为 `32134948150`。最终 `super.img` SHA256 为 `78de34e36e3244c2c188e8547de164165f6c956e222efc0a4be7a209ecd78ce1`，成品反抽 verifier 已返回 `ok=true`。P2 已在 0.20.1 实机完成 exact ACK、成功变更、失败不变、原配置恢复、真实游戏重入和开机同 hash reload；0.20.2 只修 AppOpt 包校验，P2 只需刷后回归抽查。
+当前待刷 App 为 `versionCode=32` / `versionName=0.20.3`，生产代码 commit 为 `8c4ae5327af59006a738a13d41103c80f82d40c3`，GitHub Actions run 为 `32141595553`。最终 `super.img` SHA256 为 `58342f892641faa1e1a80535a5ab67b131bdcc60876505f32c255222b30ffcc2`，成品反抽 verifier 已返回 `ok=true`。P2 已在 0.20.2 实机完成 exact ACK、成功变更、失败不变、原配置恢复、真实游戏重入和 hash/mount/reload 闭环；0.20.3 只修 ZuiPP reload 前原厂 service 的退出次序，刷后需确认一次干净 PID 切换且无 `OverHeatCleanService` fatal。
 
 当前生产模型：
 
@@ -16,7 +16,7 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 -> Little/Big/Titan/Mega 四个 Type 用同一 ID、各存自己的频率值
 -> 同一 LimitConfig 镜像到 balanced / powersave / savage
 -> 校验、promote、bind active XML
--> ZuiPP 在运行时受控重启并等待新 PID 稳定 10 秒；未运行则记录合法 skipped
+-> ZuiPP 在运行时先停止四个原厂 service，再受控重启并等待新 PID 稳定 10 秒；未运行则记录合法 skipped
 -> 原子提交 profile + runtime + terminal ACK；失败则恢复整笔旧状态
 -> 用户彻底退出并重新进入 ZUI 已识别的游戏
 -> 原厂 onGameAppStart / GameHelper 选择任一模式，得到相同配置
@@ -28,6 +28,7 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 - daemon 把原请求和终态 ACK 写成两行原子 receipt，可在重启后 replay；profile、active XML、mount/reload 是一笔事务。任何阶段失败都必须恢复旧 profile、旧 active 并真实 reload 旧 runtime，不能只报错却留下三层不一致。
 - 每次 daemon 启动都清除旧 reload receipt。即使 active hash 与上次相同，boot bind 后若 ZuiPP 正在运行，也必须确认新 PID 稳定 10 秒；若尚未运行，允许 `skipped;reason=zuipp_not_running`，其首次启动会读取已 bind 的 active XML。不能用跨开机 remembered hash 跳过一次本应执行的 reload。
 - `last_good` 保存 promote 前的旧 active；成功后不被新 active 覆盖。
+- 0.20.2 实机发现裸 SIGTERM 会使原厂 `OverHeatCleanService` 在 persistent 进程重启时收到空 Intent 并 NPE。0.20.3 在 SIGTERM 前精确停止 OverHeatStats、OverHeatClean、StubbornStats 和 MainService；任一 stop 失败即阻止 kill 并报 `stage=stop_services`，避免把原厂进程崩溃伪装成正常 reload。
 
 原因和边界：
 
@@ -45,7 +46,7 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 3. `xml_state=state=mounted`，active 与 `/system/etc` 是否同 hash 且确为 bind mount。
 4. 目标 App 的三个 LimitConfig mode block 是否完全一致。
 5. 每个温区 Little/Big/Titan/Mega 四个 ID 是否相同，并在四个 Type 中都存在。
-6. ZuiPP 正在运行时，reload 是否 `state=done`、`stableSeconds=10`、`needsAppReenter=1`；未运行时允许 `state=skipped;reason=zuipp_not_running`。只有输入/输出 hash 确实未变时才接受 `skipped;same_hash`，而每次 daemon 新启动不能用上次开机 receipt 跳过一次本应执行的 reload。
+6. ZuiPP 正在运行时，四个原厂 service 是否先成功停止，reload 是否 `state=done`、`stableSeconds=10`、`needsAppReenter=1`，并且只有一次干净 PID 切换、没有 `OverHeatCleanService` fatal/NPE；未运行时允许 `state=skipped;reason=zuipp_not_running`。只有输入/输出 hash 确实未变时才接受 `skipped;same_hash`，而每次 daemon 新启动不能用上次开机 receipt 跳过一次本应执行的 reload。
 7. 强停/退出并重新进入 ZUI 已识别的游戏，按顺序检查同一 package 的 `onGameAppStart`、GameHelper、ZuiPP `notifyGameAppStateChanged`、非空 LimitConfig/TAssistant 下发。
 8. 再读 CPU/GPU 最终节点，并区分用户请求、厂商覆盖和真实高温降频。
 9. 检查 dmesg 与全 buffer logcat 中相关 AVC。
