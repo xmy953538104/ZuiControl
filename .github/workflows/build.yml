@@ -63,10 +63,10 @@ jobs:
 
       - name: Stage payload APK
         run: |
-          rm -rf payload/system/priv-app/ZuiControl payload/system/priv-app/ZuiControlV30
-          mkdir -p payload/system/priv-app/ZuiControlV31
+          rm -rf payload/system/priv-app/ZuiControl payload/system/priv-app/ZuiControlV30 payload/system/priv-app/ZuiControlV31
+          mkdir -p payload/system/priv-app/ZuiControlV32
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV31/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV32/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

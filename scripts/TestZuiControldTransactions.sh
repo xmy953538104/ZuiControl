@@ -186,6 +186,7 @@ test_reload_invalidates_remembered_hash() (
     zuipp_pid() { printf '123\n'; }
     proc_cmdline_clean() { printf 'com.zui.pp\n'; }
     proc_start_time() { printf '1\n'; }
+    am() { return 0; }
     kill() { return 1; }
     publish_zuipp_reload_state() { :; }
     reload_zuipp_if_needed test && fail 'simulated SIGTERM failure unexpectedly succeeded'
@@ -209,6 +210,7 @@ test_daemon_start_forces_same_hash_reload() (
 
     KILL_CALLS=0
     KILL_CALLED=0
+    : > "$TEST_ROOT/am_calls"
     zuipp_mount_ready() { return 0; }
     zuipp_pid() {
         if [ "$KILL_CALLED" = 1 ]; then
@@ -221,6 +223,10 @@ test_daemon_start_forces_same_hash_reload() (
     proc_start_time() {
         if [ "$1" = 456 ]; then printf '2\n'; else printf '1\n'; fi
     }
+    am() {
+        printf '%s\n' "$*" >> "$TEST_ROOT/am_calls"
+        return 0
+    }
     kill() {
         KILL_CALLS=$((KILL_CALLS + 1))
         KILL_CALLED=1
@@ -232,8 +238,40 @@ test_daemon_start_forces_same_hash_reload() (
     reload_zuipp_if_needed boot_active ||
         fail 'same-hash XML was not reloaded after daemon start'
     [[ "$KILL_CALLS" = 1 ]] || fail 'same-hash boot reload did not signal ZuiPP'
+    [[ "$(wc -l < "$TEST_ROOT/am_calls")" = 4 ]] ||
+        fail 'same-hash boot reload did not stop all ZuiPP services first'
+    [[ "$(tail -n 1 "$TEST_ROOT/am_calls")" == *'com.zui.pp/.service.MainService' ]] ||
+        fail 'same-hash boot reload did not stop MainService last'
     [[ "$(last_reloaded_hash_pair)" == "$previous_hash" ]] ||
         fail 'same-hash boot reload did not remember the new runtime state'
+)
+
+test_reload_stop_service_failure_prevents_signal() (
+    export ZUI_CONTROLD_TEST_MODE=1
+    # shellcheck source=/dev/null
+    source "$DAEMON"
+    setup_test_state
+    trap 'rm -rf "$TEST_ROOT"' EXIT
+    printf '<AppPolicy>B</AppPolicy>\n' > "$ACTIVE_GAME_POLICY"
+    printf '<GameLimitConfig>B</GameLimitConfig>\n' > "$ACTIVE_PERF_CONFIG"
+    zuipp_mount_ready() { return 0; }
+    zuipp_pid() { printf '123\n'; }
+    proc_cmdline_clean() { printf 'com.zui.pp\n'; }
+    proc_start_time() { printf '1\n'; }
+    am() { return 1; }
+    KILL_CALLS=0
+    kill() {
+        KILL_CALLS=$((KILL_CALLS + 1))
+        return 0
+    }
+    publish_zuipp_reload_state() { :; }
+
+    reload_zuipp_if_needed test &&
+        fail 'reload continued after ZuiPP service stop failed'
+    [[ "$KILL_CALLS" = 0 ]] ||
+        fail 'reload signalled ZuiPP after service stop failed'
+    [[ ! -e "$ZUIPP_LAST_RELOADED_HASH_FILE" ]] ||
+        fail 'service stop failure left stale remembered hash'
 )
 
 test_transaction_recovery() (
@@ -617,6 +655,7 @@ test_reload_failure_propagates
 test_remount_propagates_reload_failure
 test_reload_invalidates_remembered_hash
 test_daemon_start_forces_same_hash_reload
+test_reload_stop_service_failure_prevents_signal
 test_transaction_recovery
 test_apply_failure_rolls_back_all_layers
 test_reload_failure_rolls_back_request_transaction

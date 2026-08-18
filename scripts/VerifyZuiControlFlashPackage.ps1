@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '31'
-$ExpectedVersionName = '0.20.2'
+$ExpectedVersionCode = '32'
+$ExpectedVersionName = '0.20.3'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -260,9 +260,9 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV31\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV32\ZuiControl.apk'
     $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
-    $PreviousAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControlV30'
+    $PreviousAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControlV31'
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
     $DaemonRc = Join-Path $SystemRoot 'system\etc\init\zui_controld.rc'
@@ -352,6 +352,9 @@ try {
     Assert-Contains $Daemon 'rewrite_performance_without_package "$profile_pkg"' 'single performance profile per package rewrite'
     Assert-Contains $Daemon 'performance profiles migrated to one canonical profile per package' 'legacy multi-mode profile migration'
     Assert-Contains $Daemon 'stableSeconds=10' 'stable ZuiPP restart readiness marker'
+    Assert-Contains $Daemon 'stop_zuipp_services_for_reload' 'graceful ZuiPP service shutdown before process reload'
+    Assert-Contains $Daemon 'com.zui.pp/com.zui.power.overheat.OverHeatCleanService' 'OverHeatCleanService null-Intent crash prevention'
+    Assert-Contains $Daemon 'state=error;stage=stop_services' 'ZuiPP service shutdown failure state'
     Assert-Contains $Daemon 'invalidate_zuipp_reload_receipt_on_start || return 1' 'boot-time ZuiPP reload receipt invalidation'
     Assert-Contains $Daemon 'LAST_REQUEST_RECEIPT_FILE=$CONTROL_DIR/last_processed_settings_request_receipt' 'persistent request receipt'
     Assert-Contains $Daemon 'REQUEST_ACK_KEY=zui_control_request_ack' 'exact terminal request acknowledgement'

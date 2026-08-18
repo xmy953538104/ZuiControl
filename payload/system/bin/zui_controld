@@ -1010,6 +1010,24 @@ zuipp_pid() {
     pidof com.zui.pp 2>/dev/null | awk '{print $1}'
 }
 
+stop_zuipp_services_for_reload() {
+    # ZUI's OverHeatCleanService crashes on a null restart Intent if the
+    # persistent process is signalled while its started services are live.
+    # Stop those services through Android first; PPApplication will recreate
+    # MainService and its modules when the persistent process starts again.
+    for component in \
+        com.zui.pp/com.zui.power.overheat.OverHeatStatsService \
+        com.zui.pp/com.zui.power.overheat.OverHeatCleanService \
+        com.zui.pp/com.zui.power.overheat.StubbornStatsService \
+        com.zui.pp/.service.MainService; do
+        if ! am stop-service --user 0 -n "$component" >>"$LOG_FILE" 2>&1; then
+            log_line "cannot stop ZuiPP service before reload: $component"
+            return 1
+        fi
+    done
+    return 0
+}
+
 proc_cmdline_clean() {
     tr '\0' '\n' < "/proc/$1/cmdline" 2>/dev/null | head -n 1
 }
@@ -1054,6 +1072,11 @@ reload_zuipp_if_needed() {
         return 1
     fi
     old_start="$(proc_start_time "$old_pid")"
+
+    if ! stop_zuipp_services_for_reload; then
+        publish_zuipp_reload_state "state=error;stage=stop_services;oldPid=$old_pid;game=$game_hash;perf=$perf_hash"
+        return 1
+    fi
 
     if ! kill -TERM "$old_pid" 2>>"$LOG_FILE"; then
         publish_zuipp_reload_state "state=error;stage=sigterm;oldPid=$old_pid;game=$game_hash;perf=$perf_hash"
