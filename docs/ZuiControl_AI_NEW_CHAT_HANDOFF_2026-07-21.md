@@ -13,7 +13,108 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.5 2026-08-18 0.20.2 实机全功能闭环与 0.20.3 P2 reload 修复包（当前最新）
+### 0.6 2026-08-18 0.20.3 刷后根因、0.20.4 成品与 9008 自动化（当前最新）
+
+本节覆盖 0.5 的版本、hash、“0.20.3 待刷”和下一步。设备已经通过新的最小化 9008 自动流程持久刷入 33/0.20.4，并完成开机、P2 修改/恢复、真实游戏重入、P1、相机、AppOpt、云控删除和 AVC 全功能回归。0.20.3 的 graceful stop 判断问题已经在 0.20.4 中修复；当前不再存在“临时 daemon bind”或“待刷验证”状态。
+
+#### 0.20.3 刷后发现的真实问题
+
+0.20.3 开机后 `zui_control_zuipp_reload_state` 为：
+
+```text
+state=error;stage=stop_services;oldPid=4750
+```
+
+daemon 日志同时出现：
+
+```text
+cmd: Failure calling service activity: Failed transaction (2147483646)
+cannot stop ZuiPP service before reload: com.zui.pp/...OverHeatStatsService
+```
+
+根因有两部分：
+
+1. 本机 ZUI 的 `am stop-service` 即使打印 `Service stopped`，退出码仍为 255；目标未运行时打印 `Service not stopped: was not running.`，退出码同样为 255。0.20.3 用 shell 退出码判断成功，因此把真实成功误判为失败。
+2. 0.20.3 把 daemon 的 `/data/vendor/zui_control/log/controld.log` 文件描述符直接继承给 `am/cmd`。该描述符经 Binder 进入 system_server 后触发 system_server 对 shell-owned 日志的 append AVC，进而出现 `Failed transaction`。这不是缺少一条应该放宽的 SELinux 权限，而是不该跨 Binder 传入该 FD。
+
+0.20.4 不改四个精确 service 的顺序，也不扩大 SELinux。它先在命令替换中捕获 `am stop-service` 输出，再由 daemon 自己写日志；只接受上述两种明确成功文本。瞬时 Binder 失败最多重试 5 次；5 次都没有明确成功文本才发布 `stage=stop_services` 并禁止 SIGTERM。
+
+#### 0.20.4 已完成的修复前临时验证（历史证据）
+
+- 开机 active reload：ZuiPP 从 `11699:115086` 切换为 `23574:153977`，四个 service 均得到明确 stop/no-op 文本，终态 `state=done;reason=boot_active;stableSeconds=10`，没有 fatal/NPE。
+- P2 修改：把鸣潮首温区 GPU 请求从 720000 改为 710000，exact ACK done，profile、active/system XML、bind mount 和 hash 全部闭合，ZuiPP 只从 23574 切到 25079 一次并稳定 10 秒。
+- P2 恢复：恢复 720000 后 exact ACK done，ZuiPP 只切到 26547 一次；原始 game/performance hash 分别恢复为 `cf787905a1a2d9a3afae69b7a48272ff0d86ff0e35c99d9a305e3dc31b634c1d` / `447277c22ba0d2cd378b05e2c99bc80d89d4fb57717deb78ac5ca760407e7a92`。
+- 鸣潮重入：看到同一 package 的 `onGameAppStart`、GameHelper `initGameHelper`、ZuiPP `notifyPerfStatus` 和 `writeSavageMode::open::1,status::0`，证明不是只停在 provider 返回值。
+- P1 回归：system_server owner、daemon refresh disabled、未授权 Binder 拒绝、60Hz 可逆 profile 测试和恢复默认 120 全部通过；最终 profile 只有 default 120。
+- 相机回归：系统相机、`IMAGE_CAPTURE`、`VIDEO_CAPTURE` 均通过；boot ID、SurfaceFlinger/cameraserver PID+starttime 和 tombstone 列表不变，无 `No matching frame rate modes`、DEAD_OBJECT 或 fatal。
+- AppOpt 回归：测试 App 设为 `0-1` 后 34 个存活线程全部命中，删除规则 exact ACK done；最终 0 规则、service stopped、无 PID、无 enabled flag。
+- 云控继续为 null/不存在。修复后没有新增项目 AVC；旧 0.20.3 的 system_server append denial 是本次根因证据。原厂 cameraserver/vendor_display_prop 等 denial 仍不是项目问题，禁止扩大权限。
+
+以上 live 验证当时使用 `/data/local/tmp` 到 `/system/bin/zui_controld` 的临时 bind，用于在重封前证明修复逻辑成立。后续已经通过 9008 把同一生产内容持久写入系统分区，并在全新开机后重复验证；不要再把当前设备描述为临时 bind。
+
+#### 33/0.20.4 发布事实
+
+- 修复生产 commit：`523990b4062f06d8bf5ee27713ac55e5348458ad`
+- 9008 自动化 commit：`362ae7f65dcd3a12b95cebaefc08ef88b4d4f138`
+- GitHub Actions App build run：`32147587045`，结论 `success`：<https://github.com/xmy953538104/ZuiControl/actions/runs/32147587045>
+- GitHub Actions qdl-rs Windows build run：`32149002631`，结论 `success`：<https://github.com/xmy953538104/ZuiControl/actions/runs/32149002631>
+- 下载并用于 payload 的 CI artifact：`D:\3.VScode\Mi\work\ci_32147587045`
+- package：`com.zui.zuicontrol`；版本：33/0.20.4；system 路径：`/system/priv-app/ZuiControlV33/ZuiControl.apk`
+- release 证书 SHA-256：`3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94`
+- CI APK、payload APK、最终 system 内嵌 APK和两个 sidecar APK SHA-256：`3534bf88224cf7c61b317e35720dc7ae4ca9ec18de70091a66ad94adc24cb18f`
+- 最终刷机目录：`D:\3.VScode\Mi\【B刷机】187`
+
+```text
+5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b  boot.img
+8b31b4e742794e3e8c3c5d05dd2fe7307f53c7aeaa76a10833c810c48fd3c80c  super.img
+9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5  vbmeta.img
+2baf3432bda31c74cc421932b8c7292f38e4750e36bc09a6bdfb838b457a27f5  vbmeta_system.img
+3534bf88224cf7c61b317e35720dc7ae4ca9ec18de70091a66ad94adc24cb18f  ZuiControl-v19-system.apk
+3534bf88224cf7c61b317e35720dc7ae4ca9ec18de70091a66ad94adc24cb18f  ZuiControl-v19-release.apk
+```
+
+发布顺序为同一 CI run 的 release APK/payload → Apply payload → 重建 `system_a.img` → `SignNoFecDryRun` → `SignNoFec` → 签名后重新 `PackSuper`。最终 `VerifyZuiControlFlashPackage.ps1` 从刷机目录的成品 super 反抽全部动态分区和 system EROFS、解码成品 `services.jar`，返回 `ok=true`；33/0.20.4、V33、release 证书、daemon 输出判断/重试、P1/P2/AppOpt/SELinux 边界和 sidecar hash 全部通过。
+
+#### 9008 自动化已完成并通过首次真实刷写
+
+- 现有 GeekFlashTool 全量目录包含 99 个 program 项，会写 GPT、persist、FRP、modemst 等与 ZuiControl 更新无关的高风险区域，自动化禁止直接使用这些 XML。
+- `scripts/PrepareZuiControl9008Package.ps1` 校验最终 SHA256、镜像长度和原始 XML 的 sector/LUN 字段，然后在 `D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE` 生成独立包。该包只有一个 `rawprogram_zuicontrol.xml`、没有 patch XML，只写 7 项：LUN0 super、vbmeta_system_a/b；LUN4 boot_a/b、vbmeta_a/b。
+- `scripts/FlashZuiControl9008.ps1` 默认只做 Preflight。`-Mode Flash` 会先校验唯一 ADB 设备 `HA25HSZM`、TB321FU、187 和 root，再 `reboot edl`，只接受一个 `05C6:9008` COM 口，调用 Qualcomm 官方开源 `qdl-rs` 串口后端执行上述 7 项，要求成功标记后自动 reset system，并等待 Android boot completed 和 33/0.20.4。
+- qdl-rs 固定使用 Qualcomm `qdlrs` commit `412f90bc08cc3a687d552ff599da29043c4f54f4`。Windows 构建 workflow 是 `.github/workflows/build-qdlrs-windows.yml`；详细步骤和恢复边界见 `docs/ZuiControl_9008_AUTOMATION_GUIDE_2026-08-18.md`。
+
+2026-08-18 首次真实自动刷写已成功：脚本从正常 Android 自动执行 `reboot edl`，识别唯一 `COM3`，完成 Sahara/Firehose/UFS 配置，以约 42–43 MB/s 写完 13 GB super 和其余 6 个双槽 boot/vbmeta 项，qdl-rs 返回 `All went well! Resetting to system`。设备自动回到 Android，脚本确认同一 ADB serial `HA25HSZM`、`boot_completed=1` 和 PackageManager 33/0.20.4。完整日志：
+
+```text
+D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-18_22-36-35.log
+```
+
+qdl-rs Windows 二进制 SHA-256：
+
+```text
+54330234768a651540eabc108d72cad506c6f3511ebb94e04fec90ca7844332a
+```
+
+#### 0.20.4 持久刷后验证（当前设备真实状态）
+
+- 设备/系统：`HA25HSZM`，TB321FU，`TB321FU_CN_OPEN_USER_Q00040.0_U_ZUI_16.1.11.187_ST_250227`；App 来自 `/system/priv-app/ZuiControlV33/ZuiControl.apk`，PackageManager 为 33/0.20.4。
+- 开机 P2：active XML 在 ZuiPP 启动后 bind，reload 从 PID 4646 切到 6972，`state=done;reason=boot_active;stableSeconds=10`；没有 0.20.3 的 `Failed transaction` 或 `stage=stop_services`。
+- P1：普通 shell Binder 调用被拒绝；system UID 对 Settings 做 60Hz 可逆规则时 target/actual 都为 60，删除规则后都回到 120；最终 `refreshOwner=system`、`daemonRefreshDisabled=true`，原 profile 未被污染。
+- P2 事务：鸣潮首温区 GPU 720000→710000 得到 exact done ACK，ZuiPP 6972→12039 并稳定 10 秒；恢复 720000 再得到 exact done ACK，ZuiPP 12039→12819，profile 逐字恢复，active/system 两对 hash 回到本节发布 hash。
+- 鸣潮重入：第一次熄屏启动被 ZuiMode 正确判为非游戏态，因此不计成功；唤醒后从桌面重入，看到同一 package 的 `onGameAppStart`、GameHelper `initGameHelper`、TAssistant、ZuiPP `notifyPerfStatus`、`writeSavageMode::open::1,status::0`，并输出恢复后 CPU/GPU 三温区。这个对照证明“App 在前台”不等于“ZUI 游戏态已进入”。
+- 相机：系统相机、`IMAGE_CAPTURE`、`VIDEO_CAPTURE` 全部打开；boot ID 不变，SurfaceFlinger PID 1639、cameraserver PID 1938 不变，没有新 tombstone 或匹配 fatal/DEAD_OBJECT。
+- AppOpt：鸣潮 `0-1` 预设 exact done，服务运行且主进程 209 个线程全部为 `Cpus_allowed_list: 0-1`；删除 exact done 后强停目标 App，最终 0 规则、service stopped、无 AppOpt PID。
+- 云控：hosts 仍为官方 56 字节/`425c3e713d5bae19b031bc8639c20c6a23e311a54647ba1824cbf45969a11ff4`，旧 Settings/iptables/文件链不存在。
+- 最终 XML：active/system game hash 均为 `cf787905a1a2d9a3afae69b7a48272ff0d86ff0e35c99d9a305e3dc31b634c1d`，performance hash 均为 `447277c22ba0d2cd378b05e2c99bc80d89d4fb57717deb78ac5ca760407e7a92`。
+- 没有新增项目 AVC。仍有原厂 system_server DAC、cameraserver 读取 vendor_display_prop 等 denial；功能成功时同样出现，禁止为其扩大 ZuiControl 权限。唯一匹配 NPE 来自联想应用商店 `ImeiHelper/MiitSDKTool`，不是 ZuiControl/ZuiPP/相机。
+
+#### 新聊天当前最短下一步
+
+1. 先只读确认当前仍是 `HA25HSZM`、33/0.20.4、V33 路径和四个最终 hash；这些已在 2026-08-18 持久刷后全部通过，不要再次制造无意义的全套写入测试。
+2. 用户若报告具体体验问题，先复现并同时记录屏幕唤醒/ZuiMode 游戏态、exact ACK、XML hash、ZuiPP PID/reload 和真实原厂重入链；不能只看频率节点或 App 焦点就下结论。
+3. 下一版本只有在出现可复现的新缺陷时再制作。9008 日常更新只允许使用 `FlashZuiControl9008.ps1` 生成的 7 项安全包，禁止调用原始 99 项全量 XML。
+4. 仍不进入 FPS cap、不改 P1、不恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。
+
+### 0.5 2026-08-18 0.20.2 实机全功能闭环与 0.20.3 P2 reload 修复包（历史，已被 0.6 覆盖）
 
 本节覆盖 0.4 的“待刷”状态、版本、hash 和下一步。设备已经刷入并完整验证 31/0.20.2；本轮唯一新增的真实缺陷是 ZuiPP XML reload 会让原厂 `OverHeatCleanService` 以空 Intent 重启并崩溃一次。该问题已用实机对照实验定位并修复为 32/0.20.3。0.20.3 已完成 CI、签名、重封和最终 super 反向校验，但尚未刷入，所以不能提前宣称新 reload 路径已持久实机通过。
 

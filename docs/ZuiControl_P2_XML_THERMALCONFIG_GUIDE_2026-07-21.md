@@ -4,7 +4,7 @@
 
 本节覆盖本文后面关于“三个用户 profile、daemon 选择 gameMode、GameModeProvider 重入”和旧固定延时保存流程的说明；后文 XML 字段、ThermalConfig 和原厂热控原理仍有效。
 
-当前待刷 App 为 `versionCode=32` / `versionName=0.20.3`，生产代码 commit 为 `8c4ae5327af59006a738a13d41103c80f82d40c3`，GitHub Actions run 为 `32141595553`。最终 `super.img` SHA256 为 `58342f892641faa1e1a80535a5ab67b131bdcc60876505f32c255222b30ffcc2`，成品反抽 verifier 已返回 `ok=true`。P2 已在 0.20.2 实机完成 exact ACK、成功变更、失败不变、原配置恢复、真实游戏重入和 hash/mount/reload 闭环；0.20.3 只修 ZuiPP reload 前原厂 service 的退出次序，刷后需确认一次干净 PID 切换且无 `OverHeatCleanService` fatal。
+当前成品 App 为 `versionCode=33` / `versionName=0.20.4`，修复生产 commit 为 `523990b4062f06d8bf5ee27713ac55e5348458ad`，GitHub Actions run 为 `32147587045`。最终 `super.img` SHA256 为 `8b31b4e742794e3e8c3c5d05dd2fe7307f53c7aeaa76a10833c810c48fd3c80c`，成品反抽 verifier 已返回 `ok=true`。设备已经通过最小化 7 项 9008 XML 持久刷入 0.20.4，并在 V33 系统镜像上完成 exact ACK、成功变更、原配置逐字恢复、真实游戏重入和 hash/mount/reload 闭环；当前不再是临时 daemon 验证状态。
 
 当前生产模型：
 
@@ -28,7 +28,7 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 - daemon 把原请求和终态 ACK 写成两行原子 receipt，可在重启后 replay；profile、active XML、mount/reload 是一笔事务。任何阶段失败都必须恢复旧 profile、旧 active 并真实 reload 旧 runtime，不能只报错却留下三层不一致。
 - 每次 daemon 启动都清除旧 reload receipt。即使 active hash 与上次相同，boot bind 后若 ZuiPP 正在运行，也必须确认新 PID 稳定 10 秒；若尚未运行，允许 `skipped;reason=zuipp_not_running`，其首次启动会读取已 bind 的 active XML。不能用跨开机 remembered hash 跳过一次本应执行的 reload。
 - `last_good` 保存 promote 前的旧 active；成功后不被新 active 覆盖。
-- 0.20.2 实机发现裸 SIGTERM 会使原厂 `OverHeatCleanService` 在 persistent 进程重启时收到空 Intent 并 NPE。0.20.3 在 SIGTERM 前精确停止 OverHeatStats、OverHeatClean、StubbornStats 和 MainService；任一 stop 失败即阻止 kill 并报 `stage=stop_services`，避免把原厂进程崩溃伪装成正常 reload。
+- 0.20.2 实机发现裸 SIGTERM 会使原厂 `OverHeatCleanService` 在 persistent 进程重启时收到空 Intent 并 NPE。0.20.3 在 SIGTERM 前精确停止 OverHeatStats、OverHeatClean、StubbornStats 和 MainService，但错误地相信 `am stop-service` 退出码，且把 daemon 日志 FD 传入 Binder；本机成功/no-op 的退出码均为 255，继承 FD 又会触发 system_server append AVC/Failed transaction。0.20.4 改为先捕获输出、再由 daemon 写日志，仅接受 `Service stopped` 或 `Service not stopped: was not running.`，瞬时失败重试最多 5 次；没有扩大 SELinux 权限。
 
 原因和边界：
 
