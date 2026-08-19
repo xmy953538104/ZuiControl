@@ -1,10 +1,10 @@
 # ZuiControl P2 XML 与 ThermalConfig 读法 - 2026-07-21
 
-## 0. 2026-08-19 当前生产规则
+## 0. 2026-08-20 当前生产规则
 
 本节覆盖本文后面关于“三个用户 profile、daemon 选择 gameMode、GameModeProvider 重入”和旧固定延时保存流程的说明；后文 XML 字段、ThermalConfig 和原厂热控原理仍有效。
 
-当前成品 App 为 `versionCode=36` / `versionName=0.20.7`，生产 commit 为 `0d4b75c32496ce8767c0421c13bdc56b0045f63c`，GitHub Actions run 为 `32218280953`。最终 `super.img` SHA256 为 `93f5e7dffb76b06b725962b7c6a8d7d788c558992d47f7ea511255c4f3c54515`，成品反抽 verifier 已返回 `ok=true`。设备已经通过最小化 7 项 9008 XML 持久刷入 0.20.7，并在 V36 系统镜像上完成 exact stage/terminal ACK、添加和删除 Game Assistant membership、成功变更、自动停止运行中目标、原配置逐字恢复和 hash/mount/reload 闭环；当前不再是临时 daemon 验证状态。
+当前成品 App 为 `versionCode=37` / `versionName=0.21.0`，生产 commit 为 `36d6b26c05e5c0ecfca04ae78120aede51f1d8a2`，GitHub Actions run 为 `32266515192`。最终 `super.img` SHA256 为 `b43375c2c3c53ae5df8f23f6f658ae97cc7b76b5501012fec93cf1c60db173ae`，成品反抽 verifier 已返回 `ok=true`。设备已经通过最小化 7 项 9008 XML 持久刷入 0.21.0；正常重启后 boot bind 触发 ZuiPP `4620 -> 6636` 并得到 `state=done;reason=boot_active;stableSeconds=3`，亮屏重入鸣潮又闭合 `onGameAppStart -> GameHelper -> notifyPerfStatus -> writeSavageMode`。V37 同值保存的真实 UI 操作约 9.8 秒并合法 `skipped;same_hash`；输入改变 XML 时仍执行新 PID 与 3 秒稳定窗。当前不再是临时 daemon 验证状态。
 
 当前生产模型：
 

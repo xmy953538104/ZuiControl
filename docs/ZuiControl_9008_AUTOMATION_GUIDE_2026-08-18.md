@@ -78,7 +78,7 @@ cd D:\3.VScode\Mi\ZuiControl
 -> 要求 All went well 成功标记
 -> Firehose reset 到 system
 -> 等待同一 ADB serial boot_completed=1
--> 要求 PackageManager 为当前脚本声明的 36/0.20.7
+-> 要求 PackageManager 为当前脚本声明的 37/0.21.0
 ```
 
 只想验证能否自动进入 EDL、不写入时可用 `-Mode EnterEdl`。注意它会把设备留在 9008；没有准备好恢复工具时不要单独使用。
@@ -105,7 +105,7 @@ cd D:\3.VScode\Mi\ZuiControl
 - 自动刷写日志：`D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-19_11-51-18.log`
 - 自动复位后确认同一 `HA25HSZM`、`boot_completed=1`、PackageManager 35/0.20.6 和 `/system/priv-app/ZuiControlV35`
 
-2026-08-19 随后又用同一安全路径刷入当前 36/0.20.7：
+2026-08-19 随后又用同一安全路径刷入当时的 36/0.20.7（历史）：
 
 - 当前生产 commit：`0d4b75c32496ce8767c0421c13bdc56b0045f63c`
 - App build run：`32218280953`，结论 `success`
@@ -113,6 +113,16 @@ cd D:\3.VScode\Mi\ZuiControl
 - APK SHA-256：`07a715c59730fabc2a09ab258c1eff5121da1b7719184970814661d1735de09f`
 - 自动刷写日志：`D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-19_13-26-33.log`
 - 自动复位后确认同一 `HA25HSZM`、`boot_completed=1`、PackageManager 36/0.20.7 和 `/system/priv-app/ZuiControlV36`
+
+2026-08-19 深夜继续用同一安全路径刷入当前 37/0.21.0：
+
+- 当前生产 commit：`36d6b26c05e5c0ecfca04ae78120aede51f1d8a2`
+- App build run：`32266515192`，结论 `success`
+- `super.img` SHA-256：`b43375c2c3c53ae5df8f23f6f658ae97cc7b76b5501012fec93cf1c60db173ae`
+- APK SHA-256：`459db275dd33272ed229ac4a7adfac180f314d3345dca4c30d4b9f37b7fe7fef`
+- 自动刷写日志：`D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-19_23-25-02.log`
+- 自动进入 `COM3`，Firehose 返回 `All went well!`；自动复位后确认同一 `HA25HSZM`、`boot_completed=1`、PackageManager 37/0.21.0 和 `/system/priv-app/ZuiControlV37`
+- 正常重启后的 P1/P2/AppOpt、亮屏游戏重入、相机、精确 AVC 与 12 轮稳定性检查均已完成；这才是当前功能交付基线。
 
 loader 在每个 program 完成后打印过 `Trying to free an already freed buffer 0`，但没有中断命令，7 项均写完且最终返回正式成功标记。这个文本当前只按 loader 日志噪声记录；脚本仍以 qdl-rs 退出码、`All went well`、Android 回连和版本检查共同判断成功，不能单独忽略真正的非零退出或写入中断。
 
@@ -128,7 +138,7 @@ loader 在每个 program 完成后打印过 `Trying to free an already freed buf
 
 自动脚本只把“写入成功、reset、Android完成启动、PackageManager 版本正确”作为传输层闭环。功能层仍按主交接当前章节验证：
 
-1. V36/0.20.7 和 APK hash；
+1. V37/0.21.0 和 APK hash；
 2. 开机 P2 reload 必须 done/stableSeconds=3，无 Failed transaction、OverHeatClean fatal/NPE；
 3. 一次可恢复的 P2 修改/恢复和鸣潮重入；
 4. P1、相机、AppOpt 快速回归；
