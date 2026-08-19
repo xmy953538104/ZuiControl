@@ -100,15 +100,21 @@ object ZuiControlRequest {
         context: Context,
         requestId: String,
         timeoutMs: Long = ACK_TIMEOUT_MS,
+        onProgress: ((Ack) -> Unit)? = null,
     ): Ack {
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        var lastProgress: Ack? = null
         do {
             val ack = parseAck(Settings.System.getString(
                 context.contentResolver,
                 ZuiControlContract.KEY_REQUEST_ACK,
             ).orEmpty())
-            if (ack?.requestId == requestId && ack.isTerminal) {
-                return ack
+            if (ack?.requestId == requestId) {
+                if (ack.isTerminal) return ack
+                if (ack != lastProgress) {
+                    lastProgress = ack
+                    onProgress?.invoke(ack)
+                }
             }
             Thread.sleep(ACK_POLL_MS)
         } while (SystemClock.elapsedRealtime() < deadline)
@@ -135,6 +141,24 @@ object ZuiControlRequest {
             return null
         }
         return Ack(fields[0], fields[1], fields[2], fields[3])
+    }
+
+    internal fun progressLabel(detail: String): String = when (detail) {
+        "validating" -> "正在校验请求"
+        "validating_target" -> "正在校验目标应用"
+        "generating_xml" -> "正在生成并校验 XML"
+        "reloading_zuipp" -> "正在挂载新 XML"
+        "stopping_zuipp_services" -> "正在停止 ZuiPP 服务"
+        "waiting_zuipp" -> "正在等待 ZuiPP 新进程稳定（3 秒）"
+        "syncing_game_assistant" -> "正在同步游戏助手"
+        "committing" -> "正在原子提交配置"
+        "validating_rules" -> "正在校验 AppOpt 规则"
+        "writing_rules" -> "正在写入 AppOpt 配置"
+        "restarting_appopt" -> "正在重启并检查 AppOpt"
+        "stopping_appopt" -> "正在停止并检查 AppOpt"
+        "stopping_target" -> "正在关闭受影响 App"
+        "stopping_targets" -> "正在关闭受影响的 App"
+        else -> detail.ifBlank { "正在等待系统处理" }
     }
 
     internal fun buildGenericRequestText(

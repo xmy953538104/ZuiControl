@@ -98,6 +98,8 @@ ZUI_MODE_TX_ADD_USER_GAME=14
 ZUI_MODE_TX_REMOVE_USER_GAME=15
 ZUI_MODE_TX_IS_USER_GAME=16
 ZUI_MODE_TX_IS_SYSTEM_GAME=17
+CURRENT_REQUEST_ID=
+CURRENT_REQUEST_CMD=
 
 ts() {
     date '+%Y-%m-%d %H:%M:%S'
@@ -1097,6 +1099,7 @@ reload_zuipp_if_needed() {
     fi
     old_start="$(proc_start_time "$old_pid")"
 
+    publish_request_progress stopping_zuipp_services
     if ! stop_zuipp_services_for_reload; then
         publish_zuipp_reload_state "state=error;stage=stop_services;oldPid=$old_pid;game=$game_hash;perf=$perf_hash"
         return 1
@@ -1107,6 +1110,7 @@ reload_zuipp_if_needed() {
         return 1
     fi
 
+    publish_request_progress waiting_zuipp
     candidate_key=
     stable_ticks=0
     tries=30
@@ -1412,12 +1416,77 @@ ensure_zui_game_managed() {
     [ "$zui_system_result" = "1" ] || return 1
 
     if zui_mode_call_bool "$ZUI_MODE_TX_ADD_USER_GAME" \
-        s16 "$zui_game_pkg" s16 game s16 111111 &&
-        zui_mode_call_bool "$ZUI_MODE_TX_IS_USER_GAME" s16 "$zui_game_pkg"; then
-        ZUI_GAME_SYNC_RESULT=user_added
-        return 0
+        s16 "$zui_game_pkg" s16 game s16 111111; then
+        zui_mode_call_bool "$ZUI_MODE_TX_IS_USER_GAME" s16 "$zui_game_pkg"
+        if [ "$?" = "0" ]; then
+            ZUI_GAME_SYNC_RESULT=user_added
+            return 0
+        fi
+        zui_mode_call_bool "$ZUI_MODE_TX_REMOVE_USER_GAME" s16 "$zui_game_pkg" || true
     fi
     return 1
+}
+
+remove_zui_game_managed() {
+    zui_game_pkg="$1"
+    ZUI_GAME_SYNC_RESULT=
+
+    zui_mode_call_bool "$ZUI_MODE_TX_IS_USER_GAME" s16 "$zui_game_pkg"
+    zui_user_result=$?
+    if [ "$zui_user_result" = "0" ]; then
+        zui_mode_call_bool "$ZUI_MODE_TX_REMOVE_USER_GAME" s16 "$zui_game_pkg" || return 1
+        zui_mode_call_bool "$ZUI_MODE_TX_IS_USER_GAME" s16 "$zui_game_pkg"
+        if [ "$?" != "1" ]; then
+            zui_mode_call_bool "$ZUI_MODE_TX_ADD_USER_GAME" \
+                s16 "$zui_game_pkg" s16 game s16 111111 || true
+            return 1
+        fi
+        ZUI_GAME_SYNC_RESULT=user_removed
+        return 0
+    fi
+    [ "$zui_user_result" = "1" ] || return 1
+
+    zui_mode_call_bool "$ZUI_MODE_TX_IS_SYSTEM_GAME" s16 "$zui_game_pkg"
+    zui_system_result=$?
+    if [ "$zui_system_result" = "0" ]; then
+        ZUI_GAME_SYNC_RESULT=system_existing
+        return 0
+    fi
+    [ "$zui_system_result" = "1" ] || return 1
+    ZUI_GAME_SYNC_RESULT=already_absent
+    return 0
+}
+
+sync_zui_game_for_performance() {
+    zui_game_action="$1"
+    zui_game_pkg="$2"
+    ZUI_GAME_SYNC_UNDO=none
+    case "$zui_game_action" in
+        set)
+            ensure_zui_game_managed "$zui_game_pkg" || return 1
+            [ "$ZUI_GAME_SYNC_RESULT" = user_added ] && ZUI_GAME_SYNC_UNDO=remove
+            ;;
+        remove)
+            remove_zui_game_managed "$zui_game_pkg" || return 1
+            [ "$ZUI_GAME_SYNC_RESULT" = user_removed ] && ZUI_GAME_SYNC_UNDO=add
+            ;;
+        *) return 1 ;;
+    esac
+    return 0
+}
+
+rollback_zui_game_sync() {
+    zui_game_pkg="$1"
+    case "$ZUI_GAME_SYNC_UNDO" in
+        remove)
+            zui_mode_call_bool "$ZUI_MODE_TX_REMOVE_USER_GAME" s16 "$zui_game_pkg"
+            ;;
+        add)
+            zui_mode_call_bool "$ZUI_MODE_TX_ADD_USER_GAME" \
+                s16 "$zui_game_pkg" s16 game s16 111111
+            ;;
+        *) return 0 ;;
+    esac
 }
 
 package_has_process() {
@@ -1712,6 +1781,7 @@ wait_appopt_stopped() {
 }
 
 apply_appopt() {
+    publish_request_progress restarting_appopt
     copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
     if ! validate_appopt_config; then
         trigger_init_action "$PROP_APPOPT" stop || true
@@ -1745,6 +1815,7 @@ apply_appopt() {
 }
 
 stop_appopt() {
+    publish_request_progress stopping_appopt
     if trigger_init_action "$PROP_APPOPT" stop && wait_appopt_stopped; then
         rm -f "$APPOPT_ENABLED"
         publish_appopt_health
@@ -1760,6 +1831,7 @@ stop_appopt() {
 stop_appopt_and_targets() {
     appopt_stop_packages="$(appopt_rule_packages)"
     stop_appopt || return 1
+    publish_request_progress stopping_targets
     force_stop_package_lines "$appopt_stop_packages"
     REQUEST_RESULT_DETAIL="stoppedApps=$FORCE_STOPPED_COUNT;stopFailed=$FORCE_STOP_FAILED_COUNT"
     return 0
@@ -1779,6 +1851,7 @@ restore_appopt_update_backup() {
 
 replace_appopt_rules() {
     requested_payload="$1"
+    publish_request_progress validating_rules
     copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
     validate_appopt_config_syntax || {
         set_status "daemon=running" "last=replace_appopt_rules_failed" \
@@ -1790,8 +1863,10 @@ replace_appopt_rules() {
     old_appopt_packages="$(appopt_rule_packages)"
     atomic_copy_file "$APPOPT_CONFIG" "$APPOPT_UPDATE_BACKUP" || return 1
 
+    publish_request_progress writing_rules
     if rewrite_appopt_rules_payload "$requested_payload"; then
         new_appopt_packages="$(appopt_rule_packages)"
+        publish_request_progress stopping_targets
         force_stop_package_lines "$old_appopt_packages
 $new_appopt_packages"
         appopt_replace_stopped="$FORCE_STOPPED_COUNT"
@@ -1827,6 +1902,7 @@ $new_appopt_packages"
 set_appopt_rule() {
     requested_pkg="$1"
     requested_preset="$2"
+    publish_request_progress validating_rules
     if ! valid_appopt_package_name "$requested_pkg" ||
         ! valid_appopt_preset "$requested_preset" ||
         ! appopt_package_is_user_app "$requested_pkg"; then
@@ -1843,9 +1919,11 @@ set_appopt_rule() {
     old_appopt_enabled=0
     [ -f "$APPOPT_ENABLED" ] && old_appopt_enabled=1
     atomic_copy_file "$APPOPT_CONFIG" "$APPOPT_UPDATE_BACKUP" || return 1
+    publish_request_progress writing_rules
     if rewrite_appopt_rule "$requested_pkg" "$requested_preset" && apply_appopt; then
         rm -f "$APPOPT_UPDATE_BACKUP"
         publish_appopt_rules_state
+        publish_request_progress stopping_target
         force_stop_package_if_running "$requested_pkg" || true
         REQUEST_RESULT_DETAIL="preset=$requested_preset;target=$PACKAGE_STOP_RESULT"
         set_status "daemon=running" "last=set_appopt_rule_applied" \
@@ -1864,6 +1942,7 @@ set_appopt_rule() {
 
 remove_appopt_rule() {
     requested_pkg="$1"
+    publish_request_progress validating_rules
     if ! valid_appopt_package_name "$requested_pkg"; then
         set_status "daemon=running" "last=remove_appopt_rule_failed" \
             "package=$requested_pkg" "reason=invalid_package"
@@ -1885,6 +1964,7 @@ remove_appopt_rule() {
         if [ "$appopt_reconcile_result" = "0" ]; then
             rm -f "$APPOPT_UPDATE_BACKUP"
             publish_appopt_rules_state
+            publish_request_progress stopping_target
             force_stop_package_if_running "$requested_pkg" || true
             REQUEST_RESULT_DETAIL="already_absent_reconciled;target=$PACKAGE_STOP_RESULT"
             set_status "daemon=running" "last=remove_appopt_rule_applied" \
@@ -1899,6 +1979,7 @@ remove_appopt_rule() {
     [ -f "$APPOPT_ENABLED" ] && old_appopt_enabled=1
     atomic_copy_file "$APPOPT_CONFIG" "$APPOPT_UPDATE_BACKUP" || return 1
     appopt_update_result=
+    publish_request_progress writing_rules
     if rewrite_appopt_rule "$requested_pkg" ""; then
         if [ "$(appopt_rules_count)" -gt 0 ]; then
             if validate_appopt_config; then
@@ -1918,6 +1999,7 @@ remove_appopt_rule() {
         if [ "$appopt_update_result" = "0" ]; then
             rm -f "$APPOPT_UPDATE_BACKUP"
             publish_appopt_rules_state
+            publish_request_progress stopping_target
             force_stop_package_if_running "$requested_pkg" || true
             appopt_remove_detail="${REQUEST_RESULT_DETAIL:-ok}"
             REQUEST_RESULT_DETAIL="$appopt_remove_detail;target=$PACKAGE_STOP_RESULT"
@@ -2057,30 +2139,42 @@ recover_performance_transaction() {
 }
 
 complete_performance_transaction() {
-    if generate_performance_xml && promote_staging_to_active; then
-        if commit_performance_transaction; then
-            return 0
+    performance_game_action="$1"
+    performance_game_pkg="$2"
+    ZUI_GAME_SYNC_UNDO=none
+    publish_request_progress generating_xml
+    if generate_performance_xml; then
+        publish_request_progress reloading_zuipp
+        if promote_staging_to_active; then
+            publish_request_progress syncing_game_assistant
+            if sync_zui_game_for_performance "$performance_game_action" \
+                "$performance_game_pkg"; then
+                publish_request_progress committing
+                if commit_performance_transaction; then
+                    return 0
+                fi
+                set_xml_error "performance transaction commit failed"
+            else
+                set_xml_error "performance transaction game list sync failed"
+            fi
         fi
-        set_xml_error "performance transaction commit failed"
     fi
     if ! rollback_performance_transaction; then
         set_xml_error "performance transaction rollback failed"
         publish_xml_state
         log_line "performance transaction rollback failed"
     fi
+    rollback_zui_game_sync "$performance_game_pkg" ||
+        log_line "performance transaction game list rollback failed: package=$performance_game_pkg"
     return 1
 }
 
 prepare_performance_target() {
     performance_target_pkg="$1"
+    publish_request_progress validating_target
     if ! appopt_package_is_user_app "$performance_target_pkg"; then
         set_status "daemon=running" "last=set_performance_profile_failed" \
             "package=$performance_target_pkg" "reason=invalid_or_system_package"
-        return 1
-    fi
-    if ! ensure_zui_game_managed "$performance_target_pkg"; then
-        set_status "daemon=running" "last=set_performance_profile_failed" \
-            "package=$performance_target_pkg" "reason=game_list_sync_failed"
         return 1
     fi
     return 0
@@ -2088,6 +2182,7 @@ prepare_performance_target() {
 
 finish_performance_target() {
     performance_target_pkg="$1"
+    publish_request_progress stopping_target
     force_stop_package_if_running "$performance_target_pkg" || true
     REQUEST_RESULT_DETAIL="game=$ZUI_GAME_SYNC_RESULT;target=$PACKAGE_STOP_RESULT"
 }
@@ -2145,7 +2240,7 @@ set_performance_profile() {
     fi
     clear_performance_summary
     log_line "performance profile saved: $profile_pkg/$profile_mode"
-    if complete_performance_transaction; then
+    if complete_performance_transaction set "$profile_pkg"; then
         publish_performance_state
         finish_performance_target "$profile_pkg"
         set_status "daemon=running" "last=set_performance_profile_applied" \
@@ -2240,7 +2335,7 @@ set_performance_profile_staged() {
     fi
     clear_performance_summary
     log_line "staged performance profile saved: $profile_pkg/$profile_mode"
-    if complete_performance_transaction; then
+    if complete_performance_transaction set "$profile_pkg"; then
         publish_performance_state
         finish_performance_target "$profile_pkg"
         set_status "daemon=running" "last=set_performance_profile_applied" \
@@ -2274,10 +2369,11 @@ remove_performance_profile() {
     fi
     clear_performance_summary
     log_line "performance profile removed: $profile_pkg"
-    if complete_performance_transaction; then
+    if complete_performance_transaction remove "$profile_pkg"; then
         publish_performance_state
+        publish_request_progress stopping_target
         force_stop_package_if_running "$profile_pkg" || true
-        REQUEST_RESULT_DETAIL="target=$PACKAGE_STOP_RESULT"
+        REQUEST_RESULT_DETAIL="game=$ZUI_GAME_SYNC_RESULT;target=$PACKAGE_STOP_RESULT"
         set_status "daemon=running" "last=remove_performance_profile_applied" \
             "package=$profile_pkg" "mode=$profile_mode" "$REQUEST_RESULT_DETAIL"
         return 0
@@ -2446,6 +2542,11 @@ publish_request_ack() {
     settings_put_quiet "$REQUEST_ACK_KEY" "$ack_text"
 }
 
+publish_request_progress() {
+    [ -n "$CURRENT_REQUEST_ID" ] && [ -n "$CURRENT_REQUEST_CMD" ] || return 0
+    publish_request_ack "$CURRENT_REQUEST_ID" processing "$CURRENT_REQUEST_CMD" "$1"
+}
+
 persist_settings_request_completion() {
     completed_request="$1"
     completed_ack="$2"
@@ -2510,6 +2611,8 @@ finish_atomic_settings_request() {
     if ! settings_put_quiet "$REQUEST_ACK_KEY" "$completed_ack"; then
         log_line "request terminal ACK publish deferred: id=$completed_id cmd=$completed_cmd"
     fi
+    CURRENT_REQUEST_ID=
+    CURRENT_REQUEST_CMD=
     return "$completed_result"
 }
 
@@ -2653,6 +2756,9 @@ process_atomic_settings_request() {
         return $?
     fi
 
+    CURRENT_REQUEST_ID="$id"
+    CURRENT_REQUEST_CMD="$cmd"
+
     if [ "$field_count" -gt 15 ]; then
         log_line "invalid atomic request: too many fields cmd=$cmd"
         set_status "daemon=running" "last=invalid_request" "cmd=$cmd"
@@ -2667,7 +2773,7 @@ process_atomic_settings_request() {
             finish_atomic_settings_request "$request" "$id" "$cmd" 1 "invalid_request"
             return $?
         fi
-        publish_request_ack "$id" processing "$cmd" "" ||
+        publish_request_ack "$id" processing "$cmd" validating ||
             log_line "request processing ACK publish failed: id=$id cmd=$cmd"
         stage_payload="$rate"
         if [ "$field_count" -eq 7 ]; then
@@ -2697,7 +2803,7 @@ process_atomic_settings_request() {
             finish_atomic_settings_request "$request" "$id" "$cmd" 1 "invalid_request"
             return $?
         fi
-        publish_request_ack "$id" processing "$cmd" "" ||
+        publish_request_ack "$id" processing "$cmd" validating ||
             log_line "request processing ACK publish failed: id=$id cmd=$cmd"
         log_line "request: settings:$id cmd=$cmd"
         replace_appopt_rules "$rate"
@@ -2708,7 +2814,7 @@ process_atomic_settings_request() {
         return $?
     fi
 
-    publish_request_ack "$id" processing "$cmd" "" ||
+    publish_request_ack "$id" processing "$cmd" validating ||
         log_line "request processing ACK publish failed: id=$id cmd=$cmd"
     if [ "$cmd" = "set_performance_profile" ] &&
         [ -z "$field10$field11$field12$field13$field14$field15" ]; then

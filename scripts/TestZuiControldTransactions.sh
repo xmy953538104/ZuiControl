@@ -433,6 +433,12 @@ test_request_ack_and_replay() (
     publish_request_ack req1 processing 'bad|cmd' $'line1\nline2'
     [[ "${TEST_SETTINGS[$REQUEST_ACK_KEY]}" == 'req1|processing|bad cmd|line1 line2' ]] ||
         fail 'processing ACK format/sanitization mismatch'
+    CURRENT_REQUEST_ID=req1
+    CURRENT_REQUEST_CMD=set_performance_profile_staged
+    publish_request_progress generating_xml
+    [[ "${TEST_SETTINGS[$REQUEST_ACK_KEY]}" == \
+        'req1|processing|set_performance_profile_staged|generating_xml' ]] ||
+        fail 'processing stage ACK mismatch'
 
     request='req2|status|||||||||||||'
     finish_atomic_settings_request "$request" req2 status 0 ok ||
@@ -537,7 +543,7 @@ test_process_ack_order() (
     TEST_SETTINGS["$REQ_TEXT_KEY"]='req4|status|||||||||||||'
     handle_request() { return 0; }
     process_atomic_settings_request || fail 'atomic request processing failed'
-    [[ "${ACK_HISTORY[0]-}" == 'req4|processing|status|' ]] ||
+    [[ "${ACK_HISTORY[0]-}" == 'req4|processing|status|validating' ]] ||
         fail 'processing ACK was not first'
     [[ "${ACK_HISTORY[-1]-}" == 'req4|done|status|ok' ]] ||
         fail 'terminal ACK was not last'
@@ -687,6 +693,10 @@ test_zui_game_sync_and_target_stop() (
                 : > "$TEST_ROOT/user_game"
                 printf 'Result: Parcel( 00000000 00000001 )\n'
                 ;;
+            15)
+                rm -f "$TEST_ROOT/user_game"
+                printf 'Result: Parcel( 00000000 00000001 )\n'
+                ;;
             16)
                 if [ -e "$TEST_ROOT/user_game" ]; then
                     printf 'Result: Parcel( 00000000 00000001 )\n'
@@ -705,6 +715,26 @@ test_zui_game_sync_and_target_stop() (
     ensure_zui_game_managed com.example.game || fail 'existing custom game query failed'
     [[ "$ZUI_GAME_SYNC_RESULT" == user_existing ]] ||
         fail 'existing custom game was not detected'
+    remove_zui_game_managed com.example.game || fail 'custom game removal failed'
+    [[ "$ZUI_GAME_SYNC_RESULT" == user_removed && ! -e "$TEST_ROOT/user_game" ]] ||
+        fail 'custom game was not removed'
+    remove_zui_game_managed com.example.game || fail 'absent custom game removal failed'
+    [[ "$ZUI_GAME_SYNC_RESULT" == already_absent ]] ||
+        fail 'absent custom game state was not reported'
+
+    sync_zui_game_for_performance set com.example.game ||
+        fail 'transactional game add failed'
+    [[ "$ZUI_GAME_SYNC_UNDO" == remove && -e "$TEST_ROOT/user_game" ]] ||
+        fail 'transactional game add did not record rollback action'
+    rollback_zui_game_sync com.example.game || fail 'transactional game add rollback failed'
+    [[ ! -e "$TEST_ROOT/user_game" ]] || fail 'game add rollback left membership'
+    : > "$TEST_ROOT/user_game"
+    sync_zui_game_for_performance remove com.example.game ||
+        fail 'transactional game remove failed'
+    [[ "$ZUI_GAME_SYNC_UNDO" == add && ! -e "$TEST_ROOT/user_game" ]] ||
+        fail 'transactional game remove did not record rollback action'
+    rollback_zui_game_sync com.example.game || fail 'transactional game remove rollback failed'
+    [[ -e "$TEST_ROOT/user_game" ]] || fail 'game remove rollback did not restore membership'
 
     : > "$TEST_ROOT/running"
     package_has_process() { [ -e "$TEST_ROOT/running" ]; }
@@ -714,6 +744,47 @@ test_zui_game_sync_and_target_stop() (
     [[ "$PACKAGE_STOP_RESULT" == stopped ]] || fail 'target stop result was not reported'
     force_stop_package_if_running com.example.game || fail 'stopped target check failed'
     [[ "$PACKAGE_STOP_RESULT" == not_running ]] || fail 'not-running target was not skipped'
+)
+
+test_performance_game_sync_commit_boundary() (
+    export ZUI_CONTROLD_TEST_MODE=1
+    # shellcheck source=/dev/null
+    source "$DAEMON"
+    setup_test_state
+    trap 'rm -rf "$TEST_ROOT"' EXIT
+    service() {
+        case "$3" in
+            14) : > "$TEST_ROOT/user_game"; printf 'Result: Parcel( 00000000 00000001 )\n' ;;
+            15) rm -f "$TEST_ROOT/user_game"; printf 'Result: Parcel( 00000000 00000001 )\n' ;;
+            16)
+                if [ -e "$TEST_ROOT/user_game" ]; then
+                    printf 'Result: Parcel( 00000000 00000001 )\n'
+                else
+                    printf 'Result: Parcel( 00000000 00000000 )\n'
+                fi
+                ;;
+            17) printf 'Result: Parcel( 00000000 00000000 )\n' ;;
+            *) return 1 ;;
+        esac
+    }
+    generate_performance_xml() { return 0; }
+    promote_staging_to_active() { return 0; }
+    rollback_performance_transaction() { return 0; }
+    commit_performance_transaction() { return 1; }
+
+    complete_performance_transaction set com.example.game &&
+        fail 'failed profile commit kept a game-list add'
+    [ ! -e "$TEST_ROOT/user_game" ] || fail 'failed profile commit leaked game-list add'
+    : > "$TEST_ROOT/user_game"
+    complete_performance_transaction remove com.example.game &&
+        fail 'failed profile removal commit succeeded'
+    [ -e "$TEST_ROOT/user_game" ] || fail 'failed profile removal did not restore game membership'
+
+    commit_performance_transaction() { return 0; }
+    complete_performance_transaction set com.example.game || fail 'committed profile did not add game'
+    [ -e "$TEST_ROOT/user_game" ] || fail 'committed profile lost game membership'
+    complete_performance_transaction remove com.example.game || fail 'committed profile removal failed'
+    [ ! -e "$TEST_ROOT/user_game" ] || fail 'committed profile removal kept custom game'
 )
 
 test_appopt_batch_replace() (
@@ -769,6 +840,7 @@ test_appopt_update_rollback
 test_appopt_stale_rule_removal
 test_appopt_same_pid_stability
 test_zui_game_sync_and_target_stop
+test_performance_game_sync_commit_boundary
 test_appopt_batch_replace
 
 printf 'zui_controld transactions, request ACK, and AppOpt rules: OK\n'

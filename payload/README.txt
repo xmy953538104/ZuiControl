@@ -1,7 +1,7 @@
 ZuiControl v19 payload
 
 System components:
-- /system/priv-app/ZuiControlV35/ZuiControl.apk
+- /system/priv-app/ZuiControlV36/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/AppOpt
 - /system/etc/init/zui_controld.rc
@@ -42,8 +42,9 @@ Behavior:
   official originals. An official-original restore is available only if such a
   pair is explicitly saved under the runtime official_original directory.
 - Each game has one current performance profile. Saving a user game also adds it
-  to ZUI Game Assistant's custom list if needed, without removing Game
-  Assistant-only entries. Its LimitConfig is mirrored to
+  to ZUI Game Assistant's custom list if needed; deleting that ZuiControl
+  profile removes the user custom-game entry in the same recoverable transaction.
+  Game Assistant-side edits never create or delete ZuiControl profiles. Its LimitConfig is mirrored to
   all three OEM mode slots, and one CPU level ID is shared by the four CPU Type
   maps for each thermal stage. Daemon-side GameModeProvider forcing is removed;
   the next game start uses the OEM chain and mounted XML. A running target is
@@ -61,8 +62,9 @@ Behavior:
 - The shipped AppOpt default contains only commented package-wide preset
   examples. It enables no rule and contains no thread-name rule syntax.
 - AppOpt keeps its validated canonical config under /data/vendor. The App UI can
-  export and strictly validate/import an editable Download/ZuiControl/AppOpt.conf
-  copy; a batch import restarts AppOpt once and stops affected running apps.
+  edit the complete list in-app or export and strictly validate/import an editable
+  Download/ZuiControl/AppOpt.conf copy; either batch path restarts AppOpt once and
+  stops affected running apps.
 - SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input method,
   and overlays are transient scenes. Launcher is a valid configurable scene.
 - 144/165 are displayHz lock targets only in v19; generic UID FPS cap is a later

@@ -15,6 +15,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.text.Editable
+import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
@@ -25,6 +26,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ListView
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
@@ -1152,16 +1154,27 @@ class MainActivity : Activity() {
 
     private fun removePerformanceProfile() {
         val pkg = selectedPackage ?: return toast("请先选择应用")
-        sendCommand("正在删除性能配置", onTerminal = { ack ->
-            if (ack.succeeded) toast(targetResultText(ack.detail, "游戏"))
-        }) {
-            ZuiControlRequest.send(
-                this,
-                ZuiControlContract.CMD_REMOVE_PERFORMANCE_PROFILE,
-                pkg = pkg,
-                mode = PerformanceMode.BALANCED.id,
+        if (!performanceProfiles.containsKey(pkg)) return toast("该应用没有性能配置")
+        AlertDialog.Builder(this)
+            .setTitle("删除性能配置")
+            .setMessage(
+                "将删除 ${labelForPackage(pkg)} 的自定义 XML，并同步移出游戏助手用户自定义列表。" +
+                    "系统内置游戏识别不会被删除。若目标正在运行，成功后会自动关闭。",
             )
-        }
+            .setPositiveButton("删除并应用") { _, _ ->
+                sendCommand("正在删除性能配置", onTerminal = { ack ->
+                    if (ack.succeeded) toast(targetResultText(ack.detail, "游戏"))
+                }) {
+                    ZuiControlRequest.send(
+                        this,
+                        ZuiControlContract.CMD_REMOVE_PERFORMANCE_PROFILE,
+                        pkg = pkg,
+                        mode = PerformanceMode.BALANCED.id,
+                    )
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun buildSystemPage(): View {
@@ -1177,7 +1190,7 @@ class MainActivity : Activity() {
         appOptStatus = infoPanel()
         root.addView(appOptStatus, fieldMargins())
         root.addView(compactNote(
-            "仅支持整包 CPU 预设，不支持线程名或自由输入。保存、删除或停止成功后会自动关闭正在运行的受影响 App；未运行的 App 会在下次启动时生效。可编辑副本：${AppOptConfig.DISPLAY_PATH}",
+            "仅支持整包 CPU 预设，不支持线程名或自由 CPU 集合。可逐项设置、直接编辑完整清单，或导入 ${AppOptConfig.DISPLAY_PATH}。校验通过后才会应用；运行中的受影响 App 会自动关闭。",
         ), fieldMargins())
 
         appOptRulesHost = vertical()
@@ -1200,6 +1213,11 @@ class MainActivity : Activity() {
                 })
         }
         root.addView(appOptActions, buttonMargins())
+
+        root.addView(primaryButton("编辑配置清单") { showAppOptTextEditor() },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)).apply {
+                setMargins(0, dp(8), 0, 0)
+            })
 
         val appOptConfigActions = horizontalRow().apply {
             background = null
@@ -1371,12 +1389,7 @@ class MainActivity : Activity() {
 
     private fun importAppOptConfig() {
         Thread {
-            val result = runCatching {
-                val rules = AppOptConfig.parse(AppOptConfig.read(this))
-                val invalid = rules.keys.firstOrNull { !isInstalledUserApp(it) }
-                require(invalid == null) { "$invalid 不是已安装用户 App" }
-                rules
-            }
+            val result = runCatching { validateAppOptText(AppOptConfig.read(this)) }
             handler.post {
                 val rules = result.getOrElse {
                     toast(it.message ?: "共享配置读取失败")
@@ -1389,23 +1402,79 @@ class MainActivity : Activity() {
                             "成功后会自动关闭正在运行的受影响 App。",
                     )
                     .setPositiveButton("导入并应用") { _, _ ->
-                        sendCommand("正在导入 AppOpt 配置", onTerminal = { ack ->
-                            if (ack.succeeded) {
-                                syncAppOptConfig()
-                                toast(appOptStopResultText(ack.detail, "配置已导入"))
-                            }
-                        }) {
-                            ZuiControlRequest.send(
-                                this,
-                                ZuiControlContract.CMD_REPLACE_APPOPT_RULES,
-                                appOptPayload = AppOptConfig.payload(rules),
-                            )
-                        }
+                        applyAppOptRules(rules, "正在导入 AppOpt 配置", "配置已导入")
                     }
                     .setNegativeButton("取消", null)
                     .show()
             }
         }.start()
+    }
+
+    private fun showAppOptTextEditor() {
+        val editor = EditText(this).apply {
+            setText(AppOptConfig.text(appOptRules))
+            gravity = Gravity.TOP or Gravity.START
+            typeface = Typeface.MONOSPACE
+            textSize = 14f
+            minLines = 12
+            maxLines = 18
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+        }
+        val container = FrameLayout(this).apply {
+            setPadding(dp(20), dp(4), dp(20), 0)
+            addView(editor, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(if (isWideLayout()) 430 else 320),
+            ))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("编辑 AppOpt 配置清单")
+            .setMessage("每行一个 包名=预设；只接受 0-7、0-4、5-7、0-1。校验通过后才会替换并应用。")
+            .setView(container)
+            .setPositiveButton("校验并应用", null)
+            .setNegativeButton("取消", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val rules = runCatching { validateAppOptText(editor.text.toString()) }
+                    .getOrElse {
+                        editor.error = it.message ?: "配置校验失败"
+                        return@setOnClickListener
+                    }
+                dialog.dismiss()
+                applyAppOptRules(rules, "正在应用 AppOpt 配置", "配置已保存")
+            }
+        }
+        dialog.show()
+    }
+
+    private fun validateAppOptText(text: String): LinkedHashMap<String, AppOptRule> {
+        val rules = AppOptConfig.parse(text)
+        val invalid = rules.keys.firstOrNull { !isInstalledUserApp(it) }
+        require(invalid == null) { "$invalid 不是已安装用户 App" }
+        return rules
+    }
+
+    private fun applyAppOptRules(
+        rules: Map<String, AppOptRule>,
+        message: String,
+        successText: String,
+    ) {
+        sendCommand(message, onTerminal = { ack ->
+            if (ack.succeeded) {
+                syncAppOptConfig()
+                toast(appOptStopResultText(ack.detail, successText))
+            }
+        }) {
+            ZuiControlRequest.send(
+                this,
+                ZuiControlContract.CMD_REPLACE_APPOPT_RULES,
+                appOptPayload = AppOptConfig.payload(rules),
+            )
+        }
     }
 
     private fun syncAppOptConfig(showToast: Boolean = false) {
@@ -1427,6 +1496,9 @@ class MainActivity : Activity() {
     private fun targetResultText(detail: String, targetName: String): String {
         val gameText = when {
             detail.contains("game=user_added") -> "，已同步加入游戏助手"
+            detail.contains("game=user_removed") -> "，已同步移出游戏助手自定义列表"
+            detail.contains("game=already_absent") -> "，游戏助手自定义条目已不存在"
+            detail.contains("game=system_existing") -> "，系统内置游戏识别已保留"
             detail.contains("game=") -> "，游戏助手已识别"
             else -> ""
         }
@@ -1686,14 +1758,22 @@ class MainActivity : Activity() {
         }
         commandInFlight = true
         lastCommandAt = now
-        if (message != null) toast(message)
+        val progressUi = message?.let { commandProgressDialog(it) }
+        progressUi?.first?.show()
         Thread {
             val result = runCatching {
                 val requestId = block()
-                ZuiControlRequest.awaitTerminalAck(this, requestId)
+                ZuiControlRequest.awaitTerminalAck(this, requestId) { ack ->
+                    handler.post {
+                        if (progressUi?.first?.isShowing == true) {
+                            progressUi.second.text = ZuiControlRequest.progressLabel(ack.detail)
+                        }
+                    }
+                }
             }
             handler.post {
                 commandInFlight = false
+                runCatching { progressUi?.first?.dismiss() }
                 val ack = result.getOrNull()
                 when {
                     result.isFailure && message != null ->
@@ -1712,6 +1792,34 @@ class MainActivity : Activity() {
                 }
             }
         }.start()
+    }
+
+    private fun commandProgressDialog(title: String): Pair<AlertDialog, TextView> {
+        val progressText = label(
+            "正在等待系统接收请求",
+            14f,
+            COLOR_TEXT,
+            Typeface.NORMAL,
+        )
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(22), dp(12), dp(22), dp(12))
+            addView(ProgressBar(this@MainActivity).apply { isIndeterminate = true },
+                LinearLayout.LayoutParams(dp(42), dp(42)))
+            addView(progressText, LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f,
+            ).apply { setMargins(dp(16), 0, 0, 0) })
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(row)
+            .setCancelable(false)
+            .create()
+        dialog.setCanceledOnTouchOutside(false)
+        return dialog to progressText
     }
 
     private fun ensureSelectedPerformanceProfile() {

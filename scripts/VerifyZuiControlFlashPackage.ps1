@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '35'
-$ExpectedVersionName = '0.20.6'
+$ExpectedVersionCode = '36'
+$ExpectedVersionName = '0.20.7'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -260,14 +260,15 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV35\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV36\ZuiControl.apk'
     $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
     $PreviousAppDirs = @(
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV30'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV31'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV32'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV33'),
-        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV34')
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV34'),
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV35')
     )
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
@@ -371,7 +372,10 @@ try {
     Assert-Contains $Daemon 'REQUEST_ACK_KEY=zui_control_request_ack' 'exact terminal request acknowledgement'
     Assert-Contains $Daemon 'PERFORMANCE_TXN_MARKER=$PERFORMANCE_DIR/profile_txn.prop' 'recoverable performance transaction marker'
     Assert-Contains $Daemon 'ZUI_MODE_TX_ADD_USER_GAME=14' 'one-way ZUI Game Assistant custom-game sync'
+    Assert-Contains $Daemon 'ZUI_MODE_TX_REMOVE_USER_GAME=15' 'P2 delete custom-game sync'
     Assert-Contains $Daemon 'ensure_zui_game_managed' 'P2 Game Assistant membership gate'
+    Assert-Contains $Daemon 'rollback_zui_game_sync' 'P2 Game Assistant transaction rollback'
+    Assert-Contains $Daemon 'publish_request_progress' 'long command processing stages'
     Assert-Contains $Daemon 'force_stop_package_if_running' 'running target auto-stop'
     Assert-Contains $Daemon 'replace_appopt_rules' 'atomic AppOpt batch import'
     Assert-Contains $Daemon 'APPOPT_STABLE_SECONDS=3' 'bounded AppOpt stability window'
