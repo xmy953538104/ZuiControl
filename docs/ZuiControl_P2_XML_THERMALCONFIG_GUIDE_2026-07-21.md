@@ -1,24 +1,26 @@
 # ZuiControl P2 XML 与 ThermalConfig 读法 - 2026-07-21
 
-## 0. 2026-08-18 当前生产规则
+## 0. 2026-08-19 当前生产规则
 
 本节覆盖本文后面关于“三个用户 profile、daemon 选择 gameMode、GameModeProvider 重入”和旧固定延时保存流程的说明；后文 XML 字段、ThermalConfig 和原厂热控原理仍有效。
 
-当前成品 App 为 `versionCode=33` / `versionName=0.20.4`，修复生产 commit 为 `523990b4062f06d8bf5ee27713ac55e5348458ad`，GitHub Actions run 为 `32147587045`。最终 `super.img` SHA256 为 `8b31b4e742794e3e8c3c5d05dd2fe7307f53c7aeaa76a10833c810c48fd3c80c`，成品反抽 verifier 已返回 `ok=true`。设备已经通过最小化 7 项 9008 XML 持久刷入 0.20.4，并在 V33 系统镜像上完成 exact ACK、成功变更、原配置逐字恢复、真实游戏重入和 hash/mount/reload 闭环；当前不再是临时 daemon 验证状态。
+当前成品 App 为 `versionCode=35` / `versionName=0.20.6`，生产 commit 为 `c1d8978a70fecd25163fae1ef6eb157d413a960e`，GitHub Actions run 为 `32212847833`。最终 `super.img` SHA256 为 `f2b49a1670b28fbe43b1a9bc91db5486668b3c1d4c0c8c0a2b7a5cc9f1dead47`，成品反抽 verifier 已返回 `ok=true`。设备已经通过最小化 7 项 9008 XML 持久刷入 0.20.6，并在 V35 系统镜像上完成 exact ACK、成功变更、自动停止运行中目标、原配置逐字恢复和 hash/mount/reload 闭环；当前不再是临时 daemon 验证状态。
 
 当前生产模型：
 
 ```text
 App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
+-> 保存前查询目标是否已在 ZUI Game Assistant；若没有则单向加入自定义游戏列表
 -> daemon 备份旧 profile、旧 active XML 与事务 marker
 -> 每个 package 生成一份 canonical profile
 -> 每个温区分配一个共享 CPU level ID
 -> Little/Big/Titan/Mega 四个 Type 用同一 ID、各存自己的频率值
 -> 同一 LimitConfig 镜像到 balanced / powersave / savage
 -> 校验、promote、bind active XML
--> ZuiPP 在运行时先停止四个原厂 service，再受控重启并等待新 PID 稳定 10 秒；未运行则记录合法 skipped
+-> ZuiPP 在运行时先停止四个原厂 service，再受控重启并等待新 PID 稳定 3 秒；未运行则记录合法 skipped
 -> 原子提交 profile + runtime + terminal ACK；失败则恢复整笔旧状态
--> 用户彻底退出并重新进入 ZUI 已识别的游戏
+-> 保存成功后自动停止当时正在运行的目标；未运行则跳过
+-> 用户从桌面重新进入 ZUI 已识别的游戏
 -> 原厂 onGameAppStart / GameHelper 选择任一模式，得到相同配置
 ```
 
@@ -26,7 +28,7 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 
 - App 不再用 720ms/13s 定时器猜完成，也不乐观改 UI 列表。ACK 固定为四段：`id|processing|cmd|`、`id|done|cmd|detail`、`id|failed|cmd|reason`；只有 exact terminal ACK 才允许下一条请求覆盖 Settings.System 单槽。
 - daemon 把原请求和终态 ACK 写成两行原子 receipt，可在重启后 replay；profile、active XML、mount/reload 是一笔事务。任何阶段失败都必须恢复旧 profile、旧 active 并真实 reload 旧 runtime，不能只报错却留下三层不一致。
-- 每次 daemon 启动都清除旧 reload receipt。即使 active hash 与上次相同，boot bind 后若 ZuiPP 正在运行，也必须确认新 PID 稳定 10 秒；若尚未运行，允许 `skipped;reason=zuipp_not_running`，其首次启动会读取已 bind 的 active XML。不能用跨开机 remembered hash 跳过一次本应执行的 reload。
+- 每次 daemon 启动都清除旧 reload receipt。即使 active hash 与上次相同，boot bind 后若 ZuiPP 正在运行，也必须确认新 PID 稳定 3 秒；若尚未运行，允许 `skipped;reason=zuipp_not_running`，其首次启动会读取已 bind 的 active XML。不能用跨开机 remembered hash 跳过一次本应执行的 reload。3 秒仍是必要的新进程立即崩溃观察窗，不能只看到 PID 变化就报成功。
 - `last_good` 保存 promote 前的旧 active；成功后不被新 active 覆盖。
 - 0.20.2 实机发现裸 SIGTERM 会使原厂 `OverHeatCleanService` 在 persistent 进程重启时收到空 Intent 并 NPE。0.20.3 在 SIGTERM 前精确停止 OverHeatStats、OverHeatClean、StubbornStats 和 MainService，但错误地相信 `am stop-service` 退出码，且把 daemon 日志 FD 传入 Binder；本机成功/no-op 的退出码均为 255，继承 FD 又会触发 system_server append AVC/Failed transaction。0.20.4 改为先捕获输出、再由 daemon 写日志，仅接受 `Service stopped` 或 `Service not stopped: was not running.`，瞬时失败重试最多 5 次；没有扩大 SELinux 权限。
 
@@ -34,8 +36,10 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 
 - 设备实测 ZuiPP 的 CPU Type 读取顺序不是 XML 文档顺序。旧版为四簇分配不同 level ID 时，错误 Type 查找可能缺少 level，TAssistant 会放弃整条策略。共享 CPU ID 消除了顺序依赖。
 - daemon 直接调用 `GameModeProvider/contact` 会出现“命令成功但 ZuiPP 没有目标游戏状态”的假成功，现已删除。OEM GameHelper 本来就会在真实 `onGameAppStart` 时调用 provider；provider rows=1 也只能表示模式值被接受，不能单独证明 LimitConfig 已下发。
-- ZuiPP 被重启后，TAssistant/原厂 game callback 要到下一次真实游戏启动才重新建立。因此 UI done 以后仍必须强停/退出并重进目标游戏。
-- 普通 App 即使被写入 XML，也可能没有 GameHelper/ZuiPP 的 `onGameAppStart`，因此只承诺 ZUI 已识别的游戏。
+- ZuiControl 保存 P2 前会通过 `zuimode` 检查 Game Assistant 自定义列表；目标不在其中时自动添加。这个同步只从 ZuiControl 指向 Game Assistant：Game Assistant 单独添加不会创建 P2 profile，删除 P2 profile也不会移除游戏条目。因此前者继续走 OEM 默认调度，只有 ZuiControl 中有 profile 的 App 才走自定义 XML。
+- ZuiPP 被重启后，TAssistant/原厂 game callback 要到下一次真实游戏启动才重新建立。保存成功后 daemon 会自动停止当时正在运行的目标；未运行时不做无意义的停止。UI done 后用户直接从桌面重新打开即可，不再要求去系统设置手动强停。
+- “息屏启动”只指旧测试曾在屏幕关闭时用 adb 拉起 App，不是产品流程。正常亮屏从桌面启动才是交付路径；仅有 Activity 焦点而没有 `onGameAppStart` 不能判为 ZUI 游戏态。
+- P2 添加器只列已安装、可启动的 `/data/app` 用户 App；保存又会确保 Game Assistant membership，因此不再依赖用户手工两地添加。
 - XML 的 CPU/GPU 上下限是 OEM 性能请求，不是不可被覆盖的硬上限。全局 thermal、厂商性能服务或更高优先级请求仍可能改变最终节点值；节点不瞬时等于输入值不能单独判为失败。
 - 不恢复 daemon direct cpufreq/KGSL sysfs，不进入 FPS cap。
 
@@ -46,8 +50,8 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 3. `xml_state=state=mounted`，active 与 `/system/etc` 是否同 hash 且确为 bind mount。
 4. 目标 App 的三个 LimitConfig mode block 是否完全一致。
 5. 每个温区 Little/Big/Titan/Mega 四个 ID 是否相同，并在四个 Type 中都存在。
-6. ZuiPP 正在运行时，四个原厂 service 是否先成功停止，reload 是否 `state=done`、`stableSeconds=10`、`needsAppReenter=1`，并且只有一次干净 PID 切换、没有 `OverHeatCleanService` fatal/NPE；未运行时允许 `state=skipped;reason=zuipp_not_running`。只有输入/输出 hash 确实未变时才接受 `skipped;same_hash`，而每次 daemon 新启动不能用上次开机 receipt 跳过一次本应执行的 reload。
-7. 强停/退出并重新进入 ZUI 已识别的游戏，按顺序检查同一 package 的 `onGameAppStart`、GameHelper、ZuiPP `notifyGameAppStateChanged`、非空 LimitConfig/TAssistant 下发。
+6. ZuiPP 正在运行时，四个原厂 service 是否先成功停止，reload 是否 `state=done`、`stableSeconds=3`、`needsAppReenter=1`，并且只有一次干净 PID 切换、没有 `OverHeatCleanService` fatal/NPE；未运行时允许 `state=skipped;reason=zuipp_not_running`。只有输入/输出 hash 确实未变时才接受 `skipped;same_hash`，而每次 daemon 新启动不能用上次开机 receipt 跳过一次本应执行的 reload。
+7. 确认运行中的目标已自动停止或返回 `target=not_running`，再从桌面重新进入；按顺序检查同一 package 的 `onGameAppStart`、GameHelper、ZuiPP `notifyGameAppStateChanged`、非空 LimitConfig/TAssistant 下发。
 8. 再读 CPU/GPU 最终节点，并区分用户请求、厂商覆盖和真实高温降频。
 9. 检查 dmesg 与全 buffer logcat 中相关 AVC。
 
