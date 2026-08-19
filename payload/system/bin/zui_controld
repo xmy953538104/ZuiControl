@@ -1364,7 +1364,7 @@ valid_appopt_package_name() {
 
 valid_appopt_preset() {
     case "$1" in
-        0-7|0-4|5-7|0-1) return 0 ;;
+        2-6|2-4|7|0-7|0-4|5-7|0-1) return 0 ;;
     esac
     return 1
 }
@@ -1520,13 +1520,24 @@ valid_appopt_rule_line() {
     appopt_line="$1"
     appopt_check_package="$2"
     case "$appopt_line" in
-        *'{'*|*'}'*|*=*=*) return 1 ;;
+        *=*=*) return 1 ;;
     esac
-    appopt_rule_pkg="${appopt_line%%=*}"
+    appopt_rule_left="${appopt_line%%=*}"
     appopt_rule_preset="${appopt_line#*=}"
-    [ "$appopt_rule_pkg" != "$appopt_line" ] || return 1
-    valid_appopt_package_name "$appopt_rule_pkg" || return 1
+    [ "$appopt_rule_left" != "$appopt_line" ] || return 1
+    appopt_rule_thread=
+    if valid_appopt_package_name "$appopt_rule_left"; then
+        appopt_rule_pkg="$appopt_rule_left"
+    elif printf '%s\n' "$appopt_rule_left" | grep -Eq \
+        '^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+\{[A-Za-z0-9_.:+*? -]{1,31}\}$'; then
+        appopt_rule_pkg="${appopt_rule_left%%\{*}"
+        appopt_rule_thread="${appopt_rule_left#*\{}"
+        appopt_rule_thread="${appopt_rule_thread%\}}"
+    else
+        return 1
+    fi
     valid_appopt_preset "$appopt_rule_preset" || return 1
+    appopt_rule_key="$appopt_rule_left"
     if [ "$appopt_check_package" = "1" ]; then
         appopt_package_is_user_app "$appopt_rule_pkg" || return 1
     fi
@@ -1605,12 +1616,11 @@ publish_appopt_rules_state() {
                 ""|'#'*) continue ;;
             esac
             if valid_appopt_rule_line "$appopt_line" 0; then
-                appopt_rule_text="$appopt_rule_pkg|$appopt_rule_preset"
                 if [ -n "$appopt_rules_text" ]; then
                     appopt_rules_text="$appopt_rules_text
-$appopt_rule_text"
+$appopt_line"
                 else
-                    appopt_rules_text="$appopt_rule_text"
+                    appopt_rules_text="$appopt_line"
                 fi
             fi
         done < "$APPOPT_CONFIG"
@@ -1699,12 +1709,7 @@ force_stop_package_lines() {
 
 rewrite_appopt_rules_payload() {
     appopt_payload="$1"
-    [ "${#appopt_payload}" -le 4096 ] || return 1
-    if [ -n "$appopt_payload" ] &&
-        ! printf '%s\n' "$appopt_payload" | grep -Eq \
-            '^([A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+=(0-7|0-4|5-7|0-1))(;[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+=(0-7|0-4|5-7|0-1))*$'; then
-        return 1
-    fi
+    [ "${#appopt_payload}" -le 16384 ] || return 1
 
     appopt_tmp="$APPOPT_CONFIG.tmp"
     appopt_payload_lines="$APPOPT_CONFIG.payload.tmp"
@@ -1715,26 +1720,46 @@ rewrite_appopt_rules_payload() {
         return 1
     }
     appopt_payload_seen='|'
+    appopt_payload_packages='|'
+    appopt_payload_bases='|'
     while IFS= read -r appopt_payload_line || [ -n "$appopt_payload_line" ]; do
         [ -n "$appopt_payload_line" ] || continue
-        valid_appopt_rule_line "$appopt_payload_line" 1 || {
+        valid_appopt_rule_line "$appopt_payload_line" 0 || {
             rm -f "$appopt_tmp" "$appopt_payload_lines"
             return 1
         }
         case "$appopt_payload_seen" in
-            *"|$appopt_rule_pkg|"*)
+            *"|$appopt_rule_key|"*)
                 rm -f "$appopt_tmp" "$appopt_payload_lines"
                 return 1
                 ;;
         esac
-        appopt_payload_seen="$appopt_payload_seen$appopt_rule_pkg|"
-        printf '%s=%s\n' "$appopt_rule_pkg" "$appopt_rule_preset" \
-            >> "$appopt_tmp" || {
+        appopt_payload_seen="$appopt_payload_seen$appopt_rule_key|"
+        if [ -z "$appopt_rule_thread" ]; then
+            appopt_payload_bases="$appopt_payload_bases$appopt_rule_pkg|"
+        fi
+        case "$appopt_payload_packages" in
+            *"|$appopt_rule_pkg|"*) ;;
+            *)
+                appopt_package_is_user_app "$appopt_rule_pkg" || {
+                    rm -f "$appopt_tmp" "$appopt_payload_lines"
+                    return 1
+                }
+                appopt_payload_packages="$appopt_payload_packages$appopt_rule_pkg|"
+                ;;
+        esac
+        printf '%s\n' "$appopt_payload_line" >> "$appopt_tmp" || {
             rm -f "$appopt_tmp" "$appopt_payload_lines"
             return 1
         }
     done < "$appopt_payload_lines"
     rm -f "$appopt_payload_lines"
+    for appopt_payload_pkg in $(printf '%s' "$appopt_payload_packages" | tr '|' ' '); do
+        case "$appopt_payload_bases" in
+            *"|$appopt_payload_pkg|"*) ;;
+            *) rm -f "$appopt_tmp"; return 1 ;;
+        esac
+    done
     if chmod 0664 "$appopt_tmp" && mv "$appopt_tmp" "$APPOPT_CONFIG"; then
         return 0
     fi

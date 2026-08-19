@@ -23,9 +23,10 @@ AppOpt thread-placement orchestration.
 - `/data/system/zui_control/profiles.prop`: refresh scene profiles.
 - `/data/vendor/zui_control/`: daemon runtime state, XML work files, and logs.
 
-AppOpt is exposed only as four package-wide presets (`0-7`, `0-4`, `5-7`,
-`0-1`) for installed user apps. Thread-name rules, free-form CPU sets, and
-system-app targets are deliberately not exposed.
+AppOpt supports one fallback CPU set plus validated thread-name/glob overrides
+for each installed user app. The UI includes an opt-in Snapdragon 8 Gen 3 game
+catalog, a strict in-app editor, and import/export; arbitrary CPU masks and
+system-app targets remain unavailable.
 
 Refresh-rate ownership is intentionally not shared: notification clicks call
 `zui_control`; the daemon does not learn refresh rules, restore 120Hz, or write

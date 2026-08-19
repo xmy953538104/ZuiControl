@@ -180,7 +180,9 @@ object ZuiControlRequest {
             ZuiControlContract.CMD_REPLACE_APPOPT_RULES,
             payload.filter {
                 it.isLetterOrDigit() || it == '_' || it == '.' ||
-                    it == '=' || it == '-' || it == ';'
+                    it == '=' || it == '-' || it == ';' || it == ',' ||
+                    it == '{' || it == '}' || it == '*' || it == '?' ||
+                    it == ':' || it == '+' || it == ' '
             },
         ).joinToString("|")
 

@@ -583,7 +583,7 @@ test_appopt_rule_commands() (
     set_appopt_rule com.example.user 0-1 || fail 'valid AppOpt rule was rejected'
     grep -qx 'com.example.user=0-1' "$APPOPT_CONFIG" ||
         fail 'valid AppOpt rule was not written canonically'
-    [[ "${TEST_SETTINGS[$APPOPT_RULES_KEY]-}" == 'com.example.user|0-1' ]] ||
+    [[ "${TEST_SETTINGS[$APPOPT_RULES_KEY]-}" == 'com.example.user=0-1' ]] ||
         fail 'AppOpt rules state was not published'
 
     cp "$APPOPT_CONFIG" "$TEST_ROOT/appopt_before_reject"
@@ -802,20 +802,26 @@ test_appopt_batch_replace() (
     am() { rm -f "$TEST_ROOT/running_batch_target"; return 0; }
     sleep() { :; }
 
-    replace_appopt_rules 'com.example.user=0-1;com.example.other=5-7' ||
+    replace_appopt_rules 'com.example.user=2-6;com.example.user{RenderThread}=2-4;com.example.user{GameThread}=7;com.example.other=5-7' ||
         fail 'valid AppOpt batch was rejected'
-    grep -qx 'com.example.user=0-1' "$APPOPT_CONFIG" ||
-        fail 'first batch rule missing'
+    grep -qx 'com.example.user=2-6' "$APPOPT_CONFIG" ||
+        fail 'batch fallback rule missing'
+    grep -qx 'com.example.user{RenderThread}=2-4' "$APPOPT_CONFIG" ||
+        fail 'batch render rule missing'
+    grep -qx 'com.example.user{GameThread}=7' "$APPOPT_CONFIG" ||
+        fail 'batch game rule missing'
     grep -qx 'com.example.other=5-7' "$APPOPT_CONFIG" ||
         fail 'second batch rule missing'
     [[ ! -e "$TEST_ROOT/running_batch_target" ]] ||
         fail 'batch did not stop a running target'
-    [[ "$REQUEST_RESULT_DETAIL" == 'rules=2;stoppedApps=1;stopFailed=0' ]] ||
+    [[ "$REQUEST_RESULT_DETAIL" == 'rules=4;stoppedApps=1;stopFailed=0' ]] ||
         fail 'batch result detail is wrong'
 
     cp "$APPOPT_CONFIG" "$TEST_ROOT/before_invalid_batch"
-    replace_appopt_rules 'com.example.user=0-1;com.example.user=5-7' &&
-        fail 'duplicate batch package was accepted'
+    replace_appopt_rules 'com.example.user=2-6;com.example.user{GameThread}=7;com.example.user{GameThread}=2-4' &&
+        fail 'duplicate batch thread key was accepted'
+    replace_appopt_rules 'com.example.user{GameThread}=7' &&
+        fail 'thread-only batch without fallback was accepted'
     cmp -s "$APPOPT_CONFIG" "$TEST_ROOT/before_invalid_batch" ||
         fail 'invalid batch changed active rules'
 )

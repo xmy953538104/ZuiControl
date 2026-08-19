@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '36'
-$ExpectedVersionName = '0.20.7'
+$ExpectedVersionCode = '37'
+$ExpectedVersionName = '0.21.0'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -260,7 +260,7 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV36\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV37\ZuiControl.apk'
     $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
     $PreviousAppDirs = @(
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV30'),
@@ -268,7 +268,8 @@ try {
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV32'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV33'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV34'),
-        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV35')
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV35'),
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV36')
     )
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
@@ -320,9 +321,38 @@ try {
     if ($ActiveDefaultAppOptRules.Count -ne 0) {
         throw "Default AppOpt config must not contain active rules: $($ActiveDefaultAppOptRules -join '; ')"
     }
-    Assert-Contains $DefaultAppList '# Supported values: 0-7, 0-4, 5-7, 0-1' 'four package-wide AppOpt presets'
-    foreach ($legacyThreadRule in @('{', '}', 'UnityMain', 'RenderThread', 'RHIThread')) {
-        Assert-NotContains $DefaultAppList $legacyThreadRule 'legacy AppOpt thread rule syntax'
+    Assert-Contains $DefaultAppList '# Supported CPU sets: 2-6, 2-4, 7, 0-7, 0-4, 5-7, 0-1' 'validated AppOpt CPU sets'
+    Assert-Contains $DefaultAppList '# com.kurogame.mingchao=2-6' 'commented AppOpt fallback example'
+    Assert-Contains $DefaultAppList '# com.kurogame.mingchao{RenderThread}=2-4' 'commented AppOpt render-thread example'
+    Assert-Contains $DefaultAppList '# com.kurogame.mingchao{GameThread}=7' 'commented AppOpt game-thread example'
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $ApkArchive = [System.IO.Compression.ZipFile]::OpenRead($AppApk)
+    try {
+        $AppOptCatalogEntry = $ApkArchive.GetEntry('assets/appopt_sm8650_profiles.conf')
+        if ($null -eq $AppOptCatalogEntry) {
+            throw 'APK is missing Snapdragon 8 Gen 3 AppOpt catalog'
+        }
+        $CatalogReader = [System.IO.StreamReader]::new($AppOptCatalogEntry.Open())
+        try {
+            $CatalogText = $CatalogReader.ReadToEnd()
+        } finally {
+            $CatalogReader.Dispose()
+        }
+    } finally {
+        $ApkArchive.Dispose()
+    }
+    foreach ($catalogMarker in @(
+        'com.kurogame.mingchao=2-6',
+        'com.kurogame.mingchao{RenderThread}=2-4',
+        'com.kurogame.mingchao{GameThread}=7'
+    )) {
+        if (-not $CatalogText.Contains($catalogMarker)) {
+            throw "AppOpt catalog is missing marker: $catalogMarker"
+        }
+    }
+    if (($CatalogText -split "`n" | Where-Object { $_ -match '^[a-zA-Z0-9_.]+=' }).Count -lt 300) {
+        throw 'AppOpt catalog does not contain the expected package coverage'
     }
     if ((File-Sha256 $Hosts) -ne '425c3e713d5bae19b031bc8639c20c6a23e311a54647ba1824cbf45969a11ff4') {
         throw 'system hosts does not match the official ZUI 16.1.11.187 default'

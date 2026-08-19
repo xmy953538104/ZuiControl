@@ -8,35 +8,82 @@ import android.provider.MediaStore
 
 object AppOptConfig {
     const val DISPLAY_PATH = "Download/ZuiControl/AppOpt.conf"
+    const val TEMPLATE_ASSET = "appopt_sm8650_profiles.conf"
+    private const val MAX_PAYLOAD_CHARS = 16_384
     internal const val DOWNLOAD_MIME_TYPE = "application/octet-stream"
     private const val DISPLAY_NAME = "AppOpt.conf"
     private val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/ZuiControl/"
+    private val threadPattern = Regex("^[A-Za-z0-9_.:+*? -]{1,31}$")
 
     fun parse(text: String): LinkedHashMap<String, AppOptRule> {
-        val rules = linkedMapOf<String, AppOptRule>()
+        data class Draft(
+            var base: AppOptPreset? = null,
+            val threads: MutableList<AppOptThreadRule> = mutableListOf(),
+            val keys: MutableSet<String> = linkedSetOf(),
+        )
+
+        val drafts = linkedMapOf<String, Draft>()
         text.lineSequence().forEachIndexed { index, source ->
             val line = source.trim()
             if (line.isEmpty() || line.startsWith('#')) return@forEachIndexed
             val fields = line.split('=', limit = 2)
-            require(fields.size == 2 && PackageNames.isValid(fields[0])) {
-                "第 ${index + 1} 行包名无效"
+            require(fields.size == 2) { "第 ${index + 1} 行缺少 =" }
+            val left = fields[0].trim()
+            val cpuSet = fields[1].trim()
+            val brace = left.indexOf('{')
+            val packageName: String
+            val thread: String?
+            if (brace < 0) {
+                packageName = left
+                thread = null
+            } else {
+                require(left.endsWith('}') && left.indexOf('{', brace + 1) < 0) {
+                    "第 ${index + 1} 行线程格式无效"
+                }
+                packageName = left.substring(0, brace)
+                thread = left.substring(brace + 1, left.length - 1).trim()
+                require(threadPattern.matches(thread)) {
+                    "第 ${index + 1} 行线程名无效"
+                }
             }
-            val preset = AppOptPreset.fromCpuSet(fields[1])
-                ?: throw IllegalArgumentException("第 ${index + 1} 行预设无效")
-            require(!rules.containsKey(fields[0])) { "第 ${index + 1} 行包名重复" }
-            rules[fields[0]] = AppOptRule(fields[0], preset)
+            require(PackageNames.isValid(packageName)) { "第 ${index + 1} 行包名无效" }
+            val preset = AppOptPreset.fromCpuSet(cpuSet)
+                ?: throw IllegalArgumentException("第 ${index + 1} 行 CPU 集合无效")
+            val draft = drafts.getOrPut(packageName) { Draft() }
+            val key = thread.orEmpty()
+            require(draft.keys.add(key)) { "第 ${index + 1} 行规则重复" }
+            if (thread == null) {
+                draft.base = preset
+            } else {
+                draft.threads += AppOptThreadRule(thread, preset)
+            }
+        }
+
+        val rules = linkedMapOf<String, AppOptRule>()
+        drafts.forEach { (packageName, draft) ->
+            val base = requireNotNull(draft.base) { "$packageName 缺少整包兜底规则" }
+            rules[packageName] = AppOptRule(packageName, base, draft.threads.toList())
         }
         return rules
     }
 
     fun payload(rules: Map<String, AppOptRule>): String =
-        rules.values.joinToString(";") { "${it.packageName}=${it.preset.cpuSet}" }
+        canonicalLines(rules).joinToString(";").also {
+            require(it.length <= MAX_PAYLOAD_CHARS) { "AppOpt 配置过大，请减少规则" }
+        }
 
     fun text(rules: Map<String, AppOptRule>): String = buildString {
         appendLine("# ZuiControl AppOpt 配置")
-        appendLine("# 格式：包名=0-7/0-4/5-7/0-1；只允许已安装用户 App")
-        rules.values.forEach { appendLine("${it.packageName}=${it.preset.cpuSet}") }
+        appendLine("# 包名=CPU集合 是未命中线程的兜底；包名{线程通配符}=CPU集合 是覆盖规则")
+        appendLine("# CPU集合：2-6、2-4、7、0-7、0-4、5-7、0-1")
+        canonicalLines(rules).forEach(::appendLine)
     }
+
+    fun totalRuleCount(rules: Map<String, AppOptRule>): Int =
+        rules.values.sumOf(AppOptRule::totalRules)
+
+    fun readTemplates(context: Context): LinkedHashMap<String, AppOptRule> =
+        context.assets.open(TEMPLATE_ASSET).bufferedReader().use { parse(it.readText()) }
 
     fun read(context: Context): String {
         val uri = find(context) ?: throw IllegalStateException("配置文件不存在")
@@ -61,6 +108,15 @@ object AppOptConfig {
 
     fun ensure(context: Context, rules: Map<String, AppOptRule>) {
         if (find(context) == null) write(context, rules)
+    }
+
+    private fun canonicalLines(rules: Map<String, AppOptRule>): List<String> = buildList {
+        rules.values.forEach { rule ->
+            add("${rule.packageName}=${rule.preset.cpuSet}")
+            rule.threadRules.forEach { thread ->
+                add("${rule.packageName}{${thread.pattern}}=${thread.preset.cpuSet}")
+            }
+        }
     }
 
     private fun find(context: Context): Uri? {

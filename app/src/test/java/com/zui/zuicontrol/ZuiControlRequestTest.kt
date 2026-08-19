@@ -90,7 +90,8 @@ class ZuiControlRequestTest {
 
     @Test
     fun buildsValidatedBatchAppOptRequest() {
-        val payload = "com.example.one=0-1;com.example.two=5-7"
+        val payload = "com.example.one=2-6;com.example.one{RenderThread}=2-4;" +
+            "com.example.one{GameThread}=7"
         assertEquals(
             "id|replace_appopt_rules|$payload",
             ZuiControlRequest.buildAppOptReplaceRequestText("id", payload),

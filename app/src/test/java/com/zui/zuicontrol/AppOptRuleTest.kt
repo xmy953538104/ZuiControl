@@ -6,24 +6,24 @@ import org.junit.Test
 
 class AppOptRuleTest {
     @Test
-    fun parsesOnlySupportedWholePackagePresets() {
+    fun parsesPublishedCanonicalAndLegacyRules() {
         val rules = AppOptRules.parse(
             """
-            com.example.all|0-7
-            com.example.efficiency|0-4
-            com.example.performance|5-7
-            com.example.little|0-1
-            com.example.invalid|2-3
-            com.example.thread{RenderThread}|5-7
-            malformed
+            com.example.game=2-6
+            com.example.game{RenderThread}=2-4
+            com.example.game{GameThread}=7
             """.trimIndent(),
         )
 
-        assertEquals(4, rules.size)
-        assertEquals(AppOptPreset.ALL, rules["com.example.all"]?.preset)
-        assertEquals(AppOptPreset.EFFICIENCY, rules["com.example.efficiency"]?.preset)
-        assertEquals(AppOptPreset.PERFORMANCE, rules["com.example.performance"]?.preset)
-        assertEquals(AppOptPreset.LITTLE, rules["com.example.little"]?.preset)
-        assertFalse(rules.containsKey("com.example.invalid"))
+        assertEquals(1, rules.size)
+        assertEquals(AppOptPreset.GAME_BACKGROUND, rules["com.example.game"]?.preset)
+        assertEquals(2, rules["com.example.game"]?.threadRules?.size)
+
+        val legacy = AppOptRules.parse("com.example.all|0-7\ncom.example.invalid|2-3")
+        assertEquals(AppOptPreset.ALL, legacy["com.example.all"]?.preset)
+        assertFalse(legacy.containsKey("com.example.invalid"))
+        assertFalse(AppOptPreset.PERFORMANCE_CLUSTER.canUseAsPackagePreset)
+        assertFalse(AppOptPreset.PRIME.canUseAsPackagePreset)
+        assertEquals(5, AppOptPreset.packagePresets.size)
     }
 }

@@ -3,6 +3,7 @@ package com.zui.zuicontrol
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.content.pm.ApplicationInfo
 import android.graphics.Color
 import android.graphics.Typeface
@@ -41,6 +42,7 @@ class MainActivity : Activity() {
     private val appOptRules = linkedMapOf<String, AppOptRule>()
     private val refreshRules = linkedMapOf<String, Int>()
     private val labelCache = linkedMapOf<String, String>()
+    private val appOptTemplates by lazy { AppOptConfig.readTemplates(this) }
 
     private lateinit var contentHost: FrameLayout
     private lateinit var tabButtons: Map<Page, TextView>
@@ -88,7 +90,9 @@ class MainActivity : Activity() {
         Thread { runCatching { AppOptConfig.ensure(this, initialAppOptRules) } }.start()
         setContentView(buildRoot())
         showPage(Page.REFRESH)
-        handler.postDelayed({ ZuiControlQuickService.start(this) }, 250)
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
+            handler.postDelayed({ ZuiControlQuickService.start(this) }, 250)
+        }
     }
 
     override fun onResume() {
@@ -104,17 +108,17 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             setBackgroundColor(COLOR_BG)
-            setPadding(dp(18), dp(14), dp(18), dp(18))
+            setPadding(dp(if (wide) 12 else 16), dp(12), dp(16), dp(16))
         }
         if (wide) {
             val nav = vertical().apply {
-                setPadding(0, 0, dp(12), 0)
+                setPadding(0, dp(52), dp(12), 0)
                 addView(pageTabs(verticalTabs = true), LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                 ))
             }
-            root.addView(nav, LinearLayout.LayoutParams(dp(168), ViewGroup.LayoutParams.MATCH_PARENT))
+            root.addView(nav, LinearLayout.LayoutParams(dp(116), ViewGroup.LayoutParams.MATCH_PARENT))
 
             val main = vertical()
             main.addView(header(), matchWrap())
@@ -154,7 +158,7 @@ class MainActivity : Activity() {
             setPadding(0, 0, 0, dp(12))
             val titleBox = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
-                addView(label("ZuiControl", 23f, COLOR_TEXT, Typeface.BOLD))
+                addView(label("ZuiControl", 28f, COLOR_TEXT, Typeface.BOLD))
                 headerStatus = label(headerStatusText(), 12f, COLOR_SUBTLE, Typeface.NORMAL)
                 addView(headerStatus)
             }
@@ -163,29 +167,34 @@ class MainActivity : Activity() {
                 sendCommand("正在刷新", refreshNotification = true) {
                     ZuiControlRequest.send(this@MainActivity, ZuiControlContract.CMD_STATUS)
                 }
-            }, LinearLayout.LayoutParams(dp(92), dp(40)))
+            }, LinearLayout.LayoutParams(dp(92), dp(44)))
         }
     }
 
     private fun pageTabs(verticalTabs: Boolean): View {
         val row = LinearLayout(this).apply {
             orientation = if (verticalTabs) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-            background = rounded(COLOR_FIELD, dp(8), COLOR_STROKE)
-            setPadding(dp(3), dp(3), dp(3), dp(3))
+            setPadding(0, 0, 0, 0)
         }
         val map = linkedMapOf<Page, TextView>()
         Page.entries.forEach { page ->
-            val tab = label(page.title, 14f, COLOR_TEXT, Typeface.BOLD).apply {
+            val tab = label(page.title, 12f, COLOR_SUBTLE, Typeface.BOLD).apply {
                 gravity = Gravity.CENTER
+                compoundDrawablePadding = dp(5)
+                if (verticalTabs) {
+                    setCompoundDrawablesRelativeWithIntrinsicBounds(0, page.iconRes, 0, 0)
+                } else {
+                    setCompoundDrawablesRelativeWithIntrinsicBounds(page.iconRes, 0, 0, 0)
+                }
                 setOnClickListener { showPage(page) }
             }
             map[page] = tab
             if (verticalTabs) {
                 row.addView(tab, LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    dp(46),
+                    dp(72),
                 ).apply {
-                    setMargins(0, if (row.childCount == 0) 0 else dp(4), 0, 0)
+                    setMargins(0, if (row.childCount == 0) 0 else dp(6), 0, 0)
                 })
             } else {
                 row.addView(tab, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
@@ -199,10 +208,12 @@ class MainActivity : Activity() {
         currentPage = page
         tabButtons.forEach { (item, view) ->
             val selected = item == page
-            view.setTextColor(if (selected) Color.WHITE else COLOR_TEXT)
+            val color = if (selected) COLOR_ACCENT else COLOR_SUBTLE
+            view.setTextColor(color)
+            view.compoundDrawableTintList = ColorStateList.valueOf(color)
             view.background = rounded(
-                if (selected) COLOR_ACCENT else Color.TRANSPARENT,
-                dp(6),
+                if (selected) COLOR_SELECTED else Color.TRANSPARENT,
+                dp(18),
                 Color.TRANSPARENT,
             )
         }
@@ -215,6 +226,7 @@ class MainActivity : Activity() {
         val view = when (currentPage) {
             Page.REFRESH -> buildRefreshPage()
             Page.PERFORMANCE -> buildPerformancePage()
+            Page.APPOPT -> buildAppOptPage()
             Page.SYSTEM -> buildSystemPage()
         }
         contentHost.addView(view, FrameLayout.LayoutParams(
@@ -332,8 +344,9 @@ class MainActivity : Activity() {
         }
         refreshRules.forEach { (pkg, rate) ->
             val card = vertical().apply {
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                background = rounded(Color.WHITE, dp(8), COLOR_STROKE)
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                background = rounded(Color.WHITE, dp(14), Color.TRANSPARENT)
+                elevation = dp(1).toFloat()
             }
             val header = horizontalRow().apply {
                 background = null
@@ -345,10 +358,10 @@ class MainActivity : Activity() {
                 addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 addView(rateBadge("${rate}Hz").apply {
                     setOnClickListener { showRefreshRateDialog(pkg, rate) }
-                }, LinearLayout.LayoutParams(dp(72), dp(36)))
+                }, LinearLayout.LayoutParams(dp(80), dp(40)))
                 addView(commandButton("移除") {
                     removeRefreshProfile(pkg)
-                }, LinearLayout.LayoutParams(dp(72), dp(36)).apply {
+                }, LinearLayout.LayoutParams(dp(72), dp(40)).apply {
                     setMargins(dp(8), 0, 0, 0)
                 })
             }
@@ -366,7 +379,7 @@ class MainActivity : Activity() {
                     } else {
                         commandButton(title) { setRefreshProfile(pkg, target) }
                     }
-                    addView(button, LinearLayout.LayoutParams(0, dp(36), 1f).apply {
+                    addView(button, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
                         if (target != ZuiControlContract.rates.first()) {
                             setMargins(dp(6), 0, 0, 0)
                         }
@@ -447,7 +460,7 @@ class MainActivity : Activity() {
                         launchableOnly = true,
                     )
                 },
-                    LinearLayout.LayoutParams(dp(104), dp(40)))
+                    LinearLayout.LayoutParams(dp(112), dp(44)))
             }
             addView(head)
             performanceListHost = vertical()
@@ -478,7 +491,7 @@ class MainActivity : Activity() {
             addView(fieldTitle("调度条目"), fieldMargins())
             policySpinner = Spinner(this@MainActivity).apply {
                 adapter = SimpleTextAdapter(GamePolicyMode.entries.map { it.title })
-                background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+                background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
                 setPadding(dp(4), 0, dp(4), 0)
                 onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                     override fun onNothingSelected(parent: AdapterView<*>?) = Unit
@@ -502,7 +515,7 @@ class MainActivity : Activity() {
             addView(fieldTitle("游戏帧率"), fieldMargins())
             framePolicySpinner = Spinner(this@MainActivity).apply {
                 adapter = SimpleTextAdapter(FramePolicy.entries.map { it.title })
-                background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+                background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
                 setPadding(dp(4), 0, dp(4), 0)
                 onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                     override fun onNothingSelected(parent: AdapterView<*>?) = Unit
@@ -550,7 +563,7 @@ class MainActivity : Activity() {
             addView(fieldTitle("温区频率配置"), fieldMargins())
             thermalZoneSpinner = Spinner(this@MainActivity).apply {
                 adapter = SimpleTextAdapter(ThermalZone.entries.map { it.title })
-                background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+                background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
                 setPadding(dp(4), 0, dp(4), 0)
                 onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                     override fun onNothingSelected(parent: AdapterView<*>?) = Unit
@@ -685,8 +698,8 @@ class MainActivity : Activity() {
                 setPadding(dp(12), dp(10), dp(12), dp(10))
                 background = rounded(
                     if (selected) COLOR_SELECTED else Color.WHITE,
-                    dp(7),
-                    if (selected) COLOR_ACCENT else COLOR_STROKE,
+                    dp(12),
+                    Color.TRANSPARENT,
                 )
                 addView(label(
                     labelForPackage(profile.packageName),
@@ -1177,20 +1190,17 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun buildSystemPage(): View {
+    private fun buildAppOptPage(): View {
         val scroll = ScrollView(this)
         val root = vertical()
         scroll.addView(root)
 
-        root.addView(sectionTitle("运行状态"))
-        systemStatus = infoPanel()
-        root.addView(systemStatus, fieldMargins())
-
-        root.addView(sectionTitle("AppOpt 线程放置"), sectionMargins())
+        root.addView(sectionTitle("AppOpt 线程放置"))
         appOptStatus = infoPanel()
         root.addView(appOptStatus, fieldMargins())
         root.addView(compactNote(
-            "仅支持整包 CPU 预设，不支持线程名或自由 CPU 集合。可逐项设置、直接编辑完整清单，或导入 ${AppOptConfig.DISPLAY_PATH}。校验通过后才会应用；运行中的受影响 App 会自动关闭。",
+            "支持整包兜底和线程通配规则。内置 326 个 Snapdragon 8 Gen 3 游戏模板，" +
+                "只会应用你实际选择的游戏。配置校验通过后原子替换；运行中的受影响 App 会自动关闭。",
         ), fieldMargins())
 
         appOptRulesHost = vertical()
@@ -1199,9 +1209,9 @@ class MainActivity : Activity() {
         val appOptActions = horizontalRow().apply {
             background = null
             setPadding(0, 0, 0, 0)
-            addView(primaryButton("添加用户 App") {
+            addView(primaryButton("添加或使用模板") {
                 showPackagePicker(
-                    title = "选择 AppOpt 用户应用",
+                    title = "选择 AppOpt 应用",
                     onSelected = { entry -> showAppOptPresetDialog(entry.info.packageName) },
                     userAppsOnly = true,
                     launchableOnly = true,
@@ -1231,6 +1241,19 @@ class MainActivity : Activity() {
         }
         root.addView(appOptConfigActions, fieldMargins())
 
+        renderAppOptState()
+        return scroll
+    }
+
+    private fun buildSystemPage(): View {
+        val scroll = ScrollView(this)
+        val root = vertical()
+        scroll.addView(root)
+
+        root.addView(sectionTitle("运行状态"))
+        systemStatus = infoPanel()
+        root.addView(systemStatus, fieldMargins())
+
         root.addView(sectionTitle("工具"), sectionMargins())
         val row = horizontalRow().apply {
             background = null
@@ -1256,6 +1279,12 @@ class MainActivity : Activity() {
         }
         val last = setting(ZuiControlContract.KEY_STATUS_LAST).ifBlank { "无" }
         systemStatus.text = "守护服务 运行中\n${conciseXmlState()}\n${conciseZuippReloadState()}\n刷新率 系统接管\n最近操作 ${commandName(last)}"
+    }
+
+    private fun renderAppOptState() {
+        if (!::appOptStatus.isInitialized) {
+            return
+        }
         appOptStatus.text = setting(ZuiControlContract.KEY_APPOPT_HEALTH)
             .ifBlank { "正在读取 AppOpt 状态" }
         renderAppOptRules()
@@ -1273,8 +1302,9 @@ class MainActivity : Activity() {
         appOptRules.values.forEach { rule ->
             val userApp = isInstalledUserApp(rule.packageName)
             val card = vertical().apply {
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                background = rounded(Color.WHITE, dp(8), COLOR_STROKE)
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                background = rounded(Color.WHITE, dp(14), Color.TRANSPARENT)
+                elevation = dp(1).toFloat()
                 addView(horizontalRow().apply {
                     background = null
                     setPadding(0, 0, 0, 0)
@@ -1287,24 +1317,46 @@ class MainActivity : Activity() {
                         ))
                         addView(label(rule.packageName, 11f, COLOR_SUBTLE, Typeface.NORMAL))
                     }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                    addView(rateBadge(rule.preset.displayName).apply {
-                        if (userApp) {
-                            setOnClickListener {
-                                showAppOptPresetDialog(rule.packageName, rule.preset)
-                            }
-                        }
-                    }, LinearLayout.LayoutParams(dp(112), dp(38)))
-                    addView(commandButton("删除") { confirmRemoveAppOptRule(rule) },
-                        LinearLayout.LayoutParams(dp(72), dp(38)).apply {
-                            setMargins(dp(8), 0, 0, 0)
-                        })
+                    addView(rateBadge("兜底 ${rule.preset.cpuSet}"),
+                        LinearLayout.LayoutParams(dp(112), dp(44)))
                 }, matchWrap())
+                if (rule.threadRules.isEmpty()) {
+                    addView(compactNote("当前为整包规则；所有线程使用 ${rule.preset.cpuSet}"), fieldMargins())
+                } else {
+                    rule.threadRules.forEach { thread ->
+                        addView(horizontalRow().apply {
+                            background = null
+                            setPadding(0, dp(8), 0, 0)
+                            addView(label(thread.pattern, 13f, COLOR_TEXT, Typeface.BOLD),
+                                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                            addView(chip(thread.preset.cpuSet),
+                                LinearLayout.LayoutParams(dp(72), dp(34)))
+                        })
+                    }
+                }
                 addView(label(
-                    if (userApp) "修改成功后，正在运行的 App 会自动关闭" else "不是已安装用户 App，仅允许删除",
+                    if (userApp) {
+                        "${rule.totalRules} 条规则 · 修改后自动关闭运行中的 App"
+                    } else {
+                        "不是已安装用户 App，仅允许删除"
+                    },
                     11f,
                     COLOR_SUBTLE,
                     Typeface.NORMAL,
-                ))
+                ), fieldMargins())
+                addView(horizontalRow().apply {
+                    background = null
+                    setPadding(0, dp(10), 0, 0)
+                    if (userApp) {
+                        addView(primaryButton("编辑配置") {
+                            showAppOptPresetDialog(rule.packageName, rule.preset)
+                        }, LinearLayout.LayoutParams(0, dp(44), 1f))
+                    }
+                    addView(commandButton("删除") { confirmRemoveAppOptRule(rule) },
+                        LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                            if (userApp) setMargins(dp(10), 0, 0, 0)
+                        })
+                })
             }
             appOptRulesHost.addView(card, cardMargins())
         }
@@ -1318,17 +1370,45 @@ class MainActivity : Activity() {
             toast("AppOpt 只允许已安装用户 App")
             return
         }
-        val presets = AppOptPreset.entries
-        var selected = current?.ordinal ?: AppOptPreset.ALL.ordinal
+        val template = appOptTemplates[pkg]
+        val packagePresets = AppOptPreset.packagePresets
+        val choices = buildList {
+            if (template != null) {
+                add("8 Gen 3 推荐模板 · ${template.totalRules} 条规则")
+            }
+            packagePresets.forEach { preset ->
+                add("整包 ${preset.displayName}${if (preset == current) " · 当前兜底" else ""}")
+            }
+        }
         AlertDialog.Builder(this)
-            .setTitle(labelForPackage(pkg))
-            .setMessage("$pkg\n规则会限制此 App 的全部线程。若它正在运行，保存成功后会自动关闭。")
-            .setSingleChoiceItems(
-                presets.map { it.displayName }.toTypedArray(),
-                selected,
-            ) { _, which -> selected = which }
-            .setPositiveButton("保存") { _, _ ->
-                setAppOptRule(pkg, presets[selected])
+            .setTitle("${labelForPackage(pkg)}\n$pkg")
+            .setItems(choices.toTypedArray()) { _, which ->
+                if (template != null && which == 0) {
+                    confirmApplyAppOptTemplate(template)
+                } else {
+                    val presetIndex = which - if (template == null) 0 else 1
+                    setAppOptRule(pkg, packagePresets[presetIndex])
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun confirmApplyAppOptTemplate(template: AppOptRule) {
+        val summary = buildString {
+            appendLine("未命中线程 → CPU${template.preset.cpuSet}")
+            template.threadRules.forEach { thread ->
+                appendLine("${thread.pattern} → CPU${thread.preset.cpuSet}")
+            }
+            append("\n应用成功后会自动关闭正在运行的目标 App。")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("使用 8 Gen 3 推荐模板")
+            .setMessage(summary)
+            .setPositiveButton("应用模板") { _, _ ->
+                val rules = LinkedHashMap(appOptRules)
+                rules[template.packageName] = template
+                applyAppOptRules(rules, "正在应用推荐模板", "推荐模板已应用")
             }
             .setNegativeButton("取消", null)
             .show()
@@ -1398,7 +1478,8 @@ class MainActivity : Activity() {
                 AlertDialog.Builder(this)
                     .setTitle("导入 AppOpt 配置")
                     .setMessage(
-                        "将用共享文件中的 ${rules.size} 条规则替换当前列表。" +
+                        "将用共享文件中的 ${rules.size} 个 App、" +
+                            "${AppOptConfig.totalRuleCount(rules)} 条规则替换当前列表。" +
                             "成功后会自动关闭正在运行的受影响 App。",
                     )
                     .setPositiveButton("导入并应用") { _, _ ->
@@ -1421,7 +1502,7 @@ class MainActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+            background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
         }
         val container = FrameLayout(this).apply {
             setPadding(dp(20), dp(4), dp(20), 0)
@@ -1432,7 +1513,10 @@ class MainActivity : Activity() {
         }
         val dialog = AlertDialog.Builder(this)
             .setTitle("编辑 AppOpt 配置清单")
-            .setMessage("每行一个 包名=预设；只接受 0-7、0-4、5-7、0-1。校验通过后才会替换并应用。")
+            .setMessage(
+                "包名=CPU集合 是兜底；包名{线程名或通配符}=CPU集合 是线程覆盖。" +
+                    "每个包必须有一条兜底，校验通过后才会替换并应用。",
+            )
             .setView(container)
             .setPositiveButton("校验并应用", null)
             .setNegativeButton("取消", null)
@@ -1611,9 +1695,9 @@ class MainActivity : Activity() {
         }
         val userTab = chip("用户应用")
         val systemTab = chip("系统应用")
-        tabs.addView(userTab, LinearLayout.LayoutParams(0, dp(40), 1f))
+        tabs.addView(userTab, LinearLayout.LayoutParams(0, dp(44), 1f))
         if (!userAppsOnly) {
-            tabs.addView(systemTab, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+            tabs.addView(systemTab, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
                 setMargins(dp(8), 0, 0, 0)
             })
         }
@@ -1624,7 +1708,7 @@ class MainActivity : Activity() {
             setSingleLine(true)
             textSize = 14f
             setPadding(dp(12), 0, dp(12), 0)
-            background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+            background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
         }
         root.addView(search, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2010,16 +2094,18 @@ class MainActivity : Activity() {
     private fun horizontalRow() = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(12), dp(10), dp(12), dp(10))
-        background = rounded(Color.WHITE, dp(8), COLOR_STROKE)
+        setPadding(dp(16), dp(12), dp(16), dp(12))
+        background = rounded(Color.WHITE, dp(14), Color.TRANSPARENT)
+        elevation = dp(1).toFloat()
     }
 
     private fun panel() = LinearLayout(this).apply {
-        setPadding(dp(14), dp(14), dp(14), dp(14))
-        background = rounded(Color.WHITE, dp(8), COLOR_STROKE)
+        setPadding(dp(18), dp(18), dp(18), dp(18))
+        background = rounded(Color.WHITE, dp(16), Color.TRANSPARENT)
+        elevation = dp(1).toFloat()
     }
 
-    private fun sectionTitle(text: String) = label(text, 17f, COLOR_TEXT, Typeface.BOLD)
+    private fun sectionTitle(text: String) = label(text, 18f, COLOR_TEXT, Typeface.BOLD)
 
     private fun fieldTitle(text: String) = label(text, 13f, COLOR_SUBTLE, Typeface.BOLD)
 
@@ -2086,24 +2172,25 @@ class MainActivity : Activity() {
         setSingleLine(true)
         textSize = 15f
         setPadding(dp(12), 0, dp(12), 0)
-        background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+        background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
     }
 
     private fun helpButton(action: () -> Unit) =
         label("!", 13f, COLOR_ACCENT, Typeface.BOLD).apply {
             gravity = Gravity.CENTER
-            background = rounded(COLOR_FIELD, dp(15), COLOR_STROKE)
+            background = rounded(COLOR_FIELD, dp(15), Color.TRANSPARENT)
             setOnClickListener { action() }
         }
 
     private fun infoPanel() = label("", 13f, COLOR_TEXT, Typeface.NORMAL).apply {
-        setPadding(dp(13), dp(11), dp(13), dp(11))
-        background = rounded(COLOR_FIELD, dp(8), COLOR_STROKE)
+        setPadding(dp(16), dp(14), dp(16), dp(14))
+        background = rounded(Color.WHITE, dp(14), Color.TRANSPARENT)
+        elevation = dp(1).toFloat()
     }
 
     private fun compactNote(text: String) = label(text, 12f, COLOR_SUBTLE, Typeface.NORMAL).apply {
         setPadding(dp(10), dp(8), dp(10), dp(8))
-        background = rounded(COLOR_NOTE, dp(7), COLOR_STROKE)
+        background = rounded(COLOR_NOTE, dp(12), Color.TRANSPARENT)
     }
 
     private fun emptyText(text: String) = label(text, 13f, COLOR_SUBTLE, Typeface.NORMAL).apply {
@@ -2113,34 +2200,34 @@ class MainActivity : Activity() {
 
     private fun rateBadge(text: String) = label(text, 13f, Color.WHITE, Typeface.BOLD).apply {
         gravity = Gravity.CENTER
-        background = rounded(COLOR_GREEN, dp(7), COLOR_GREEN)
+        background = rounded(COLOR_ACCENT, dp(12), COLOR_ACCENT)
     }
 
     private fun commandButton(text: String, action: () -> Unit) =
         label(text, 13f, COLOR_TEXT, Typeface.BOLD).apply {
             gravity = Gravity.CENTER
-            background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+            background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
             setOnClickListener { action() }
         }
 
     private fun primaryButton(text: String, action: () -> Unit) =
         label(text, 13f, Color.WHITE, Typeface.BOLD).apply {
             gravity = Gravity.CENTER
-            background = rounded(COLOR_ACCENT, dp(7), COLOR_ACCENT)
+            background = rounded(COLOR_ACCENT, dp(12), COLOR_ACCENT)
             setOnClickListener { action() }
         }
 
     private fun chip(text: String) = label(text, 13f, COLOR_TEXT, Typeface.BOLD).apply {
         gravity = Gravity.CENTER
-        background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+        background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
     }
 
     private fun styleChip(view: TextView, selected: Boolean) {
         view.setTextColor(if (selected) Color.WHITE else COLOR_TEXT)
         view.background = rounded(
             if (selected) COLOR_ACCENT else COLOR_FIELD,
-            dp(7),
-            if (selected) COLOR_ACCENT else COLOR_STROKE,
+            dp(12),
+            if (selected) COLOR_ACCENT else Color.TRANSPARENT,
         )
     }
 
@@ -2266,7 +2353,7 @@ class MainActivity : Activity() {
             label(items[position], 14f, COLOR_TEXT, Typeface.BOLD).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), 0, dp(12), 0)
-                background = rounded(COLOR_FIELD, dp(7), COLOR_STROKE)
+                background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
             }
 
         override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup?): View =
@@ -2305,23 +2392,22 @@ class MainActivity : Activity() {
         HOT("高温", "高温"),
     }
 
-    private enum class Page(val title: String) {
-        REFRESH("刷新率"),
-        PERFORMANCE("性能调度"),
-        SYSTEM("系统状态"),
+    private enum class Page(val title: String, val iconRes: Int) {
+        REFRESH("刷新率", R.drawable.ic_nav_refresh),
+        PERFORMANCE("性能", R.drawable.ic_nav_performance),
+        APPOPT("AppOpt", R.drawable.ic_nav_appopt),
+        SYSTEM("系统", R.drawable.ic_nav_system),
     }
 
     companion object {
         private const val REQUEST_EXPORT_LOG = 901
-        private val COLOR_BG = Color.rgb(244, 247, 250)
-        private val COLOR_FIELD = Color.rgb(238, 242, 246)
-        private val COLOR_NOTE = Color.rgb(250, 252, 244)
-        private val COLOR_SELECTED = Color.rgb(226, 239, 255)
-        private val COLOR_STROKE = Color.rgb(211, 220, 230)
-        private val COLOR_TEXT = Color.rgb(28, 34, 42)
-        private val COLOR_SUBTLE = Color.rgb(91, 101, 114)
-        private val COLOR_ACCENT = Color.rgb(35, 102, 207)
-        private val COLOR_GREEN = Color.rgb(32, 132, 99)
+        private val COLOR_BG = Color.rgb(248, 247, 252)
+        private val COLOR_FIELD = Color.rgb(240, 241, 247)
+        private val COLOR_NOTE = Color.rgb(245, 247, 241)
+        private val COLOR_SELECTED = Color.rgb(224, 230, 248)
+        private val COLOR_TEXT = Color.rgb(34, 35, 42)
+        private val COLOR_SUBTLE = Color.rgb(87, 89, 99)
+        private val COLOR_ACCENT = Color.rgb(68, 91, 139)
         private val LITTLE_FREQS = intArrayOf(
             364800, 460800, 556800, 672000, 787200, 902400, 1017600, 1132800,
             1248000, 1344000, 1459200, 1574400, 1689600, 1804800, 1920000,

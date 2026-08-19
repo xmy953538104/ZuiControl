@@ -1,7 +1,7 @@
 ZuiControl v19 payload
 
 System components:
-- /system/priv-app/ZuiControlV36/ZuiControl.apk
+- /system/priv-app/ZuiControlV37/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/AppOpt
 - /system/etc/init/zui_controld.rc
@@ -59,8 +59,9 @@ Behavior:
   to config file watching, process getsched/signull probes, dac_override/kill,
   and a directory-getattr dontaudit; it adds no setsched or stronger appdomain
   signal permission.
-- The shipped AppOpt default contains only commented package-wide preset
-  examples. It enables no rule and contains no thread-name rule syntax.
+- The shipped AppOpt default contains only commented fallback/thread examples
+  and enables no rule. The App APK carries opt-in Snapdragon 8 Gen 3 templates;
+  only games explicitly selected by the user are written to the active config.
 - AppOpt keeps its validated canonical config under /data/vendor. The App UI can
   edit the complete list in-app or export and strictly validate/import an editable
   Download/ZuiControl/AppOpt.conf copy; either batch path restarts AppOpt once and
