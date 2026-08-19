@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '33'
-$ExpectedVersionName = '0.20.4'
+$ExpectedVersionCode = '34'
+$ExpectedVersionName = '0.20.5'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -260,12 +260,13 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV33\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV34\ZuiControl.apk'
     $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
     $PreviousAppDirs = @(
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV30'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV31'),
-        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV32')
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV32'),
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV33')
     )
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
@@ -357,7 +358,8 @@ try {
     Assert-Contains $Daemon 'profile_mode=balanced' 'single active performance profile canonical mode'
     Assert-Contains $Daemon 'rewrite_performance_without_package "$profile_pkg"' 'single performance profile per package rewrite'
     Assert-Contains $Daemon 'performance profiles migrated to one canonical profile per package' 'legacy multi-mode profile migration'
-    Assert-Contains $Daemon 'stableSeconds=10' 'stable ZuiPP restart readiness marker'
+    Assert-Contains $Daemon 'ZUIPP_STABLE_SECONDS=3' 'bounded ZuiPP stability window'
+    Assert-Contains $Daemon 'stableSeconds=$ZUIPP_STABLE_SECONDS' 'stable ZuiPP restart readiness marker'
     Assert-Contains $Daemon 'stop_zuipp_services_for_reload' 'graceful ZuiPP service shutdown before process reload'
     Assert-Contains $Daemon 'com.zui.pp/com.zui.power.overheat.OverHeatCleanService' 'OverHeatCleanService null-Intent crash prevention'
     Assert-Contains $Daemon 'Service not stopped: was not running.' 'ZUI am stop-service successful no-op handling'
@@ -367,6 +369,12 @@ try {
     Assert-Contains $Daemon 'LAST_REQUEST_RECEIPT_FILE=$CONTROL_DIR/last_processed_settings_request_receipt' 'persistent request receipt'
     Assert-Contains $Daemon 'REQUEST_ACK_KEY=zui_control_request_ack' 'exact terminal request acknowledgement'
     Assert-Contains $Daemon 'PERFORMANCE_TXN_MARKER=$PERFORMANCE_DIR/profile_txn.prop' 'recoverable performance transaction marker'
+    Assert-Contains $Daemon 'ZUI_MODE_TX_ADD_USER_GAME=14' 'one-way ZUI Game Assistant custom-game sync'
+    Assert-Contains $Daemon 'ensure_zui_game_managed' 'P2 Game Assistant membership gate'
+    Assert-Contains $Daemon 'force_stop_package_if_running' 'running target auto-stop'
+    Assert-Contains $Daemon 'replace_appopt_rules' 'atomic AppOpt batch import'
+    Assert-Contains $Daemon 'APPOPT_STABLE_SECONDS=3' 'bounded AppOpt stability window'
+    Assert-Contains $Daemon 'durable_sync_paths' 'targeted transaction durability sync'
     Assert-Contains $Daemon 'BAKED_TEMPLATE_SHA_FILE=$ZUI_BAKED_DIR/template.sha256' 'versioned payload baseline stamp'
     Assert-Contains $Daemon 'ZuiPP active XML regenerated after payload baseline refresh' 'payload baseline upgrade regeneration'
     if ($daemonText -match 'if promote_staging_with_init "promote_staging"; then\s+backup_active_to_last_good') {

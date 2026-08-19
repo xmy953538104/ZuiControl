@@ -87,4 +87,13 @@ class ZuiControlRequestTest {
             ),
         )
     }
+
+    @Test
+    fun buildsValidatedBatchAppOptRequest() {
+        val payload = "com.example.one=0-1;com.example.two=5-7"
+        assertEquals(
+            "id|replace_appopt_rules|$payload",
+            ZuiControlRequest.buildAppOptReplaceRequestText("id", payload),
+        )
+    }
 }

@@ -13,6 +13,7 @@ object ZuiControlContract {
     const val CMD_SYNC_XML_REFRESH = "sync_xml_refresh"
     const val CMD_SET_APPOPT_RULE = "set_appopt_rule"
     const val CMD_REMOVE_APPOPT_RULE = "remove_appopt_rule"
+    const val CMD_REPLACE_APPOPT_RULES = "replace_appopt_rules"
     const val CMD_STOP_APPOPT = "restore_asoul"
     const val CMD_EXPORT_LOGS = "export_logs"
 

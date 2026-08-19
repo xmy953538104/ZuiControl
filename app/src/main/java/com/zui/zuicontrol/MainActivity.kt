@@ -82,6 +82,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         reloadState()
+        val initialAppOptRules = LinkedHashMap(appOptRules)
+        Thread { runCatching { AppOptConfig.ensure(this, initialAppOptRules) } }.start()
         setContentView(buildRoot())
         showPage(Page.REFRESH)
         handler.postDelayed({ ZuiControlQuickService.start(this) }, 250)
@@ -436,7 +438,13 @@ class MainActivity : Activity() {
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     1f,
                 ))
-                addView(commandButton("添加应用") { showPackagePicker() },
+                addView(commandButton("添加应用") {
+                    showPackagePicker(
+                        title = "选择游戏",
+                        userAppsOnly = true,
+                        launchableOnly = true,
+                    )
+                },
                     LinearLayout.LayoutParams(dp(104), dp(40)))
             }
             addView(head)
@@ -457,7 +465,7 @@ class MainActivity : Activity() {
             addView(selectedAppTitle)
             addView(selectedPackageView)
 
-            addView(compactNote("每个游戏只保存一套三温区配置，并同步到原厂均衡/省电/野兽三个模式。仅 ZUI 已识别为游戏的应用会由原厂链路应用；保存完成后请退出并重新进入游戏。CPU/GPU 数值是原厂性能请求，仍可能被系统温控进一步压低或覆盖。"),
+            addView(compactNote("每个游戏只保存一套三温区配置，并同步到原厂均衡/省电/野兽三个模式。保存时会自动加入游戏助手自定义列表；若游戏正在运行，成功后会自动关闭，下次打开直接使用新配置。CPU/GPU 数值是原厂性能请求，仍可能被系统温控进一步压低或覆盖。"),
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -832,7 +840,9 @@ class MainActivity : Activity() {
             gamePolicy,
             framePolicy,
         )
-        sendCommand("正在保存；完成后请重新进入游戏") {
+        sendCommand("正在保存性能配置", onTerminal = { ack ->
+            if (ack.succeeded) toast(targetResultText(ack.detail, "游戏"))
+        }) {
             ZuiControlRequest.send(
                 this,
                 ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE_STAGED,
@@ -1142,7 +1152,9 @@ class MainActivity : Activity() {
 
     private fun removePerformanceProfile() {
         val pkg = selectedPackage ?: return toast("请先选择应用")
-        sendCommand("正在删除性能配置") {
+        sendCommand("正在删除性能配置", onTerminal = { ack ->
+            if (ack.succeeded) toast(targetResultText(ack.detail, "游戏"))
+        }) {
             ZuiControlRequest.send(
                 this,
                 ZuiControlContract.CMD_REMOVE_PERFORMANCE_PROFILE,
@@ -1165,7 +1177,7 @@ class MainActivity : Activity() {
         appOptStatus = infoPanel()
         root.addView(appOptStatus, fieldMargins())
         root.addView(compactNote(
-            "仅支持整包 CPU 预设，不支持线程名或自由输入。规则会限制目标 App 的全部线程；保存、删除或停止 AppOpt 后，都请强制停止并重新打开目标 App。",
+            "仅支持整包 CPU 预设，不支持线程名或自由输入。保存、删除或停止成功后会自动关闭正在运行的受影响 App；未运行的 App 会在下次启动时生效。可编辑副本：${AppOptConfig.DISPLAY_PATH}",
         ), fieldMargins())
 
         appOptRulesHost = vertical()
@@ -1179,6 +1191,7 @@ class MainActivity : Activity() {
                     title = "选择 AppOpt 用户应用",
                     onSelected = { entry -> showAppOptPresetDialog(entry.info.packageName) },
                     userAppsOnly = true,
+                    launchableOnly = true,
                 )
             }, LinearLayout.LayoutParams(0, dp(44), 1f))
             addView(commandButton("停止 AppOpt") { confirmStopAppOpt() },
@@ -1187,6 +1200,18 @@ class MainActivity : Activity() {
                 })
         }
         root.addView(appOptActions, buttonMargins())
+
+        val appOptConfigActions = horizontalRow().apply {
+            background = null
+            setPadding(0, 0, 0, 0)
+            addView(commandButton("导入共享配置") { importAppOptConfig() },
+                LinearLayout.LayoutParams(0, dp(44), 1f))
+            addView(commandButton("导出共享配置") { syncAppOptConfig(showToast = true) },
+                LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                    setMargins(dp(8), 0, 0, 0)
+                })
+        }
+        root.addView(appOptConfigActions, fieldMargins())
 
         root.addView(sectionTitle("工具"), sectionMargins())
         val row = horizontalRow().apply {
@@ -1257,7 +1282,7 @@ class MainActivity : Activity() {
                         })
                 }, matchWrap())
                 addView(label(
-                    if (userApp) "修改后请强制停止并重新打开此 App" else "不是已安装用户 App，仅允许删除",
+                    if (userApp) "修改成功后，正在运行的 App 会自动关闭" else "不是已安装用户 App，仅允许删除",
                     11f,
                     COLOR_SUBTLE,
                     Typeface.NORMAL,
@@ -1279,7 +1304,7 @@ class MainActivity : Activity() {
         var selected = current?.ordinal ?: AppOptPreset.ALL.ordinal
         AlertDialog.Builder(this)
             .setTitle(labelForPackage(pkg))
-            .setMessage("$pkg\n规则会限制此 App 的全部线程。保存后请强制停止并重新打开。")
+            .setMessage("$pkg\n规则会限制此 App 的全部线程。若它正在运行，保存成功后会自动关闭。")
             .setSingleChoiceItems(
                 presets.map { it.displayName }.toTypedArray(),
                 selected,
@@ -1292,7 +1317,12 @@ class MainActivity : Activity() {
     }
 
     private fun setAppOptRule(pkg: String, preset: AppOptPreset) {
-        sendCommand("正在保存 AppOpt 规则") {
+        sendCommand("正在保存 AppOpt 规则", onTerminal = { ack ->
+            if (ack.succeeded) {
+                syncAppOptConfig()
+                toast(targetResultText(ack.detail, "App"))
+            }
+        }) {
             ZuiControlRequest.send(
                 this,
                 ZuiControlContract.CMD_SET_APPOPT_RULE,
@@ -1305,9 +1335,14 @@ class MainActivity : Activity() {
     private fun confirmRemoveAppOptRule(rule: AppOptRule) {
         AlertDialog.Builder(this)
             .setTitle("删除 AppOpt 规则")
-            .setMessage("${labelForPackage(rule.packageName)}\n删除后请强制停止并重新打开目标 App，已有 affinity 才会恢复。")
+            .setMessage("${labelForPackage(rule.packageName)}\n若目标 App 正在运行，删除成功后会自动关闭，使旧 affinity 不再残留。")
             .setPositiveButton("删除") { _, _ ->
-                sendCommand("正在删除 AppOpt 规则") {
+                sendCommand("正在删除 AppOpt 规则", onTerminal = { ack ->
+                    if (ack.succeeded) {
+                        syncAppOptConfig()
+                        toast(targetResultText(ack.detail, "App"))
+                    }
+                }) {
                     ZuiControlRequest.send(
                         this,
                         ZuiControlContract.CMD_REMOVE_APPOPT_RULE,
@@ -1322,14 +1357,92 @@ class MainActivity : Activity() {
     private fun confirmStopAppOpt() {
         AlertDialog.Builder(this)
             .setTitle("停止 AppOpt")
-            .setMessage("停止不会删除规则，也不会立即恢复已运行 App 的 affinity。停止后请强制停止并重新打开目标 App；重新保存任一规则可再次启动 AppOpt。")
+            .setMessage("停止不会删除规则。成功后会自动关闭当前正在运行的受管 App，使旧 affinity 不再残留；重新保存任一规则可再次启动 AppOpt。")
             .setPositiveButton("停止") { _, _ ->
-                sendCommand("正在停止 AppOpt") {
+                sendCommand("正在停止 AppOpt", onTerminal = { ack ->
+                    if (ack.succeeded) toast(appOptStopResultText(ack.detail))
+                }) {
                     ZuiControlRequest.send(this, ZuiControlContract.CMD_STOP_APPOPT)
                 }
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    private fun importAppOptConfig() {
+        Thread {
+            val result = runCatching {
+                val rules = AppOptConfig.parse(AppOptConfig.read(this))
+                val invalid = rules.keys.firstOrNull { !isInstalledUserApp(it) }
+                require(invalid == null) { "$invalid 不是已安装用户 App" }
+                rules
+            }
+            handler.post {
+                val rules = result.getOrElse {
+                    toast(it.message ?: "共享配置读取失败")
+                    return@post
+                }
+                AlertDialog.Builder(this)
+                    .setTitle("导入 AppOpt 配置")
+                    .setMessage(
+                        "将用共享文件中的 ${rules.size} 条规则替换当前列表。" +
+                            "成功后会自动关闭正在运行的受影响 App。",
+                    )
+                    .setPositiveButton("导入并应用") { _, _ ->
+                        sendCommand("正在导入 AppOpt 配置", onTerminal = { ack ->
+                            if (ack.succeeded) {
+                                syncAppOptConfig()
+                                toast(appOptStopResultText(ack.detail, "配置已导入"))
+                            }
+                        }) {
+                            ZuiControlRequest.send(
+                                this,
+                                ZuiControlContract.CMD_REPLACE_APPOPT_RULES,
+                                appOptPayload = AppOptConfig.payload(rules),
+                            )
+                        }
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
+        }.start()
+    }
+
+    private fun syncAppOptConfig(showToast: Boolean = false) {
+        val snapshot = LinkedHashMap(appOptRules)
+        Thread {
+            val result = runCatching { AppOptConfig.write(this, snapshot) }
+            if (showToast || result.isFailure) {
+                handler.post {
+                    if (result.isSuccess) {
+                        toast("配置已写入 ${AppOptConfig.DISPLAY_PATH}")
+                    } else {
+                        toast(result.exceptionOrNull()?.message ?: "共享配置写入失败")
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun targetResultText(detail: String, targetName: String): String {
+        val gameText = when {
+            detail.contains("game=user_added") -> "，已同步加入游戏助手"
+            detail.contains("game=") -> "，游戏助手已识别"
+            else -> ""
+        }
+        return when {
+            detail.contains("target=stopped") -> "操作成功${gameText}，已自动关闭目标${targetName}"
+            detail.contains("target=not_running") -> "操作成功${gameText}，目标${targetName}未运行，下次打开时生效"
+            detail.contains("target=stop_failed") -> "配置已保存${gameText}，但自动关闭失败，请手动强停一次"
+            else -> "操作成功${gameText}"
+        }
+    }
+
+    private fun appOptStopResultText(detail: String, prefix: String = "AppOpt 已停止"): String {
+        val stopped = Regex("stoppedApps=(\\d+)").find(detail)?.groupValues?.get(1) ?: "0"
+        val failed = Regex("stopFailed=(\\d+)").find(detail)?.groupValues?.get(1) ?: "0"
+        return if (failed == "0") "${prefix}；已自动关闭 $stopped 个运行中 App"
+        else "${prefix}；关闭 $stopped 个 App，另有 $failed 个需手动强停"
     }
 
     private fun isInstalledUserApp(pkg: String): Boolean = runCatching {
@@ -1415,6 +1528,7 @@ class MainActivity : Activity() {
     private fun showPackagePicker(
         title: String = "选择应用",
         userAppsOnly: Boolean = false,
+        launchableOnly: Boolean = false,
         onSelected: ((PackageEntry) -> Unit)? = null,
     ) {
         val root = vertical().apply {
@@ -1507,6 +1621,11 @@ class MainActivity : Activity() {
                 .filter { it.packageName != packageName }
                 .map { PackageEntry(it) }
                 .filter { !userAppsOnly || !it.system }
+                .filter {
+                    !launchableOnly || packageManager.getLaunchIntentForPackage(
+                        it.info.packageName,
+                    ) != null
+                }
                 .sortedBy { it.info.packageName.lowercase(Locale.ROOT) }
                 .toList()
             handler.post {
@@ -1581,7 +1700,7 @@ class MainActivity : Activity() {
                         toast(result.exceptionOrNull()?.message ?: "命令发送失败")
                     ack != null && !ack.succeeded ->
                         toast("操作失败${ack.detail.takeIf { it.isNotBlank() }?.let { "：$it" }.orEmpty()}")
-                    message != null -> toast("操作完成")
+                    message != null && onTerminal == null -> toast("操作完成")
                 }
                 reloadState()
                 renderCurrentPage()

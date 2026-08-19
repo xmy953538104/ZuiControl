@@ -91,6 +91,13 @@ SAFE_CENTER_KEEPALIVE_ATTEMPTS=0
 SAFE_CENTER_KEEPALIVE_MAX_ATTEMPTS=60
 SAFE_CENTER_KEEPALIVE_DONE=0
 LOOP_SLEEP_SECONDS=1
+ZUIPP_STABLE_SECONDS=3
+APPOPT_STABLE_SECONDS=3
+ZUI_MODE_SERVICE=zuimode
+ZUI_MODE_TX_ADD_USER_GAME=14
+ZUI_MODE_TX_REMOVE_USER_GAME=15
+ZUI_MODE_TX_IS_USER_GAME=16
+ZUI_MODE_TX_IS_SYSTEM_GAME=17
 
 ts() {
     date '+%Y-%m-%d %H:%M:%S'
@@ -159,6 +166,10 @@ atomic_copy_file() {
     fi
     rm -f "$tmp"
     return 1
+}
+
+durable_sync_paths() {
+    fsync "$@" >/dev/null 2>&1
 }
 
 log_line() {
@@ -892,7 +903,6 @@ trigger_init_action() {
     prop="$1"
     value="$2"
     setprop "$prop" idle >> "$LOG_FILE" 2>&1
-    sleep 1
     if setprop "$prop" "$value" >> "$LOG_FILE" 2>&1; then
         log_line "init action requested: $prop=$value"
         return 0
@@ -1113,9 +1123,9 @@ reload_zuipp_if_needed() {
                     candidate_key="$current_key"
                     stable_ticks=1
                 fi
-                if [ "$stable_ticks" -ge 10 ]; then
+                if [ "$stable_ticks" -ge "$ZUIPP_STABLE_SECONDS" ]; then
                     remember_reloaded_hash_pair "$hash_pair"
-                    publish_zuipp_reload_state "state=done;reason=$reason;oldPid=$old_pid;newPid=$new_pid;stableSeconds=10;game=$game_hash;perf=$perf_hash;needsAppReenter=1"
+                    publish_zuipp_reload_state "state=done;reason=$reason;oldPid=$old_pid;newPid=$new_pid;stableSeconds=$ZUIPP_STABLE_SECONDS;game=$game_hash;perf=$perf_hash;needsAppReenter=1"
                     return 0
                 fi
             fi
@@ -1369,6 +1379,74 @@ appopt_package_is_user_app() {
     return 1
 }
 
+zui_mode_call_bool() {
+    zui_mode_tx="$1"
+    shift
+    zui_mode_output="$(service call "$ZUI_MODE_SERVICE" "$zui_mode_tx" "$@" 2>&1)"
+    zui_mode_result=$?
+    log_line "ZuiMode call: tx=$zui_mode_tx result=$zui_mode_result output=$(printf '%s' "$zui_mode_output" | tr '\r\n' ' ')"
+    [ "$zui_mode_result" = "0" ] || return 2
+    printf '%s\n' "$zui_mode_output" | grep -q '00000001' && return 0
+    printf '%s\n' "$zui_mode_output" | grep -q '00000000' && return 1
+    return 2
+}
+
+ensure_zui_game_managed() {
+    zui_game_pkg="$1"
+    ZUI_GAME_SYNC_RESULT=
+
+    zui_mode_call_bool "$ZUI_MODE_TX_IS_USER_GAME" s16 "$zui_game_pkg"
+    zui_user_result=$?
+    if [ "$zui_user_result" = "0" ]; then
+        ZUI_GAME_SYNC_RESULT=user_existing
+        return 0
+    fi
+    [ "$zui_user_result" = "1" ] || return 1
+
+    zui_mode_call_bool "$ZUI_MODE_TX_IS_SYSTEM_GAME" s16 "$zui_game_pkg"
+    zui_system_result=$?
+    if [ "$zui_system_result" = "0" ]; then
+        ZUI_GAME_SYNC_RESULT=system_existing
+        return 0
+    fi
+    [ "$zui_system_result" = "1" ] || return 1
+
+    if zui_mode_call_bool "$ZUI_MODE_TX_ADD_USER_GAME" \
+        s16 "$zui_game_pkg" s16 game s16 111111 &&
+        zui_mode_call_bool "$ZUI_MODE_TX_IS_USER_GAME" s16 "$zui_game_pkg"; then
+        ZUI_GAME_SYNC_RESULT=user_added
+        return 0
+    fi
+    return 1
+}
+
+package_has_process() {
+    package_process_pkg="$1"
+    [ -n "$(pidof "$package_process_pkg" 2>/dev/null)" ] && return 0
+    ps -A -o NAME= 2>/dev/null | awk -v pkg="$package_process_pkg" \
+        '$1 == pkg || index($1, pkg ":") == 1 { found=1; exit } END { exit !found }'
+}
+
+force_stop_package_if_running() {
+    force_stop_pkg="$1"
+    PACKAGE_STOP_RESULT=not_running
+    package_has_process "$force_stop_pkg" || return 0
+    if am force-stop --user 0 "$force_stop_pkg" >/dev/null 2>&1; then
+        force_stop_tries=5
+        while [ "$force_stop_tries" -gt 0 ]; do
+            package_has_process "$force_stop_pkg" || {
+                PACKAGE_STOP_RESULT=stopped
+                return 0
+            }
+            force_stop_tries=$((force_stop_tries - 1))
+            sleep 1
+        done
+    fi
+    PACKAGE_STOP_RESULT=stop_failed
+    log_line "target package could not be stopped: $force_stop_pkg"
+    return 1
+}
+
 valid_appopt_rule_line() {
     appopt_line="$1"
     appopt_check_package="$2"
@@ -1516,6 +1594,85 @@ rewrite_appopt_rule() {
     return 1
 }
 
+appopt_rule_packages() {
+    [ -e "$APPOPT_CONFIG" ] || return 0
+    while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
+        appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
+        case "$appopt_line" in
+            ""|'#'*) continue ;;
+        esac
+        valid_appopt_rule_line "$appopt_line" 0 || continue
+        printf '%s\n' "$appopt_rule_pkg"
+    done < "$APPOPT_CONFIG"
+}
+
+force_stop_package_lines() {
+    force_stop_lines="$1"
+    FORCE_STOPPED_COUNT=0
+    FORCE_STOP_FAILED_COUNT=0
+    force_stop_seen='|'
+    log_line "force-stop candidates: $(printf '%s' "$force_stop_lines" | tr '\n' ',')"
+    for force_stop_line in $force_stop_lines; do
+        valid_appopt_package_name "$force_stop_line" || continue
+        case "$force_stop_seen" in
+            *"|$force_stop_line|"*) continue ;;
+        esac
+        force_stop_seen="$force_stop_seen$force_stop_line|"
+        if force_stop_package_if_running "$force_stop_line"; then
+            log_line "force-stop result: package=$force_stop_line result=$PACKAGE_STOP_RESULT"
+            [ "$PACKAGE_STOP_RESULT" = "stopped" ] &&
+                FORCE_STOPPED_COUNT=$((FORCE_STOPPED_COUNT + 1))
+        else
+            FORCE_STOP_FAILED_COUNT=$((FORCE_STOP_FAILED_COUNT + 1))
+        fi
+    done
+}
+
+rewrite_appopt_rules_payload() {
+    appopt_payload="$1"
+    [ "${#appopt_payload}" -le 4096 ] || return 1
+    if [ -n "$appopt_payload" ] &&
+        ! printf '%s\n' "$appopt_payload" | grep -Eq \
+            '^([A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+=(0-7|0-4|5-7|0-1))(;[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+=(0-7|0-4|5-7|0-1))*$'; then
+        return 1
+    fi
+
+    appopt_tmp="$APPOPT_CONFIG.tmp"
+    appopt_payload_lines="$APPOPT_CONFIG.payload.tmp"
+    rm -f "$appopt_tmp" "$appopt_payload_lines"
+    cp "$DEFAULT_APPLIST" "$appopt_tmp" || return 1
+    printf '%s' "$appopt_payload" | tr ';' '\n' > "$appopt_payload_lines" || {
+        rm -f "$appopt_tmp" "$appopt_payload_lines"
+        return 1
+    }
+    appopt_payload_seen='|'
+    while IFS= read -r appopt_payload_line || [ -n "$appopt_payload_line" ]; do
+        [ -n "$appopt_payload_line" ] || continue
+        valid_appopt_rule_line "$appopt_payload_line" 1 || {
+            rm -f "$appopt_tmp" "$appopt_payload_lines"
+            return 1
+        }
+        case "$appopt_payload_seen" in
+            *"|$appopt_rule_pkg|"*)
+                rm -f "$appopt_tmp" "$appopt_payload_lines"
+                return 1
+                ;;
+        esac
+        appopt_payload_seen="$appopt_payload_seen$appopt_rule_pkg|"
+        printf '%s=%s\n' "$appopt_rule_pkg" "$appopt_rule_preset" \
+            >> "$appopt_tmp" || {
+            rm -f "$appopt_tmp" "$appopt_payload_lines"
+            return 1
+        }
+    done < "$appopt_payload_lines"
+    rm -f "$appopt_payload_lines"
+    if chmod 0664 "$appopt_tmp" && mv "$appopt_tmp" "$APPOPT_CONFIG"; then
+        return 0
+    fi
+    rm -f "$appopt_tmp"
+    return 1
+}
+
 wait_appopt_running() {
     appopt_candidate_pid=
     appopt_stable_ticks=0
@@ -1531,7 +1688,7 @@ wait_appopt_running() {
                 appopt_candidate_pid="$appopt_pid"
                 appopt_stable_ticks=1
             fi
-            [ "$appopt_stable_ticks" -ge 10 ] && return 0
+            [ "$appopt_stable_ticks" -ge "$APPOPT_STABLE_SECONDS" ] && return 0
         else
             appopt_candidate_pid=
             appopt_stable_ticks=0
@@ -1581,7 +1738,7 @@ apply_appopt() {
     trigger_init_action "$PROP_APPOPT" stop || true
     wait_appopt_stopped || true
     rm -f "$APPOPT_ENABLED"
-    log_line "AppOpt failed to stay on one PID for 10 seconds"
+    log_line "AppOpt failed to stay on one PID for $APPOPT_STABLE_SECONDS seconds"
     set_status "daemon=running" "last=apply_appopt_failed" "reason=service_not_stable"
     publish_appopt_health
     return 1
@@ -1600,6 +1757,14 @@ stop_appopt() {
     return 1
 }
 
+stop_appopt_and_targets() {
+    appopt_stop_packages="$(appopt_rule_packages)"
+    stop_appopt || return 1
+    force_stop_package_lines "$appopt_stop_packages"
+    REQUEST_RESULT_DETAIL="stoppedApps=$FORCE_STOPPED_COUNT;stopFailed=$FORCE_STOP_FAILED_COUNT"
+    return 0
+}
+
 restore_appopt_update_backup() {
     old_appopt_enabled="$1"
     atomic_copy_file "$APPOPT_UPDATE_BACKUP" "$APPOPT_CONFIG" || return 1
@@ -1610,6 +1775,53 @@ restore_appopt_update_backup() {
     fi
     publish_appopt_rules_state
     return 0
+}
+
+replace_appopt_rules() {
+    requested_payload="$1"
+    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
+    validate_appopt_config_syntax || {
+        set_status "daemon=running" "last=replace_appopt_rules_failed" \
+            "reason=invalid_existing_rules"
+        return 1
+    }
+    old_appopt_enabled=0
+    [ -f "$APPOPT_ENABLED" ] && old_appopt_enabled=1
+    old_appopt_packages="$(appopt_rule_packages)"
+    atomic_copy_file "$APPOPT_CONFIG" "$APPOPT_UPDATE_BACKUP" || return 1
+
+    if rewrite_appopt_rules_payload "$requested_payload"; then
+        new_appopt_packages="$(appopt_rule_packages)"
+        force_stop_package_lines "$old_appopt_packages
+$new_appopt_packages"
+        appopt_replace_stopped="$FORCE_STOPPED_COUNT"
+        appopt_replace_stop_failed="$FORCE_STOP_FAILED_COUNT"
+        appopt_replace_result=1
+        if [ "$(appopt_rules_count)" -gt 0 ]; then
+            apply_appopt
+            appopt_replace_result=$?
+        else
+            stop_appopt
+            appopt_replace_result=$?
+        fi
+        if [ "$appopt_replace_result" = "0" ]; then
+            rm -f "$APPOPT_UPDATE_BACKUP"
+            publish_appopt_rules_state
+            REQUEST_RESULT_DETAIL="rules=$(appopt_rules_count);stoppedApps=$appopt_replace_stopped;stopFailed=$appopt_replace_stop_failed"
+            set_status "daemon=running" "last=replace_appopt_rules_applied" \
+                "$REQUEST_RESULT_DETAIL"
+            return 0
+        fi
+    fi
+
+    if restore_appopt_update_backup "$old_appopt_enabled"; then
+        rm -f "$APPOPT_UPDATE_BACKUP"
+    else
+        log_line "AppOpt list replacement rollback failed"
+    fi
+    set_status "daemon=running" "last=replace_appopt_rules_failed" \
+        "reason=apply_failed"
+    return 1
 }
 
 set_appopt_rule() {
@@ -1634,8 +1846,10 @@ set_appopt_rule() {
     if rewrite_appopt_rule "$requested_pkg" "$requested_preset" && apply_appopt; then
         rm -f "$APPOPT_UPDATE_BACKUP"
         publish_appopt_rules_state
+        force_stop_package_if_running "$requested_pkg" || true
+        REQUEST_RESULT_DETAIL="preset=$requested_preset;target=$PACKAGE_STOP_RESULT"
         set_status "daemon=running" "last=set_appopt_rule_applied" \
-            "package=$requested_pkg" "preset=$requested_preset"
+            "package=$requested_pkg" "$REQUEST_RESULT_DETAIL"
         return 0
     fi
     if restore_appopt_update_backup "$old_appopt_enabled"; then
@@ -1671,7 +1885,8 @@ remove_appopt_rule() {
         if [ "$appopt_reconcile_result" = "0" ]; then
             rm -f "$APPOPT_UPDATE_BACKUP"
             publish_appopt_rules_state
-            REQUEST_RESULT_DETAIL=already_absent_reconciled
+            force_stop_package_if_running "$requested_pkg" || true
+            REQUEST_RESULT_DETAIL="already_absent_reconciled;target=$PACKAGE_STOP_RESULT"
             set_status "daemon=running" "last=remove_appopt_rule_applied" \
                 "package=$requested_pkg" "detail=$REQUEST_RESULT_DETAIL"
             return 0
@@ -1703,9 +1918,12 @@ remove_appopt_rule() {
         if [ "$appopt_update_result" = "0" ]; then
             rm -f "$APPOPT_UPDATE_BACKUP"
             publish_appopt_rules_state
+            force_stop_package_if_running "$requested_pkg" || true
+            appopt_remove_detail="${REQUEST_RESULT_DETAIL:-ok}"
+            REQUEST_RESULT_DETAIL="$appopt_remove_detail;target=$PACKAGE_STOP_RESULT"
             set_status "daemon=running" "last=remove_appopt_rule_applied" \
                 "package=$requested_pkg" \
-                "detail=${REQUEST_RESULT_DETAIL:-ok}"
+                "detail=$REQUEST_RESULT_DETAIL"
             return 0
         fi
     fi
@@ -1752,7 +1970,8 @@ begin_performance_transaction() {
         set_xml_error "performance transaction marker write failed"
         return 1
     fi
-    sync >/dev/null 2>&1 || {
+    durable_sync_paths "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_MARKER" \
+        "$PERFORMANCE_DIR" || {
         set_xml_error "performance transaction sync failed"
         return 1
     }
@@ -1760,11 +1979,14 @@ begin_performance_transaction() {
 }
 
 commit_performance_transaction() {
-    sync >/dev/null 2>&1 || return 1
+    durable_sync_paths "$PERFORMANCE_PROFILES" "$ACTIVE_GAME_POLICY" \
+        "$ACTIVE_PERF_CONFIG" "$LAST_GOOD_GAME_POLICY" \
+        "$LAST_GOOD_PERF_CONFIG" "$PERFORMANCE_DIR" "$ZUI_ACTIVE_DIR" \
+        "$ZUI_LAST_GOOD_DIR" || return 1
     rm -f "$PERFORMANCE_TXN_MARKER" || return 1
     # Marker removal is the commit point. A later sync/cleanup failure must not
     # report a rollbackable failure after the rollback record is already gone.
-    sync >/dev/null 2>&1 || log_line \
+    durable_sync_paths "$PERFORMANCE_DIR" || log_line \
         "performance transaction commit marker sync deferred"
     rm -f "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_BACKUP.tmp" \
         "$PERFORMANCE_TXN_MARKER.tmp" || log_line \
@@ -1809,12 +2031,13 @@ rollback_performance_transaction() {
     }
     clear_performance_summary
     publish_performance_state
-    sync >/dev/null 2>&1 || return 1
+    durable_sync_paths "$PERFORMANCE_PROFILES" "$ACTIVE_GAME_POLICY" \
+        "$ACTIVE_PERF_CONFIG" "$PERFORMANCE_DIR" "$ZUI_ACTIVE_DIR" || return 1
     rm -f "$PERFORMANCE_TXN_MARKER" || return 1
     # The old state is restored once the marker is removed. Cleanup is
     # repeatable on the next start and cannot turn a completed rollback into a
     # false failure.
-    sync >/dev/null 2>&1 || log_line \
+    durable_sync_paths "$PERFORMANCE_DIR" || log_line \
         "performance transaction rollback marker sync deferred"
     rm -f "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_BACKUP.tmp" \
         "$PERFORMANCE_TXN_MARKER.tmp" || log_line \
@@ -1848,6 +2071,27 @@ complete_performance_transaction() {
     return 1
 }
 
+prepare_performance_target() {
+    performance_target_pkg="$1"
+    if ! appopt_package_is_user_app "$performance_target_pkg"; then
+        set_status "daemon=running" "last=set_performance_profile_failed" \
+            "package=$performance_target_pkg" "reason=invalid_or_system_package"
+        return 1
+    fi
+    if ! ensure_zui_game_managed "$performance_target_pkg"; then
+        set_status "daemon=running" "last=set_performance_profile_failed" \
+            "package=$performance_target_pkg" "reason=game_list_sync_failed"
+        return 1
+    fi
+    return 0
+}
+
+finish_performance_target() {
+    performance_target_pkg="$1"
+    force_stop_package_if_running "$performance_target_pkg" || true
+    REQUEST_RESULT_DETAIL="game=$ZUI_GAME_SYNC_RESULT;target=$PACKAGE_STOP_RESULT"
+}
+
 set_performance_profile() {
     profile_pkg="$1"
     profile_mode="$2"
@@ -1877,6 +2121,7 @@ set_performance_profile() {
         set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg"
         return 1
     fi
+    prepare_performance_target "$profile_pkg" || return 1
     profile_mode=balanced
     begin_performance_transaction || {
         set_status "daemon=running" "last=set_performance_profile_failed" \
@@ -1902,8 +2147,9 @@ set_performance_profile() {
     log_line "performance profile saved: $profile_pkg/$profile_mode"
     if complete_performance_transaction; then
         publish_performance_state
+        finish_performance_target "$profile_pkg"
         set_status "daemon=running" "last=set_performance_profile_applied" \
-            "package=$profile_pkg" "mode=$profile_mode"
+            "package=$profile_pkg" "mode=$profile_mode" "$REQUEST_RESULT_DETAIL"
         return 0
     fi
     publish_performance_state
@@ -1954,6 +2200,7 @@ set_performance_profile_staged() {
         fi
         [ "$profile_policy" = "default" ] && profile_frame_policy=default
     fi
+    prepare_performance_target "$profile_pkg" || return 1
     profile_mode=balanced
     begin_performance_transaction || {
         set_status "daemon=running" "last=set_performance_profile_failed" \
@@ -1995,8 +2242,10 @@ set_performance_profile_staged() {
     log_line "staged performance profile saved: $profile_pkg/$profile_mode"
     if complete_performance_transaction; then
         publish_performance_state
+        finish_performance_target "$profile_pkg"
         set_status "daemon=running" "last=set_performance_profile_applied" \
-            "package=$profile_pkg" "mode=$profile_mode" "thermal=staged"
+            "package=$profile_pkg" "mode=$profile_mode" "thermal=staged" \
+            "$REQUEST_RESULT_DETAIL"
         return 0
     fi
     publish_performance_state
@@ -2027,8 +2276,10 @@ remove_performance_profile() {
     log_line "performance profile removed: $profile_pkg"
     if complete_performance_transaction; then
         publish_performance_state
+        force_stop_package_if_running "$profile_pkg" || true
+        REQUEST_RESULT_DETAIL="target=$PACKAGE_STOP_RESULT"
         set_status "daemon=running" "last=remove_performance_profile_applied" \
-            "package=$profile_pkg" "mode=$profile_mode"
+            "package=$profile_pkg" "mode=$profile_mode" "$REQUEST_RESULT_DETAIL"
         return 0
     fi
     publish_performance_state
@@ -2201,7 +2452,7 @@ persist_settings_request_completion() {
     completed_receipt="$completed_request
 $completed_ack"
     atomic_write_text "$LAST_REQUEST_RECEIPT_FILE" "$completed_receipt" || return 1
-    sync >/dev/null 2>&1 || return 1
+    durable_sync_paths "$LAST_REQUEST_RECEIPT_FILE" "$CONTROL_DIR" || return 1
     LAST_SETTINGS_REQUEST_TEXT="$completed_request"
     rm -f "$LAST_REQUEST_FILE"
     return 0
@@ -2311,8 +2562,9 @@ handle_request() {
         restore_official_original) restore_official_original_zuipp; result=$? ;;
         set_appopt_rule) set_appopt_rule "$pkg" "$mode"; result=$? ;;
         remove_appopt_rule) remove_appopt_rule "$pkg"; result=$? ;;
+        replace_appopt_rules) replace_appopt_rules "$rate"; result=$? ;;
         apply_asoul) apply_appopt; result=$? ;;
-        restore_asoul) stop_appopt; result=$? ;;
+        restore_asoul) stop_appopt_and_targets; result=$? ;;
         export_logs) export_logs; result=$? ;;
         *)
             log_line "unknown request: $cmd"
@@ -2431,6 +2683,24 @@ process_atomic_settings_request() {
                 "$stage_payload" "$pkg" "$mode" \
                 "" "" "" "" "" "" "" "" "" ""
         fi
+        result=$?
+        trim_log
+        finish_atomic_settings_request "$request" "$id" "$cmd" "$result" \
+            "${REQUEST_RESULT_DETAIL:-$([ "$result" = "0" ] && printf 'ok' || printf 'command_failed')}"
+        return $?
+    fi
+
+    if [ "$cmd" = "replace_appopt_rules" ]; then
+        if [ "$field_count" -ne 3 ]; then
+            log_line "invalid AppOpt replacement request: fields=$field_count"
+            set_status "daemon=running" "last=invalid_request" "cmd=$cmd"
+            finish_atomic_settings_request "$request" "$id" "$cmd" 1 "invalid_request"
+            return $?
+        fi
+        publish_request_ack "$id" processing "$cmd" "" ||
+            log_line "request processing ACK publish failed: id=$id cmd=$cmd"
+        log_line "request: settings:$id cmd=$cmd"
+        replace_appopt_rules "$rate"
         result=$?
         trim_log
         finish_atomic_settings_request "$request" "$id" "$cmd" "$result" \

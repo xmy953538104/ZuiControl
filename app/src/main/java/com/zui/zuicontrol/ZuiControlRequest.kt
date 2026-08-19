@@ -36,6 +36,7 @@ object ZuiControlRequest {
         gpuMax: Int? = null,
         gpuMin: Int? = null,
         stagePayload: String? = null,
+        appOptPayload: String? = null,
         gamePolicy: String? = null,
         framePolicy: String? = null,
     ): String {
@@ -62,6 +63,8 @@ object ZuiControlRequest {
                 gamePolicy.orEmpty().filter { it.isLetterOrDigit() || it == '_' },
                 framePolicy.orEmpty().filter { it.isLetterOrDigit() || it == '_' },
             ).joinToString("|")
+        } else if (cmd == ZuiControlContract.CMD_REPLACE_APPOPT_RULES) {
+            buildAppOptReplaceRequestText(requestId, appOptPayload.orEmpty())
         } else {
             buildGenericRequestText(
                 requestId,
@@ -146,6 +149,16 @@ object ZuiControlRequest {
         return (listOf(requestId, command, rate, packageName, mode) + extraFields)
             .joinToString("|")
     }
+
+    internal fun buildAppOptReplaceRequestText(requestId: String, payload: String): String =
+        listOf(
+            requestId,
+            ZuiControlContract.CMD_REPLACE_APPOPT_RULES,
+            payload.filter {
+                it.isLetterOrDigit() || it == '_' || it == '.' ||
+                    it == '=' || it == '-' || it == ';'
+            },
+        ).joinToString("|")
 
     private const val ACK_PROCESSING = "processing"
     private const val ACK_DONE = "done"

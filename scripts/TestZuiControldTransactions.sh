@@ -73,6 +73,16 @@ setup_test_state() {
     }
     log_line() { :; }
     sync() { :; }
+    fsync() { :; }
+    pm() {
+        [[ "$1" == path ]] || return 1
+        printf 'package:/data/app/%s/base.apk\n' "$2"
+    }
+    service() {
+        [[ "$1" == call && "$2" == "$ZUI_MODE_SERVICE" ]] || return 1
+        printf "Result: Parcel( 00000000 00000001 )\n"
+    }
+    package_has_process() { return 1; }
 }
 
 run_profile_failure_case() (
@@ -636,7 +646,7 @@ test_appopt_stale_rule_removal() (
     ! grep -q '^com.example.user=' "$APPOPT_CONFIG" ||
         fail 'safe removal left requested rule'
     [[ "${TEST_SETTINGS[$REQUEST_ACK_KEY]}" == \
-        'stale_remove|done|remove_appopt_rule|remaining_invalid_stopped' ]] ||
+        'stale_remove|done|remove_appopt_rule|remaining_invalid_stopped;target=not_running' ]] ||
         fail 'remaining stale rule did not publish stopped detail'
 )
 
@@ -653,15 +663,90 @@ test_appopt_same_pid_stability() (
         count="$(cat "$TEST_ROOT/pid_calls")"
         count=$((count + 1))
         printf '%s\n' "$count" > "$TEST_ROOT/pid_calls"
-        if [ "$count" -le 4 ]; then
+        if [ "$count" -le 2 ]; then
             printf '111\n'
         else
             printf '222\n'
         fi
     }
     wait_appopt_running || fail 'stable AppOpt PID was not accepted'
-    [[ "$(cat "$TEST_ROOT/pid_calls")" == 14 ]] ||
+    [[ "$(cat "$TEST_ROOT/pid_calls")" == 5 ]] ||
         fail 'AppOpt stability did not reset after PID change'
+)
+
+test_zui_game_sync_and_target_stop() (
+    export ZUI_CONTROLD_TEST_MODE=1
+    # shellcheck source=/dev/null
+    source "$DAEMON"
+    setup_test_state
+    trap 'rm -rf "$TEST_ROOT"' EXIT
+    service() {
+        tx="$3"
+        case "$tx" in
+            14)
+                : > "$TEST_ROOT/user_game"
+                printf 'Result: Parcel( 00000000 00000001 )\n'
+                ;;
+            16)
+                if [ -e "$TEST_ROOT/user_game" ]; then
+                    printf 'Result: Parcel( 00000000 00000001 )\n'
+                else
+                    printf 'Result: Parcel( 00000000 00000000 )\n'
+                fi
+                ;;
+            17) printf 'Result: Parcel( 00000000 00000000 )\n' ;;
+            *) return 1 ;;
+        esac
+    }
+
+    ensure_zui_game_managed com.example.game || fail 'custom game sync failed'
+    [[ "$ZUI_GAME_SYNC_RESULT" == user_added ]] ||
+        fail 'new custom game was not reported as added'
+    ensure_zui_game_managed com.example.game || fail 'existing custom game query failed'
+    [[ "$ZUI_GAME_SYNC_RESULT" == user_existing ]] ||
+        fail 'existing custom game was not detected'
+
+    : > "$TEST_ROOT/running"
+    package_has_process() { [ -e "$TEST_ROOT/running" ]; }
+    am() { rm -f "$TEST_ROOT/running"; return 0; }
+    sleep() { :; }
+    force_stop_package_if_running com.example.game || fail 'running target was not stopped'
+    [[ "$PACKAGE_STOP_RESULT" == stopped ]] || fail 'target stop result was not reported'
+    force_stop_package_if_running com.example.game || fail 'stopped target check failed'
+    [[ "$PACKAGE_STOP_RESULT" == not_running ]] || fail 'not-running target was not skipped'
+)
+
+test_appopt_batch_replace() (
+    export ZUI_CONTROLD_TEST_MODE=1
+    # shellcheck source=/dev/null
+    source "$DAEMON"
+    setup_test_state
+    trap 'rm -rf "$TEST_ROOT"' EXIT
+    apply_appopt() { : > "$APPOPT_ENABLED"; return 0; }
+    stop_appopt() { rm -f "$APPOPT_ENABLED"; return 0; }
+    : > "$TEST_ROOT/running_batch_target"
+    package_has_process() {
+        [[ "$1" == com.example.user && -e "$TEST_ROOT/running_batch_target" ]]
+    }
+    am() { rm -f "$TEST_ROOT/running_batch_target"; return 0; }
+    sleep() { :; }
+
+    replace_appopt_rules 'com.example.user=0-1;com.example.other=5-7' ||
+        fail 'valid AppOpt batch was rejected'
+    grep -qx 'com.example.user=0-1' "$APPOPT_CONFIG" ||
+        fail 'first batch rule missing'
+    grep -qx 'com.example.other=5-7' "$APPOPT_CONFIG" ||
+        fail 'second batch rule missing'
+    [[ ! -e "$TEST_ROOT/running_batch_target" ]] ||
+        fail 'batch did not stop a running target'
+    [[ "$REQUEST_RESULT_DETAIL" == 'rules=2;stoppedApps=1;stopFailed=0' ]] ||
+        fail 'batch result detail is wrong'
+
+    cp "$APPOPT_CONFIG" "$TEST_ROOT/before_invalid_batch"
+    replace_appopt_rules 'com.example.user=0-1;com.example.user=5-7' &&
+        fail 'duplicate batch package was accepted'
+    cmp -s "$APPOPT_CONFIG" "$TEST_ROOT/before_invalid_batch" ||
+        fail 'invalid batch changed active rules'
 )
 
 test_profile_failures
@@ -683,5 +768,7 @@ test_appopt_rule_commands
 test_appopt_update_rollback
 test_appopt_stale_rule_removal
 test_appopt_same_pid_stability
+test_zui_game_sync_and_target_stop
+test_appopt_batch_replace
 
 printf 'zui_controld transactions, request ACK, and AppOpt rules: OK\n'

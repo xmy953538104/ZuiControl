@@ -1,7 +1,7 @@
 ZuiControl v19 payload
 
 System components:
-- /system/priv-app/ZuiControlV33/ZuiControl.apk
+- /system/priv-app/ZuiControlV34/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/AppOpt
 - /system/etc/init/zui_controld.rc
@@ -23,6 +23,7 @@ Runtime data:
 - /data/vendor/zui_control/zuipp/last_good/
 - /data/vendor/zui_control/zuipp/state/
 - /data/vendor/zui_control/appopt/applist.conf
+- /storage/emulated/0/Download/ZuiControl/AppOpt.conf (editable import/export copy)
 - /data/vendor/zui_control/log/controld.log
 - /data/vendor/zui_control/log/appopt.log
 
@@ -40,11 +41,14 @@ Behavior:
 - Payload default XML files are templates/fallbacks, not automatically labeled as
   official originals. An official-original restore is available only if such a
   pair is explicitly saved under the runtime official_original directory.
-- Each game has one current performance profile. Its LimitConfig is mirrored to
+- Each game has one current performance profile. Saving a user game also adds it
+  to ZUI Game Assistant's custom list if needed, without removing Game
+  Assistant-only entries. Its LimitConfig is mirrored to
   all three OEM mode slots, and one CPU level ID is shared by the four CPU Type
   maps for each thermal stage. Daemon-side GameModeProvider forcing is removed;
-  the user re-enters a ZUI-recognized game after saving so the OEM chain applies
-  the mounted XML. CPU/GPU values remain OEM performance requests, not hard caps.
+  the next game start uses the OEM chain and mounted XML. A running target is
+  force-stopped after a successful save. CPU/GPU values remain OEM performance
+  requests, not hard caps.
 - Daemon keeps XML generation/bind mount, controlled ZuiPP reload after active
   XML hash verification, SafeCenter one-shot keepalive, AppOpt preparation, and
   log export. Cloud blocking is removed and /system/etc/hosts matches the
@@ -56,6 +60,9 @@ Behavior:
   signal permission.
 - The shipped AppOpt default contains only commented package-wide preset
   examples. It enables no rule and contains no thread-name rule syntax.
+- AppOpt keeps its validated canonical config under /data/vendor. The App UI can
+  export and strictly validate/import an editable Download/ZuiControl/AppOpt.conf
+  copy; a batch import restarts AppOpt once and stops affected running apps.
 - SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input method,
   and overlays are transient scenes. Launcher is a valid configurable scene.
 - 144/165 are displayHz lock targets only in v19; generic UID FPS cap is a later
