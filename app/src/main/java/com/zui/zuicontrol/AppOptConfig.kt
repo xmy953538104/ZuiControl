@@ -8,6 +8,7 @@ import android.provider.MediaStore
 
 object AppOptConfig {
     const val DISPLAY_PATH = "Download/ZuiControl/AppOpt.conf"
+    internal const val DOWNLOAD_MIME_TYPE = "application/octet-stream"
     private const val DISPLAY_NAME = "AppOpt.conf"
     private val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/ZuiControl/"
 
@@ -49,7 +50,7 @@ object AppOptConfig {
             MediaStore.Downloads.EXTERNAL_CONTENT_URI,
             ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, DISPLAY_NAME)
-                put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                put(MediaStore.MediaColumns.MIME_TYPE, DOWNLOAD_MIME_TYPE)
                 put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
             },
         ) ?: throw IllegalStateException("配置文件无法创建")

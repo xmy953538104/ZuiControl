@@ -14,9 +14,10 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $project = Join-Path $root $ProjectDir
 $payload = Join-Path $root $PayloadDir
 $privAppDir = Join-Path $payload "system/priv-app"
-$apkOutDir = Join-Path $privAppDir "ZuiControlV34"
+$apkOutDir = Join-Path $privAppDir "ZuiControlV35"
 $legacyApkOutDir = Join-Path $privAppDir "ZuiControl"
-$previousApkOutDir = Join-Path $privAppDir "ZuiControlV33"
+$previousApkOutDirs = @('ZuiControlV30', 'ZuiControlV31', 'ZuiControlV32', 'ZuiControlV33', 'ZuiControlV34') |
+    ForEach-Object { Join-Path $privAppDir $_ }
 
 if (-not (Test-Path $project)) {
     throw "Missing project directory: $project"
@@ -74,8 +75,10 @@ if (-not (Test-Path $builtApk)) {
 if (Test-Path -LiteralPath $legacyApkOutDir) {
     Remove-Item -LiteralPath $legacyApkOutDir -Recurse -Force
 }
-if (Test-Path -LiteralPath $previousApkOutDir) {
-    Remove-Item -LiteralPath $previousApkOutDir -Recurse -Force
+foreach ($previousApkOutDir in $previousApkOutDirs) {
+    if (Test-Path -LiteralPath $previousApkOutDir) {
+        Remove-Item -LiteralPath $previousApkOutDir -Recurse -Force
+    }
 }
 New-Item -ItemType Directory -Force -Path $apkOutDir | Out-Null
 Copy-Item -LiteralPath $builtApk -Destination (Join-Path $apkOutDir "ZuiControl.apk") -Force

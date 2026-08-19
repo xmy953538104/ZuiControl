@@ -6,6 +6,11 @@ import org.junit.Test
 
 class AppOptConfigTest {
     @Test
+    fun downloadMimeTypeDoesNotInviteTxtSuffix() {
+        assertEquals("application/octet-stream", AppOptConfig.DOWNLOAD_MIME_TYPE)
+    }
+
+    @Test
     fun parsesAndSerializesStrictWholePackageRules() {
         val rules = AppOptConfig.parse(
             """
