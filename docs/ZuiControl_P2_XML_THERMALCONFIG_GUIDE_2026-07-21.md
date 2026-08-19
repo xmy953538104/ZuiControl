@@ -4,13 +4,13 @@
 
 本节覆盖本文后面关于“三个用户 profile、daemon 选择 gameMode、GameModeProvider 重入”和旧固定延时保存流程的说明；后文 XML 字段、ThermalConfig 和原厂热控原理仍有效。
 
-当前成品 App 为 `versionCode=35` / `versionName=0.20.6`，生产 commit 为 `c1d8978a70fecd25163fae1ef6eb157d413a960e`，GitHub Actions run 为 `32212847833`。最终 `super.img` SHA256 为 `f2b49a1670b28fbe43b1a9bc91db5486668b3c1d4c0c8c0a2b7a5cc9f1dead47`，成品反抽 verifier 已返回 `ok=true`。设备已经通过最小化 7 项 9008 XML 持久刷入 0.20.6，并在 V35 系统镜像上完成 exact ACK、成功变更、自动停止运行中目标、原配置逐字恢复和 hash/mount/reload 闭环；当前不再是临时 daemon 验证状态。
+当前成品 App 为 `versionCode=36` / `versionName=0.20.7`，生产 commit 为 `0d4b75c32496ce8767c0421c13bdc56b0045f63c`，GitHub Actions run 为 `32218280953`。最终 `super.img` SHA256 为 `93f5e7dffb76b06b725962b7c6a8d7d788c558992d47f7ea511255c4f3c54515`，成品反抽 verifier 已返回 `ok=true`。设备已经通过最小化 7 项 9008 XML 持久刷入 0.20.7，并在 V36 系统镜像上完成 exact stage/terminal ACK、添加和删除 Game Assistant membership、成功变更、自动停止运行中目标、原配置逐字恢复和 hash/mount/reload 闭环；当前不再是临时 daemon 验证状态。
 
 当前生产模型：
 
 ```text
 App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
--> 保存前查询目标是否已在 ZUI Game Assistant；若没有则单向加入自定义游戏列表
+-> 保存前查询目标是否已在 ZUI Game Assistant；若没有则加入自定义游戏列表
 -> daemon 备份旧 profile、旧 active XML 与事务 marker
 -> 每个 package 生成一份 canonical profile
 -> 每个温区分配一个共享 CPU level ID
@@ -18,7 +18,8 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 -> 同一 LimitConfig 镜像到 balanced / powersave / savage
 -> 校验、promote、bind active XML
 -> ZuiPP 在运行时先停止四个原厂 service，再受控重启并等待新 PID 稳定 3 秒；未运行则记录合法 skipped
--> 原子提交 profile + runtime + terminal ACK；失败则恢复整笔旧状态
+-> 同步 Game Assistant membership；新增 profile 时添加、删除 profile 时删除自定义条目
+-> 原子提交 membership + profile + runtime + terminal ACK；失败则恢复整笔旧状态
 -> 保存成功后自动停止当时正在运行的目标；未运行则跳过
 -> 用户从桌面重新进入 ZUI 已识别的游戏
 -> 原厂 onGameAppStart / GameHelper 选择任一模式，得到相同配置
@@ -36,7 +37,7 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 
 - 设备实测 ZuiPP 的 CPU Type 读取顺序不是 XML 文档顺序。旧版为四簇分配不同 level ID 时，错误 Type 查找可能缺少 level，TAssistant 会放弃整条策略。共享 CPU ID 消除了顺序依赖。
 - daemon 直接调用 `GameModeProvider/contact` 会出现“命令成功但 ZuiPP 没有目标游戏状态”的假成功，现已删除。OEM GameHelper 本来就会在真实 `onGameAppStart` 时调用 provider；provider rows=1 也只能表示模式值被接受，不能单独证明 LimitConfig 已下发。
-- ZuiControl 保存 P2 前会通过 `zuimode` 检查 Game Assistant 自定义列表；目标不在其中时自动添加。这个同步只从 ZuiControl 指向 Game Assistant：Game Assistant 单独添加不会创建 P2 profile，删除 P2 profile也不会移除游戏条目。因此前者继续走 OEM 默认调度，只有 ZuiControl 中有 profile 的 App 才走自定义 XML。
+- ZuiControl 保存 P2 前会通过 `zuimode` 检查 Game Assistant；目标不在其中时自动添加自定义条目。删除 ZuiControl P2 profile 时同步删除对应自定义条目。这个同步严格只从 ZuiControl 指向 Game Assistant：Game Assistant 单独添加或删除都不会反向创建或删除 P2 profile。系统内建识别不是自定义条目，不做伪删除。membership/profile/XML/runtime 是同一事务，任一步失败都会恢复旧状态。
 - ZuiPP 被重启后，TAssistant/原厂 game callback 要到下一次真实游戏启动才重新建立。保存成功后 daemon 会自动停止当时正在运行的目标；未运行时不做无意义的停止。UI done 后用户直接从桌面重新打开即可，不再要求去系统设置手动强停。
 - “息屏启动”只指旧测试曾在屏幕关闭时用 adb 拉起 App，不是产品流程。正常亮屏从桌面启动才是交付路径；仅有 Activity 焦点而没有 `onGameAppStart` 不能判为 ZUI 游戏态。
 - P2 添加器只列已安装、可启动的 `/data/app` 用户 App；保存又会确保 Game Assistant membership，因此不再依赖用户手工两地添加。
@@ -45,13 +46,13 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 
 当前排查顺序：
 
-1. 请求 ID 是否收到同 ID、同 command 的 `done`；若为 `failed`，先看 reason，禁止继续覆盖请求槽。
+1. 请求 ID 是否收到同 ID、同 command 的 `done`；处理中应看到真实 stage（如 `generating_xml`、`reloading_zuipp`、`syncing_game_assistant`、`committing`）。若为 `failed`，先看 reason，禁止继续覆盖请求槽。
 2. `profiles.prop` 中每个 package 是否只有一条 canonical `balanced` 记录。
 3. `xml_state=state=mounted`，active 与 `/system/etc` 是否同 hash 且确为 bind mount。
 4. 目标 App 的三个 LimitConfig mode block 是否完全一致。
 5. 每个温区 Little/Big/Titan/Mega 四个 ID 是否相同，并在四个 Type 中都存在。
 6. ZuiPP 正在运行时，四个原厂 service 是否先成功停止，reload 是否 `state=done`、`stableSeconds=3`、`needsAppReenter=1`，并且只有一次干净 PID 切换、没有 `OverHeatCleanService` fatal/NPE；未运行时允许 `state=skipped;reason=zuipp_not_running`。只有输入/输出 hash 确实未变时才接受 `skipped;same_hash`，而每次 daemon 新启动不能用上次开机 receipt 跳过一次本应执行的 reload。
-7. 确认运行中的目标已自动停止或返回 `target=not_running`，再从桌面重新进入；按顺序检查同一 package 的 `onGameAppStart`、GameHelper、ZuiPP `notifyGameAppStateChanged`、非空 LimitConfig/TAssistant 下发。
+7. 确认 Game Assistant membership 与操作方向一致，运行中的目标已自动停止或返回 `target=not_running`，再从桌面重新进入；按顺序检查同一 package 的 `onGameAppStart`、GameHelper、ZuiPP `notifyGameAppStateChanged`、非空 LimitConfig/TAssistant 下发。
 8. 再读 CPU/GPU 最终节点，并区分用户请求、厂商覆盖和真实高温降频。
 9. 检查 dmesg 与全 buffer logcat 中相关 AVC。
 

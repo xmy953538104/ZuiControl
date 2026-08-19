@@ -13,7 +13,75 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.7 2026-08-19 0.20.6 工作流优化、持久实测与当前交接（当前最新）
+### 0.8 2026-08-19 0.20.7 真单向同步、内置编辑器、进度反馈与当前交接（当前最新）
+
+本节覆盖 0.7 及更早章节中的当前版本、P2 删除不移出游戏助手、AppOpt 必须先导出再编辑、操作期间只能等待等表述。设备 `HA25HSZM` 已通过安全 7 项 9008 流程持久刷入 `versionCode=36` / `versionName=0.20.7`；发布、自动刷写和刷后可逆实测均已闭合，设备最终恢复到原有鸣潮 P2 profile、AppOpt 0 规则的基线。
+
+#### 当前成品与发布事实
+
+- 生产 commit：`0d4b75c32496ce8767c0421c13bdc56b0045f63c`
+- GitHub Actions run：`32218280953`，结论 `success`：<https://github.com/xmy953538104/ZuiControl/actions/runs/32218280953>
+- CI artifact：`D:\3.VScode\Mi\work\release_0207_32218280953`
+- package：`com.zui.zuicontrol`；版本：36/0.20.7；system 路径：`/system/priv-app/ZuiControlV36/ZuiControl.apk`
+- release 证书 SHA-256：`3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94`
+- CI、payload、system 内嵌和两个 sidecar APK SHA-256：`07a715c59730fabc2a09ab258c1eff5121da1b7719184970814661d1735de09f`
+- 最终刷机目录：`D:\3.VScode\Mi\【B刷机】187`
+- 安全自动刷机目录：`D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE`
+- 最终成品反抽 verifier：`ok=true`
+
+```text
+5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b  boot.img
+93f5e7dffb76b06b725962b7c6a8d7d788c558992d47f7ea511255c4f3c54515  super.img
+9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5  vbmeta.img
+4635484b6469fe4db9fb9c78aa5a5f2c410aef514eda0db7b3f34d5ece053a9f  vbmeta_system.img
+07a715c59730fabc2a09ab258c1eff5121da1b7719184970814661d1735de09f  ZuiControl-v19-system.apk
+07a715c59730fabc2a09ab258c1eff5121da1b7719184970814661d1735de09f  ZuiControl-v19-release.apk
+```
+
+自动刷写日志：`D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-19_13-26-33.log`。脚本从正常 Android 自动进入 COM3/9008，只写 super、boot_a/b、vbmeta_a/b、vbmeta_system_a/b，自动复位并确认同一 ADB serial、`boot_completed=1` 和 36/0.20.7。禁止使用原始 99 项全量 XML 做日常更新。
+
+#### 0.20.7 当前用户语义
+
+P2：
+
+- ZuiPP 重启完全由 ZuiControl 的 daemon 自动完成。保存或删除时，daemon 会生成和校验 XML、promote/bind、先停止四个已知原厂 service、受控重启 ZuiPP、确认新 PID 稳定 3 秒，再发布完成；用户不应手动重启 ZuiPP。
+- 现在是严格的单向镜像：在 ZuiControl 新增 P2 profile，会同步添加目标到 Game Assistant 自定义列表；在 ZuiControl 删除该 profile，会同步删除由自定义列表表示的目标；在 Game Assistant 单独新增或删除，不会反向创建或删除 ZuiControl profile。系统内建游戏识别不是“自定义条目”，不能也不需要伪造删除。
+- Game Assistant membership、profile、active XML 和 runtime 位于同一事务提交边界。任一步失败都恢复旧 membership/profile/XML/runtime，不允许出现“游戏列表改了但 XML 没改”或反过来的半成功。
+- 保存或删除成功后，只在目标当时有运行进程时自动 `force-stop`；未运行时返回 `target=not_running`，不做无意义操作。完成后用户直接从桌面重新打开即可。
+- 实机新增 `com.xmy.ap` 用时 14.766 秒，逐阶段看到 validating、generating_xml、reloading_zuipp、stopping_zuipp_services、waiting_zuipp、syncing_game_assistant、committing、stopping_target，终态 `game=user_added;target=not_running`。运行该 App 后删除 profile 用时 12.788 秒，终态 `game=user_removed;target=stopped`；membership=false、profile 消失、目标 PID 消失，XML hash 逐字恢复，ZuiPP PID 15754→23762 且稳定 3 秒。
+
+AppOpt：
+
+- 系统状态页现在有“编辑配置清单”：打开原生多行编辑器，内容预填当前 canonical 配置；点击“校验并应用”后，只有全部行通过校验才一次性替换权威配置。错误会留在编辑器中并明确显示，不会部分应用。
+- 每条活动规则仍严格为 `普通用户包名=预设`，预设仅 `0-7`、`0-4`、`5-7`、`0-1`；不开放系统 App、线程名或任意 CPU 集合。已有的单 App 图形化添加/修改/删除和共享文件导入/导出继续保留。
+- 权威配置仍是 `/data/vendor/zui_control/appopt/applist.conf`，但用户无需直接访问它。编辑器和导入都通过同一个 daemon 校验/事务接口写入，因此改规则不需要重刷镜像。`Download/ZuiControl/AppOpt.conf` 只是可导入/导出的共享副本，不是 daemon 热读源。
+- 保存、删除、停止或整表替换成功后，daemon 自动停止正在运行的受影响 App；未运行则跳过。规则只有在目标下一次新进程启动时完整生效。
+- 实机已打开编辑器、读取 canonical 零规则文本并点击应用；非取消式进度框出现，显示“正在应用 AppOpt 配置”和真实阶段，exact ACK 为 `done|replace_appopt_rules|rules=0;stoppedApps=0;stopFailed=0`，弹窗随后自动关闭。最终仍为 0 活动规则、service stopped、无 AppOpt PID。
+
+进度反馈：
+
+- P2、AppOpt 及相关长操作现在使用非取消式原生进度弹窗，不再靠固定 13 秒或界面乐观更新。弹窗只跟踪当前 requestId 的四字段 ACK，显示 daemon 的真实阶段；收到同 ID/同 command 的 `done` 或 `failed` 才关闭并刷新状态。
+- P2 的 12–15 秒主要来自生成/校验、ZuiPP service 安全停止和新 PID 的 3 秒稳定窗，不是 App 卡死。AppOpt 通常约 5–7 秒；具体时间取决于受影响 App 数和 AppOpt 重启/停止。
+
+#### 36/0.20.7 持久刷后真实结果
+
+- 身份：系统为 ZUI 16.1.11.187；PackageManager 36/0.20.7，路径 `/system/priv-app/ZuiControlV36`，APK hash 与发布 hash一致，旧 V35 不存在。
+- P1：system_server 仍是唯一刷新率 owner，daemon refresh disabled；未授权 shell Binder 被拒绝。对 Settings 做可逆 60Hz profile 时 target/actual 和 display active mode 都到 60，删除后回到 120，原 profile 未污染。没有改 P1，也没有进入 FPS cap。
+- 开机 P2：active XML bind 后 ZuiPP 4614→6479，`state=done;reason=boot_active;stableSeconds=3`，证明重启由系统自动完成。P2 新增/删除的 membership、profile、hash、mount、新 PID和 target stop 均闭合；失败注入没有改变旧 membership/profile/hash/PID。
+- 最终只剩鸣潮 profile。active/system game hash 均为 `cf787905a1a2d9a3afae69b7a48272ff0d86ff0e35c99d9a305e3dc31b634c1d`，performance hash 均为 `447277c22ba0d2cd378b05e2c99bc80d89d4fb57717deb78ac5ca760407e7a92`，两个路径保持 bind mount。鸣潮 `ThermalConfig=0 0 0`，三个 LimitConfig 段完全一致，四簇共享 level ID `900000` 且四个 Type 都存在。
+- AppOpt：内置编辑器和 exact progress/ACK 通过；最终 `applist.conf` 0 活动规则、`init.svc.zui_appopt=stopped`、无 AppOpt PID、无 enabled flag。
+- 相机：`STILL_IMAGE_CAMERA` 和模拟第三方 `IMAGE_CAPTURE` 都打开成功；SurfaceFlinger 始终 PID 1626/starttime 403，cameraserver 始终 PID 1919/starttime 429，无新增 tombstone、`No matching frame rate modes`、abort、fatal 或 CameraProvider DEAD_OBJECT。
+- 项目精确路径未发现 AVC。仍有原厂 cameraserver 读取 `vendor_display_prop`、相机属性设置和厂商 HAL denial，以及相机 DSP unmap 错误；本轮功能成功且相关进程未重启，禁止把这些原厂日志误当 ZuiControl 缺权限而扩大策略。
+- 云控继续为删除状态；官方 hosts 仍是 56 字节/`425c3e713d5bae19b031bc8639c20c6a23e311a54647ba1824cbf45969a11ff4`，旧脚本、runtime、setting 和 iptables/ip6tables 链不存在。
+
+#### 新聊天当前最短下一步
+
+1. 先只读确认设备仍为 36/0.20.7、V36、P1 owner 和本节最终 P2/AppOpt 基线；不要无原因重复全套写入测试。
+2. 用户若报告 P2 不响应，记录 exact request ACK 的最后阶段、Game Assistant membership、target stop 结果、profile、active/system hash、ZuiPP PID/reload 和下一次真实 `onGameAppStart`。CPU/GPU XML 是 OEM 性能请求而非 hard cap，节点瞬时不同不能单独判失败。
+3. 用户若报告 AppOpt 不响应，记录编辑器校验错误或 exact ACK、权威配置、AppOpt PID/service、目标 stop 结果，并在重新打开后读 `/proc/<pid>/status`。不要绕开 UI/daemon 直接写权威文件。
+4. 只有出现可复现的新缺陷才制作下一包。仍不进入 FPS cap，不改 P1，不恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。
+
+### 0.7 2026-08-19 0.20.6 工作流优化、持久实测与交接（历史，已被 0.8 覆盖）
 
 本节覆盖 0.6 及更早章节中的当前版本、hash、10 秒等待、手动强停、P2 两地添加和 AppOpt 无公开配置等表述。设备 `HA25HSZM` 已通过安全 7 项 9008 流程持久刷入 `versionCode=35` / `versionName=0.20.6`，不是临时 bind；成品、运行时状态和测试后的基线均已复核。
 
@@ -793,10 +861,4 @@ ZuiControl/scripts/VerifyZuiControlFlashPackage.ps1
 
 ## 9. 新聊天首条消息
 
-复制以下内容给新窗口：
-
-```text
-请先完整读取 D:\3.VScode\Mi\AGENTS.md 和 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；涉及 P2 XML/ThermalConfig 时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md。旧的 2026-06-21 P2-I/asoulOpt 入口和大篇历史文档只作历史，若与主交接冲突，以 AGENTS.md 和主交接第 0.3 节为准。
-
-当前工作区是 D:\3.VScode\Mi，当前仓库是 D:\3.VScode\Mi\ZuiControl。先读本文件第 0.3 节；后面的旧 provider、云控、AppOpt 只读状态和 29/0.20.0 及更早包 hash 均已被覆盖。最新待刷包在 D:\3.VScode\Mi\【B刷机】187，super SHA256 应为 e755cb3544314cef8ecc764dc2325cd2b0fa45d523d499c721afe2a096d99b2d，内嵌 APK 应为 7e60f25103ec29521652c6b3e827dc05e7a6150d9836aa1c5d808fd37bebeac8（30/0.20.1，路径 ZuiControlV30）。先只读确认设备是否已经刷入该包。刷后完整验证 P1 相机/active mode、P2 精确 ACK/失败回滚/开机同 hash reload/退出重入、AppOpt 四预设与停止、官方 hosts/旧云控残留清理及 AVC；不要测试已删除的 provider_direct/云控链。通过前不进入 FPS cap、不再改 P1、不恢复 direct CPU/GPU sysfs，也不重新引入旧 AsoulOpt。
-```
+本节原先保存过 30/0.20.1 的复制文本，现已作废。新聊天不要复制历史段落；直接使用同目录的 `AI交接记录_ZuiControl_2026-07-21_当前主入口.txt`，它与本文第 0.8 节保持一致。
