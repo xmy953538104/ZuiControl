@@ -4,11 +4,13 @@
 
 本节覆盖本文后面关于“三个用户 profile、daemon 选择 gameMode、GameModeProvider 重入”和旧固定延时保存流程的说明；后文 XML 字段、ThermalConfig 和原厂热控原理仍有效。
 
-当前成品 App 为 `versionCode=37` / `versionName=0.21.0`，生产 commit 为 `36d6b26c05e5c0ecfca04ae78120aede51f1d8a2`，GitHub Actions run 为 `32266515192`。最终 `super.img` SHA256 为 `b43375c2c3c53ae5df8f23f6f658ae97cc7b76b5501012fec93cf1c60db173ae`，成品反抽 verifier 已返回 `ok=true`。设备已经通过最小化 7 项 9008 XML 持久刷入 0.21.0；正常重启后 boot bind 触发 ZuiPP `4620 -> 6636` 并得到 `state=done;reason=boot_active;stableSeconds=3`，亮屏重入鸣潮又闭合 `onGameAppStart -> GameHelper -> notifyPerfStatus -> writeSavageMode`。V37 同值保存的真实 UI 操作约 9.8 秒并合法 `skipped;same_hash`；输入改变 XML 时仍执行新 PID 与 3 秒稳定窗。当前不再是临时 daemon 验证状态。
+当前成品 App 为 `versionCode=38` / `versionName=0.21.1`，生产代码 commit 为 `84f3c97bf27f0cec7c8335aa0d164baf49e2b376`，GitHub Actions run 为 `32330351987`。最终 `super.img` SHA256 为 `eaa6e5ea230fdff34fe2935a3ffe3d63c61521ed22826ce93a82cf7c8055cbce`，成品反抽 verifier 已返回 `ok=true`。设备已经通过最小化 7 项 9008 XML 持久刷入 0.21.1；正常重启后 boot bind 触发 ZuiPP `4804 -> 6656` 并得到 `state=done;reason=boot_active;stableSeconds=3`，亮屏重入鸣潮又闭合 `onGameAppStart -> GameHelper initGameHelper -> notifyPerfStatus : 11 17 -> writeSavageMode`。V38 会在 App 侧先比较 canonical 配置：完全同值时小于 1 秒返回，不写请求槽、不重启 ZuiPP、不停止目标；真实改变 XML 时实测约 11.7–13.1 秒，仍执行新 PID 与 3 秒稳定窗。当前不再是临时 daemon 验证状态。
 
 当前生产模型：
 
 ```text
+App 先比较 canonical 输入与现有 profile；完全相同则本地完成，不发请求
+否则：
 App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 -> 保存前查询目标是否已在 ZUI Game Assistant；若没有则加入自定义游戏列表
 -> daemon 备份旧 profile、旧 active XML 与事务 marker

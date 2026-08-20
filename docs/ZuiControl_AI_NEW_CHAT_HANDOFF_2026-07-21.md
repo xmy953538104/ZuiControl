@@ -13,7 +13,70 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.9 2026-08-20 0.21.0 统一 UI、线程级 AppOpt 与最终刷后验收（当前最新）
+### 0.10 2026-08-20 0.21.1 响应式 UI、同值秒回与 V38 刷后验收（当前最新）
+
+本节覆盖 0.9 及更早章节中的当前版本、UI 布局、同值保存时长、成品 hash 和下一步。设备 `HA25HSZM` 已从正常 Android 自动进入 COM3/9008，经安全 7 项 XML 持久刷入 `versionCode=38` / `versionName=0.21.1`，随后完成真实横竖屏、P1、P2、AppOpt、相机、云控删除状态和项目 AVC 验收。当前运行的是 `/system` 内 V38，不是临时 bind APK。
+
+#### 当前成品与发布事实
+
+- 生产代码 commit：`84f3c97bf27f0cec7c8335aa0d164baf49e2b376`
+- GitHub Actions run：`32330351987`，结论 `success`：<https://github.com/xmy953538104/ZuiControl/actions/runs/32330351987>
+- CI artifact：`D:\3.VScode\Mi\work\release_0.21.1_run_32330351987`
+- package：`com.zui.zuicontrol`；版本：38/0.21.1；system 路径：`/system/priv-app/ZuiControlV38/ZuiControl.apk`
+- release 证书 SHA-256：`3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94`
+- CI、payload、system 内嵌和两个 sidecar APK SHA-256：`5780bda644ce920c6072d6fa73f9dde486cc58f4037aba5ba271da0a38496d62`
+- 最终刷机目录：`D:\3.VScode\Mi\【B刷机】187`
+- 安全自动刷机目录：`D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE`
+- 最终 super 反抽 verifier：`ok=true`
+
+```text
+5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b  boot.img
+eaa6e5ea230fdff34fe2935a3ffe3d63c61521ed22826ce93a82cf7c8055cbce  super.img
+9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5  vbmeta.img
+92e205e3d9571c3a42d376d7bf7b05f86e0897813f6c2b08abbe1084c71cf825  vbmeta_system.img
+5780bda644ce920c6072d6fa73f9dde486cc58f4037aba5ba271da0a38496d62  ZuiControl-v19-system.apk
+5780bda644ce920c6072d6fa73f9dde486cc58f4037aba5ba271da0a38496d62  ZuiControl-v19-release.apk
+```
+
+自动刷写日志：`D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-20_12-19-00.log`。脚本只写 super、boot_a/b、vbmeta_a/b、vbmeta_system_a/b，Firehose 返回 `All went well! Resetting to system`，自动复位后确认同一 ADB serial、`boot_completed=1` 和 38/0.21.1。禁止使用原始 99 项全量 XML 做日常更新。
+
+#### 0.21.1 UI 与响应改动
+
+- 仍使用原生 Kotlin + Android Views，不引入 Compose、Rust UI 或新依赖。右上刷新和设置改为图标真正居中的圆形 `ImageView` 按钮，选中状态也在同一底图内，不再出现图标与底图分离。
+- 竖屏是底部居中的刷新率/性能/AppOpt 三项导航；横屏是左侧居中的纵向 navigation rail。设置只保留在右上角。选中胶囊完整包住图标和文字，三个一级入口不再横竖屏都挤在顶部。
+- 刷新率主页只保留 App、图标和 Hz；右下角 `+` 新增，点卡片编辑。性能主页只保留配置列表，点卡片进入二级编辑。AppOpt 主页只保留规则列表，优先提供内置 8 Gen 3 细分线程模板和整包 fallback。所有主功能卡片、弹窗、托盘、圆角、间距和字体统一。
+- 真机截图：`D:\3.VScode\Mi\work\device_v38_release\zui_v38_portrait.png`、`zui_v38_landscape3.png`、`zui_v38_settings.png`。横屏截图实际为 `2560x1600`、`ROTATION_90`，不是把竖屏截图误当横屏。
+- P2/AppOpt 在发送前比较 canonical 配置：保存内容完全相同则本地直接返回，不写 Settings 请求槽、不重启 ZuiPP/AppOpt、不停止目标。实机同值操作小于 1 秒，ACK 保持不变。
+- 真正改变 XML 的 P2 实测约 11.7–13.1 秒；真正改变 AppOpt 的实测约 9.2–10.9 秒。等待框显示真实阶段，只在 exact terminal ACK 后关闭。
+
+#### V38 持久刷后真实结果
+
+- P1：`refreshOwner=system`、`daemonRefreshDisabled=true`、`displayVote=adaptiveRender`，普通 shell Binder 被拒绝。鸣潮 profile 目标/实际为 60/60，桌面最终为 144/144，未出现 `lastError`，profile 文件没有 SystemUI。没有修改 P1，也没有进入 FPS cap。
+- P1 的准确产品边界仍应保留：这里是系统 adaptive render vote，不是 UID FPS cap；静止的 Settings/相机页面可在目标 120 时物理降至 30/60，发生交互或回到配置场景后再升档。不能把 `targetDisplayHz` 描述成任何时刻都不允许物理降档的硬定频。
+- P2：开机后 `xml_state=mounted`，ZuiPP `4804 -> 6656`，终态 `state=done;reason=boot_active;stableSeconds=3`。active 与 `/system/etc` 的 game hash 都为 `cf787905a1a2d9a3afae69b7a48272ff0d86ff0e35c99d9a305e3dc31b634c1d`，performance hash 都为 `447277c22ba0d2cd378b05e2c99bc80d89d4fb57717deb78ac5ca760407e7a92`，两者均为 bind mount。
+- 亮屏强停并从桌面重新进入鸣潮，真实日志闭合：同包名 `onGameAppStart` -> GameHelper `initGameHelper` -> ZuiPP `notifyPerfStatus : 11 17`（三温区 CPU/GPU JSON）-> `writeSavageMode::open::1,status::0`。这证明原厂 GameHelper/ZuiPP 读取了生成 XML；没有恢复旧 provider_direct。
+- AppOpt：权威配置保留三条鸣潮规则，service 为 running。新鸣潮 PID 17020 的主进程实际 mask `7c`（CPU2-6），`RenderThread` mask `1c`（CPU2-4），所有精确 `GameThread` mask `80`（CPU7）。这是 `/proc`/`taskset` 的内核结果，不只是 UI 或配置文本。
+- P2 与 AppOpt 互补：P2 约束原厂对各 CPU cluster/GPU 的性能请求，AppOpt 限制具体线程允许在哪些 CPU 运行。错误或过激参数仍会共同造成卡顿；XML 上下限是 OEM 请求，不是不可被更高优先级 thermal 覆盖的 hard cap。
+- 相机：`STILL_IMAGE_CAMERA` 冷启动和第三方 `IMAGE_CAPTURE` 热启动均成功。SurfaceFlinger 始终 PID/starttime `1647/387`，cameraserver 始终 `1940/413`，tombstone 列表未变化，没有 frame-rate fatal、abort、DEAD_OBJECT 或设备重启。
+- 云控继续完全删除：`/system/etc/hosts` 为 56 字节、SHA-256 `425c3e713d5bae19b031bc8639c20c6a23e311a54647ba1824cbf45969a11ff4`；旧脚本、runtime 目录、setting 和 iptables/ip6tables 链均不存在。
+- dmesg 与全 buffer logcat 按项目路径筛选没有相关 AVC、fatal 或 ANR。鸣潮自身尝试 netlink 的 `untrusted_app_32` denial 与 ZuiControl 无关，禁止为它扩大项目策略。
+
+#### 当前操作方法
+
+1. 刷新率：进入“刷新率”，右下 `+` 选择用户 App 和 Hz；已有条目直接点卡片修改或删除。120 是未配置默认值。通知/QS 只在需要快速改上一个真实场景时使用。
+2. 性能：进入“性能”，右下 `+` 选择 App，配置默认/温区 CPU 四簇与 GPU 上下限后保存。ZuiControl 会单向加入 Game Assistant、自行生成/校验/promote/bind XML、重启 ZuiPP，并仅在目标正在运行时自动强停；完成后从桌面重新打开目标。当前三种 OEM mode 镜像同一份配置，切换均不会绕过用户值。
+3. AppOpt：进入“AppOpt”，右下 `+` 选择用户 App，优先使用“8 Gen 3 细分线程模板”，没有可靠线程模板时才用整包 fallback。保存会严格校验并自动停止运行中的目标；完成后重新打开。备份导入/导出在右上设置页，`Download/ZuiControl/AppOpt.conf` 只是交换副本，权威源仍在 `/data/vendor/zui_control/appopt/applist.conf`。
+4. 设置：右上齿轮进入健康状态、日志、AppOpt 导入/导出和停止服务。右上刷新只刷新 UI 状态，不负责维持核心功能。
+
+#### 新聊天当前最短下一步
+
+1. 先只读确认设备仍为 38/0.21.1、V38、P1 owner、鸣潮 P2 hash/mount、ZuiPP 终态和三条 AppOpt 规则；不要无原因重复修改配置或重新刷包。
+2. 用户若报告 UI 问题，先取得真实横/竖屏截图和当前 rotation/window bounds，再针对现有 Views 做最小调整；不要换 Compose/Rust。
+3. 用户若报告 P2 不响应，收集 exact ACK、Game Assistant membership、profile、active/system hash、reload 和下一次真实 `onGameAppStart -> GameHelper -> notifyPerfStatus -> writeSavageMode`。
+4. 用户若报告 AppOpt 不响应，重启目标后读取精确线程名及 `/proc/<tid>/status`/`taskset`；不要只看配置文本。
+5. 只有出现可复现的新缺陷才制作下一包。仍不进入 FPS cap，不改 P1，不恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt；自动刷机只能使用 7 项安全包。
+
+### 0.9 2026-08-20 0.21.0 统一 UI、线程级 AppOpt 与最终刷后验收（历史，已被 0.10 覆盖）
 
 本节覆盖 0.8 及更早章节中的当前版本、AppOpt 只支持整包预设、最终基线和下一步。设备 `HA25HSZM` 已通过安全 7 项 9008 流程持久刷入 `versionCode=37` / `versionName=0.21.0`，随后完成正常重启、真实亮屏游戏重入、内核线程亲和、相机、P1、P2、AppOpt、SELinux 和连续稳定性验收。当前成品不是临时 bind 或待刷包。
 
