@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.content.pm.ApplicationInfo
 import android.graphics.Color
 import android.graphics.Typeface
@@ -16,7 +17,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.text.Editable
-import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
@@ -25,6 +25,7 @@ import android.widget.AdapterView
 import android.widget.BaseAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ProgressBar
@@ -36,6 +37,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+internal fun hasP2StateError(xmlState: String, reloadState: String): Boolean =
+    sequenceOf(xmlState, reloadState)
+        .flatMap { it.lineSequence() }
+        .any {
+            it.contains("failed", ignoreCase = true) ||
+                it.contains("error", ignoreCase = true)
+        }
+
 class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val performanceProfiles = linkedMapOf<String, PerformanceProfile>()
@@ -46,9 +55,9 @@ class MainActivity : Activity() {
 
     private lateinit var contentHost: FrameLayout
     private lateinit var tabButtons: Map<Page, TextView>
+    private lateinit var settingsButton: ImageView
     private lateinit var headerStatus: TextView
     private lateinit var refreshRulesHost: LinearLayout
-    private lateinit var refreshStatus: TextView
     private lateinit var performanceListHost: LinearLayout
     private lateinit var selectedAppTitle: TextView
     private lateinit var selectedPackageView: TextView
@@ -69,12 +78,11 @@ class MainActivity : Activity() {
     private lateinit var warmStartInput: EditText
     private lateinit var hotStartInput: EditText
     private lateinit var thermalPreview: TextView
-    private lateinit var performanceSummary: TextView
     private lateinit var systemStatus: TextView
-    private lateinit var appOptStatus: TextView
     private lateinit var appOptRulesHost: LinearLayout
 
     private var currentPage = Page.REFRESH
+    private var performanceEditorOpen = false
     private var selectedPackage: String? = null
     private var commandInFlight = false
     private var lastCommandAt = 0L
@@ -86,13 +94,31 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         reloadState()
+        selectedPackage = savedInstanceState?.getString(STATE_PERFORMANCE_PACKAGE)
         val initialAppOptRules = LinkedHashMap(appOptRules)
         Thread { runCatching { AppOptConfig.ensure(this, initialAppOptRules) } }.start()
         setContentView(buildRoot())
-        showPage(Page.REFRESH)
+        val restoredPage = savedInstanceState?.getString(STATE_PAGE)?.let { name ->
+            Page.entries.firstOrNull { it.name == name }
+        } ?: Page.REFRESH
+        showPage(restoredPage)
+        if (restoredPage == Page.PERFORMANCE &&
+            savedInstanceState?.getBoolean(STATE_PERFORMANCE_EDITOR) == true &&
+            selectedPackage != null
+        ) {
+            performanceEditorOpen = true
+            renderCurrentPage()
+        }
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
             handler.postDelayed({ ZuiControlQuickService.start(this) }, 250)
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(STATE_PAGE, currentPage.name)
+        outState.putBoolean(STATE_PERFORMANCE_EDITOR, performanceEditorOpen)
+        outState.putString(STATE_PERFORMANCE_PACKAGE, selectedPackage)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
@@ -104,50 +130,46 @@ class MainActivity : Activity() {
     }
 
     private fun buildRoot(): View {
-        val wide = isWideLayout()
+        val portrait = resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
         val root = LinearLayout(this).apply {
-            orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            orientation = LinearLayout.VERTICAL
             setBackgroundColor(COLOR_BG)
-            setPadding(dp(if (wide) 12 else 16), dp(12), dp(16), dp(16))
-        }
-        if (wide) {
-            val nav = vertical().apply {
-                setPadding(0, dp(52), dp(12), 0)
-                addView(pageTabs(verticalTabs = true), LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ))
-            }
-            root.addView(nav, LinearLayout.LayoutParams(dp(116), ViewGroup.LayoutParams.MATCH_PARENT))
-
-            val main = vertical()
-            main.addView(header(), matchWrap())
-            contentHost = FrameLayout(this)
-            main.addView(contentHost, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f,
-            ))
-            root.addView(main, LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                1f,
-            ))
-            return root
+            setPadding(dp(16), dp(12), dp(16), dp(16))
         }
         root.addView(header(), matchWrap())
-        root.addView(pageTabs(verticalTabs = false), LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(44),
-        ).apply {
-            setMargins(0, 0, 0, dp(12))
-        })
         contentHost = FrameLayout(this)
-        root.addView(contentHost, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            0,
-            1f,
-        ))
+        if (portrait) {
+            root.addView(contentHost, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f,
+            ))
+            root.addView(pageTabs(horizontal = true), LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(70),
+            ).apply {
+                setMargins(0, dp(8), 0, 0)
+            })
+        } else {
+            root.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(pageTabs(horizontal = false), LinearLayout.LayoutParams(
+                    dp(104),
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                ).apply {
+                    setMargins(0, 0, dp(12), 0)
+                })
+                addView(contentHost, LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    1f,
+                ))
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f,
+            ))
+        }
         return root
     }
 
@@ -163,42 +185,45 @@ class MainActivity : Activity() {
                 addView(headerStatus)
             }
             addView(titleBox, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(commandButton("刷新") {
+            addView(iconButton(R.drawable.ic_nav_refresh, "刷新状态") {
                 sendCommand("正在刷新", refreshNotification = true) {
                     ZuiControlRequest.send(this@MainActivity, ZuiControlContract.CMD_STATUS)
                 }
-            }, LinearLayout.LayoutParams(dp(92), dp(44)))
+            }, LinearLayout.LayoutParams(dp(44), dp(44)))
+            settingsButton = iconButton(R.drawable.ic_nav_system, "设置") {
+                showPage(Page.SYSTEM)
+            }
+            addView(settingsButton, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                setMargins(dp(8), 0, 0, 0)
+            })
         }
     }
 
-    private fun pageTabs(verticalTabs: Boolean): View {
+    private fun pageTabs(horizontal: Boolean): View {
         val row = LinearLayout(this).apply {
-            orientation = if (verticalTabs) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, 0)
+            orientation = if (horizontal) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
         }
         val map = linkedMapOf<Page, TextView>()
-        Page.entries.forEach { page ->
+        Page.entries.filter { it != Page.SYSTEM }.forEach { page ->
             val tab = label(page.title, 12f, COLOR_SUBTLE, Typeface.BOLD).apply {
                 gravity = Gravity.CENTER
-                compoundDrawablePadding = dp(5)
-                if (verticalTabs) {
-                    setCompoundDrawablesRelativeWithIntrinsicBounds(0, page.iconRes, 0, 0)
-                } else {
-                    setCompoundDrawablesRelativeWithIntrinsicBounds(page.iconRes, 0, 0, 0)
-                }
+                includeFontPadding = false
+                compoundDrawablePadding = dp(4)
+                setPadding(dp(10), dp(7), dp(10), dp(6))
+                setCompoundDrawablesRelativeWithIntrinsicBounds(0, page.iconRes, 0, 0)
                 setOnClickListener { showPage(page) }
             }
             map[page] = tab
-            if (verticalTabs) {
-                row.addView(tab, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    dp(72),
-                ).apply {
-                    setMargins(0, if (row.childCount == 0) 0 else dp(6), 0, 0)
-                })
-            } else {
-                row.addView(tab, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-            }
+            row.addView(tab, LinearLayout.LayoutParams(
+                if (horizontal) dp(108) else dp(96),
+                if (horizontal) dp(62) else dp(76),
+            ).apply {
+                if (row.childCount > 0) {
+                    if (horizontal) setMargins(dp(8), 0, 0, 0)
+                    else setMargins(0, dp(8), 0, 0)
+                }
+            })
         }
         tabButtons = map
         return row
@@ -206,6 +231,7 @@ class MainActivity : Activity() {
 
     private fun showPage(page: Page) {
         currentPage = page
+        performanceEditorOpen = false
         tabButtons.forEach { (item, view) ->
             val selected = item == page
             val color = if (selected) COLOR_ACCENT else COLOR_SUBTLE
@@ -217,6 +243,16 @@ class MainActivity : Activity() {
                 Color.TRANSPARENT,
             )
         }
+        if (::settingsButton.isInitialized) {
+            val selected = page == Page.SYSTEM
+            val color = if (selected) COLOR_ACCENT else COLOR_SUBTLE
+            settingsButton.imageTintList = ColorStateList.valueOf(color)
+            settingsButton.background = rounded(
+                if (selected) COLOR_SELECTED else COLOR_FIELD,
+                dp(22),
+                Color.TRANSPARENT,
+            )
+        }
         renderCurrentPage()
     }
 
@@ -225,7 +261,11 @@ class MainActivity : Activity() {
         contentHost.removeAllViews()
         val view = when (currentPage) {
             Page.REFRESH -> buildRefreshPage()
-            Page.PERFORMANCE -> buildPerformancePage()
+            Page.PERFORMANCE -> if (performanceEditorOpen) {
+                buildPerformanceEditorPage()
+            } else {
+                buildPerformancePage()
+            }
             Page.APPOPT -> buildAppOptPage()
             Page.SYSTEM -> buildSystemPage()
         }
@@ -246,8 +286,7 @@ class MainActivity : Activity() {
             ?: setting(ZuiControlContract.KEY_ACTIVE_REFRESH)
             .ifBlank { setting("peak_refresh_rate").cleanSetting() }
             .ifBlank { "120" }
-        val last = setting(ZuiControlContract.KEY_STATUS_LAST).ifBlank { "init" }
-        return "v${appVersionName()} · ${displayHz}Hz · ${commandName(last)}"
+        return "v${appVersionName()} · ${displayHz}Hz"
     }
 
     private fun appVersionName(): String {
@@ -265,128 +304,54 @@ class MainActivity : Activity() {
     }
 
     private fun buildRefreshPage(): View {
-        val scroll = ScrollView(this)
-        val root = vertical()
-        scroll.addView(root)
-
-        refreshStatus = infoPanel()
-        root.addView(refreshStatus, matchWrap())
-        root.addView(sectionTitle("场景刷新率"), sectionMargins())
-
+        val root = FrameLayout(this)
         refreshRulesHost = vertical()
-        root.addView(refreshRulesHost, matchWrap())
-
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(commandButton("当前场景默认") {
-                sendCommand("正在恢复默认", refreshNotification = true) {
-                    val reply = ZuiControlClient.setCurrentSceneDisplayHz(120)
-                    if (!reply.ok) {
-                        throw IllegalStateException(reply.text)
-                    }
-                    ZuiControlRequest.send(this@MainActivity, ZuiControlContract.CMD_SYNC_XML_REFRESH)
-                }
-            }, LinearLayout.LayoutParams(0, dp(44), 1f))
-            addView(commandButton("添加规则") {
-                showPackagePicker("选择刷新率应用") { entry ->
-                    labelCache[entry.info.packageName] = entry.label()
-                    showRefreshRateDialog(entry.info.packageName, refreshRules[entry.info.packageName])
-                }
-            }, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                setMargins(dp(8), 0, 0, 0)
-            })
-            addView(commandButton("刷新通知") {
-                ZuiControlQuickService.start(this@MainActivity)
-            }, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                setMargins(dp(8), 0, 0, 0)
-            })
+        val scroll = ScrollView(this).apply {
+            addView(refreshRulesHost)
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(76))
         }
-        root.addView(actions, LinearLayout.LayoutParams(
+        root.addView(scroll, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            setMargins(0, dp(12), 0, 0)
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        root.addView(floatingButton("+") {
+            showPackagePicker("选择刷新率应用") { entry ->
+                labelCache[entry.info.packageName] = entry.label()
+                showRefreshRateDialog(entry.info.packageName, refreshRules[entry.info.packageName])
+            }
+        }, FrameLayout.LayoutParams(dp(54), dp(54), Gravity.END or Gravity.BOTTOM).apply {
+            setMargins(0, 0, dp(6), dp(8))
         })
         renderRefreshState()
-        return scroll
+        return root
     }
 
     private fun renderRefreshState() {
-        if (!::refreshStatus.isInitialized) {
+        if (!::refreshRulesHost.isInitialized) {
             return
         }
-        val serviceState = ZuiControlClient.stateText()
-        val stateOk = serviceState.startsWith("ok") || serviceState.contains("\nok=")
-        val active = stateValue(serviceState, "targetDisplayHz")
-            .ifBlank { setting(ZuiControlContract.KEY_ACTIVE_REFRESH) }
-            .ifBlank { "120" }
-        val actual = stateValue(serviceState, "actualDisplayHz").ifBlank { active }
-        val currentScene = stateValue(serviceState, "currentScenePackage").ifBlank { "等待前台场景" }
-        val rawFocused = stateValue(serviceState, "rawFocusedPackage").ifBlank { "无" }
-        val lastScene = stateValue(serviceState, "lastNonTransientScenePackage").ifBlank { "无" }
-        val appliedScene = stateValue(serviceState, "appliedScenePackage").ifBlank { currentScene }
-        val owner = stateValue(serviceState, "refreshOwner").ifBlank { "system_server" }
-        refreshStatus.text = if (stateOk) {
-            val sceneLine = if (appliedScene != currentScene) {
-                "显示场景 $appliedScene\n业务场景 $currentScene"
-            } else {
-                "当前场景 $currentScene"
-            }
-            "$sceneLine\n目标 ${active}Hz · 实际 ${actual}Hz · owner $owner\nraw $rawFocused · last $lastScene"
-        } else {
-            "zui_control 服务暂不可用\n$serviceState"
-        }
-
         refreshRulesHost.removeAllViews()
         if (refreshRules.isEmpty()) {
-            refreshRulesHost.addView(emptyText("暂无手动规则"), matchWrap())
+            refreshRulesHost.addView(emptyText("点击右下角 + 添加应用"), matchWrap())
             return
         }
         refreshRules.forEach { (pkg, rate) ->
-            val card = vertical().apply {
-                setPadding(dp(16), dp(14), dp(16), dp(14))
-                background = rounded(Color.WHITE, dp(14), Color.TRANSPARENT)
+            val card = horizontalRow().apply {
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
                 elevation = dp(1).toFloat()
-            }
-            val header = horizontalRow().apply {
-                background = null
-                setPadding(0, 0, 0, dp(8))
+                addView(appIcon(pkg), LinearLayout.LayoutParams(dp(44), dp(44)))
                 val text = vertical().apply {
                     addView(label(labelForPackage(pkg), 15f, COLOR_TEXT, Typeface.BOLD))
-                    addView(label(pkg, 11f, COLOR_SUBTLE, Typeface.NORMAL))
+                    addView(label("点击修改刷新率", 11f, COLOR_SUBTLE, Typeface.NORMAL))
                 }
-                addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                addView(rateBadge("${rate}Hz").apply {
-                    setOnClickListener { showRefreshRateDialog(pkg, rate) }
-                }, LinearLayout.LayoutParams(dp(80), dp(40)))
-                addView(commandButton("移除") {
-                    removeRefreshProfile(pkg)
-                }, LinearLayout.LayoutParams(dp(72), dp(40)).apply {
-                    setMargins(dp(8), 0, 0, 0)
+                addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dp(12), 0, dp(12), 0)
                 })
+                addView(rateBadge("${rate}Hz"), LinearLayout.LayoutParams(dp(82), dp(38)))
+                setOnClickListener { showRefreshRateDialog(pkg, rate) }
             }
-            card.addView(header, matchWrap())
-            val rates = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                ZuiControlContract.rates.forEach { target ->
-                    val title = if (target == RefreshSceneController.BASE_REFRESH_RATE) {
-                        "默认"
-                    } else {
-                        target.toString()
-                    }
-                    val button = if (target == rate) {
-                        primaryButton(title) { setRefreshProfile(pkg, target) }
-                    } else {
-                        commandButton(title) { setRefreshProfile(pkg, target) }
-                    }
-                    addView(button, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-                        if (target != ZuiControlContract.rates.first()) {
-                            setMargins(dp(6), 0, 0, 0)
-                        }
-                    })
-                }
-            }
-            card.addView(rates, matchWrap())
             refreshRulesHost.addView(card, cardMargins())
         }
     }
@@ -394,18 +359,35 @@ class MainActivity : Activity() {
     private fun showRefreshRateDialog(pkg: String, currentRate: Int?) {
         val labels = ZuiControlContract.rates.map { rate ->
             if (rate == RefreshSceneController.BASE_REFRESH_RATE) {
-                "默认 ${rate}Hz"
-            } else if (rate == currentRate) {
-                "${rate}Hz（当前）"
+                "默认 · ${rate}Hz"
             } else {
                 "${rate}Hz"
             }
-        }.toTypedArray()
+        }
+        val ratePicker = traySpinner(labels) {}
+        ratePicker.setSelection(
+            ZuiControlContract.rates.indexOf(currentRate).takeIf { it >= 0 }
+                ?: ZuiControlContract.rates.indexOf(RefreshSceneController.BASE_REFRESH_RATE),
+        )
+        val content = vertical().apply {
+            setPadding(dp(20), dp(6), dp(20), 0)
+            addView(appIdentity(pkg))
+            addView(fieldTitle("刷新率"), fieldMargins())
+            addView(ratePicker, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ).apply { setMargins(0, dp(6), 0, 0) })
+        }
         AlertDialog.Builder(this)
-            .setTitle(labelForPackage(pkg))
-            .setMessage(pkg)
-            .setItems(labels) { _, which ->
-                setRefreshProfile(pkg, ZuiControlContract.rates[which])
+            .setTitle(if (currentRate == null) "添加刷新率" else "编辑刷新率")
+            .setView(content)
+            .setPositiveButton("保存") { _, _ ->
+                setRefreshProfile(pkg, ZuiControlContract.rates[ratePicker.selectedItemPosition])
+            }
+            .apply {
+                if (currentRate != null) {
+                    setNeutralButton("删除") { _, _ -> removeRefreshProfile(pkg) }
+                }
             }
             .setNegativeButton("取消", null)
             .show()
@@ -437,109 +419,81 @@ class MainActivity : Activity() {
     }
 
     private fun buildPerformancePage(): View {
-        val tablet = isWideLayout()
-        val root = LinearLayout(this).apply {
-            orientation = if (tablet) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-            gravity = Gravity.TOP
-        }
+        val root = FrameLayout(this)
+        performanceListHost = vertical()
+        root.addView(ScrollView(this).apply {
+            addView(performanceListHost)
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(76))
+        }, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        root.addView(floatingButton("+") {
+            showPackagePicker(
+                title = "选择游戏",
+                userAppsOnly = true,
+                launchableOnly = true,
+                onSelected = { entry -> openPerformanceEditor(entry.info.packageName) },
+            )
+        }, FrameLayout.LayoutParams(dp(54), dp(54), Gravity.END or Gravity.BOTTOM).apply {
+            setMargins(0, 0, dp(6), dp(8))
+        })
+        renderPerformanceProfiles()
+        return root
+    }
 
-        val listPanel = panel().apply {
-            orientation = LinearLayout.VERTICAL
-            val head = horizontalRow().apply {
-                background = null
-                setPadding(0, 0, 0, dp(8))
-                addView(sectionTitle("性能配置"), LinearLayout.LayoutParams(
-                    0,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    1f,
-                ))
-                addView(commandButton("添加应用") {
-                    showPackagePicker(
-                        title = "选择游戏",
-                        userAppsOnly = true,
-                        launchableOnly = true,
-                    )
-                },
-                    LinearLayout.LayoutParams(dp(112), dp(44)))
-            }
-            addView(head)
-            performanceListHost = vertical()
-            addView(ScrollView(this@MainActivity).apply {
-                addView(performanceListHost)
-            }, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                if (tablet) 0 else dp(260),
-                if (tablet) 1f else 0f,
-            ))
-        }
+    private fun openPerformanceEditor(pkg: String) {
+        selectedPackage = pkg
+        performanceEditorOpen = true
+        renderCurrentPage()
+    }
+
+    private fun buildPerformanceEditorPage(): View {
+        val tablet = isWideLayout()
+        val root = vertical()
 
         val formPanel = panel().apply {
             orientation = LinearLayout.VERTICAL
             selectedAppTitle = label("选择或添加应用", 20f, COLOR_TEXT, Typeface.BOLD)
             selectedPackageView = label("", 12f, COLOR_SUBTLE, Typeface.NORMAL)
-            addView(selectedAppTitle)
-            addView(selectedPackageView)
+            addView(horizontalRow().apply {
+                background = null
+                setPadding(0, 0, 0, dp(4))
+                addView(commandButton("‹") {
+                    performanceEditorOpen = false
+                    renderCurrentPage()
+                }, LinearLayout.LayoutParams(dp(44), dp(44)))
+                selectedPackage?.let {
+                    addView(appIcon(it), LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                        setMargins(dp(10), 0, dp(10), 0)
+                    })
+                }
+                addView(vertical().apply {
+                    addView(selectedAppTitle)
+                    addView(selectedPackageView)
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            })
 
-            addView(compactNote("每个游戏只保存一套三温区配置，并同步到原厂均衡/省电/野兽三个模式。保存时会自动加入游戏助手自定义列表；若游戏正在运行，成功后会自动关闭，下次打开直接使用新配置。CPU/GPU 数值是原厂性能请求，仍可能被系统温控进一步压低或覆盖。"),
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    setMargins(0, dp(8), 0, 0)
-                })
-
-            addView(fieldTitle("调度条目"), fieldMargins())
             policySpinner = Spinner(this@MainActivity).apply {
                 adapter = SimpleTextAdapter(GamePolicyMode.entries.map { it.title })
-                background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
-                setPadding(dp(4), 0, dp(4), 0)
-                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-                    override fun onItemSelected(
-                        parent: AdapterView<*>?,
-                        view: View?,
-                        position: Int,
-                        id: Long,
-                    ) {
-                        if (!loadingPerformanceForm) {
-                            updatePolicySummary()
-                        }
-                    }
-                }
             }
-            addView(policySpinner, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48),
-            ))
 
             addView(fieldTitle("游戏帧率"), fieldMargins())
-            framePolicySpinner = Spinner(this@MainActivity).apply {
-                adapter = SimpleTextAdapter(FramePolicy.entries.map { it.title })
-                background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
-                setPadding(dp(4), 0, dp(4), 0)
-                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-                    override fun onItemSelected(
-                        parent: AdapterView<*>?,
-                        view: View?,
-                        position: Int,
-                        id: Long,
-                    ) {
-                        if (!loadingPerformanceForm) {
-                            updatePolicySummary()
-                        }
-                    }
-                }
+            framePolicySpinner = traySpinner(
+                listOf("默认 · 性能 120 / 省电 60", "统一 60Hz", "跟随应用刷新率"),
+            ) {
+                if (!loadingPerformanceForm) updatePolicySummary()
             }
             addView(framePolicySpinner, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48),
-            ))
-            policySummary = infoPanel()
+            ).apply { setMargins(0, dp(6), 0, 0) })
+            policySummary = compactNote("")
             addView(policySummary, fieldMargins())
 
             addView(fieldTitle("温度起始点"), fieldMargins())
-            addView(compactNote("低温 < 中温起始点；中温 ≥ 中温起始点 且 < 高温起始点；高温 ≥ 高温起始点。"),
+            addView(compactNote("同一套 CPU/GPU 三温区会镜像到均衡、节能、野兽模式。"),
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -561,28 +515,15 @@ class MainActivity : Activity() {
             }, fieldMargins())
 
             addView(fieldTitle("温区频率配置"), fieldMargins())
-            thermalZoneSpinner = Spinner(this@MainActivity).apply {
-                adapter = SimpleTextAdapter(ThermalZone.entries.map { it.title })
-                background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
-                setPadding(dp(4), 0, dp(4), 0)
-                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-                    override fun onItemSelected(
-                        parent: AdapterView<*>?,
-                        view: View?,
-                        position: Int,
-                        id: Long,
-                    ) {
-                        if (!loadingPerformanceForm && ::littleMaxInput.isInitialized) {
-                            switchThermalZone(position)
-                        }
-                    }
+            thermalZoneSpinner = traySpinner(ThermalZone.entries.map { it.title }) { position ->
+                if (!loadingPerformanceForm && ::littleMaxInput.isInitialized) {
+                    switchThermalZone(position)
                 }
             }
             addView(thermalZoneSpinner, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48),
-            ))
+            ).apply { setMargins(0, dp(6), 0, 0) })
 
             littleMaxInput = numericField("上限 GHz", formatFreq(LITTLE_FREQS.last()))
             littleMinInput = numericField("下限 GHz", formatFreq(LITTLE_FREQS.first()))
@@ -615,7 +556,7 @@ class MainActivity : Activity() {
                 addView(gpuRow, fieldMargins())
             }
 
-            thermalPreview = infoPanel()
+            thermalPreview = compactNote("")
             addView(thermalPreview, fieldMargins())
             addView(commandButton("当前频率同步到全部温区") {
                 syncCurrentThermalZoneToAll()
@@ -627,57 +568,17 @@ class MainActivity : Activity() {
             })
             bindThermalPreviewUpdates()
 
-            performanceSummary = infoPanel()
-            addView(performanceSummary, fieldMargins())
-
-            addView(sectionTitle("操作"), fieldMargins())
             addView(actionPair(
                 primaryButton("保存并应用") { savePerformanceProfile() },
                 commandButton("删除并应用") { removePerformanceProfile() },
             ), buttonMargins())
-            addView(actionPair(
-                primaryButton("生成并应用调度") {
-                    sendCommand("正在生成并应用") {
-                        ZuiControlRequest.send(
-                            this@MainActivity,
-                            ZuiControlContract.CMD_APPLY_PERFORMANCE,
-                        )
-                    }
-                },
-                commandButton("恢复基线调度") {
-                    sendCommand("正在恢复基线调度") {
-                        ZuiControlRequest.send(
-                            this@MainActivity,
-                            ZuiControlContract.CMD_RESTORE_ZUIPP,
-                        )
-                    }
-                },
-            ), buttonMargins())
         }
 
-        if (tablet) {
-            root.addView(listPanel, LinearLayout.LayoutParams(dp(390), ViewGroup.LayoutParams.MATCH_PARENT).apply {
-                setMargins(0, 0, dp(12), 0)
-            })
-            root.addView(ScrollView(this).apply {
-                addView(formPanel)
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-        } else {
-            root.addView(listPanel, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                setMargins(0, 0, 0, dp(12))
-            })
-            root.addView(ScrollView(this).apply {
-                addView(formPanel)
-            }, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f,
-            ))
-        }
-        renderPerformanceProfiles()
+        root.addView(ScrollView(this).apply { addView(formPanel) }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1f,
+        ))
         updatePerformanceForm()
         return root
     }
@@ -693,51 +594,30 @@ class MainActivity : Activity() {
         }
         ensureSelectedPerformanceProfile()
         performanceProfiles.values.forEach { profile ->
-            val selected = profile.packageName == selectedPackage
-            val row = vertical().apply {
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                background = rounded(
-                    if (selected) COLOR_SELECTED else Color.WHITE,
-                    dp(12),
-                    Color.TRANSPARENT,
-                )
-                addView(label(
-                    labelForPackage(profile.packageName),
-                    14f,
-                    COLOR_TEXT,
-                    Typeface.BOLD,
-                ))
-                addView(label(
-                    "L ${formatFreq(profile.littleMinKHz)}-${formatFreq(profile.littleMaxKHz)}  " +
-                        "B ${formatFreq(profile.bigMinKHz)}-${formatFreq(profile.bigMaxKHz)}  " +
-                        "T ${formatFreq(profile.titanMinKHz)}-${formatFreq(profile.titanMaxKHz)}",
-                    11f,
-                    COLOR_SUBTLE,
-                    Typeface.NORMAL,
-                ))
-                addView(label(
-                    "M ${formatFreq(profile.megaMinKHz)}-${formatFreq(profile.megaMaxKHz)}  " +
-                        "GPU ${formatFreq(profile.gpuMinKHz)}-${formatFreq(profile.gpuMaxKHz)}GHz",
-                    11f,
-                    COLOR_SUBTLE,
-                    Typeface.NORMAL,
-                ))
-                addView(label(
-                    "温控 ${profile.thermalSummary()}",
-                    11f,
-                    COLOR_SUBTLE,
-                    Typeface.NORMAL,
-                ))
-                addView(label(
-                    "${profile.gamePolicy.title} · ${frameSummary(profile.packageName, profile.framePolicy)}",
-                    11f,
-                    COLOR_SUBTLE,
-                    Typeface.NORMAL,
-                ))
+            val row = horizontalRow().apply {
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
+                elevation = dp(1).toFloat()
+                addView(appIcon(profile.packageName), LinearLayout.LayoutParams(dp(44), dp(44)))
+                addView(vertical().apply {
+                    addView(label(
+                        labelForPackage(profile.packageName),
+                        15f,
+                        COLOR_TEXT,
+                        Typeface.BOLD,
+                    ))
+                    addView(label(
+                        "三温区 · ${frameSummary(profile.packageName, profile.framePolicy)}",
+                        11f,
+                        COLOR_SUBTLE,
+                        Typeface.NORMAL,
+                    ))
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dp(12), 0, dp(12), 0)
+                })
+                addView(rateBadge("编辑"), LinearLayout.LayoutParams(dp(70), dp(38)))
                 setOnClickListener {
-                    selectedPackage = profile.packageName
-                    updatePerformanceForm()
-                    renderPerformanceProfiles()
+                    openPerformanceEditor(profile.packageName)
                 }
             }
             performanceListHost.addView(row, LinearLayout.LayoutParams(
@@ -759,50 +639,6 @@ class MainActivity : Activity() {
         selectedPackageView.text = pkg ?: "未选择应用"
         loadSelectedProfile()
         updatePolicySummary()
-        performanceSummary.text = performanceXmlStatusText()
-    }
-
-    private fun performanceXmlStatusText(): String {
-        val xmlState = setting(ZuiControlContract.KEY_XML_STATE)
-        val reloadState = setting(ZuiControlContract.KEY_ZUIPP_RELOAD_STATE)
-        val daemon = setting(ZuiControlContract.KEY_DAEMON_STATUS_TEXT)
-        val requestText = setting(ZuiControlContract.KEY_REQUEST_TEXT)
-        val requestAckText = setting(ZuiControlContract.KEY_REQUEST_ACK)
-        val requestAck = ZuiControlRequest.parseAck(requestAckText)
-        val requestId = ZuiControlRequest.requestIdFromText(requestText)
-        val requestCommand = ZuiControlRequest.requestCommandFromText(requestText).orEmpty()
-        if (isPerformanceCommand(requestCommand) && requestId != null &&
-            requestAck?.requestId == requestId &&
-            requestAck.state == "failed") {
-            return "操作失败${requestAck.detail.takeIf { it.isNotBlank() }?.let { "：$it" }.orEmpty()}"
-        }
-        if (isPerformanceCommand(requestCommand) &&
-            ZuiControlRequest.hasPendingRequest(requestText, requestAckText)) {
-            return "操作处理中；正在等待 XML 生成和 ZuiPP 重载"
-        }
-        val hasError = listOf(xmlState, daemon, reloadState)
-            .flatMap { it.lineSequence() }
-            .any {
-                it.contains("failed", ignoreCase = true) ||
-                    it.contains("error", ignoreCase = true)
-            }
-        if (hasError) {
-            return "XML 异常"
-        }
-        if (xmlState.startsWith("state=mounted")) {
-            return when {
-                reloadState.contains("state=done") ->
-                    "XML 已挂载，ZuiPP 已稳定重载；请退出并重新进入游戏"
-                reloadState.contains("state=skipped;reason=same_hash") ->
-                    "XML 已挂载且内容未变化；请退出并重新进入游戏"
-                reloadState.contains("state=skipped;reason=zuipp_not_running") ->
-                    "XML 已挂载，ZuiPP 当前未运行；启动游戏后将重新读取"
-                reloadState.contains("state=skipped") ->
-                    "XML 已挂载，ZuiPP 当前无需重载；请重新进入游戏"
-                else -> "XML 已挂载；正在等待 ZuiPP 重载终态"
-            }
-        }
-        return "XML 未启用"
     }
 
     private fun loadSelectedProfile() {
@@ -855,8 +691,18 @@ class MainActivity : Activity() {
             gamePolicy,
             framePolicy,
         )
+        if (performanceProfiles[profile.key] == profile) {
+            performanceEditorOpen = false
+            renderCurrentPage()
+            toast("配置没有变化，无需重新应用")
+            return
+        }
         sendCommand("正在保存性能配置", onTerminal = { ack ->
-            if (ack.succeeded) toast(targetResultText(ack.detail, "游戏"))
+            if (ack.succeeded) {
+                performanceEditorOpen = false
+                toast(targetResultText(ack.detail, "游戏"))
+                renderCurrentPage()
+            }
         }) {
             ZuiControlRequest.send(
                 this,
@@ -1176,7 +1022,11 @@ class MainActivity : Activity() {
             )
             .setPositiveButton("删除并应用") { _, _ ->
                 sendCommand("正在删除性能配置", onTerminal = { ack ->
-                    if (ack.succeeded) toast(targetResultText(ack.detail, "游戏"))
+                    if (ack.succeeded) {
+                        performanceEditorOpen = false
+                        toast(targetResultText(ack.detail, "游戏"))
+                        renderCurrentPage()
+                    }
                 }) {
                     ZuiControlRequest.send(
                         this,
@@ -1191,58 +1041,28 @@ class MainActivity : Activity() {
     }
 
     private fun buildAppOptPage(): View {
-        val scroll = ScrollView(this)
-        val root = vertical()
-        scroll.addView(root)
-
-        root.addView(sectionTitle("AppOpt 线程放置"))
-        appOptStatus = infoPanel()
-        root.addView(appOptStatus, fieldMargins())
-        root.addView(compactNote(
-            "支持整包兜底和线程通配规则。内置 326 个 Snapdragon 8 Gen 3 游戏模板，" +
-                "只会应用你实际选择的游戏。配置校验通过后原子替换；运行中的受影响 App 会自动关闭。",
-        ), fieldMargins())
-
+        val root = FrameLayout(this)
         appOptRulesHost = vertical()
-        root.addView(appOptRulesHost, fieldMargins())
-
-        val appOptActions = horizontalRow().apply {
-            background = null
-            setPadding(0, 0, 0, 0)
-            addView(primaryButton("添加或使用模板") {
-                showPackagePicker(
-                    title = "选择 AppOpt 应用",
-                    onSelected = { entry -> showAppOptPresetDialog(entry.info.packageName) },
-                    userAppsOnly = true,
-                    launchableOnly = true,
-                )
-            }, LinearLayout.LayoutParams(0, dp(44), 1f))
-            addView(commandButton("停止 AppOpt") { confirmStopAppOpt() },
-                LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                    setMargins(dp(8), 0, 0, 0)
-                })
-        }
-        root.addView(appOptActions, buttonMargins())
-
-        root.addView(primaryButton("编辑配置清单") { showAppOptTextEditor() },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)).apply {
-                setMargins(0, dp(8), 0, 0)
-            })
-
-        val appOptConfigActions = horizontalRow().apply {
-            background = null
-            setPadding(0, 0, 0, 0)
-            addView(commandButton("导入共享配置") { importAppOptConfig() },
-                LinearLayout.LayoutParams(0, dp(44), 1f))
-            addView(commandButton("导出共享配置") { syncAppOptConfig(showToast = true) },
-                LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                    setMargins(dp(8), 0, 0, 0)
-                })
-        }
-        root.addView(appOptConfigActions, fieldMargins())
-
+        root.addView(ScrollView(this).apply {
+            addView(appOptRulesHost)
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(76))
+        }, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        root.addView(floatingButton("+") {
+            showPackagePicker(
+                title = "选择 AppOpt 应用",
+                onSelected = { entry -> showAppOptPresetDialog(entry.info.packageName) },
+                userAppsOnly = true,
+                launchableOnly = true,
+            )
+        }, FrameLayout.LayoutParams(dp(54), dp(54), Gravity.END or Gravity.BOTTOM).apply {
+            setMargins(0, 0, dp(6), dp(8))
+        })
         renderAppOptState()
-        return scroll
+        return root
     }
 
     private fun buildSystemPage(): View {
@@ -1250,25 +1070,18 @@ class MainActivity : Activity() {
         val root = vertical()
         scroll.addView(root)
 
-        root.addView(sectionTitle("运行状态"))
-        systemStatus = infoPanel()
-        root.addView(systemStatus, fieldMargins())
+        systemStatus = compactNote("")
+        root.addView(systemStatus)
 
         root.addView(sectionTitle("工具"), sectionMargins())
-        val row = horizontalRow().apply {
-            background = null
-            setPadding(0, 0, 0, 0)
-            addView(commandButton("刷新状态") {
-                sendCommand("正在刷新", refreshNotification = true) {
-                    ZuiControlRequest.send(this@MainActivity, ZuiControlContract.CMD_STATUS)
-                }
-            }, LinearLayout.LayoutParams(0, dp(44), 1f))
-            addView(primaryButton("导出运行日志") { exportLogs() },
-                LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                    setMargins(dp(8), 0, 0, 0)
-                })
-        }
-        root.addView(row)
+        root.addView(settingsAction("导出运行日志", "用于排查 P1、P2 与 AppOpt") { exportLogs() })
+        root.addView(settingsAction("导入 AppOpt 备份", AppOptConfig.DISPLAY_PATH) { importAppOptConfig() }, cardMargins())
+        root.addView(settingsAction("导出 AppOpt 备份", AppOptConfig.DISPLAY_PATH) {
+            syncAppOptConfig(showToast = true)
+        }, cardMargins())
+        root.addView(settingsAction("停止 AppOpt", "保留规则，停止线程放置服务") {
+            confirmStopAppOpt()
+        }, cardMargins())
         renderSystemState()
         return scroll
     }
@@ -1277,16 +1090,10 @@ class MainActivity : Activity() {
         if (!::systemStatus.isInitialized) {
             return
         }
-        val last = setting(ZuiControlContract.KEY_STATUS_LAST).ifBlank { "无" }
-        systemStatus.text = "守护服务 运行中\n${conciseXmlState()}\n${conciseZuippReloadState()}\n刷新率 系统接管\n最近操作 ${commandName(last)}"
+        systemStatus.text = "系统服务正常 · ${conciseXmlState()} · ${conciseZuippReloadState()}"
     }
 
     private fun renderAppOptState() {
-        if (!::appOptStatus.isInitialized) {
-            return
-        }
-        appOptStatus.text = setting(ZuiControlContract.KEY_APPOPT_HEALTH)
-            .ifBlank { "正在读取 AppOpt 状态" }
         renderAppOptRules()
     }
 
@@ -1296,67 +1103,37 @@ class MainActivity : Activity() {
         }
         appOptRulesHost.removeAllViews()
         if (appOptRules.isEmpty()) {
-            appOptRulesHost.addView(emptyText("暂无 AppOpt 规则；服务应保持停止"), matchWrap())
+            appOptRulesHost.addView(emptyText("点击右下角 + 添加应用"), matchWrap())
             return
         }
         appOptRules.values.forEach { rule ->
             val userApp = isInstalledUserApp(rule.packageName)
-            val card = vertical().apply {
-                setPadding(dp(16), dp(14), dp(16), dp(14))
-                background = rounded(Color.WHITE, dp(14), Color.TRANSPARENT)
+            val card = horizontalRow().apply {
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
                 elevation = dp(1).toFloat()
-                addView(horizontalRow().apply {
-                    background = null
-                    setPadding(0, 0, 0, 0)
-                    addView(vertical().apply {
-                        addView(label(
-                            labelForPackage(rule.packageName),
-                            14f,
-                            COLOR_TEXT,
-                            Typeface.BOLD,
-                        ))
-                        addView(label(rule.packageName, 11f, COLOR_SUBTLE, Typeface.NORMAL))
-                    }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                    addView(rateBadge("兜底 ${rule.preset.cpuSet}"),
-                        LinearLayout.LayoutParams(dp(112), dp(44)))
-                }, matchWrap())
-                if (rule.threadRules.isEmpty()) {
-                    addView(compactNote("当前为整包规则；所有线程使用 ${rule.preset.cpuSet}"), fieldMargins())
-                } else {
-                    rule.threadRules.forEach { thread ->
-                        addView(horizontalRow().apply {
-                            background = null
-                            setPadding(0, dp(8), 0, 0)
-                            addView(label(thread.pattern, 13f, COLOR_TEXT, Typeface.BOLD),
-                                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                            addView(chip(thread.preset.cpuSet),
-                                LinearLayout.LayoutParams(dp(72), dp(34)))
-                        })
-                    }
-                }
-                addView(label(
-                    if (userApp) {
-                        "${rule.totalRules} 条规则 · 修改后自动关闭运行中的 App"
-                    } else {
-                        "不是已安装用户 App，仅允许删除"
-                    },
-                    11f,
-                    COLOR_SUBTLE,
-                    Typeface.NORMAL,
-                ), fieldMargins())
-                addView(horizontalRow().apply {
-                    background = null
-                    setPadding(0, dp(10), 0, 0)
-                    if (userApp) {
-                        addView(primaryButton("编辑配置") {
-                            showAppOptPresetDialog(rule.packageName, rule.preset)
-                        }, LinearLayout.LayoutParams(0, dp(44), 1f))
-                    }
-                    addView(commandButton("删除") { confirmRemoveAppOptRule(rule) },
-                        LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-                            if (userApp) setMargins(dp(10), 0, 0, 0)
-                        })
+                addView(appIcon(rule.packageName), LinearLayout.LayoutParams(dp(44), dp(44)))
+                addView(vertical().apply {
+                    addView(label(labelForPackage(rule.packageName), 15f, COLOR_TEXT, Typeface.BOLD))
+                    addView(label(
+                        when {
+                            !userApp -> "应用已卸载 · 点击删除"
+                            rule.threadRules.isEmpty() -> "整包 · CPU ${rule.preset.cpuSet}"
+                            else -> "8 Gen 3 线程模板 · ${rule.totalRules} 条规则"
+                        },
+                        11f,
+                        COLOR_SUBTLE,
+                        Typeface.NORMAL,
+                    ))
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dp(12), 0, dp(12), 0)
                 })
+                addView(rateBadge(if (rule.threadRules.isEmpty()) "整包" else "线程"),
+                    LinearLayout.LayoutParams(dp(70), dp(38)))
+                setOnClickListener {
+                    if (userApp) showAppOptPresetDialog(rule.packageName, rule.preset)
+                    else confirmRemoveAppOptRule(rule)
+                }
             }
             appOptRulesHost.addView(card, cardMargins())
         }
@@ -1372,49 +1149,73 @@ class MainActivity : Activity() {
         }
         val template = appOptTemplates[pkg]
         val packagePresets = AppOptPreset.packagePresets
-        val choices = buildList {
-            if (template != null) {
-                add("8 Gen 3 推荐模板 · ${template.totalRules} 条规则")
-            }
-            packagePresets.forEach { preset ->
-                add("整包 ${preset.displayName}${if (preset == current) " · 当前兜底" else ""}")
+        val modes = if (template == null) listOf("整包") else listOf("8 Gen 3 线程模板", "整包")
+        val modePicker = traySpinner(modes) {}
+        val presetPicker = traySpinner(packagePresets.map { it.displayName }) {}
+        presetPicker.setSelection(packagePresets.indexOf(current).takeIf { it >= 0 } ?: 0)
+        val summary = compactNote("")
+        fun updateMode(position: Int) {
+            val useTemplate = template != null && position == 0
+            presetPicker.visibility = if (useTemplate) View.GONE else View.VISIBLE
+            summary.text = if (useTemplate) {
+                val preview = template!!.threadRules.take(4).joinToString(" · ") {
+                    "${it.pattern}→${it.preset.cpuSet}"
+                }
+                "未命中线程→${template.preset.cpuSet} · $preview" +
+                    if (template.threadRules.size > 4) " · 另 ${template.threadRules.size - 4} 条" else ""
+            } else {
+                "所有线程使用同一 CPU 集合"
             }
         }
+        modePicker.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                updateMode(position)
+            }
+        }
+        val currentRule = appOptRules[pkg]
+        modePicker.setSelection(if (template != null && currentRule?.threadRules?.isNotEmpty() == true) 0 else modes.lastIndex)
+        updateMode(modePicker.selectedItemPosition)
+        val content = vertical().apply {
+            setPadding(dp(20), dp(6), dp(20), 0)
+            addView(appIdentity(pkg))
+            addView(fieldTitle("放置方式"), fieldMargins())
+            addView(modePicker, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ).apply { setMargins(0, dp(6), 0, 0) })
+            addView(presetPicker, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ).apply { setMargins(0, dp(8), 0, 0) })
+            addView(summary, fieldMargins())
+        }
         AlertDialog.Builder(this)
-            .setTitle("${labelForPackage(pkg)}\n$pkg")
-            .setItems(choices.toTypedArray()) { _, which ->
-                if (template != null && which == 0) {
-                    confirmApplyAppOptTemplate(template)
+            .setTitle(if (currentRule == null) "添加 AppOpt" else "编辑 AppOpt")
+            .setView(content)
+            .setPositiveButton("应用") { _, _ ->
+                if (template != null && modePicker.selectedItemPosition == 0) {
+                    val rules = LinkedHashMap(appOptRules)
+                    rules[pkg] = template
+                    applyAppOptRules(rules, "正在应用线程模板", "线程模板已应用")
                 } else {
-                    val presetIndex = which - if (template == null) 0 else 1
-                    setAppOptRule(pkg, packagePresets[presetIndex])
+                    setAppOptRule(pkg, packagePresets[presetPicker.selectedItemPosition])
+                }
+            }
+            .apply {
+                if (currentRule != null) {
+                    setNeutralButton("删除") { _, _ -> confirmRemoveAppOptRule(currentRule) }
                 }
             }
             .setNegativeButton("取消", null)
             .show()
     }
 
-    private fun confirmApplyAppOptTemplate(template: AppOptRule) {
-        val summary = buildString {
-            appendLine("未命中线程 → CPU${template.preset.cpuSet}")
-            template.threadRules.forEach { thread ->
-                appendLine("${thread.pattern} → CPU${thread.preset.cpuSet}")
-            }
-            append("\n应用成功后会自动关闭正在运行的目标 App。")
-        }
-        AlertDialog.Builder(this)
-            .setTitle("使用 8 Gen 3 推荐模板")
-            .setMessage(summary)
-            .setPositiveButton("应用模板") { _, _ ->
-                val rules = LinkedHashMap(appOptRules)
-                rules[template.packageName] = template
-                applyAppOptRules(rules, "正在应用推荐模板", "推荐模板已应用")
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
     private fun setAppOptRule(pkg: String, preset: AppOptPreset) {
+        if (appOptRules[pkg] == AppOptRule(pkg, preset)) {
+            toast("配置没有变化，无需重新应用")
+            return
+        }
         sendCommand("正在保存 AppOpt 规则", onTerminal = { ack ->
             if (ack.succeeded) {
                 syncAppOptConfig()
@@ -1491,50 +1292,6 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun showAppOptTextEditor() {
-        val editor = EditText(this).apply {
-            setText(AppOptConfig.text(appOptRules))
-            gravity = Gravity.TOP or Gravity.START
-            typeface = Typeface.MONOSPACE
-            textSize = 14f
-            minLines = 12
-            maxLines = 18
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
-        }
-        val container = FrameLayout(this).apply {
-            setPadding(dp(20), dp(4), dp(20), 0)
-            addView(editor, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(if (isWideLayout()) 430 else 320),
-            ))
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("编辑 AppOpt 配置清单")
-            .setMessage(
-                "包名=CPU集合 是兜底；包名{线程名或通配符}=CPU集合 是线程覆盖。" +
-                    "每个包必须有一条兜底，校验通过后才会替换并应用。",
-            )
-            .setView(container)
-            .setPositiveButton("校验并应用", null)
-            .setNegativeButton("取消", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val rules = runCatching { validateAppOptText(editor.text.toString()) }
-                    .getOrElse {
-                        editor.error = it.message ?: "配置校验失败"
-                        return@setOnClickListener
-                    }
-                dialog.dismiss()
-                applyAppOptRules(rules, "正在应用 AppOpt 配置", "配置已保存")
-            }
-        }
-        dialog.show()
-    }
-
     private fun validateAppOptText(text: String): LinkedHashMap<String, AppOptRule> {
         val rules = AppOptConfig.parse(text)
         val invalid = rules.keys.firstOrNull { !isInstalledUserApp(it) }
@@ -1547,6 +1304,10 @@ class MainActivity : Activity() {
         message: String,
         successText: String,
     ) {
+        if (rules == appOptRules) {
+            toast("配置没有变化，无需重新应用")
+            return
+        }
         sendCommand(message, onTerminal = { ack ->
             if (ack.succeeded) {
                 syncAppOptConfig()
@@ -1612,8 +1373,7 @@ class MainActivity : Activity() {
         val xml = setting(ZuiControlContract.KEY_XML_STATE)
         return when {
             xml.startsWith("state=mounted") -> "XML 正常"
-            hasErrorLine(xml) ||
-                hasErrorLine(setting(ZuiControlContract.KEY_DAEMON_STATUS_TEXT)) -> "XML 异常"
+            hasP2StateError(xml, "") -> "XML 异常"
             xml.isBlank() -> "XML 未启用"
             else -> "XML 检查中"
         }
@@ -1704,11 +1464,11 @@ class MainActivity : Activity() {
         root.addView(tabs)
 
         val search = EditText(this).apply {
-            hint = "搜索包名"
+            hint = "搜索应用或包名"
             setSingleLine(true)
             textSize = 14f
-            setPadding(dp(12), 0, dp(12), 0)
-            background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
+            setPadding(dp(16), 0, dp(16), 0)
+            background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
         }
         root.addView(search, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1952,19 +1712,26 @@ class MainActivity : Activity() {
         }
         policySummary.text = when (selectedGamePolicy()) {
             GamePolicyMode.INDEPENDENT ->
-                "XML 独立条目 · ${frameSummary(pkg, framePolicy)}"
+                when (framePolicy) {
+                    FramePolicy.DEFAULT -> "均衡/野兽 120Hz · 节能 60Hz"
+                    FramePolicy.FIXED_60 -> "均衡/节能/野兽均为 60Hz"
+                    FramePolicy.FOLLOW_DISPLAY -> {
+                        val refreshHz = refreshTargetFor(pkg)
+                        "均衡/野兽跟随 ${refreshHz}Hz · 节能 ${powerSaveRefreshFor(refreshHz)}Hz"
+                    }
+                }
             GamePolicyMode.DEFAULT ->
-                "XML 走 default · default 120/60"
+                "使用系统默认游戏条目"
         }
     }
 
     private fun frameSummary(pkg: String, policy: FramePolicy): String {
         return when (policy) {
-            FramePolicy.DEFAULT -> "默认 120/60"
-            FramePolicy.FIXED_60 -> "游戏 60/60"
+            FramePolicy.DEFAULT -> "120 / 60Hz"
+            FramePolicy.FIXED_60 -> "60Hz"
             FramePolicy.FOLLOW_DISPLAY -> {
                 val refreshHz = refreshTargetFor(pkg)
-                "跟随 ${refreshHz}Hz / 节能 ${powerSaveRefreshFor(refreshHz)}Hz"
+                "跟随 ${refreshHz}Hz"
             }
         }
     }
@@ -2038,54 +1805,11 @@ class MainActivity : Activity() {
     private fun setting(key: String): String =
         Settings.System.getString(contentResolver, key).orEmpty().takeUnless { it == "null" }.orEmpty()
 
-    private fun stateValue(state: String, key: String): String {
-        return state.lineSequence()
-            .firstOrNull { it.startsWith("$key=") }
-            ?.substringAfter('=')
-            .orEmpty()
-    }
-
     private fun toast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun String.cleanSetting(): String = removeSuffix(".0")
-
-    private fun commandName(value: String): String = when (value) {
-        ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE_STAGED -> "保存温控性能配置"
-        ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE -> "保存性能配置"
-        ZuiControlContract.CMD_REMOVE_PERFORMANCE_PROFILE -> "删除性能配置"
-        ZuiControlContract.CMD_APPLY_PERFORMANCE -> "应用性能调度"
-        ZuiControlContract.CMD_SYNC_XML_REFRESH -> "同步 XML 帧率"
-        ZuiControlContract.CMD_RESTORE_ZUIPP -> "恢复基线调度"
-        ZuiControlContract.CMD_RESTORE_LAST_GOOD -> "恢复 last_good"
-        ZuiControlContract.CMD_RESTORE_OFFICIAL_ORIGINAL -> "恢复官方原始表"
-        ZuiControlContract.CMD_SET_APPOPT_RULE -> "保存 AppOpt 规则"
-        ZuiControlContract.CMD_REMOVE_APPOPT_RULE -> "删除 AppOpt 规则"
-        ZuiControlContract.CMD_STOP_APPOPT -> "停止 AppOpt"
-        "set_appopt_rule_applied" -> "AppOpt 规则已保存"
-        "remove_appopt_rule_applied" -> "AppOpt 规则已删除"
-        "restore_appopt" -> "AppOpt 已停止"
-        "restore_appopt_failed" -> "AppOpt 停止失败"
-        "restore_baked_baseline" -> "恢复基线调度"
-        ZuiControlContract.CMD_EXPORT_LOGS -> "导出日志"
-        ZuiControlContract.CMD_STATUS -> "刷新状态"
-        "init" -> "初始化"
-        else -> value
-    }
-
-    private fun isPerformanceCommand(value: String): Boolean = when (value) {
-        ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE,
-        ZuiControlContract.CMD_SET_PERFORMANCE_PROFILE_STAGED,
-        ZuiControlContract.CMD_REMOVE_PERFORMANCE_PROFILE,
-        ZuiControlContract.CMD_APPLY_PERFORMANCE,
-        ZuiControlContract.CMD_SYNC_XML_REFRESH,
-        ZuiControlContract.CMD_APPLY_ZUIPP,
-        ZuiControlContract.CMD_RESTORE_ZUIPP,
-        ZuiControlContract.CMD_RESTORE_LAST_GOOD,
-        ZuiControlContract.CMD_RESTORE_OFFICIAL_ORIGINAL -> true
-        else -> false
-    }
 
     private fun vertical() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -2095,13 +1819,13 @@ class MainActivity : Activity() {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(16), dp(12), dp(16), dp(12))
-        background = rounded(Color.WHITE, dp(14), Color.TRANSPARENT)
+        background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
         elevation = dp(1).toFloat()
     }
 
     private fun panel() = LinearLayout(this).apply {
         setPadding(dp(18), dp(18), dp(18), dp(18))
-        background = rounded(Color.WHITE, dp(16), Color.TRANSPARENT)
+        background = rounded(Color.WHITE, dp(20), Color.TRANSPARENT)
         elevation = dp(1).toFloat()
     }
 
@@ -2172,25 +1896,26 @@ class MainActivity : Activity() {
         setSingleLine(true)
         textSize = 15f
         setPadding(dp(12), 0, dp(12), 0)
-        background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
+        background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
     }
 
     private fun helpButton(action: () -> Unit) =
-        label("!", 13f, COLOR_ACCENT, Typeface.BOLD).apply {
+        label("?", 13f, COLOR_ACCENT, Typeface.BOLD).apply {
             gravity = Gravity.CENTER
+            contentDescription = "查看支持频率"
             background = rounded(COLOR_FIELD, dp(15), Color.TRANSPARENT)
             setOnClickListener { action() }
         }
 
     private fun infoPanel() = label("", 13f, COLOR_TEXT, Typeface.NORMAL).apply {
         setPadding(dp(16), dp(14), dp(16), dp(14))
-        background = rounded(Color.WHITE, dp(14), Color.TRANSPARENT)
+        background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
         elevation = dp(1).toFloat()
     }
 
     private fun compactNote(text: String) = label(text, 12f, COLOR_SUBTLE, Typeface.NORMAL).apply {
         setPadding(dp(10), dp(8), dp(10), dp(8))
-        background = rounded(COLOR_NOTE, dp(12), Color.TRANSPARENT)
+        background = rounded(COLOR_NOTE, dp(18), Color.TRANSPARENT)
     }
 
     private fun emptyText(text: String) = label(text, 13f, COLOR_SUBTLE, Typeface.NORMAL).apply {
@@ -2200,33 +1925,102 @@ class MainActivity : Activity() {
 
     private fun rateBadge(text: String) = label(text, 13f, Color.WHITE, Typeface.BOLD).apply {
         gravity = Gravity.CENTER
-        background = rounded(COLOR_ACCENT, dp(12), COLOR_ACCENT)
+        background = rounded(COLOR_ACCENT, dp(20), COLOR_ACCENT)
     }
 
     private fun commandButton(text: String, action: () -> Unit) =
         label(text, 13f, COLOR_TEXT, Typeface.BOLD).apply {
             gravity = Gravity.CENTER
-            background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
+            background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
             setOnClickListener { action() }
         }
 
     private fun primaryButton(text: String, action: () -> Unit) =
         label(text, 13f, Color.WHITE, Typeface.BOLD).apply {
             gravity = Gravity.CENTER
-            background = rounded(COLOR_ACCENT, dp(12), COLOR_ACCENT)
+            background = rounded(COLOR_ACCENT, dp(22), COLOR_ACCENT)
+            setOnClickListener { action() }
+        }
+
+    private fun iconButton(iconRes: Int, description: String, action: () -> Unit) =
+        ImageView(this).apply {
+            contentDescription = description
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setImageResource(iconRes)
+            imageTintList = ColorStateList.valueOf(COLOR_SUBTLE)
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
+            setOnClickListener { action() }
+        }
+
+    private fun floatingButton(text: String, action: () -> Unit) =
+        label(text, 28f, Color.WHITE, Typeface.NORMAL).apply {
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            contentDescription = "添加"
+            background = rounded(COLOR_ACCENT, dp(27), COLOR_ACCENT)
+            elevation = dp(5).toFloat()
+            setOnClickListener { action() }
+        }
+
+    private fun traySpinner(items: List<String>, onSelected: (Int) -> Unit) =
+        Spinner(this).apply {
+            adapter = SimpleTextAdapter(items)
+            background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
+            setPadding(dp(6), 0, dp(6), 0)
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    onSelected(position)
+                }
+            }
+        }
+
+    private fun appIcon(pkg: String) = ImageView(this).apply {
+        scaleType = ImageView.ScaleType.CENTER_CROP
+        setImageDrawable(runCatching {
+            packageManager.getApplicationInfo(pkg, 0).loadIcon(packageManager)
+        }.getOrElse { getDrawable(android.R.drawable.sym_def_app_icon) })
+        contentDescription = labelForPackage(pkg)
+    }
+
+    private fun appIdentity(pkg: String) = horizontalRow().apply {
+        background = null
+        setPadding(0, dp(4), 0, dp(4))
+        addView(appIcon(pkg), LinearLayout.LayoutParams(dp(44), dp(44)))
+        addView(label(labelForPackage(pkg), 15f, COLOR_TEXT, Typeface.BOLD),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(dp(12), 0, 0, 0)
+                gravity = Gravity.CENTER_VERTICAL
+            })
+    }
+
+    private fun settingsAction(title: String, subtitle: String, action: () -> Unit) =
+        horizontalRow().apply {
+            setPadding(dp(16), dp(13), dp(16), dp(13))
+            background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
+            elevation = dp(1).toFloat()
+            addView(vertical().apply {
+                addView(label(title, 14f, COLOR_TEXT, Typeface.BOLD))
+                addView(label(subtitle, 11f, COLOR_SUBTLE, Typeface.NORMAL))
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(label("›", 22f, COLOR_SUBTLE, Typeface.NORMAL),
+                LinearLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                })
             setOnClickListener { action() }
         }
 
     private fun chip(text: String) = label(text, 13f, COLOR_TEXT, Typeface.BOLD).apply {
         gravity = Gravity.CENTER
-        background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
+        background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
     }
 
     private fun styleChip(view: TextView, selected: Boolean) {
         view.setTextColor(if (selected) Color.WHITE else COLOR_TEXT)
         view.background = rounded(
             if (selected) COLOR_ACCENT else COLOR_FIELD,
-            dp(12),
+            dp(22),
             if (selected) COLOR_ACCENT else Color.TRANSPARENT,
         )
     }
@@ -2313,7 +2107,7 @@ class MainActivity : Activity() {
                 it.system == systemApps &&
                     (lower.isBlank() ||
                         it.info.packageName.lowercase(Locale.ROOT).contains(lower) ||
-                        labelCache[it.info.packageName]?.lowercase(Locale.ROOT)?.contains(lower) == true)
+                        it.label().lowercase(Locale.ROOT).contains(lower))
             })
             notifyDataSetChanged()
         }
@@ -2325,22 +2119,32 @@ class MainActivity : Activity() {
         override fun getItemId(position: Int): Long = visible[position].info.packageName.hashCode().toLong()
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-            val row = (convertView as? LinearLayout) ?: vertical().apply {
-                setPadding(dp(10), dp(8), dp(10), dp(8))
-                addView(label("", 14f, COLOR_TEXT, Typeface.BOLD))
-                addView(label("", 11f, COLOR_SUBTLE, Typeface.NORMAL))
+            val row = (convertView as? LinearLayout) ?: horizontalRow().apply {
+                setPadding(dp(12), dp(9), dp(12), dp(9))
+                addView(ImageView(this@MainActivity).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                }, LinearLayout.LayoutParams(dp(40), dp(40)))
+                addView(vertical().apply {
+                    addView(label("", 14f, COLOR_TEXT, Typeface.BOLD))
+                    addView(label("", 11f, COLOR_SUBTLE, Typeface.NORMAL))
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dp(12), 0, 0, 0)
+                })
             }
             val entry = visible[position]
-            val title = row.getChildAt(0) as TextView
-            val pkg = row.getChildAt(1) as TextView
+            val icon = row.getChildAt(0) as ImageView
+            val text = row.getChildAt(1) as LinearLayout
+            val title = text.getChildAt(0) as TextView
+            val pkg = text.getChildAt(1) as TextView
+            icon.setImageDrawable(entry.info.loadIcon(packageManager))
             title.text = entry.label()
             pkg.text = entry.info.packageName
             labelCache[entry.info.packageName] = title.text.toString()
-            row.background = if (position % 2 == 0) {
-                rounded(COLOR_FIELD, dp(6), Color.TRANSPARENT)
-            } else {
-                Color.TRANSPARENT.toDrawable()
-            }
+            row.background = rounded(
+                if (position % 2 == 0) COLOR_FIELD else Color.TRANSPARENT,
+                dp(18),
+                Color.TRANSPARENT,
+            )
             return row
         }
     }
@@ -2352,18 +2156,16 @@ class MainActivity : Activity() {
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View =
             label(items[position], 14f, COLOR_TEXT, Typeface.BOLD).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), 0, dp(12), 0)
-                background = rounded(COLOR_FIELD, dp(12), Color.TRANSPARENT)
+                setPadding(dp(16), 0, dp(16), 0)
+                background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
             }
 
         override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup?): View =
             label(items[position], 14f, COLOR_TEXT, Typeface.NORMAL).apply {
-                setPadding(dp(14), dp(12), dp(14), dp(12))
-                setBackgroundColor(Color.WHITE)
+                setPadding(dp(16), dp(12), dp(16), dp(12))
+                background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
             }
     }
-
-    private fun Int.toDrawable() = android.graphics.drawable.ColorDrawable(this)
 
     private data class FrequencyBundle(
         val littleMax: Int,
@@ -2401,6 +2203,9 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_EXPORT_LOG = 901
+        private const val STATE_PAGE = "page"
+        private const val STATE_PERFORMANCE_EDITOR = "performance_editor"
+        private const val STATE_PERFORMANCE_PACKAGE = "performance_package"
         private val COLOR_BG = Color.rgb(248, 247, 252)
         private val COLOR_FIELD = Color.rgb(240, 241, 247)
         private val COLOR_NOTE = Color.rgb(245, 247, 241)
