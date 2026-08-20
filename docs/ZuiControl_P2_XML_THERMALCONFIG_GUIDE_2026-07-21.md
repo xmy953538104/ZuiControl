@@ -1,10 +1,10 @@
 # ZuiControl P2 XML 与 ThermalConfig 读法 - 2026-07-21
 
-## 0. 2026-08-20 当前生产规则
+## 0. 2026-08-21 当前生产规则
 
 本节覆盖本文后面关于“三个用户 profile、daemon 选择 gameMode、GameModeProvider 重入”和旧固定延时保存流程的说明；后文 XML 字段、ThermalConfig 和原厂热控原理仍有效。
 
-当前成品 App 为 `versionCode=39` / `versionName=0.21.2`，生产代码 commit 为 `402b20c6e85a769587853f5195510ac0558f6f09`，GitHub Actions run 为 `32357568579`。最终 `super.img` SHA256 为 `e8980048c291eb7e33eb4b70875a00ab2dc680e1db86f016c7137ea826d58648`，成品反抽 verifier 已返回 `ok=true`。设备已经通过最小化 7 项 9008 XML 持久刷入 0.21.2；正常重启后 boot bind 触发 ZuiPP `4713 -> 6409` 并得到 `state=done;reason=boot_active;stableSeconds=3`，亮屏重入鸣潮又闭合 `onGameAppStart -> GameHelper initGameHelper -> notifyPerfStatus : 11 17 -> writeSavageMode`。App 会先比较 canonical 配置：完全同值时小于 1 秒返回，不写请求槽、不重启 ZuiPP、不停止目标；真实改变 XML 时仍执行新 PID 与 3 秒稳定窗。当前不再是临时 daemon 验证状态。
+当前待刷成品 App 为 `versionCode=40` / `versionName=0.21.3`，生产代码 commit 为 `1b58816`，GitHub Actions run 为 `32392494646`。最终 `super.img` SHA256 为 `25b8d9f0c80bed77c660200abd3cca92dff67db5549d19a0c94892d150ac6f3b`，成品反抽 verifier 已返回 `ok=true`。设备当前仍运行已验收的 39/0.21.2/V39；0.21.3 的新 daemon 重入顺序与 GPU 索引方向已在设备上分别可逆验证，但最终 V40 镜像尚未持久刷入。App 仍先比较 canonical 配置：完全同值时小于 1 秒返回，不写请求槽、不重启 ZuiPP、不停止目标；真实改变 XML 时仍执行受控重入。
 
 当前生产模型：
 
@@ -19,7 +19,7 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 -> Little/Big/Titan/Mega 四个 Type 用同一 ID、各存自己的频率值
 -> 同一 LimitConfig 镜像到 balanced / powersave / savage
 -> 校验、promote、bind active XML
--> ZuiPP 在运行时先停止四个原厂 service，再受控重启并等待新 PID 稳定 3 秒；未运行则记录合法 skipped
+-> ZuiPP 在运行时先顺序停止 GameHelper 和 ZuiPP 已知 services，再受控重启 ZuiPP、等新 PID 稳定 3 秒、显式启动 PerformanceConnect、预热 GameHelper 并等新 PID 稳定 2 秒；未运行则记录合法 skipped
 -> 同步 Game Assistant membership；新增 profile 时添加、删除 profile 时删除自定义条目
 -> 原子提交 membership + profile + runtime + terminal ACK；失败则恢复整笔旧状态
 -> 保存成功后自动停止当时正在运行的目标；未运行则跳过
@@ -39,6 +39,7 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 
 - 设备实测 ZuiPP 的 CPU Type 读取顺序不是 XML 文档顺序。旧版为四簇分配不同 level ID 时，错误 Type 查找可能缺少 level，TAssistant 会放弃整条策略。共享 CPU ID 消除了顺序依赖。
 - daemon 直接调用 `GameModeProvider/contact` 会出现“命令成功但 ZuiPP 没有目标游戏状态”的假成功，现已删除。OEM GameHelper 本来就会在真实 `onGameAppStart` 时调用 provider；provider rows=1 也只能表示模式值被接受，不能单独证明 LimitConfig 已下发。
+- 0.21.2 只等 ZuiPP 新 PID 的重载不够：GameHelper sticky services 可能错过重入，新 ZuiPP 的 `PerformanceConnectHelper` 在 `PerformanceConnect` service 创建前为 null，provider 会在 `sendLimitInner` NPE。0.21.3 必须把 GameHelper 停启、PerformanceConnect 初始化和 GameHelper 预热放进同一 reload gate，才能发 done。
 - ZuiControl 保存 P2 前会通过 `zuimode` 检查 Game Assistant；目标不在其中时自动添加自定义条目。删除 ZuiControl P2 profile 时同步删除对应自定义条目。这个同步严格只从 ZuiControl 指向 Game Assistant：Game Assistant 单独添加或删除都不会反向创建或删除 P2 profile。系统内建识别不是自定义条目，不做伪删除。membership/profile/XML/runtime 是同一事务，任一步失败都会恢复旧状态。
 - ZuiPP 被重启后，TAssistant/原厂 game callback 要到下一次真实游戏启动才重新建立。保存成功后 daemon 会自动停止当时正在运行的目标；未运行时不做无意义的停止。UI done 后用户直接从桌面重新打开即可，不再要求去系统设置手动强停。
 - “息屏启动”只指旧测试曾在屏幕关闭时用 adb 拉起 App，不是产品流程。正常亮屏从桌面启动才是交付路径；仅有 Activity 焦点而没有 `onGameAppStart` 不能判为 ZUI 游戏态。
@@ -53,7 +54,7 @@ App 发送唯一 requestId，等待同 ID/同 command 的 terminal ACK
 3. `xml_state=state=mounted`，active 与 `/system/etc` 是否同 hash 且确为 bind mount。
 4. 目标 App 的三个 LimitConfig mode block 是否完全一致。
 5. 每个温区 Little/Big/Titan/Mega 四个 ID 是否相同，并在四个 Type 中都存在。
-6. ZuiPP 正在运行时，四个原厂 service 是否先成功停止，reload 是否 `state=done`、`stableSeconds=3`、`needsAppReenter=1`，并且只有一次干净 PID 切换、没有 `OverHeatCleanService` fatal/NPE；未运行时允许 `state=skipped;reason=zuipp_not_running`。只有输入/输出 hash 确实未变时才接受 `skipped;same_hash`，而每次 daemon 新启动不能用上次开机 receipt 跳过一次本应执行的 reload。
+6. ZuiPP 正在运行时，GameHelper/ZuiPP 原厂 services 是否先成功停止，reload 是否 `state=done`、PP `stableSeconds=3`、PerformanceConnect 已启动、GameHelper 新 PID 稳定 2 秒、`needsAppReenter=1`，并且没有 `OverHeatCleanService` fatal/NPE 或 `PerformanceConnectHelper` null NPE；任一 `stop_game_helper/performance_connect/prewarm_game_helper` error 都是失败。未运行时允许 `state=skipped;reason=zuipp_not_running`。只有输入/输出 hash 确实未变时才接受 `skipped;same_hash`，而每次 daemon 新启动不能用上次开机 receipt 跳过一次本应执行的 reload。
 7. 确认 Game Assistant membership 与操作方向一致，运行中的目标已自动停止或返回 `target=not_running`，再从桌面重新进入；按顺序检查同一 package 的 `onGameAppStart`、GameHelper、ZuiPP `notifyGameAppStateChanged`、非空 LimitConfig/TAssistant 下发。
 8. 再读 CPU/GPU 最终节点，并区分用户请求、厂商覆盖和真实高温降频。
 9. 检查 dmesg 与全 buffer logcat 中相关 AVC。
@@ -203,20 +204,28 @@ index 10 = 310MHz
 index 11 = 231MHz
 ```
 
-例如生成器创建：
+注意：用户界面/API 仍使用正常的“最低频率—最高频率”语义，但 SM8650 TAssistant 的实际消费方向与 XML 日志里 `GPUMax/GPUMin` 的表面名字相反。0.21.3 生成器因此必须写：
+
+```text
+XML = 用户最低频率的 index _ 用户最高频率的 index _ -1
+```
+
+例如用户设置 GPU 500–720MHz，生成器创建：
 
 ```xml
-<Freq level="804">3_7_-1</Freq>
+<Freq level="804">7_3_-1</Freq>
 ```
 
 含义是：
 
 ```text
-GPUMax index 3 -> 720MHz
-GPUMin index 7 -> 500MHz
+第一值 index 7 -> 用户最低 500MHz
+第二值 index 3 -> 用户最高 720MHz
 ```
 
 `804` 是 ZuiControl 生成的唯一 level ID，不等于 804MHz。
+
+这不是仅凭名字猜测的兼容处理。设备可逆实验中，用户 422–903MHz 的旧 `0_8_-1` 会在冷机、thermal state=0 时把 KGSL 锁到 422MHz；换成 `8_0_-1` 后，ZuiPP 日志虽显示 `GPUMax=8,GPUMin=0`，但内核结果正确变成 `thermal_pwrlevel=0/max_gpuclk=903MHz`，实时频率可动态波动。
 
 ## 5. ThermalConfig 后续系统逻辑
 
@@ -260,7 +269,7 @@ quiet-therm 30/32/34/36/38/40C
 与 vendor thermal user case / 全局热控限制共同作用的结果
 ```
 
-旧鸣潮问题就是两条链路同时生效：ZuiPP 已读取 `GPUMax=3 / GPUMin=7`，但 `ThermalConfig=200` 又选择 `battery_2/gpu_0`，最终 KGSL 被压到约 310/231MHz。
+历史旧鸣潮问题曾有两条链路同时生效：`ThermalConfig=200` 会选择更激进的 `battery_2/gpu_0`；此外，0.21.2 以及更早生成器还将 GPU 索引方向写反，使用户设定的“最低频率”成为实际上限。因此 422/500MHz 长期锁频首先要查 XML 值顺序，然后才能根据当时 `quiet-therm` 判断 vendor thermal 是否又在叠加限制。
 
 ## 6. 为什么改成 0 0 0
 
@@ -270,7 +279,7 @@ quiet-therm 30/32/34/36/38/40C
 <Attribute name="ThermalConfig">0 0 0</Attribute>
 ```
 
-含义是三个 GameHelper 模式都选择 thermal user case 0，避免由游戏 XML 主动切到 100/200/300 的额外厂商策略。
+含义是三个 GameHelper 模式都选择 thermal user case 0，避免由游戏 XML 主动切到 100/200/300 的额外厂商策略。case 0 仍然组合 `sensor_0 + cpu_0 + gpu_0 + fan_0 + common_0 + battery_0`，所以它仍保留完整安全热控。
 
 它不表示：
 
@@ -279,7 +288,13 @@ quiet-therm 30/32/34/36/38/40C
 - 绕过内核或硬件保护。
 - 强制 GPU 一直跑最高频。
 
-设备真实过热时，系统全局 thermal/KGSL 仍然可以降频。`0 0 0` 只移除已经实测会与用户 XML 冲突的游戏 thermal user-case 切换。
+设备真实过热时，vendor `thermal-engine-v2`、Lenovo performance service 和 Qualcomm KGSL/HAL 仍然可以降频。`0 0 0` 只移除已经实测会与用户 XML 冲突的 100/200/300 游戏 thermal user-case 切换，不移除 case 0 本身的 `cpu_0/gpu_0/battery_0`。
+
+温度判断必须区分三类传感器：
+
+- ZuiControl/P2 温区选档用 `back_temp`（实机 thermal zone 54）。level 8/14 通过平台 +34 映射为 42/48C；当前鸣潮 profile 确实有默认、42C、48C 三档。
+- 系统界面常见的 41.6–42C 是 `battery`（zone 85），不等于 P2 选档温度，也不等于 GPU 热控传感器。
+- case 0 的 GPU/CPU 安全限制主要使用 `quiet-therm`（zone 61）和芯片结温。GPU 在 quiet 44/46/48/50C 时可被限制到 720/629/500/231MHz，CPU 相关文件从 quiet 40C 就可开始逐档限制。
 
 ## 7. 完整运行流程
 

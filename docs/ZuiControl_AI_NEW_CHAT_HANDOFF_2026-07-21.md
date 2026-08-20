@@ -13,7 +13,101 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.11 2026-08-20 0.21.2 UI 收口、连续核心范围与 V39 刷后验收（当前最新）
+### 0.12 2026-08-21 0.21.3 P2 重入与 SM8650 GPU 索引修复（当前最新，V40 待刷）
+
+本节覆盖 0.11 及更早章节中的当前版本、P2 GPU 范围语义、ZuiPP/GameHelper 重入时序、成品 hash 和下一步。设备 `HA25HSZM` 当前仍持久运行已验收的 39/0.21.2/V39；40/0.21.3/V40 已完成代码、CI、AVB 无 FEC 签名、重新 PackSuper 和最终 super 反抽验收，但还没有持久刷入设备。不得把“分组件实机验证”写成“V40 刷后全部验收”。
+
+#### 当前成品与发布事实
+
+- 生产代码 commit：`1b58816` (`fix: stabilize P2 reentry and GPU ranges`)
+- GitHub Actions run：`32392494646`，结论 `success`：<https://github.com/xmy953538104/ZuiControl/actions/runs/32392494646>
+- CI artifact：`D:\3.VScode\Mi\work\ci_artifacts\zuicontrol_32392494646`
+- package：`com.zui.zuicontrol`；版本：40/0.21.3；system 路径：`/system/priv-app/ZuiControlV40/ZuiControl.apk`
+- release 证书 SHA-256：`3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94`
+- CI/payload/两个 sidecar APK SHA-256：`b8eb282485a8fb89304a64bf1f59ade9c0bbe928530e3f8021ba8f959f32537b`
+- 最终刷机目录：`D:\3.VScode\Mi\【B刷机】187`
+- 最终 `VerifyZuiControlFlashPackage.ps1` 反抽结论：`ok=true`
+
+```text
+5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b  boot.img
+25b8d9f0c80bed77c660200abd3cca92dff67db5549d19a0c94892d150ac6f3b  super.img
+9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5  vbmeta.img
+d5770041b2ae6cc5e33b139175c826545c25b1323c1303517ed17442f67e9256  vbmeta_system.img
+b8eb282485a8fb89304a64bf1f59ade9c0bbe928530e3f8021ba8f959f32537b  ZuiControl-v19-system.apk
+b8eb282485a8fb89304a64bf1f59ade9c0bbe928530e3f8021ba8f959f32537b  ZuiControl-v19-release.apk
+```
+
+日常更新只允许 `scripts/FlashZuiControl9008.ps1` 的安全 7 项包；不得使用原始 99 项全量 XML。本节仅表示包已就绪，不表示已获得进入 9008 并刷写的新授权。
+
+#### 根因 1：ZuiPP PID 重启了，但运行链未就绪
+
+旧 daemon 的“成功”只保证 ZuiPP 新 PID 存活并稳定 3 秒，没有保证两个关键上层就绪：
+
+- GameHelper 有 Console、ScreenRecorder、Rocker、Main 等多个 sticky service。ZuiPP 被杀时它们还活着，ActivityManager 会按 1/11/21 秒等间隔分批重启，容易错过游戏重入。
+- 新 ZuiPP 的静态 `PerformanceConnectHelper` 在 `com.zui.pp/com.zui.performance.clientcenter.PerformanceConnect` 创建前是 null。这时即使 OEM provider 接受 mode，也会在 `sendLimitInner` 对 null 连接精确 NPE；GameHelper 只记录 `writeSavageMode open=0`，看不到 `notifyPerfStatus 11/17`。
+
+0.21.3 的最小修复顺序是：
+
+```text
+停止 GameHelper 已知 services 并确认旧进程退出
+-> 停止 ZuiPP 已知 services
+-> TERM 旧 ZuiPP
+-> 等待新 ZuiPP PID 稳定 3 秒
+-> 显式启动 ZuiPP PerformanceConnect
+-> 用 OEM GAME_MODE_START_SERVICE 预热 GameHelper，等新 PID 稳定 2 秒
+-> 才发 terminal ACK done
+```
+
+App 的非取消等待框增加了对应真实阶段。没有恢复 daemon provider_direct，没有伪造游戏态。在 V39 设备上临时精确替换新 daemon 并重载后，ZuiPP `6239 -> 19239`、GameHelper 新 PID `19372`；亮屏解锁从桌面正常启动鸣潮，日志闭合：
+
+```text
+onGameAppStart(com.kurogame.mingchao)
+-> GameHelper initGameHelper(com.kurogame.mingchao)
+-> ZuiPP notifyPerfStatus : 11 / 17（当前 CPU/GPU JSON）
+-> GameHelper writeSavageMode::open::1,status::0
+```
+
+息屏/keyguard 下用 adb 强拉 Activity 不一定产生正常 game-start；这只是错误测试条件，不是产品流程。交付路径必须是亮屏、解锁、从桌面正常启动。
+
+#### 根因 2：SM8650 GPU 字段在实际 TAssistant 中方向相反
+
+旧生成器将用户 GPU 422–903MHz 写为：
+
+```xml
+<Freq level="901">0_8_-1</Freq>
+```
+
+ZuiPP 日志把它解析为 `GPUMax=0, GPUMin=8`，但 SM8650 TAssistant/KGSL 的实际效果是后一个 index 变成最终可用上限。在 `quiet-therm=37.8C`、GPU thermal cooling state 均为 0 时，旧 XML 仍立即得到 `thermal_pwrlevel=8/max_gpuclk=422MHz`；所以用户看到长期 422/500MHz 不只是夏天热控，首先是我们的 XML 索引顺序错了。
+
+可逆实验只将该值改为 `8_0_-1`，重载并正常重入游戏后，ZuiPP 得到 `GPUMax=8,GPUMin=0`，冷机无 thermal clamp 时变成 `thermal_pwrlevel=0/max_gpuclk=903MHz`，`cur_freq` 可按负载波动。随后已逐字恢复原 active XML 和 hash，没有将实验文件留在设备。
+
+0.21.3 从 `XmlProfileGenerator` 根修正：用户 UI/API 仍是正常的 min/max，但写入 XML 时按 SM8650 实测消费方向输出 `minIndex_maxIndex_-1`。测试锁定 422–903MHz -> `8_0_-1`、500–903MHz -> `7_0_-1`。模板增加新 stamp，升级后 daemon 会从保留的 profile 自动重生 active XML，不需用户再点一次保存。
+
+#### 温度与最终频率的权威边界
+
+- 鸣潮当前 profile 存在三个完整温区：默认（<42C）、42C、48C，不是漏了中温/高温。UI level 8/14 通过 +34 映射为 42/48C。P2 选档看 `back_temp`（thermal zone 54）。
+- 系统 UI/dumpsys 里 41.6–42C 的“电池温度”是另一个 `battery` 传感器（zone 85），不能用它直接判断 P2 温区或 GPU 热控。
+- vendor 安全链由 `thermal-engine-v2`、`vendor.lenovo.hardware.performance-service`、Qualcomm KGSL/HAL 执行，case 0 主要读 `quiet-therm`（zone 61）和各芯片结温。`/vendor/etc/thermal-engine_gpu_0.conf` 在 quiet 44/46/48/50C 分别设 GPU 720/629/500/231MHz 上限，CPU 文件从 quiet 40C 就开始逐档限制。
+- `ThermalConfig=0 0 0` 只是不再切到更激进的 100/200/300 游戏 user case；case 0 本身仍组合 `cpu_0/gpu_0/battery_0`，不是关闭温控。P2 XML 是 OEM 性能请求，vendor safety thermal 可合法覆盖它。本轮不改安全温控文件。
+
+#### App 进程、通知、P2 与 AppOpt 的真实生命周期
+
+- 快捷通知由 `ZuiControlQuickService` 前台 service 支撑。只要通知存在，`com.zui.zuicontrol` 的轻量进程就存在；Android 不存在“App 完全没运行但自己的动态通知还能点击”的实现。该 service 只接收点击并发 Binder，不是刷新率大脑。
+- 已保存 P1 由 system_server `zui_control` 执行；P2 由 bind XML + ZuiPP/TAssistant/GameHelper + `zui_controld` 执行；AppOpt 由 init 管理的 `/system/bin/AppOpt -c /data/vendor/zui_control/appopt/applist.conf -s 2` 原生服务执行。三者都不需要 MainActivity 常驻。
+- 如果强停 ZuiControl，快捷通知会消失，直到重开 App/重启时 receiver 恢复；但已持久的 P1 profile、active XML/P2 和 AppOpt 规则仍生效。只有编辑配置和点快捷通知需要 App 进程短暂参与。
+- 保存 P2/AppOpt 后，daemon 只在目标当时有 PID 时自动 force-stop；未运行则是可预期 no-op。用户不需去系统设置手动强停。
+
+#### V40 刷后必须完成的验证
+
+1. 确认 PackageManager 为 40/0.21.3，codePath 为 `ZuiControlV40`，旧 V39 不存在。
+2. 确认保留的 P1 profile、P2 鸣潮 profile 和 AppOpt 三条规则未丢；P1 owner 仍为 system，daemon refresh disabled，不进入 FPS cap。
+3. 开机 daemon 应因新模板 stamp 自动重生 XML；active/system 两对 hash 闭合且为 bind mount。鸣潮默认档 422–903MHz 的 GPU Freq 必须是 `8_0_-1`，42/48C 档 500–903MHz 必须是 `7_0_-1`。
+4. ZuiPP 已运行时，reload terminal 必须 `state=done`，新 PP PID 稳定 3 秒，PerformanceConnect 启动，GameHelper 新 PID 稳定 2 秒；任一 `stop_game_helper/performance_connect/prewarm_game_helper` error 都不能当成成功。
+5. 亮屏、解锁、从桌面正常启动鸣潮，必须闭合同一 package 的 `onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode open=1`；不得用 provider rows 或单独 PID 代替。
+6. 在 `quiet-therm <44C`且 GPU thermal cooling state=0 的冷机条件下，默认档应看到 `thermal_pwrlevel=0/max_gpuclk=903MHz`，实时频率可按负载波动。若 quiet 已达 44/46/48/50C，分别被安全热控限制到 720/629/500/231MHz 是合法结果，要同时记录 battery/back/quiet，不可只报电池温度。
+7. 复验 AppOpt 真实线程 mask、P1、相机 PID/starttime/tombstone、云控完全删除状态，并同时查 dmesg 与 logcat all buffers 的项目 AVC/fatal/ANR。
+
+### 0.11 2026-08-20 0.21.2 UI 收口、连续核心范围与 V39 刷后验收（历史，已被 0.12 覆盖）
 
 本节覆盖 0.10 及更早章节中的当前版本、UI、AppOpt 取值范围、成品 hash 和下一步。设备 `HA25HSZM` 已由正常 Android 自动进入 `COM3/9008`，使用安全 7 项 XML 持久刷入 `versionCode=39` / `versionName=0.21.2`，再完成真实横竖屏、P1、P2、AppOpt、相机、云控删除和稳定性验收。当前运行的是 `/system/priv-app/ZuiControlV39/ZuiControl.apk`，不是临时 bind APK。
 
