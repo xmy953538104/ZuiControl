@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '39'
-$ExpectedVersionName = '0.21.2'
+$ExpectedVersionCode = '40'
+$ExpectedVersionName = '0.21.3'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -260,7 +260,7 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV39\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV40\ZuiControl.apk'
     $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
     $PreviousAppDirs = @(
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV30'),
@@ -271,7 +271,8 @@ try {
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV35'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV36'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV37'),
-        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV38')
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV38'),
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV39')
     )
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
@@ -395,6 +396,13 @@ try {
     Assert-Contains $Daemon 'ZUIPP_STABLE_SECONDS=3' 'bounded ZuiPP stability window'
     Assert-Contains $Daemon 'stableSeconds=$ZUIPP_STABLE_SECONDS' 'stable ZuiPP restart readiness marker'
     Assert-Contains $Daemon 'stop_zuipp_services_for_reload' 'graceful ZuiPP service shutdown before process reload'
+    Assert-Contains $Daemon 'prepare_game_helper_for_zuipp_reload' 'GameHelper lifecycle preparation before ZuiPP reload'
+    Assert-Contains $Daemon 'prewarm_game_helper_after_zuipp_reload' 'GameHelper listener prewarm after ZuiPP reload'
+    Assert-Contains $Daemon 'initialize_zuipp_performance_connect' 'ZuiPP PerformanceConnect initialization before GameHelper'
+    Assert-Contains $Daemon 'com.zui.pp/com.zui.performance.clientcenter.PerformanceConnect' 'OEM ZuiPP PerformanceConnect component'
+    Assert-Contains $Daemon 'com.zui.game.service.action.GAME_MODE_START_SERVICE' 'OEM GameHelper prewarm action'
+    Assert-Contains $Daemon 'state=error;stage=prewarm_game_helper' 'GameHelper prewarm failure state'
+    Assert-Contains $Daemon 'state=error;stage=performance_connect' 'ZuiPP PerformanceConnect failure state'
     Assert-Contains $Daemon 'com.zui.pp/com.zui.power.overheat.OverHeatCleanService' 'OverHeatCleanService null-Intent crash prevention'
     Assert-Contains $Daemon 'Service not stopped: was not running.' 'ZUI am stop-service successful no-op handling'
     Assert-Contains $Daemon 'attempts=5' 'transient boot Binder stop-service retry'
@@ -418,6 +426,7 @@ try {
         throw 'daemon overwrites last_good with the new active XML after successful promote'
     }
     Assert-ZuiLimitXml $GameTemplate $PerfTemplate
+    Assert-Contains $PerfTemplate 'ZuiControl SM8650 generator writes floorIndex_ceilingIndex' 'SM8650 GPU direction baseline refresh marker'
     $gameXml = Read-XmlDocument $GameTemplate
     $mingchao = $gameXml.SelectSingleNode("//AppList[@type='game']/App[@pkg='com.kurogame.mingchao']")
     if ($null -eq $mingchao) {

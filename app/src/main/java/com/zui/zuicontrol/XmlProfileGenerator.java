@@ -562,7 +562,9 @@ public final class XmlProfileGenerator {
         int minIndex = gpuIndex(min) + 1;
         return new LevelValue(
                 minIndex * 100 + maxIndex,
-                (maxIndex - 1) + "_" + (minIndex - 1) + "_-1",
+                // SM8650's TAssistant consumes the XML names backwards:
+                // GPUMax is the floor index and GPUMin is the ceiling index.
+                (minIndex - 1) + "_" + (maxIndex - 1) + "_-1",
                 max,
                 min
         );

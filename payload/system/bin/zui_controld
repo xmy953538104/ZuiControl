@@ -24,6 +24,10 @@ LAST_REQUEST_RECEIPT_FILE=$CONTROL_DIR/last_processed_settings_request_receipt
 
 APP_PACKAGE=com.zui.zuicontrol
 APP_SERVICE_COMPONENT=com.zui.zuicontrol/com.zui.zuicontrol.ZuiControlQuickService
+GAME_HELPER_PACKAGE=com.zui.game.service
+GAME_HELPER_SERVICE_COMPONENT=$GAME_HELPER_PACKAGE/.GameHelperService
+GAME_HELPER_START_ACTION=com.zui.game.service.action.GAME_MODE_START_SERVICE
+ZUIPP_PERFORMANCE_CONNECT_COMPONENT=com.zui.pp/com.zui.performance.clientcenter.PerformanceConnect
 SAFE_CENTER_PACKAGE=com.zui.safecenter
 SAFE_CENTER_DB=/data/user/0/$SAFE_CENTER_PACKAGE/databases/BlackWhite.db
 SAFE_CENTER_KEEPALIVE_FLAG=$DATA_ROOT/safecenter_keepalive_done.flag
@@ -92,6 +96,7 @@ SAFE_CENTER_KEEPALIVE_MAX_ATTEMPTS=60
 SAFE_CENTER_KEEPALIVE_DONE=0
 LOOP_SLEEP_SECONDS=1
 ZUIPP_STABLE_SECONDS=3
+GAME_HELPER_STABLE_SECONDS=2
 APPOPT_STABLE_SECONDS=3
 ZUI_MODE_SERVICE=zuimode
 ZUI_MODE_TX_ADD_USER_GAME=14
@@ -1022,6 +1027,104 @@ zuipp_pid() {
     pidof com.zui.pp 2>/dev/null | awk '{print $1}'
 }
 
+game_helper_pid() {
+    pidof "$GAME_HELPER_PACKAGE" 2>/dev/null | awk '{print $1}'
+}
+
+prepare_game_helper_for_zuipp_reload() {
+    # ZuiPP is a provider dependency of GameHelper. Killing ZuiPP while
+    # GameHelper's started services are live makes ActivityManager stagger
+    # their sticky restarts, which can miss the next game-start callback.
+    for component in \
+        "$GAME_HELPER_SERVICE_COMPONENT" \
+        "$GAME_HELPER_PACKAGE/.console.ConsoleService" \
+        "$GAME_HELPER_PACKAGE/.highlight.ScreenRecorderService" \
+        "$GAME_HELPER_PACKAGE/com.zui.gamecontroller.RockerService"; do
+        stop_output="$(am stop-service --user 0 -n "$component" 2>&1)"
+        printf '%s\n' "$stop_output" >> "$LOG_FILE"
+        case "$stop_output" in
+            *"Service stopped"*|*"Service not stopped: was not running."*) ;;
+            *)
+                log_line "cannot stop GameHelper service before ZuiPP reload: $component"
+                return 1
+                ;;
+        esac
+    done
+
+    old_game_helper_pid="$(game_helper_pid)"
+    [ -n "$old_game_helper_pid" ] || return 0
+    [ "$(proc_cmdline_clean "$old_game_helper_pid")" = "$GAME_HELPER_PACKAGE" ] || {
+        log_line "GameHelper pid check failed before ZuiPP reload: $old_game_helper_pid"
+        return 1
+    }
+    kill -TERM "$old_game_helper_pid" 2>>"$LOG_FILE" || return 1
+    tries=5
+    while [ "$tries" -gt 0 ]; do
+        [ -z "$(game_helper_pid)" ] && return 0
+        tries=$((tries - 1))
+        sleep 1
+    done
+    log_line "GameHelper process did not stop before ZuiPP reload: $old_game_helper_pid"
+    return 1
+}
+
+prewarm_game_helper_after_zuipp_reload() {
+    start_output="$(am start-foreground-service --user 0 \
+        -a "$GAME_HELPER_START_ACTION" --ei self_start 1 \
+        -n "$GAME_HELPER_SERVICE_COMPONENT" 2>&1)"
+    printf '%s\n' "$start_output" >> "$LOG_FILE"
+    case "$start_output" in
+        *"Starting service"*) ;;
+        *)
+            log_line "cannot prewarm GameHelper after ZuiPP reload"
+            return 1
+            ;;
+    esac
+
+    candidate_key=
+    stable_ticks=0
+    tries=8
+    while [ "$tries" -gt 0 ]; do
+        new_game_helper_pid="$(game_helper_pid)"
+        if [ -n "$new_game_helper_pid" ] &&
+            [ "$(proc_cmdline_clean "$new_game_helper_pid")" = "$GAME_HELPER_PACKAGE" ]; then
+            new_game_helper_start="$(proc_start_time "$new_game_helper_pid")"
+            current_key="$new_game_helper_pid:$new_game_helper_start"
+            if [ "$current_key" = "$candidate_key" ]; then
+                stable_ticks=$((stable_ticks + 1))
+            else
+                candidate_key="$current_key"
+                stable_ticks=1
+            fi
+            if [ "$stable_ticks" -ge "$GAME_HELPER_STABLE_SECONDS" ]; then
+                log_line "GameHelper prewarmed after ZuiPP reload: pid=$new_game_helper_pid"
+                return 0
+            fi
+        else
+            candidate_key=
+            stable_ticks=0
+        fi
+        tries=$((tries - 1))
+        sleep 1
+    done
+    log_line "GameHelper did not become stable after ZuiPP reload"
+    return 1
+}
+
+initialize_zuipp_performance_connect() {
+    # GameModeProvider calls the static PerformanceConnectHelper immediately.
+    # A fresh ZuiPP process has no helper until this OEM service is created;
+    # otherwise the first real game start can lose LimitConfig with an NPE.
+    start_output="$(am start-service --user 0 \
+        -n "$ZUIPP_PERFORMANCE_CONNECT_COMPONENT" 2>&1)"
+    printf '%s\n' "$start_output" >> "$LOG_FILE"
+    case "$start_output" in
+        *"Starting service"*) return 0 ;;
+    esac
+    log_line "cannot initialize ZuiPP PerformanceConnect after reload"
+    return 1
+}
+
 stop_zuipp_services_for_reload() {
     # ZUI's OverHeatCleanService crashes on a null restart Intent if the
     # persistent process is signalled while its started services are live.
@@ -1031,6 +1134,7 @@ stop_zuipp_services_for_reload() {
         com.zui.pp/com.zui.power.overheat.OverHeatStatsService \
         com.zui.pp/com.zui.power.overheat.OverHeatCleanService \
         com.zui.pp/com.zui.power.overheat.StubbornStatsService \
+        "$ZUIPP_PERFORMANCE_CONNECT_COMPONENT" \
         com.zui.pp/.service.MainService; do
         attempts=5
         stopped=0
@@ -1099,6 +1203,12 @@ reload_zuipp_if_needed() {
     fi
     old_start="$(proc_start_time "$old_pid")"
 
+    publish_request_progress stopping_game_helper
+    if ! prepare_game_helper_for_zuipp_reload; then
+        publish_zuipp_reload_state "state=error;stage=stop_game_helper;oldPid=$old_pid;game=$game_hash;perf=$perf_hash"
+        return 1
+    fi
+
     publish_request_progress stopping_zuipp_services
     if ! stop_zuipp_services_for_reload; then
         publish_zuipp_reload_state "state=error;stage=stop_services;oldPid=$old_pid;game=$game_hash;perf=$perf_hash"
@@ -1128,6 +1238,16 @@ reload_zuipp_if_needed() {
                     stable_ticks=1
                 fi
                 if [ "$stable_ticks" -ge "$ZUIPP_STABLE_SECONDS" ]; then
+                    publish_request_progress initializing_zuipp_connect
+                    if ! initialize_zuipp_performance_connect; then
+                        publish_zuipp_reload_state "state=error;stage=performance_connect;oldPid=$old_pid;newPid=$new_pid;game=$game_hash;perf=$perf_hash"
+                        return 1
+                    fi
+                    publish_request_progress preparing_game_helper
+                    if ! prewarm_game_helper_after_zuipp_reload; then
+                        publish_zuipp_reload_state "state=error;stage=prewarm_game_helper;oldPid=$old_pid;newPid=$new_pid;game=$game_hash;perf=$perf_hash"
+                        return 1
+                    fi
                     remember_reloaded_hash_pair "$hash_pair"
                     publish_zuipp_reload_state "state=done;reason=$reason;oldPid=$old_pid;newPid=$new_pid;stableSeconds=$ZUIPP_STABLE_SECONDS;game=$game_hash;perf=$perf_hash;needsAppReenter=1"
                     return 0

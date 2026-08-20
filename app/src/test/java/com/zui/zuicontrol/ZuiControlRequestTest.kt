@@ -101,6 +101,9 @@ class ZuiControlRequestTest {
     @Test
     fun mapsDaemonStagesToUserProgress() {
         assertEquals("正在等待 ZuiPP 新进程稳定（3 秒）", ZuiControlRequest.progressLabel("waiting_zuipp"))
+        assertEquals("正在准备游戏助手", ZuiControlRequest.progressLabel("stopping_game_helper"))
+        assertEquals("正在初始化 ZuiPP 调度通道", ZuiControlRequest.progressLabel("initializing_zuipp_connect"))
+        assertEquals("正在恢复游戏识别", ZuiControlRequest.progressLabel("preparing_game_helper"))
         assertEquals("正在重启并检查 AppOpt", ZuiControlRequest.progressLabel("restarting_appopt"))
         assertEquals("custom stage", ZuiControlRequest.progressLabel("custom stage"))
     }

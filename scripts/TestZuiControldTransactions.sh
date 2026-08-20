@@ -196,6 +196,7 @@ test_reload_invalidates_remembered_hash() (
     zuipp_pid() { printf '123\n'; }
     proc_cmdline_clean() { printf 'com.zui.pp\n'; }
     proc_start_time() { printf '1\n'; }
+    prepare_game_helper_for_zuipp_reload() { return 0; }
     am() {
         printf 'Service stopped\n'
         return 255
@@ -236,6 +237,9 @@ test_daemon_start_forces_same_hash_reload() (
     proc_start_time() {
         if [ "$1" = 456 ]; then printf '2\n'; else printf '1\n'; fi
     }
+    prepare_game_helper_for_zuipp_reload() { return 0; }
+    initialize_zuipp_performance_connect() { return 0; }
+    prewarm_game_helper_after_zuipp_reload() { return 0; }
     am() {
         call_count="$(wc -l < "$TEST_ROOT/am_calls")"
         printf '%s\n' "$*" >> "$TEST_ROOT/am_calls"
@@ -259,7 +263,7 @@ test_daemon_start_forces_same_hash_reload() (
     reload_zuipp_if_needed boot_active ||
         fail 'same-hash XML was not reloaded after daemon start'
     [[ "$KILL_CALLS" = 1 ]] || fail 'same-hash boot reload did not signal ZuiPP'
-    [[ "$(wc -l < "$TEST_ROOT/am_calls")" = 5 ]] ||
+    [[ "$(wc -l < "$TEST_ROOT/am_calls")" = 6 ]] ||
         fail 'same-hash boot reload did not retry a transient stop then stop all ZuiPP services'
     [[ "$(tail -n 1 "$TEST_ROOT/am_calls")" == *'com.zui.pp/.service.MainService' ]] ||
         fail 'same-hash boot reload did not stop MainService last'
@@ -279,6 +283,7 @@ test_reload_stop_service_failure_prevents_signal() (
     zuipp_pid() { printf '123\n'; }
     proc_cmdline_clean() { printf 'com.zui.pp\n'; }
     proc_start_time() { printf '1\n'; }
+    prepare_game_helper_for_zuipp_reload() { return 0; }
     am() {
         printf 'cmd: Failure calling service activity: Failed transaction (2147483646)\n'
         return 255
@@ -297,6 +302,95 @@ test_reload_stop_service_failure_prevents_signal() (
         fail 'reload signalled ZuiPP after service stop failed'
     [[ ! -e "$ZUIPP_LAST_RELOADED_HASH_FILE" ]] ||
         fail 'service stop failure left stale remembered hash'
+)
+
+test_reload_orders_game_helper_around_zuipp() (
+    export ZUI_CONTROLD_TEST_MODE=1
+    # shellcheck source=/dev/null
+    source "$DAEMON"
+    setup_test_state
+    trap 'rm -rf "$TEST_ROOT"' EXIT
+    printf '<AppPolicy>B</AppPolicy>\n' > "$ACTIVE_GAME_POLICY"
+    printf '<GameLimitConfig>B</GameLimitConfig>\n' > "$ACTIVE_PERF_CONFIG"
+    : > "$TEST_ROOT/reload_order"
+    : > "$TEST_ROOT/zuipp_old"
+    zuipp_mount_ready() { return 0; }
+    zuipp_pid() {
+        if [ -e "$TEST_ROOT/zuipp_old" ]; then printf '123\n'; else printf '456\n'; fi
+    }
+    proc_cmdline_clean() { printf 'com.zui.pp\n'; }
+    proc_start_time() {
+        if [ "$1" = 456 ]; then printf '2\n'; else printf '1\n'; fi
+    }
+    prepare_game_helper_for_zuipp_reload() {
+        printf 'stop_game_helper\n' >> "$TEST_ROOT/reload_order"
+    }
+    stop_zuipp_services_for_reload() {
+        printf 'stop_zuipp\n' >> "$TEST_ROOT/reload_order"
+    }
+    kill() {
+        printf 'signal_zuipp\n' >> "$TEST_ROOT/reload_order"
+        rm -f "$TEST_ROOT/zuipp_old"
+    }
+    prewarm_game_helper_after_zuipp_reload() {
+        printf 'prewarm_game_helper\n' >> "$TEST_ROOT/reload_order"
+    }
+    initialize_zuipp_performance_connect() {
+        printf 'initialize_zuipp_connect\n' >> "$TEST_ROOT/reload_order"
+    }
+    sleep() { :; }
+    publish_zuipp_reload_state() { :; }
+
+    reload_zuipp_if_needed test || fail 'ordered reload unexpectedly failed'
+    printf '%s\n' stop_game_helper stop_zuipp signal_zuipp \
+        initialize_zuipp_connect prewarm_game_helper \
+        > "$TEST_ROOT/expected_reload_order"
+    cmp -s "$TEST_ROOT/reload_order" "$TEST_ROOT/expected_reload_order" ||
+        fail 'GameHelper was not stopped before and prewarmed after ZuiPP reload'
+)
+
+test_game_helper_reload_helpers() (
+    export ZUI_CONTROLD_TEST_MODE=1
+    # shellcheck source=/dev/null
+    source "$DAEMON"
+    setup_test_state
+    trap 'rm -rf "$TEST_ROOT"' EXIT
+    printf 'old\n' > "$TEST_ROOT/game_helper_state"
+    : > "$TEST_ROOT/game_helper_calls"
+    am() {
+        printf '%s\n' "$*" >> "$TEST_ROOT/game_helper_calls"
+        case "$1" in
+            stop-service) printf 'Service stopped\n' ;;
+            start-service) printf 'Starting service\n' ;;
+            start-foreground-service)
+                printf 'new\n' > "$TEST_ROOT/game_helper_state"
+                printf 'Starting service\n'
+                ;;
+            *) return 1 ;;
+        esac
+    }
+    game_helper_pid() {
+        case "$(cat "$TEST_ROOT/game_helper_state" 2>/dev/null)" in
+            old) printf '111\n' ;;
+            new) printf '222\n' ;;
+        esac
+    }
+    proc_cmdline_clean() { printf '%s\n' "$GAME_HELPER_PACKAGE"; }
+    proc_start_time() { printf '9\n'; }
+    kill() { rm -f "$TEST_ROOT/game_helper_state"; }
+    sleep() { :; }
+
+    prepare_game_helper_for_zuipp_reload || fail 'GameHelper preparation failed'
+    [ -z "$(game_helper_pid)" ] || fail 'GameHelper preparation left its process alive'
+    initialize_zuipp_performance_connect || fail 'ZuiPP PerformanceConnect initialization failed'
+    prewarm_game_helper_after_zuipp_reload || fail 'GameHelper prewarm failed'
+    [ "$(game_helper_pid)" = 222 ] || fail 'GameHelper prewarm did not create a new process'
+    [ "$(grep -c '^stop-service ' "$TEST_ROOT/game_helper_calls")" = 4 ] ||
+        fail 'GameHelper preparation did not stop all four OEM services'
+    grep -q "^start-foreground-service .*${GAME_HELPER_START_ACTION}.*${GAME_HELPER_SERVICE_COMPONENT}" \
+        "$TEST_ROOT/game_helper_calls" || fail 'GameHelper prewarm used the wrong action/component'
+    grep -q "^start-service .*${ZUIPP_PERFORMANCE_CONNECT_COMPONENT}" \
+        "$TEST_ROOT/game_helper_calls" || fail 'ZuiPP PerformanceConnect used the wrong component'
 )
 
 test_transaction_recovery() (
@@ -836,6 +930,8 @@ test_remount_propagates_reload_failure
 test_reload_invalidates_remembered_hash
 test_daemon_start_forces_same_hash_reload
 test_reload_stop_service_failure_prevents_signal
+test_reload_orders_game_helper_around_zuipp
+test_game_helper_reload_helpers
 test_transaction_recovery
 test_apply_failure_rolls_back_all_layers
 test_reload_failure_rolls_back_request_transaction

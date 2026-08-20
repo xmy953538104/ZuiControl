@@ -528,6 +528,7 @@
         </Type>
         <Type name = "GPU">
             <!-- device/default levels preserved from official config -->
+            <!-- ZuiControl SM8650 generator writes floorIndex_ceilingIndex for TAssistant. -->
             <Freq level = "0">-1_-1_-1</Freq>
             <Freq level = "-1001">5_6_-1</Freq>
             <Freq level = "-1002">5_6_-1</Freq>

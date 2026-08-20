@@ -27,7 +27,7 @@ def main():
             "com.example.game|powersave|v4|independent|default|"
             "-1000,1017600,460800,1401600,614400,1401600,614400,1478400,576000,500000,310000\n"
             "com.example.game|balanced|v4|independent|default|"
-            "-1000,1804800,672000,2438400,844800,2323200,844800,2496000,902400,680000,310000;"
+            "-1000,1804800,672000,2438400,844800,2323200,844800,2496000,902400,903000,422000;"
             "8,1574400,556800,2035200,729600,1920000,729600,2112000,787200,578000,310000;"
             "14,1248000,460800,1708800,614400,1612800,614400,1708800,576000,422000,310000\n",
             encoding="utf-8",
@@ -77,6 +77,10 @@ def main():
         assert type_levels["BigCore"][first_id] == "2438400_844800_-1"
         assert type_levels["TitanCore"][first_id] == "2323200_844800_-1"
         assert type_levels["MegaCore"][first_id] == "2496000_902400_-1"
+        first_ids = modes[0].split("|", 1)[0].split(":", 1)[1].split("_")
+        gpu_id = first_ids[4]
+        assert gpu_id == "901"
+        assert type_levels["GPU"][gpu_id] == "8_0_-1"
 
     print("XmlProfileGenerator shared CPU levels and mirrored OEM modes: OK")
 

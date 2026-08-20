@@ -122,6 +122,6 @@ if ($booted -ne '1') {
 $package = & $AdbPath -s $ConfirmAdbSerial shell dumpsys package com.zui.zuicontrol 2>&1
 if (($package -join "`n") -notmatch 'versionCode=39\b' -or
     ($package -join "`n") -notmatch 'versionName=0\.21\.2\b') {
-    throw "Device rebooted, but ZuiControl is not 39/0.21.2. Log: $log"
+    throw "Device rebooted, but ZuiControl is not 40/0.21.3. Log: $log"
 }
-Write-Host "9008 flash and reboot passed; device reports ZuiControl 39/0.21.2. Log: $log"
+Write-Host "9008 flash and reboot passed; device reports ZuiControl 40/0.21.3. Log: $log"
