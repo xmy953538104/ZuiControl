@@ -585,10 +585,13 @@ test_appopt_rule_commands() (
         fail 'valid AppOpt rule was not written canonically'
     [[ "${TEST_SETTINGS[$APPOPT_RULES_KEY]-}" == 'com.example.user=0-1' ]] ||
         fail 'AppOpt rules state was not published'
+    set_appopt_rule com.example.user 3-6 || fail 'custom contiguous AppOpt range was rejected'
+    grep -qx 'com.example.user=3-6' "$APPOPT_CONFIG" ||
+        fail 'custom contiguous AppOpt range was not written canonically'
 
     cp "$APPOPT_CONFIG" "$TEST_ROOT/appopt_before_reject"
     set_appopt_rule com.android.systemui 0-1 && fail 'system AppOpt package was accepted'
-    set_appopt_rule com.example.user 0-3 && fail 'free AppOpt preset was accepted'
+    set_appopt_rule com.example.user 6-3 && fail 'reversed AppOpt range was accepted'
     cmp -s "$APPOPT_CONFIG" "$TEST_ROOT/appopt_before_reject" ||
         fail 'rejected AppOpt request changed config'
 
@@ -802,7 +805,7 @@ test_appopt_batch_replace() (
     am() { rm -f "$TEST_ROOT/running_batch_target"; return 0; }
     sleep() { :; }
 
-    replace_appopt_rules 'com.example.user=2-6;com.example.user{RenderThread}=2-4;com.example.user{GameThread}=7;com.example.other=5-7' ||
+    replace_appopt_rules 'com.example.user=2-6;com.example.user{RenderThread}=2-4;com.example.user{GameThread}=7;com.example.other=3-6' ||
         fail 'valid AppOpt batch was rejected'
     grep -qx 'com.example.user=2-6' "$APPOPT_CONFIG" ||
         fail 'batch fallback rule missing'
@@ -810,7 +813,7 @@ test_appopt_batch_replace() (
         fail 'batch render rule missing'
     grep -qx 'com.example.user{GameThread}=7' "$APPOPT_CONFIG" ||
         fail 'batch game rule missing'
-    grep -qx 'com.example.other=5-7' "$APPOPT_CONFIG" ||
+    grep -qx 'com.example.other=3-6' "$APPOPT_CONFIG" ||
         fail 'second batch rule missing'
     [[ ! -e "$TEST_ROOT/running_batch_target" ]] ||
         fail 'batch did not stop a running target'

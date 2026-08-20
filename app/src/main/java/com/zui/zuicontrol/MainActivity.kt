@@ -8,6 +8,7 @@ import android.content.res.Configuration
 import android.content.pm.ApplicationInfo
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -21,6 +22,7 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.BaseAdapter
 import android.widget.EditText
@@ -91,8 +93,15 @@ class MainActivity : Activity() {
     private var currentThermalZone = ThermalZone.NORMAL
     private val thermalDrafts = mutableMapOf<ThermalZone, FrequencyBundle>()
 
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = COLOR_BG
+        window.navigationBarColor = COLOR_BG
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
         reloadState()
         selectedPackage = savedInstanceState?.getString(STATE_PERFORMANCE_PACKAGE)
         val initialAppOptRules = LinkedHashMap(appOptRules)
@@ -109,7 +118,7 @@ class MainActivity : Activity() {
             performanceEditorOpen = true
             renderCurrentPage()
         }
-        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
+        if (!BuildConfig.DEBUG) {
             handler.postDelayed({ ZuiControlQuickService.start(this) }, 250)
         }
     }
@@ -185,7 +194,7 @@ class MainActivity : Activity() {
                 addView(headerStatus)
             }
             addView(titleBox, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(iconButton(R.drawable.ic_nav_refresh, "刷新状态") {
+            addView(iconButton(R.drawable.ic_action_refresh, "刷新状态") {
                 sendCommand("正在刷新", refreshNotification = true) {
                     ZuiControlRequest.send(this@MainActivity, ZuiControlContract.CMD_STATUS)
                 }
@@ -203,6 +212,7 @@ class MainActivity : Activity() {
         val row = LinearLayout(this).apply {
             orientation = if (horizontal) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             gravity = Gravity.CENTER
+            setBackgroundColor(COLOR_BG)
         }
         val map = linkedMapOf<Page, TextView>()
         Page.entries.filter { it != Page.SYSTEM }.forEach { page ->
@@ -336,34 +346,51 @@ class MainActivity : Activity() {
             refreshRulesHost.addView(emptyText("点击右下角 + 添加应用"), matchWrap())
             return
         }
-        refreshRules.forEach { (pkg, rate) ->
-            val card = horizontalRow().apply {
-                setPadding(dp(14), dp(12), dp(14), dp(12))
-                background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
-                elevation = dp(1).toFloat()
-                addView(appIcon(pkg), LinearLayout.LayoutParams(dp(44), dp(44)))
-                val text = vertical().apply {
-                    addView(label(labelForPackage(pkg), 15f, COLOR_TEXT, Typeface.BOLD))
-                    addView(label("点击修改刷新率", 11f, COLOR_SUBTLE, Typeface.NORMAL))
-                }
-                addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    setMargins(dp(12), 0, dp(12), 0)
-                })
-                addView(rateBadge("${rate}Hz"), LinearLayout.LayoutParams(dp(82), dp(38)))
-                setOnClickListener { showRefreshRateDialog(pkg, rate) }
+        val columns = if (isWideLayout()) 3 else 2
+        refreshRules.entries.chunked(columns).forEach { entries ->
+            val row = horizontalRow().apply {
+                background = null
+                elevation = 0f
+                setPadding(0, 0, 0, 0)
             }
-            refreshRulesHost.addView(card, cardMargins())
+            entries.forEachIndexed { index, (pkg, rate) ->
+                val card = horizontalRow().apply {
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                    background = rounded(Color.WHITE, dp(20), Color.TRANSPARENT)
+                    elevation = 0f
+                    addView(appIcon(pkg), LinearLayout.LayoutParams(dp(42), dp(42)))
+                    addView(label(labelForPackage(pkg), 12f, COLOR_TEXT, Typeface.BOLD).apply {
+                        gravity = Gravity.CENTER_VERTICAL
+                        maxLines = 1
+                    }, LinearLayout.LayoutParams(
+                        0,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        1f,
+                    ).apply { setMargins(dp(10), 0, dp(8), 0) })
+                    addView(rateBadge("${rate}Hz"), LinearLayout.LayoutParams(dp(78), dp(38)).apply {
+                        setMargins(0, 0, 0, 0)
+                    })
+                    setOnClickListener { showRefreshRateDialog(pkg, rate) }
+                }
+                row.addView(card, LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    1f,
+                ).apply {
+                    if (index > 0) setMargins(dp(8), 0, 0, 0)
+                })
+            }
+            repeat(columns - entries.size) { index ->
+                row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply {
+                    if (entries.isNotEmpty() || index > 0) setMargins(dp(8), 0, 0, 0)
+                })
+            }
+            refreshRulesHost.addView(row, cardMargins())
         }
     }
 
     private fun showRefreshRateDialog(pkg: String, currentRate: Int?) {
-        val labels = ZuiControlContract.rates.map { rate ->
-            if (rate == RefreshSceneController.BASE_REFRESH_RATE) {
-                "默认 · ${rate}Hz"
-            } else {
-                "${rate}Hz"
-            }
-        }
+        val labels = ZuiControlContract.rates.map { rate -> "${rate}Hz" }
         val ratePicker = traySpinner(labels) {}
         ratePicker.setSelection(
             ZuiControlContract.rates.indexOf(currentRate).takeIf { it >= 0 }
@@ -390,15 +417,11 @@ class MainActivity : Activity() {
                 }
             }
             .setNegativeButton("取消", null)
-            .show()
+            .showStyled()
     }
 
     private fun setRefreshProfile(pkg: String, rate: Int) {
-        val message = if (rate == RefreshSceneController.BASE_REFRESH_RATE) {
-            "正在恢复默认"
-        } else {
-            "正在设置 ${rate}Hz"
-        }
+        val message = "正在设置 ${rate}Hz"
         sendCommand(message, refreshNotification = true) {
             val reply = ZuiControlClient.setPackageDisplayHz(pkg, rate)
             if (!reply.ok) {
@@ -481,7 +504,7 @@ class MainActivity : Activity() {
 
             addView(fieldTitle("游戏帧率"), fieldMargins())
             framePolicySpinner = traySpinner(
-                listOf("默认 · 性能 120 / 省电 60", "统一 60Hz", "跟随应用刷新率"),
+                listOf("性能 120Hz / 省电 60Hz", "统一 60Hz", "跟随应用刷新率"),
             ) {
                 if (!loadingPerformanceForm) updatePolicySummary()
             }
@@ -570,7 +593,7 @@ class MainActivity : Activity() {
 
             addView(actionPair(
                 primaryButton("保存并应用") { savePerformanceProfile() },
-                commandButton("删除并应用") { removePerformanceProfile() },
+                dangerButton("删除并应用") { removePerformanceProfile() },
             ), buttonMargins())
         }
 
@@ -1037,7 +1060,7 @@ class MainActivity : Activity() {
                 }
             }
             .setNegativeButton("取消", null)
-            .show()
+            .showStyled()
     }
 
     private fun buildAppOptPage(): View {
@@ -1067,21 +1090,25 @@ class MainActivity : Activity() {
 
     private fun buildSystemPage(): View {
         val scroll = ScrollView(this)
-        val root = vertical()
+        val root = vertical().apply { setPadding(0, 0, 0, dp(20)) }
         scroll.addView(root)
 
         systemStatus = compactNote("")
         root.addView(systemStatus)
 
         root.addView(sectionTitle("工具"), sectionMargins())
-        root.addView(settingsAction("导出运行日志", "用于排查 P1、P2 与 AppOpt") { exportLogs() })
-        root.addView(settingsAction("导入 AppOpt 备份", AppOptConfig.DISPLAY_PATH) { importAppOptConfig() }, cardMargins())
-        root.addView(settingsAction("导出 AppOpt 备份", AppOptConfig.DISPLAY_PATH) {
+        root.addView(settingsAction(R.drawable.ic_action_logs, "导出运行日志", "排查刷新率、性能与 AppOpt") {
+            exportLogs()
+        }, settingsActionMargins())
+        root.addView(settingsAction(R.drawable.ic_action_import, "导入 AppOpt 备份", AppOptConfig.DISPLAY_PATH) {
+            importAppOptConfig()
+        }, settingsActionMargins(spaced = true))
+        root.addView(settingsAction(R.drawable.ic_action_export, "导出 AppOpt 备份", AppOptConfig.DISPLAY_PATH) {
             syncAppOptConfig(showToast = true)
-        }, cardMargins())
-        root.addView(settingsAction("停止 AppOpt", "保留规则，停止线程放置服务") {
+        }, settingsActionMargins(spaced = true))
+        root.addView(settingsAction(R.drawable.ic_action_stop, "停止 AppOpt", "保留规则，仅停止线程放置") {
             confirmStopAppOpt()
-        }, cardMargins())
+        }, settingsActionMargins(spaced = true))
         renderSystemState()
         return scroll
     }
@@ -1118,8 +1145,8 @@ class MainActivity : Activity() {
                     addView(label(
                         when {
                             !userApp -> "应用已卸载 · 点击删除"
-                            rule.threadRules.isEmpty() -> "整包 · CPU ${rule.preset.cpuSet}"
-                            else -> "8 Gen 3 线程模板 · ${rule.totalRules} 条规则"
+                            rule.threadRules.isEmpty() -> "整包自定义 · ${rule.preset.cpuSet}"
+                            else -> "8 Gen 3 优化 · ${rule.totalRules} 条规则"
                         },
                         11f,
                         COLOR_SUBTLE,
@@ -1128,7 +1155,7 @@ class MainActivity : Activity() {
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                     setMargins(dp(12), 0, dp(12), 0)
                 })
-                addView(rateBadge(if (rule.threadRules.isEmpty()) "整包" else "线程"),
+                addView(rateBadge(if (rule.threadRules.isEmpty()) "整包" else "优化"),
                     LinearLayout.LayoutParams(dp(70), dp(38)))
                 setOnClickListener {
                     if (userApp) showAppOptPresetDialog(rule.packageName, rule.preset)
@@ -1148,23 +1175,60 @@ class MainActivity : Activity() {
             return
         }
         val template = appOptTemplates[pkg]
-        val packagePresets = AppOptPreset.packagePresets
-        val modes = if (template == null) listOf("整包") else listOf("8 Gen 3 线程模板", "整包")
+        val modes = if (template == null) listOf("整包自定义") else listOf("8 Gen 3 优化", "整包自定义")
         val modePicker = traySpinner(modes) {}
-        val presetPicker = traySpinner(packagePresets.map { it.displayName }) {}
-        presetPicker.setSelection(packagePresets.indexOf(current).takeIf { it >= 0 } ?: 0)
         val summary = compactNote("")
+        val selectedCores = linkedSetOf<Int>()
+        (current ?: AppOptPreset.GAME_BACKGROUND).cpuSet.split('-')
+            .mapNotNull { it.toIntOrNull() }
+            .take(2)
+            .forEach(selectedCores::add)
+        val coreButtons = mutableListOf<TextView>()
+        val coreSummary = compactNote("")
+        val coreControls = vertical().apply {
+            addView(fieldTitle("核心选项"))
+            addView(horizontalRow().apply {
+                background = null
+                elevation = 0f
+                setPadding(0, 0, 0, 0)
+                (0..7).forEach { core ->
+                    val button = chip(core.toString()).apply {
+                        contentDescription = "CPU$core"
+                        setOnClickListener {
+                            if (!selectedCores.remove(core)) {
+                                if (selectedCores.size == 2) selectedCores.clear()
+                                selectedCores += core
+                            }
+                            updateCoreRangeButtons(coreButtons, selectedCores, coreSummary)
+                        }
+                    }
+                    coreButtons += button
+                    addView(button, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                        if (core > 0) setMargins(dp(5), 0, 0, 0)
+                    })
+                }
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { setMargins(0, dp(8), 0, 0) })
+            addView(coreSummary, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { setMargins(0, dp(8), 0, 0) })
+        }
+        updateCoreRangeButtons(coreButtons, selectedCores, coreSummary)
         fun updateMode(position: Int) {
             val useTemplate = template != null && position == 0
-            presetPicker.visibility = if (useTemplate) View.GONE else View.VISIBLE
+            coreControls.visibility = if (useTemplate) View.GONE else View.VISIBLE
+            summary.visibility = if (useTemplate) View.VISIBLE else View.GONE
             summary.text = if (useTemplate) {
                 val preview = template!!.threadRules.take(4).joinToString(" · ") {
                     "${it.pattern}→${it.preset.cpuSet}"
                 }
-                "未命中线程→${template.preset.cpuSet} · $preview" +
+                "整包兜底 ${template.preset.cpuSet} · $preview" +
                     if (template.threadRules.size > 4) " · 另 ${template.threadRules.size - 4} 条" else ""
             } else {
-                "所有线程使用同一 CPU 集合"
+                ""
             }
         }
         modePicker.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -1184,11 +1248,8 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48),
             ).apply { setMargins(0, dp(6), 0, 0) })
-            addView(presetPicker, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48),
-            ).apply { setMargins(0, dp(8), 0, 0) })
             addView(summary, fieldMargins())
+            addView(coreControls, fieldMargins())
         }
         AlertDialog.Builder(this)
             .setTitle(if (currentRule == null) "添加 AppOpt" else "编辑 AppOpt")
@@ -1199,7 +1260,11 @@ class MainActivity : Activity() {
                     rules[pkg] = template
                     applyAppOptRules(rules, "正在应用线程模板", "线程模板已应用")
                 } else {
-                    setAppOptRule(pkg, packagePresets[presetPicker.selectedItemPosition])
+                    val endpoints = selectedCores.sorted()
+                    val preset = endpoints.firstOrNull()?.let { first ->
+                        AppOptPreset.fromEndpoints(first, endpoints.getOrElse(1) { first })
+                    }
+                    if (preset == null) toast("请至少选择一个核心") else setAppOptRule(pkg, preset)
                 }
             }
             .apply {
@@ -1208,7 +1273,7 @@ class MainActivity : Activity() {
                 }
             }
             .setNegativeButton("取消", null)
-            .show()
+            .showStyled()
     }
 
     private fun setAppOptRule(pkg: String, preset: AppOptPreset) {
@@ -1250,7 +1315,7 @@ class MainActivity : Activity() {
                 }
             }
             .setNegativeButton("取消", null)
-            .show()
+            .showStyled()
     }
 
     private fun confirmStopAppOpt() {
@@ -1265,7 +1330,7 @@ class MainActivity : Activity() {
                 }
             }
             .setNegativeButton("取消", null)
-            .show()
+            .showStyled()
     }
 
     private fun importAppOptConfig() {
@@ -1287,7 +1352,7 @@ class MainActivity : Activity() {
                         applyAppOptRules(rules, "正在导入 AppOpt 配置", "配置已导入")
                     }
                     .setNegativeButton("取消", null)
-                    .show()
+                    .showStyled()
             }
         }.start()
     }
@@ -1490,7 +1555,7 @@ class MainActivity : Activity() {
             .setTitle(title)
             .setView(root)
             .setNegativeButton("取消", null)
-            .create()
+            .createStyled()
         val adapter = PackagePickerAdapter()
         list.adapter = adapter
         list.setOnItemClickListener { _, _, position, _ ->
@@ -1628,7 +1693,7 @@ class MainActivity : Activity() {
                 }
                 reloadState()
                 renderCurrentPage()
-                if (ack?.succeeded == true && refreshNotification) {
+                if (ack?.succeeded == true && refreshNotification && !BuildConfig.DEBUG) {
                     ZuiControlQuickService.start(this)
                 }
                 if (ack != null) {
@@ -1661,9 +1726,66 @@ class MainActivity : Activity() {
             .setTitle(title)
             .setView(row)
             .setCancelable(false)
-            .create()
+            .createStyled()
         dialog.setCanceledOnTouchOutside(false)
         return dialog to progressText
+    }
+
+    private fun AlertDialog.Builder.showStyled(): AlertDialog =
+        createStyled().also(AlertDialog::show)
+
+    private fun AlertDialog.Builder.createStyled(): AlertDialog = create().apply {
+        setOnShowListener { styleDialog(this) }
+    }
+
+    private fun styleDialog(dialog: AlertDialog) {
+        val window = dialog.window ?: return
+        window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window.attributes = window.attributes.apply { dimAmount = 0.34f }
+        window.decorView.apply {
+            background = rounded(COLOR_SURFACE, dp(30), Color.TRANSPARENT)
+            clipToOutline = true
+            elevation = dp(8).toFloat()
+        }
+        val width = (resources.displayMetrics.widthPixels - dp(32)).coerceAtMost(dp(520))
+        window.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.apply {
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            includeFontPadding = false
+            background = rounded(COLOR_ACCENT, dp(19), COLOR_ACCENT)
+            setPadding(dp(14), 0, dp(14), 0)
+            minWidth = 0
+            minimumWidth = 0
+            minHeight = 0
+            minimumHeight = 0
+            layoutParams = layoutParams.apply {
+                this.width = dp(78)
+                this.height = dp(38)
+            }
+        }
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.apply {
+            isAllCaps = false
+            setTextColor(COLOR_ACCENT)
+            background = ColorDrawable(Color.TRANSPARENT)
+        }
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.apply {
+            isAllCaps = false
+            setTextColor(COLOR_DANGER)
+            background = ColorDrawable(Color.TRANSPARENT)
+        }
+        val titleId = resources.getIdentifier("alertTitle", "id", "android")
+        dialog.findViewById<TextView>(titleId)?.apply {
+            setTextColor(COLOR_TEXT)
+            textSize = 20f
+        }
+        dialog.findViewById<TextView>(android.R.id.message)?.apply {
+            setTextColor(COLOR_SUBTLE)
+            textSize = 14f
+            setLineSpacing(dp(3).toFloat(), 1f)
+        }
     }
 
     private fun ensureSelectedPerformanceProfile() {
@@ -1791,7 +1913,7 @@ class MainActivity : Activity() {
             .setTitle(title)
             .setMessage(frequencyHelp(title, available))
             .setPositiveButton("知道了", null)
-            .show()
+            .showStyled()
     }
 
     private fun labelForPackage(pkg: String): String {
@@ -1825,8 +1947,8 @@ class MainActivity : Activity() {
 
     private fun panel() = LinearLayout(this).apply {
         setPadding(dp(18), dp(18), dp(18), dp(18))
-        background = rounded(Color.WHITE, dp(20), Color.TRANSPARENT)
-        elevation = dp(1).toFloat()
+        background = rounded(COLOR_SURFACE, dp(24), Color.TRANSPARENT)
+        elevation = 0f
     }
 
     private fun sectionTitle(text: String) = label(text, 18f, COLOR_TEXT, Typeface.BOLD)
@@ -1942,6 +2064,13 @@ class MainActivity : Activity() {
             setOnClickListener { action() }
         }
 
+    private fun dangerButton(text: String, action: () -> Unit) =
+        label(text, 13f, COLOR_DANGER, Typeface.BOLD).apply {
+            gravity = Gravity.CENTER
+            background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
+            setOnClickListener { action() }
+        }
+
     private fun iconButton(iconRes: Int, description: String, action: () -> Unit) =
         ImageView(this).apply {
             contentDescription = description
@@ -1959,7 +2088,7 @@ class MainActivity : Activity() {
             includeFontPadding = false
             contentDescription = "添加"
             background = rounded(COLOR_ACCENT, dp(27), COLOR_ACCENT)
-            elevation = dp(5).toFloat()
+            elevation = 0f
             setOnClickListener { action() }
         }
 
@@ -1967,6 +2096,8 @@ class MainActivity : Activity() {
         Spinner(this).apply {
             adapter = SimpleTextAdapter(items)
             background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
+            setPopupBackgroundDrawable(rounded(COLOR_SURFACE, dp(24), Color.TRANSPARENT))
+            dropDownVerticalOffset = dp(4)
             setPadding(dp(6), 0, dp(6), 0)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onNothingSelected(parent: AdapterView<*>?) = Unit
@@ -1995,11 +2126,21 @@ class MainActivity : Activity() {
             })
     }
 
-    private fun settingsAction(title: String, subtitle: String, action: () -> Unit) =
+    private fun settingsAction(iconRes: Int, title: String, subtitle: String, action: () -> Unit) =
         horizontalRow().apply {
-            setPadding(dp(16), dp(13), dp(16), dp(13))
-            background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
-            elevation = dp(1).toFloat()
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rounded(COLOR_FIELD, dp(18), Color.TRANSPARENT)
+            elevation = 0f
+            minimumHeight = dp(68)
+            addView(ImageView(this@MainActivity).apply {
+                setImageResource(iconRes)
+                imageTintList = ColorStateList.valueOf(COLOR_SUBTLE)
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                background = rounded(COLOR_SURFACE, dp(18), Color.TRANSPARENT)
+            }, LinearLayout.LayoutParams(dp(38), dp(38)).apply {
+                setMargins(0, 0, dp(12), 0)
+            })
             addView(vertical().apply {
                 addView(label(title, 14f, COLOR_TEXT, Typeface.BOLD))
                 addView(label(subtitle, 11f, COLOR_SUBTLE, Typeface.NORMAL))
@@ -2023,6 +2164,20 @@ class MainActivity : Activity() {
             dp(22),
             if (selected) COLOR_ACCENT else Color.TRANSPARENT,
         )
+    }
+
+    private fun updateCoreRangeButtons(
+        buttons: List<TextView>,
+        selectedCores: Set<Int>,
+        summary: TextView,
+    ) {
+        buttons.forEachIndexed { core, button -> styleChip(button, core in selectedCores) }
+        val endpoints = selectedCores.sorted()
+        summary.text = when (endpoints.size) {
+            0 -> "至少选择一个核心"
+            1 -> "使用 CPU${endpoints[0]}"
+            else -> "连续范围 CPU${endpoints[0]}–CPU${endpoints[1]}（包含中间核心）"
+        }
     }
 
     private fun label(value: String, size: Float, color: Int, style: Int) = TextView(this).apply {
@@ -2070,6 +2225,13 @@ class MainActivity : Activity() {
         ViewGroup.LayoutParams.WRAP_CONTENT,
     ).apply {
         setMargins(0, 0, 0, dp(8))
+    }
+
+    private fun settingsActionMargins(spaced: Boolean = false) = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        dp(68),
+    ).apply {
+        setMargins(0, if (spaced) dp(8) else 0, 0, 0)
     }
 
     private fun dp(value: Int): Int =
@@ -2162,8 +2324,10 @@ class MainActivity : Activity() {
 
         override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup?): View =
             label(items[position], 14f, COLOR_TEXT, Typeface.NORMAL).apply {
-                setPadding(dp(16), dp(12), dp(16), dp(12))
-                background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
+                minHeight = dp(48)
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(18), dp(12), dp(18), dp(12))
+                background = ColorDrawable(Color.TRANSPARENT)
             }
     }
 
@@ -2195,7 +2359,7 @@ class MainActivity : Activity() {
     }
 
     private enum class Page(val title: String, val iconRes: Int) {
-        REFRESH("刷新率", R.drawable.ic_nav_refresh),
+        REFRESH("刷新率", R.drawable.ic_nav_display_rate),
         PERFORMANCE("性能", R.drawable.ic_nav_performance),
         APPOPT("AppOpt", R.drawable.ic_nav_appopt),
         SYSTEM("系统", R.drawable.ic_nav_system),
@@ -2207,12 +2371,14 @@ class MainActivity : Activity() {
         private const val STATE_PERFORMANCE_EDITOR = "performance_editor"
         private const val STATE_PERFORMANCE_PACKAGE = "performance_package"
         private val COLOR_BG = Color.rgb(248, 247, 252)
+        private val COLOR_SURFACE = Color.rgb(250, 249, 253)
         private val COLOR_FIELD = Color.rgb(240, 241, 247)
         private val COLOR_NOTE = Color.rgb(245, 247, 241)
         private val COLOR_SELECTED = Color.rgb(224, 230, 248)
         private val COLOR_TEXT = Color.rgb(34, 35, 42)
         private val COLOR_SUBTLE = Color.rgb(87, 89, 99)
         private val COLOR_ACCENT = Color.rgb(68, 91, 139)
+        private val COLOR_DANGER = Color.rgb(168, 62, 67)
         private val LITTLE_FREQS = intArrayOf(
             364800, 460800, 556800, 672000, 787200, 902400, 1017600, 1132800,
             1248000, 1344000, 1459200, 1574400, 1689600, 1804800, 1920000,

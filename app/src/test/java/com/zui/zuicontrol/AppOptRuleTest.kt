@@ -19,11 +19,15 @@ class AppOptRuleTest {
         assertEquals(AppOptPreset.GAME_BACKGROUND, rules["com.example.game"]?.preset)
         assertEquals(2, rules["com.example.game"]?.threadRules?.size)
 
-        val legacy = AppOptRules.parse("com.example.all|0-7\ncom.example.invalid|2-3")
+        val legacy = AppOptRules.parse("com.example.all|0-7\ncom.example.invalid|7-2")
         assertEquals(AppOptPreset.ALL, legacy["com.example.all"]?.preset)
         assertFalse(legacy.containsKey("com.example.invalid"))
         assertFalse(AppOptPreset.PERFORMANCE_CLUSTER.canUseAsPackagePreset)
         assertFalse(AppOptPreset.PRIME.canUseAsPackagePreset)
         assertEquals(5, AppOptPreset.packagePresets.size)
+        assertEquals("2-7", AppOptPreset.fromEndpoints(7, 2)?.cpuSet)
+        assertEquals("3", AppOptPreset.fromEndpoints(3)?.cpuSet)
+        assertEquals(null, AppOptPreset.fromCpuSet("6-2"))
+        assertEquals(null, AppOptPreset.fromCpuSet("01"))
     }
 }

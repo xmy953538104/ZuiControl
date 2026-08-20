@@ -18,7 +18,7 @@ class AppOptConfigTest {
             com.example.one=2-6
             com.example.one{RenderThread}=2-4
             com.example.one{GameThread}=7
-            com.example.two=5-7
+            com.example.two=3-6
             """.trimIndent(),
         )
 
@@ -26,7 +26,7 @@ class AppOptConfigTest {
         assertEquals(2, rules["com.example.one"]?.threadRules?.size)
         assertEquals(
             "com.example.one=2-6;com.example.one{RenderThread}=2-4;" +
-                "com.example.one{GameThread}=7;com.example.two=5-7",
+                "com.example.one{GameThread}=7;com.example.two=3-6",
             AppOptConfig.payload(rules),
         )
         assertThrows(IllegalArgumentException::class.java) {
@@ -37,7 +37,7 @@ class AppOptConfigTest {
             AppOptConfig.parse("com.example.one{GameThread}=7")
         }
         assertThrows(IllegalArgumentException::class.java) {
-            AppOptConfig.parse("com.example.one=3-6")
+            AppOptConfig.parse("com.example.one=6-3")
         }
     }
 }

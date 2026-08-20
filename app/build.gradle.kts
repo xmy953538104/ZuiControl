@@ -5,13 +5,14 @@ plugins {
 android {
     namespace = "com.zui.zuicontrol"
     compileSdk = 35
+    buildFeatures.buildConfig = true
 
     defaultConfig {
         applicationId = "com.zui.zuicontrol"
         minSdk = 29
         targetSdk = 35
-        versionCode = 38
-        versionName = "0.21.1"
+        versionCode = 39
+        versionName = "0.21.2"
     }
 
     signingConfigs {

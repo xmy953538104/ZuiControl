@@ -75,7 +75,7 @@ object AppOptConfig {
     fun text(rules: Map<String, AppOptRule>): String = buildString {
         appendLine("# ZuiControl AppOpt 配置")
         appendLine("# 包名=CPU集合 是未命中线程的兜底；包名{线程通配符}=CPU集合 是覆盖规则")
-        appendLine("# CPU集合：2-6、2-4、7、0-7、0-4、5-7、0-1")
+        appendLine("# CPU集合：单核心 0..7，或连续范围 X-Y（例如 2-7）")
         canonicalLines(rules).forEach(::appendLine)
     }
 

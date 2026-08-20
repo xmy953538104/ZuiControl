@@ -1364,7 +1364,12 @@ valid_appopt_package_name() {
 
 valid_appopt_preset() {
     case "$1" in
-        2-6|2-4|7|0-7|0-4|5-7|0-1) return 0 ;;
+        [0-7]) return 0 ;;
+        [0-7]-[0-7])
+            appopt_range_start="${1%-*}"
+            appopt_range_end="${1#*-}"
+            [ "$appopt_range_start" -lt "$appopt_range_end" ] && return 0
+            ;;
     esac
     return 1
 }

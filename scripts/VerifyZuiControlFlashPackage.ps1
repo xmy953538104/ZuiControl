@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '38'
-$ExpectedVersionName = '0.21.1'
+$ExpectedVersionCode = '39'
+$ExpectedVersionName = '0.21.2'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -260,7 +260,7 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV38\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV39\ZuiControl.apk'
     $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
     $PreviousAppDirs = @(
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV30'),
@@ -270,7 +270,8 @@ try {
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV34'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV35'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV36'),
-        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV37')
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV37'),
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV38')
     )
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
@@ -322,7 +323,7 @@ try {
     if ($ActiveDefaultAppOptRules.Count -ne 0) {
         throw "Default AppOpt config must not contain active rules: $($ActiveDefaultAppOptRules -join '; ')"
     }
-    Assert-Contains $DefaultAppList '# Supported CPU sets: 2-6, 2-4, 7, 0-7, 0-4, 5-7, 0-1' 'validated AppOpt CPU sets'
+    Assert-Contains $DefaultAppList '# Supported CPU sets: one core 0..7, or a contiguous X-Y range such as 2-7' 'validated AppOpt CPU sets'
     Assert-Contains $DefaultAppList '# com.kurogame.mingchao=2-6' 'commented AppOpt fallback example'
     Assert-Contains $DefaultAppList '# com.kurogame.mingchao{RenderThread}=2-4' 'commented AppOpt render-thread example'
     Assert-Contains $DefaultAppList '# com.kurogame.mingchao{GameThread}=7' 'commented AppOpt game-thread example'
