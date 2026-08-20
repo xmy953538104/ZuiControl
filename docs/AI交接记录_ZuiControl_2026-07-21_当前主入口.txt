@@ -1,4 +1,4 @@
-ZuiControl 新聊天当前主入口 - 2026-08-20 0.10
+ZuiControl 新聊天当前主入口 - 2026-08-20 0.11
 
 一、先读什么
 
@@ -9,40 +9,39 @@ ZuiControl 新聊天当前主入口 - 2026-08-20 0.10
 4. 涉及自动 9008 刷机时再读：
    D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_9008_AUTOMATION_GUIDE_2026-08-18.md
 
-旧的 2026-06-21 P2-I/asoulOpt 入口和根目录长文只保留历史证据。当前事实以 AGENTS.md、主交接第 0.10 节和本入口为准。
+旧的 2026-06-21 P2-I/asoulOpt 入口和根目录长文只保留历史证据。当前事实以 AGENTS.md、主交接第 0.11 节和本入口为准。
 
 二、当前成品
 
 - 仓库：D:\3.VScode\Mi\ZuiControl
 - 成品：D:\3.VScode\Mi\【B刷机】187
 - 安全 9008 包：D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE
-- App：versionCode=38 / versionName=0.21.1
-- 生产代码 commit：84f3c97bf27f0cec7c8335aa0d164baf49e2b376
-- GitHub Actions run：32330351987（success）
-- App 路径：/system/priv-app/ZuiControlV38/ZuiControl.apk
+- App：versionCode=39 / versionName=0.21.2
+- 生产代码 commit：402b20c6e85a769587853f5195510ac0558f6f09
+- GitHub Actions run：32357568579（success）
+- App 路径：/system/priv-app/ZuiControlV39/ZuiControl.apk
 - boot SHA256：5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b
-- super SHA256：eaa6e5ea230fdff34fe2935a3ffe3d63c61521ed22826ce93a82cf7c8055cbce
+- super SHA256：e8980048c291eb7e33eb4b70875a00ab2dc680e1db86f016c7137ea826d58648
 - vbmeta SHA256：9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5
-- vbmeta_system SHA256：92e205e3d9571c3a42d376d7bf7b05f86e0897813f6c2b08abbe1084c71cf825
-- APK SHA256：5780bda644ce920c6072d6fa73f9dde486cc58f4037aba5ba271da0a38496d62
+- vbmeta_system SHA256：15d61f36eb6feeb1b0f0df09d71b8540c1c2f274df71e112cd1adad59dfeb593
+- APK SHA256：68eece15d4c2e3ca14d4d9a9669a196ab48b913ac870a53eeac981117ee3c19e
 - 最终 verifier：ok=true
-- 自动刷写日志：D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-20_12-19-00.log
+- 自动刷写日志：D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-20_18-25-38.log
 
-三、38/0.21.1 已实测状态
+三、39/0.21.2 已实测状态
 
-- 已通过安全 7 项 XML 从正常 Android 自动进入 COM3/9008、刷写、复位并确认 boot_completed、V38 和 38/0.21.1。日常更新禁止使用原始 99 项全量 XML。
-- UI：原生 Kotlin + Android Views；右上刷新/设置是图标居中的圆形按钮。竖屏底部居中三导航，横屏左侧居中 navigation rail，设置只在右上角。真实截图位于 D:\3.VScode\Mi\work\device_v38_release。
-- 刷新率：system_server 是唯一 owner，daemon refresh disabled，普通 shell Binder 被拒绝；鸣潮 60/60，桌面 144/144，无 lastError。底层是 adaptive render vote，静止页面可物理降档，不能描述成 UID FPS cap 或永不降档的硬锁；FPS cap 仍未交付。
-- P2：同值配置本地小于 1 秒返回，不重启 ZuiPP、不强停目标。真实改值约 11.7–13.1 秒；daemon 自动重载 ZuiPP、必要时自动停止运行中的目标，未运行返回 not_running。用户完成后只需从桌面重新打开。
-- P2：开机 ZuiPP 4804->6656，state=done/reason=boot_active/stableSeconds=3。active/system game hash 都为 cf787905a1a2d9a3afae69b7a48272ff0d86ff0e35c99d9a305e3dc31b634c1d，performance hash 都为 447277c22ba0d2cd378b05e2c99bc80d89d4fb57717deb78ac5ca760407e7a92，均为 bind mount。
-- 亮屏重入鸣潮闭合 onGameAppStart -> GameHelper initGameHelper -> notifyPerfStatus : 11 17 -> writeSavageMode；没有恢复 provider_direct。ZuiControl 添加/删除 P2 profile 会严格单向同步 Game Assistant，自定义列表自己的增删不反向改 ZuiControl。
-- AppOpt：同值配置本地小于 1 秒返回。真实改值约 9.2–10.9 秒；自动停止运行中的目标，完成后重开。鸣潮权威规则为 package 2-6、RenderThread 2-4、GameThread 7；新进程 taskset 实测分别为 7c、1c、80，证明真实生效。
-- 相机 STILL_IMAGE_CAMERA 与 IMAGE_CAPTURE 均通过；SurfaceFlinger 1647/387、cameraserver 1940/413 不变，无 tombstone、fatal、abort、DEAD_OBJECT 或设备重启。
-- 没有项目相关 AVC/fatal/ANR。云控保持完全删除，hosts 为官方 56 字节/hash，旧脚本、runtime、setting、iptables 链都不存在。
+- 已通过安全 7 项 XML 从正常 Android 自动进入 COM3/9008；super 13 GiB 和其余 6 项全部写到 100%，Firehose 返回 All went well，自动复位并确认同一 serial、boot_completed=1、V39 和 39/0.21.2。日常更新禁止使用原始 99 项全量 XML。
+- UI：原生 Kotlin + Android Views；刷新率卡为 App 图标+名称+Hz，竖屏两列/横屏三列；弹窗、托盘、二级按钮统一。设置页已删除白色套层，四个灰色工具项同高同宽同间距。持久 V39 实机截图位于 D:\3.VScode\Mi\work\device_v39_release。
+- 刷新率：system_server 是唯一 owner，daemon refresh disabled，普通 shell Binder 被拒绝。原 profile 保留桌面 144、鸣潮 60、MT 90、默认 120，无 SystemUI。六轮 Settings 120/120、MT 90/90、相机切换通过。底层仍是 adaptive render vote，静止页面允许物理降档；FPS cap 未交付。
+- P2：开机 ZuiPP 4713->6409，state=done/reason=boot_active/stableSeconds=3。active/system game hash 都为 cf787905a1a2d9a3afae69b7a48272ff0d86ff0e35c99d9a305e3dc31b634c1d，performance hash 都为 447277c22ba0d2cd378b05e2c99bc80d89d4fb57717deb78ac5ca760407e7a92，均为 bind mount。
+- 亮屏重入鸣潮闭合 onGameAppStart -> GameHelper initGameHelper -> notifyPerfStatus : 11 17 -> writeSavageMode；没有恢复 provider_direct。ZuiControl 添加/删除 P2 profile 严格单向同步 Game Assistant，自定义列表自身增删不反向改 ZuiControl。
+- AppOpt：service running，PID 7271，performanced 域。鸣潮权威规则为 package 2-6、RenderThread 2-4、GameThread 7；真实 /proc 读取确认精确 RenderThread=2-4、所有 GameThread=7、其余 TaskGraph/RHI fallback=2-6。0.21.2 的整包自定义支持 0..7 中任意连续单核或 X-Y 范围。
+- 相机 STILL_IMAGE_CAMERA 与 IMAGE_CAPTURE 均通过；boot ID 不变，SurfaceFlinger 1630/387、cameraserver 1928/414 在六轮切换中不变，无新 tombstone、fatal、abort、DEAD_OBJECT 或设备重启。
+- 没有项目相关 AVC/fatal/ANR。系统原生 system_server 和 cameraserver vendor_display_prop denial 仍存在，但没有造成项目或相机故障。云控保持完全删除，hosts 为官方 56 字节/hash，旧脚本、runtime、setting、iptables 链都不存在。
 - P2 XML CPU/GPU 上下限与 AppOpt 线程亲和互补，但过激参数会共同造成卡顿。XML 是 OEM 性能请求，不是不可被 thermal 覆盖的 hard cap。
 
 四、新聊天直接复制的首条消息
 
-请先完整读取 D:\3.VScode\Mi\AGENTS.md 和 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；涉及 P2 XML/ThermalConfig 时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md，涉及自动 9008 刷机时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_9008_AUTOMATION_GUIDE_2026-08-18.md。旧的 2026-06-21 P2-I/asoulOpt 和大篇历史文档只作历史，若冲突，以 AGENTS.md 和主交接第 0.10 节为准。
+请先完整读取 D:\3.VScode\Mi\AGENTS.md 和 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；涉及 P2 XML/ThermalConfig 时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md，涉及自动 9008 刷机时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_9008_AUTOMATION_GUIDE_2026-08-18.md。旧的 2026-06-21 P2-I/asoulOpt 和大篇历史文档只作历史，若冲突，以 AGENTS.md 和主交接第 0.11 节为准。
 
-当前工作区 D:\3.VScode\Mi，仓库 D:\3.VScode\Mi\ZuiControl。设备 HA25HSZM 已通过安全 7 项 9008 流程持久刷入 versionCode 38 / versionName 0.21.1（ZuiControlV38），成品在 D:\3.VScode\Mi\【B刷机】187，super SHA256=eaa6e5ea230fdff34fe2935a3ffe3d63c61521ed22826ce93a82cf7c8055cbce，APK SHA256=5780bda644ce920c6072d6fa73f9dde486cc58f4037aba5ba271da0a38496d62。0.21.1 已完成响应式统一 UI、P2/AppOpt 同值秒回、P2/Game Assistant 严格单向事务、ZuiPP 自动重载/目标自动停止、AppOpt 8 Gen 3 精确线程模板/真实内核亲和、相机、云控删除和项目 AVC 验收；最终只剩鸣潮 P2 profile，AppOpt 保留鸣潮三条规则。先只读确认状态；只有用户报告具体可复现问题时才做最小可恢复复现。不要进入 FPS cap，不改 P1，不恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt；新包只允许使用 scripts/FlashZuiControl9008.ps1 的 7 项安全包。
+当前工作区 D:\3.VScode\Mi，仓库 D:\3.VScode\Mi\ZuiControl。设备 HA25HSZM 已通过安全 7 项 9008 流程持久刷入 versionCode 39 / versionName 0.21.2（ZuiControlV39），成品在 D:\3.VScode\Mi\【B刷机】187，super SHA256=e8980048c291eb7e33eb4b70875a00ab2dc680e1db86f016c7137ea826d58648，APK SHA256=68eece15d4c2e3ca14d4d9a9669a196ab48b913ac870a53eeac981117ee3c19e。0.21.2 已完成 UI 收口、设置页去套层、AppOpt 连续核心范围、P2/Game Assistant 事务、ZuiPP 自动重载、真实线程亲和、相机、云控删除和项目 AVC 验收；最终只剩鸣潮 P2 profile，AppOpt 保留鸣潮三条规则。先只读确认状态；只有用户报告具体可复现问题时才做最小可恢复复现。不要进入 FPS cap，不改 P1，不恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt；新包只允许使用 scripts/FlashZuiControl9008.ps1 的 7 项安全包。
