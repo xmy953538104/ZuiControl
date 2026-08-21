@@ -13,7 +13,45 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.12 2026-08-21 0.21.3 P2 重入与 SM8650 GPU 索引修复（当前最新，V40 已刷后验收）
+### 0.13 2026-08-21 GPU 动态调频、隐藏温控与疑似限频残留（当前最新，只读现场）
+
+本节只覆盖 0.12 中 GPU/温控的当前现场和最短下一步；V40 发布、P1、P2 事务、AppOpt、相机、云控与 9008 结论仍以 0.12 为准。本轮没有改配置、代码或镜像，没有进入 FPS cap，也没有恢复 direct CPU/GPU sysfs。
+
+#### 当前设备基线
+
+- 设备仍是 `HA25HSZM`，PackageManager 为 40/0.21.3，codePath 应继续是 `ZuiControlV40`。
+- 当前 P2 有两条 canonical profile：`com.kurogame.mingchao` 和 `bin.mt.plus.canary`。因此 active XML 已不再是 0.12 刷后只有鸣潮时的 hash；当前 mounted hash 为 game `75cbf2ca9dc5b6c47831e14bf9fe7b520975e3e0c52af50da84a9cf8d127a244`、performance `ab7ac1c0d1a331c0f3dccc379f0f35ff7bd02660fe23b56efc07b4133725e09f`，reload terminal 为 `state=done;oldPid=26148;newPid=28226;stableSeconds=3`。
+- 鸣潮仍为默认温区 GPU 422–903MHz、42/48C 温区 500–903MHz；active XML 对应 `8_0_-1` / `7_0_-1`。这仍是 SM8650 实机证明过的正确消费方向，禁止按 `GPUMax/GPUMin` 表面名字改回 `0_8`。
+- AppOpt 权威配置仍是三条鸣潮规则：包 fallback `2-6`、`RenderThread=2-4`、`GameThread=7`。
+
+#### GPU 不是硬锁 903MHz
+
+- KGSL governor 为 `msm-adreno-tz`，`force_clk_on/force_bus_on/force_rail_on` 均为 0。桌面空闲实际会到 231MHz；累计 `trans_stat` 已记录 1885 次切换，903/834/770/720/680/629/578/500/422/366/310/231MHz 都出现过，903MHz 累计约 95 秒。因此“游戏里经常 903”本身不是锁频证据。
+- 判断必须把 `cur_freq` 与 `gpu_busy_percentage` 放在同一时间轴：903MHz 且忙碌率 80–100% 是负载跑满；903MHz 且忙碌率长期低于约 20% 才像错误锁频；忙碌率 80%以上而可用上限只有 578/422MHz 才是明确热/策略瓶颈。
+
+#### 本轮鸣潮实测与疑似残留
+
+- 两次亮屏正常启动都闭合 `onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode open=1`。ZuiPP JSON 与 active XML 一致：默认 `GPUMax=8/GPUMin=0`，42/48C 为 `GPUMax=7/GPUMin=0`；P2 没有漏读。
+- 第一轮高负载中 KGSL 先被限到 578MHz，随后降到 422MHz；422MHz 时 GPU 忙碌率长期 83–86%，构成真实 GPU 瓶颈。同期 CPU7/CPU2 等芯片结温出现 95C severe，`skin-msm-therm` 在 46.617C 进入 status 3，随后约 49.5C；当时 `quiet-therm` 仅约 40C、`back_temp` 约 41C，尚未触发 `gpu_0.conf` 的 quiet 44C 第一档。
+- 退出后 422MHz 先恢复为 578MHz，但设备完全冷却到 `skin=33.3C / quiet=32.5C / back=32.7C / battery=31.5C`、标准 GPU cooling devices 均为 0 后，KGSL 仍为 `thermal_pwrlevel=6/max=578MHz`。再次正常游戏重入且 P2 四段链完整时也没有升回 903MHz。因此当前是“高温后限频释放滞后或其他策略残留”的真实待查项；尚不能断言由哪一服务写入，也不能靠改 XML 猜修。
+- 最终现场已强停测试用鸣潮，Launcher 是最后真实场景，GPU 实际 231MHz/忙碌率约 1%，但允许上限仍为 578MHz、`thermal_pwrlevel=6`。
+
+#### 三份文本 conf 只覆盖一部分热控
+
+- `ThermalConfig=0` 映射 `cpu_0 + gpu_0 + battery_0`。`cpu_0` 从 quiet 40/42/44/46/48C 开始逐档限制；cluster1/2 上限依次为 2572.8/2188.8/1612.8/1075.2/499.2MHz，cluster3 为 2688/2112/1363.2/1017.6/480MHz。
+- `gpu_0` 在 quiet 44/46/48/50C 分别限制 720/629/500/231MHz。本轮 422MHz 发生在 quiet 约 40C，所以不是这四条文本规则直接造成。
+- `battery_0` 把 quiet 温度转换为 vendor `battery` virtual cooling state，不是直接的 CPU/GPU MHz 表。退出游戏后 state 由 12 降至 10/7 时，GPU 仍保持 578MHz，证明它不是唯一来源；没有完成作用映射前不要盲改。
+- `/vendor/bin/thermal-engine-v2` 内置而非文本保存 `SS-GPU-SKIN`、`SS-GPU-SKIN-TEMP`、`SS-SKIN-GPU-LOW/HIGH`、`GPU-TSKIN-SENSOR` 等策略，并持有 `max_gpuclk` 路径。Thermal HAL 另有 skin severe 46.5C、CPU/GPU junction severe 95C 等静态阈值。修改 `cpu_0/gpu_0/battery_0` 不能解除这些更底层限制。
+
+#### 新聊天最短下一步
+
+1. 先只读确认本节版本、两条 P2 profile、active/system hash、三条 AppOpt 规则和当前 KGSL/温度现场；不要保存配置、改 conf 或制作镜像。
+2. 记录重启前 `thermal_pwrlevel=6/max=578MHz`。征得用户当次确认后做一次正常冷机重启；开机后记录 Launcher 的 KGSL 基线，再亮屏从桌面启动鸣潮，连续采样 `cur/busy/min/max/thermal_pwrlevel`、skin/quiet/back、八个 gpuss 和 CPU junction，确认 P2 四段链后是否恢复 `thermal_pwrlevel=0/max=903MHz`。
+3. 不要为了复现主动把设备烧到 95C。用户正常游戏时被动观察第一次 severe、578/422 限制和退出后的释放时间；区分“桌面默认上限”“HAL/KGSL safety cap”和“未释放残留”。
+4. 在写入者和释放条件闭合前，不改三份 thermal conf。若以后只做中温实验，优先只软化 `cpu_0` 的 40/42C 两档，44C 以上、`gpu_0`、`battery_0`、skin 46.5C 与 junction 95C 先保持原样；任何改动都需独立版本和可回滚 9008 包。
+5. 本轮部分探测曾让 `shell` 子进程直接读 `vendor_sysfs_kgsl`，产生少量 `shell -> vendor_sysfs_kgsl` AVC；这是诊断命令噪声，不是 ZuiControl/daemon 新回归，不要为它扩大 SELinux。
+
+### 0.12 2026-08-21 0.21.3 P2 重入与 SM8650 GPU 索引修复（V40 已刷后验收；GPU 当前现场由 0.13 覆盖）
 
 本节覆盖 0.11 及更早章节中的当前版本、P2 GPU 范围语义、ZuiPP/GameHelper 重入时序、成品 hash 和下一步。设备 `HA25HSZM` 已通过安全 7 项 9008 流程持久刷入 40/0.21.3/V40，并完成身份、P1、P2 可逆修改/恢复、正常游戏重入、GPU/温控、AppOpt、相机、云控删除、AVC 和稳定性验收。当前不是临时 bind 或待刷状态。
 
@@ -1160,4 +1198,4 @@ ZuiControl/scripts/VerifyZuiControlFlashPackage.ps1
 
 ## 9. 新聊天首条消息
 
-本节原先保存过 30/0.20.1 的复制文本，现已作废。新聊天不要复制历史段落；直接使用同目录的 `AI交接记录_ZuiControl_2026-07-21_当前主入口.txt`，它与本文第 0.8 节保持一致。
+本节原先保存过 30/0.20.1 的复制文本，现已作废。新聊天不要复制历史段落；直接使用同目录的 `AI交接记录_ZuiControl_2026-07-21_当前主入口.txt`，它与本文第 0.13 节保持一致。

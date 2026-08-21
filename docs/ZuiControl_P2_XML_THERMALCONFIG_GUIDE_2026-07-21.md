@@ -6,6 +6,15 @@
 
 当前成品 App 为 `versionCode=40` / `versionName=0.21.3`，生产代码 commit 为 `1b58816`，GitHub Actions run 为 `32392494646`。最终 `super.img` SHA256 为 `25b8d9f0c80bed77c660200abd3cca92dff67db5549d19a0c94892d150ac6f3b`，成品反抽 verifier 已返回 `ok=true`。设备 `HA25HSZM` 已通过安全 7 项 9008 流程持久刷入 V40，并完成 P2 可逆修改/恢复、正常游戏重入和温控实测。真实改变保存实测 13.03–21.35 秒；目标运行时自动停止，未运行时返回 `target=not_running`。App 仍先比较 canonical 配置：完全同值时小于 1 秒返回，不写请求槽、不重启 ZuiPP、不停止目标；真实改变 XML 时执行受控重入。
 
+### 0.1 2026-08-21 GPU/温控追加现场
+
+- `8_0_-1` 仍是 SM8650 上用户 422–903MHz 的正确 XML 方向。本轮两次正常重入均闭合 OEM 四段链，ZuiPP JSON 也精确读到 `GPUMax=8/GPUMin=0`；不要因 KGSL 最终被压到 578/422MHz 就把 XML 改回旧的 `0_8`。
+- GPU 并非硬锁 903：governor 为 `msm-adreno-tz`、三个 force 开关为 0，`trans_stat` 记录所有 12 档和 1885 次切换。必须同时采样频率和 `gpu_busy_percentage`；高频且高忙碌率是正常跑满，高忙碌率但低上限才是瓶颈。
+- 高负载现场出现 CPU/GPU junction 95C、skin 46.617C severe；KGSL 从 578MHz 降到 422MHz且忙碌率 83–86%。当时 quiet 约 40C，低于 `gpu_0.conf` 的 44C 第一档，因此 422 不是该文本表直接触发。
+- 退出并完全冷却到 skin/quiet/back 约 33C 后，标准 GPU cooling state 已为 0，但 `thermal_pwrlevel=6/max=578MHz` 仍未释放；随后再次正常游戏重入、P2 链完整也未恢复 903。当前应按“热限释放滞后或其他策略残留”继续定位，先做经用户确认的冷机重启 A/B，禁止直接改 XML 或 sysfs掩盖。
+- `thermal-engine-v2` 二进制内置 `SS-GPU-SKIN`、`SS-GPU-SKIN-TEMP`、`SS-SKIN-GPU-LOW/HIGH`、`GPU-TSKIN-SENSOR` 等非文本 profile，并直接持有 `max_gpuclk` 路径；Thermal HAL 另有 skin 46.5C、CPU/GPU junction 95C 静态阈值。因此三份 case 0 文本 conf 只是一层，不拥有最终安全上限。
+- case 0 的 CPU 文本档位从 quiet 40C 开始，GPU文本档位从44C开始；`battery_0` 只是映射 vendor virtual cooling state。本轮 battery state 从12降到10/7而GPU仍为578，不能把它当成唯一写入者。
+
 当前生产模型：
 
 ```text

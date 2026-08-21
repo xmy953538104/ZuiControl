@@ -1,4 +1,4 @@
-ZuiControl 新聊天当前主入口 - 2026-08-21 0.12
+ZuiControl 新聊天当前主入口 - 2026-08-21 0.13
 
 一、先读什么
 
@@ -9,37 +9,46 @@ ZuiControl 新聊天当前主入口 - 2026-08-21 0.12
 4. 涉及自动 9008 刷机时再读：
    D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_9008_AUTOMATION_GUIDE_2026-08-18.md
 
-旧的 2026-06-21 P2-I/asoulOpt 入口和根目录长文只保留历史证据。当前事实以 AGENTS.md、主交接第 0.12 节和本入口为准。
+旧的 2026-06-21 P2-I/asoulOpt 入口和根目录长文只保留历史证据。当前事实以 AGENTS.md、主交接第 0.13 节和本入口为准。
 
-二、当前成品
+二、当前成品和设备
 
+- 工作区：D:\3.VScode\Mi
 - 仓库：D:\3.VScode\Mi\ZuiControl
-- 成品：D:\3.VScode\Mi\【B刷机】187
-- 安全 9008 包：D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE
-- 当前设备仍是已验收的 versionCode=39 / versionName=0.21.2（ZuiControlV39）
-- 新待刷修复包：versionCode=40 / versionName=0.21.3（ZuiControlV40）
+- 设备：HA25HSZM / TB321FU / ZUI 16.1.11.187
+- 已持久刷入并验收：versionCode=40 / versionName=0.21.3 / ZuiControlV40
 - 生产代码 commit：1b58816
 - GitHub Actions run：32392494646（success）
-- 新 App 路径：/system/priv-app/ZuiControlV40/ZuiControl.apk
-- boot SHA256：5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b
+- 成品：D:\3.VScode\Mi\【B刷机】187
+- 安全 9008 包：D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE
 - super SHA256：25b8d9f0c80bed77c660200abd3cca92dff67db5549d19a0c94892d150ac6f3b
-- vbmeta SHA256：9db326d3d605885c4afdac6b0883dc3f9c0bc2b9b1b3766cc4808945015967f5
-- vbmeta_system SHA256：d5770041b2ae6cc5e33b139175c826545c25b1323c1303517ed17442f67e9256
 - APK SHA256：b8eb282485a8fb89304a64bf1f59ade9c0bbe928530e3f8021ba8f959f32537b
-- 最终 verifier：ok=true
-- 边界：0.21.3 的 daemon 重入和 GPU 索引修复已在当前设备上分别可逆验证，最终 V40 镜像已反抽验收，但尚未持久刷入设备。
+- 最终 super 反抽 verifier：ok=true
+- 当前不是待刷、临时 bind 或旧 V39 状态。
 
-三、0.21.3 根因、修复与待刷验证
+三、当前配置
 
-- 当前 V39 仍保留已验收的 P1、UI、AppOpt 三条鸣潮规则、相机、云控删除和 SELinux 状态。本轮不改 P1，不进入 FPS cap。
-- 严重时序根因：旧 daemon 只杀 ZuiPP 并等新 PID，GameHelper 的多个 sticky service 会错过重入；新 ZuiPP 的 `PerformanceConnectHelper` 尚未初始化时，provider 会精确 NPE，因此看不到 `notifyPerfStatus 11/17`。0.21.3 改为顺序停 GameHelper -> 停 ZuiPP services -> TERM ZuiPP -> 等新 PID 稳定 3 秒 -> 显式启动 `PerformanceConnect` -> 预热 GameHelper 并稳定 2 秒。设备上临时精确替换 daemon 后，亮屏解锁从桌面启动鸣潮已闭合 `onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode open=1`。
-- GPU 直接根因：旧生成器把用户的 GPU max/min 按表面名字写成 `0_8_-1`，SM8650 TAssistant 实际把后者当成最终上限，所以即使 `quiet-therm=37.8C`、两个 thermal cooling state 都是 0，GPU 仍被锁在 422MHz；中高温配置的下限 500 又会变成 500MHz 上限。可逆实验改为 `8_0_-1` 后，ZuiPP 读到 `GPUMax=8,GPUMin=0`，冷机 `thermal_pwrlevel=0/max_gpuclk=903MHz`，频率可动态波动。0.21.3 已从生成器根修正次序，且通过模板 stamp 迫使升级开机从保留 profile 自动重生 XML，不用用户重新保存。
-- 温度并非没有中/高档：当前鸣潮 profile 有默认、42C、48C 三段，P2 取 `back_temp`；系统界面电池 41.6–42C 是另一个 `battery` 传感器。vendor `thermal-engine-v2`/Lenovo performance service/KGSL 主要根据 `quiet-therm`和芯片结温执行最终安全限制；`thermal-engine_gpu_0.conf` 在 quiet 44/46/48/50C 分别限 720/629/500/231MHz，这一安全链会合法覆盖 P2，本轮不修改。`ThermalConfig=0 0 0` 仍包含 user-case 0 的 cpu_0/gpu_0 安全热控，不是关闭温控。
-- 后台边界：“通知存在”就表示 App 的轻量前台 service 进程在运行，不是无进程的通知。但已保存 P1 由 system_server 执行，P2 由 XML/ZuiPP/GameHelper/zui_controld 执行，AppOpt 由 init 管理的原生 AppOpt 服务执行；即使强停 ZuiControl 导致快捷通知消失，三者已保存规则仍生效。
-- 刷 V40 后必须验证：PackageManager 40/0.21.3/V40；开机 XML 自动重生，鸣潮 GPU 422–903 应写为 `8_0_-1`（500–903 为 `7_0_-1`）；开机/Save reload terminal done；亮屏解锁正常启动闭合四段链；冷机无 thermal clamp 时 GPU max 为 903MHz 且可波动；再完整查 AppOpt、P1、相机、云控和 AVC。
+- P1 已验收，system_server 是唯一 refresh owner；不要进入 FPS cap，不改 P1。
+- 当前 P2 profile 有 com.kurogame.mingchao 和 bin.mt.plus.canary 两条。active/system mounted hash 为 game 75cbf2ca9dc5b6c47831e14bf9fe7b520975e3e0c52af50da84a9cf8d127a244、performance ab7ac1c0d1a331c0f3dccc379f0f35ff7bd02660fe23b56efc07b4133725e09f。
+- 鸣潮默认 GPU 422–903MHz 写为 8_0_-1；42/48C 的 500–903MHz 写为 7_0_-1。这是 SM8650 正确方向，禁止改回 0_8。
+- AppOpt 权威配置仍是：com.kurogame.mingchao=2-6、RenderThread=2-4、GameThread=7。
+- 相机、云控删除、SELinux 项目规则和自动安全 9008 流程都已验收，不要无原因重做或扩权。
 
-四、新聊天直接复制的首条消息
+四、最新未解决项
 
-请先完整读取 D:\3.VScode\Mi\AGENTS.md 和 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；涉及 P2 XML/ThermalConfig 时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md，涉及自动 9008 刷机时再读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_9008_AUTOMATION_GUIDE_2026-08-18.md。旧的 2026-06-21 P2-I/asoulOpt 和大篇历史文档只作历史，若冲突，以 AGENTS.md 和主交接第 0.12 节为准。
+- GPU不是硬锁903：governor=msm-adreno-tz，force开关均为0，桌面可到231MHz，trans_stat 已记录1885次和全部12档切换。游戏里903且忙碌率高是正常跑满。
+- 正常鸣潮重入已闭合 onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode open=1，P2没有漏读。
+- 高负载时 CPU/GPU junction 出现95C、skin 46.617C severe，KGSL上限从578降到422MHz；422时GPU忙碌率83–86%，会真实掉帧。
+- 当时 quiet 约40C，低于 gpu_0.conf 的44C第一档，所以422不是三份文本conf直接造成。
+- 退出并冷却到 skin=33.3C、quiet=32.5C、back=32.7C、battery=31.5C 后，GPU标准 cooling state为0，但 thermal_pwrlevel=6/max=578MHz 仍未释放；再次正常游戏重入且P2四段链完整时也没有恢复903。当前需定位“高温后限频释放滞后或其他策略残留”。
+- thermal-engine-v2 二进制内置 SS-GPU-SKIN、SS-GPU-SKIN-TEMP、SS-SKIN-GPU-LOW/HIGH 等隐藏策略；Thermal HAL 另有 skin 46.5C 和 junction 95C 静态阈值。只改 cpu_0/gpu_0/battery_0 不能解除全部限制。
+- 最终现场已强停测试鸣潮；Launcher 是最后真实场景，GPU实际231MHz/约1%忙碌率，但允许上限仍为578MHz、thermal_pwrlevel=6。
+- 本轮只读探测产生了少量 shell -> vendor_sysfs_kgsl AVC，是诊断命令噪声，不是项目回归，不要为它扩大SELinux。
 
-当前工作区 D:\3.VScode\Mi，仓库 D:\3.VScode\Mi\ZuiControl，设备 HA25HSZM 仍运行已验收的 39/0.21.2/V39。新待刷包 40/0.21.3/V40 已放入 D:\3.VScode\Mi\【B刷机】187，super SHA256=25b8d9f0c80bed77c660200abd3cca92dff67db5549d19a0c94892d150ac6f3b，APK SHA256=b8eb282485a8fb89304a64bf1f59ade9c0bbe928530e3f8021ba8f959f32537b，最终 super 反抽 verifier ok=true，尚未刷入。本包修复两个已实机证明的 P2 根因：ZuiPP 重启后 PerformanceConnect/GameHelper 未就绪导致缺 `initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode`，以及 SM8650 GPU XML 索引方向反了导致 422/500MHz 锁上限。刷后先按主交接 0.12 完整验证，不要进入 FPS cap，不改 P1，不恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt；只使用 scripts/FlashZuiControl9008.ps1 的安全 7 项包。
+五、新聊天直接复制的首条消息
+
+请先完整读取 D:\3.VScode\Mi\AGENTS.md、D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；本轮涉及 P2/ThermalConfig，必须再完整读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md。旧的 2026-06-21 P2-I/asoulOpt 和大篇历史文档只作历史；若冲突，以 AGENTS.md、主交接第 0.13 节和当前主入口为准。
+
+当前工作区 D:\3.VScode\Mi，仓库 D:\3.VScode\Mi\ZuiControl，设备 HA25HSZM 已持久刷入并验收 40/0.21.3/ZuiControlV40，不是待刷状态。当前先不要制作镜像、不要改 thermal conf、不要进入 FPS cap、不要改 P1，也不要恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。
+
+请先只读确认版本、两条 P2 profile、active/system hash、三条 AppOpt 规则，以及当前 KGSL cur/min/max/thermal_pwrlevel、skin/quiet/back/battery 和八个 gpuss。上个窗口最终现场是：鸣潮已强停，GPU实际231MHz，但 thermal_pwrlevel=6/max=578MHz 在完全冷却后仍未释放；P2 的 onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode 已闭合，8_0/7_0 XML 方向正确。先报告当前是否仍残留，不要写节点或改配置。若仍存在，征得我当次确认后再做一次正常冷机重启 A/B：记录重启前，开机 Launcher 基线，再从亮屏桌面正常进入鸣潮，同步采样 GPU 频率+忙碌率+上下限+thermal_pwrlevel、skin/quiet/back、八个 gpuss 和 CPU junction；不要主动把设备烧到95C。目标是区分桌面默认上限、HAL/KGSL safety cap 和未释放残留，再决定是否需要修复或做独立可回滚的 CPU 中温实验。
