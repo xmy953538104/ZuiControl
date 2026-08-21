@@ -469,7 +469,7 @@ try {
     Assert-Contains $PlatPolicy '(allow performanced zui_control_data_file (dir (getattr open read search)))' 'AppOpt zui_control data dir read allow'
     Assert-Contains $PlatPolicy '(allow performanced zui_control_data_file (file (getattr open read map watch watch_reads)))' 'AppOpt zui_control data file read and watch allow'
     Assert-Contains $PlatPolicy '(allow performanced appdomain (process (getsched signull)))' 'AppOpt minimal app process probe allow'
-    Assert-Contains $PlatPolicy '(dontaudit performanced domain (dir (getattr)))' 'AppOpt process scan getattr dontaudit'
+    Assert-Contains $PlatPolicy '(dontaudit performanced domain (dir (getattr search)))' 'AppOpt process scan getattr/search dontaudit'
 
     $OemPerformancedSetSchedRules = @(
         '(allow performanced appdomain (process (setsched)))',

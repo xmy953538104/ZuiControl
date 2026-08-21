@@ -20,7 +20,7 @@
 (allow performanced zui_control_data_file (dir (getattr open read search)))
 (allow performanced zui_control_data_file (file (getattr open read map watch watch_reads)))
 (allow performanced appdomain (process (getsched signull)))
-(dontaudit performanced domain (dir (getattr)))
+(dontaudit performanced domain (dir (getattr search)))
 (allow init shell_data_file (dir (getattr open read search setattr relabelfrom)))
 (allow init shell_data_file (file (getattr open read relabelfrom)))
 (allow init zui_control_data_file (dir (getattr open read search write add_name remove_name create setattr relabelto)))

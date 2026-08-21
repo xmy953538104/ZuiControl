@@ -1,6 +1,7 @@
 param(
-    [string]$SourceDir = "D:\3.VScode\Mi\【B刷机】187",
-    [string]$OutputDir = "D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE"
+    [string]$SourceDir = '',
+    [string]$PlatformDir = '',
+    [string]$OutputDir = "D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE_072"
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,7 +12,18 @@ function Require-File([string]$Path) {
     }
 }
 
+$workspace = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+if ([string]::IsNullOrWhiteSpace($SourceDir)) {
+    $SourceDir = @(Get-ChildItem -LiteralPath $workspace -Directory | Where-Object { $_.Name -match 'B.*072$' }).FullName
+}
+if ([string]::IsNullOrWhiteSpace($PlatformDir)) {
+    $PlatformDir = @(Get-ChildItem -LiteralPath $workspace -Directory | Where-Object { $_.Name -match 'A.*072$' }).FullName
+}
+if (@($SourceDir).Count -ne 1 -or @($PlatformDir).Count -ne 1) {
+    throw 'Could not resolve exactly one B072 source directory and one A072 platform directory.'
+}
 $source = [IO.Path]::GetFullPath($SourceDir)
+$platform = [IO.Path]::GetFullPath($PlatformDir)
 $output = [IO.Path]::GetFullPath($OutputDir)
 if ($source.TrimEnd('\') -eq $output.TrimEnd('\')) {
     throw "OutputDir must be a dedicated directory, not the full flash package."
@@ -27,15 +39,16 @@ $generatedNames = @(
     'README_SAFE_9008.txt'
 ) + $imageNames
 
-foreach ($name in $imageNames + @($loaderName, $checksumName)) {
+foreach ($name in $imageNames + @($checksumName)) {
     Require-File (Join-Path $source $name)
 }
+Require-File (Join-Path $platform $loaderName)
 
-$sourceXmlFiles = Get-ChildItem -LiteralPath $source -Filter 'rawprogram*.xml' -File |
+$sourceXmlFiles = Get-ChildItem -LiteralPath $platform -Filter 'rawprogram*.xml' -File |
     Where-Object { $_.Name -match '^rawprogram[0-5]\.xml$' } |
     Sort-Object Name
 if ($sourceXmlFiles.Count -ne 6) {
-    throw "Expected exactly rawprogram0.xml through rawprogram5.xml in $source"
+    throw "Expected exactly rawprogram0.xml through rawprogram5.xml in $platform"
 }
 
 $expected = [ordered]@{
@@ -111,7 +124,7 @@ foreach ($name in $generatedNames) {
     }
 }
 
-Copy-Item -LiteralPath (Join-Path $source $loaderName) -Destination (Join-Path $output $loaderName)
+Copy-Item -LiteralPath (Join-Path $platform $loaderName) -Destination (Join-Path $output $loaderName)
 Copy-Item -LiteralPath (Join-Path $source $checksumName) -Destination (Join-Path $output $checksumName)
 foreach ($name in $imageNames) {
     New-Item -ItemType HardLink -Path (Join-Path $output $name) -Target (Join-Path $source $name) | Out-Null
@@ -141,6 +154,7 @@ $readme = @"
 ZuiControl SAFE 9008 package
 
 Source: $source
+Platform metadata/loader: $platform
 Generated: $([DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss zzz'))
 
 This directory intentionally contains one rawprogram XML and no patch XML.

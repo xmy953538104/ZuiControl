@@ -1,18 +1,20 @@
 param(
     [ValidateSet('Preflight', 'EnterEdl', 'Flash')]
     [string]$Mode = 'Preflight',
-    [string]$SourceDir = "D:\3.VScode\Mi\【B刷机】187",
-    [string]$SafePackageDir = "D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE",
+    [string]$SourceDir = '',
+    [string]$PlatformDir = '',
+    [string]$SafePackageDir = "D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE_072",
     [string]$QdlPath = "D:\3.VScode\Mi\flash\Binaries\Qcom\qdl-rs.exe",
     [string]$AdbPath = "D:\3.VScode\Mi\work\android-sdk\platform-tools\adb.exe",
     [string]$ConfirmAdbSerial = 'HA25HSZM',
+    [string]$ExpectedBuildRegex = 'TB321FU.*16\.1\.11\.072',
     [int]$EdlTimeoutSeconds = 60,
     [int]$BootTimeoutSeconds = 240
 )
 
 $ErrorActionPreference = "Stop"
 $prepare = Join-Path $PSScriptRoot 'PrepareZuiControl9008Package.ps1'
-& $prepare -SourceDir $SourceDir -OutputDir $SafePackageDir
+& $prepare -SourceDir $SourceDir -PlatformDir $PlatformDir -OutputDir $SafePackageDir
 if ($Mode -eq 'Preflight') {
     Write-Host 'Preflight only: the device was not rebooted and nothing was flashed.'
     return
@@ -57,7 +59,7 @@ if ($adbDevices.Count -ne 1 -or $adbDevices[0] -ne $ConfirmAdbSerial) {
 }
 $model = (Invoke-Adb @('shell', 'getprop', 'ro.product.model') | Select-Object -Last 1).Trim()
 $build = (Invoke-Adb @('shell', 'getprop', 'ro.build.display.id') | Select-Object -Last 1).Trim()
-if ($model -ne 'TB321FU' -or $build -notmatch 'TB321FU.*16\.1\.11\.187') {
+if ($model -ne 'TB321FU' -or $build -notmatch $ExpectedBuildRegex) {
     throw "Device identity mismatch: model=$model build=$build"
 }
 $rootProbe = (Invoke-Adb @('shell', 'su', '-c', 'id') | Out-String)
@@ -109,11 +111,15 @@ if ((Get-Content -LiteralPath $log -Raw) -notmatch 'All went well!') {
 $deadline = [DateTime]::UtcNow.AddSeconds($BootTimeoutSeconds)
 do {
     Start-Sleep -Seconds 2
-    $state = (& $AdbPath -s $ConfirmAdbSerial get-state 2>$null | Select-Object -Last 1)
-    $booted = if ($state -eq 'device') {
-        (& $AdbPath -s $ConfirmAdbSerial shell getprop sys.boot_completed 2>$null | Select-Object -Last 1)
-    } else {
-        $null
+    $booted = $null
+    try {
+        $online = @(& $AdbPath devices 2>$null | Select-String -Pattern "^$([regex]::Escape($ConfirmAdbSerial))\s+device$")
+        if ($online.Count -eq 1) {
+            $booted = (& $AdbPath -s $ConfirmAdbSerial shell getprop sys.boot_completed 2>$null |
+                Select-Object -Last 1)
+        }
+    } catch {
+        $booted = $null
     }
 } until ($booted -eq '1' -or [DateTime]::UtcNow -ge $deadline)
 if ($booted -ne '1') {
