@@ -1,4 +1,4 @@
-ZuiControl 新聊天当前主入口 - 2026-08-21 0.13
+ZuiControl 新聊天当前主入口 - 2026-08-21 0.14
 
 一、先读什么
 
@@ -9,46 +9,45 @@ ZuiControl 新聊天当前主入口 - 2026-08-21 0.13
 4. 涉及自动 9008 刷机时再读：
    D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_9008_AUTOMATION_GUIDE_2026-08-18.md
 
-旧的 2026-06-21 P2-I/asoulOpt 入口和根目录长文只保留历史证据。当前事实以 AGENTS.md、主交接第 0.13 节和本入口为准。
+旧的 2026-06-21 P2-I/asoulOpt、187 温控现场和大篇历史文档只保留证据。当前事实以 AGENTS.md、主交接第 0.14 节和本入口为准。
 
 二、当前成品和设备
 
 - 工作区：D:\3.VScode\Mi
 - 仓库：D:\3.VScode\Mi\ZuiControl
-- 设备：HA25HSZM / TB321FU / ZUI 16.1.11.187
+- 设备：HA25HSZM / TB321FU / ZUI 16.1.11.072
 - 已持久刷入并验收：versionCode=40 / versionName=0.21.3 / ZuiControlV40
-- 生产代码 commit：1b58816
-- GitHub Actions run：32392494646（success）
-- 成品：D:\3.VScode\Mi\【B刷机】187
-- 安全 9008 包：D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE
-- super SHA256：25b8d9f0c80bed77c660200abd3cca92dff67db5549d19a0c94892d150ac6f3b
-- APK SHA256：b8eb282485a8fb89304a64bf1f59ade9c0bbe928530e3f8021ba8f959f32537b
+- 生产代码 commit：5163afeef9e798d04563b32bcf165248d3fa6ff6
+- GitHub Actions run：32489793335（success）
+- 成品：D:\3.VScode\Mi\【B刷机】072
+- 安全 9008 包：D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE_072
+- 刷写日志：D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-21_22-16-41.log
+- super SHA256：3d1702c91bcde81af31086c639ffc15b4a277d4525d2c30be5c097dc96dbd9ed
+- APK SHA256：0675617c8348a5d763bb5901b16aa5391f40a4b07a2d8c83595319dfef5fe666
 - 最终 super 反抽 verifier：ok=true
-- 当前不是待刷、临时 bind 或旧 V39 状态。
+- 当前不是待刷、临时 bind 或 187 残留状态。
 
-三、当前配置
+三、当前功能和配置
 
-- P1 已验收，system_server 是唯一 refresh owner；不要进入 FPS cap，不改 P1。
-- 当前 P2 profile 有 com.kurogame.mingchao 和 bin.mt.plus.canary 两条。active/system mounted hash 为 game 75cbf2ca9dc5b6c47831e14bf9fe7b520975e3e0c52af50da84a9cf8d127a244、performance ab7ac1c0d1a331c0f3dccc379f0f35ff7bd02660fe23b56efc07b4133725e09f。
-- 鸣潮默认 GPU 422–903MHz 写为 8_0_-1；42/48C 的 500–903MHz 写为 7_0_-1。这是 SM8650 正确方向，禁止改回 0_8。
-- AppOpt 权威配置仍是：com.kurogame.mingchao=2-6、RenderThread=2-4、GameThread=7。
-- 相机、云控删除、SELinux 项目规则和自动安全 9008 流程都已验收，不要无原因重做或扩权。
+- P1 已在 072 实机验收，system_server 是唯一 refresh owner；当前默认 Launcher 120/120，profileCount=1，没有显式 profile 文件。不要进入 FPS cap，不改 P1。
+- 当前 P2 有 com.kurogame.mingchao 和 bin.mt.plus.canary 两条 canonical profile。active/system bind hash：game 5e7d43726796c98b81a2d38ca2c44ad8d57f3bbd18f4cae763a7cf09d6e7eda2；performance 861ee1df41eb37df1b1b554b7d8bfe63e6d79bf48ec20af196f3c6e8fac2a1d8。
+- 鸣潮默认 GPU 422–903MHz 写为 8_0_-1；42/48C 的 500–903MHz 写为 7_0_-1。鸣潮和 MT 条目均为 ThermalConfig=0 0 0。
+- AppOpt 后端已升级为作者 2.2.3；测试 App 30/30 线程 mask 验证通过，comm="AppOpt" AVC 为 0。
+- 当前三条权威鸣潮规则：com.kurogame.mingchao=2-6、RenderThread=2-4、GameThread=7。AppOpt init service 当前 running。
+- 相机、云控删除、SELinux 项目运行域、072 安全 9008 流程均已实机验收。
 
-四、最新未解决项
+四、明确边界和下一步
 
-- GPU不是硬锁903：governor=msm-adreno-tz，force开关均为0，桌面可到231MHz，trans_stat 已记录1885次和全部12档切换。游戏里903且忙碌率高是正常跑满。
-- 正常鸣潮重入已闭合 onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode open=1，P2没有漏读。
-- 高负载时 CPU/GPU junction 出现95C、skin 46.617C severe，KGSL上限从578降到422MHz；422时GPU忙碌率83–86%，会真实掉帧。
-- 当时 quiet 约40C，低于 gpu_0.conf 的44C第一档，所以422不是三份文本conf直接造成。
-- 退出并冷却到 skin=33.3C、quiet=32.5C、back=32.7C、battery=31.5C 后，GPU标准 cooling state为0，但 thermal_pwrlevel=6/max=578MHz 仍未释放；再次正常游戏重入且P2四段链完整时也没有恢复903。当前需定位“高温后限频释放滞后或其他策略残留”。
-- thermal-engine-v2 二进制内置 SS-GPU-SKIN、SS-GPU-SKIN-TEMP、SS-SKIN-GPU-LOW/HIGH 等隐藏策略；Thermal HAL 另有 skin 46.5C 和 junction 95C 静态阈值。只改 cpu_0/gpu_0/battery_0 不能解除全部限制。
-- 最终现场已强停测试鸣潮；Launcher 是最后真实场景，GPU实际231MHz/约1%忙碌率，但允许上限仍为578MHz、thermal_pwrlevel=6。
-- 本轮只读探测产生了少量 shell -> vendor_sysfs_kgsl AVC，是诊断命令噪声，不是项目回归，不要为它扩大SELinux。
+- 降级后的 /data 没有安装鸣潮和 bin.mt.plus.canary。不能声称真实鸣潮 game-start 四段链或三条真实鸣潮线程已在 072 验证；P2 XML 事务和 AppOpt 引擎本身已分别通过实机测试。
+- 如果安装鸣潮前不重启，当前 AppOpt 已等待其进程；如果先重启，daemon 会因目标包未安装停止 AppOpt但保留配置。安装后在 ZuiControl AppOpt 页重新保存/应用一次，再验证真实线程 mask。
+- 从亮屏 Launcher 正常进入新安装的鸣潮后，再确认 onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode open=1。不要用 adb 强拉、provider rows 或测试包冒充。
+- 187 上 thermal_pwrlevel=6/max=578MHz 未释放只作历史。072 重新建立温控基线；不要主动烧到 95C，不改 thermal conf，不直写 CPU/GPU sysfs。
+- 不恢复 provider_direct、云控或旧 AsoulOpt。
 
 五、新聊天直接复制的首条消息
 
-请先完整读取 D:\3.VScode\Mi\AGENTS.md、D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；本轮涉及 P2/ThermalConfig，必须再完整读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md。旧的 2026-06-21 P2-I/asoulOpt 和大篇历史文档只作历史；若冲突，以 AGENTS.md、主交接第 0.13 节和当前主入口为准。
+请先完整读取 D:\3.VScode\Mi\AGENTS.md、D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；若涉及 P2/ThermalConfig，必须再完整读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md。旧的 2026-06-21 P2-I/asoulOpt、187 温控现场和大篇历史文档只作历史；若冲突，以 AGENTS.md、主交接第 0.14 节和当前主入口为准。
 
-当前工作区 D:\3.VScode\Mi，仓库 D:\3.VScode\Mi\ZuiControl，设备 HA25HSZM 已持久刷入并验收 40/0.21.3/ZuiControlV40，不是待刷状态。当前先不要制作镜像、不要改 thermal conf、不要进入 FPS cap、不要改 P1，也不要恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。
+当前工作区 D:\3.VScode\Mi，仓库 D:\3.VScode\Mi\ZuiControl。设备 HA25HSZM 已在 ZUI 16.1.11.072 上持久刷入并验收 40/0.21.3/ZuiControlV40，不是待刷状态。最终 B072、CI/hash、P1/P2/P3、相机、云控删除和 SELinux 事实见主交接 0.14。当前不要制作镜像、不要改 thermal conf、不要进入 FPS cap、不要改 P1，也不要恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。
 
-请先只读确认版本、两条 P2 profile、active/system hash、三条 AppOpt 规则，以及当前 KGSL cur/min/max/thermal_pwrlevel、skin/quiet/back/battery 和八个 gpuss。上个窗口最终现场是：鸣潮已强停，GPU实际231MHz，但 thermal_pwrlevel=6/max=578MHz 在完全冷却后仍未释放；P2 的 onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode 已闭合，8_0/7_0 XML 方向正确。先报告当前是否仍残留，不要写节点或改配置。若仍存在，征得我当次确认后再做一次正常冷机重启 A/B：记录重启前，开机 Launcher 基线，再从亮屏桌面正常进入鸣潮，同步采样 GPU 频率+忙碌率+上下限+thermal_pwrlevel、skin/quiet/back、八个 gpuss 和 CPU junction；不要主动把设备烧到95C。目标是区分桌面默认上限、HAL/KGSL safety cap 和未释放残留，再决定是否需要修复或做独立可回滚的 CPU 中温实验。
+鸣潮和 MT 目前未安装；两条 P2 profile 与三条鸣潮 AppOpt 配置已恢复。下一步等我安装鸣潮后，只读确认当前版本/profile/hash/AppOpt，再从亮屏 Launcher 正常进入鸣潮，闭合 OEM 四段链并采样真实线程 mask。不要用测试包冒充鸣潮结论，也不要主动高温烧机。

@@ -13,7 +13,55 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.13 2026-08-21 GPU 动态调频、隐藏温控与疑似限频残留（当前最新，只读现场）
+### 0.14 2026-08-21 072 完整移植、持久刷入与实机验收（当前最新）
+
+本节覆盖 0.13 的当前设备、成品、下一步和 187 温控残留现场。设备已由用户降级到 `ZUI 16.1.11.072`，随后把 V40 的 P1/P2/P3 架构完整移植到 072 官方基线，使用用户指定的高回滚 boot/vbmeta 模板经安全 7 项 9008 流程持久刷入并完成实机验收。187 上 `thermal_pwrlevel=6/max=578MHz` 未释放的现场只保留为历史，不要在 072 上继续执行原 0.13 的冷机 A/B。
+
+#### 当前生产成品与刷写事实
+
+- 设备：`HA25HSZM` / TB321FU / `TB321FU_CN_OPEN_USER_Q00040.0_U_ZUI_16.1.11.072_ST_241118`；当前槽 `_a`，Verified Boot `green`，SELinux `Enforcing`。
+- App：`versionCode=40` / `versionName=0.21.3` / `/system/priv-app/ZuiControlV40/ZuiControl.apk`。
+- 072 移植 commit：`e1fbf2718895e48851fb9e5ab3c2cdeed0f90fe7`；AppOpt `/proc` fallback 审计降噪和 072 安全刷写脚本修复 commit：`5163afeef9e798d04563b32bcf165248d3fa6ff6`。
+- 当前 CI：GitHub Actions run `32489793335`，结论 success：<https://github.com/xmy953538104/ZuiControl/actions/runs/32489793335>。
+- 当前 CI artifact：`D:\3.VScode\Mi\work\ci_artifacts\zuicontrol_32489793335`。
+- 最终成品：`D:\3.VScode\Mi\【B刷机】072`；最终 `super.img` 反向抽取 verifier 返回 `ok=true`。
+- 安全 9008 目录：`D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE_072`；刷写日志：`D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-21_22-16-41.log`。Firehose 明确返回 `All went well! Resetting to system`，脚本随后确认 072、boot completed 和 40/0.21.3。
+
+```text
+e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371  boot.img
+3d1702c91bcde81af31086c639ffc15b4a277d4525d2c30be5c097dc96dbd9ed  super.img
+0b11807493329e46f9c94f0017608f999061ade2b952638afdb4b436ca27fb1a  vbmeta_system.img
+926aa809ec55f8a521449f8673b48f93e55b412884ab23b087cc4536b73cdcce  vbmeta.img
+0675617c8348a5d763bb5901b16aa5391f40a4b07a2d8c83595319dfef5fe666  ZuiControl-v19-release.apk
+0675617c8348a5d763bb5901b16aa5391f40a4b07a2d8c83595319dfef5fe666  ZuiControl-v19-system.apk
+```
+
+- 最终 live `boot_a/boot_b` 都逐块哈希为用户提供的 `e7e85b...8371`，没有使用官方 A072 boot。最终 `vbmeta_system_a/b` 均为 `0b1180...fb1a`，`vbmeta_a/b` 均为 `926aa8...dcce`；后两者是在最终动态分区签名后，从用户高回滚模板重建。官方 A072 的这三张镜像没有作为刷写 payload。
+- 安全流程只写 `super`、`vbmeta_system_a/b`、`boot_a/b`、`vbmeta_a/b` 七项；未写 userdata、GPT、persist、FRP、modemst 或设备唯一分区。
+- 为满足官方 system AVB data 上限，只从 072 工作解包删除了 `/system/preload/QQMusic/QQMusic.apk`（180737432 bytes）；官方 A072 原包未改，最终系统没有再删除其它产品文件。
+- 最终清理已删除 `work` 下可重建的 unpack/img/official、签名备份、两份 13GiB 中间 super、旧 CI 副本和本轮探针共 36 个精确目标；`work` 从约 72GiB 降到约 2.2GiB，D 盘可用空间从约 36.1GiB 恢复到约 103.5GiB。官方 A072、`072必刷镜像`、最终 B072、仓库、当前 CI、配置报告、072 验收记录、安全 9008 包和刷写日志均保留。
+
+#### 072 实机功能结论
+
+- P1：`zui_control` 存在；Launcher、Settings、相机的 raw/current/last 场景切换正确，目标/实际均为默认 `120/120`。`refreshOwner=system`、`daemonRefreshDisabled=true`、`displayVote=adaptiveRender`、`systemServiceAlive=true`，支持 60/90/120/144/165；普通 shell Binder 被 `caller package is not ZuiControl` 拒绝。当前没有显式 P1 profile 文件，`profileCount=1` 表示未配置场景默认 120；没有进入 FPS cap，也没有改 P1 设计。
+- P2：072 官方 full `game_policy.xml`/`performanceconfig.xml` 已作为 baked baseline，非裁剪模板。两条 canonical profile 已恢复为 `com.kurogame.mingchao` 和 `bin.mt.plus.canary`。正常 `apply_performance` exact ACK 为 done，ZuiPP `6387 -> 20596`，terminal reload 为 `state=done;stableSeconds=3`。
+- 当前 active 与 `/system/etc` bind 内容闭合：game 均为 `5e7d43726796c98b81a2d38ca2c44ad8d57f3bbd18f4cae763a7cf09d6e7eda2`，performance 均为 `861ee1df41eb37df1b1b554b7d8bfe63e6d79bf48ec20af196f3c6e8fac2a1d8`；两者在 PID 1 mountinfo 中均为 bind mount。
+- 鸣潮仍为默认 GPU 422–903MHz、42/48C 为 500–903MHz，生成的 GPU level 分别为 `8_0_-1` / `7_0_-1`；鸣潮与 MT 条目均为 `ThermalConfig=0 0 0`。畸形 P2 请求返回 failed，profiles/game/performance 三个 hash 全部保持不变，回滚闭合。
+- P3 使用用户提供的新 `AppOpt 2.2.3 eBPF`。072 内核无 BTF 时按作者实现回退 `/proc`；`AppOpt` SHA256 为 `7e6f40c868c1f8b460309bb9d352ac9b47250aeb59068469575d95751c8d7347`，`AppOpt-ebpf` 为 `acb2dcefc39b28d1b941e76b8c36fb696ac9810d94b777839eeb87a5f4f86751`。
+- 用已安装测试 App `com.xmy.ap=0-1` 经正常 exact request 测试，新进程 30/30 个线程 affinity mask 均为 `0x3`；删除请求后目标被强停、服务停止、测试规则归零。新 policy 只对 `/proc` fallback 的无害目录探测加入 `dontaudit performanced domain (dir (getattr search))`，没有授予更宽权限。
+- 当前三条权威鸣潮规则已逐字恢复：包 fallback `2-6`、`RenderThread=2-4`、`GameThread=7`；AppOpt 由 init 以 `u:r:performanced:s0` 运行且 PID 稳定。鸣潮目前在 072 上尚未安装，因此不能声称已验证真实鸣潮线程；daemon 的用户包校验也会在“仍未安装鸣潮却先重启设备”时停止 AppOpt 并移除 enabled flag，但不会删除三条配置。安装鸣潮后应在 ZuiControl 中重新保存/应用一次 AppOpt，随后再做真实线程验证。
+- 相机：系统 `STILL_IMAGE_CAMERA` 和外部 `IMAGE_CAPTURE` 均成功；boot ID 不变，SurfaceFlinger `1654/start=391`、cameraserver `1940/start=417` 不变，tombstone `0 -> 0`，没有 `No matching frame rate modes`、DEAD_OBJECT 或相关 fatal。
+- 云控删除仍闭合：`/system/etc/hosts` 为 56 bytes，SHA256 `425c3e713d5bae19b031bc8639c20c6a23e311a54647ba1824cbf45969a11ff4`；旧 cloud 脚本/runtime/log/setting/iptables chain 均不存在。旧 AsoulOpt 二进制、conf 和进程均不存在。
+- 项目运行域精确 AVC 为 0，`comm="AppOpt"` AVC 为 0，全 buffer logcat 没有 ZuiControl/SurfaceFlinger/cameraserver 相关 fatal/ANR。诊断时两次直接 `adb pull /data/vendor/zui_control/...` 产生 `adbd -> zui_control_data_file search` denial，属于失败的只读诊断命令噪声；不要为它扩大策略。
+
+#### 当前边界和最短下一步
+
+1. 当前不是待刷状态，不要重复制作或刷写镜像。不要改 thermal conf、P1，不进入 FPS cap，不恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。
+2. 鸣潮和 MT 在降级清空的 `/data` 中都未安装。P1、P2 XML 事务、AppOpt 引擎、相机和系统稳定性已在 072 实机通过；只有“真实鸣潮 game-start 四段链”和三条真实鸣潮线程 mask 必须等用户安装 App 后验证，不能用测试包冒充。
+3. 若安装鸣潮前不重启，当前 AppOpt 已在等待其进程；若先重启，安装后在 ZuiControl AppOpt 页重新保存/应用一次三条规则。随后从亮屏 Launcher 正常进入鸣潮，只做冷态功能观察，不主动烧到 95C。
+4. 072 的 GPU/温控表现应作为新基线重新观察；187 上疑似未释放残留不直接外推到 072。本轮没有修改任何 thermal conf 或 CPU/GPU sysfs 节点。
+
+### 0.13 2026-08-21 GPU 动态调频、隐藏温控与疑似限频残留（历史，已被 0.14 的 072 现场覆盖）
 
 本节只覆盖 0.12 中 GPU/温控的当前现场和最短下一步；V40 发布、P1、P2 事务、AppOpt、相机、云控与 9008 结论仍以 0.12 为准。本轮没有改配置、代码或镜像，没有进入 FPS cap，也没有恢复 direct CPU/GPU sysfs。
 
