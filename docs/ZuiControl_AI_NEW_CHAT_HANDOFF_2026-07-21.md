@@ -13,9 +13,9 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.12 2026-08-21 0.21.3 P2 重入与 SM8650 GPU 索引修复（当前最新，V40 待刷）
+### 0.12 2026-08-21 0.21.3 P2 重入与 SM8650 GPU 索引修复（当前最新，V40 已刷后验收）
 
-本节覆盖 0.11 及更早章节中的当前版本、P2 GPU 范围语义、ZuiPP/GameHelper 重入时序、成品 hash 和下一步。设备 `HA25HSZM` 当前仍持久运行已验收的 39/0.21.2/V39；40/0.21.3/V40 已完成代码、CI、AVB 无 FEC 签名、重新 PackSuper 和最终 super 反抽验收，但还没有持久刷入设备。不得把“分组件实机验证”写成“V40 刷后全部验收”。
+本节覆盖 0.11 及更早章节中的当前版本、P2 GPU 范围语义、ZuiPP/GameHelper 重入时序、成品 hash 和下一步。设备 `HA25HSZM` 已通过安全 7 项 9008 流程持久刷入 40/0.21.3/V40，并完成身份、P1、P2 可逆修改/恢复、正常游戏重入、GPU/温控、AppOpt、相机、云控删除、AVC 和稳定性验收。当前不是临时 bind 或待刷状态。
 
 #### 当前成品与发布事实
 
@@ -27,6 +27,7 @@
 - CI/payload/两个 sidecar APK SHA-256：`b8eb282485a8fb89304a64bf1f59ade9c0bbe928530e3f8021ba8f959f32537b`
 - 最终刷机目录：`D:\3.VScode\Mi\【B刷机】187`
 - 最终 `VerifyZuiControlFlashPackage.ps1` 反抽结论：`ok=true`
+- 9008 刷后版本校验修复 commit：`5fbcfc3` (`fix: verify V40 after 9008 flash`)
 
 ```text
 5fc24c5b36ba7394125b87b681b62e38575172057c78417a0fa24746815be76b  boot.img
@@ -37,7 +38,20 @@ b8eb282485a8fb89304a64bf1f59ade9c0bbe928530e3f8021ba8f959f32537b  ZuiControl-v19
 b8eb282485a8fb89304a64bf1f59ade9c0bbe928530e3f8021ba8f959f32537b  ZuiControl-v19-release.apk
 ```
 
-日常更新只允许 `scripts/FlashZuiControl9008.ps1` 的安全 7 项包；不得使用原始 99 项全量 XML。本节仅表示包已就绪，不表示已获得进入 9008 并刷写的新授权。
+日常更新只允许 `scripts/FlashZuiControl9008.ps1` 的安全 7 项包；不得使用原始 99 项全量 XML。每次刷写仍必须取得用户当次明确授权。
+
+#### V40 持久刷后真实结果
+
+- 自动刷写日志：`D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-21_08-38-38.log`。脚本从 Android 自动进入 `COM3/9008`，7 项全部写完，Firehose 返回 `All went well! Resetting to system`；自动复位后确认同一 serial、`boot_completed=1`、40/0.21.3 和 `/system/priv-app/ZuiControlV40`。设备 boot ID 为 `3e711fdf-cca0-48ba-96bb-9a016476591d`。
+- P1：`refreshOwner=system`、`daemonRefreshDisabled=true`、`displayVote=adaptiveRender`。普通 shell Binder 被 `caller package is not ZuiControl` 拒绝；system UID 可逆设置 Settings 60Hz 后，`targetDisplayHz/actualDisplayHz=60/60`，删除测试规则回桌面后恢复 120/120，profile 最终只剩默认 120。
+- 开机从保留 profile 自动重生 active XML。最终 active 与 `/system/etc` 的 game hash 均为 `15841c4c7bf11c3c9eb5773a15ff757afd46ec89eacff9dd9f3a94344806037c`，performance hash 均为 `a6788fef30dc23ea8f30527b59b4f794322d6268bc705c9cbecd1b9973290a65`，两者均为 bind mount。冷档 GPU 为 `8_0_-1`，42/48C 档为 `7_0_-1`。
+- 一次真实改变 P2、再恢复原值均通过同一原子入口完成。运行中修改耗时 13.03 秒，ZuiPP `6363 -> 24450`，终态 `game=user_existing;target=stopped`；目标未运行时恢复耗时 21.35 秒，ZuiPP `24450 -> 26148`，终态 `game=user_existing;target=not_running`。两次均为 `state=done;stableSeconds=3`，最终 profile、hash、mount 已逐字恢复。
+- 恢复后从亮屏桌面正常进入鸣潮，同一包在 09:02:59 闭合 `onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode open=1`。JSON 为默认 `GPUMax=8/GPUMin=0`、42/48C `GPUMax=7/GPUMin=0`。未恢复 provider_direct。
+- 冷机阶段 GPU 允许 231–903MHz，`thermal_pwrlevel=0`，连续采样可实际到 903MHz。高负载后芯片 GPU/CPU 结温曾碰到 95C，Thermal HAL status=3，KGSL 将 GPU 上限降到 578MHz、`thermal_pwrlevel=6`；当时 `back_temp` 约 43.3C、`quiet-therm` 约 42.2C、电池约 41.3C。这是独立安全温控覆盖 P2 请求，不是 XML 未读。
+- AppOpt：init service running，真实模板仍为包 fallback `2-6`、`RenderThread=2-4`、`GameThread=7`。两次新鸣潮进程中 190–205 个普通线程、RenderThread、GameThread、RHI 均符合预期。少量由 GameThread 后期派生的 `APM-*`/匿名线程会继承 CPU7；临时增加显式通配符仍未纠正，说明这是原 AppOpt 二进制只在进程早期扫描的精度边界。测试后已恢复三条权威规则，没有留下无效通配符，也没有引入第二套常驻扫描器。
+- 相机：连续 3 次 `STILL_IMAGE_CAMERA` 和 2 次第三方 `IMAGE_CAPTURE` 均正常；boot ID 不变，SurfaceFlinger `1670/start=401`、cameraserver `1914/start=420` 不变，无新增 tombstone、`No matching frame rate modes`、`DEAD_OBJECT` 或 fatal。
+- 云控删除仍闭合：hosts 56 字节、SHA256 `425c3e713d5bae19b031bc8639c20c6a23e311a54647ba1824cbf45969a11ff4`，旧脚本/数据/setting/iptables chain 全部不存在。dmesg 与全 buffer logcat 没有项目相关 AVC；精确 fatal/NPE 审计只命中无关 Lenovo App Store `ImeiHelper`。
+- 四轮稳定性观察中 boot ID、ZuiPP PID 26148、GameHelper PID 26283、AppOpt PID 和 XML/ACK 均稳定。GameHelper 在被受控停止时会打印 OEM 自身的 `IntentReceiverLeaked VolumeReceiver`，但旧进程随后按设计退出，新 GameHelper 正常预热并完成后续游戏闭环；这不是 fatal 或事务失败。
 
 #### 根因 1：ZuiPP PID 重启了，但运行链未就绪
 
@@ -85,7 +99,7 @@ ZuiPP 日志把它解析为 `GPUMax=0, GPUMin=8`，但 SM8650 TAssistant/KGSL �
 
 #### 温度与最终频率的权威边界
 
-- 鸣潮当前 profile 存在三个完整温区：默认（<42C）、42C、48C，不是漏了中温/高温。UI level 8/14 通过 +34 映射为 42/48C。P2 选档看 `back_temp`（thermal zone 54）。
+- 鸣潮当前 profile 存在三个完整温区：默认（<42C）、42C、48C，不是漏了中温/高温。UI level 8/14 通过 +34 映射为 42/48C。P2 选档看 `back_temp`（实机 thermal zone 55；zone 54 是 `front_temp`）。
 - 系统 UI/dumpsys 里 41.6–42C 的“电池温度”是另一个 `battery` 传感器（zone 85），不能用它直接判断 P2 温区或 GPU 热控。
 - vendor 安全链由 `thermal-engine-v2`、`vendor.lenovo.hardware.performance-service`、Qualcomm KGSL/HAL 执行，case 0 主要读 `quiet-therm`（zone 61）和各芯片结温。`/vendor/etc/thermal-engine_gpu_0.conf` 在 quiet 44/46/48/50C 分别设 GPU 720/629/500/231MHz 上限，CPU 文件从 quiet 40C 就开始逐档限制。
 - `ThermalConfig=0 0 0` 只是不再切到更激进的 100/200/300 游戏 user case；case 0 本身仍组合 `cpu_0/gpu_0/battery_0`，不是关闭温控。P2 XML 是 OEM 性能请求，vendor safety thermal 可合法覆盖它。本轮不改安全温控文件。
@@ -97,10 +111,10 @@ ZuiPP 日志把它解析为 `GPUMax=0, GPUMin=8`，但 SM8650 TAssistant/KGSL �
 - 如果强停 ZuiControl，快捷通知会消失，直到重开 App/重启时 receiver 恢复；但已持久的 P1 profile、active XML/P2 和 AppOpt 规则仍生效。只有编辑配置和点快捷通知需要 App 进程短暂参与。
 - 保存 P2/AppOpt 后，daemon 只在目标当时有 PID 时自动 force-stop；未运行则是可预期 no-op。用户不需去系统设置手动强停。
 
-#### V40 刷后必须完成的验证
+#### V40 后续回归要点
 
-1. 确认 PackageManager 为 40/0.21.3，codePath 为 `ZuiControlV40`，旧 V39 不存在。
-2. 确认保留的 P1 profile、P2 鸣潮 profile 和 AppOpt 三条规则未丢；P1 owner 仍为 system，daemon refresh disabled，不进入 FPS cap。
+1. 确认 PackageManager 仍为 40/0.21.3，codePath 为 `ZuiControlV40`，旧 V39 不存在。
+2. 确认 P1、P2 鸣潮 profile 和 AppOpt 三条规则与用户当前选择一致；P1 owner 仍为 system，daemon refresh disabled，不进入 FPS cap。
 3. 开机 daemon 应因新模板 stamp 自动重生 XML；active/system 两对 hash 闭合且为 bind mount。鸣潮默认档 422–903MHz 的 GPU Freq 必须是 `8_0_-1`，42/48C 档 500–903MHz 必须是 `7_0_-1`。
 4. ZuiPP 已运行时，reload terminal 必须 `state=done`，新 PP PID 稳定 3 秒，PerformanceConnect 启动，GameHelper 新 PID 稳定 2 秒；任一 `stop_game_helper/performance_connect/prewarm_game_helper` error 都不能当成成功。
 5. 亮屏、解锁、从桌面正常启动鸣潮，必须闭合同一 package 的 `onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode open=1`；不得用 provider rows 或单独 PID 代替。

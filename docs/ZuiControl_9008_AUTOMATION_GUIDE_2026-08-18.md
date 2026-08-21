@@ -78,7 +78,7 @@ cd D:\3.VScode\Mi\ZuiControl
 -> 要求 All went well 成功标记
 -> Firehose reset 到 system
 -> 等待同一 ADB serial boot_completed=1
--> 要求 PackageManager 为当前脚本声明的 39/0.21.2
+-> 要求 PackageManager 为当前脚本声明的 40/0.21.3
 ```
 
 只想验证能否自动进入 EDL、不写入时可用 `-Mode EnterEdl`。注意它会把设备留在 9008；没有准备好恢复工具时不要单独使用。
@@ -144,6 +144,16 @@ cd D:\3.VScode\Mi\ZuiControl
 - 自动进入 `COM3`，super 13 GiB 和其余 6 项均写到 100%，Firehose 返回 `All went well! Resetting to system`；自动复位后确认同一 `HA25HSZM`、`boot_completed=1`、PackageManager 39/0.21.2 和 `/system/priv-app/ZuiControlV39`
 - 最终 super 反抽 verifier 为 `ok=true`。持久 V39 的横竖屏设置页、P1/P2/AppOpt、两种相机入口、云控删除和六轮切换稳定性均已刷后验收。
 
+2026-08-21 继续用同一安全路径刷入当前 40/0.21.3：
+
+- 生产代码 commit：`1b58816a99a3cf2e676edc6e29d87e0bc7e17277`；刷后版本守卫修复 commit：`5fbcfc32caa05c8d7fddb097ad6ef40422316381`
+- App build run：`32392494646`，结论 `success`
+- `super.img` SHA-256：`25b8d9f0c80bed77c660200abd3cca92dff67db5549d19a0c94892d150ac6f3b`
+- APK SHA-256：`b8eb282485a8fb89304a64bf1f59ade9c0bbe928530e3f8021ba8f959f32537b`
+- 自动刷写日志：`D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-21_08-38-38.log`
+- 自动进入 `COM3`，7 项均写完，Firehose 返回 `All went well! Resetting to system`；自动复位后确认同一 `HA25HSZM`、`boot_completed=1`、PackageManager 40/0.21.3 和 `/system/priv-app/ZuiControlV40`
+- 最终 super 反抽 verifier 为 `ok=true`。持久 V40 的 P1、P2 可逆修改/恢复、正常鸣潮四段重入链、GPU 903MHz 冷档与 95C 安全降频、AppOpt、两种相机入口、云控删除、项目 AVC 和四轮稳定性均已刷后验收。
+
 loader 在每个 program 完成后打印过 `Trying to free an already freed buffer 0`，但没有中断命令，7 项均写完且最终返回正式成功标记。这个文本当前只按 loader 日志噪声记录；脚本仍以 qdl-rs 退出码、`All went well`、Android 回连和版本检查共同判断成功，不能单独忽略真正的非零退出或写入中断。
 
 ## 5. 失败边界与恢复
@@ -158,7 +168,7 @@ loader 在每个 program 完成后打印过 `Trying to free an already freed buf
 
 自动脚本只把“写入成功、reset、Android完成启动、PackageManager 版本正确”作为传输层闭环。功能层仍按主交接当前章节验证：
 
-1. V38/0.21.1 和 APK hash；
+1. V40/0.21.3、`ZuiControlV40` 和 APK hash；
 2. 开机 P2 reload 必须 done/stableSeconds=3，无 Failed transaction、OverHeatClean fatal/NPE；
 3. 一次可恢复的 P2 修改/恢复和鸣潮重入；
 4. P1、相机、AppOpt 快速回归；

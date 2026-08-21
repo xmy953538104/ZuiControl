@@ -4,7 +4,7 @@
 
 本节覆盖本文后面关于“三个用户 profile、daemon 选择 gameMode、GameModeProvider 重入”和旧固定延时保存流程的说明；后文 XML 字段、ThermalConfig 和原厂热控原理仍有效。
 
-当前待刷成品 App 为 `versionCode=40` / `versionName=0.21.3`，生产代码 commit 为 `1b58816`，GitHub Actions run 为 `32392494646`。最终 `super.img` SHA256 为 `25b8d9f0c80bed77c660200abd3cca92dff67db5549d19a0c94892d150ac6f3b`，成品反抽 verifier 已返回 `ok=true`。设备当前仍运行已验收的 39/0.21.2/V39；0.21.3 的新 daemon 重入顺序与 GPU 索引方向已在设备上分别可逆验证，但最终 V40 镜像尚未持久刷入。App 仍先比较 canonical 配置：完全同值时小于 1 秒返回，不写请求槽、不重启 ZuiPP、不停止目标；真实改变 XML 时仍执行受控重入。
+当前成品 App 为 `versionCode=40` / `versionName=0.21.3`，生产代码 commit 为 `1b58816`，GitHub Actions run 为 `32392494646`。最终 `super.img` SHA256 为 `25b8d9f0c80bed77c660200abd3cca92dff67db5549d19a0c94892d150ac6f3b`，成品反抽 verifier 已返回 `ok=true`。设备 `HA25HSZM` 已通过安全 7 项 9008 流程持久刷入 V40，并完成 P2 可逆修改/恢复、正常游戏重入和温控实测。真实改变保存实测 13.03–21.35 秒；目标运行时自动停止，未运行时返回 `target=not_running`。App 仍先比较 canonical 配置：完全同值时小于 1 秒返回，不写请求槽、不重启 ZuiPP、不停止目标；真实改变 XML 时执行受控重入。
 
 当前生产模型：
 
@@ -292,7 +292,7 @@ quiet-therm 30/32/34/36/38/40C
 
 温度判断必须区分三类传感器：
 
-- ZuiControl/P2 温区选档用 `back_temp`（实机 thermal zone 54）。level 8/14 通过平台 +34 映射为 42/48C；当前鸣潮 profile 确实有默认、42C、48C 三档。
+- ZuiControl/P2 温区选档用 `back_temp`（实机 thermal zone 55；zone 54 是 `front_temp`）。level 8/14 通过平台 +34 映射为 42/48C；当前鸣潮 profile 确实有默认、42C、48C 三档。
 - 系统界面常见的 41.6–42C 是 `battery`（zone 85），不等于 P2 选档温度，也不等于 GPU 热控传感器。
 - case 0 的 GPU/CPU 安全限制主要使用 `quiet-therm`（zone 61）和芯片结温。GPU 在 quiet 44/46/48/50C 时可被限制到 720/629/500/231MHz，CPU 相关文件从 quiet 40C 就可开始逐档限制。
 
@@ -305,10 +305,10 @@ quiet-therm 30/32/34/36/38/40C
 -> promote active
 -> bind 到 /system/etc
 -> hash 闭合后 reload com.zui.pp
--> 进入目标 App
--> system_server 发布真实场景
--> daemon 以 gameMode=0/1/2 调 GameModeProvider/contact
--> ZuiPP 按包名找到 App 条目
+-> 用户从亮屏、解锁的桌面进入目标 App
+-> system_server 发布真实 onGameAppStart
+-> OEM GameHelper 读取其保存的 mode，并调用 GameModeProvider/contact
+-> ZuiPP 对同一包找到 App 条目
 -> 按 gameMode 选择 LimitConfig 第 1/2/3 段
 -> 按同一模式位置选择 ThermalConfig code
 -> LimitConfig 走 CPU/GPU 性能下发
@@ -324,9 +324,9 @@ quiet-therm 30/32/34/36/38/40C
 2. staging/active XML 是否生成成功。
 3. active 与 `/system/etc` 是否同 hash、确实 bind mounted。
 4. ZuiPP 是否完成受控 reload。
-5. 当前 package 与 gameMode 是否正确。
-6. `zui_control_pp_mode_state` 是否在每次重新进入时更新时间戳。
-7. ZuiPP 日志是否解析到 Little/Big/Titan/Mega/GPU 五段。
+5. 同一 package 是否出现真实 `onGameAppStart` 和 GameHelper `initGameHelper`。
+6. 是否出现 ZuiPP `notifyPerfStatus 11/17` 以及 GameHelper `writeSavageMode open=1`；provider 返回值不能单独证明应用成功。
+7. `notifyPerfStatus 11/17` JSON 是否解析到 Little/Big/Titan/Mega/GPU 五段，并与当前 active XML 一致。
 8. `ThermalConfig` 选择了哪个 user case。
 9. KGSL/cpufreq 的最终节点值是多少。
 10. 当前是否是真实高温导致的全局降频，或存在 AVC 阻断。
