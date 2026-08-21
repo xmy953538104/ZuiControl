@@ -74,19 +74,23 @@ def file_context_regex(path):
 def mode_for(rel, is_dir):
     if is_dir:
         return "0755"
-    if rel in ["system_a/system/bin/zui_controld", "system_a/system/bin/AppOpt"]:
+    if rel in [
+        "system_a/system/bin/zui_controld",
+        "system_a/system/bin/AppOpt",
+        "system_a/system/bin/AppOpt-ebpf",
+    ]:
         return "0755"
     return "0644"
 
 
 def owner_group_for(rel):
-    if rel == "system_a/system/bin/AppOpt":
+    if rel in ["system_a/system/bin/AppOpt", "system_a/system/bin/AppOpt-ebpf"]:
         return "0 2000"
     return "0 0"
 
 
 def context_for(rel):
-    if rel == "system_a/system/bin/AppOpt":
+    if rel in ["system_a/system/bin/AppOpt", "system_a/system/bin/AppOpt-ebpf"]:
         return "u:object_r:performanced_exec:s0"
     return "u:object_r:system_file:s0"
 

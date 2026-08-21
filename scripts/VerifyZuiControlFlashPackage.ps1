@@ -24,6 +24,8 @@ $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
 $ExpectedVersionCode = '40'
 $ExpectedVersionName = '0.21.3'
+$ExpectedAppOptSha256 = '7e6f40c868c1f8b460309bb9d352ac9b47250aeb59068469575d95751c8d7347'
+$ExpectedAppOptEbpfSha256 = 'acb2dcefc39b28d1b941e76b8c36fb696ac9810d94b777839eeb87a5f4f86751'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -276,6 +278,7 @@ try {
     )
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
+    $AppOptEbpf = Join-Path $SystemRoot 'system\bin\AppOpt-ebpf'
     $DaemonRc = Join-Path $SystemRoot 'system\etc\init\zui_controld.rc'
     $AppOptRc = Join-Path $SystemRoot 'system\etc\init\zui_appopt.rc'
     $ClearPackageCache = Join-Path $SystemRoot 'system\etc\zui_control\clear_package_cache.sh'
@@ -286,8 +289,14 @@ try {
     $PrivAppPermissions = Join-Path $SystemRoot 'system\etc\permissions\privapp-permissions-zui-control.xml'
     $GameTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_game_policy.xml'
     $PerfTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_performanceconfig.xml'
-    foreach ($required in @($AppApk, $Daemon, $AppOpt, $DaemonRc, $AppOptRc, $AppOptPrepare, $Hosts, $DefaultAppList, $PrivAppPermissions, $GameTemplate, $PerfTemplate)) {
+    foreach ($required in @($AppApk, $Daemon, $AppOpt, $AppOptEbpf, $DaemonRc, $AppOptRc, $AppOptPrepare, $Hosts, $DefaultAppList, $PrivAppPermissions, $GameTemplate, $PerfTemplate)) {
         Require-File $required
+    }
+    if ((File-Sha256 $AppOpt) -ne $ExpectedAppOptSha256) {
+        throw 'Embedded AppOpt is not the approved 2.2.3 arm64 binary'
+    }
+    if ((File-Sha256 $AppOptEbpf) -ne $ExpectedAppOptEbpfSha256) {
+        throw 'Embedded AppOpt-ebpf is not the approved 2.2.3 arm64 helper'
     }
     Assert-MissingFile $LegacyAppDir 'legacy ZuiControl priv-app directory'
     foreach ($PreviousAppDir in $PreviousAppDirs) {
@@ -442,6 +451,7 @@ try {
     Assert-Contains (Join-Path $PlatSelinux 'plat_property_contexts') 'zui_control. u:object_r:shell_prop:s0' 'zui_control property_context'
     Assert-Contains (Join-Path $PlatSelinux 'plat_file_contexts') '/data/system/zui_control(/.*)? u:object_r:system_data_file:s0' 'data system file_context'
     Assert-Contains (Join-Path $PlatSelinux 'plat_file_contexts') '/system/bin/AppOpt u:object_r:performanced_exec:s0' 'AppOpt performanced file_context'
+    Assert-Contains (Join-Path $PlatSelinux 'plat_file_contexts') '/system/bin/AppOpt-ebpf u:object_r:performanced_exec:s0' 'AppOpt-ebpf performanced file_context'
     Assert-Contains (Join-Path $PlatSelinux 'plat_file_contexts') '/data/vendor/zui_control/zuipp/active/game_policy\.xml u:object_r:system_file:s0' 'active game_policy file_context'
     Assert-Contains (Join-Path $PlatSelinux 'plat_file_contexts') '/data/vendor/zui_control/zuipp/active/performanceconfig\.xml u:object_r:system_file:s0' 'active performanceconfig file_context'
     Assert-Contains (Join-Path $PlatSelinux 'plat_file_contexts') '/data/vendor/zui_control(/.*)? u:object_r:zui_control_data_file:s0' 'vendor data file_context'
