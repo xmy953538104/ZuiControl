@@ -549,7 +549,10 @@ public final class XmlProfileGenerator {
         }
         int maxIndex = indexOf(available, max) + 1;
         int minIndex = indexOf(available, min) + 1;
-        return new LevelValue(minIndex * 100 + maxIndex, max + "_" + min + "_-1", max, min);
+        // ZUI 16.1.11.187 fixes the 3.3 GHz Mega-core ceiling by leaving max
+        // unconstrained; 072's explicit 3302400 request is clipped to 3052800.
+        String xmlMax = available == MEGA && max == MEGA[MEGA.length - 1] ? "-1" : String.valueOf(max);
+        return new LevelValue(minIndex * 100 + maxIndex, xmlMax + "_" + min + "_-1", max, min);
     }
 
     private static LevelValue gpuLevel(int requestedMax, int requestedMin) {

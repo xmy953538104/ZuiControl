@@ -1,3 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="dolby_tile_label">杜比音效</string>
+    <string name="dolby_tile_on">已开启</string>
+    <string name="dolby_tile_off">已关闭</string>
 </resources>

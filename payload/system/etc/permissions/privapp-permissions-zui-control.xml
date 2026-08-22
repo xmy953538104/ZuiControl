@@ -3,6 +3,7 @@
     <privapp-permissions package="com.zui.zuicontrol">
         <permission name="android.permission.RECEIVE_BOOT_COMPLETED"/>
         <permission name="android.permission.WRITE_SETTINGS"/>
+        <permission name="android.permission.WRITE_SECURE_SETTINGS"/>
         <permission name="android.permission.QUERY_ALL_PACKAGES"/>
         <permission name="android.permission.FOREGROUND_SERVICE"/>
         <permission name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>

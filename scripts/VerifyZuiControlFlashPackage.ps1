@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $WorkspaceRoot = Split-Path -Parent $RepoRoot
 if (-not $FlashDir) {
-    $FlashDir = Join-Path $WorkspaceRoot '【B刷机】187'
+    $FlashDir = Join-Path $WorkspaceRoot '【B刷机】072'
 }
 if (-not $WorkDir) {
     $WorkDir = Join-Path $WorkspaceRoot 'work\verify_flash_zui_control'
@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '40'
-$ExpectedVersionName = '0.21.3'
+$ExpectedVersionCode = '41'
+$ExpectedVersionName = '0.21.4'
 $ExpectedAppOptSha256 = '7e6f40c868c1f8b460309bb9d352ac9b47250aeb59068469575d95751c8d7347'
 $ExpectedAppOptEbpfSha256 = 'acb2dcefc39b28d1b941e76b8c36fb696ac9810d94b777839eeb87a5f4f86751'
 
@@ -131,6 +131,16 @@ function Assert-ZuiControlApkMetadata([string]$ApkPath, [string]$Label) {
     }
     if ($permissions -match "uses-permission: name='com\.zui\.performance\.permission\.gamemode'") {
         throw "$Label still requests stale com.zui.performance.permission.gamemode"
+    }
+    if ($permissions -notmatch "uses-permission: name='android\.permission\.WRITE_SECURE_SETTINGS'") {
+        throw "$Label is missing the Dolby tile WRITE_SECURE_SETTINGS permission"
+    }
+    $manifest = & $aapt2 dump xmltree $ApkPath --file AndroidManifest.xml | Out-String -Width 4096
+    if ($LASTEXITCODE -ne 0) {
+        throw "aapt2 manifest dump failed for $Label`: $ApkPath"
+    }
+    if ($manifest -notmatch 'com\.zui\.zuicontrol\.DolbyTileService') {
+        throw "$Label is missing the speaker-capable Dolby quick settings tile"
     }
 }
 
@@ -262,7 +272,7 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV40\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV41\ZuiControl.apk'
     $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
     $PreviousAppDirs = @(
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV30'),
@@ -274,7 +284,8 @@ try {
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV36'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV37'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV38'),
-        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV39')
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV39'),
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV40')
     )
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
@@ -370,6 +381,7 @@ try {
         throw 'system hosts does not match the official ZUI 16.1.11.187 default'
     }
     Assert-NotContains $PrivAppPermissions 'com.zui.performance.permission.gamemode' 'stale P2-G gamemode privileged permission'
+    Assert-Contains $PrivAppPermissions 'android.permission.WRITE_SECURE_SETTINGS' 'Dolby tile privileged settings permission'
     $daemonText = Get-Content -Raw -LiteralPath $Daemon
     if ($daemonText -like '*chcon u:object_r:system_file:s0*') {
         throw 'daemon still attempts shell-domain active XML chcon'
@@ -436,6 +448,7 @@ try {
     }
     Assert-ZuiLimitXml $GameTemplate $PerfTemplate
     Assert-Contains $PerfTemplate 'ZuiControl SM8650 generator writes floorIndex_ceilingIndex' 'SM8650 GPU direction baseline refresh marker'
+    Assert-Contains $PerfTemplate '<Freq level = "645">-1_1708800_-1</Freq>' '072 Mingchao Mega 3.3 GHz no-max fix'
     $gameXml = Read-XmlDocument $GameTemplate
     $mingchao = $gameXml.SelectSingleNode("//AppList[@type='game']/App[@pkg='com.kurogame.mingchao']")
     if ($null -eq $mingchao) {

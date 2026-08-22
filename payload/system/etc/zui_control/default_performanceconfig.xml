@@ -2019,7 +2019,8 @@
             <Freq level = "643">1132800_480000_-1</Freq>
             <Freq level = "644">787200_480000_-1</Freq>
             <!-- mingchao SavageMode yhy -->
-            <Freq level = "645">3302400_1708800_-1</Freq>
+            <!-- ZuiControl 0.21.4: port ZUI 187's Mega 3.3 GHz no-max fix to 072. -->
+            <Freq level = "645">-1_1708800_-1</Freq>
             <Freq level = "646">3302400_1708800_-1</Freq>
             <Freq level = "647">3302400_1708800_-1</Freq>
             <Freq level = "648">1132800_480000_-1</Freq>
