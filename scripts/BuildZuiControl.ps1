@@ -14,9 +14,9 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $project = Join-Path $root $ProjectDir
 $payload = Join-Path $root $PayloadDir
 $privAppDir = Join-Path $payload "system/priv-app"
-$apkOutDir = Join-Path $privAppDir "ZuiControlV42"
+$apkOutDir = Join-Path $privAppDir "ZuiControlV43"
 $legacyApkOutDir = Join-Path $privAppDir "ZuiControl"
-$previousApkOutDirs = @('ZuiControlV30', 'ZuiControlV31', 'ZuiControlV32', 'ZuiControlV33', 'ZuiControlV34', 'ZuiControlV35', 'ZuiControlV36', 'ZuiControlV37', 'ZuiControlV38', 'ZuiControlV39', 'ZuiControlV40', 'ZuiControlV41') |
+$previousApkOutDirs = @('ZuiControlV30', 'ZuiControlV31', 'ZuiControlV32', 'ZuiControlV33', 'ZuiControlV34', 'ZuiControlV35', 'ZuiControlV36', 'ZuiControlV37', 'ZuiControlV38', 'ZuiControlV39', 'ZuiControlV40', 'ZuiControlV41', 'ZuiControlV42') |
     ForEach-Object { Join-Path $privAppDir $_ }
 
 if (-not (Test-Path $project)) {

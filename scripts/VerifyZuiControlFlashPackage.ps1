@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '42'
-$ExpectedVersionName = '0.21.5'
+$ExpectedVersionCode = '43'
+$ExpectedVersionName = '0.21.6'
 $ExpectedAppOptSha256 = '7e6f40c868c1f8b460309bb9d352ac9b47250aeb59068469575d95751c8d7347'
 $ExpectedAppOptEbpfSha256 = 'acb2dcefc39b28d1b941e76b8c36fb696ac9810d94b777839eeb87a5f4f86751'
 
@@ -297,7 +297,7 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV42\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV43\ZuiControl.apk'
     $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
     $PreviousAppDirs = @(
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV30'),
@@ -311,7 +311,8 @@ try {
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV38'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV39'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV40'),
-        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV41')
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV41'),
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV42')
     )
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
@@ -517,6 +518,7 @@ try {
     Assert-Contains $PlatPolicy '(allow performanced zui_control_data_file (dir (getattr open read search)))' 'AppOpt zui_control data dir read allow'
     Assert-Contains $PlatPolicy '(allow performanced zui_control_data_file (file (getattr open read map watch watch_reads)))' 'AppOpt zui_control data file read and watch allow'
     Assert-Contains $PlatPolicy '(allow performanced appdomain (process (getsched signull)))' 'AppOpt minimal app process probe allow'
+    Assert-Contains $PlatPolicy '(allow performanced cgroup (dir (create setattr)))' 'AppOpt 2.2.3 cpuset directory initialization allow'
     Assert-Contains $PlatPolicy '(dontaudit performanced domain (dir (getattr search)))' 'AppOpt process scan getattr/search dontaudit'
 
     $OemPerformancedSetSchedRules = @(
