@@ -13,7 +13,34 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.15 2026-08-22 0.21.6：072 的 3.3GHz、无耳机杜比开关和 AppOpt 2.2.3（当前最新）
+### 0.16 2026-08-22 鸣潮卡顿与杜比状态同步复查（当前最新）
+
+本节覆盖 0.15 的“当前现场”和下一步，但不改写 0.15 已完成的 072 刷写事实。设备仍是已持久刷入并验收的 `43/0.21.6/ZuiControlV43`，当前不是待刷状态。仓库已起草 `44/0.21.7/ZuiControlV44` 的杜比小修，Debug 构建和单元测试通过；尚未推送 CI、制作镜像或刷入设备。本轮没有修改 thermal conf、P1、FPS cap、P2 XML、direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。
+
+#### 鸣潮卡顿的只读结论
+
+- 不是 Android 仍在持续编译鸣潮。PackageManager dexopt 显示 `speed-profile / bg-dexopt`，`base.odex`/`base.vdex` 已存在，现场没有 `dex2oat` 进程。UE 首次进入新场景仍可能有 shader/PSO 短卡，但不能解释本次持续不稳。
+- 当前两条 P2 profile 仍是 `bin.mt.plus.canary` 与 `com.kurogame.mingchao`。用户在 15:48 重新保存鸣潮后，鸣潮 default/42C/48C 三档 GPU 上限均请求 903MHz；active 与 `/system/etc` hash 闭合：game 两处均为 `5e7d43726796c98b81a2d38ca2c44ad8d57f3bbd18f4cae763a7cf09d6e7eda2`，performance 两处均为 `bf1f2c98762024ac5c811c2cad3736721dc1054e37b6ca6a055abd4fc0da4ec7`。所以这次不是 XML 仍把 GPU 封在 720MHz。
+- 当前 AppOpt 规则文件只有注释，`init.svc.zui_appopt=stopped`。daemon 日志明确记录 15:56 从 UI 收到 `remove_appopt_rule pkg=com.kurogame.mingchao`，不是规则自行丢失。受控前台短测时 RenderThread/GameThread/RHI 均为 `0-7`；当前卡顿不能归因于一条正在生效的错误 AppOpt 绑核规则，但也意味着原来的三条优化此刻没有启用。
+- 冷态/后台基线已出现 `max=680MHz / thermal_pwrlevel=4`；正常从亮屏桌面进入鸣潮约 10 秒后，GPU 连续固定在 578MHz、忙碌率 70–72%、允许上限 578MHz、`thermal_pwrlevel=6`，而 P2 明确请求 903MHz。CPU 各簇同时接近自身上限，最高 CPU junction 86.8C，低于预设 88C 停止线且未继续加热。直接瓶颈是 KGSL/HAL 安全层覆盖了 XML 请求，不是 CPU 没有 3.3GHz，也不是后台编译。
+- 短测后由本轮拉起的鸣潮已强停；杜比保留为 `dlb_dap_state=1`。不要靠改 XML 或写 KGSL 节点掩盖。若要区分“本次开机残留”与“072 每次游戏都会触发的安全 cap”，仍须征得用户当次确认后做一次正常冷机重启 A/B；不要主动烧到 95C。
+
+#### 杜比慢、显示不一致的根因与 V44 草案
+
+- 当前 QS 列表同时存在 ZuiControl `custom(com.zui.zuicontrol/.DolbyTileService)` 和原厂 `dolbyatmos` 两个磁贴。两者外观/名称接近但逻辑不同，是“点了很慢、状态像被重开”的主要混淆源。
+- 072 `DaxService` 已原生监听 `Settings.Global.dlb_dap_state` 并据此执行效果总开关。游戏启动日志中的 `change dolby mode by app type` 只是在切换 `dolby_dap_profile`，本轮没有看到鸣潮把 `dlb_dap_state` 从 0 改成 1 的证据。
+- 072 `ZuiSettings.apk` 的 `BaseDolbyController` 在无耳机时把开关禁用并把显示值硬编码为 `true`；有耳机时则读取 `Settings.System.recordDolbySwitchStatusWidthHeadSet`。这就是官方设置页在扬声器模式下永远显示“开”的真实原因，不是我们的全局状态没有写成功。
+- `ZuiSettings.apk` 使用 `android.uid.system` shared UID，并由 Lenovo OEM 平台证书签名；仓库没有对应私钥。直接重打此 APK 会破坏 system shared UID 签名校验，因此不能为了一个显示问题冒险替换官方 Settings，也不应引入常驻 hook/轮询。
+- V44 草案让 ZuiControl Tile 在监听期间注册 `dlb_dap_state` 的 `ContentObserver`，任何外部变更都会立即刷新；点击时同时写真实总状态和原厂耳机记忆键，使以后插拔耳机保持同一选择。BootReceiver 仅在开机做一次幂等 QS 列表归一化：移除重复原厂 `dolbyatmos`，保留并前置 ZuiControl Dolby Tile。没有后台轮询。
+- V44 当前只解决“唯一入口、真实状态、耳机记忆和及时刷新”；072 官方 Settings 在无耳机时硬编码为开的显示仍无法在不持有 OEM 平台私钥的前提下安全修补。此时以 ZuiControl Tile 的开/关副标题和 `dlb_dap_state` 为权威状态。
+
+#### 当前最短下一步
+
+1. 先向用户报告上述判断；未经当次确认不要重启。用户确认后做一次正常冷机 A/B：重启前记录，开机 Launcher 记录 903MHz/level 0 是否恢复，再正常进入鸣潮同步采样 GPU、CPU junction 与温度，不主动烧机。
+2. V44 代码已通过 `:app:assembleDebug :app:testDebugUnitTest`，但没有 CI artifact、最终 super 或实机验收。只有用户决定要刷杜比小修时，才按当前 release flow 推 CI、反向抽查最终 super 并制作安全 7 项 9008 包。
+3. AppOpt 当前是用户从 UI 移除规则后的 stopped 状态。不要自动恢复旧三条规则；若用户要继续比较，先让用户明确是否恢复当前 AppOpt 2.2.3 的三条权威规则。
+
+### 0.15 2026-08-22 0.21.6：072 的 3.3GHz、无耳机杜比开关和 AppOpt 2.2.3（历史，已被 0.16 覆盖）
 
 本节覆盖 0.14 的当前版本、成品、AppOpt 状态和下一步。设备 `HA25HSZM` 已通过安全 7 项 9008 流程持久刷入 `versionCode=43` / `versionName=0.21.6` / `ZuiControlV43`，并完成 072 实机验收；当前不是待刷状态。072 的 CPU 修复沿用 187 官方的 `MegaCoreMax=-1` 语义，不是超频；杜比使用新的 ZuiControl QS Tile；AppOpt 使用用户提供的 2.2.3，并以最小 SELinux 权限完成独立 cpuset 初始化。没有修改 thermal conf、P1、FPS cap，也没有恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。
 

@@ -1,7 +1,7 @@
 ZuiControl v19 payload
 
 System components:
-- /system/priv-app/ZuiControlV43/ZuiControl.apk
+- /system/priv-app/ZuiControlV44/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/AppOpt
 - /system/etc/init/zui_controld.rc
