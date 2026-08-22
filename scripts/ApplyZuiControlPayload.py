@@ -134,6 +134,7 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV37",
         "system_a/system/priv-app/ZuiControlV38",
         "system_a/system/priv-app/ZuiControlV39",
+        "system_a/system/priv-app/ZuiControlV40",
         "system_a/system/priv-app/ZuiperfCtl",
         "system_a/system/bin/zui_perfctld",
         "system_a/system/etc/init/zui_perfctld.rc",
@@ -177,6 +178,7 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV37",
         "system_a/system/priv-app/ZuiControlV38",
         "system_a/system/priv-app/ZuiControlV39",
+        "system_a/system/priv-app/ZuiControlV40",
         "system_a/system/etc/zui_control/clear_package_cache",
     ]
     targets = [
