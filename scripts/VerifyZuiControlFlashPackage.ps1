@@ -22,8 +22,8 @@ $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '41'
-$ExpectedVersionName = '0.21.4'
+$ExpectedVersionCode = '42'
+$ExpectedVersionName = '0.21.5'
 $ExpectedAppOptSha256 = '7e6f40c868c1f8b460309bb9d352ac9b47250aeb59068469575d95751c8d7347'
 $ExpectedAppOptEbpfSha256 = 'acb2dcefc39b28d1b941e76b8c36fb696ac9810d94b777839eeb87a5f4f86751'
 
@@ -69,6 +69,31 @@ function Assert-NotContains([string]$Path, [string]$Needle, [string]$Label) {
 function File-Sha256([string]$Path) {
     Require-File $Path
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+}
+
+function Assert-SymlinkMarkerTarget([string]$Path, [string]$ExpectedTarget) {
+    Require-File $Path
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $prefix = [System.Text.Encoding]::ASCII.GetBytes('!<symlink>')
+    if ($bytes.Length -lt ($prefix.Length + 4)) {
+        throw "Invalid extracted symlink marker: $Path"
+    }
+    for ($i = 0; $i -lt $prefix.Length; $i++) {
+        if ($bytes[$i] -ne $prefix[$i]) {
+            throw "Invalid extracted symlink marker: $Path"
+        }
+    }
+    if ($bytes[$prefix.Length] -ne 0xff -or $bytes[$prefix.Length + 1] -ne 0xfe) {
+        throw "Expected UTF-16LE symlink marker: $Path"
+    }
+    $target = [System.Text.Encoding]::Unicode.GetString(
+        $bytes,
+        $prefix.Length + 2,
+        $bytes.Length - $prefix.Length - 2
+    ).TrimEnd([char]0)
+    if ($target -ne $ExpectedTarget) {
+        throw "Wrong symlink target in $Path`: expected $ExpectedTarget, got $target"
+    }
 }
 
 function Find-ApkSigner {
@@ -272,7 +297,7 @@ try {
     Assert-Contains $ZuiServiceSmali 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-NotContains $ZuiServiceSmali 'forPhysicalRefreshRates' 'unsafe hard physical refresh vote'
 
-    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV41\ZuiControl.apk'
+    $AppApk = Join-Path $SystemRoot 'system\priv-app\ZuiControlV42\ZuiControl.apk'
     $LegacyAppDir = Join-Path $SystemRoot 'system\priv-app\ZuiControl'
     $PreviousAppDirs = @(
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV30'),
@@ -285,7 +310,8 @@ try {
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV37'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV38'),
         (Join-Path $SystemRoot 'system\priv-app\ZuiControlV39'),
-        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV40')
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV40'),
+        (Join-Path $SystemRoot 'system\priv-app\ZuiControlV41')
     )
     $Daemon = Join-Path $SystemRoot 'system\bin\zui_controld'
     $AppOpt = Join-Path $SystemRoot 'system\bin\AppOpt'
@@ -297,12 +323,21 @@ try {
     $CloudBlock = Join-Path $SystemRoot 'system\etc\zui_control\zui_cloud_block.sh'
     $Hosts = Join-Path $SystemRoot 'system\etc\hosts'
     $DefaultAppList = Join-Path $SystemRoot 'system\etc\zui_control\default_applist.conf'
+    $AppOptSettings = Join-Path $SystemRoot 'system\etc\zui_control\AppOpt.json'
+    $AppOptSettingsLink = Join-Path $SystemRoot 'AppOpt.json'
     $PrivAppPermissions = Join-Path $SystemRoot 'system\etc\permissions\privapp-permissions-zui-control.xml'
     $GameTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_game_policy.xml'
     $PerfTemplate = Join-Path $SystemRoot 'system\etc\zui_control\default_performanceconfig.xml'
-    foreach ($required in @($AppApk, $Daemon, $AppOpt, $AppOptEbpf, $DaemonRc, $AppOptRc, $AppOptPrepare, $Hosts, $DefaultAppList, $PrivAppPermissions, $GameTemplate, $PerfTemplate)) {
+    foreach ($required in @($AppApk, $Daemon, $AppOpt, $AppOptEbpf, $DaemonRc, $AppOptRc, $AppOptPrepare, $Hosts, $DefaultAppList, $AppOptSettings, $AppOptSettingsLink, $PrivAppPermissions, $GameTemplate, $PerfTemplate)) {
         Require-File $required
     }
+    $AppOptSettingsJson = Get-Content -Raw -LiteralPath $AppOptSettings | ConvertFrom-Json
+    if ($AppOptSettingsJson.mode -ne 2 -or $AppOptSettingsJson.web_enable -ne $false -or
+        $AppOptSettingsJson.check_interval -ne 2 -or
+        $AppOptSettingsJson.config_file -ne '/data/vendor/zui_control/appopt/applist.conf') {
+        throw 'AppOpt 2.2.3 production settings must force bounded Proc mode with web disabled'
+    }
+    Assert-SymlinkMarkerTarget $AppOptSettingsLink '/system/etc/zui_control/AppOpt.json'
     if ((File-Sha256 $AppOpt) -ne $ExpectedAppOptSha256) {
         throw 'Embedded AppOpt is not the approved 2.2.3 arm64 binary'
     }

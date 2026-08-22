@@ -1,0 +1,7 @@
+{
+  "check_interval": 2,
+  "config_file": "/data/vendor/zui_control/appopt/applist.conf",
+  "cpuset_name": "AppOpt",
+  "mode": 2,
+  "web_enable": false
+}

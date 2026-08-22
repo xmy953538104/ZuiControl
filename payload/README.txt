@@ -1,11 +1,13 @@
 ZuiControl v19 payload
 
 System components:
-- /system/priv-app/ZuiControlV41/ZuiControl.apk
+- /system/priv-app/ZuiControlV42/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/AppOpt
 - /system/etc/init/zui_controld.rc
 - /system/etc/init/zui_appopt.rc
+- /system/etc/zui_control/AppOpt.json
+- /AppOpt.json -> /system/etc/zui_control/AppOpt.json
 
 Framework patch:
 - scripts/ApplyZuiControlPayload.py calls scripts/PatchZuiControlFramework.py.

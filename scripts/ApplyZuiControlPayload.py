@@ -11,7 +11,7 @@ from datetime import datetime
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
-APP_APK_PATH = "system/priv-app/ZuiControlV41/ZuiControl.apk"
+APP_APK_PATH = "system/priv-app/ZuiControlV42/ZuiControl.apk"
 LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -135,6 +135,7 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV38",
         "system_a/system/priv-app/ZuiControlV39",
         "system_a/system/priv-app/ZuiControlV40",
+        "system_a/system/priv-app/ZuiControlV41",
         "system_a/system/priv-app/ZuiperfCtl",
         "system_a/system/bin/zui_perfctld",
         "system_a/system/etc/init/zui_perfctld.rc",
@@ -179,6 +180,7 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV38",
         "system_a/system/priv-app/ZuiControlV39",
         "system_a/system/priv-app/ZuiControlV40",
+        "system_a/system/priv-app/ZuiControlV41",
         "system_a/system/etc/zui_control/clear_package_cache",
     ]
     targets = [
@@ -234,6 +236,21 @@ def copy_payload(payload, unpack, dry_run, report):
                 dst.chmod(mode)
             except OSError:
                 pass
+
+    appopt_link_rel = "system_a/AppOpt.json"
+    appopt_link_target = "/system/etc/zui_control/AppOpt.json"
+    appopt_link = unpack / appopt_link_rel
+    appopt_link_data = b"!<symlink>\xff\xfe" + appopt_link_target.encode("utf-16-le") + b"\x00\x00"
+    link_changed = not appopt_link.exists() or appopt_link.read_bytes() != appopt_link_data
+    copied.append({
+        "source": "generated AppOpt settings symlink",
+        "target": appopt_link_rel,
+        "changed": link_changed,
+    })
+    if not dry_run and link_changed:
+        appopt_link.parent.mkdir(parents=True, exist_ok=True)
+        appopt_link.write_bytes(appopt_link_data)
+    dst_items.append((appopt_link_rel, False))
 
     for rel, is_dir in dst_items:
         mode = mode_for(rel, is_dir)
