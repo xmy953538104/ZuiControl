@@ -13,7 +13,70 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.14 2026-08-21 072 完整移植、持久刷入与实机验收（当前最新）
+### 0.15 2026-08-22 0.21.6：072 的 3.3GHz、无耳机杜比开关和 AppOpt 2.2.3（当前最新）
+
+本节覆盖 0.14 的当前版本、成品、AppOpt 状态和下一步。设备 `HA25HSZM` 已通过安全 7 项 9008 流程持久刷入 `versionCode=43` / `versionName=0.21.6` / `ZuiControlV43`，并完成 072 实机验收；当前不是待刷状态。072 的 CPU 修复沿用 187 官方的 `MegaCoreMax=-1` 语义，不是超频；杜比使用新的 ZuiControl QS Tile；AppOpt 使用用户提供的 2.2.3，并以最小 SELinux 权限完成独立 cpuset 初始化。没有修改 thermal conf、P1、FPS cap，也没有恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。
+
+#### 当前生产成品与刷写事实
+
+- 设备/系统：TB321FU / `TB321FU_CN_OPEN_USER_Q00040.0_U_ZUI_16.1.11.072_ST_241118`；当前槽 `_a`，Verified Boot `green`，SELinux `Enforcing`。
+- App：`43/0.21.6`，PackageManager codePath 为 `/system/priv-app/ZuiControlV43`；V42 已从最终 system 移除。
+- 生产 commit：`bfeb578f40ce40323a2fb2898e0474a44d69054d`（`fix: allow AppOpt cpuset initialization`）。CPU/杜比主体为 `031b29c`，V40 升级清理为 `84303bc`，AppOpt 强制 `/proc` JSON/根目录软链接为 `3a9a309`；这些中间 commit 均已包含在 V43。
+- GitHub Actions run `32557174653` success：<https://github.com/xmy953538104/ZuiControl/actions/runs/32557174653>；保留的最终 artifact 为 `D:\3.VScode\Mi\work\ci_artifacts\zuicontrol_32557174653`。
+- release 证书 SHA-256：`3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94`；CI/payload/两个 APK SHA-256：`89d9b10a483cb4bc1fc1123fec1201aa0c465cfeb1acd943be556a9b819c1055`。
+- 最终成品：`D:\3.VScode\Mi\【B刷机】072`；最终 super 反向抽取 verifier 为 `ok=true`，安全 9008 preflight 只含 `super`、`vbmeta_system_a/b`、`boot_a/b`、`vbmeta_a/b` 七项。
+- 正式刷写日志：`D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-22_14-44-47.log`。Firehose 返回 `All went well! Resetting to system`；重启后脚本确认 072、boot completed 和 43/0.21.6。
+- 最终验收后清理了 22 个精确、可重建目标：工作分区 img/unpack、当前与备份中间 super、反编译/签名探针、五份旧 CI artifact、Gradle/Kotlin/build 缓存和 Python `__pycache__`。`work` 现约 1.906GiB，D 盘可用空间由 43.118GiB 增至 103.492GiB，实际恢复约 60.374GiB；官方 A072、用户 `072必刷镜像`、最终 B072、安全 9008 包、最终 CI artifact、仓库和刷写日志均保留。
+
+```text
+e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371  boot.img
+1093c4aff5672a090d39bd1a23a413b71402cdba960edc9b1f022f78d795f3e3  super.img
+bbf1d2bb3c2273dc87c427b93590f40c117ae36d68744fe1797a7269cf7986f7  vbmeta_system.img
+926aa809ec55f8a521449f8673b48f93e55b412884ab23b087cc4536b73cdcce  vbmeta.img
+89d9b10a483cb4bc1fc1123fec1201aa0c465cfeb1acd943be556a9b819c1055  ZuiControl-v19-release.apk
+89d9b10a483cb4bc1fc1123fec1201aa0c465cfeb1acd943be556a9b819c1055  ZuiControl-v19-system.apk
+```
+
+- `boot.img` 逐字来自用户指定的 `D:\3.VScode\Mi\072必刷镜像\boot.img`。`vbmeta_system.img`/`vbmeta.img` 以同目录用户高回滚模板为唯一模板，在最终动态分区签名后重建；没有把 `【A官方】072` 中对应三张镜像混入成品。
+
+#### 072 的 3.3GHz 根因与修复
+
+- 072 内核本身已经公开 3.3024GHz：policy7 的 `cpuinfo_max_freq=3302400`，boost OPP 中也存在 3.1104/3.1872/3.2448/3.3024GHz。因此不是内核没解锁，也不需要改 boot、内核或直写 cpufreq。
+- 072 官方性能 XML 把 Mega 上限显式写成 `3302400`，但 072 ZuiPP 会把“显式等于最高 OPP”的值裁到最后一个普通档 `3052800`。187 官方修复不是写更大的数字，而是把上限改为 `-1`，表示不再人为封顶，让内核自己使用完整 OPP 表。
+- `XmlProfileGenerator` 现在仅在用户请求恰好等于 Mega 顶级 OPP 时生成 `MegaCoreMax=-1`；其它值仍按用户输入生成。这是对 187 官方语义的最小移植，不是无条件放开所有 profile，更不是超频。
+- V43 实机的 P2 `notifyPerfStatus 11/17` 已显示三个温区均为 `MegaCoreMax=-1`；policy7 的 `scaling_max_freq=3302400`。本次正常亮屏启动鸣潮后，`time_in_state` 的 3302400 档累计为 2792 tick；更早 V41 的独立前后差分也记录到该档 `+47`。因此 3.3024GHz 不只是配置文本或上限显示，而是内核实际进入过的频点。
+- 频率仍受 OEM 调度、负载、温度和功耗安全策略动态决定；“允许 3.3GHz”不等于一直锁 3.3GHz。本轮没有主动高温压测，也没有修改任何 thermal conf。
+
+#### 无耳机杜比开关
+
+- “不插耳机不能关”的限制在原厂 SystemUI `QDolbyAtmosTile` 的耳机状态检查，不在 Dolby 效果服务本体。`DaxService` 本身会监听并执行 `Settings.Global.dlb_dap_state`。
+- 新增的 `DolbyTileService` 是系统 priv-app 的轻量 QS Tile，使用已有的 `WRITE_SECURE_SETTINGS` 权限直接切换该全局状态；没有 root 轮询、后台常驻或音效服务替换。原厂 Dolby tile 和其耳机限制保持原样，用户使用通知栏最前面的 ZuiControl 杜比开关即可。
+- V43 实机确认 `mBluetoothName=null`、`mBluetoothHeadset=null`、`mBluetoothHeadsetDevice=null`。无耳机时点击新 Tile 得到 `1 -> 0 -> 1`，`DaxService` 两次均收到参数更新；最终已恢复为 `1`（开启）。
+
+#### AppOpt 2.2.3 最小修复与最终实测
+
+- 用户提供的新包为 AppOpt 2.2.3。072 没有 BTF，因此生产配置明确使用作者支持的 `/proc` 模式：根目录 `/AppOpt.json` 软链接到 `/system/etc/zui_control/AppOpt.json`，JSON 为 `mode=2`、`check_interval=2`、`cpuset_name=AppOpt`、`web_enable=false`。
+- V42 中服务虽然显示 running，但 Enforcing 阻止 `u:r:performanced:s0` 创建 `/dev/cpuset/AppOpt`，三条规则不会稳定生效。一次受控的约 8 秒 Permissive 探针证明二进制和规则本身正确，并把缺口精确缩小为 cgroup 目录的 `create` 与 `setattr`；探针在 finally 中恢复 Enforcing，没有留下宽松模式。
+- V43 只增加 `(allow performanced cgroup (dir (create setattr)))`，没有授予广泛 cgroup 文件写权限、root 域、全局 signal 或额外 sysfs 权限。最终开机 `/dev/cpuset/AppOpt` 已存在，AppOpt PID 7816 运行于 `u:r:performanced:s0`，本 boot 中 `comm="AppOpt"`/performanced 相关 AVC 为 0。
+- 权威规则仍只有三条：`com.kurogame.mingchao=2-6`、`{RenderThread}=2-4`、`{GameThread}=7`。V43 在亮屏 Launcher 通过正常 Launcher intent 启动鸣潮后，稳定采样为：主进程与 TaskGraph/RHI `2-6`，RenderThread `2-4`，全部精确 GameThread `7`。早期线程创建阶段出现过 OEM 临时重分配，但 AppOpt 的 2 秒扫描后连续样本恢复到上述目标；这才是最终判定。
+- 本次短验收设 90C 保护线，最高瞬时 CPU junction 为 80.2C，未触线且没有继续加热。测试后已强停鸣潮；冷却后 CPU junction 最高约 38.1C，八个 gpuss 为 33.8–35.0C。
+
+#### P1/P2 与最终设备现场
+
+- P1 未改：Launcher 的 raw/current/last/applied 一致，target/actual 为 `120/120`，`refreshOwner=system`、`daemonRefreshDisabled=true`、`displayVote=adaptiveRender`、`systemServiceAlive=true`；没有进入 FPS cap。
+- P2 两条 canonical profile 为 `bin.mt.plus.canary` 与 `com.kurogame.mingchao`，两者 Mega 请求显示 3.30GHz；鸣潮仍是默认 GPU 422–720MHz、42/48C 为 500–903MHz，active XML 中仍是正确的 `8_0_-1` / `7_0_-1` 方向，`ThermalConfig=0 0 0` 未改。
+- active 与 `/system/etc` 最终 bind hash 闭合：game 两处均为 `ef2244f17f75941d13b501ad25c293e05ff2cccbeecb5bd03b3318bcd174bb82`；performance 两处均为 `65913fe5875c403c3baa59c88af687231db0efd141bb224e732f8fabc4fe3b9a`。两条路径均在 PID 1 mountinfo 中确认为 bind mount。
+- 同一次亮屏正常鸣潮入口闭合 `onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode open=1`；JSON 中 Mega 为 `-1`，GPU 三温区与当前 XML 一致。没有恢复 provider_direct。
+- 最终鸣潮已强停，SELinux 为 Enforcing，杜比为开启，AppOpt 与 zui_controld 为 running。KGSL 回到 231MHz、允许 231–903MHz、`thermal_pwrlevel=0`；`skin-msm-therm=34.0C`、`quiet-therm=33.0C`、`back_temp=33.5C`、battery=31.7C。072 没有残留 187 的 578MHz/level 6 现场。
+
+#### 当前最短下一步
+
+1. 当前不是待刷状态，不要重复制作或刷写镜像。最终日用包只认 `D:\3.VScode\Mi\【B刷机】072`，校验值以其中 `SHA256SUMS_ZuiControl_v19.txt` 为准。
+2. 用户正常使用时观察 3.3GHz、杜比开关和 AppOpt 即可；不要为了证明频率主动烧机。3.3GHz 是允许的 boost 档，不承诺持续驻留。
+3. 若以后出现 AppOpt 不响应，先确认 Enforcing、`/dev/cpuset/AppOpt`、PID/域、三条权威规则、真实线程 mask 和 `comm="AppOpt"` AVC；不要退回 Permissive、Magisk 模块或第二套常驻扫描器。
+4. 仍然不要改 thermal conf、P1，不进入 FPS cap，不恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。温控若以后重开，应作为独立、可回滚实验另起版本。
+
+### 0.14 2026-08-21 072 完整移植、持久刷入与实机验收（历史，已被 0.15 覆盖）
 
 本节覆盖 0.13 的当前设备、成品、下一步和 187 温控残留现场。设备已由用户降级到 `ZUI 16.1.11.072`，随后把 V40 的 P1/P2/P3 架构完整移植到 072 官方基线，使用用户指定的高回滚 boot/vbmeta 模板经安全 7 项 9008 流程持久刷入并完成实机验收。187 上 `thermal_pwrlevel=6/max=578MHz` 未释放的现场只保留为历史，不要在 072 上继续执行原 0.13 的冷机 A/B。
 
