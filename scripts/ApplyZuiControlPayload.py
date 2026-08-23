@@ -213,6 +213,7 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         image_root / "work" / "config" / "erofs_overrides" / "system_a_file_contexts",
         unpack / "system_a" / "system" / "etc" / "selinux" / "plat_property_contexts",
         unpack / "system_a" / "system" / "etc" / "selinux" / "plat_service_contexts",
+        unpack / "system_a" / "system" / "etc" / "selinux" / "plat_file_contexts",
         unpack / "system_a" / "system" / "etc" / "selinux" / "plat_sepolicy.cil",
         unpack / "vendor_a" / "etc" / "selinux" / "vendor_sepolicy.cil",
     ]
