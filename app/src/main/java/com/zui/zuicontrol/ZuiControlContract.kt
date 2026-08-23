@@ -15,6 +15,12 @@ object ZuiControlContract {
     const val CMD_REMOVE_APPOPT_RULE = "remove_appopt_rule"
     const val CMD_REPLACE_APPOPT_RULES = "replace_appopt_rules"
     const val CMD_STOP_APPOPT = "restore_asoul"
+    const val CMD_SET_UPERF_MODE = "set_uperf_mode"
+    const val CMD_SET_UPERF_APP = "set_uperf_app"
+    const val CMD_REMOVE_UPERF_APP = "remove_uperf_app"
+    const val CMD_RESTART_SCHEDULER = "restart_scheduler"
+    const val CMD_START_ASOUL = "start_asoul"
+    const val CMD_STOP_ASOUL = "stop_asoul"
     const val CMD_EXPORT_LOGS = "export_logs"
 
     const val KEY_REQUEST_TEXT = "zui_control_request_text"
@@ -32,6 +38,9 @@ object ZuiControlContract {
     const val KEY_ZUIPP_RELOAD_STATE = "zui_control_zuipp_reload_state"
     const val KEY_APPOPT_HEALTH = "zui_control_asoul_health"
     const val KEY_APPOPT_RULES_TEXT = "zui_control_appopt_rules_text"
+    const val KEY_UPERF_HEALTH = "zui_control_uperf_health"
+    const val KEY_UPERF_MODE = "zui_control_uperf_mode"
+    const val KEY_UPERF_RULES_TEXT = "zui_control_uperf_rules_text"
     const val KEY_XML_STATE = "zui_control_xml_state"
     const val KEY_LOG_EXPORT = "zui_control_log_export"
 

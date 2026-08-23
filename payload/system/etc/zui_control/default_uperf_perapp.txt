@@ -1,0 +1,6 @@
+# ZuiControl Uperf per-app modes.
+# Exact package rules are evaluated before the screen-off and default rules.
+com.kurogame.mingchao performance
+com.kurogame.wutheringwaves.global performance
+- powersave
+* balance

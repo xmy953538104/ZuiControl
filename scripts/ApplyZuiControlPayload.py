@@ -76,21 +76,30 @@ def mode_for(rel, is_dir):
         return "0755"
     if rel in [
         "system_a/system/bin/zui_controld",
-        "system_a/system/bin/AppOpt",
-        "system_a/system/bin/AppOpt-ebpf",
+        "system_a/system/bin/zui_uperf_service",
+        "system_a/system/bin/uperf",
+        "system_a/system/bin/AsoulOpt",
     ]:
         return "0755"
     return "0644"
 
 
 def owner_group_for(rel):
-    if rel in ["system_a/system/bin/AppOpt", "system_a/system/bin/AppOpt-ebpf"]:
+    if rel in [
+        "system_a/system/bin/zui_uperf_service",
+        "system_a/system/bin/uperf",
+        "system_a/system/bin/AsoulOpt",
+    ]:
         return "0 2000"
     return "0 0"
 
 
 def context_for(rel):
-    if rel in ["system_a/system/bin/AppOpt", "system_a/system/bin/AppOpt-ebpf"]:
+    if rel in [
+        "system_a/system/bin/zui_uperf_service",
+        "system_a/system/bin/uperf",
+        "system_a/system/bin/AsoulOpt",
+    ]:
         return "u:object_r:performanced_exec:s0"
     return "u:object_r:system_file:s0"
 
@@ -152,6 +161,13 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/etc/asopt.conf",
         "system_a/system/etc/zui_control/zui_cloud_block.sh",
         "system_a/system/etc/zui_control/clear_package_cache.sh",
+        "system_a/system/bin/AppOpt",
+        "system_a/system/bin/AppOpt-ebpf",
+        "system_a/system/etc/init/zui_appopt.rc",
+        "system_a/system/etc/zui_control/AppOpt.json",
+        "system_a/system/etc/zui_control/default_applist.conf",
+        "system_a/system/etc/zui_control/zui_appopt_prepare.sh",
+        "system_a/AppOpt.json",
     ]
     for rel in legacy:
         remove_path(unpack / rel, dry_run, removed)
@@ -169,6 +185,9 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "zui_asoulopt",
         "asopt.conf",
         "zui_cloud_block",
+        "AppOpt",
+        "zui_appopt",
+        "default_applist.conf",
         "system_a/system/priv-app/ZuiControl ",
         "system_a/system/priv-app/ZuiControl/ZuiControl",
         "system_a/system/priv-app/ZuiControlV30",
@@ -240,21 +259,6 @@ def copy_payload(payload, unpack, dry_run, report):
                 dst.chmod(mode)
             except OSError:
                 pass
-
-    appopt_link_rel = "system_a/AppOpt.json"
-    appopt_link_target = "/system/etc/zui_control/AppOpt.json"
-    appopt_link = unpack / appopt_link_rel
-    appopt_link_data = b"!<symlink>\xff\xfe" + appopt_link_target.encode("utf-16-le") + b"\x00\x00"
-    link_changed = not appopt_link.exists() or appopt_link.read_bytes() != appopt_link_data
-    copied.append({
-        "source": "generated AppOpt settings symlink",
-        "target": appopt_link_rel,
-        "changed": link_changed,
-    })
-    if not dry_run and link_changed:
-        appopt_link.parent.mkdir(parents=True, exist_ok=True)
-        appopt_link.write_bytes(appopt_link_data)
-    dst_items.append((appopt_link_rel, False))
 
     for rel, is_dir in dst_items:
         mode = mode_for(rel, is_dir)
@@ -508,8 +512,11 @@ def patch_vendor_sepolicy(unpack, payload, dry_run, report):
         "(allow shell_34_0 vendor_sysfs_kgsl (file ",
         "(allow shell_34_0 vendor_sysfs_kgsl (lnk_file ",
     ]
-    report["vendor_sepolicy_removed"] = remove_lines_containing(target, obsolete, dry_run)
-    report["vendor_sepolicy_added"] = []
+    removed = remove_lines_containing(target, obsolete, dry_run)
+    patch = payload / "patches" / "vendor_sepolicy_zui_scheduler.cil"
+    additions = append_unique_lines(target, read_patch_lines(patch), dry_run)
+    report["vendor_sepolicy_removed"] = removed
+    report["vendor_sepolicy_added"] = additions
 
 
 def update_plat_mapping_hash(unpack, report):

@@ -1,0 +1,8 @@
+;; Uperf owns the bounded Snapdragon GPU and msm_performance controls.
+;; The service runs in the platform performanced domain, seen here through the
+;; public 34.0 mapping type used by vendor policy.
+(allow performanced_34_0 vendor_sysfs_kgsl (dir (ioctl read getattr lock open search)))
+(allow performanced_34_0 vendor_sysfs_kgsl (file (ioctl read write getattr lock append map open)))
+(allow performanced_34_0 vendor_sysfs_kgsl (lnk_file (ioctl read getattr lock map open)))
+(allow performanced_34_0 vendor_sysfs_msm_perf (dir (ioctl read getattr lock open search)))
+(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr lock append map open)))

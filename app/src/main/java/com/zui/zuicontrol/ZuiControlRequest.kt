@@ -161,6 +161,7 @@ object ZuiControlRequest {
         "stopping_appopt" -> "正在停止并检查 AppOpt"
         "stopping_target" -> "正在关闭受影响 App"
         "stopping_targets" -> "正在关闭受影响的 App"
+        "restarting_scheduler" -> "正在重启 Uperf 与线程服务"
         else -> detail.ifBlank { "正在等待系统处理" }
     }
 

@@ -1,0 +1,53 @@
+on post-fs-data
+    mkdir /data/vendor/zui_control 0775 root shell
+    mkdir /data/vendor/zui_control/uperf 0775 root shell
+    mkdir /data/vendor/zui_control/asoul 0775 root shell
+    mkdir /data/adb/naki 0755 root root
+    restorecon_recursive /data/vendor/zui_control
+    restorecon_recursive /data/adb/naki
+
+on property:sys.boot_completed=1
+    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh
+    trigger zui-scheduler-start
+
+on zui-scheduler-start
+    stop vendor.perfservice
+    umount /data/adb/naki/asopt.conf
+    mount none /data/vendor/zui_control/asoul/asopt.conf /data/adb/naki/asopt.conf bind
+    restorecon /data/adb/naki/asopt.conf
+    start zui_asoulopt
+    setprop zui_control.asoul started
+    start zui_uperf
+
+on property:zui_control.scheduler=restart
+    stop zui_uperf
+    stop zui_asoulopt
+    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh
+    trigger zui-scheduler-start
+    setprop zui_control.scheduler restarted
+
+on property:zui_control.scheduler=stop
+    stop zui_uperf
+    stop zui_asoulopt
+    start vendor.perfservice
+    setprop zui_control.scheduler stopped
+
+on property:zui_control.asoul=start
+    start zui_asoulopt
+    setprop zui_control.asoul started
+
+on property:zui_control.asoul=stop
+    stop zui_asoulopt
+    setprop zui_control.asoul stopped
+
+service zui_uperf /system/bin/zui_uperf_service
+    class late_start
+    disabled
+    user root
+    group root system readproc graphics input
+
+service zui_asoulopt /system/bin/AsoulOpt
+    class late_start
+    disabled
+    user root
+    group root system readproc

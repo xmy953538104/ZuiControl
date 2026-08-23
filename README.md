@@ -3,15 +3,15 @@
 ## Current Handoff
 
 - `docs/ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md`: current project state, package identity, boundaries, and post-flash verification order.
-- `docs/ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md`: P2 XML structure, `ThermalConfig` values, and the full ZuiPP application path.
+- `docs/ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md`: retained P2 XML/ThermalConfig reference; P2 is not the current scheduler owner.
 
 ZuiControl is the v19 system-server refresh-rate and performance control plane.
 
 The app is now a privileged UI/QS/config client. Foreground scene detection and
 refresh-rate policy live in `system_server` through the `zui_control` Binder
-service. The daemon remains for XML generation, bind mounts, controlled ZuiPP
-reload after XML hash verification, SafeCenter one-time keepalive, logs, and
-AppOpt thread-placement orchestration.
+service. Performance ownership is now split between the ROM-integrated Uperf
+core and Shiroko A-SOUL thread placement. P2 XML is restored to the stock ZUI
+files and AppOpt is removed from the production payload.
 
 ## Runtime Split
 
@@ -19,14 +19,16 @@ AppOpt thread-placement orchestration.
 - `android.zui.ZuiControlManager`: thin framework client used by the app.
 - `zui_control`: Binder service published from `system_server`.
 - `ZuiControlService`: service-side display-mode policy owner.
-- `/system/bin/zui_controld`: root daemon for XML/ZuiPP reload/AppOpt/log work only.
+- `/system/bin/zui_controld`: scheduler control plane, persistent Uperf profiles, health checks, and logs.
+- `/system/bin/uperf`: CPU power-model scheduler and bounded CPU/GPU policy writer.
+- `/system/bin/AsoulOpt`: thread placement with the verified `mode=0`, `rt=0` policy.
 - `/data/system/zui_control/profiles.prop`: refresh scene profiles.
 - `/data/vendor/zui_control/`: daemon runtime state, XML work files, and logs.
 
-AppOpt supports one fallback CPU set plus validated thread-name/glob overrides
-for each installed user app. The UI includes an opt-in Snapdragon 8 Gen 3 game
-catalog, a strict in-app editor, and import/export; arbitrary CPU masks and
-system-app targets remain unavailable.
+The Uperf UI supports a global fallback mode plus validated per-app overrides.
+The production defaults use global `balance`, screen-off `powersave`, and
+`performance` for both Mingchao package names. A-SOUL owns game-thread affinity;
+Uperf's own thread scheduler remains disabled to prevent double placement.
 
 Refresh-rate ownership is intentionally not shared: notification clicks call
 `zui_control`; the daemon does not learn refresh rules, restore 120Hz, or write
@@ -48,11 +50,11 @@ Refresh-rate ownership is intentionally not shared: notification clicks call
 
 Run the `Build ZuiControl` workflow manually. It will:
 
-1. Run the XML/daemon tests and script syntax checks.
+1. Run the daemon/Uperf ownership tests and script syntax checks.
 2. Run Android unit tests and lint.
 3. Decode the release keystore from GitHub Actions secrets.
 4. Build signed `app-release.apk`.
-5. Stage it into `payload/system/priv-app/ZuiControlV33/ZuiControl.apk`.
+5. Stage it into `payload/system/priv-app/ZuiControlV44/ZuiControl.apk`.
 6. Upload both the APK and staged payload as artifacts.
 
 Required repository secrets:
@@ -64,7 +66,7 @@ Required repository secrets:
 
 ## Payload Usage
 
-After the APK exists in `payload/system/priv-app/ZuiControlV33/ZuiControl.apk`,
+After the APK exists in `payload/system/priv-app/ZuiControlV44/ZuiControl.apk`,
 apply the payload to an unpacked image tree:
 
 ```bash
@@ -74,7 +76,7 @@ python scripts/ApplyZuiControlPayload.py --unpack /path/to/work/unpack
 Runtime logs on device:
 
 - `/data/vendor/zui_control/log/controld.log`
-- `/data/vendor/zui_control/log/appopt.log`
+- `/data/vendor/zui_control/log/uperf.log`
 
 ## Validation Anchors
 
@@ -84,6 +86,9 @@ Runtime logs on device:
 - `settings get system zui_control_active_refresh`
 - `dumpsys display` active mode versus the selected scene profile
 - `logcat -b all | grep -i ZuiControl`
+- `ps -AZ | grep -E 'uperf|AsoulOpt'`
+- `settings get system zui_control_uperf_health`
 
-The expected steady state is `refreshOwner=system` and
-`daemonRefreshDisabled=true`.
+The expected steady state is `refreshOwner=system`,
+`daemonRefreshDisabled=true`, Uperf/A-SOUL in `performanced`, and
+`zui_control_xml_state=state=retired;owner=uperf`.

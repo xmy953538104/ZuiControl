@@ -51,6 +51,7 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val performanceProfiles = linkedMapOf<String, PerformanceProfile>()
     private val appOptRules = linkedMapOf<String, AppOptRule>()
+    private val uperfRules = linkedMapOf<String, UperfMode>()
     private val refreshRules = linkedMapOf<String, Int>()
     private val labelCache = linkedMapOf<String, String>()
     private val appOptTemplates by lazy { AppOptConfig.readTemplates(this) }
@@ -82,6 +83,7 @@ class MainActivity : Activity() {
     private lateinit var thermalPreview: TextView
     private lateinit var systemStatus: TextView
     private lateinit var appOptRulesHost: LinearLayout
+    private lateinit var uperfRulesHost: LinearLayout
 
     private var currentPage = Page.REFRESH
     private var performanceEditorOpen = false
@@ -104,8 +106,6 @@ class MainActivity : Activity() {
         }
         reloadState()
         selectedPackage = savedInstanceState?.getString(STATE_PERFORMANCE_PACKAGE)
-        val initialAppOptRules = LinkedHashMap(appOptRules)
-        Thread { runCatching { AppOptConfig.ensure(this, initialAppOptRules) } }.start()
         setContentView(buildRoot())
         val restoredPage = savedInstanceState?.getString(STATE_PAGE)?.let { name ->
             Page.entries.firstOrNull { it.name == name }
@@ -271,11 +271,7 @@ class MainActivity : Activity() {
         contentHost.removeAllViews()
         val view = when (currentPage) {
             Page.REFRESH -> buildRefreshPage()
-            Page.PERFORMANCE -> if (performanceEditorOpen) {
-                buildPerformanceEditorPage()
-            } else {
-                buildPerformancePage()
-            }
+            Page.PERFORMANCE -> buildUperfPage()
             Page.APPOPT -> buildAppOptPage()
             Page.SYSTEM -> buildSystemPage()
         }
@@ -438,6 +434,153 @@ class MainActivity : Activity() {
                 throw IllegalStateException(reply.text)
             }
             ZuiControlRequest.send(this, ZuiControlContract.CMD_SYNC_XML_REFRESH)
+        }
+    }
+
+    private fun buildUperfPage(): View {
+        val root = FrameLayout(this)
+        uperfRulesHost = vertical().apply {
+            addView(compactNote(
+                setting(ZuiControlContract.KEY_UPERF_HEALTH).ifBlank {
+                    "Uperf 状态等待系统服务上报"
+                },
+            ))
+            addView(sectionTitle("全局模式"), sectionMargins())
+            val selected = UperfMode.fromId(setting(ZuiControlContract.KEY_UPERF_MODE))
+                ?: UperfMode.BALANCE
+            UperfMode.entries.chunked(2).forEach { modes ->
+                addView(horizontalRow().apply {
+                    background = null
+                    modes.forEachIndexed { index, mode ->
+                        addView(commandButton(
+                            if (mode == selected) "✓ ${mode.title}" else mode.title,
+                        ) { setUperfMode(mode) }, LinearLayout.LayoutParams(
+                            0,
+                            dp(46),
+                            1f,
+                        ).apply {
+                            if (index > 0) setMargins(dp(8), 0, 0, 0)
+                        })
+                    }
+                }, settingsActionMargins(spaced = true))
+            }
+            addView(compactNote(
+                "日常默认均衡、熄屏节能；应用覆盖只改变当前前台应用。" +
+                    "GPU 安全上下界跟随 Uperf 档位，KGSL DVFS 与 thermal_pwrlevel 保留。",
+            ), fieldMargins())
+            addView(sectionTitle("应用覆盖"), sectionMargins())
+        }
+        root.addView(ScrollView(this).apply {
+            addView(uperfRulesHost)
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(76))
+        }, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        root.addView(floatingButton("+") {
+            showPackagePicker(
+                title = "选择 Uperf 应用",
+                userAppsOnly = true,
+                launchableOnly = true,
+                onSelected = { entry -> showUperfAppDialog(entry.info.packageName) },
+            )
+        }, FrameLayout.LayoutParams(dp(54), dp(54), Gravity.END or Gravity.BOTTOM).apply {
+            setMargins(0, 0, dp(6), dp(8))
+        })
+        renderUperfRules()
+        return root
+    }
+
+    private fun renderUperfRules() {
+        if (!::uperfRulesHost.isInitialized) return
+        while (uperfRulesHost.childCount > UPERF_STATIC_CHILDREN) {
+            uperfRulesHost.removeViewAt(UPERF_STATIC_CHILDREN)
+        }
+        if (uperfRules.isEmpty()) {
+            uperfRulesHost.addView(emptyText("点击右下角 + 添加应用覆盖"), matchWrap())
+            return
+        }
+        uperfRules.forEach { (pkg, mode) ->
+            uperfRulesHost.addView(horizontalRow().apply {
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
+                addView(appIcon(pkg), LinearLayout.LayoutParams(dp(44), dp(44)))
+                addView(vertical().apply {
+                    addView(label(labelForPackage(pkg), 15f, COLOR_TEXT, Typeface.BOLD))
+                    addView(label(pkg, 11f, COLOR_SUBTLE, Typeface.NORMAL))
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins(dp(12), 0, dp(12), 0)
+                })
+                addView(rateBadge(mode.title), LinearLayout.LayoutParams(dp(78), dp(38)))
+                setOnClickListener { showUperfAppDialog(pkg, mode) }
+            }, cardMargins())
+        }
+    }
+
+    private fun showUperfAppDialog(pkg: String, current: UperfMode? = uperfRules[pkg]) {
+        val modes = UperfMode.entries
+        val picker = traySpinner(modes.map { it.title }) {}
+        picker.setSelection(modes.indexOf(current ?: UperfMode.PERFORMANCE))
+        AlertDialog.Builder(this)
+            .setTitle(if (current == null) "添加 Uperf 覆盖" else "编辑 Uperf 覆盖")
+            .setView(vertical().apply {
+                setPadding(dp(20), dp(6), dp(20), 0)
+                addView(appIdentity(pkg))
+                addView(fieldTitle("性能模式"), fieldMargins())
+                addView(picker, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dp(48),
+                ).apply { setMargins(0, dp(6), 0, 0) })
+            })
+            .setPositiveButton("保存") { _, _ -> setUperfApp(pkg, modes[picker.selectedItemPosition]) }
+            .apply {
+                if (current != null) {
+                    setNeutralButton("删除") { _, _ -> removeUperfApp(pkg) }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .showStyled()
+    }
+
+    private fun setUperfMode(mode: UperfMode) {
+        sendCommand("正在切换 Uperf ${mode.title}", onTerminal = { ack ->
+            if (ack.succeeded) {
+                reloadState()
+                renderCurrentPage()
+                toast("Uperf 已切换为${mode.title}")
+            }
+        }) {
+            ZuiControlRequest.send(this, ZuiControlContract.CMD_SET_UPERF_MODE, mode = mode.id)
+        }
+    }
+
+    private fun setUperfApp(pkg: String, mode: UperfMode) {
+        sendCommand("正在保存 Uperf 应用模式", onTerminal = { ack ->
+            if (ack.succeeded) {
+                reloadState()
+                renderCurrentPage()
+                toast("应用覆盖已保存")
+            }
+        }) {
+            ZuiControlRequest.send(
+                this,
+                ZuiControlContract.CMD_SET_UPERF_APP,
+                pkg = pkg,
+                mode = mode.id,
+            )
+        }
+    }
+
+    private fun removeUperfApp(pkg: String) {
+        sendCommand("正在删除 Uperf 应用模式", onTerminal = { ack ->
+            if (ack.succeeded) {
+                reloadState()
+                renderCurrentPage()
+                toast("应用已恢复全局模式")
+            }
+        }) {
+            ZuiControlRequest.send(this, ZuiControlContract.CMD_REMOVE_UPERF_APP, pkg = pkg)
         }
     }
 
@@ -1064,28 +1207,47 @@ class MainActivity : Activity() {
     }
 
     private fun buildAppOptPage(): View {
-        val root = FrameLayout(this)
-        appOptRulesHost = vertical()
-        root.addView(ScrollView(this).apply {
-            addView(appOptRulesHost)
-            clipToPadding = false
-            setPadding(0, 0, 0, dp(76))
-        }, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        ))
-        root.addView(floatingButton("+") {
-            showPackagePicker(
-                title = "选择 AppOpt 应用",
-                onSelected = { entry -> showAppOptPresetDialog(entry.info.packageName) },
-                userAppsOnly = true,
-                launchableOnly = true,
+        return ScrollView(this).apply {
+            addView(vertical().apply {
+                setPadding(0, 0, 0, dp(20))
+                addView(compactNote(
+                    setting(ZuiControlContract.KEY_UPERF_HEALTH).ifBlank {
+                        "A-SOUL 状态等待系统服务上报"
+                    },
+                ))
+                addView(sectionTitle("Shiroko A-SOUL"), sectionMargins())
+                addView(compactNote(
+                    "mode=0：硬亲和；rt=0：保留默认调度策略。" +
+                        "实机鸣潮规则为 GameThread→7、Render/RHI→2-4、其它→2-6，" +
+                        "并使用 WALT per-task boost。AppOpt 已退役，不会并行运行。",
+                ))
+                addView(settingsAction(
+                    R.drawable.ic_action_refresh,
+                    "启用线程优化",
+                    "启动系统内置 A-SOUL，不依赖 Magisk 模块",
+                ) { setAsoulEnabled(true) }, settingsActionMargins(spaced = true))
+                addView(settingsAction(
+                    R.drawable.ic_action_stop,
+                    "停止线程优化",
+                    "停止 A-SOUL；已运行游戏建议重新进入",
+                ) { setAsoulEnabled(false) }, settingsActionMargins(spaced = true))
+            })
+        }
+    }
+
+    private fun setAsoulEnabled(enabled: Boolean) {
+        sendCommand(if (enabled) "正在启用线程优化" else "正在停止线程优化", onTerminal = { ack ->
+            if (ack.succeeded) {
+                reloadState()
+                renderCurrentPage()
+                toast(if (enabled) "A-SOUL 已启用" else "A-SOUL 已停止")
+            }
+        }) {
+            ZuiControlRequest.send(
+                this,
+                if (enabled) ZuiControlContract.CMD_START_ASOUL else ZuiControlContract.CMD_STOP_ASOUL,
             )
-        }, FrameLayout.LayoutParams(dp(54), dp(54), Gravity.END or Gravity.BOTTOM).apply {
-            setMargins(0, 0, dp(6), dp(8))
-        })
-        renderAppOptState()
-        return root
+        }
     }
 
     private fun buildSystemPage(): View {
@@ -1097,17 +1259,19 @@ class MainActivity : Activity() {
         root.addView(systemStatus)
 
         root.addView(sectionTitle("工具"), sectionMargins())
-        root.addView(settingsAction(R.drawable.ic_action_logs, "导出运行日志", "排查刷新率、性能与 AppOpt") {
+        root.addView(settingsAction(R.drawable.ic_action_logs, "导出运行日志", "排查刷新率、Uperf 与 A-SOUL") {
             exportLogs()
         }, settingsActionMargins())
-        root.addView(settingsAction(R.drawable.ic_action_import, "导入 AppOpt 备份", AppOptConfig.DISPLAY_PATH) {
-            importAppOptConfig()
-        }, settingsActionMargins(spaced = true))
-        root.addView(settingsAction(R.drawable.ic_action_export, "导出 AppOpt 备份", AppOptConfig.DISPLAY_PATH) {
-            syncAppOptConfig(showToast = true)
-        }, settingsActionMargins(spaced = true))
-        root.addView(settingsAction(R.drawable.ic_action_stop, "停止 AppOpt", "保留规则，仅停止线程放置") {
-            confirmStopAppOpt()
+        root.addView(settingsAction(R.drawable.ic_action_refresh, "重启调度核心", "重新加载 Uperf 配置并检查 A-SOUL") {
+            sendCommand("正在重启调度核心", onTerminal = { ack ->
+                if (ack.succeeded) {
+                    reloadState()
+                    renderCurrentPage()
+                    toast("调度核心已重启")
+                }
+            }) {
+                ZuiControlRequest.send(this@MainActivity, ZuiControlContract.CMD_RESTART_SCHEDULER)
+            }
         }, settingsActionMargins(spaced = true))
         renderSystemState()
         return scroll
@@ -1117,7 +1281,9 @@ class MainActivity : Activity() {
         if (!::systemStatus.isInitialized) {
             return
         }
-        systemStatus.text = "系统服务正常 · ${conciseXmlState()} · ${conciseZuippReloadState()}"
+        val scheduler = setting(ZuiControlContract.KEY_UPERF_HEALTH)
+        val schedulerState = if (scheduler.contains("Uperf：未运行")) "Uperf 异常" else "Uperf 已接管"
+        systemStatus.text = "系统服务正常 · $schedulerState · ${conciseXmlState()}"
     }
 
     private fun renderAppOptState() {
@@ -1437,6 +1603,7 @@ class MainActivity : Activity() {
     private fun conciseXmlState(): String {
         val xml = setting(ZuiControlContract.KEY_XML_STATE)
         return when {
+            xml.contains("owner=uperf") || xml.startsWith("state=retired") -> "P2 已退役"
             xml.startsWith("state=mounted") -> "XML 正常"
             hasP2StateError(xml, "") -> "XML 异常"
             xml.isBlank() -> "XML 未启用"
@@ -1623,6 +1790,15 @@ class MainActivity : Activity() {
         appOptRules.putAll(AppOptRules.parse(
             setting(ZuiControlContract.KEY_APPOPT_RULES_TEXT),
         ))
+        uperfRules.clear()
+        setting(ZuiControlContract.KEY_UPERF_RULES_TEXT).lineSequence().forEach { line ->
+            val fields = line.split('|', limit = 2)
+            val pkg = fields.getOrNull(0).orEmpty()
+            val mode = fields.getOrNull(1)?.let(UperfMode::fromId)
+            if (PackageNames.isValid(pkg) && mode != null) {
+                uperfRules[pkg] = mode
+            }
+        }
         performanceProfiles.clear()
         val parsed = setting(ZuiControlContract.KEY_PERFORMANCE_PROFILES_TEXT).lineSequence()
             .mapNotNull { PerformanceProfile.parse(it) }
@@ -2358,10 +2534,22 @@ class MainActivity : Activity() {
         HOT("高温", "高温"),
     }
 
+    private enum class UperfMode(val id: String, val title: String) {
+        POWERSAVE("powersave", "节能"),
+        BALANCE("balance", "均衡"),
+        PERFORMANCE("performance", "性能"),
+        FAST("fast", "极速"),
+        ;
+
+        companion object {
+            fun fromId(value: String): UperfMode? = entries.firstOrNull { it.id == value }
+        }
+    }
+
     private enum class Page(val title: String, val iconRes: Int) {
         REFRESH("刷新率", R.drawable.ic_nav_display_rate),
-        PERFORMANCE("性能", R.drawable.ic_nav_performance),
-        APPOPT("AppOpt", R.drawable.ic_nav_appopt),
+        PERFORMANCE("Uperf", R.drawable.ic_nav_performance),
+        APPOPT("线程", R.drawable.ic_nav_appopt),
         SYSTEM("系统", R.drawable.ic_nav_system),
     }
 
@@ -2370,6 +2558,7 @@ class MainActivity : Activity() {
         private const val STATE_PAGE = "page"
         private const val STATE_PERFORMANCE_EDITOR = "performance_editor"
         private const val STATE_PERFORMANCE_PACKAGE = "performance_package"
+        private const val UPERF_STATIC_CHILDREN = 6
         private val COLOR_BG = Color.rgb(248, 247, 252)
         private val COLOR_SURFACE = Color.rgb(250, 249, 253)
         private val COLOR_FIELD = Color.rgb(240, 241, 247)
