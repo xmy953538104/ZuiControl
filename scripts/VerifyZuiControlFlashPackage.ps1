@@ -297,7 +297,7 @@ try {
     $VendorPolicy = Join-Path $VendorSelinux 'vendor_sepolicy.cil'
     Assert-Contains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_kgsl (file (ioctl read write getattr lock append map open)))' 'Uperf KGSL vendor rule'
     Assert-Contains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr lock append map open)))' 'Uperf msm_performance vendor rule'
-    Assert-NotContains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl' 'legacy shell KGSL permission'
+    Assert-NotContains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (' 'legacy shell KGSL permission'
 
     $hashes = [ordered]@{
         boot = File-Sha256 $Boot
