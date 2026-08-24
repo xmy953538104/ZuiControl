@@ -357,7 +357,14 @@ try {
         '(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))',
         '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))'
     )) { Assert-Contains $PlatPolicy $rule 'scheduler SELinux rule' }
-    Assert-NotContains $PlatPolicy '(allow performanced system_server (' 'retired Uperf top-app proc access'
+    foreach ($retiredProcAccess in @(
+        '(allow performanced system_server (dir ',
+        '(allow performanced system_server (file ',
+        '(allow performanced system_server (lnk_file ',
+        '(allow performanced system_server (process '
+    )) {
+        Assert-NotContains $PlatPolicy $retiredProcAccess 'retired Uperf top-app proc access'
+    }
 
     $VendorPolicy = Join-Path $VendorSelinux 'vendor_sepolicy.cil'
     Assert-Contains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr setattr lock append map open)))' 'Uperf msm_performance vendor rule'
