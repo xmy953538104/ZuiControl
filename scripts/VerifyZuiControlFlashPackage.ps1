@@ -16,11 +16,15 @@ $Python = Join-Path $ToolsDir 'python-3.8.0\python.exe'
 $LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
+$Avbtool = Join-Path $ToolsDir 'downloaded\avbtool_aosp_c0af371_1.2.0.py'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
 $ExpectedVersionCode = '44'
 $ExpectedVersionName = '0.21.7'
 $ExpectedUperfSha256 = 'f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8'
 $ExpectedAsoulSha256 = '7ed7beb2a2680ac91a61dad6b7d64de2eb7eb5711d09c85fc21050b62a3243bd'
+$ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371'
+$ExpectedBuildFingerprintMarker = 'ZUI_16.1.11.072_241118_PRC'
+$MinimumAvbRollbackIndex = [int64]1736035200
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Missing file: $Path" }
@@ -52,6 +56,18 @@ function Assert-NotContains([string]$Path, [string]$Needle, [string]$Label) {
 function File-Sha256([string]$Path) {
     Require-File $Path
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+}
+
+function Read-AvbInfo([string]$Path) {
+    $text = & $Python $Avbtool info_image --image $Path | Out-String -Width 4096
+    if ($LASTEXITCODE -ne 0) { throw "Invalid AVB image: $Path" }
+    return $text
+}
+
+function Read-AvbRollbackIndex([string]$Info, [string]$Label) {
+    $match = [regex]::Match($Info, 'Rollback Index:\s+(\d+)')
+    if (-not $match.Success) { throw "Missing rollback index in $Label" }
+    return [int64]$match.Groups[1].Value
 }
 
 function Find-AndroidTool([string]$Name) {
@@ -166,8 +182,29 @@ $Vbmeta = Join-Path $FlashDir 'vbmeta.img'
 $VbmetaSystem = Join-Path $FlashDir 'vbmeta_system.img'
 $SidecarApk = Join-Path $FlashDir 'ZuiControl-v19-system.apk'
 $ReleaseSidecarApk = Join-Path $FlashDir 'ZuiControl-v19-release.apk'
-foreach ($file in @($Python, $LpUnpack, $ExtractErofs, $Apktool, $Super, $Boot, $Vbmeta, $VbmetaSystem, $SidecarApk, $ReleaseSidecarApk)) {
+foreach ($file in @($Python, $LpUnpack, $ExtractErofs, $Apktool, $Avbtool, $Super, $Boot, $Vbmeta, $VbmetaSystem, $SidecarApk, $ReleaseSidecarApk)) {
     Require-File $file
+}
+
+$BootHash = File-Sha256 $Boot
+if ($BootHash -ne $ExpectedBootSha256) {
+    throw "Unexpected B072 boot image: $BootHash"
+}
+$BootAvbInfo = Read-AvbInfo $Boot
+$VbmetaSystemAvbInfo = Read-AvbInfo $VbmetaSystem
+if (-not $BootAvbInfo.Contains($ExpectedBuildFingerprintMarker)) {
+    throw 'boot.img is not from the target B072 build'
+}
+if (-not $VbmetaSystemAvbInfo.Contains($ExpectedBuildFingerprintMarker)) {
+    throw 'vbmeta_system.img is not from the target B072 build'
+}
+$BootRollbackIndex = Read-AvbRollbackIndex $BootAvbInfo 'boot.img'
+$VbmetaSystemRollbackIndex = Read-AvbRollbackIndex $VbmetaSystemAvbInfo 'vbmeta_system.img'
+if ($BootRollbackIndex -lt $MinimumAvbRollbackIndex) {
+    throw "boot.img rollback index is below the device floor: $BootRollbackIndex < $MinimumAvbRollbackIndex"
+}
+if ($VbmetaSystemRollbackIndex -lt $MinimumAvbRollbackIndex) {
+    throw "vbmeta_system.img rollback index is below the device floor: $VbmetaSystemRollbackIndex < $MinimumAvbRollbackIndex"
 }
 
 $ok = $false
@@ -327,6 +364,8 @@ try {
         super_sha256 = $hashes.super
         vbmeta_sha256 = $hashes.vbmeta
         vbmeta_system_sha256 = $hashes.vbmeta_system
+        boot_rollback_index = $BootRollbackIndex
+        vbmeta_system_rollback_index = $VbmetaSystemRollbackIndex
     } | ConvertTo-Json -Depth 4
 } finally {
     if (-not $KeepWork -and (Test-Path -LiteralPath $WorkDir)) {
