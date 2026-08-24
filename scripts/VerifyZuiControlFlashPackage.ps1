@@ -18,8 +18,8 @@ $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $Avbtool = Join-Path $ToolsDir 'downloaded\avbtool_aosp_c0af371_1.2.0.py'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '46'
-$ExpectedVersionName = '0.21.9'
+$ExpectedVersionCode = '47'
+$ExpectedVersionName = '0.21.10'
 $ExpectedUperfSha256 = 'f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8'
 $ExpectedAsoulSha256 = '7ed7beb2a2680ac91a61dad6b7d64de2eb7eb5711d09c85fc21050b62a3243bd'
 $ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371'
@@ -144,9 +144,11 @@ function Assert-AsoulConfig([string]$Path) {
 function Assert-UperfConfig([string]$Path) {
     $raw = Get-Content -Raw -LiteralPath $Path
     $json = $raw | ConvertFrom-Json
-    if ($json.modules.switcher.switchInode -ne '/data/vendor/zui_control/uperf/cur_powermode.txt' -or
-        $json.modules.switcher.perapp -ne '/data/vendor/zui_control/uperf/perapp_powermode.txt') {
-        throw 'Uperf switcher does not use the canonical persistent paths'
+    if ($json.modules.switcher.switchInode -ne '/data/vendor/zui_control/uperf/effective_powermode.txt') {
+        throw 'Uperf switcher does not use the ROM frontend effective-mode path'
+    }
+    if ($json.modules.switcher.perapp -ne '/data/vendor/zui_control/uperf/perapp_powermode.txt') {
+        throw 'Uperf parser-compatible per-app path is not canonical'
     }
     if ($json.modules.sfanalysis.enable -ne $false -or $json.modules.sched.enable -ne $false) {
         throw 'Bundled Uperf must leave SurfaceFlinger injection off and delegate thread placement to A-SOUL'
@@ -154,23 +156,7 @@ function Assert-UperfConfig([string]$Path) {
     foreach ($governor in @('governor0', 'governor2', 'governor5', 'governor7')) {
         if ($json.initials.sysfs.$governor -ne 'walt') { throw "Uperf $governor is not walt" }
     }
-    if ($json.modules.sysfs.knob.gpuMin -ne '/sys/class/kgsl/kgsl-3d0/min_clock_mhz' -or
-        $json.modules.sysfs.knob.gpuMax -ne '/sys/class/kgsl/kgsl-3d0/max_clock_mhz') {
-        throw 'Uperf is missing the bounded KGSL integration'
-    }
-    $expectedGpu = @{
-        balance = @(231, 903)
-        powersave = @(231, 500)
-        performance = @(231, 903)
-        fast = @(231, 903)
-    }
-    foreach ($mode in $expectedGpu.Keys) {
-        $all = $json.presets.$mode.'*'
-        if ($all.'sysfs.gpuMin' -ne $expectedGpu[$mode][0] -or $all.'sysfs.gpuMax' -ne $expectedGpu[$mode][1]) {
-            throw "Unsafe or unexpected GPU bounds in Uperf mode: $mode"
-        }
-    }
-    foreach ($forbidden in @('thermal_pwrlevel', 'max_pwrlevel', 'min_pwrlevel', 'thermal-engine', 'mi_thermald')) {
+    foreach ($forbidden in @('/sys/class/kgsl', 'sysfs.gpuMin', 'sysfs.gpuMax', 'thermal_pwrlevel', 'max_pwrlevel', 'min_pwrlevel', 'thermal-engine', 'mi_thermald')) {
         if ($raw.Contains($forbidden)) { throw "Uperf config contains forbidden thermal/direct-pwrlevel marker: $forbidden" }
     }
 }
@@ -225,7 +211,7 @@ try {
     $System = Join-Path $SystemRoot 'system'
     $PlatSelinux = Join-Path $System 'etc\selinux'
     $VendorSelinux = Join-Path $VendorRoot 'etc\selinux'
-    $AppApk = Join-Path $System 'priv-app\ZuiControlV46\ZuiControl.apk'
+    $AppApk = Join-Path $System 'priv-app\ZuiControlV47\ZuiControl.apk'
     $Daemon = Join-Path $System 'bin\zui_controld'
     $Uperf = Join-Path $System 'bin\uperf'
     $UperfService = Join-Path $System 'bin\zui_uperf_service'
@@ -238,7 +224,8 @@ try {
     $PrivPermissions = Join-Path $System 'etc\permissions\privapp-permissions-zui-control.xml'
     $GameTemplate = Join-Path $System 'etc\zui_control\default_game_policy.xml'
     $PerfTemplate = Join-Path $System 'etc\zui_control\default_performanceconfig.xml'
-    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $SchedulerPrepare, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $GameTemplate, $PerfTemplate)) {
+    $ZuippPower = Join-Path $System 'etc\zuipp_powercfg.xml'
+    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $SchedulerPrepare, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $GameTemplate, $PerfTemplate, $ZuippPower)) {
         Require-File $file
     }
 
@@ -253,7 +240,8 @@ try {
         (Join-Path $SystemRoot 'AppOpt.json')
     )) { Assert-Missing $path 'retired AppOpt runtime' }
     Assert-Missing (Join-Path $System 'etc\zui_control\zui_cloud_block.sh') 'cloud-control block script'
-    foreach ($old in 30..45) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
+    Assert-Missing (Join-Path $System 'etc\zui_control\promote_zuipp_xml.sh') 'retired ZuiPP promotion script'
+    foreach ($old in 30..46) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
     Assert-Missing (Join-Path $System 'priv-app\ZuiControl') 'legacy unversioned ZuiControl directory'
 
     Assert-UperfConfig $UperfConfig
@@ -283,6 +271,9 @@ try {
     Assert-Contains $SchedulerPrepare 'setprop zui_control.zuipp restore' 'stock ZuiPP XML restore fence'
     Assert-Contains $SchedulerPrepare "printf 'auto\n'" 'automatic per-app Uperf control mode'
     Assert-Contains $SchedulerPrepare '.auto_mode_v46' 'V45 fixed-mode migration marker'
+    Assert-Contains $SchedulerPrepare '.rom_frontend_v47' 'ROM scene frontend migration marker'
+    Assert-Contains $SchedulerPrepare 'effective_powermode.txt' 'effective Uperf mode preparation'
+    Assert-Contains $SchedulerPrepare '[ "$effective_mode" != "auto" ] || effective_mode=balance' 'effective Uperf mode cannot be auto'
     Assert-NotContains $SchedulerPrepare '/data/adb' 'shell-domain access to protected Magisk data'
     foreach ($forbidden in @('killall', 'thermal', '/sdcard', 'busybox', 'zui_cloud')) {
         Assert-NotContains $SchedulerPrepare $forbidden 'copied third-party unsafe setup logic'
@@ -295,10 +286,15 @@ try {
     Assert-Contains $Daemon 'restart_scheduler)' 'scheduler restart command'
     Assert-Contains $Daemon 'auto|powersave|balance|performance|fast' 'automatic Uperf control mode validation'
     Assert-Contains $Daemon 'valid_uperf_preset "$requested_mode"' 'per-app preset-only validation'
+    Assert-Contains $Daemon 'UPERF_SCENE_KEY=zui_control_top_package' 'system_server scene source'
+    Assert-Contains $Daemon 'UPERF_SCREEN_KEY=zui_control_screen_on' 'system_server screen source'
+    Assert-Contains $Daemon 'sync_uperf_frontend()' 'ROM Uperf frontend'
+    Assert-Contains $Daemon 'effective_powermode.txt' 'ROM effective-mode output'
+    Assert-Contains $Daemon 'valid_uperf_preset "$frontend_mode" || return 1' 'effective-mode preset-only fence'
     Assert-Contains $Daemon "grep -q ' I Uperf is running`$'" 'strict Uperf daemon health check'
     Assert-Contains $Daemon 'rm -rf "$APPOPT_DIR" "$ZUI_DIR"' 'retired AppOpt and ZuiPP runtime cleanup'
     Assert-Contains $Daemon '线程参数：mode=0 · rt=0' 'verified A-SOUL mode state'
-    Assert-Contains $Daemon 'KGSL DVFS 与热保护保留' 'bounded GPU ownership statement'
+    Assert-Contains $Daemon '不伪造 Uperf GPU 接管' 'honest GPU ownership statement'
     foreach ($forbidden in @('/sys/class/kgsl/kgsl-3d0', '/sys/devices/system/cpu/cpufreq', 'provider_direct', 'GameModeProvider/contact', 'zui_control.cloud_block', 'cloud_block.log')) {
         Assert-NotContains $Daemon $forbidden 'retired direct/provider/cloud runtime'
     }
@@ -306,6 +302,7 @@ try {
     Assert-Contains $Daemon 'LAST_REQUEST_RECEIPT_FILE=$CONTROL_DIR/last_processed_settings_request_receipt' 'durable request receipt'
 
     Assert-ZuiXmlBaseline $GameTemplate $PerfTemplate
+    Assert-NotContains $ZuippPower 'com.zui.zuicontrol' 'retired ZuiPP overheat/device-idle whitelist'
     Assert-Contains $PrivPermissions 'android.permission.WRITE_SECURE_SETTINGS' 'Dolby privileged permission'
     Assert-NotContains $PrivPermissions 'com.zui.performance.permission.gamemode' 'retired P2 GameMode permission'
 
@@ -321,6 +318,8 @@ try {
     Assert-Contains $serviceSmali[0].FullName 'Landroid/os/HandlerThread;' 'asynchronous focus worker'
     Assert-Contains $serviceSmali[0].FullName 'forRenderFrameRates' 'adaptive render refresh vote'
     Assert-Contains $serviceSmali[0].FullName 'displayVote=adaptiveRender' 'adaptive render state marker'
+    Assert-Contains $serviceSmali[0].FullName 'zui_control_screen_on' 'system_server screen-state publication'
+    Assert-Contains $serviceSmali[0].FullName 'registerScreenObserver' 'system_server screen observer'
     Assert-NotContains $serviceSmali[0].FullName 'forPhysicalRefreshRates' 'unsafe physical refresh vote'
 
     $FileContexts = Join-Path $PlatSelinux 'plat_file_contexts'
@@ -329,6 +328,8 @@ try {
     Assert-Contains $FileContexts '/system/bin/AsoulOpt u:object_r:performanced_exec:s0' 'A-SOUL file context'
     Assert-Contains $FileContexts '/data/adb/naki(/.*)? u:object_r:zui_control_data_file:s0' 'A-SOUL compatibility data context'
     Assert-Contains $FileContexts '/data/vendor/zui_control(/.*)? u:object_r:zui_control_data_file:s0' 'scheduler data context'
+    Assert-NotContains $FileContexts '/data/vendor/zui_control/zuipp/active/game_policy\.xml' 'retired ZuiPP game XML context'
+    Assert-NotContains $FileContexts '/data/vendor/zui_control/zuipp/active/performanceconfig\.xml' 'retired ZuiPP performance XML context'
     Assert-NotContains $FileContexts '/system/bin/AppOpt ' 'retired AppOpt file context'
     Assert-Contains (Join-Path $PlatSelinux 'plat_service_contexts') 'zui_control                               u:object_r:zui_control_service:s0' 'zui_control service context'
 
@@ -350,17 +351,18 @@ try {
         '(allow performanced cgroup (file (ioctl read write create getattr setattr lock append map open unlink)))',
         '(allow performanced cgroup_v2 (dir (getattr open read search)))',
         '(allow performanced cgroup_v2 (file (getattr open read)))',
-        '(allow performanced zui_scheduler_proc (file (getattr open read write append)))',
+        '(allow performanced zui_scheduler_proc (file (getattr open read write append setattr)))',
         '(allow performanced input_device (dir (ioctl read getattr lock open watch watch_reads search)))',
         '(allow performanced input_device (chr_file (ioctl read getattr lock map open)))',
         '(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))',
         '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))'
     )) { Assert-Contains $PlatPolicy $rule 'scheduler SELinux rule' }
+    Assert-NotContains $PlatPolicy '(allow performanced system_server (' 'retired Uperf top-app proc access'
 
     $VendorPolicy = Join-Path $VendorSelinux 'vendor_sepolicy.cil'
-    Assert-Contains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_kgsl (file (ioctl read write getattr lock append map open)))' 'Uperf KGSL vendor rule'
     Assert-Contains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr setattr lock append map open)))' 'Uperf msm_performance vendor rule'
     Assert-NotContains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (' 'legacy shell KGSL permission'
+    Assert-NotContains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_kgsl (' 'unsupported Uperf KGSL permission'
 
     $hashes = [ordered]@{
         boot = File-Sha256 $Boot

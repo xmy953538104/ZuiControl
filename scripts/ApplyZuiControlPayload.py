@@ -11,7 +11,7 @@ from datetime import datetime
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
-APP_APK_PATH = "system/priv-app/ZuiControlV46/ZuiControl.apk"
+APP_APK_PATH = "system/priv-app/ZuiControlV47/ZuiControl.apk"
 LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -149,6 +149,7 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV43",
         "system_a/system/priv-app/ZuiControlV44",
         "system_a/system/priv-app/ZuiControlV45",
+        "system_a/system/priv-app/ZuiControlV46",
         "system_a/system/priv-app/ZuiperfCtl",
         "system_a/system/bin/zui_perfctld",
         "system_a/system/etc/init/zui_perfctld.rc",
@@ -169,6 +170,7 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/etc/zui_control/AppOpt.json",
         "system_a/system/etc/zui_control/default_applist.conf",
         "system_a/system/etc/zui_control/zui_appopt_prepare.sh",
+        "system_a/system/etc/zui_control/promote_zuipp_xml.sh",
         "system_a/AppOpt.json",
     ]
     for rel in legacy:
@@ -208,6 +210,7 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV43",
         "system_a/system/priv-app/ZuiControlV44",
         "system_a/system/priv-app/ZuiControlV45",
+        "system_a/system/priv-app/ZuiControlV46",
         "system_a/system/etc/zui_control/clear_package_cache",
     ]
     targets = [
@@ -385,13 +388,12 @@ def patch_keepalive_configs(unpack, dry_run, report):
             ],
         )
 
-    def patch_zuipp_power(text):
-        text = remove_legacy_package_lines(text)
-        ok_all = True
-        text, ok = ensure_line_in_section(text, "OverHeat", f"            <Item>{APP_PACKAGE}</Item>")
-        ok_all = ok_all and ok
-        text, ok = ensure_line_in_section(text, "DeviceIdle", f"            <Item>{APP_PACKAGE}</Item>")
-        return text, ok_all and ok
+    def restore_zuipp_power(text):
+        lines = [line for line in text.splitlines() if APP_PACKAGE not in line]
+        restored = "\n".join(lines)
+        if text.endswith("\n"):
+            restored += "\n"
+        return restored, True
 
     patch_text_file(base / "ZuiMemCleanerConfig.xml", dry_run, changed, warnings, patch_mem_cleaner)
     patch_text_file(base / "ZuiPowerPolicyConfig.xml", dry_run, changed, warnings, patch_power_policy)
@@ -402,7 +404,7 @@ def patch_keepalive_configs(unpack, dry_run, report):
         warnings,
         patch_bgintents,
     )
-    patch_text_file(base / "zuipp_powercfg.xml", dry_run, changed, warnings, patch_zuipp_power)
+    patch_text_file(base / "zuipp_powercfg.xml", dry_run, changed, warnings, restore_zuipp_power)
 
     report["keepalive_configs_changed"] = changed
     report["keepalive_config_warnings"] = warnings
@@ -482,7 +484,12 @@ def patch_service_contexts(unpack, payload, dry_run, report):
 def patch_file_contexts(unpack, payload, dry_run, report):
     patch = payload / "patches" / "plat_file_contexts_add.txt"
     target = unpack / "system_a" / "system" / "etc" / "selinux" / "plat_file_contexts"
+    removed = remove_lines_containing(target, [
+        "/data/vendor/zui_control/zuipp/active/game_policy\\.xml",
+        "/data/vendor/zui_control/zuipp/active/performanceconfig\\.xml",
+    ], dry_run)
     additions, changed = merge_unique_lines_by_key(target, read_patch_lines(patch), dry_run)
+    report["file_contexts_removed"] = removed
     report["file_contexts_added"] = additions
     report["file_contexts_reordered_or_replaced"] = changed
 
@@ -516,6 +523,9 @@ def patch_vendor_sepolicy(unpack, payload, dry_run, report):
         "(allow shell_34_0 vendor_sysfs_kgsl (dir ",
         "(allow shell_34_0 vendor_sysfs_kgsl (file ",
         "(allow shell_34_0 vendor_sysfs_kgsl (lnk_file ",
+        "(allow performanced_34_0 vendor_sysfs_kgsl (dir ",
+        "(allow performanced_34_0 vendor_sysfs_kgsl (file ",
+        "(allow performanced_34_0 vendor_sysfs_kgsl (lnk_file ",
     ]
     removed = remove_lines_containing(target, obsolete, dry_run)
     patch = payload / "patches" / "vendor_sepolicy_zui_scheduler.cil"
@@ -577,10 +587,9 @@ def main():
         "warnings": [],
     }
     report["zuipp_xml_baseline_model"] = {
-        "baked_baseline": "Versioned copies of /system/etc/zui_control/default_game_policy.xml and default_performanceconfig.xml, keyed by their SHA256 pair.",
-        "active_runtime": "/data/vendor/zui_control/zuipp/active/ is bind-mounted to /system/etc at boot and after each XML apply.",
-        "payload_templates": "A template SHA change refreshes baked_baseline and regenerates active XML from preserved user profiles.",
-        "official_original": "Only expose an official-original restore path when an original pair was explicitly captured under /data/vendor/zui_control/zuipp/official_original/.",
+        "state": "retired",
+        "owner": "uperf",
+        "runtime_cleanup": "/data/vendor/zui_control/zuipp and old bind mounts are removed at boot.",
     }
 
     apk = payload.joinpath(*APP_APK_PATH.split("/"))

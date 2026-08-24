@@ -6,34 +6,10 @@ on post-fs-data
 on property:sys.boot_completed=1
     start zui_controld
 
-on property:zui_control.zuipp=apply
-    umount /system/etc/game_policy.xml
-    umount /system/etc/performanceconfig.xml
-    mount none /data/vendor/zui_control/zuipp/active/game_policy.xml /system/etc/game_policy.xml bind
-    mount none /data/vendor/zui_control/zuipp/active/performanceconfig.xml /system/etc/performanceconfig.xml bind
-    restorecon /system/etc/game_policy.xml
-    restorecon /system/etc/performanceconfig.xml
-    chmod 0664 /system/etc/game_policy.xml
-    chmod 0664 /system/etc/performanceconfig.xml
-    setprop zui_control.zuipp done
-
 on property:zui_control.zuipp=restore
     umount /system/etc/game_policy.xml
     umount /system/etc/performanceconfig.xml
     setprop zui_control.zuipp restored
-
-on property:zui_control.zuipp=promote_active
-    rm /data/vendor/zui_control/zuipp/active/game_policy.xml.tmp
-    rm /data/vendor/zui_control/zuipp/active/performanceconfig.xml.tmp
-    rm /data/vendor/zui_control/zuipp/active/game_policy.xml
-    rm /data/vendor/zui_control/zuipp/active/performanceconfig.xml
-    mkdir /data/vendor/zui_control/zuipp/active 0775 root shell
-    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/promote_zuipp_xml.sh
-    chown root root /data/vendor/zui_control/zuipp/active/game_policy.xml
-    chown root root /data/vendor/zui_control/zuipp/active/performanceconfig.xml
-    chmod 0664 /data/vendor/zui_control/zuipp/active/game_policy.xml
-    chmod 0664 /data/vendor/zui_control/zuipp/active/performanceconfig.xml
-    setprop zui_control.zuipp done
 
 service zui_controld /system/bin/sh /system/bin/zui_controld
     class late_start

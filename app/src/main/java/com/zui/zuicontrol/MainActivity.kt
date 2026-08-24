@@ -466,7 +466,7 @@ class MainActivity : Activity() {
             }
             addView(compactNote(
                 "日常默认均衡、熄屏节能；应用覆盖只改变当前前台应用。" +
-                    "GPU 安全上下界跟随 Uperf 档位，KGSL DVFS 与 thermal_pwrlevel 保留。",
+                    "8 Gen 3 原配置不接管 Adreno 频率；KGSL DVFS 与 thermal_pwrlevel 保留给下一阶段。",
             ), fieldMargins())
             addView(sectionTitle("应用覆盖"), sectionMargins())
         }

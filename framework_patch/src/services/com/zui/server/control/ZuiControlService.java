@@ -1,6 +1,9 @@
 package com.zui.server.control;
 
 import android.content.Context;
+import android.content.BroadcastReceiver;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
@@ -10,6 +13,7 @@ import android.os.Binder;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Parcel;
+import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemProperties;
@@ -85,6 +89,7 @@ public final class ZuiControlService extends Binder {
     private int mLastAppliedModeId = -1;
     private int mLastAppliedDisplayHz = -1;
     private int mLastSyncedPeakHz = -1;
+    private boolean mScreenInteractive = true;
 
     public ZuiControlService(Context context) {
         mContext = context;
@@ -102,6 +107,7 @@ public final class ZuiControlService extends Binder {
         sInstance = this;
         attachInterface(null, DESCRIPTOR);
         registerPeakObserver();
+        registerScreenObserver();
         publishState();
     }
 
@@ -411,6 +417,37 @@ public final class ZuiControlService extends Binder {
         }
     }
 
+    private void registerScreenObserver() {
+        try {
+            PowerManager power = (PowerManager) mContext.getSystemService(PowerManager.class);
+            mScreenInteractive = power == null || power.isInteractive();
+            IntentFilter filter = new IntentFilter();
+            filter.addAction(Intent.ACTION_SCREEN_ON);
+            filter.addAction(Intent.ACTION_SCREEN_OFF);
+            mContext.registerReceiver(new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    String action = intent == null ? "" : intent.getAction();
+                    if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                        onScreenInteractiveChanged(true);
+                    } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                        onScreenInteractiveChanged(false);
+                    }
+                }
+            }, filter, null, mWorker);
+        } catch (Throwable t) {
+            Log.w(TAG, "screen observer unavailable", t);
+        }
+    }
+
+    private synchronized void onScreenInteractiveChanged(boolean interactive) {
+        if (mScreenInteractive == interactive) {
+            return;
+        }
+        mScreenInteractive = interactive;
+        publishState();
+    }
+
     private synchronized void onPeakRefreshRateChanged() {
         if (SystemProperties.getBoolean("persist.zui_control.disable", false)
                 || SystemProperties.getBoolean("persist.zui_control.refresh.disable", false)) {
@@ -581,6 +618,7 @@ public final class ZuiControlService extends Binder {
                 + "\nactualDisplayHz=" + actualHz()
                 + "\ntargetFpsCap=" + mTargetFpsCap
                 + "\nmode=" + mTargetMode
+                + "\nscreenInteractive=" + mScreenInteractive
                 + "\nrefreshOwner=system"
                 + "\nsystemServiceAlive=true"
                 + "\ndaemonRefreshDisabled=true"
@@ -624,6 +662,8 @@ public final class ZuiControlService extends Binder {
             Settings.System.putString(mContext.getContentResolver(),
                     "zui_control_scene_event_text",
                     android.os.SystemClock.elapsedRealtimeNanos() + "|" + mCurrentScenePackage);
+            Settings.System.putString(mContext.getContentResolver(),
+                    "zui_control_screen_on", mScreenInteractive ? "1" : "0");
             Settings.System.putString(mContext.getContentResolver(),
                     "zui_control_status_text", state());
         } catch (Throwable ignored) {

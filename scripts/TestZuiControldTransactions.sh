@@ -18,6 +18,7 @@ setup_state() {
     LOG_DIR="$DATA_ROOT/log"
     CONTROL_DIR="$DATA_ROOT/control"
     UPERF_MODE="$UPERF_DIR/cur_powermode.txt"
+    UPERF_EFFECTIVE_MODE="$UPERF_DIR/effective_powermode.txt"
     UPERF_PERAPP="$UPERF_DIR/perapp_powermode.txt"
     UPERF_LOG="$LOG_DIR/uperf.log"
     APPOPT_ENABLED="$DATA_ROOT/appopt/enabled.flag"
@@ -27,15 +28,20 @@ setup_state() {
     UPERF_HEALTH_KEY=zui_control_uperf_health
     UPERF_MODE_KEY=zui_control_uperf_mode
     UPERF_RULES_KEY=zui_control_uperf_rules_text
+    UPERF_SCENE_KEY=zui_control_top_package
+    UPERF_SCREEN_KEY=zui_control_screen_on
     ASOUL_HEALTH_KEY=zui_control_asoul_health
     APPOPT_RULES_KEY=zui_control_appopt_rules_text
     REQUEST_RESULT_DETAIL=
     mkdir -p "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR" "$CONTROL_DIR" "$(dirname "$APPOPT_ENABLED")"
     cp "$DEFAULT_PERAPP" "$UPERF_PERAPP"
     printf 'auto\n' > "$UPERF_MODE"
+    printf 'balance\n' > "$UPERF_EFFECTIVE_MODE"
     : > "$UPERF_LOG"
 
     declare -gA TEST_SETTINGS=()
+    TEST_SETTINGS[$UPERF_SCENE_KEY]=com.kurogame.mingchao
+    TEST_SETTINGS[$UPERF_SCREEN_KEY]=1
     settings_get_clean() { printf '%s\n' "${TEST_SETTINGS[$1]-}"; }
     settings_put_quiet() { TEST_SETTINGS["$1"]="$2"; }
     log_line() { :; }
@@ -67,14 +73,23 @@ test_mode_updates() (
 
     set_uperf_mode performance || fail 'performance mode rejected'
     [[ "$(tr -d '\r\n ' < "$UPERF_MODE")" == performance ]] || fail 'mode file not updated'
-    grep -qx '\* performance' "$UPERF_PERAPP" || fail 'global per-app fallback not updated'
+    [[ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" == performance ]] || fail 'manual mode not applied effectively'
+    grep -qx '\* balance' "$UPERF_PERAPP" || fail 'manual mode corrupted the per-app fallback'
     grep -qx -- '- powersave' "$UPERF_PERAPP" || fail 'screen-off rule changed with global mode'
     [[ "${TEST_SETTINGS[$UPERF_MODE_KEY]}" == performance ]] || fail 'mode state not published'
     set_uperf_mode auto || fail 'automatic per-app mode rejected'
     [[ "$(tr -d '\r\n ' < "$UPERF_MODE")" == auto ]] || fail 'automatic mode file not updated'
-    grep -qx '\* performance' "$UPERF_PERAPP" || fail 'automatic mode corrupted the per-app fallback'
+    [[ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" == performance ]] || fail 'Mingchao auto rule not applied'
+    grep -qx '\* balance' "$UPERF_PERAPP" || fail 'automatic mode corrupted the per-app fallback'
     ! grep -q '^\* auto$' "$UPERF_PERAPP" || fail 'automatic mode was written as an invalid preset'
     [[ "${TEST_SETTINGS[$UPERF_MODE_KEY]}" == auto ]] || fail 'automatic mode state not published'
+    TEST_SETTINGS[$UPERF_SCREEN_KEY]=0
+    sync_uperf_frontend || fail 'screen-off frontend sync failed'
+    [[ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" == powersave ]] || fail 'screen-off rule not applied'
+    TEST_SETTINGS[$UPERF_SCREEN_KEY]=1
+    TEST_SETTINGS[$UPERF_SCENE_KEY]=com.example.normal
+    sync_uperf_frontend || fail 'default frontend sync failed'
+    [[ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" == balance ]] || fail 'default fallback not applied'
     cp "$UPERF_MODE" "$TEST_ROOT/mode.before"
     set_uperf_mode crazy && fail 'unsupported crazy mode accepted'
     cmp -s "$UPERF_MODE" "$TEST_ROOT/mode.before" || fail 'invalid mode changed file'
@@ -97,6 +112,9 @@ test_per_app_updates() (
     [[ "$(grep -c '^com.example.game powersave$' "$UPERF_PERAPP")" == 1 ]] || fail 'updated rule is not canonical'
     [[ "$(grep -c '^com.example.game ' "$UPERF_PERAPP")" == 1 ]] || fail 'duplicate app rule left behind'
     [[ "${TEST_SETTINGS[$UPERF_RULES_KEY]}" == *'com.example.game|powersave'* ]] || fail 'rules state not published'
+    TEST_SETTINGS[$UPERF_SCENE_KEY]=com.example.game
+    sync_uperf_frontend || fail 'updated app frontend sync failed'
+    [[ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" == powersave ]] || fail 'updated app rule not effective'
 
     cp "$UPERF_PERAPP" "$TEST_ROOT/perapp.before"
     set_uperf_app_mode com.android.systemui fast && fail 'system package accepted'
@@ -117,7 +135,7 @@ test_owner_routing() (
     trap 'rm -rf "$TEST_ROOT"' EXIT
 
     handle_request test set_uperf_mode '' '' performance || fail 'new Uperf command failed'
-    [[ "$REQUEST_RESULT_DETAIL" == mode=performance ]] || fail 'new command detail missing'
+    [[ "$REQUEST_RESULT_DETAIL" == mode=performance\;effective=performance ]] || fail 'new command detail missing'
     REQUEST_RESULT_DETAIL=
     handle_request test sync_xml_refresh || fail 'retired XML refresh should be an idempotent success'
     [[ "$REQUEST_RESULT_DETAIL" == owner=uperf\;p2=retired ]] || fail 'retired XML owner detail wrong'

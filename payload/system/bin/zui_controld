@@ -61,6 +61,7 @@ APPOPT_CONFIG=$APPOPT_DIR/applist.conf
 APPOPT_ENABLED=$APPOPT_DIR/enabled.flag
 UPERF_CONFIG=$UPERF_DIR/uperf.json
 UPERF_MODE=$UPERF_DIR/cur_powermode.txt
+UPERF_EFFECTIVE_MODE=$UPERF_DIR/effective_powermode.txt
 UPERF_PERAPP=$UPERF_DIR/perapp_powermode.txt
 ASOUL_CONFIG=$ASOUL_DIR/asopt.conf
 APPOPT_UPDATE_BACKUP=$APPOPT_DIR/applist.conf.update_backup
@@ -94,6 +95,8 @@ APPOPT_RULES_KEY=zui_control_appopt_rules_text
 UPERF_HEALTH_KEY=zui_control_uperf_health
 UPERF_MODE_KEY=zui_control_uperf_mode
 UPERF_RULES_KEY=zui_control_uperf_rules_text
+UPERF_SCENE_KEY=zui_control_top_package
+UPERF_SCREEN_KEY=zui_control_screen_on
 XML_STATE_KEY=zui_control_xml_state
 LOG_EXPORT_KEY=zui_control_log_export
 
@@ -103,6 +106,10 @@ LAST_REFRESH_RATE=
 LAST_SETTINGS_REQUEST_TEXT=
 HEALTH_TICKS=0
 UPERF_MISSES=0
+UPERF_FRONTEND_SCENE=
+UPERF_FRONTEND_SCREEN=1
+UPERF_FRONTEND_SOURCE=
+UPERF_FRONTEND_EFFECTIVE=balance
 SAFE_CENTER_KEEPALIVE_TICKS=0
 SAFE_CENTER_KEEPALIVE_ATTEMPTS=0
 SAFE_CENTER_KEEPALIVE_MAX_ATTEMPTS=60
@@ -756,7 +763,72 @@ publish_xml_state() {
     fi
 }
 
+uperf_rule_for_scene() {
+    lookup_scene="$1"
+    lookup_fallback=
+    while read -r lookup_pkg lookup_mode lookup_extra; do
+        [ -z "$lookup_extra" ] || continue
+        case "$lookup_pkg" in ''|'#'*) continue ;; esac
+        if [ "$lookup_pkg" = "$lookup_scene" ]; then
+            printf '%s\n' "$lookup_mode"
+            return 0
+        fi
+        [ "$lookup_pkg" = "*" ] && lookup_fallback="$lookup_mode"
+    done < "$UPERF_PERAPP" 2>/dev/null
+    printf '%s\n' "$lookup_fallback"
+}
+
+write_uperf_effective_mode() {
+    frontend_mode="$1"
+    valid_uperf_preset "$frontend_mode" || return 1
+    frontend_current="$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE" 2>/dev/null)"
+    [ "$frontend_current" != "$frontend_mode" ] || return 0
+    # Uperf watches this inode. Update it in place; replacing it with rename(2)
+    # would leave the native watcher attached to the old inode.
+    if printf '%s\n' "$frontend_mode" > "$UPERF_EFFECTIVE_MODE" &&
+        chmod 0644 "$UPERF_EFFECTIVE_MODE"; then
+        sync "$UPERF_EFFECTIVE_MODE" 2>/dev/null || sync
+        log_line "Uperf effective mode: $frontend_mode source=$UPERF_FRONTEND_SOURCE scene=$UPERF_FRONTEND_SCENE screen=$UPERF_FRONTEND_SCREEN"
+        return 0
+    fi
+    return 1
+}
+
+sync_uperf_frontend() {
+    frontend_requested="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
+    if ! valid_uperf_mode "$frontend_requested"; then
+        frontend_requested=auto
+        printf 'auto\n' > "$UPERF_MODE" 2>/dev/null || return 1
+        chmod 0644 "$UPERF_MODE" 2>/dev/null || true
+    fi
+
+    frontend_scene="$(settings_get_clean "$UPERF_SCENE_KEY")"
+    valid_package_name "$frontend_scene" || frontend_scene="*"
+    frontend_screen="$(settings_get_clean "$UPERF_SCREEN_KEY")"
+    [ "$frontend_screen" = "0" ] || frontend_screen=1
+
+    if [ "$frontend_requested" != "auto" ]; then
+        frontend_effective="$frontend_requested"
+        frontend_source=manual
+    elif [ "$frontend_screen" = "0" ]; then
+        frontend_effective="$(awk '$1 == "-" {print $2; exit}' "$UPERF_PERAPP" 2>/dev/null)"
+        frontend_source="-"
+    else
+        frontend_effective="$(uperf_rule_for_scene "$frontend_scene")"
+        frontend_source="$frontend_scene"
+        [ "$frontend_scene" != "*" ] || frontend_source="*"
+    fi
+    valid_uperf_preset "$frontend_effective" || frontend_effective=balance
+
+    UPERF_FRONTEND_SCENE="$frontend_scene"
+    UPERF_FRONTEND_SCREEN="$frontend_screen"
+    UPERF_FRONTEND_SOURCE="$frontend_source"
+    UPERF_FRONTEND_EFFECTIVE="$frontend_effective"
+    write_uperf_effective_mode "$frontend_effective"
+}
+
 publish_appopt_health() {
+    sync_uperf_frontend >/dev/null 2>&1 || true
     uperf_pid="$(pidof uperf 2>/dev/null | awk '{print $1}')"
     uperf_processes="$(pidof uperf 2>/dev/null | awk '{print NF}')"
     asoul_pid="$(pidof AsoulOpt 2>/dev/null | awk '{print $1}')"
@@ -768,17 +840,18 @@ publish_appopt_health() {
         asoul_domain="$(ps -AZ 2>/dev/null | awk -v wanted="$asoul_pid" '$3 == wanted {print $1; exit}')"
     current_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
     valid_uperf_mode "$current_mode" || current_mode=unknown
+    effective_mode="$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE" 2>/dev/null)"
+    valid_uperf_preset "$effective_mode" || effective_mode=unknown
     default_mode="$(awk '$1 == "*" {print $2; exit}' "$UPERF_PERAPP" 2>/dev/null)"
     valid_uperf_preset "$default_mode" || default_mode=balance
-    effective_rule="$(sed -n "s/.* Perapp '\([^']*\)' -> '\([^']*\)'.*/\1 → \2/p" "$UPERF_LOG" 2>/dev/null | tail -n 1)"
-    [ -n "$effective_rule" ] || effective_rule="等待前台事件"
     qti_perf_bridge="$(getprop init.svc.vendor.perfservice 2>/dev/null)"
     [ -n "$qti_perf_bridge" ] || qti_perf_bridge=unknown
     log_size=0
     [ -f "$UPERF_LOG" ] && log_size="$(wc -c < "$UPERF_LOG" 2>/dev/null)"
     health="Uperf：${uperf_pid:-未运行}（${uperf_processes:-0} 进程 · ${uperf_domain:-未识别}）
-控制模式：$current_mode · 自动命中：$effective_rule · 默认：$default_mode
-GPU：Uperf 仅管理安全上下界，KGSL DVFS 与热保护保留
+控制模式：$current_mode · 实际档位：$effective_mode · 规则：${UPERF_FRONTEND_SOURCE:-*} · 默认：$default_mode
+前端：ROM system_server 场景 ${UPERF_FRONTEND_SCENE:-*} · 亮屏：$UPERF_FRONTEND_SCREEN
+GPU：原厂 KGSL DVFS 与热保护保留，本阶段不伪造 Uperf GPU 接管
 QTI Perf 桥：$qti_perf_bridge（调度接管时应为 stopped）
 A-SOUL：${asoul_pid:-未运行}（${asoul_domain:-未识别}）
 线程参数：mode=0 · rt=0
@@ -821,42 +894,19 @@ publish_uperf_rules_state() {
 set_uperf_mode() {
     requested_mode="$1"
     valid_uperf_mode "$requested_mode" || return 1
-    old_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
-    valid_uperf_mode "$old_mode" || old_mode=balance
-    tmp=
-    if [ "$requested_mode" != "auto" ]; then
-        tmp="$UPERF_PERAPP.tmp"
-        awk -v mode="$requested_mode" '
-            $1 == "*" {
-                if (!written) print "* " mode
-                written=1
-                next
-            }
-            { print }
-            END { if (!written) print "* " mode }
-        ' "$UPERF_PERAPP" > "$tmp" || {
-            rm -f "$tmp"
-            return 1
-        }
-    fi
-    printf '%s\n' "$requested_mode" > "$UPERF_MODE" || {
-        [ -z "$tmp" ] || rm -f "$tmp"
+    mode_tmp="$UPERF_MODE.tmp"
+    rm -f "$mode_tmp"
+    printf '%s\n' "$requested_mode" > "$mode_tmp" || return 1
+    chmod 0644 "$mode_tmp" && mv -f "$mode_tmp" "$UPERF_MODE" || {
+        rm -f "$mode_tmp"
         return 1
     }
-    if [ -n "$tmp" ]; then
-        cat "$tmp" > "$UPERF_PERAPP" || {
-            printf '%s\n' "$old_mode" > "$UPERF_MODE" 2>/dev/null
-            rm -f "$tmp"
-            return 1
-        }
-        rm -f "$tmp"
-    fi
     chmod 0644 "$UPERF_MODE" 2>/dev/null
-    chmod 0644 "$UPERF_PERAPP" 2>/dev/null
-    sync "$UPERF_MODE" "$UPERF_PERAPP" 2>/dev/null || sync
+    sync "$UPERF_MODE" 2>/dev/null || sync
+    sync_uperf_frontend || return 1
     settings_put_quiet "$UPERF_MODE_KEY" "$requested_mode"
-    REQUEST_RESULT_DETAIL="mode=$requested_mode"
-    log_line "Uperf mode changed: $requested_mode"
+    REQUEST_RESULT_DETAIL="mode=$requested_mode;effective=$UPERF_FRONTEND_EFFECTIVE"
+    log_line "Uperf requested mode changed: $requested_mode effective=$UPERF_FRONTEND_EFFECTIVE"
     return 0
 }
 
@@ -903,6 +953,7 @@ set_uperf_app_mode() {
     chmod 0644 "$UPERF_PERAPP" 2>/dev/null
     sync "$UPERF_PERAPP" 2>/dev/null || sync
     publish_uperf_rules_state
+    sync_uperf_frontend || return 1
     REQUEST_RESULT_DETAIL="package=$requested_pkg;mode=$requested_mode"
     log_line "Uperf app mode changed: package=$requested_pkg mode=$requested_mode"
 }
@@ -912,6 +963,7 @@ remove_uperf_app_mode() {
     valid_package_name "$requested_pkg" || return 1
     write_uperf_perapp_without_package "$requested_pkg" || return 1
     publish_uperf_rules_state
+    sync_uperf_frontend || return 1
     REQUEST_RESULT_DETAIL="package=$requested_pkg;mode=default"
     log_line "Uperf app mode removed: package=$requested_pkg"
 }
@@ -2825,6 +2877,11 @@ $(cat "$REFRESH_RULES" 2>/dev/null)
 [Uperf 全局模式]
 $(cat "$UPERF_MODE" 2>/dev/null)
 
+[Uperf 实际档位 / ROM 前端]
+$(cat "$UPERF_EFFECTIVE_MODE" 2>/dev/null)
+scene=$(settings_get_clean "$UPERF_SCENE_KEY")
+screen=$(settings_get_clean "$UPERF_SCREEN_KEY")
+
 [Uperf 分应用规则]
 $(cat "$UPERF_PERAPP" 2>/dev/null)
 
@@ -3235,6 +3292,7 @@ main_loop() {
     }
     log_line "zui_controld v19 start"
     boot_restore
+    sync_uperf_frontend || log_line "Uperf ROM frontend initial sync failed"
     LAST_REFRESH_RATE="$BASE_REFRESH_RATE"
     log_line "daemon refresh disabled: refresh_owner=$REFRESH_OWNER"
     publish_state
@@ -3245,6 +3303,7 @@ main_loop() {
     while true; do
         process_atomic_settings_request
         process_request_file "$ADB_REQUEST"
+        sync_uperf_frontend || true
         if [ "$SAFE_CENTER_KEEPALIVE_DONE" != "1" ]; then
             SAFE_CENTER_KEEPALIVE_TICKS=$((SAFE_CENTER_KEEPALIVE_TICKS + 1))
             if [ "$SAFE_CENTER_KEEPALIVE_TICKS" -ge 20 ]; then

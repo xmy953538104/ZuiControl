@@ -5,7 +5,7 @@
   },
   "modules": {
     "switcher": {
-      "switchInode": "/data/vendor/zui_control/uperf/cur_powermode.txt",
+      "switchInode": "/data/vendor/zui_control/uperf/effective_powermode.txt",
       "perapp": "/data/vendor/zui_control/uperf/perapp_powermode.txt",
       "hintDuration": {
         "idle": 0.0,
@@ -93,9 +93,7 @@
         "inputBoostFreq": "/proc/sys/walt/input_boost/input_boost_freq",
         "inputBoostMs": "/proc/sys/walt/input_boost/input_boost_ms",
         "msmCpuMin": "/sys/kernel/msm_performance/parameters/cpu_min_freq",
-        "msmCpuMax": "/sys/kernel/msm_performance/parameters/cpu_max_freq",
-        "gpuMin": "/sys/class/kgsl/kgsl-3d0/min_clock_mhz",
-        "gpuMax": "/sys/class/kgsl/kgsl-3d0/max_clock_mhz"
+        "msmCpuMax": "/sys/kernel/msm_performance/parameters/cpu_max_freq"
       }
     },
     "sched": {
@@ -497,9 +495,7 @@
       "inputBoostFreq": "0 0 0 0 0 0 0 0",
       "inputBoostMs": 0,
       "msmCpuMin": "0:0 1:0 2:0 3:0 4:0 5:0 6:0 7:0",
-      "msmCpuMax": "0:9999000 1:9999000 2:9999000 3:9999000 4:9999000 5:9999000 6:9999000 7:9999000",
-      "gpuMin": 231,
-      "gpuMax": 903
+      "msmCpuMax": "0:9999000 1:9999000 2:9999000 3:9999000 4:9999000 5:9999000 6:9999000 7:9999000"
     },
     "sched": {
       "scene": "idle"
@@ -508,8 +504,6 @@
   "presets": {
     "balance": {
       "*": {
-        "sysfs.gpuMin": 231,
-        "sysfs.gpuMax": 903,
         "cpu.latencyTime": 0.3,
         "cpu.slowLimitPower": 12.0,
         "cpu.fastLimitPower": 12.0,
@@ -551,8 +545,6 @@
     },
     "powersave": {
       "*": {
-        "sysfs.gpuMin": 231,
-        "sysfs.gpuMax": 500,
         "cpu.latencyTime": 0.6,
         "cpu.slowLimitPower": 5,
         "cpu.fastLimitPower": 5,
@@ -594,8 +586,6 @@
     },
     "performance": {
       "*": {
-        "sysfs.gpuMin": 231,
-        "sysfs.gpuMax": 903,
         "cpu.latencyTime": 0.0,
         "cpu.slowLimitPower": 250.0,
         "cpu.fastLimitPower": 250.0,
@@ -632,8 +622,6 @@
     },
     "fast": {
       "*": {
-        "sysfs.gpuMin": 231,
-        "sysfs.gpuMax": 903,
         "cpu.latencyTime": 0.0,
         "sysfs.cpuonlinemax": 2,
         "sysfs.cpuonlinemin": 2,
@@ -663,8 +651,6 @@
     },
     "crazy": {
       "*": {
-        "sysfs.gpuMin": 231,
-        "sysfs.gpuMax": 903,
         "cpu.latencyTime": 0.0,
         "sysfs.cpuonlinemax": 2,
         "sysfs.cpuonlinemin": 2,

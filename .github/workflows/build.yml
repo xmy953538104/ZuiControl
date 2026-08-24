@@ -44,7 +44,6 @@ jobs:
           bash -n payload/system/bin/zui_controld
           bash -n payload/system/bin/zui_uperf_service
           bash scripts/TestZuiControldTransactions.sh
-          bash -n payload/system/etc/zui_control/promote_zuipp_xml.sh
           bash -n payload/system/etc/zui_control/zui_scheduler_prepare.sh
           python3 -m json.tool payload/system/etc/zui_control/uperf-sm8650.json >/dev/null
 
@@ -70,10 +69,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV35 payload/system/priv-app/ZuiControlV36 payload/system/priv-app/ZuiControlV37
           rm -rf payload/system/priv-app/ZuiControlV38 payload/system/priv-app/ZuiControlV39 payload/system/priv-app/ZuiControlV40
           rm -rf payload/system/priv-app/ZuiControlV41 payload/system/priv-app/ZuiControlV42 payload/system/priv-app/ZuiControlV43
-          rm -rf payload/system/priv-app/ZuiControlV44 payload/system/priv-app/ZuiControlV45
-          mkdir -p payload/system/priv-app/ZuiControlV46
+          rm -rf payload/system/priv-app/ZuiControlV44 payload/system/priv-app/ZuiControlV45 payload/system/priv-app/ZuiControlV46
+          mkdir -p payload/system/priv-app/ZuiControlV47
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV46/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV47/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -20,7 +20,7 @@ files and AppOpt is removed from the production payload.
 - `zui_control`: Binder service published from `system_server`.
 - `ZuiControlService`: service-side display-mode policy owner.
 - `/system/bin/zui_controld`: scheduler control plane, persistent Uperf profiles, health checks, and logs.
-- `/system/bin/uperf`: CPU power-model scheduler and bounded CPU/GPU policy writer.
+- `/system/bin/uperf`: CPU power-model scheduler driven by the ROM scene frontend.
 - `/system/bin/AsoulOpt`: thread placement with the verified `mode=0`, `rt=0` policy.
 - `/data/system/zui_control/profiles.prop`: refresh scene profiles.
 - `/data/vendor/zui_control/`: daemon runtime state, XML work files, and logs.
