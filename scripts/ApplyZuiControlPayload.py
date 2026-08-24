@@ -11,7 +11,7 @@ from datetime import datetime
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
-APP_APK_PATH = "system/priv-app/ZuiControlV48/ZuiControl.apk"
+APP_APK_PATH = "system/priv-app/ZuiControlV49/ZuiControl.apk"
 LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -151,6 +151,7 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV45",
         "system_a/system/priv-app/ZuiControlV46",
         "system_a/system/priv-app/ZuiControlV47",
+        "system_a/system/priv-app/ZuiControlV48",
         "system_a/system/priv-app/ZuiperfCtl",
         "system_a/system/bin/zui_perfctld",
         "system_a/system/etc/init/zui_perfctld.rc",
@@ -213,6 +214,7 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV45",
         "system_a/system/priv-app/ZuiControlV46",
         "system_a/system/priv-app/ZuiControlV47",
+        "system_a/system/priv-app/ZuiControlV48",
         "system_a/system/etc/zui_control/clear_package_cache",
     ]
     targets = [
@@ -289,142 +291,28 @@ def update_metadata(root, unpack, entries, dry_run, report):
     report["metadata_files"] = changed
 
 
-def read_text_lossy(path):
-    return path.read_text(encoding="utf-8", errors="ignore")
-
-
-def write_text_if_changed(path, original, updated, dry_run, changed):
-    if updated == original:
-        return
-    changed.append(str(path))
-    if not dry_run:
-        path.write_text(updated, encoding="utf-8")
-
-
-def remove_legacy_package_lines(text):
-    return "\n".join(
-        line for line in text.splitlines()
-        if LEGACY_APP_PACKAGE not in line
-    ) + "\n"
-
-
-def ensure_lines_before_marker(text, marker, lines):
-    additions = [line for line in lines if line not in text]
-    if not additions:
-        return text, True
-    block = "\n".join(additions) + "\n"
-    index = text.find(marker)
-    if index < 0:
-        return text.rstrip() + "\n" + block, False
-    return text[:index] + block + text[index:], True
-
-
-def ensure_line_in_section(text, section_name, line):
-    open_tag = f"<{section_name}>"
-    close_tag = f"</{section_name}>"
-    section_start = text.find(open_tag)
-    section_end = text.find(close_tag, section_start)
-    if section_start < 0 or section_end < 0:
-        return text, False
-    section = text[section_start:section_end]
-    if line in section:
-        return text, True
-    marker = "</WhiteListApp>"
-    marker_index = text.find(marker, section_start, section_end)
-    if marker_index < 0:
-        return text, False
-    return text[:marker_index] + line + "\n" + text[marker_index:], True
-
-
-def patch_text_file(path, dry_run, changed, warnings, transform):
-    path = pathlib.Path(path)
-    if not path.exists():
-        warnings.append(f"missing keepalive config: {path}")
-        return
-    original = read_text_lossy(path)
-    updated, ok = transform(original)
-    if not ok:
-        warnings.append(f"keepalive config marker not found: {path}")
-    write_text_if_changed(path, original, updated, dry_run, changed)
-
-
-def patch_keepalive_configs(unpack, dry_run, report):
+def cleanup_retired_whitelists(unpack, dry_run, report):
     base = unpack / "system_a" / "system" / "etc"
-    changed = []
-    warnings = []
-
-    def patch_mem_cleaner(text):
-        text = remove_legacy_package_lines(text)
-        ok_all = True
-        text, ok = ensure_lines_before_marker(
-            text,
-            "    </PermanentWhiteList>",
-            [f"        <PermanentPackageName>{APP_PACKAGE}</PermanentPackageName>"],
-        )
-        ok_all = ok_all and ok
-        text, ok = ensure_lines_before_marker(
-            text,
-            "</ZuiMemCleanerConfig>",
-            [f"    <Whitelist package=\"{APP_PACKAGE}\" />"],
-        )
-        return text, ok_all and ok
-
-    def patch_power_policy(text):
-        text = remove_legacy_package_lines(text)
-        return ensure_lines_before_marker(
-            text,
-            "        </WhitelistApp>",
-            [f"            <Item>{APP_PACKAGE}</Item>"],
-        )
-
-    def patch_bgintents(text):
-        text = remove_legacy_package_lines(text)
-        return ensure_lines_before_marker(
-            text,
-            "</config>",
-            [
-                f"        <default_allow_auto_run package=\"{APP_PACKAGE}\" allowtype=\"hide\" />",
-                f"        <hide-fg-notify package=\"{APP_PACKAGE}\" />",
-                f"        <hide-alertwindow-notify package=\"{APP_PACKAGE}\" />",
-                f"        <allow-bg-intents package=\"{APP_PACKAGE}\" />",
-            ],
-        )
-
-    def restore_zuipp_power(text):
-        lines = [line for line in text.splitlines() if APP_PACKAGE not in line]
-        restored = "\n".join(lines)
-        if text.endswith("\n"):
-            restored += "\n"
-        return restored, True
-
-    patch_text_file(base / "ZuiMemCleanerConfig.xml", dry_run, changed, warnings, patch_mem_cleaner)
-    patch_text_file(base / "ZuiPowerPolicyConfig.xml", dry_run, changed, warnings, patch_power_policy)
-    patch_text_file(
-        base / "motorola" / "bgintents" / "com.zui.safecenter.autorun.xml",
-        dry_run,
-        changed,
-        warnings,
-        patch_bgintents,
-    )
-    patch_text_file(base / "zuipp_powercfg.xml", dry_run, changed, warnings, restore_zuipp_power)
-
-    report["keepalive_configs_changed"] = changed
-    report["keepalive_config_warnings"] = warnings
-
-
-def patch_legacy_text_markers(unpack, dry_run, report):
     targets = [
-        unpack / "system_a" / "system" / "etc" / "game_policy.xml",
-        unpack / "system_a" / "system" / "etc" / "performanceconfig.xml",
+        base / "ZuiMemCleanerConfig.xml",
+        base / "ZuiPowerPolicyConfig.xml",
+        base / "motorola" / "bgintents" / "com.zui.safecenter.autorun.xml",
+        base / "zuipp_powercfg.xml",
     ]
     changed = []
     for path in targets:
         if not path.exists():
             continue
-        original = read_text_lossy(path)
-        updated = original.replace("ZuiperfCtl", "ZuiControl")
-        write_text_if_changed(path, original, updated, dry_run, changed)
-    report["legacy_text_markers_changed"] = changed
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        kept = [
+            line for line in lines
+            if APP_PACKAGE not in line and LEGACY_APP_PACKAGE not in line
+        ]
+        if kept != lines:
+            changed.append(str(path))
+            if not dry_run:
+                path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    report["retired_whitelists_removed"] = changed
 
 
 def read_patch_lines(path):
@@ -588,12 +476,6 @@ def main():
         "dry_run": args.dry_run,
         "warnings": [],
     }
-    report["zuipp_xml_baseline_model"] = {
-        "state": "retired",
-        "owner": "uperf",
-        "runtime_cleanup": "/data/vendor/zui_control/zuipp and old bind mounts are removed at boot.",
-    }
-
     apk = payload.joinpath(*APP_APK_PATH.split("/"))
     if not apk.exists():
         raise SystemExit(f"Missing {APP_APK_PATH}. Run scripts/BuildZuiControl.ps1 before applying the payload.")
@@ -601,6 +483,7 @@ def main():
     cleanup_legacy_payload(unpack, args.dry_run, report)
     cleanup_legacy_metadata(image_root, unpack, args.dry_run, report)
     entries = copy_payload(payload, unpack, args.dry_run, report)
+    cleanup_retired_whitelists(unpack, args.dry_run, report)
     dumpsys_rel = "system_a/system/bin/dumpsys"
     entries.append((
         "ctx",
@@ -614,8 +497,6 @@ def main():
     patch_plat_sepolicy(unpack, payload, args.dry_run, report)
     patch_vendor_sepolicy(unpack, payload, args.dry_run, report)
     patch_framework_jars(root, unpack, args.dry_run, report)
-    patch_keepalive_configs(unpack, args.dry_run, report)
-    patch_legacy_text_markers(unpack, args.dry_run, report)
     update_metadata(image_root, unpack, entries, args.dry_run, report)
 
     out_dir = image_root / "work" / "config"

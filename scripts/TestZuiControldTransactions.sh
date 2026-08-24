@@ -1,9 +1,10 @@
-#!/usr/bin/env bash
-set -eo pipefail
+#!/bin/sh
+set -eu
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DAEMON="$ROOT/payload/system/bin/zui_controld"
-DEFAULT_PERAPP="$ROOT/payload/system/etc/zui_control/default_uperf_perapp.txt"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+DAEMON="${1:-$ROOT/payload/system/bin/zui_controld}"
+DEFAULT_PERAPP="${2:-$ROOT/payload/system/etc/zui_control/default_uperf_perapp.txt}"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -13,168 +14,149 @@ fail() {
 setup_state() {
     TEST_ROOT="$(mktemp -d)"
     DATA_ROOT="$TEST_ROOT/data"
+    CONTROL_DIR="$DATA_ROOT/control"
     UPERF_DIR="$DATA_ROOT/uperf"
     ASOUL_DIR="$DATA_ROOT/asoul"
     LOG_DIR="$DATA_ROOT/log"
-    CONTROL_DIR="$DATA_ROOT/control"
+    LOG_FILE="$LOG_DIR/controld.log"
+    UPERF_LOG="$LOG_DIR/uperf.log"
+    STATUS_FILE="$CONTROL_DIR/status.prop"
+    LAST_REQUEST_RECEIPT="$CONTROL_DIR/last_receipt"
     UPERF_MODE="$UPERF_DIR/cur_powermode.txt"
     UPERF_EFFECTIVE_MODE="$UPERF_DIR/effective_powermode.txt"
     UPERF_PERAPP="$UPERF_DIR/perapp_powermode.txt"
-    UPERF_LOG="$LOG_DIR/uperf.log"
-    APPOPT_ENABLED="$DATA_ROOT/appopt/enabled.flag"
-    LAST_REQUEST_FILE="$CONTROL_DIR/last_request"
-    LAST_REQUEST_RECEIPT_FILE="$CONTROL_DIR/last_receipt"
-    XML_STATE_KEY=zui_control_xml_state
-    UPERF_HEALTH_KEY=zui_control_uperf_health
-    UPERF_MODE_KEY=zui_control_uperf_mode
-    UPERF_RULES_KEY=zui_control_uperf_rules_text
-    UPERF_SCENE_KEY=zui_control_top_package
-    UPERF_SCREEN_KEY=zui_control_screen_on
-    ASOUL_HEALTH_KEY=zui_control_asoul_health
-    APPOPT_RULES_KEY=zui_control_appopt_rules_text
-    REQUEST_RESULT_DETAIL=
-    mkdir -p "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR" "$CONTROL_DIR" "$(dirname "$APPOPT_ENABLED")"
+    ASOUL_CONFIG="$ASOUL_DIR/asopt.conf"
+    mkdir -p "$CONTROL_DIR" "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR"
     cp "$DEFAULT_PERAPP" "$UPERF_PERAPP"
-    printf 'auto\n' > "$UPERF_MODE"
+    printf 'balance\n' > "$UPERF_MODE"
     printf 'balance\n' > "$UPERF_EFFECTIVE_MODE"
+    printf 'mode=0\nrt=0\nopt=0xDEADBEEF\n' > "$ASOUL_CONFIG"
     : > "$UPERF_LOG"
+    : > "$LOG_FILE"
+    TEST_SCENE=com.kurogame.mingchao
+    TEST_SCREEN=1
+    TEST_REQUEST=
+    TEST_ACK=
+    TEST_MODE_STATE=
+    TEST_RULES_STATE=
 
-    declare -gA TEST_SETTINGS=()
-    TEST_SETTINGS[$UPERF_SCENE_KEY]=com.kurogame.mingchao
-    TEST_SETTINGS[$UPERF_SCREEN_KEY]=1
-    settings_get_clean() { printf '%s\n' "${TEST_SETTINGS[$1]-}"; }
-    settings_put_quiet() { TEST_SETTINGS["$1"]="$2"; }
+    settings_get_clean() {
+        case "$1" in
+            "$UPERF_SCENE_KEY") printf '%s\n' "$TEST_SCENE" ;;
+            "$UPERF_SCREEN_KEY") printf '%s\n' "$TEST_SCREEN" ;;
+            "$REQ_TEXT_KEY") printf '%s\n' "$TEST_REQUEST" ;;
+            "$REQUEST_ACK_KEY") printf '%s\n' "$TEST_ACK" ;;
+            *) printf '\n' ;;
+        esac
+    }
+    settings_put_quiet() {
+        case "$1" in
+            "$REQUEST_ACK_KEY") TEST_ACK="$2" ;;
+            "$UPERF_MODE_KEY") TEST_MODE_STATE="$2" ;;
+            "$UPERF_RULES_KEY") TEST_RULES_STATE="$2" ;;
+        esac
+    }
     log_line() { :; }
     sync() { :; }
     sleep() { :; }
     pm() {
-        [[ "$1" == path && "$2" != com.android.systemui ]] || return 1
+        [ "$1" = path ] && [ "$2" != com.android.systemui ] || return 1
         printf 'package:/data/app/%s/base.apk\n' "$2"
     }
 }
 
 assert_default_policy() {
     grep -qx 'com.kurogame.mingchao performance' "$DEFAULT_PERAPP" ||
-        fail 'Mingchao is not performance by default'
+        fail 'Mingchao default missing'
     grep -qx 'com.kurogame.wutheringwaves.global performance' "$DEFAULT_PERAPP" ||
-        fail 'global Wuthering Waves is not performance by default'
-    grep -qx -- '- powersave' "$DEFAULT_PERAPP" || fail 'screen-off powersave rule missing'
-    grep -qx '\* balance' "$DEFAULT_PERAPP" || fail 'global balance fallback missing'
-    [[ "$(grep -Ec '^[^#[:space:]]+[[:space:]]+(powersave|balance|performance|fast)$' "$DEFAULT_PERAPP")" == 4 ]] ||
-        fail 'unexpected active default rule count'
+        fail 'global Wuthering Waves default missing'
+    grep -qx -- '- powersave' "$DEFAULT_PERAPP" || fail 'screen-off rule missing'
+    if grep -q '^\* ' "$DEFAULT_PERAPP"; then fail 'per-app file still owns global fallback'; fi
 }
 
-test_mode_updates() (
-    export ZUI_CONTROLD_TEST_MODE=1
+test_resolution_order() (
+    ZUI_CONTROLD_TEST_MODE=1
+    export ZUI_CONTROLD_TEST_MODE
     # shellcheck source=/dev/null
-    source "$DAEMON"
+    . "$DAEMON"
     setup_state
     trap 'rm -rf "$TEST_ROOT"' EXIT
 
-    set_uperf_mode performance || fail 'performance mode rejected'
-    [[ "$(tr -d '\r\n ' < "$UPERF_MODE")" == performance ]] || fail 'mode file not updated'
-    [[ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" == performance ]] || fail 'manual mode not applied effectively'
-    grep -qx '\* balance' "$UPERF_PERAPP" || fail 'manual mode corrupted the per-app fallback'
-    grep -qx -- '- powersave' "$UPERF_PERAPP" || fail 'screen-off rule changed with global mode'
-    [[ "${TEST_SETTINGS[$UPERF_MODE_KEY]}" == performance ]] || fail 'mode state not published'
-    set_uperf_mode auto || fail 'automatic per-app mode rejected'
-    [[ "$(tr -d '\r\n ' < "$UPERF_MODE")" == auto ]] || fail 'automatic mode file not updated'
-    [[ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" == performance ]] || fail 'Mingchao auto rule not applied'
-    grep -qx '\* balance' "$UPERF_PERAPP" || fail 'automatic mode corrupted the per-app fallback'
-    ! grep -q '^\* auto$' "$UPERF_PERAPP" || fail 'automatic mode was written as an invalid preset'
-    [[ "${TEST_SETTINGS[$UPERF_MODE_KEY]}" == auto ]] || fail 'automatic mode state not published'
-    TEST_SETTINGS[$UPERF_SCREEN_KEY]=0
-    sync_uperf_frontend || fail 'screen-off frontend sync failed'
-    [[ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" == powersave ]] || fail 'screen-off rule not applied'
-    TEST_SETTINGS[$UPERF_SCREEN_KEY]=1
-    TEST_SETTINGS[$UPERF_SCENE_KEY]=com.example.normal
-    sync_uperf_frontend || fail 'default frontend sync failed'
-    [[ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" == balance ]] || fail 'default fallback not applied'
-    cp "$UPERF_MODE" "$TEST_ROOT/mode.before"
-    set_uperf_mode crazy && fail 'unsupported crazy mode accepted'
-    cmp -s "$UPERF_MODE" "$TEST_ROOT/mode.before" || fail 'invalid mode changed file'
+    sync_uperf_frontend || fail 'initial frontend sync failed'
+    [ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" = performance ] ||
+        fail 'exact app did not override global mode'
+    [ "$UPERF_FRONTEND_SOURCE" = app:com.kurogame.mingchao ] ||
+        fail 'exact-app source not reported'
+
+    TEST_SCREEN=0
+    sync_uperf_frontend || fail 'screen-off sync failed'
+    [ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" = powersave ] ||
+        fail 'screen-off did not win over exact app'
+    [ "$UPERF_FRONTEND_SOURCE" = screen_off ] || fail 'screen-off source not reported'
+
+    TEST_SCREEN=1
+    TEST_SCENE=com.example.unknown
+    set_uperf_mode fast || fail 'valid global mode rejected'
+    [ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" = fast ] ||
+        fail 'global fallback not applied to unknown app'
+    if set_uperf_mode auto; then fail 'retired auto mode accepted'; fi
 )
 
-test_per_app_updates() (
-    export ZUI_CONTROLD_TEST_MODE=1
-    # shellcheck source=/dev/null
-    source "$DAEMON"
+test_custom_app_lifecycle() (
+    ZUI_CONTROLD_TEST_MODE=1
+    export ZUI_CONTROLD_TEST_MODE
+    . "$DAEMON"
     setup_state
     trap 'rm -rf "$TEST_ROOT"' EXIT
+    TEST_SCENE=com.example.game
 
-    set_uperf_app_mode com.example.game fast || fail 'valid app mode rejected'
-    [[ "$(grep -c '^com.example.game fast$' "$UPERF_PERAPP")" == 1 ]] || fail 'app rule not inserted once'
-    first_special="$(grep -nE '^(-|\*) ' "$UPERF_PERAPP" | head -n1 | cut -d: -f1)"
-    app_line="$(grep -n '^com.example.game ' "$UPERF_PERAPP" | cut -d: -f1)"
-    (( app_line < first_special )) || fail 'app rule must precede special fallbacks'
+    set_uperf_app_mode com.example.game fast || fail 'custom app rejected'
+    grep -qx 'com.example.game fast' "$UPERF_PERAPP" || fail 'custom app not persisted'
+    [ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" = fast ] ||
+        fail 'custom app not applied immediately'
+    if set_uperf_app_mode com.android.systemui fast; then fail 'system app accepted'; fi
 
-    set_uperf_app_mode com.example.game powersave || fail 'existing app rule update failed'
-    [[ "$(grep -c '^com.example.game powersave$' "$UPERF_PERAPP")" == 1 ]] || fail 'updated rule is not canonical'
-    [[ "$(grep -c '^com.example.game ' "$UPERF_PERAPP")" == 1 ]] || fail 'duplicate app rule left behind'
-    [[ "${TEST_SETTINGS[$UPERF_RULES_KEY]}" == *'com.example.game|powersave'* ]] || fail 'rules state not published'
-    TEST_SETTINGS[$UPERF_SCENE_KEY]=com.example.game
-    sync_uperf_frontend || fail 'updated app frontend sync failed'
-    [[ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" == powersave ]] || fail 'updated app rule not effective'
-
-    cp "$UPERF_PERAPP" "$TEST_ROOT/perapp.before"
-    set_uperf_app_mode com.android.systemui fast && fail 'system package accepted'
-    set_uperf_app_mode com.example.game crazy && fail 'unsupported app mode accepted'
-    cmp -s "$UPERF_PERAPP" "$TEST_ROOT/perapp.before" || fail 'rejected rule changed config'
-
-    remove_uperf_app_mode com.example.game || fail 'app rule removal failed'
-    ! grep -q '^com.example.game ' "$UPERF_PERAPP" || fail 'app rule remains after removal'
-    grep -qx -- '- powersave' "$UPERF_PERAPP" || fail 'screen-off fallback was damaged'
-    grep -qx '\* balance' "$UPERF_PERAPP" || fail 'global fallback was damaged'
+    remove_uperf_app_mode com.example.game || fail 'custom app removal failed'
+    if grep -q '^com.example.game ' "$UPERF_PERAPP"; then fail 'custom app survived removal'; fi
+    [ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" = balance ] ||
+        fail 'removed app did not return to global mode'
 )
 
-test_owner_routing() (
-    export ZUI_CONTROLD_TEST_MODE=1
-    # shellcheck source=/dev/null
-    source "$DAEMON"
+test_effective_inode_is_stable() (
+    ZUI_CONTROLD_TEST_MODE=1
+    export ZUI_CONTROLD_TEST_MODE
+    . "$DAEMON"
     setup_state
     trap 'rm -rf "$TEST_ROOT"' EXIT
-
-    handle_request test set_uperf_mode '' '' performance || fail 'new Uperf command failed'
-    [[ "$REQUEST_RESULT_DETAIL" == mode=performance\;effective=performance ]] || fail 'new command detail missing'
-    REQUEST_RESULT_DETAIL=
-    handle_request test sync_xml_refresh || fail 'retired XML refresh should be an idempotent success'
-    [[ "$REQUEST_RESULT_DETAIL" == owner=uperf\;p2=retired ]] || fail 'retired XML owner detail wrong'
-
-    for old in set_performance_profile set_appopt_rule replace_appopt_rules stop_appopt; do
-        REQUEST_RESULT_DETAIL=
-        handle_request test "$old" && fail "retired command accepted: $old"
-        [[ "$REQUEST_RESULT_DETAIL" == *owner=uperf* ]] || fail "retired command did not identify Uperf owner: $old"
-    done
+    before="$(stat -c %i "$UPERF_EFFECTIVE_MODE")"
+    UPERF_FRONTEND_SOURCE=test
+    write_uperf_effective_mode fast || fail 'effective write failed'
+    after="$(stat -c %i "$UPERF_EFFECTIVE_MODE")"
+    [ "$before" = "$after" ] || fail 'effective mode inode was replaced'
 )
 
-test_scheduler_lifecycle() (
-    export ZUI_CONTROLD_TEST_MODE=1
-    # shellcheck source=/dev/null
-    source "$DAEMON"
+test_minimal_request_and_receipt() (
+    ZUI_CONTROLD_TEST_MODE=1
+    export ZUI_CONTROLD_TEST_MODE
+    . "$DAEMON"
     setup_state
     trap 'rm -rf "$TEST_ROOT"' EXIT
-    declare -a ACTIONS=()
-    trigger_init_action() { ACTIONS+=("$1=$2"); return 0; }
-    pidof() {
-        case "$1" in uperf) printf '101 103\n' ;; AsoulOpt) printf '102\n' ;; *) return 1 ;; esac
-    }
-    ps() { printf 'u:r:performanced:s0 root 101 1 uperf\nu:r:performanced:s0 root 102 1 AsoulOpt\nu:r:performanced:s0 root 103 101 uperf\n'; }
-    printf '00:00:00 I Uperf is running\n' > "$UPERF_LOG"
+    TEST_SCENE=com.example.unknown
+    TEST_REQUEST='id-1|set_uperf_mode|||performance'
+    LAST_SETTINGS_REQUEST=
 
-    restart_scheduler || fail 'scheduler restart failed with both services present'
-    [[ "${ACTIONS[*]}" == *'zui_control.scheduler=restart'* ]] || fail 'scheduler restart property not triggered'
-    [[ "$REQUEST_RESULT_DETAIL" == uperf=running\;asoul=running ]] || fail 'scheduler restart detail wrong'
-
-    ACTIONS=()
-    boot_restore
-    [[ "${ACTIONS[*]}" == *'zui_control.zuipp=restore'* ]] || fail 'stock ZuiPP restore not triggered'
-    [[ "${ACTIONS[*]}" == *'zui_control.appopt=stop'* ]] || fail 'AppOpt stop not triggered'
-    [[ "${TEST_SETTINGS[$XML_STATE_KEY]}" == state=retired\;owner=uperf ]] || fail 'retired XML state not published'
+    process_settings_request || fail 'settings request failed'
+    [ "$TEST_ACK" = 'id-1|done|set_uperf_mode|global=performance;effective=performance' ] ||
+        fail 'terminal ACK mismatch'
+    [ "$(sed -n '1p' "$LAST_REQUEST_RECEIPT")" = "$TEST_REQUEST" ] ||
+        fail 'request receipt missing request'
+    [ "$(sed -n '2p' "$LAST_REQUEST_RECEIPT")" = "$TEST_ACK" ] ||
+        fail 'request receipt missing ACK'
 )
 
 assert_default_policy
-test_mode_updates
-test_per_app_updates
-test_owner_routing
-test_scheduler_lifecycle
-printf 'zui_controld Uperf ownership and scheduler transactions: OK\n'
+test_resolution_order
+test_custom_app_lifecycle
+test_effective_inode_is_stable
+test_minimal_request_and_receipt
+printf 'PASS: zui_controld Uperf/A-SOUL tests\n'

@@ -2,168 +2,62 @@
 
 DATA_ROOT=/data/vendor/zui_control
 CONTROL_DIR=$DATA_ROOT/zuicontrol
-DONE_DIR=$CONTROL_DIR/processed
-ZUI_DIR=$DATA_ROOT/zuipp
-ZUI_BAKED_DIR=$ZUI_DIR/baked_baseline
-ZUI_ACTIVE_DIR=$ZUI_DIR/active
-ZUI_STAGING_DIR=$ZUI_DIR/staging
-ZUI_LAST_GOOD_DIR=$ZUI_DIR/last_good
-ZUI_STATE_DIR=$ZUI_DIR/state
-ZUI_OFFICIAL_DIR=$ZUI_DIR/official_original
-APPOPT_DIR=$DATA_ROOT/appopt
 UPERF_DIR=$DATA_ROOT/uperf
 ASOUL_DIR=$DATA_ROOT/asoul
-REFRESH_DIR=$DATA_ROOT/refresh
-PERFORMANCE_DIR=$DATA_ROOT/performance
 LOG_DIR=$DATA_ROOT/log
 
 LOG_FILE=$LOG_DIR/controld.log
-APPOPT_LOG=$LOG_DIR/appopt.log
 UPERF_LOG=$LOG_DIR/uperf.log
 STATUS_FILE=$CONTROL_DIR/status.prop
-ADB_REQUEST=$CONTROL_DIR/request.prop
-LAST_REQUEST_FILE=$CONTROL_DIR/last_processed_settings_request_text
-LAST_REQUEST_RECEIPT_FILE=$CONTROL_DIR/last_processed_settings_request_receipt
+LAST_REQUEST_RECEIPT=$CONTROL_DIR/last_request_receipt
 
-APP_PACKAGE=com.zui.zuicontrol
-APP_SERVICE_COMPONENT=com.zui.zuicontrol/com.zui.zuicontrol.ZuiControlQuickService
-GAME_HELPER_PACKAGE=com.zui.game.service
-GAME_HELPER_SERVICE_COMPONENT=$GAME_HELPER_PACKAGE/.GameHelperService
-GAME_HELPER_START_ACTION=com.zui.game.service.action.GAME_MODE_START_SERVICE
-ZUIPP_PERFORMANCE_CONNECT_COMPONENT=com.zui.pp/com.zui.performance.clientcenter.PerformanceConnect
-SAFE_CENTER_PACKAGE=com.zui.safecenter
-SAFE_CENTER_DB=/data/user/0/$SAFE_CENTER_PACKAGE/databases/BlackWhite.db
-SAFE_CENTER_KEEPALIVE_FLAG=$DATA_ROOT/safecenter_keepalive_done.flag
-SAFE_CENTER_KEEPALIVE_BACKUP_FLAG=$DATA_ROOT/safecenter_keepalive_backup.flag
-SAFE_CENTER_KEEPALIVE_LOG=$LOG_DIR/safecenter_keepalive.log
-PROP_ZUIPP=zui_control.zuipp
-PROP_APPOPT=zui_control.appopt
-PROP_SCHEDULER=zui_control.scheduler
-PROP_ASOUL=zui_control.asoul
-
-SYSTEM_GAME_POLICY=/system/etc/game_policy.xml
-SYSTEM_PERF_CONFIG=/system/etc/performanceconfig.xml
-DEFAULT_GAME_POLICY=/system/etc/zui_control/default_game_policy.xml
-DEFAULT_PERF_CONFIG=/system/etc/zui_control/default_performanceconfig.xml
-DEFAULT_APPLIST=/system/etc/zui_control/default_applist.conf
-
-BAKED_GAME_POLICY=$ZUI_BAKED_DIR/game_policy.xml
-BAKED_PERF_CONFIG=$ZUI_BAKED_DIR/performanceconfig.xml
-ACTIVE_GAME_POLICY=$ZUI_ACTIVE_DIR/game_policy.xml
-ACTIVE_PERF_CONFIG=$ZUI_ACTIVE_DIR/performanceconfig.xml
-STAGING_GAME_POLICY=$ZUI_STAGING_DIR/game_policy.xml
-STAGING_PERF_CONFIG=$ZUI_STAGING_DIR/performanceconfig.xml
-LAST_GOOD_GAME_POLICY=$ZUI_LAST_GOOD_DIR/game_policy.xml
-LAST_GOOD_PERF_CONFIG=$ZUI_LAST_GOOD_DIR/performanceconfig.xml
-OFFICIAL_GAME_POLICY=$ZUI_OFFICIAL_DIR/game_policy.xml
-OFFICIAL_PERF_CONFIG=$ZUI_OFFICIAL_DIR/performanceconfig.xml
-APPOPT_CONFIG=$APPOPT_DIR/applist.conf
-APPOPT_ENABLED=$APPOPT_DIR/enabled.flag
-UPERF_CONFIG=$UPERF_DIR/uperf.json
 UPERF_MODE=$UPERF_DIR/cur_powermode.txt
 UPERF_EFFECTIVE_MODE=$UPERF_DIR/effective_powermode.txt
 UPERF_PERAPP=$UPERF_DIR/perapp_powermode.txt
 ASOUL_CONFIG=$ASOUL_DIR/asopt.conf
-APPOPT_UPDATE_BACKUP=$APPOPT_DIR/applist.conf.update_backup
-REFRESH_RULES=$REFRESH_DIR/rules.prop
-SYSTEM_REFRESH_PROFILES=/data/system/zui_control/profiles.prop
-PERFORMANCE_PROFILES=$PERFORMANCE_DIR/profiles.prop
-PERFORMANCE_SUMMARY=$PERFORMANCE_DIR/summary.txt
-PERFORMANCE_TXN_BACKUP=$PERFORMANCE_DIR/profiles.prop.txn_backup
-PERFORMANCE_TXN_MARKER=$PERFORMANCE_DIR/profile_txn.prop
-XML_STATUS_FILE=$ZUI_STATE_DIR/status.prop
-XML_LAST_ERROR_FILE=$ZUI_STATE_DIR/last_error.txt
-XML_ACTIVE_SHA_FILE=$ZUI_STATE_DIR/active.sha256
-XML_VERIFY_FILE=$ZUI_STATE_DIR/verify.txt
-ZUIPP_APPLY_LOCK_DIR=$ZUI_STATE_DIR/apply.lock
-ZUIPP_LAST_RELOADED_HASH_FILE=$ZUI_STATE_DIR/last_reloaded_hash
-BAKED_TEMPLATE_SHA_FILE=$ZUI_BAKED_DIR/template.sha256
-BAKED_REFRESH_REQUIRED=$ZUI_STATE_DIR/baseline_refresh_required
-ZUI_ENABLED=$ZUI_DIR/enabled.flag
+
+APP_PACKAGE=com.zui.zuicontrol
+APP_SERVICE_COMPONENT=$APP_PACKAGE/$APP_PACKAGE.ZuiControlQuickService
+PROP_SCHEDULER=zui_control.scheduler
+PROP_ASOUL=zui_control.asoul
 
 REQ_TEXT_KEY=zui_control_request_text
 REQUEST_ACK_KEY=zui_control_request_ack
 STATUS_TIME_KEY=zui_control_status_time
 STATUS_LAST_KEY=zui_control_status_last
-STATUS_TEXT_KEY=zui_control_daemon_status_text
+DAEMON_STATUS_KEY=zui_control_daemon_status_text
 DAEMON_REFRESH_STATE_KEY=zui_control_daemon_refresh_state
-PERFORMANCE_PROFILES_KEY=zui_control_performance_profiles_text
-PERFORMANCE_SUMMARY_KEY=zui_control_performance_summary
-ZUIPP_RELOAD_STATE_KEY=zui_control_zuipp_reload_state
 ASOUL_HEALTH_KEY=zui_control_asoul_health
-APPOPT_RULES_KEY=zui_control_appopt_rules_text
 UPERF_HEALTH_KEY=zui_control_uperf_health
 UPERF_MODE_KEY=zui_control_uperf_mode
 UPERF_RULES_KEY=zui_control_uperf_rules_text
 UPERF_SCENE_KEY=zui_control_top_package
 UPERF_SCREEN_KEY=zui_control_screen_on
-XML_STATE_KEY=zui_control_xml_state
 LOG_EXPORT_KEY=zui_control_log_export
 
-BASE_REFRESH_RATE=120
-REFRESH_OWNER=system
-LAST_REFRESH_RATE=
-LAST_SETTINGS_REQUEST_TEXT=
+LAST_SETTINGS_REQUEST=
+CURRENT_REQUEST_ID=
+CURRENT_REQUEST_CMD=
+REQUEST_RESULT_DETAIL=
 HEALTH_TICKS=0
 UPERF_MISSES=0
 UPERF_FRONTEND_SCENE=
 UPERF_FRONTEND_SCREEN=1
-UPERF_FRONTEND_SOURCE=
+UPERF_FRONTEND_SOURCE=global
 UPERF_FRONTEND_EFFECTIVE=balance
-SAFE_CENTER_KEEPALIVE_TICKS=0
-SAFE_CENTER_KEEPALIVE_ATTEMPTS=0
-SAFE_CENTER_KEEPALIVE_MAX_ATTEMPTS=60
-SAFE_CENTER_KEEPALIVE_DONE=0
-LOOP_SLEEP_SECONDS=1
-ZUIPP_STABLE_SECONDS=3
-GAME_HELPER_STABLE_SECONDS=2
-APPOPT_STABLE_SECONDS=3
-ZUI_MODE_SERVICE=zuimode
-ZUI_MODE_TX_ADD_USER_GAME=14
-ZUI_MODE_TX_REMOVE_USER_GAME=15
-ZUI_MODE_TX_IS_USER_GAME=16
-ZUI_MODE_TX_IS_SYSTEM_GAME=17
-CURRENT_REQUEST_ID=
-CURRENT_REQUEST_CMD=
 
 ts() {
     date '+%Y-%m-%d %H:%M:%S'
 }
 
-now_seconds() {
-    date '+%s'
-}
-
-uptime_seconds() {
-    awk '{printf "%d\n", $1}' /proc/uptime 2>/dev/null
-}
-
 settings_get_clean() {
     value="$(settings get system "$1" 2>/dev/null)"
-    if [ "$value" = "null" ]; then
-        value=
-    fi
-    printf '%s\n' "$value"
-}
-
-settings_get_secure_clean() {
-    value="$(settings get secure "$1" 2>/dev/null)"
-    if [ "$value" = "null" ]; then
-        value=
-    fi
+    [ "$value" != "null" ] || value=
     printf '%s\n' "$value"
 }
 
 settings_put_quiet() {
     settings put system "$1" "$2" >/dev/null 2>&1
-}
-
-settings_put_secure_quiet() {
-    settings put secure "$1" "$2" >/dev/null 2>&1
-}
-
-read_file_clean() {
-    cat "$1" 2>/dev/null | tr -d '\r\n'
 }
 
 atomic_write_text() {
@@ -173,30 +67,12 @@ atomic_write_text() {
     rm -f "$tmp"
     if printf '%s\n' "$value" > "$tmp" &&
         chmod 0664 "$tmp" &&
-        mv "$tmp" "$target"; then
+        mv -f "$tmp" "$target"; then
+        sync "$target" 2>/dev/null || sync
         return 0
     fi
     rm -f "$tmp"
     return 1
-}
-
-atomic_copy_file() {
-    source_file="$1"
-    target="$2"
-    tmp="$target.tmp"
-    [ -e "$source_file" ] || return 1
-    rm -f "$tmp"
-    if cp "$source_file" "$tmp" &&
-        chmod 0664 "$tmp" &&
-        mv "$tmp" "$target"; then
-        return 0
-    fi
-    rm -f "$tmp"
-    return 1
-}
-
-durable_sync_paths() {
-    fsync "$@" >/dev/null 2>&1
 }
 
 log_line() {
@@ -209,669 +85,36 @@ trim_log() {
     size="$(wc -c < "$LOG_FILE" 2>/dev/null)"
     if [ "${size:-0}" -gt 524288 ]; then
         tail -n 2000 "$LOG_FILE" > "$LOG_FILE.tmp" 2>/dev/null &&
-            mv "$LOG_FILE.tmp" "$LOG_FILE"
+            mv -f "$LOG_FILE.tmp" "$LOG_FILE"
     fi
 }
 
 set_status() {
-    mkdir -p "$CONTROL_DIR"
     {
         echo "time=$(ts)"
-        for line in "$@"; do
-            echo "$line"
-        done
+        for line in "$@"; do echo "$line"; done
     } > "$STATUS_FILE"
     chmod 0664 "$STATUS_FILE" 2>/dev/null
-
     last=
     for line in "$@"; do
-        case "$line" in
-            last=*) last="${line#last=}" ;;
-        esac
+        case "$line" in last=*) last="${line#last=}" ;; esac
     done
     settings_put_quiet "$STATUS_TIME_KEY" "$(ts)"
     settings_put_quiet "$STATUS_LAST_KEY" "$last"
-    status_text="$(tr '\n' ';' < "$STATUS_FILE" 2>/dev/null)"
-    settings_put_quiet "$STATUS_TEXT_KEY" "$status_text"
-}
-
-copy_if_missing() {
-    src="$1"
-    dst="$2"
-    if [ -s "$dst" ]; then
-        return 0
-    fi
-    if [ -s "$src" ]; then
-        cp "$src" "$dst" && chmod 0664 "$dst"
-    fi
-}
-
-file_sha() {
-    [ -s "$1" ] || return 1
-    sha256sum "$1" 2>/dev/null | awk '{print $1}'
-}
-
-same_file_hash() {
-    left="$(file_sha "$1")"
-    right="$(file_sha "$2")"
-    [ -n "$left" ] && [ "$left" = "$right" ]
-}
-
-verify_active_matches_staging() {
-    if ! same_file_hash "$STAGING_GAME_POLICY" "$ACTIVE_GAME_POLICY"; then
-        set_xml_error "promote active game_policy hash does not match staging"
-        return 1
-    fi
-    if ! same_file_hash "$STAGING_PERF_CONFIG" "$ACTIVE_PERF_CONFIG"; then
-        set_xml_error "promote active performanceconfig hash does not match staging"
-        return 1
-    fi
-    return 0
-}
-
-set_xml_error() {
-    mkdir -p "$ZUI_STATE_DIR"
-    printf '%s %s\n' "$(ts)" "$*" > "$XML_LAST_ERROR_FILE"
-    chmod 0664 "$XML_LAST_ERROR_FILE" 2>/dev/null
-    log_line "ZuiPP XML error: $*"
-}
-
-clear_xml_error() {
-    rm -f "$XML_LAST_ERROR_FILE"
-}
-
-write_xml_status_file() {
-    mkdir -p "$ZUI_STATE_DIR"
-    {
-        echo "time=$(ts)"
-        for line in "$@"; do
-            echo "$line"
-        done
-        if [ -s "$XML_LAST_ERROR_FILE" ]; then
-            echo "last_error=$(cat "$XML_LAST_ERROR_FILE" 2>/dev/null)"
-        fi
-    } > "$XML_STATUS_FILE"
-    chmod 0664 "$XML_STATUS_FILE" 2>/dev/null
-}
-
-write_active_sha() {
-    mkdir -p "$ZUI_STATE_DIR"
-    {
-        echo "game_policy=$(file_sha "$ACTIVE_GAME_POLICY")"
-        echo "performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")"
-    } > "$XML_ACTIVE_SHA_FILE"
-    chmod 0664 "$XML_ACTIVE_SHA_FILE" 2>/dev/null
-}
-
-label_active_xml() {
-    for file in "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG"; do
-        [ -e "$file" ] || continue
-        current_mode="$(stat -c %a "$file" 2>/dev/null | head -n 1)"
-        if [ "$current_mode" != "664" ]; then
-            chmod 0664 "$file" 2>/dev/null || true
-        fi
-    done
-}
-
-prepare_xml_replace_target() {
-    file="$1"
-    [ -e "$file" ] || return 0
-    chmod 0664 "$file" >/dev/null 2>&1 || true
-}
-
-copy_xml_pair_to_dir() {
-    src_game="$1"
-    src_perf="$2"
-    dst_dir="$3"
-    label="$4"
-    [ -s "$src_game" ] && [ -s "$src_perf" ] || {
-        set_xml_error "$label source XML missing"
-        return 1
-    }
-    mkdir -p "$dst_dir"
-    prepare_xml_replace_target "$dst_dir/game_policy.xml"
-    prepare_xml_replace_target "$dst_dir/performanceconfig.xml"
-    game_tmp="$dst_dir/game_policy.xml.tmp"
-    perf_tmp="$dst_dir/performanceconfig.xml.tmp"
-    rm -f "$game_tmp" "$perf_tmp"
-    if cp "$src_game" "$game_tmp" &&
-        cp "$src_perf" "$perf_tmp"; then
-        chown root:root "$game_tmp" "$perf_tmp" >/dev/null 2>&1 || true
-        if chmod 0664 "$game_tmp" "$perf_tmp" &&
-            mv "$game_tmp" "$dst_dir/game_policy.xml" &&
-            mv "$perf_tmp" "$dst_dir/performanceconfig.xml"; then
-            return 0
-        fi
-    fi
-    rm -f "$game_tmp" "$perf_tmp"
-    set_xml_error "$label copy failed"
-    return 1
-}
-
-validate_xml_pair() {
-    game="$1"
-    perf="$2"
-    label="$3"
-    if [ ! -s "$game" ] || [ ! -s "$perf" ]; then
-        set_xml_error "$label validation failed: missing XML"
-        return 1
-    fi
-    grep -q "AppPolicy" "$game" 2>/dev/null || {
-        set_xml_error "$label validation failed: AppPolicy missing"
-        return 1
-    }
-    grep -q "GameLimitConfig" "$perf" 2>/dev/null || {
-        set_xml_error "$label validation failed: GameLimitConfig missing"
-        return 1
-    }
-    return 0
-}
-
-init_baked_baseline_xml() {
-    mkdir -p "$ZUI_BAKED_DIR" "$ZUI_STATE_DIR"
-    template_game_sha="$(file_sha "$DEFAULT_GAME_POLICY")"
-    template_perf_sha="$(file_sha "$DEFAULT_PERF_CONFIG")"
-    [ -n "$template_game_sha" ] && [ -n "$template_perf_sha" ] || {
-        set_xml_error "payload baseline template hash failed"
-        return 1
-    }
-    template_stamp="$template_game_sha:$template_perf_sha"
-    saved_stamp="$(read_file_clean "$BAKED_TEMPLATE_SHA_FILE")"
-    if [ -n "$template_stamp" ] && [ "$saved_stamp" = "$template_stamp" ] &&
-        [ -s "$BAKED_GAME_POLICY" ] && [ -s "$BAKED_PERF_CONFIG" ]; then
-        return 0
-    fi
-    if copy_xml_pair_to_dir "$DEFAULT_GAME_POLICY" "$DEFAULT_PERF_CONFIG" \
-        "$ZUI_BAKED_DIR" "baked baseline"; then
-        printf '%s\n' "$template_stamp" > "$BAKED_TEMPLATE_SHA_FILE.tmp"
-        chmod 0664 "$BAKED_TEMPLATE_SHA_FILE.tmp" 2>/dev/null
-        mv "$BAKED_TEMPLATE_SHA_FILE.tmp" "$BAKED_TEMPLATE_SHA_FILE"
-        touch "$BAKED_REFRESH_REQUIRED"
-        chmod 0664 "$BAKED_REFRESH_REQUIRED" 2>/dev/null
-        log_line "ZuiPP baked baseline refreshed from payload template: $template_stamp"
-        return 0
-    fi
-    return 1
-}
-
-init_active_xml() {
-    init_baked_baseline_xml || return 1
-    mkdir -p "$ZUI_ACTIVE_DIR" "$ZUI_STAGING_DIR" "$ZUI_LAST_GOOD_DIR" \
-        "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR"
-    if [ ! -s "$ACTIVE_GAME_POLICY" ] || [ ! -s "$ACTIVE_PERF_CONFIG" ]; then
-        copy_xml_pair_to_dir "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
-            "$ZUI_STAGING_DIR" "active init" || return 1
-        promote_staging_with_lock "active_init" || return 1
-        log_line "ZuiPP active XML initialized from baked baseline"
-    fi
-    validate_xml_pair "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" "active" || return 1
-    if [ ! -s "$LAST_GOOD_GAME_POLICY" ] || [ ! -s "$LAST_GOOD_PERF_CONFIG" ]; then
-        copy_xml_pair_to_dir "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" \
-            "$ZUI_LAST_GOOD_DIR" "last_good init" || return 1
-        log_line "ZuiPP last_good initialized from active XML"
-    fi
-    label_active_xml
-    write_active_sha
-    return 0
+    settings_put_quiet "$DAEMON_STATUS_KEY" "$(tr '\n' ';' < "$STATUS_FILE" 2>/dev/null)"
 }
 
 valid_package_name() {
-    pkg="$1"
-    case "$pkg" in
-        ""|.*|*.) return 1 ;;
-        *..*) return 1 ;;
-        *[!A-Za-z0-9_.]*) return 1 ;;
+    case "$1" in
+        ""|.*|*.|*..*|*[!A-Za-z0-9_.]*) return 1 ;;
     esac
     return 0
 }
 
-valid_refresh_rate() {
-    case "$1" in
-        60|90|120|144|165) return 0 ;;
-    esac
+package_is_user_app() {
+    apk="$(pm path "$1" </dev/null 2>/dev/null | sed -n 's/^package://p' | head -n 1)"
+    case "$apk" in /data/app/*) return 0 ;; esac
     return 1
-}
-
-valid_game_policy_mode() {
-    case "$1" in
-        independent|default) return 0 ;;
-    esac
-    return 1
-}
-
-valid_game_policy_refresh_rate() {
-    case "$1" in
-        0|60|90|120|144|165) return 0 ;;
-    esac
-    return 1
-}
-
-valid_game_policy_power_save_refresh_rate() {
-    case "$1" in
-        0|30|60|90|120|144|165) return 0 ;;
-    esac
-    return 1
-}
-
-valid_frame_policy() {
-    case "$1" in
-        default|fixed60|follow_display) return 0 ;;
-    esac
-    return 1
-}
-
-legacy_frame_policy() {
-    legacy_policy="$1"
-    legacy_refresh="$2"
-    legacy_power_save="$3"
-    if [ "$legacy_policy" != "independent" ]; then
-        echo "default"
-    elif [ "$legacy_refresh" = "60" ] && [ "$legacy_power_save" = "60" ]; then
-        echo "fixed60"
-    elif [ -n "$legacy_refresh" ] && [ "$legacy_refresh" != "0" ] &&
-        [ "$legacy_refresh" != "$BASE_REFRESH_RATE" ]; then
-        echo "follow_display"
-    else
-        echo "default"
-    fi
-}
-
-valid_mode() {
-    case "$1" in
-        balanced|powersave|savage) return 0 ;;
-    esac
-    return 1
-}
-
-valid_stage_payload() {
-    [ -n "$1" ] || return 1
-    awk -v payload="$1" '
-        BEGIN {
-            if (payload !~ /^[-0-9,;]+$/) {
-                exit 1
-            }
-            count = split(payload, stages, ";")
-            if (count < 1) {
-                exit 1
-            }
-            previous = 0
-            for (i = 1; i <= count; i++) {
-                if (stages[i] == "") {
-                    exit 1
-                }
-                fields = split(stages[i], values, ",")
-                if (fields != 11 || values[1] !~ /^-?[0-9]+$/) {
-                    exit 1
-                }
-                thermal = values[1] + 0
-                if (i == 1) {
-                    if (thermal != -1000) {
-                        exit 1
-                    }
-                } else {
-                    if (thermal < 1 || thermal > 16 || thermal <= previous) {
-                        exit 1
-                    }
-                    previous = thermal
-                }
-                for (j = 2; j <= 11; j++) {
-                    if (values[j] !~ /^[0-9]+$/ || values[j] + 0 <= 0) {
-                        exit 1
-                    }
-                }
-                if ((values[2] + 0) < (values[3] + 0) ||
-                    (values[4] + 0) < (values[5] + 0) ||
-                    (values[6] + 0) < (values[7] + 0) ||
-                    (values[8] + 0) < (values[9] + 0) ||
-                    (values[10] + 0) < (values[11] + 0)) {
-                    exit 1
-                }
-            }
-            exit 0
-        }
-    '
-}
-
-valid_positive_int() {
-    case "$1" in
-        ""|*[!0-9]*) return 1 ;;
-    esac
-    [ "$1" -gt 0 ]
-}
-
-rewrite_performance_without_package() {
-    pkg="$1"
-    tmp="$PERFORMANCE_PROFILES.tmp"
-    rm -f "$tmp"
-    : > "$tmp" || return 1
-    if [ -s "$PERFORMANCE_PROFILES" ]; then
-        while IFS= read -r line || [ -n "$line" ]; do
-            old_ifs="$IFS"
-            IFS='|'
-            set -- $line
-            IFS="$old_ifs"
-            line_pkg="$1"
-            if [ "$line_pkg" = "$pkg" ]; then
-                continue
-            fi
-            printf '%s\n' "$line" >> "$tmp" || {
-                rm -f "$tmp"
-                return 1
-            }
-        done < "$PERFORMANCE_PROFILES" || {
-            rm -f "$tmp"
-            return 1
-        }
-    fi
-    if chmod 0664 "$tmp" && mv "$tmp" "$PERFORMANCE_PROFILES"; then
-        return 0
-    fi
-    rm -f "$tmp"
-    return 1
-}
-
-migrate_performance_profiles() {
-    tmp="$PERFORMANCE_PROFILES.migrate"
-    before="$(file_sha "$PERFORMANCE_PROFILES")"
-    awk -F '|' 'BEGIN { OFS="|" }
-        NF == 4 || NF == 6 || NF == 7 || NF == 12 {
-            pkg=$1
-            mode=$2
-            if (pkg !~ /^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+$/ ||
-                (mode != "balanced" && mode != "powersave" && mode != "savage")) {
-                next
-            }
-            if (!(pkg in chosen)) {
-                order[++count]=pkg
-            }
-            if (!(pkg in chosen) || mode == "balanced") {
-                $2="balanced"
-                chosen[pkg]=$0
-            }
-        }
-        END {
-            for (i=1; i<=count; i++) {
-                pkg=order[i]
-                if (pkg in chosen) print chosen[pkg]
-            }
-        }
-    ' "$PERFORMANCE_PROFILES" > "$tmp"
-    chmod 0664 "$tmp" 2>/dev/null
-    mv "$tmp" "$PERFORMANCE_PROFILES"
-    after="$(file_sha "$PERFORMANCE_PROFILES")"
-    if [ "$before" != "$after" ]; then
-        log_line "performance profiles migrated to one canonical profile per package"
-    fi
-}
-
-migrate_refresh_rules() {
-    tmp="$REFRESH_RULES.migrate"
-    : > "$tmp"
-    if [ -s "$REFRESH_RULES" ]; then
-        while IFS='=' read -r pkg rate; do
-            valid_package_name "$pkg" || continue
-            valid_refresh_rate "$rate" || continue
-            [ "$rate" = "$BASE_REFRESH_RATE" ] && continue
-            printf '%s=%s\n' "$pkg" "$rate" >> "$tmp"
-        done < "$REFRESH_RULES"
-    fi
-    mv "$tmp" "$REFRESH_RULES"
-    chmod 0664 "$REFRESH_RULES" 2>/dev/null
-}
-
-publish_refresh_state() {
-    settings_put_quiet "$DAEMON_REFRESH_STATE_KEY" "refresh_owner=$REFRESH_OWNER; daemon refresh disabled"
-}
-
-publish_performance_state() {
-    profiles_text=
-    if [ -s "$PERFORMANCE_PROFILES" ]; then
-        profiles_text="$(grep -v '^[[:space:]]*#' "$PERFORMANCE_PROFILES" 2>/dev/null |
-            grep -v '^[[:space:]]*$' 2>/dev/null)"
-    fi
-    settings_put_quiet "$PERFORMANCE_PROFILES_KEY" "$profiles_text"
-    summary=
-    [ -s "$PERFORMANCE_SUMMARY" ] && summary="$(cat "$PERFORMANCE_SUMMARY" 2>/dev/null)"
-    settings_put_quiet "$PERFORMANCE_SUMMARY_KEY" "$summary"
-}
-
-clear_performance_summary() {
-    rm -f "$PERFORMANCE_SUMMARY" "$PERFORMANCE_SUMMARY.tmp"
-    settings_put_quiet "$PERFORMANCE_SUMMARY_KEY" ""
-}
-
-is_mounted_on() {
-    target="$1"
-    while read -r _ mount_point _; do
-        [ "$mount_point" = "$target" ] && return 0
-    done < /proc/mounts
-    return 1
-}
-
-mount_source_for_target() {
-    target="$1"
-    awk -v wanted="$target" '$2 == wanted {print $1; exit}' /proc/mounts 2>/dev/null
-}
-
-begin_zuipp_verify_file() {
-    mkdir -p "$ZUI_STATE_DIR"
-    : > "$XML_VERIFY_FILE"
-    chmod 0664 "$XML_VERIFY_FILE" 2>/dev/null
-    {
-        echo "active_game_policy=$(file_sha "$ACTIVE_GAME_POLICY")"
-        echo "active_performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")"
-        echo "system_game_policy=$(file_sha "$SYSTEM_GAME_POLICY")"
-        echo "system_performanceconfig=$(file_sha "$SYSTEM_PERF_CONFIG")"
-        echo "game_policy_mount_source=$(mount_source_for_target "$SYSTEM_GAME_POLICY")"
-        echo "performanceconfig_mount_source=$(mount_source_for_target "$SYSTEM_PERF_CONFIG")"
-    } >> "$XML_VERIFY_FILE"
-}
-
-verify_zuipp_mount_core() {
-    begin_zuipp_verify_file
-    if ! is_mounted_on "$SYSTEM_GAME_POLICY" ||
-        ! is_mounted_on "$SYSTEM_PERF_CONFIG"; then
-        set_xml_error "active bind missing in /proc/mounts"
-        write_xml_status_file "mounted=false" "active_hash=$(file_sha "$ACTIVE_GAME_POLICY")"
-        return 1
-    fi
-    if ! same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY"; then
-        set_xml_error "system game_policy hash does not match active"
-        write_xml_status_file "mounted=true" "game_policy=mismatch"
-        return 1
-    fi
-    if ! same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG"; then
-        set_xml_error "system performanceconfig hash does not match active"
-        write_xml_status_file "mounted=true" "performanceconfig=mismatch"
-        return 1
-    fi
-    return 0
-}
-
-system_xml_contexts_ok() {
-    for file in "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; do
-        context="$(ls -Z "$file" 2>/dev/null | awk '{print $1}')"
-        if [ "$context" != "u:object_r:system_file:s0" ]; then
-            return 1
-        fi
-    done
-    return 0
-}
-
-verify_system_xml_contexts() {
-    for file in "$SYSTEM_GAME_POLICY" "$SYSTEM_PERF_CONFIG"; do
-        context="$(ls -Z "$file" 2>/dev/null | awk '{print $1}')"
-        if [ "$context" != "u:object_r:system_file:s0" ]; then
-            set_xml_error "$file context mismatch: $context"
-            return 1
-        fi
-    done
-    return 0
-}
-
-verify_zuipp_mounts() {
-    verify_zuipp_mount_core || return 1
-    verify_system_xml_contexts || return 1
-    clear_xml_error
-    write_active_sha
-    write_xml_status_file \
-        "mounted=true" \
-        "game_policy=$(file_sha "$ACTIVE_GAME_POLICY")" \
-        "performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")" \
-        "source=active"
-    return 0
-}
-
-publish_xml_state() {
-    settings_put_quiet "$XML_STATE_KEY" "state=retired;owner=uperf"
-    return 0
-
-    game_hash="$(file_sha "$ACTIVE_GAME_POLICY")"
-    perf_hash="$(file_sha "$ACTIVE_PERF_CONFIG")"
-    if is_mounted_on "$SYSTEM_GAME_POLICY" && is_mounted_on "$SYSTEM_PERF_CONFIG" &&
-        same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY" &&
-        same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG" &&
-        system_xml_contexts_ok; then
-        clear_xml_error
-        settings_put_quiet "$XML_STATE_KEY" \
-            "state=mounted;source=active;game=${game_hash:-unknown};perf=${perf_hash:-unknown}"
-        write_xml_status_file "mounted=true" "source=active" \
-            "game_policy=${game_hash:-unknown}" "performanceconfig=${perf_hash:-unknown}"
-    elif is_mounted_on "$SYSTEM_GAME_POLICY" && is_mounted_on "$SYSTEM_PERF_CONFIG" &&
-        same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY" &&
-        same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG"; then
-        verify_system_xml_contexts >/dev/null 2>&1 || true
-        settings_put_quiet "$XML_STATE_KEY" \
-            "state=mounted_context_error;source=active;game=${game_hash:-unknown};perf=${perf_hash:-unknown}"
-        write_xml_status_file "mounted=false" "source=active-context-error" \
-            "game_policy=${game_hash:-unknown}" "performanceconfig=${perf_hash:-unknown}"
-    elif [ -s "$ACTIVE_GAME_POLICY" ] && [ -s "$ACTIVE_PERF_CONFIG" ] &&
-        same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY" &&
-        same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG"; then
-        settings_put_quiet "$XML_STATE_KEY" \
-            "state=unmounted;source=active_matches_system;game=${game_hash:-unknown};perf=${perf_hash:-unknown}"
-        write_xml_status_file "mounted=false" "source=active-matches-system" \
-            "game_policy=${game_hash:-unknown}" "performanceconfig=${perf_hash:-unknown}"
-    elif [ -s "$BAKED_GAME_POLICY" ] && [ -s "$BAKED_PERF_CONFIG" ]; then
-        settings_put_quiet "$XML_STATE_KEY" \
-            "state=unmounted;source=baked_or_system;game=${game_hash:-unknown};perf=${perf_hash:-unknown}"
-        write_xml_status_file "mounted=false" "source=baked_or_system" \
-            "game_policy=${game_hash:-unknown}" "performanceconfig=${perf_hash:-unknown}"
-    else
-        settings_put_quiet "$XML_STATE_KEY" "state=uninitialized"
-        write_xml_status_file "mounted=false" "source=uninitialized"
-    fi
-}
-
-uperf_rule_for_scene() {
-    lookup_scene="$1"
-    lookup_fallback=
-    while read -r lookup_pkg lookup_mode lookup_extra; do
-        [ -z "$lookup_extra" ] || continue
-        case "$lookup_pkg" in ''|'#'*) continue ;; esac
-        if [ "$lookup_pkg" = "$lookup_scene" ]; then
-            printf '%s\n' "$lookup_mode"
-            return 0
-        fi
-        [ "$lookup_pkg" = "*" ] && lookup_fallback="$lookup_mode"
-    done < "$UPERF_PERAPP" 2>/dev/null
-    printf '%s\n' "$lookup_fallback"
-}
-
-write_uperf_effective_mode() {
-    frontend_mode="$1"
-    valid_uperf_preset "$frontend_mode" || return 1
-    frontend_current="$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE" 2>/dev/null)"
-    [ "$frontend_current" != "$frontend_mode" ] || return 0
-    # Uperf watches this inode. Update it in place; replacing it with rename(2)
-    # would leave the native watcher attached to the old inode.
-    if printf '%s\n' "$frontend_mode" > "$UPERF_EFFECTIVE_MODE" &&
-        chmod 0644 "$UPERF_EFFECTIVE_MODE"; then
-        sync "$UPERF_EFFECTIVE_MODE" 2>/dev/null || sync
-        log_line "Uperf effective mode: $frontend_mode source=$UPERF_FRONTEND_SOURCE scene=$UPERF_FRONTEND_SCENE screen=$UPERF_FRONTEND_SCREEN"
-        return 0
-    fi
-    return 1
-}
-
-sync_uperf_frontend() {
-    frontend_requested="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
-    if ! valid_uperf_mode "$frontend_requested"; then
-        frontend_requested=auto
-        printf 'auto\n' > "$UPERF_MODE" 2>/dev/null || return 1
-        chmod 0644 "$UPERF_MODE" 2>/dev/null || true
-    fi
-
-    frontend_scene="$(settings_get_clean "$UPERF_SCENE_KEY")"
-    valid_package_name "$frontend_scene" || frontend_scene="*"
-    frontend_screen="$(settings_get_clean "$UPERF_SCREEN_KEY")"
-    [ "$frontend_screen" = "0" ] || frontend_screen=1
-
-    if [ "$frontend_requested" != "auto" ]; then
-        frontend_effective="$frontend_requested"
-        frontend_source=manual
-    elif [ "$frontend_screen" = "0" ]; then
-        frontend_effective="$(awk '$1 == "-" {print $2; exit}' "$UPERF_PERAPP" 2>/dev/null)"
-        frontend_source="-"
-    else
-        frontend_effective="$(uperf_rule_for_scene "$frontend_scene")"
-        frontend_source="$frontend_scene"
-        [ "$frontend_scene" != "*" ] || frontend_source="*"
-    fi
-    valid_uperf_preset "$frontend_effective" || frontend_effective=balance
-
-    UPERF_FRONTEND_SCENE="$frontend_scene"
-    UPERF_FRONTEND_SCREEN="$frontend_screen"
-    UPERF_FRONTEND_SOURCE="$frontend_source"
-    UPERF_FRONTEND_EFFECTIVE="$frontend_effective"
-    write_uperf_effective_mode "$frontend_effective"
-}
-
-publish_appopt_health() {
-    sync_uperf_frontend >/dev/null 2>&1 || true
-    uperf_pid="$(pidof uperf 2>/dev/null | awk '{print $1}')"
-    uperf_processes="$(pidof uperf 2>/dev/null | awk '{print NF}')"
-    asoul_pid="$(pidof AsoulOpt 2>/dev/null | awk '{print $1}')"
-    uperf_domain=
-    asoul_domain=
-    [ -n "$uperf_pid" ] && uperf_domain=u:r:performanced:s0
-    [ -n "$asoul_pid" ] && asoul_domain=u:r:performanced:s0
-    current_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
-    valid_uperf_mode "$current_mode" || current_mode=unknown
-    effective_mode="$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE" 2>/dev/null)"
-    valid_uperf_preset "$effective_mode" || effective_mode=unknown
-    default_mode="$(awk '$1 == "*" {print $2; exit}' "$UPERF_PERAPP" 2>/dev/null)"
-    valid_uperf_preset "$default_mode" || default_mode=balance
-    oem_perf_bridges=
-    for bridge in vendor.perfservice performance poweropt-service perf2-hal-1-0; do
-        bridge_state="$(getprop "init.svc.$bridge" 2>/dev/null)"
-        [ -n "$bridge_state" ] || bridge_state=absent
-        [ -z "$oem_perf_bridges" ] || oem_perf_bridges="$oem_perf_bridges · "
-        oem_perf_bridges="${oem_perf_bridges}${bridge}=${bridge_state}"
-    done
-    log_size=0
-    [ -f "$UPERF_LOG" ] && log_size="$(wc -c < "$UPERF_LOG" 2>/dev/null)"
-    health="Uperf：${uperf_pid:-未运行}（${uperf_processes:-0} 进程 · ${uperf_domain:-未识别}）
-控制模式：$current_mode · 实际档位：$effective_mode · 规则：${UPERF_FRONTEND_SOURCE:-*} · 默认：$default_mode
-前端：ROM system_server 场景 ${UPERF_FRONTEND_SCENE:-*} · 亮屏：$UPERF_FRONTEND_SCREEN
-GPU：原厂 KGSL DVFS 与热保护保留，本阶段不伪造 Uperf GPU 接管
-OEM Perf 桥：$oem_perf_bridges（存在的服务均应为 stopped）
-A-SOUL：${asoul_pid:-未运行}（${asoul_domain:-未识别}）
-线程参数：mode=0 · rt=0
-AppOpt：已退役
-日志：${log_size:-0} 字节"
-    settings_put_quiet "$ASOUL_HEALTH_KEY" "$health"
-    settings_put_quiet "$UPERF_HEALTH_KEY" "$health"
-    settings_put_quiet "$UPERF_MODE_KEY" "$current_mode"
-    publish_uperf_rules_state
-    settings_put_quiet "$APPOPT_RULES_KEY" ""
-}
-
-valid_uperf_mode() {
-    case "$1" in
-        auto|powersave|balance|performance|fast) return 0 ;;
-        *) return 1 ;;
-    esac
 }
 
 valid_uperf_preset() {
@@ -879,6 +122,70 @@ valid_uperf_preset() {
         powersave|balance|performance|fast) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+uperf_rule_for_scene() {
+    wanted="$1"
+    while read -r rule_pkg rule_mode extra; do
+        [ -z "$extra" ] || continue
+        case "$rule_pkg" in ''|'#'*|'-'|'*') continue ;; esac
+        if [ "$rule_pkg" = "$wanted" ] && valid_uperf_preset "$rule_mode"; then
+            printf '%s\n' "$rule_mode"
+            return 0
+        fi
+    done < "$UPERF_PERAPP" 2>/dev/null
+    return 1
+}
+
+write_uperf_effective_mode() {
+    next="$1"
+    valid_uperf_preset "$next" || return 1
+    current="$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE" 2>/dev/null)"
+    [ "$current" != "$next" ] || return 0
+    # Uperf watches this inode, so never replace the effective file with rename(2).
+    if printf '%s\n' "$next" > "$UPERF_EFFECTIVE_MODE" &&
+        chmod 0644 "$UPERF_EFFECTIVE_MODE"; then
+        sync "$UPERF_EFFECTIVE_MODE" 2>/dev/null || sync
+        log_line "Uperf effective=$next source=$UPERF_FRONTEND_SOURCE scene=$UPERF_FRONTEND_SCENE screen=$UPERF_FRONTEND_SCREEN"
+        return 0
+    fi
+    return 1
+}
+
+sync_uperf_frontend() {
+    global_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
+    if ! valid_uperf_preset "$global_mode"; then
+        global_mode=balance
+        atomic_write_text "$UPERF_MODE" "$global_mode" || return 1
+    fi
+
+    scene="$(settings_get_clean "$UPERF_SCENE_KEY")"
+    valid_package_name "$scene" || scene=
+    screen="$(settings_get_clean "$UPERF_SCREEN_KEY")"
+    [ "$screen" = "0" ] || screen=1
+
+    if [ "$screen" = "0" ]; then
+        effective="$(awk '$1 == "-" {print $2; exit}' "$UPERF_PERAPP" 2>/dev/null)"
+        valid_uperf_preset "$effective" || effective=powersave
+        source=screen_off
+    elif [ -n "$scene" ]; then
+        effective="$(uperf_rule_for_scene "$scene")"
+        if valid_uperf_preset "$effective"; then
+            source="app:$scene"
+        else
+            effective="$global_mode"
+            source=global
+        fi
+    else
+        effective="$global_mode"
+        source=global
+    fi
+
+    UPERF_FRONTEND_SCENE="$scene"
+    UPERF_FRONTEND_SCREEN="$screen"
+    UPERF_FRONTEND_SOURCE="$source"
+    UPERF_FRONTEND_EFFECTIVE="$effective"
+    write_uperf_effective_mode "$effective"
 }
 
 publish_uperf_rules_state() {
@@ -894,29 +201,57 @@ publish_uperf_rules_state() {
     settings_put_quiet "$UPERF_RULES_KEY" "$(printf '%s' "$rules" | sed '/^$/d')"
 }
 
-set_uperf_mode() {
-    requested_mode="$1"
-    valid_uperf_mode "$requested_mode" || return 1
-    mode_tmp="$UPERF_MODE.tmp"
-    rm -f "$mode_tmp"
-    printf '%s\n' "$requested_mode" > "$mode_tmp" || return 1
-    chmod 0644 "$mode_tmp" && mv -f "$mode_tmp" "$UPERF_MODE" || {
-        rm -f "$mode_tmp"
-        return 1
-    }
-    chmod 0644 "$UPERF_MODE" 2>/dev/null
-    sync "$UPERF_MODE" 2>/dev/null || sync
-    sync_uperf_frontend || return 1
-    settings_put_quiet "$UPERF_MODE_KEY" "$requested_mode"
-    REQUEST_RESULT_DETAIL="mode=$requested_mode;effective=$UPERF_FRONTEND_EFFECTIVE"
-    log_line "Uperf requested mode changed: $requested_mode effective=$UPERF_FRONTEND_EFFECTIVE"
-    return 0
+oem_bridge_state() {
+    result=
+    for bridge in vendor.perfservice performance poweropt-service perf2-hal-1-0; do
+        state="$(getprop "init.svc.$bridge" 2>/dev/null)"
+        [ -n "$state" ] || state=absent
+        [ -z "$result" ] || result="$result · "
+        result="${result}${bridge}=${state}"
+    done
+    printf '%s\n' "$result"
 }
 
-write_uperf_perapp_without_package() {
+publish_scheduler_health() {
+    sync_uperf_frontend >/dev/null 2>&1 || true
+    uperf_pids="$(pidof uperf 2>/dev/null)"
+    uperf_pid="$(printf '%s\n' "$uperf_pids" | awk '{print $1}')"
+    uperf_processes="$(printf '%s\n' "$uperf_pids" | awk '{print NF}')"
+    asoul_pid="$(pidof AsoulOpt 2>/dev/null | awk '{print $1}')"
+    global_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
+    valid_uperf_preset "$global_mode" || global_mode=unknown
+    effective="$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE" 2>/dev/null)"
+    valid_uperf_preset "$effective" || effective=unknown
+    log_size=0
+    [ -f "$UPERF_LOG" ] && log_size="$(wc -c < "$UPERF_LOG" 2>/dev/null)"
+    health="Uperf：${uperf_pid:-未运行}（${uperf_processes:-0} 进程 · u:r:performanced:s0）
+全局模式：$global_mode · 实际档位：$effective · 来源：${UPERF_FRONTEND_SOURCE:-global}
+前端场景：${UPERF_FRONTEND_SCENE:-无} · 亮屏：$UPERF_FRONTEND_SCREEN
+GPU：原厂 KGSL DVFS 与热保护保留
+OEM Perf 桥：$(oem_bridge_state)（存在的服务均应为 stopped）
+A-SOUL：${asoul_pid:-未运行}（u:r:performanced:s0）
+线程参数：$(tr '\n' ' ' < "$ASOUL_CONFIG" 2>/dev/null)
+日志：${log_size:-0} 字节"
+    settings_put_quiet "$UPERF_HEALTH_KEY" "$health"
+    settings_put_quiet "$ASOUL_HEALTH_KEY" "$health"
+    settings_put_quiet "$UPERF_MODE_KEY" "$global_mode"
+    publish_uperf_rules_state
+}
+
+set_uperf_mode() {
+    requested="$1"
+    valid_uperf_preset "$requested" || return 1
+    atomic_write_text "$UPERF_MODE" "$requested" || return 1
+    sync_uperf_frontend || return 1
+    settings_put_quiet "$UPERF_MODE_KEY" "$requested"
+    REQUEST_RESULT_DETAIL="global=$requested;effective=$UPERF_FRONTEND_EFFECTIVE"
+    log_line "Uperf global mode=$requested effective=$UPERF_FRONTEND_EFFECTIVE"
+}
+
+write_perapp_without_package() {
     remove_pkg="$1"
     tmp="$UPERF_PERAPP.tmp"
-    awk -v pkg="$remove_pkg" '$1 != pkg { print }' "$UPERF_PERAPP" > "$tmp" || {
+    awk -v pkg="$remove_pkg" '$1 != pkg {print}' "$UPERF_PERAPP" > "$tmp" || {
         rm -f "$tmp"
         return 1
     }
@@ -925,7 +260,7 @@ write_uperf_perapp_without_package() {
         return 1
     }
     rm -f "$tmp"
-    chmod 0644 "$UPERF_PERAPP" 2>/dev/null
+    chmod 0644 "$UPERF_PERAPP"
     sync "$UPERF_PERAPP" 2>/dev/null || sync
 }
 
@@ -933,17 +268,14 @@ set_uperf_app_mode() {
     requested_pkg="$1"
     requested_mode="$2"
     valid_package_name "$requested_pkg" || return 1
-    appopt_package_is_user_app "$requested_pkg" || return 1
+    package_is_user_app "$requested_pkg" || return 1
     valid_uperf_preset "$requested_mode" || return 1
     tmp="$UPERF_PERAPP.tmp"
     awk -v pkg="$requested_pkg" -v mode="$requested_mode" '
-        $1 == pkg { next }
-        !inserted && ($1 == "-" || $1 == "*") {
-            print pkg " " mode
-            inserted=1
-        }
-        { print }
-        END { if (!inserted) print pkg " " mode }
+        $1 == pkg {next}
+        !inserted && $1 == "-" {print pkg " " mode; inserted=1}
+        {print}
+        END {if (!inserted) print pkg " " mode}
     ' "$UPERF_PERAPP" > "$tmp" || {
         rm -f "$tmp"
         return 1
@@ -953,38 +285,58 @@ set_uperf_app_mode() {
         return 1
     }
     rm -f "$tmp"
-    chmod 0644 "$UPERF_PERAPP" 2>/dev/null
+    chmod 0644 "$UPERF_PERAPP"
     sync "$UPERF_PERAPP" 2>/dev/null || sync
     publish_uperf_rules_state
     sync_uperf_frontend || return 1
     REQUEST_RESULT_DETAIL="package=$requested_pkg;mode=$requested_mode"
-    log_line "Uperf app mode changed: package=$requested_pkg mode=$requested_mode"
+    log_line "Uperf app package=$requested_pkg mode=$requested_mode"
 }
 
 remove_uperf_app_mode() {
     requested_pkg="$1"
     valid_package_name "$requested_pkg" || return 1
-    write_uperf_perapp_without_package "$requested_pkg" || return 1
+    write_perapp_without_package "$requested_pkg" || return 1
     publish_uperf_rules_state
     sync_uperf_frontend || return 1
-    REQUEST_RESULT_DETAIL="package=$requested_pkg;mode=default"
-    log_line "Uperf app mode removed: package=$requested_pkg"
+    REQUEST_RESULT_DETAIL="package=$requested_pkg;mode=global"
+    log_line "Uperf app removed package=$requested_pkg"
+}
+
+trigger_init_action() {
+    prop="$1"
+    value="$2"
+    setprop "$prop" idle >> "$LOG_FILE" 2>&1
+    if setprop "$prop" "$value" >> "$LOG_FILE" 2>&1; then
+        log_line "init action $prop=$value"
+        return 0
+    fi
+    log_line "init action failed $prop=$value"
+    return 1
+}
+
+uperf_is_healthy() {
+    processes="$(pidof uperf 2>/dev/null | awk '{print NF}')"
+    [ "${processes:-0}" -ge 2 ] 2>/dev/null &&
+        grep -q ' I Uperf is running$' "$UPERF_LOG" 2>/dev/null &&
+        ! grep -q ' I Failed to start uperf' "$UPERF_LOG" 2>/dev/null
 }
 
 restart_scheduler() {
+    publish_request_progress restarting_scheduler
     trigger_init_action "$PROP_SCHEDULER" restart || return 1
     tries=20
     while [ "$tries" -gt 0 ]; do
         sleep 1
         if uperf_is_healthy && [ -n "$(pidof AsoulOpt 2>/dev/null)" ]; then
             UPERF_MISSES=0
-            publish_appopt_health
+            publish_scheduler_health
             REQUEST_RESULT_DETAIL="uperf=running;asoul=running"
             return 0
         fi
         tries=$((tries - 1))
     done
-    publish_appopt_health
+    publish_scheduler_health
     return 1
 }
 
@@ -992,7 +344,7 @@ start_asoul() {
     trigger_init_action "$PROP_ASOUL" start || return 1
     sleep 1
     [ -n "$(pidof AsoulOpt 2>/dev/null)" ] || return 1
-    publish_appopt_health
+    publish_scheduler_health
     REQUEST_RESULT_DETAIL="asoul=running;mode=0;rt=0"
 }
 
@@ -1000,7 +352,7 @@ stop_asoul() {
     trigger_init_action "$PROP_ASOUL" stop || return 1
     sleep 1
     [ -z "$(pidof AsoulOpt 2>/dev/null)" ] || return 1
-    publish_appopt_health
+    publish_scheduler_health
     REQUEST_RESULT_DETAIL="asoul=stopped"
 }
 
@@ -1008,7 +360,7 @@ ensure_scheduler_running() {
     [ "$(getprop "$PROP_SCHEDULER" 2>/dev/null)" != "stopped" ] || return 0
     for bridge in vendor.perfservice performance poweropt-service perf2-hal-1-0; do
         if [ "$(getprop "init.svc.$bridge" 2>/dev/null)" = "running" ]; then
-            log_line "OEM perf bridge escaped ownership fence: $bridge"
+            log_line "OEM perf bridge escaped fence: $bridge"
             trigger_init_action "$PROP_SCHEDULER" fence || true
             break
         fi
@@ -1021,23 +373,171 @@ ensure_scheduler_running() {
     fi
     UPERF_MISSES=$((UPERF_MISSES + 1))
     if [ "$UPERF_MISSES" -ge 3 ]; then
-        log_line "Uperf health restart after $UPERF_MISSES misses"
-        restart_scheduler || log_line "Uperf health restart failed"
+        log_line "scheduler health restart after $UPERF_MISSES misses"
+        restart_scheduler || log_line "scheduler health restart failed"
         UPERF_MISSES=0
     fi
 }
 
-uperf_is_healthy() {
-    [ "$(pidof uperf 2>/dev/null | awk '{print NF}')" -ge 2 ] 2>/dev/null &&
-        grep -q ' I Uperf is running$' "$UPERF_LOG" 2>/dev/null &&
-        ! grep -q ' I Failed to start uperf' "$UPERF_LOG" 2>/dev/null
+publish_refresh_state() {
+    settings_put_quiet "$DAEMON_REFRESH_STATE_KEY" \
+        "refresh_owner=system;daemon refresh disabled"
 }
 
-publish_state() {
-    publish_refresh_state
-    publish_performance_state
-    publish_xml_state
-    publish_appopt_health
+export_logs() {
+    publish_scheduler_health
+    export_text="ZuiControl 运行记录
+导出时间：$(ts)
+
+[状态]
+$(cat "$STATUS_FILE" 2>/dev/null)
+
+[刷新率 owner]
+$(settings_get_clean "$DAEMON_REFRESH_STATE_KEY")
+
+[Uperf 全局模式]
+$(cat "$UPERF_MODE" 2>/dev/null)
+
+[Uperf 实际档位]
+$(cat "$UPERF_EFFECTIVE_MODE" 2>/dev/null)
+scene=$(settings_get_clean "$UPERF_SCENE_KEY")
+screen=$(settings_get_clean "$UPERF_SCREEN_KEY")
+
+[Uperf 自定义应用]
+$(cat "$UPERF_PERAPP" 2>/dev/null)
+
+[A-SOUL 配置]
+$(cat "$ASOUL_CONFIG" 2>/dev/null)
+
+[调度健康状态]
+$(settings_get_clean "$UPERF_HEALTH_KEY")
+
+[守护服务日志末尾]
+$(tail -n 120 "$LOG_FILE" 2>/dev/null)
+
+[Uperf 日志末尾]
+$(tail -n 80 "$UPERF_LOG" 2>/dev/null)"
+    settings_put_quiet "$LOG_EXPORT_KEY" "$export_text"
+    set_status "daemon=running" "last=export_logs"
+}
+
+sanitize_ack_field() {
+    printf '%s' "$1" | tr '|\r\n' '   '
+}
+
+ack_text() {
+    printf '%s|%s|%s|%s\n' \
+        "$(sanitize_ack_field "$1")" \
+        "$(sanitize_ack_field "$2")" \
+        "$(sanitize_ack_field "$3")" \
+        "$(sanitize_ack_field "$4")"
+}
+
+publish_request_ack() {
+    settings_put_quiet "$REQUEST_ACK_KEY" "$(ack_text "$1" "$2" "$3" "$4")"
+}
+
+publish_request_progress() {
+    [ -n "$CURRENT_REQUEST_ID" ] && [ -n "$CURRENT_REQUEST_CMD" ] || return 0
+    publish_request_ack "$CURRENT_REQUEST_ID" processing "$CURRENT_REQUEST_CMD" "$1"
+}
+
+request_field() {
+    printf '%s\n' "$1" | cut -d '|' -f "$2"
+}
+
+request_field_count() {
+    printf '%s\n' "$1" | awk -F '|' 'NR == 1 {print NF; exit}'
+}
+
+load_last_receipt() {
+    [ -s "$LAST_REQUEST_RECEIPT" ] || return 1
+    [ "$(sed -n '$=' "$LAST_REQUEST_RECEIPT" 2>/dev/null)" = "2" ] || return 1
+    replay_request="$(sed -n '1p' "$LAST_REQUEST_RECEIPT" | tr -d '\r')"
+    replay_ack="$(sed -n '2p' "$LAST_REQUEST_RECEIPT" | tr -d '\r')"
+    [ -n "$replay_request" ] && [ -n "$replay_ack" ] || return 1
+    [ "$(request_field "$replay_request" 1)" = "$(request_field "$replay_ack" 1)" ] || return 1
+    [ "$(request_field "$replay_request" 2)" = "$(request_field "$replay_ack" 3)" ] || return 1
+    case "$(request_field "$replay_ack" 2)" in done|failed) ;; *) return 1 ;; esac
+}
+
+persist_completion() {
+    request="$1"
+    terminal_ack="$2"
+    atomic_write_text "$LAST_REQUEST_RECEIPT" "$request
+$terminal_ack" || return 1
+    LAST_SETTINGS_REQUEST="$request"
+}
+
+finish_request() {
+    request="$1"
+    id="$2"
+    cmd="$3"
+    result="$4"
+    detail="$5"
+    if [ "$result" = "0" ]; then
+        state=done
+        detail="${detail:-ok}"
+    else
+        state=failed
+        detail="${detail:-command_failed}"
+    fi
+    terminal_ack="$(ack_text "$id" "$state" "$cmd" "$detail")"
+    persist_completion "$request" "$terminal_ack" || return 1
+    settings_put_quiet "$REQUEST_ACK_KEY" "$terminal_ack"
+    CURRENT_REQUEST_ID=
+    CURRENT_REQUEST_CMD=
+    return "$result"
+}
+
+handle_command() {
+    cmd="$1"
+    pkg="$2"
+    mode="$3"
+    REQUEST_RESULT_DETAIL=
+    case "$cmd" in
+        status)
+            publish_refresh_state
+            publish_scheduler_health
+            set_status "daemon=running" "last=status"
+            ;;
+        set_uperf_mode) set_uperf_mode "$mode" ;;
+        set_uperf_app)
+            publish_request_progress validating_target
+            set_uperf_app_mode "$pkg" "$mode"
+            ;;
+        remove_uperf_app) remove_uperf_app_mode "$pkg" ;;
+        restart_scheduler) restart_scheduler ;;
+        start_asoul) start_asoul ;;
+        stop_asoul) stop_asoul ;;
+        export_logs) export_logs ;;
+        *) REQUEST_RESULT_DETAIL=unknown_command; return 1 ;;
+    esac
+}
+
+process_settings_request() {
+    request="$(settings_get_clean "$REQ_TEXT_KEY")"
+    [ -n "$request" ] || return 0
+    if [ "$request" = "$LAST_SETTINGS_REQUEST" ]; then
+        load_last_receipt && settings_put_quiet "$REQUEST_ACK_KEY" "$replay_ack"
+        return 0
+    fi
+    id="$(request_field "$request" 1)"
+    cmd="$(request_field "$request" 2)"
+    pkg="$(request_field "$request" 4)"
+    mode="$(request_field "$request" 5)"
+    if [ "$(request_field_count "$request")" != "5" ] || [ -z "$id" ] || [ -z "$cmd" ]; then
+        finish_request "$request" "${id:-invalid}" "${cmd:-invalid}" 1 invalid_request
+        return $?
+    fi
+    CURRENT_REQUEST_ID="$id"
+    CURRENT_REQUEST_CMD="$cmd"
+    publish_request_progress validating
+    log_line "request id=$id cmd=$cmd pkg=$pkg mode=$mode"
+    handle_command "$cmd" "$pkg" "$mode"
+    result=$?
+    trim_log
+    finish_request "$request" "$id" "$cmd" "$result" "$REQUEST_RESULT_DETAIL"
 }
 
 grant_app_permissions() {
@@ -1053,2282 +553,43 @@ notify_quick_service() {
         am startservice -n "$APP_SERVICE_COMPONENT" >/dev/null 2>&1
 }
 
-app_apk_path() {
-    path="$(pm path "$APP_PACKAGE" 2>/dev/null | head -n 1)"
-    path="${path#package:}"
-    [ -f "$path" ] || return 1
-    printf '%s\n' "$path"
-}
-
-safecenter_db_readable() {
-    SAFE_CENTER_KEEPALIVE_USE_SU=0
-    [ -s "$SAFE_CENTER_DB" ] && return 0
-    if command -v su >/dev/null 2>&1 &&
-        su -c "[ -s $SAFE_CENTER_DB ]" >/dev/null 2>&1; then
-        SAFE_CENTER_KEEPALIVE_USE_SU=1
-        return 0
-    fi
-    return 1
-}
-
-run_safecenter_root_cmd() {
-    if [ "$SAFE_CENTER_KEEPALIVE_USE_SU" = "1" ]; then
-        su -c "$1"
-    else
-        sh -c "$1"
-    fi
-}
-
-backup_safecenter_db_once() {
-    [ -f "$SAFE_CENTER_KEEPALIVE_BACKUP_FLAG" ] && return 0
-    backup="$SAFE_CENTER_DB.bak_zui_control_$(date '+%Y%m%d_%H%M%S')"
-    if run_safecenter_root_cmd "cp -p $SAFE_CENTER_DB $backup" >/dev/null 2>&1; then
-        printf '%s\n' "$backup" > "$SAFE_CENTER_KEEPALIVE_BACKUP_FLAG"
-        chmod 0664 "$SAFE_CENTER_KEEPALIVE_BACKUP_FLAG" 2>/dev/null
-        return 0
-    fi
-    return 1
-}
-
-patch_safecenter_keepalive() {
-    [ -f "$SAFE_CENTER_KEEPALIVE_FLAG" ] && {
-        SAFE_CENTER_KEEPALIVE_DONE=1
-        return 0
-    }
-    safecenter_db_readable || {
-        log_line "safecenter keepalive deferred: db missing"
-        return 1
-    }
-    apk="$(app_apk_path)" || {
-        log_line "safecenter keepalive deferred: apk missing"
-        return 1
-    }
-    backup_safecenter_db_once || true
-    tmp_log="$SAFE_CENTER_KEEPALIVE_LOG.tmp"
-    patch_cmd="CLASSPATH=$apk app_process /system/bin com.zui.zuicontrol.SafeCenterKeepAlivePatcher $APP_PACKAGE $SAFE_CENTER_DB"
-    if run_safecenter_root_cmd "$patch_cmd" > "$tmp_log" 2>&1; then
-        cat "$tmp_log" > "$SAFE_CENTER_KEEPALIVE_LOG" 2>/dev/null
-        rm -f "$tmp_log"
-        run_safecenter_root_cmd \
-            "chown system:system $SAFE_CENTER_DB; chmod 0600 $SAFE_CENTER_DB; restorecon $SAFE_CENTER_DB" \
-            >/dev/null 2>&1 || true
-        am force-stop "$SAFE_CENTER_PACKAGE" >/dev/null 2>&1 || true
-        : > "$SAFE_CENTER_KEEPALIVE_FLAG"
-        chmod 0664 "$SAFE_CENTER_KEEPALIVE_FLAG" 2>/dev/null
-        SAFE_CENTER_KEEPALIVE_DONE=1
-        summary="$(head -n 1 "$SAFE_CENTER_KEEPALIVE_LOG" 2>/dev/null)"
-        log_line "safecenter keepalive applied: $summary"
-        return 0
-    fi
-    cat "$tmp_log" > "$SAFE_CENTER_KEEPALIVE_LOG" 2>/dev/null
-    rm -f "$tmp_log"
-    summary="$(head -n 1 "$SAFE_CENTER_KEEPALIVE_LOG" 2>/dev/null)"
-    log_line "safecenter keepalive failed: $summary"
-    return 1
-}
-
-maybe_patch_safecenter_keepalive() {
-    [ "$SAFE_CENTER_KEEPALIVE_DONE" = "1" ] && return 0
-    [ -f "$SAFE_CENTER_KEEPALIVE_FLAG" ] && {
-        SAFE_CENTER_KEEPALIVE_DONE=1
-        return 0
-    }
-    [ "$SAFE_CENTER_KEEPALIVE_ATTEMPTS" -lt "$SAFE_CENTER_KEEPALIVE_MAX_ATTEMPTS" ] || {
-        SAFE_CENTER_KEEPALIVE_DONE=1
-        log_line "safecenter keepalive stopped after $SAFE_CENTER_KEEPALIVE_ATTEMPTS attempts"
-        return 1
-    }
-    SAFE_CENTER_KEEPALIVE_ATTEMPTS=$((SAFE_CENTER_KEEPALIVE_ATTEMPTS + 1))
-    patch_safecenter_keepalive
-}
-
 init_dirs() {
-    mkdir -p "$CONTROL_DIR" "$DONE_DIR" "$UPERF_DIR" "$ASOUL_DIR" \
-        "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR"
-    chmod 0775 "$DATA_ROOT" "$CONTROL_DIR" "$DONE_DIR" \
-        "$UPERF_DIR" "$ASOUL_DIR" \
-        "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR" 2>/dev/null
+    mkdir -p "$CONTROL_DIR" "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR" || return 1
+    chmod 0775 "$DATA_ROOT" "$CONTROL_DIR" "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR" 2>/dev/null
     restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
-    [ -e "$REFRESH_RULES" ] || : > "$REFRESH_RULES"
-    [ -e "$PERFORMANCE_PROFILES" ] || : > "$PERFORMANCE_PROFILES"
-    chmod 0664 "$REFRESH_RULES" "$PERFORMANCE_PROFILES" 2>/dev/null
-    settings_put_quiet "$XML_STATE_KEY" "state=retired;owner=uperf"
-    migrate_refresh_rules
-    rm -f "$REFRESH_DIR/enabled.flag"
     grant_app_permissions
 }
 
-trigger_init_action() {
-    prop="$1"
-    value="$2"
-    setprop "$prop" idle >> "$LOG_FILE" 2>&1
-    if setprop "$prop" "$value" >> "$LOG_FILE" 2>&1; then
-        log_line "init action requested: $prop=$value"
-        return 0
-    fi
-    log_line "init action request failed: $prop=$value"
-    return 1
-}
-
-wait_mount_state() {
-    expected="$1"
-    shift
-    tries=10
-    while [ "$tries" -gt 0 ]; do
-        ok=1
-        for target in "$@"; do
-            if [ "$expected" = "mounted" ]; then
-                is_mounted_on "$target" || ok=0
-            else
-                is_mounted_on "$target" && ok=0
-            fi
-        done
-        [ "$ok" = "1" ] && return 0
-        tries=$((tries - 1))
-        sleep 1
-    done
-    return 1
-}
-
-zuipp_mount_ready() {
-    is_mounted_on "$SYSTEM_GAME_POLICY" &&
-        is_mounted_on "$SYSTEM_PERF_CONFIG" &&
-        same_file_hash "$ACTIVE_GAME_POLICY" "$SYSTEM_GAME_POLICY" &&
-        same_file_hash "$ACTIVE_PERF_CONFIG" "$SYSTEM_PERF_CONFIG" &&
-        system_xml_contexts_ok
-}
-
-wait_zuipp_mount_ready() {
-    tries="${1:-10}"
-    while [ "$tries" -gt 0 ]; do
-        zuipp_mount_ready && return 0
-        tries=$((tries - 1))
-        sleep 1
-    done
-    return 1
-}
-
-acquire_zuipp_apply_lock() {
-    tries="${1:-30}"
-    mkdir -p "$ZUI_STATE_DIR"
-    while [ "$tries" -gt 0 ]; do
-        if mkdir "$ZUIPP_APPLY_LOCK_DIR" 2>/dev/null; then
-            printf '%s\n' "$$" > "$ZUIPP_APPLY_LOCK_DIR/pid" 2>/dev/null || true
-            return 0
-        fi
-        lock_pid="$(read_file_clean "$ZUIPP_APPLY_LOCK_DIR/pid")"
-        if [ -n "$lock_pid" ] && [ ! -d "/proc/$lock_pid" ]; then
-            rm -f "$ZUIPP_APPLY_LOCK_DIR/pid" 2>/dev/null || true
-            rmdir "$ZUIPP_APPLY_LOCK_DIR" 2>/dev/null || true
-            continue
-        fi
-        tries=$((tries - 1))
-        sleep 1
-    done
-    set_xml_error "ZuiPP apply lock busy"
-    publish_xml_state
-    set_status "daemon=running" "last=apply_zuipp_failed" "reason=apply_lock_busy"
-    return 1
-}
-
-release_zuipp_apply_lock() {
-    rm -f "$ZUIPP_APPLY_LOCK_DIR/pid" 2>/dev/null || true
-    rmdir "$ZUIPP_APPLY_LOCK_DIR" 2>/dev/null || true
-}
-
-xml_hash_pair_for_files() {
-    pair_game_file="$1"
-    pair_perf_file="$2"
-    game_hash="$(file_sha "$pair_game_file")"
-    perf_hash="$(file_sha "$pair_perf_file")"
-    [ -n "$game_hash" ] && [ -n "$perf_hash" ] || return 1
-    printf '%s:%s\n' "$game_hash" "$perf_hash"
-}
-
-xml_hash_pair() {
-    xml_hash_pair_for_files "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG"
-}
-
-publish_zuipp_reload_state() {
-    settings_put_quiet "$ZUIPP_RELOAD_STATE_KEY" "$1"
-    log_line "ZuiPP reload state: $1"
-}
-
-last_reloaded_hash_pair() {
-    [ -s "$ZUIPP_LAST_RELOADED_HASH_FILE" ] || return 1
-    read_file_clean "$ZUIPP_LAST_RELOADED_HASH_FILE"
-}
-
-invalidate_zuipp_reload_receipt_on_start() {
-    if [ -e "$ZUIPP_LAST_RELOADED_HASH_FILE" ] &&
-        ! rm -f "$ZUIPP_LAST_RELOADED_HASH_FILE"; then
-        log_line "cannot invalidate ZuiPP reload receipt on daemon start"
-        return 1
-    fi
-    log_line "ZuiPP reload receipt invalidated on daemon start"
-    return 0
-}
-
-remember_reloaded_hash_pair() {
-    mkdir -p "$ZUI_STATE_DIR"
-    printf '%s\n' "$1" > "$ZUIPP_LAST_RELOADED_HASH_FILE"
-    chmod 0664 "$ZUIPP_LAST_RELOADED_HASH_FILE" 2>/dev/null
-}
-
-zuipp_pid() {
-    pidof com.zui.pp 2>/dev/null | awk '{print $1}'
-}
-
-game_helper_pid() {
-    pidof "$GAME_HELPER_PACKAGE" 2>/dev/null | awk '{print $1}'
-}
-
-prepare_game_helper_for_zuipp_reload() {
-    # ZuiPP is a provider dependency of GameHelper. Killing ZuiPP while
-    # GameHelper's started services are live makes ActivityManager stagger
-    # their sticky restarts, which can miss the next game-start callback.
-    for component in \
-        "$GAME_HELPER_SERVICE_COMPONENT" \
-        "$GAME_HELPER_PACKAGE/.console.ConsoleService" \
-        "$GAME_HELPER_PACKAGE/.highlight.ScreenRecorderService" \
-        "$GAME_HELPER_PACKAGE/com.zui.gamecontroller.RockerService"; do
-        stop_output="$(am stop-service --user 0 -n "$component" 2>&1)"
-        printf '%s\n' "$stop_output" >> "$LOG_FILE"
-        case "$stop_output" in
-            *"Service stopped"*|*"Service not stopped: was not running."*) ;;
-            *)
-                log_line "cannot stop GameHelper service before ZuiPP reload: $component"
-                return 1
-                ;;
-        esac
-    done
-
-    old_game_helper_pid="$(game_helper_pid)"
-    [ -n "$old_game_helper_pid" ] || return 0
-    [ "$(proc_cmdline_clean "$old_game_helper_pid")" = "$GAME_HELPER_PACKAGE" ] || {
-        log_line "GameHelper pid check failed before ZuiPP reload: $old_game_helper_pid"
-        return 1
-    }
-    kill -TERM "$old_game_helper_pid" 2>>"$LOG_FILE" || return 1
-    tries=5
-    while [ "$tries" -gt 0 ]; do
-        [ -z "$(game_helper_pid)" ] && return 0
-        tries=$((tries - 1))
-        sleep 1
-    done
-    log_line "GameHelper process did not stop before ZuiPP reload: $old_game_helper_pid"
-    return 1
-}
-
-prewarm_game_helper_after_zuipp_reload() {
-    start_output="$(am start-foreground-service --user 0 \
-        -a "$GAME_HELPER_START_ACTION" --ei self_start 1 \
-        -n "$GAME_HELPER_SERVICE_COMPONENT" 2>&1)"
-    printf '%s\n' "$start_output" >> "$LOG_FILE"
-    case "$start_output" in
-        *"Starting service"*) ;;
-        *)
-            log_line "cannot prewarm GameHelper after ZuiPP reload"
-            return 1
-            ;;
-    esac
-
-    candidate_key=
-    stable_ticks=0
-    tries=8
-    while [ "$tries" -gt 0 ]; do
-        new_game_helper_pid="$(game_helper_pid)"
-        if [ -n "$new_game_helper_pid" ] &&
-            [ "$(proc_cmdline_clean "$new_game_helper_pid")" = "$GAME_HELPER_PACKAGE" ]; then
-            new_game_helper_start="$(proc_start_time "$new_game_helper_pid")"
-            current_key="$new_game_helper_pid:$new_game_helper_start"
-            if [ "$current_key" = "$candidate_key" ]; then
-                stable_ticks=$((stable_ticks + 1))
-            else
-                candidate_key="$current_key"
-                stable_ticks=1
-            fi
-            if [ "$stable_ticks" -ge "$GAME_HELPER_STABLE_SECONDS" ]; then
-                log_line "GameHelper prewarmed after ZuiPP reload: pid=$new_game_helper_pid"
-                return 0
-            fi
-        else
-            candidate_key=
-            stable_ticks=0
-        fi
-        tries=$((tries - 1))
-        sleep 1
-    done
-    log_line "GameHelper did not become stable after ZuiPP reload"
-    return 1
-}
-
-initialize_zuipp_performance_connect() {
-    # GameModeProvider calls the static PerformanceConnectHelper immediately.
-    # A fresh ZuiPP process has no helper until this OEM service is created;
-    # otherwise the first real game start can lose LimitConfig with an NPE.
-    start_output="$(am start-service --user 0 \
-        -n "$ZUIPP_PERFORMANCE_CONNECT_COMPONENT" 2>&1)"
-    printf '%s\n' "$start_output" >> "$LOG_FILE"
-    case "$start_output" in
-        *"Starting service"*) return 0 ;;
-    esac
-    log_line "cannot initialize ZuiPP PerformanceConnect after reload"
-    return 1
-}
-
-stop_zuipp_services_for_reload() {
-    # ZUI's OverHeatCleanService crashes on a null restart Intent if the
-    # persistent process is signalled while its started services are live.
-    # Stop those services through Android first; PPApplication will recreate
-    # MainService and its modules when the persistent process starts again.
-    for component in \
-        com.zui.pp/com.zui.power.overheat.OverHeatStatsService \
-        com.zui.pp/com.zui.power.overheat.OverHeatCleanService \
-        com.zui.pp/com.zui.power.overheat.StubbornStatsService \
-        "$ZUIPP_PERFORMANCE_CONNECT_COMPONENT" \
-        com.zui.pp/.service.MainService; do
-        attempts=5
-        stopped=0
-        while [ "$attempts" -gt 0 ]; do
-            stop_output="$(am stop-service --user 0 -n "$component" 2>&1)"
-            printf '%s\n' "$stop_output" >> "$LOG_FILE"
-            case "$stop_output" in
-                *"Service stopped"*|*"Service not stopped: was not running."*)
-                    stopped=1
-                    break
-                    ;;
-            esac
-            attempts=$((attempts - 1))
-            [ "$attempts" -gt 0 ] && sleep 1
-        done
-        if [ "$stopped" != 1 ]; then
-            log_line "cannot stop ZuiPP service before reload: $component"
-            return 1
-        fi
-    done
-    return 0
-}
-
-proc_cmdline_clean() {
-    tr '\0' '\n' < "/proc/$1/cmdline" 2>/dev/null | head -n 1
-}
-
-proc_start_time() {
-    awk '{print $22}' "/proc/$1/stat" 2>/dev/null
-}
-
-reload_zuipp_if_needed() {
-    reason="${1:-xml_apply}"
-    zuipp_mount_ready || {
-        publish_zuipp_reload_state "state=error;stage=verify_mounted_hash;reason=$reason"
-        return 1
-    }
-
-    hash_pair="$(xml_hash_pair)" || {
-        publish_zuipp_reload_state "state=error;stage=hash_pair;reason=$reason"
-        return 1
-    }
-    game_hash="${hash_pair%%:*}"
-    perf_hash="${hash_pair#*:}"
-    if [ "$hash_pair" = "$(last_reloaded_hash_pair 2>/dev/null)" ]; then
-        publish_zuipp_reload_state "state=skipped;reason=same_hash;game=$game_hash;perf=$perf_hash"
-        return 0
-    fi
-
-    # Until a new process is confirmed stable, the remembered hash must not
-    # let a rollback skip reloading the previous XML.
-    rm -f "$ZUIPP_LAST_RELOADED_HASH_FILE" || {
-        publish_zuipp_reload_state "state=error;stage=invalidate_hash;reason=$reason"
-        return 1
-    }
-
-    old_pid="$(zuipp_pid)"
-    if [ -z "$old_pid" ]; then
-        remember_reloaded_hash_pair "$hash_pair"
-        publish_zuipp_reload_state "state=skipped;reason=zuipp_not_running;game=$game_hash;perf=$perf_hash"
-        return 0
-    fi
-    if [ "$(proc_cmdline_clean "$old_pid")" != "com.zui.pp" ]; then
-        publish_zuipp_reload_state "state=error;stage=pid_check;reason=cmdline_mismatch;oldPid=$old_pid"
-        return 1
-    fi
-    old_start="$(proc_start_time "$old_pid")"
-
-    publish_request_progress stopping_game_helper
-    if ! prepare_game_helper_for_zuipp_reload; then
-        publish_zuipp_reload_state "state=error;stage=stop_game_helper;oldPid=$old_pid;game=$game_hash;perf=$perf_hash"
-        return 1
-    fi
-
-    publish_request_progress stopping_zuipp_services
-    if ! stop_zuipp_services_for_reload; then
-        publish_zuipp_reload_state "state=error;stage=stop_services;oldPid=$old_pid;game=$game_hash;perf=$perf_hash"
-        return 1
-    fi
-
-    if ! kill -TERM "$old_pid" 2>>"$LOG_FILE"; then
-        publish_zuipp_reload_state "state=error;stage=sigterm;oldPid=$old_pid;game=$game_hash;perf=$perf_hash"
-        return 1
-    fi
-
-    publish_request_progress waiting_zuipp
-    candidate_key=
-    stable_ticks=0
-    tries=30
-    while [ "$tries" -gt 0 ]; do
-        new_pid="$(zuipp_pid)"
-        if [ -n "$new_pid" ] && [ "$(proc_cmdline_clean "$new_pid")" = "com.zui.pp" ]; then
-            new_start="$(proc_start_time "$new_pid")"
-            if [ "$new_pid" != "$old_pid" ] ||
-                { [ -n "$new_start" ] && [ "$new_start" != "$old_start" ]; }; then
-                current_key="$new_pid:$new_start"
-                if [ "$current_key" = "$candidate_key" ]; then
-                    stable_ticks=$((stable_ticks + 1))
-                else
-                    candidate_key="$current_key"
-                    stable_ticks=1
-                fi
-                if [ "$stable_ticks" -ge "$ZUIPP_STABLE_SECONDS" ]; then
-                    publish_request_progress initializing_zuipp_connect
-                    if ! initialize_zuipp_performance_connect; then
-                        publish_zuipp_reload_state "state=error;stage=performance_connect;oldPid=$old_pid;newPid=$new_pid;game=$game_hash;perf=$perf_hash"
-                        return 1
-                    fi
-                    publish_request_progress preparing_game_helper
-                    if ! prewarm_game_helper_after_zuipp_reload; then
-                        publish_zuipp_reload_state "state=error;stage=prewarm_game_helper;oldPid=$old_pid;newPid=$new_pid;game=$game_hash;perf=$perf_hash"
-                        return 1
-                    fi
-                    remember_reloaded_hash_pair "$hash_pair"
-                    publish_zuipp_reload_state "state=done;reason=$reason;oldPid=$old_pid;newPid=$new_pid;stableSeconds=$ZUIPP_STABLE_SECONDS;game=$game_hash;perf=$perf_hash;needsAppReenter=1"
-                    return 0
-                fi
-            fi
-        else
-            candidate_key=
-            stable_ticks=0
-        fi
-        tries=$((tries - 1))
-        sleep 1
-    done
-
-    publish_zuipp_reload_state "state=error;stage=pid_wait;reason=$reason;oldPid=$old_pid;game=$game_hash;perf=$perf_hash"
-    return 1
-}
-
-wait_prop_value() {
-    prop="$1"
-    expected="$2"
-    tries="${3:-10}"
-    while [ "$tries" -gt 0 ]; do
-        [ "$(getprop "$prop" 2>/dev/null)" = "$expected" ] && return 0
-        tries=$((tries - 1))
-        sleep 1
-    done
-    return 1
-}
-
-stage_xml_pair_from_pair() {
-    src_game="$1"
-    src_perf="$2"
-    label="$3"
-    copy_xml_pair_to_dir "$src_game" "$src_perf" "$ZUI_STAGING_DIR" "$label staging" || return 1
-    validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "$label staging"
-}
-
-mark_zuipp_apply_success() {
-    reason="$1"
-    if ! reload_zuipp_if_needed "$reason"; then
-        set_xml_error "ZuiPP reload failed: $reason"
-        write_xml_status_file \
-            "mounted=true" \
-            "reload=false" \
-            "game_policy=$(file_sha "$ACTIVE_GAME_POLICY")" \
-            "performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")" \
-            "source=active"
-        publish_xml_state
-        set_status "daemon=running" "last=apply_zuipp_failed" \
-            "reason=reload_failed"
-        return 1
-    fi
-    touch "$ZUI_ENABLED"
-    chmod 0664 "$ZUI_ENABLED" 2>/dev/null
-    clear_xml_error
-    write_active_sha
-    write_xml_status_file \
-        "mounted=true" \
-        "game_policy=$(file_sha "$ACTIVE_GAME_POLICY")" \
-        "performanceconfig=$(file_sha "$ACTIVE_PERF_CONFIG")" \
-        "source=active"
-    publish_xml_state
-    set_status "daemon=running" "last=apply_zuipp_ok" "reason=$reason"
-    return 0
-}
-
-remount_active_xml() {
-    reason="${1:-manual}"
-    validate_zuipp_files || {
-        set_status "daemon=running" "last=apply_zuipp_failed" "reason=validate_failed"
-        return 1
-    }
-    label_active_xml
-    if trigger_init_action "$PROP_ZUIPP" apply &&
-        wait_prop_value "$PROP_ZUIPP" done 10 &&
-        wait_zuipp_mount_ready 10 &&
-        verify_zuipp_mount_core &&
-        verify_system_xml_contexts; then
-        if mark_zuipp_apply_success "$reason"; then
-            return 0
-        fi
-        return 1
-    fi
-    set_xml_error "active bind mount verification failed"
-    log_line "ZuiPP active remount failed: prop=$(getprop "$PROP_ZUIPP" 2>/dev/null)"
-    publish_xml_state
-    set_status "daemon=running" "last=apply_zuipp_failed" "reason=remount_failed"
-    return 1
-}
-
-promote_staging_with_init() {
-    reason="$1"
-    validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "staging" || return 1
-    if trigger_init_action "$PROP_ZUIPP" promote_active &&
-        wait_prop_value "$PROP_ZUIPP" done 10 &&
-        verify_active_matches_staging &&
-        remount_active_xml "$reason"; then
-        return 0
-    fi
-    set_xml_error "promote active verification failed"
-    log_line "ZuiPP promote active failed: prop=$(getprop "$PROP_ZUIPP" 2>/dev/null)"
-    publish_xml_state
-    return 1
-}
-
-promote_staging_with_lock() {
-    reason="$1"
-    acquire_zuipp_apply_lock || return 1
-    promote_staging_with_init "$reason"
-    result=$?
-    release_zuipp_apply_lock
-    return "$result"
-}
-
-remount_active_with_lock() {
-    reason="$1"
-    acquire_zuipp_apply_lock || return 1
-    remount_active_xml "$reason"
-    result=$?
-    release_zuipp_apply_lock
-    return "$result"
-}
-
-validate_zuipp_files() {
-    validate_xml_pair "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" "active"
-}
-
-backup_active_to_last_good() {
-    validate_xml_pair "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" "active" || return 1
-    copy_xml_pair_to_dir "$ACTIVE_GAME_POLICY" "$ACTIVE_PERF_CONFIG" \
-        "$ZUI_LAST_GOOD_DIR" "last_good backup"
-}
-
-rollback_active_xml() {
-    reason="$1"
-    log_line "rollback active XML: $reason"
-    if [ -s "$LAST_GOOD_GAME_POLICY" ] && [ -s "$LAST_GOOD_PERF_CONFIG" ]; then
-        stage_xml_pair_from_pair "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" \
-            "rollback last_good" || return 1
-        promote_staging_with_init "rollback_last_good"
-        return $?
-    fi
-    stage_xml_pair_from_pair "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
-        "rollback baked baseline" || return 1
-    promote_staging_with_init "rollback_baked"
-}
-
-promote_staging_to_active() {
-    acquire_zuipp_apply_lock || return 1
-    validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "staging" || {
-        release_zuipp_apply_lock
-        return 1
-    }
-    backup_active_to_last_good || {
-        release_zuipp_apply_lock
-        return 1
-    }
-    if promote_staging_with_init "promote_staging"; then
-        release_zuipp_apply_lock
-        return 0
-    fi
-    if rollback_active_xml "promote active failed"; then
-        set_xml_error "promote/reload failed; active rollback completed"
-        log_line "ZuiPP promote failed; active rollback completed"
-    else
-        set_xml_error "promote/reload failed; active rollback failed"
-        log_line "ZuiPP promote failed; active rollback failed"
-    fi
-    publish_xml_state
-    release_zuipp_apply_lock
-    return 1
-}
-
-apply_zuipp() {
-    reason="${1:-manual}"
-    init_active_xml || {
-        set_status "daemon=running" "last=apply_zuipp_failed" "reason=init_failed"
-        return 1
-    }
-    validate_zuipp_files || {
-        set_status "daemon=running" "last=apply_zuipp_failed" "reason=validate_failed"
-        return 1
-    }
-    remount_active_with_lock "$reason"
-}
-
-restore_zuipp() {
-    init_active_xml || return 1
-    stage_xml_pair_from_pair "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
-        "restore baked baseline" || {
-        set_status "daemon=running" "last=restore_zuipp_failed" "reason=copy_failed"
-        return 1
-    }
-    if ! promote_staging_with_lock "restore_baked_baseline"; then
-        rollback_active_xml "restore baked baseline failed"
-        set_status "daemon=running" "last=restore_zuipp_failed"
-        return 1
-    fi
-    backup_active_to_last_good
-    publish_xml_state
-    set_status "daemon=running" "last=restore_baked_baseline"
-}
-
-restore_last_good_zuipp() {
-    init_active_xml || return 1
-    if [ ! -s "$LAST_GOOD_GAME_POLICY" ] || [ ! -s "$LAST_GOOD_PERF_CONFIG" ]; then
-        set_xml_error "last_good restore requested but last_good XML is missing"
-        publish_xml_state
-        set_status "daemon=running" "last=restore_last_good_failed"
-        return 1
-    fi
-    stage_xml_pair_from_pair "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" \
-        "restore last_good" || return 1
-    promote_staging_with_lock "restore_last_good"
-}
-
-restore_official_original_zuipp() {
-    init_active_xml || return 1
-    if [ ! -s "$OFFICIAL_GAME_POLICY" ] || [ ! -s "$OFFICIAL_PERF_CONFIG" ]; then
-        set_xml_error "official original restore requested but official_original XML is not saved"
-        publish_xml_state
-        set_status "daemon=running" "last=restore_official_original_unavailable"
-        return 1
-    fi
-    backup_active_to_last_good || true
-    stage_xml_pair_from_pair "$OFFICIAL_GAME_POLICY" "$OFFICIAL_PERF_CONFIG" \
-        "restore official original" || return 1
-    promote_staging_with_lock "restore_official_original"
-}
-
-valid_appopt_package_name() {
-    printf '%s\n' "$1" | grep -Eq '^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+$'
-}
-
-valid_appopt_preset() {
-    case "$1" in
-        [0-7]) return 0 ;;
-        [0-7]-[0-7])
-            appopt_range_start="${1%-*}"
-            appopt_range_end="${1#*-}"
-            [ "$appopt_range_start" -lt "$appopt_range_end" ] && return 0
-            ;;
-    esac
-    return 1
-}
-
-appopt_package_apk_path() {
-    # Avoid passing applist.conf as stdin to PackageManager when validation
-    # runs inside a "while ... done < applist.conf" loop.
-    pm path "$1" </dev/null 2>/dev/null | sed -n 's/^package://p' | head -n 1
-}
-
-appopt_package_is_user_app() {
-    appopt_apk="$(appopt_package_apk_path "$1")"
-    case "$appopt_apk" in
-        /data/app/*) return 0 ;;
-    esac
-    return 1
-}
-
-zui_mode_call_bool() {
-    zui_mode_tx="$1"
-    shift
-    zui_mode_output="$(service call "$ZUI_MODE_SERVICE" "$zui_mode_tx" "$@" 2>&1)"
-    zui_mode_result=$?
-    log_line "ZuiMode call: tx=$zui_mode_tx result=$zui_mode_result output=$(printf '%s' "$zui_mode_output" | tr '\r\n' ' ')"
-    [ "$zui_mode_result" = "0" ] || return 2
-    printf '%s\n' "$zui_mode_output" | grep -q '00000001' && return 0
-    printf '%s\n' "$zui_mode_output" | grep -q '00000000' && return 1
-    return 2
-}
-
-ensure_zui_game_managed() {
-    zui_game_pkg="$1"
-    ZUI_GAME_SYNC_RESULT=
-
-    zui_mode_call_bool "$ZUI_MODE_TX_IS_USER_GAME" s16 "$zui_game_pkg"
-    zui_user_result=$?
-    if [ "$zui_user_result" = "0" ]; then
-        ZUI_GAME_SYNC_RESULT=user_existing
-        return 0
-    fi
-    [ "$zui_user_result" = "1" ] || return 1
-
-    zui_mode_call_bool "$ZUI_MODE_TX_IS_SYSTEM_GAME" s16 "$zui_game_pkg"
-    zui_system_result=$?
-    if [ "$zui_system_result" = "0" ]; then
-        ZUI_GAME_SYNC_RESULT=system_existing
-        return 0
-    fi
-    [ "$zui_system_result" = "1" ] || return 1
-
-    if zui_mode_call_bool "$ZUI_MODE_TX_ADD_USER_GAME" \
-        s16 "$zui_game_pkg" s16 game s16 111111; then
-        zui_mode_call_bool "$ZUI_MODE_TX_IS_USER_GAME" s16 "$zui_game_pkg"
-        if [ "$?" = "0" ]; then
-            ZUI_GAME_SYNC_RESULT=user_added
-            return 0
-        fi
-        zui_mode_call_bool "$ZUI_MODE_TX_REMOVE_USER_GAME" s16 "$zui_game_pkg" || true
-    fi
-    return 1
-}
-
-remove_zui_game_managed() {
-    zui_game_pkg="$1"
-    ZUI_GAME_SYNC_RESULT=
-
-    zui_mode_call_bool "$ZUI_MODE_TX_IS_USER_GAME" s16 "$zui_game_pkg"
-    zui_user_result=$?
-    if [ "$zui_user_result" = "0" ]; then
-        zui_mode_call_bool "$ZUI_MODE_TX_REMOVE_USER_GAME" s16 "$zui_game_pkg" || return 1
-        zui_mode_call_bool "$ZUI_MODE_TX_IS_USER_GAME" s16 "$zui_game_pkg"
-        if [ "$?" != "1" ]; then
-            zui_mode_call_bool "$ZUI_MODE_TX_ADD_USER_GAME" \
-                s16 "$zui_game_pkg" s16 game s16 111111 || true
-            return 1
-        fi
-        ZUI_GAME_SYNC_RESULT=user_removed
-        return 0
-    fi
-    [ "$zui_user_result" = "1" ] || return 1
-
-    zui_mode_call_bool "$ZUI_MODE_TX_IS_SYSTEM_GAME" s16 "$zui_game_pkg"
-    zui_system_result=$?
-    if [ "$zui_system_result" = "0" ]; then
-        ZUI_GAME_SYNC_RESULT=system_existing
-        return 0
-    fi
-    [ "$zui_system_result" = "1" ] || return 1
-    ZUI_GAME_SYNC_RESULT=already_absent
-    return 0
-}
-
-sync_zui_game_for_performance() {
-    zui_game_action="$1"
-    zui_game_pkg="$2"
-    ZUI_GAME_SYNC_UNDO=none
-    case "$zui_game_action" in
-        set)
-            ensure_zui_game_managed "$zui_game_pkg" || return 1
-            [ "$ZUI_GAME_SYNC_RESULT" = user_added ] && ZUI_GAME_SYNC_UNDO=remove
-            ;;
-        remove)
-            remove_zui_game_managed "$zui_game_pkg" || return 1
-            [ "$ZUI_GAME_SYNC_RESULT" = user_removed ] && ZUI_GAME_SYNC_UNDO=add
-            ;;
-        *) return 1 ;;
-    esac
-    return 0
-}
-
-rollback_zui_game_sync() {
-    zui_game_pkg="$1"
-    case "$ZUI_GAME_SYNC_UNDO" in
-        remove)
-            zui_mode_call_bool "$ZUI_MODE_TX_REMOVE_USER_GAME" s16 "$zui_game_pkg"
-            ;;
-        add)
-            zui_mode_call_bool "$ZUI_MODE_TX_ADD_USER_GAME" \
-                s16 "$zui_game_pkg" s16 game s16 111111
-            ;;
-        *) return 0 ;;
-    esac
-}
-
-package_has_process() {
-    package_process_pkg="$1"
-    [ -n "$(pidof "$package_process_pkg" 2>/dev/null)" ] && return 0
-    ps -A -o NAME= 2>/dev/null | awk -v pkg="$package_process_pkg" \
-        '$1 == pkg || index($1, pkg ":") == 1 { found=1; exit } END { exit !found }'
-}
-
-force_stop_package_if_running() {
-    force_stop_pkg="$1"
-    PACKAGE_STOP_RESULT=not_running
-    package_has_process "$force_stop_pkg" || return 0
-    if am force-stop --user 0 "$force_stop_pkg" >/dev/null 2>&1; then
-        force_stop_tries=5
-        while [ "$force_stop_tries" -gt 0 ]; do
-            package_has_process "$force_stop_pkg" || {
-                PACKAGE_STOP_RESULT=stopped
-                return 0
-            }
-            force_stop_tries=$((force_stop_tries - 1))
-            sleep 1
-        done
-    fi
-    PACKAGE_STOP_RESULT=stop_failed
-    log_line "target package could not be stopped: $force_stop_pkg"
-    return 1
-}
-
-valid_appopt_rule_line() {
-    appopt_line="$1"
-    appopt_check_package="$2"
-    case "$appopt_line" in
-        *=*=*) return 1 ;;
-    esac
-    appopt_rule_left="${appopt_line%%=*}"
-    appopt_rule_preset="${appopt_line#*=}"
-    [ "$appopt_rule_left" != "$appopt_line" ] || return 1
-    appopt_rule_thread=
-    if valid_appopt_package_name "$appopt_rule_left"; then
-        appopt_rule_pkg="$appopt_rule_left"
-    elif printf '%s\n' "$appopt_rule_left" | grep -Eq \
-        '^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+\{[A-Za-z0-9_.:+*? -]{1,31}\}$'; then
-        appopt_rule_pkg="${appopt_rule_left%%\{*}"
-        appopt_rule_thread="${appopt_rule_left#*\{}"
-        appopt_rule_thread="${appopt_rule_thread%\}}"
-    else
-        return 1
-    fi
-    valid_appopt_preset "$appopt_rule_preset" || return 1
-    appopt_rule_key="$appopt_rule_left"
-    if [ "$appopt_check_package" = "1" ]; then
-        appopt_package_is_user_app "$appopt_rule_pkg" || return 1
-    fi
-    return 0
-}
-
-validate_appopt_config_syntax() {
-    [ -e "$APPOPT_CONFIG" ] || return 1
-    while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
-        appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
-        case "$appopt_line" in
-            ""|'#'*) continue ;;
-        esac
-        valid_appopt_rule_line "$appopt_line" 0 || {
-            log_line "invalid AppOpt rule rejected: $appopt_line"
-            return 1
-        }
-    done < "$APPOPT_CONFIG"
-    return 0
-}
-
-validate_appopt_config() {
-    validate_appopt_config_syntax || return 1
-    while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
-        appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
-        case "$appopt_line" in
-            ""|'#'*) continue ;;
-        esac
-        valid_appopt_rule_line "$appopt_line" 0 || return 1
-        appopt_package_is_user_app "$appopt_rule_pkg" || {
-            log_line "non-user AppOpt package rejected: $appopt_rule_pkg"
-            return 1
-        }
-    done < "$APPOPT_CONFIG"
-    return 0
-}
-
-appopt_config_has_package() {
-    wanted_appopt_pkg="$1"
-    [ -e "$APPOPT_CONFIG" ] || return 1
-    while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
-        appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
-        case "$appopt_line" in
-            ""|'#'*) continue ;;
-        esac
-        valid_appopt_rule_line "$appopt_line" 0 || return 1
-        [ "$appopt_rule_pkg" = "$wanted_appopt_pkg" ] && return 0
-    done < "$APPOPT_CONFIG"
-    return 1
-}
-
-appopt_rules_count() {
-    appopt_count=0
-    [ -e "$APPOPT_CONFIG" ] || {
-        printf '0\n'
-        return
-    }
-    while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
-        appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
-        case "$appopt_line" in
-            ""|'#'*) continue ;;
-        esac
-        if valid_appopt_rule_line "$appopt_line" 0; then
-            appopt_count=$((appopt_count + 1))
-        fi
-    done < "$APPOPT_CONFIG"
-    printf '%s\n' "$appopt_count"
-}
-
-publish_appopt_rules_state() {
-    appopt_rules_text=
-    if [ -e "$APPOPT_CONFIG" ]; then
-        while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
-            appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
-            case "$appopt_line" in
-                ""|'#'*) continue ;;
-            esac
-            if valid_appopt_rule_line "$appopt_line" 0; then
-                if [ -n "$appopt_rules_text" ]; then
-                    appopt_rules_text="$appopt_rules_text
-$appopt_line"
-                else
-                    appopt_rules_text="$appopt_line"
-                fi
-            fi
-        done < "$APPOPT_CONFIG"
-    fi
-    settings_put_quiet "$APPOPT_RULES_KEY" "$appopt_rules_text"
-}
-
-rewrite_appopt_rule() {
-    requested_pkg="$1"
-    requested_preset="$2"
-    appopt_tmp="$APPOPT_CONFIG.tmp"
-    rm -f "$appopt_tmp"
-    : > "$appopt_tmp" || return 1
-    if [ -e "$APPOPT_CONFIG" ]; then
-        while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
-            appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
-            case "$appopt_line" in
-                ""|'#'*)
-                    printf '%s\n' "$appopt_line" >> "$appopt_tmp" || {
-                        rm -f "$appopt_tmp"
-                        return 1
-                    }
-                    continue
-                    ;;
-            esac
-            valid_appopt_rule_line "$appopt_line" 0 || {
-                rm -f "$appopt_tmp"
-                return 1
-            }
-            [ "$appopt_rule_pkg" = "$requested_pkg" ] && continue
-            printf '%s\n' "$appopt_line" >> "$appopt_tmp" || {
-                rm -f "$appopt_tmp"
-                return 1
-            }
-        done < "$APPOPT_CONFIG" || {
-            rm -f "$appopt_tmp"
-            return 1
-        }
-    fi
-    if [ -n "$requested_preset" ]; then
-        printf '%s=%s\n' "$requested_pkg" "$requested_preset" >> "$appopt_tmp" || {
-            rm -f "$appopt_tmp"
-            return 1
-        }
-    fi
-    if chmod 0664 "$appopt_tmp" && mv "$appopt_tmp" "$APPOPT_CONFIG"; then
-        return 0
-    fi
-    rm -f "$appopt_tmp"
-    return 1
-}
-
-appopt_rule_packages() {
-    [ -e "$APPOPT_CONFIG" ] || return 0
-    while IFS= read -r appopt_line || [ -n "$appopt_line" ]; do
-        appopt_line="$(printf '%s' "$appopt_line" | tr -d '\r')"
-        case "$appopt_line" in
-            ""|'#'*) continue ;;
-        esac
-        valid_appopt_rule_line "$appopt_line" 0 || continue
-        printf '%s\n' "$appopt_rule_pkg"
-    done < "$APPOPT_CONFIG"
-}
-
-force_stop_package_lines() {
-    force_stop_lines="$1"
-    FORCE_STOPPED_COUNT=0
-    FORCE_STOP_FAILED_COUNT=0
-    force_stop_seen='|'
-    log_line "force-stop candidates: $(printf '%s' "$force_stop_lines" | tr '\n' ',')"
-    for force_stop_line in $force_stop_lines; do
-        valid_appopt_package_name "$force_stop_line" || continue
-        case "$force_stop_seen" in
-            *"|$force_stop_line|"*) continue ;;
-        esac
-        force_stop_seen="$force_stop_seen$force_stop_line|"
-        if force_stop_package_if_running "$force_stop_line"; then
-            log_line "force-stop result: package=$force_stop_line result=$PACKAGE_STOP_RESULT"
-            [ "$PACKAGE_STOP_RESULT" = "stopped" ] &&
-                FORCE_STOPPED_COUNT=$((FORCE_STOPPED_COUNT + 1))
-        else
-            FORCE_STOP_FAILED_COUNT=$((FORCE_STOP_FAILED_COUNT + 1))
-        fi
-    done
-}
-
-rewrite_appopt_rules_payload() {
-    appopt_payload="$1"
-    [ "${#appopt_payload}" -le 16384 ] || return 1
-
-    appopt_tmp="$APPOPT_CONFIG.tmp"
-    appopt_payload_lines="$APPOPT_CONFIG.payload.tmp"
-    rm -f "$appopt_tmp" "$appopt_payload_lines"
-    cp "$DEFAULT_APPLIST" "$appopt_tmp" || return 1
-    printf '%s' "$appopt_payload" | tr ';' '\n' > "$appopt_payload_lines" || {
-        rm -f "$appopt_tmp" "$appopt_payload_lines"
-        return 1
-    }
-    appopt_payload_seen='|'
-    appopt_payload_packages='|'
-    appopt_payload_bases='|'
-    while IFS= read -r appopt_payload_line || [ -n "$appopt_payload_line" ]; do
-        [ -n "$appopt_payload_line" ] || continue
-        valid_appopt_rule_line "$appopt_payload_line" 0 || {
-            rm -f "$appopt_tmp" "$appopt_payload_lines"
-            return 1
-        }
-        case "$appopt_payload_seen" in
-            *"|$appopt_rule_key|"*)
-                rm -f "$appopt_tmp" "$appopt_payload_lines"
-                return 1
-                ;;
-        esac
-        appopt_payload_seen="$appopt_payload_seen$appopt_rule_key|"
-        if [ -z "$appopt_rule_thread" ]; then
-            appopt_payload_bases="$appopt_payload_bases$appopt_rule_pkg|"
-        fi
-        case "$appopt_payload_packages" in
-            *"|$appopt_rule_pkg|"*) ;;
-            *)
-                appopt_package_is_user_app "$appopt_rule_pkg" || {
-                    rm -f "$appopt_tmp" "$appopt_payload_lines"
-                    return 1
-                }
-                appopt_payload_packages="$appopt_payload_packages$appopt_rule_pkg|"
-                ;;
-        esac
-        printf '%s\n' "$appopt_payload_line" >> "$appopt_tmp" || {
-            rm -f "$appopt_tmp" "$appopt_payload_lines"
-            return 1
-        }
-    done < "$appopt_payload_lines"
-    rm -f "$appopt_payload_lines"
-    for appopt_payload_pkg in $(printf '%s' "$appopt_payload_packages" | tr '|' ' '); do
-        case "$appopt_payload_bases" in
-            *"|$appopt_payload_pkg|"*) ;;
-            *) rm -f "$appopt_tmp"; return 1 ;;
-        esac
-    done
-    if chmod 0664 "$appopt_tmp" && mv "$appopt_tmp" "$APPOPT_CONFIG"; then
-        return 0
-    fi
-    rm -f "$appopt_tmp"
-    return 1
-}
-
-wait_appopt_running() {
-    appopt_candidate_pid=
-    appopt_stable_ticks=0
-    tries=30
-    while [ "$tries" -gt 0 ]; do
-        sleep 1
-        appopt_pid="$(pidof AppOpt 2>/dev/null | awk '{print $1}')"
-        if [ "$(getprop init.svc.zui_appopt 2>/dev/null)" = "running" ] &&
-            [ -n "$appopt_pid" ]; then
-            if [ "$appopt_pid" = "$appopt_candidate_pid" ]; then
-                appopt_stable_ticks=$((appopt_stable_ticks + 1))
-            else
-                appopt_candidate_pid="$appopt_pid"
-                appopt_stable_ticks=1
-            fi
-            [ "$appopt_stable_ticks" -ge "$APPOPT_STABLE_SECONDS" ] && return 0
-        else
-            appopt_candidate_pid=
-            appopt_stable_ticks=0
-        fi
-        tries=$((tries - 1))
-    done
-    return 1
-}
-
-wait_appopt_stopped() {
-    tries=10
-    while [ "$tries" -gt 0 ]; do
-        sleep 1
-        if [ "$(getprop init.svc.zui_appopt 2>/dev/null)" = "stopped" ] &&
-            [ -z "$(pidof AppOpt 2>/dev/null)" ]; then
-            return 0
-        fi
-        tries=$((tries - 1))
-    done
-    return 1
-}
-
-apply_appopt() {
-    publish_request_progress restarting_appopt
-    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
-    if ! validate_appopt_config; then
-        trigger_init_action "$PROP_APPOPT" stop || true
-        wait_appopt_stopped || true
-        rm -f "$APPOPT_ENABLED"
-        set_status "daemon=running" "last=apply_appopt_failed" \
-            "reason=invalid_rules"
-        publish_appopt_health
-        return 1
-    fi
-    rules_count="$(appopt_rules_count)"
-    if [ "${rules_count:-0}" -le 0 ]; then
-        stop_appopt || true
-        log_line "AppOpt not started: no active rules"
-        set_status "daemon=running" "last=apply_appopt_skipped" "reason=no_active_rules"
-        publish_appopt_health
-        return 1
-    fi
-    if trigger_init_action "$PROP_APPOPT" restart && wait_appopt_running &&
-        touch "$APPOPT_ENABLED" && chmod 0664 "$APPOPT_ENABLED"; then
-        publish_appopt_health
-        return 0
-    fi
-    trigger_init_action "$PROP_APPOPT" stop || true
-    wait_appopt_stopped || true
-    rm -f "$APPOPT_ENABLED"
-    log_line "AppOpt failed to stay on one PID for $APPOPT_STABLE_SECONDS seconds"
-    set_status "daemon=running" "last=apply_appopt_failed" "reason=service_not_stable"
-    publish_appopt_health
-    return 1
-}
-
-stop_appopt() {
-    publish_request_progress stopping_appopt
-    if trigger_init_action "$PROP_APPOPT" stop && wait_appopt_stopped; then
-        rm -f "$APPOPT_ENABLED"
-        publish_appopt_health
-        set_status "daemon=running" "last=restore_appopt" "state=stopped"
-        return 0
-    fi
-    rm -f "$APPOPT_ENABLED"
-    publish_appopt_health
-    set_status "daemon=running" "last=restore_appopt_failed" "reason=process_alive"
-    return 1
-}
-
-stop_appopt_and_targets() {
-    appopt_stop_packages="$(appopt_rule_packages)"
-    stop_appopt || return 1
-    publish_request_progress stopping_targets
-    force_stop_package_lines "$appopt_stop_packages"
-    REQUEST_RESULT_DETAIL="stoppedApps=$FORCE_STOPPED_COUNT;stopFailed=$FORCE_STOP_FAILED_COUNT"
-    return 0
-}
-
-restore_appopt_update_backup() {
-    old_appopt_enabled="$1"
-    atomic_copy_file "$APPOPT_UPDATE_BACKUP" "$APPOPT_CONFIG" || return 1
-    if [ "$old_appopt_enabled" = "1" ] && [ "$(appopt_rules_count)" -gt 0 ]; then
-        apply_appopt || return 1
-    else
-        stop_appopt || return 1
-    fi
-    publish_appopt_rules_state
-    return 0
-}
-
-replace_appopt_rules() {
-    requested_payload="$1"
-    publish_request_progress validating_rules
-    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
-    validate_appopt_config_syntax || {
-        set_status "daemon=running" "last=replace_appopt_rules_failed" \
-            "reason=invalid_existing_rules"
-        return 1
-    }
-    old_appopt_enabled=0
-    [ -f "$APPOPT_ENABLED" ] && old_appopt_enabled=1
-    old_appopt_packages="$(appopt_rule_packages)"
-    atomic_copy_file "$APPOPT_CONFIG" "$APPOPT_UPDATE_BACKUP" || return 1
-
-    publish_request_progress writing_rules
-    if rewrite_appopt_rules_payload "$requested_payload"; then
-        new_appopt_packages="$(appopt_rule_packages)"
-        publish_request_progress stopping_targets
-        force_stop_package_lines "$old_appopt_packages
-$new_appopt_packages"
-        appopt_replace_stopped="$FORCE_STOPPED_COUNT"
-        appopt_replace_stop_failed="$FORCE_STOP_FAILED_COUNT"
-        appopt_replace_result=1
-        if [ "$(appopt_rules_count)" -gt 0 ]; then
-            apply_appopt
-            appopt_replace_result=$?
-        else
-            stop_appopt
-            appopt_replace_result=$?
-        fi
-        if [ "$appopt_replace_result" = "0" ]; then
-            rm -f "$APPOPT_UPDATE_BACKUP"
-            publish_appopt_rules_state
-            REQUEST_RESULT_DETAIL="rules=$(appopt_rules_count);stoppedApps=$appopt_replace_stopped;stopFailed=$appopt_replace_stop_failed"
-            set_status "daemon=running" "last=replace_appopt_rules_applied" \
-                "$REQUEST_RESULT_DETAIL"
-            return 0
-        fi
-    fi
-
-    if restore_appopt_update_backup "$old_appopt_enabled"; then
-        rm -f "$APPOPT_UPDATE_BACKUP"
-    else
-        log_line "AppOpt list replacement rollback failed"
-    fi
-    set_status "daemon=running" "last=replace_appopt_rules_failed" \
-        "reason=apply_failed"
-    return 1
-}
-
-set_appopt_rule() {
-    requested_pkg="$1"
-    requested_preset="$2"
-    publish_request_progress validating_rules
-    if ! valid_appopt_package_name "$requested_pkg" ||
-        ! valid_appopt_preset "$requested_preset" ||
-        ! appopt_package_is_user_app "$requested_pkg"; then
-        set_status "daemon=running" "last=set_appopt_rule_failed" \
-            "package=$requested_pkg" "reason=invalid_or_system_package"
-        return 1
-    fi
-    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
-    validate_appopt_config || {
-        set_status "daemon=running" "last=set_appopt_rule_failed" \
-            "package=$requested_pkg" "reason=invalid_existing_rules"
-        return 1
-    }
-    old_appopt_enabled=0
-    [ -f "$APPOPT_ENABLED" ] && old_appopt_enabled=1
-    atomic_copy_file "$APPOPT_CONFIG" "$APPOPT_UPDATE_BACKUP" || return 1
-    publish_request_progress writing_rules
-    if rewrite_appopt_rule "$requested_pkg" "$requested_preset" && apply_appopt; then
-        rm -f "$APPOPT_UPDATE_BACKUP"
-        publish_appopt_rules_state
-        publish_request_progress stopping_target
-        force_stop_package_if_running "$requested_pkg" || true
-        REQUEST_RESULT_DETAIL="preset=$requested_preset;target=$PACKAGE_STOP_RESULT"
-        set_status "daemon=running" "last=set_appopt_rule_applied" \
-            "package=$requested_pkg" "$REQUEST_RESULT_DETAIL"
-        return 0
-    fi
-    if restore_appopt_update_backup "$old_appopt_enabled"; then
-        rm -f "$APPOPT_UPDATE_BACKUP"
-    else
-        log_line "AppOpt rule rollback failed: package=$requested_pkg"
-    fi
-    set_status "daemon=running" "last=set_appopt_rule_failed" \
-        "package=$requested_pkg" "reason=apply_failed"
-    return 1
-}
-
-remove_appopt_rule() {
-    requested_pkg="$1"
-    publish_request_progress validating_rules
-    if ! valid_appopt_package_name "$requested_pkg"; then
-        set_status "daemon=running" "last=remove_appopt_rule_failed" \
-            "package=$requested_pkg" "reason=invalid_package"
-        return 1
-    fi
-    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
-    if ! validate_appopt_config_syntax; then
-        set_status "daemon=running" "last=remove_appopt_rule_failed" \
-            "package=$requested_pkg" "reason=invalid_existing_rules"
-        return 1
-    fi
-    if ! appopt_config_has_package "$requested_pkg"; then
-        if [ "$(appopt_rules_count)" -gt 0 ] && validate_appopt_config; then
-            apply_appopt
-        else
-            stop_appopt
-        fi
-        appopt_reconcile_result=$?
-        if [ "$appopt_reconcile_result" = "0" ]; then
-            rm -f "$APPOPT_UPDATE_BACKUP"
-            publish_appopt_rules_state
-            publish_request_progress stopping_target
-            force_stop_package_if_running "$requested_pkg" || true
-            REQUEST_RESULT_DETAIL="already_absent_reconciled;target=$PACKAGE_STOP_RESULT"
-            set_status "daemon=running" "last=remove_appopt_rule_applied" \
-                "package=$requested_pkg" "detail=$REQUEST_RESULT_DETAIL"
-            return 0
-        fi
-        set_status "daemon=running" "last=remove_appopt_rule_failed" \
-            "package=$requested_pkg" "reason=reconcile_failed"
-        return 1
-    fi
-    old_appopt_enabled=0
-    [ -f "$APPOPT_ENABLED" ] && old_appopt_enabled=1
-    atomic_copy_file "$APPOPT_CONFIG" "$APPOPT_UPDATE_BACKUP" || return 1
-    appopt_update_result=
-    publish_request_progress writing_rules
-    if rewrite_appopt_rule "$requested_pkg" ""; then
-        if [ "$(appopt_rules_count)" -gt 0 ]; then
-            if validate_appopt_config; then
-                apply_appopt
-                appopt_update_result=$?
-            else
-                stop_appopt
-                appopt_update_result=$?
-                if [ "$appopt_update_result" = "0" ]; then
-                    REQUEST_RESULT_DETAIL=remaining_invalid_stopped
-                fi
-            fi
-        else
-            stop_appopt
-            appopt_update_result=$?
-        fi
-        if [ "$appopt_update_result" = "0" ]; then
-            rm -f "$APPOPT_UPDATE_BACKUP"
-            publish_appopt_rules_state
-            publish_request_progress stopping_target
-            force_stop_package_if_running "$requested_pkg" || true
-            appopt_remove_detail="${REQUEST_RESULT_DETAIL:-ok}"
-            REQUEST_RESULT_DETAIL="$appopt_remove_detail;target=$PACKAGE_STOP_RESULT"
-            set_status "daemon=running" "last=remove_appopt_rule_applied" \
-                "package=$requested_pkg" \
-                "detail=$REQUEST_RESULT_DETAIL"
-            return 0
-        fi
-    fi
-    if restore_appopt_update_backup "$old_appopt_enabled"; then
-        rm -f "$APPOPT_UPDATE_BACKUP"
-    else
-        log_line "AppOpt rule removal rollback failed: package=$requested_pkg"
-    fi
-    set_status "daemon=running" "last=remove_appopt_rule_failed" \
-        "package=$requested_pkg" "reason=apply_failed"
-    return 1
-}
-
-ignore_legacy_refresh_request() {
-    legacy_cmd="$1"
-    log_line "legacy refresh request ignored: cmd=$legacy_cmd owner=$REFRESH_OWNER"
-    set_status "daemon=running" "last=${legacy_cmd}_ignored" "refresh_owner=$REFRESH_OWNER"
-}
-
-performance_transaction_old_active() {
-    sed -n 's/^old_active=//p' "$PERFORMANCE_TXN_MARKER" 2>/dev/null |
-        tail -n 1 | tr -d '\r\n'
-}
-
-begin_performance_transaction() {
-    if [ -e "$PERFORMANCE_TXN_MARKER" ]; then
-        recover_performance_transaction || return 1
-    else
-        rm -f "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_BACKUP.tmp" \
-            "$PERFORMANCE_TXN_MARKER.tmp"
-    fi
-
-    transaction_old_active="$(xml_hash_pair)" || {
-        set_xml_error "performance transaction cannot hash active XML"
-        return 1
-    }
-    atomic_copy_file "$PERFORMANCE_PROFILES" "$PERFORMANCE_TXN_BACKUP" || {
-        set_xml_error "performance transaction profile backup failed"
-        return 1
-    }
-    if ! atomic_write_text "$PERFORMANCE_TXN_MARKER" \
-        "old_active=$transaction_old_active"; then
-        rm -f "$PERFORMANCE_TXN_BACKUP"
-        set_xml_error "performance transaction marker write failed"
-        return 1
-    fi
-    durable_sync_paths "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_MARKER" \
-        "$PERFORMANCE_DIR" || {
-        set_xml_error "performance transaction sync failed"
-        return 1
-    }
-    return 0
-}
-
-commit_performance_transaction() {
-    durable_sync_paths "$PERFORMANCE_PROFILES" "$ACTIVE_GAME_POLICY" \
-        "$ACTIVE_PERF_CONFIG" "$LAST_GOOD_GAME_POLICY" \
-        "$LAST_GOOD_PERF_CONFIG" "$PERFORMANCE_DIR" "$ZUI_ACTIVE_DIR" \
-        "$ZUI_LAST_GOOD_DIR" || return 1
-    rm -f "$PERFORMANCE_TXN_MARKER" || return 1
-    # Marker removal is the commit point. A later sync/cleanup failure must not
-    # report a rollbackable failure after the rollback record is already gone.
-    durable_sync_paths "$PERFORMANCE_DIR" || log_line \
-        "performance transaction commit marker sync deferred"
-    rm -f "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_BACKUP.tmp" \
-        "$PERFORMANCE_TXN_MARKER.tmp" || log_line \
-        "performance transaction committed with stale backup"
-    return 0
-}
-
-rollback_performance_transaction() {
-    [ -e "$PERFORMANCE_TXN_MARKER" ] || return 0
-    transaction_old_active="$(performance_transaction_old_active)"
-    [ -n "$transaction_old_active" ] || {
-        set_xml_error "performance transaction marker is invalid"
-        return 1
-    }
-    [ -e "$PERFORMANCE_TXN_BACKUP" ] || {
-        set_xml_error "performance transaction profile backup is missing"
-        return 1
-    }
-    atomic_copy_file "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_PROFILES" || {
-        set_xml_error "performance transaction profile restore failed"
-        return 1
-    }
-
-    transaction_current_active="$(xml_hash_pair 2>/dev/null)"
-    if [ "$transaction_current_active" != "$transaction_old_active" ]; then
-        transaction_last_good="$(xml_hash_pair_for_files \
-            "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" 2>/dev/null)"
-        if [ "$transaction_last_good" != "$transaction_old_active" ]; then
-            set_xml_error "performance transaction last_good hash mismatch"
-            return 1
-        fi
-        stage_xml_pair_from_pair "$LAST_GOOD_GAME_POLICY" "$LAST_GOOD_PERF_CONFIG" \
-            "performance transaction rollback" || return 1
-        promote_staging_with_lock "performance_transaction_rollback" || return 1
-    elif [ "$(last_reloaded_hash_pair 2>/dev/null)" != "$transaction_old_active" ]; then
-        remount_active_with_lock "performance_transaction_runtime_rollback" || return 1
-    fi
-
-    [ "$(xml_hash_pair 2>/dev/null)" = "$transaction_old_active" ] || {
-        set_xml_error "performance transaction active rollback hash mismatch"
-        return 1
-    }
-    clear_performance_summary
-    publish_performance_state
-    durable_sync_paths "$PERFORMANCE_PROFILES" "$ACTIVE_GAME_POLICY" \
-        "$ACTIVE_PERF_CONFIG" "$PERFORMANCE_DIR" "$ZUI_ACTIVE_DIR" || return 1
-    rm -f "$PERFORMANCE_TXN_MARKER" || return 1
-    # The old state is restored once the marker is removed. Cleanup is
-    # repeatable on the next start and cannot turn a completed rollback into a
-    # false failure.
-    durable_sync_paths "$PERFORMANCE_DIR" || log_line \
-        "performance transaction rollback marker sync deferred"
-    rm -f "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_BACKUP.tmp" \
-        "$PERFORMANCE_TXN_MARKER.tmp" || log_line \
-        "performance transaction rolled back with stale backup"
-    log_line "performance transaction rolled back"
-    return 0
-}
-
-recover_performance_transaction() {
-    if [ ! -e "$PERFORMANCE_TXN_MARKER" ]; then
-        rm -f "$PERFORMANCE_TXN_BACKUP" "$PERFORMANCE_TXN_BACKUP.tmp" \
-            "$PERFORMANCE_TXN_MARKER.tmp"
-        return 0
-    fi
-    log_line "recovering interrupted performance transaction"
-    rollback_performance_transaction
-}
-
-complete_performance_transaction() {
-    performance_game_action="$1"
-    performance_game_pkg="$2"
-    ZUI_GAME_SYNC_UNDO=none
-    publish_request_progress generating_xml
-    if generate_performance_xml; then
-        publish_request_progress reloading_zuipp
-        if promote_staging_to_active; then
-            publish_request_progress syncing_game_assistant
-            if sync_zui_game_for_performance "$performance_game_action" \
-                "$performance_game_pkg"; then
-                publish_request_progress committing
-                if commit_performance_transaction; then
-                    return 0
-                fi
-                set_xml_error "performance transaction commit failed"
-            else
-                set_xml_error "performance transaction game list sync failed"
-            fi
-        fi
-    fi
-    if ! rollback_performance_transaction; then
-        set_xml_error "performance transaction rollback failed"
-        publish_xml_state
-        log_line "performance transaction rollback failed"
-    fi
-    rollback_zui_game_sync "$performance_game_pkg" ||
-        log_line "performance transaction game list rollback failed: package=$performance_game_pkg"
-    return 1
-}
-
-prepare_performance_target() {
-    performance_target_pkg="$1"
-    publish_request_progress validating_target
-    if ! appopt_package_is_user_app "$performance_target_pkg"; then
-        set_status "daemon=running" "last=set_performance_profile_failed" \
-            "package=$performance_target_pkg" "reason=invalid_or_system_package"
-        return 1
-    fi
-    return 0
-}
-
-finish_performance_target() {
-    performance_target_pkg="$1"
-    publish_request_progress stopping_target
-    force_stop_package_if_running "$performance_target_pkg" || true
-    REQUEST_RESULT_DETAIL="game=$ZUI_GAME_SYNC_RESULT;target=$PACKAGE_STOP_RESULT"
-}
-
-set_performance_profile() {
-    profile_pkg="$1"
-    profile_mode="$2"
-    little_max="$3"
-    little_min="$4"
-    big_max="$5"
-    big_min="$6"
-    titan_max="$7"
-    titan_min="$8"
-    mega_max="$9"
-    shift 9
-    mega_min="$1"
-    gpu_max="$2"
-    gpu_min="$3"
-    if ! valid_package_name "$profile_pkg" || ! valid_mode "$profile_mode" ||
-        ! valid_positive_int "$little_max" || ! valid_positive_int "$little_min" ||
-        ! valid_positive_int "$big_max" || ! valid_positive_int "$big_min" ||
-        ! valid_positive_int "$titan_max" || ! valid_positive_int "$titan_min" ||
-        ! valid_positive_int "$mega_max" || ! valid_positive_int "$mega_min" ||
-        ! valid_positive_int "$gpu_max" || ! valid_positive_int "$gpu_min" ||
-        [ "$little_max" -lt "$little_min" ] ||
-        [ "$big_max" -lt "$big_min" ] ||
-        [ "$titan_max" -lt "$titan_min" ] ||
-        [ "$mega_max" -lt "$mega_min" ] ||
-        [ "$gpu_max" -lt "$gpu_min" ]; then
-        log_line "invalid performance profile: $profile_pkg $profile_mode"
-        set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg"
-        return 1
-    fi
-    prepare_performance_target "$profile_pkg" || return 1
-    profile_mode=balanced
-    begin_performance_transaction || {
-        set_status "daemon=running" "last=set_performance_profile_failed" \
-            "package=$profile_pkg" "reason=transaction_begin_failed"
-        return 1
-    }
-    if ! rewrite_performance_without_package "$profile_pkg" ||
-        ! printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
-        "$profile_pkg" "$profile_mode" \
-        "$little_max" "$little_min" \
-        "$big_max" "$big_min" \
-        "$titan_max" "$titan_min" \
-        "$mega_max" "$mega_min" \
-        "$gpu_max" "$gpu_min" \
-        >> "$PERFORMANCE_PROFILES" ||
-        ! chmod 0664 "$PERFORMANCE_PROFILES"; then
-        rollback_performance_transaction || true
-        set_status "daemon=running" "last=set_performance_profile_failed" \
-            "package=$profile_pkg" "reason=profile_write_failed"
-        return 1
-    fi
-    clear_performance_summary
-    log_line "performance profile saved: $profile_pkg/$profile_mode"
-    if complete_performance_transaction set "$profile_pkg"; then
-        publish_performance_state
-        finish_performance_target "$profile_pkg"
-        set_status "daemon=running" "last=set_performance_profile_applied" \
-            "package=$profile_pkg" "mode=$profile_mode" "$REQUEST_RESULT_DETAIL"
-        return 0
-    fi
-    publish_performance_state
-    set_status "daemon=running" "last=set_performance_profile_failed" \
-        "package=$profile_pkg" "mode=$profile_mode" "reason=apply_failed"
-    return 1
-}
-
-set_performance_profile_staged() {
-    profile_pkg="$1"
-    profile_mode="$2"
-    stage_payload="$3"
-    profile_policy="$4"
-    profile_frame_or_refresh="$5"
-    profile_power_save="$6"
-    profile_frame_policy=
-    if ! valid_package_name "$profile_pkg" || ! valid_mode "$profile_mode" ||
-        ! valid_stage_payload "$stage_payload"; then
-        log_line "invalid staged performance profile: $profile_pkg $profile_mode"
-        set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg"
-        return 1
-    fi
-    if [ -n "$profile_policy$profile_frame_or_refresh$profile_power_save" ]; then
-        profile_policy="${profile_policy:-independent}"
-        if ! valid_game_policy_mode "$profile_policy"; then
-            log_line "invalid staged policy: $profile_pkg $profile_mode policy=$profile_policy"
-            set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg" "reason=invalid_policy"
-            return 1
-        fi
-        if [ -n "$profile_power_save" ] ||
-            printf '%s\n' "$profile_frame_or_refresh" | grep -q '^[0-9][0-9]*$'; then
-            profile_refresh="${profile_frame_or_refresh:-0}"
-            profile_power_save="${profile_power_save:-0}"
-            if ! valid_game_policy_refresh_rate "$profile_refresh" ||
-                ! valid_game_policy_power_save_refresh_rate "$profile_power_save"; then
-                log_line "invalid staged legacy refresh: $profile_pkg $profile_mode policy=$profile_policy refresh=$profile_refresh powersave=$profile_power_save"
-                set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg" "reason=invalid_policy"
-                return 1
-            fi
-            profile_frame_policy="$(legacy_frame_policy "$profile_policy" "$profile_refresh" "$profile_power_save")"
-        else
-            profile_frame_policy="${profile_frame_or_refresh:-default}"
-            if ! valid_frame_policy "$profile_frame_policy"; then
-                log_line "invalid staged frame policy: $profile_pkg $profile_mode policy=$profile_policy frame=$profile_frame_policy"
-                set_status "daemon=running" "last=set_performance_profile_failed" "package=$profile_pkg" "reason=invalid_frame_policy"
-                return 1
-            fi
-        fi
-        [ "$profile_policy" = "default" ] && profile_frame_policy=default
-    fi
-    prepare_performance_target "$profile_pkg" || return 1
-    profile_mode=balanced
-    begin_performance_transaction || {
-        set_status "daemon=running" "last=set_performance_profile_failed" \
-            "package=$profile_pkg" "reason=transaction_begin_failed"
-        return 1
-    }
-    if ! rewrite_performance_without_package "$profile_pkg"; then
-        rollback_performance_transaction || true
-        set_status "daemon=running" "last=set_performance_profile_failed" \
-            "package=$profile_pkg" "reason=profile_write_failed"
-        return 1
-    fi
-    if [ -n "$profile_policy$profile_frame_policy" ]; then
-        if ! printf '%s|%s|v4|%s|%s|%s\n' \
-            "$profile_pkg" "$profile_mode" "$profile_policy" \
-            "$profile_frame_policy" "$stage_payload" \
-            >> "$PERFORMANCE_PROFILES"; then
-            rollback_performance_transaction || true
-            set_status "daemon=running" "last=set_performance_profile_failed" \
-                "package=$profile_pkg" "reason=profile_write_failed"
-            return 1
-        fi
-    else
-        if ! printf '%s|%s|v2|%s\n' "$profile_pkg" "$profile_mode" "$stage_payload" \
-            >> "$PERFORMANCE_PROFILES"; then
-            rollback_performance_transaction || true
-            set_status "daemon=running" "last=set_performance_profile_failed" \
-                "package=$profile_pkg" "reason=profile_write_failed"
-            return 1
-        fi
-    fi
-    if ! chmod 0664 "$PERFORMANCE_PROFILES"; then
-        rollback_performance_transaction || true
-        set_status "daemon=running" "last=set_performance_profile_failed" \
-            "package=$profile_pkg" "reason=profile_write_failed"
-        return 1
-    fi
-    clear_performance_summary
-    log_line "staged performance profile saved: $profile_pkg/$profile_mode"
-    if complete_performance_transaction set "$profile_pkg"; then
-        publish_performance_state
-        finish_performance_target "$profile_pkg"
-        set_status "daemon=running" "last=set_performance_profile_applied" \
-            "package=$profile_pkg" "mode=$profile_mode" "thermal=staged" \
-            "$REQUEST_RESULT_DETAIL"
-        return 0
-    fi
-    publish_performance_state
-    set_status "daemon=running" "last=set_performance_profile_failed" \
-        "package=$profile_pkg" "mode=$profile_mode" "reason=apply_failed"
-    return 1
-}
-
-remove_performance_profile() {
-    profile_pkg="$1"
-    profile_mode="$2"
-    if ! valid_package_name "$profile_pkg" || ! valid_mode "$profile_mode"; then
-        set_status "daemon=running" "last=remove_performance_profile_failed"
-        return 1
-    fi
-    begin_performance_transaction || {
-        set_status "daemon=running" "last=remove_performance_profile_failed" \
-            "package=$profile_pkg" "reason=transaction_begin_failed"
-        return 1
-    }
-    if ! rewrite_performance_without_package "$profile_pkg"; then
-        rollback_performance_transaction || true
-        set_status "daemon=running" "last=remove_performance_profile_failed" \
-            "package=$profile_pkg" "reason=profile_write_failed"
-        return 1
-    fi
-    clear_performance_summary
-    log_line "performance profile removed: $profile_pkg"
-    if complete_performance_transaction remove "$profile_pkg"; then
-        publish_performance_state
-        publish_request_progress stopping_target
-        force_stop_package_if_running "$profile_pkg" || true
-        REQUEST_RESULT_DETAIL="game=$ZUI_GAME_SYNC_RESULT;target=$PACKAGE_STOP_RESULT"
-        set_status "daemon=running" "last=remove_performance_profile_applied" \
-            "package=$profile_pkg" "mode=$profile_mode" "$REQUEST_RESULT_DETAIL"
-        return 0
-    fi
-    publish_performance_state
-    set_status "daemon=running" "last=remove_performance_profile_failed" \
-        "package=$profile_pkg" "mode=$profile_mode" "reason=apply_failed"
-    return 1
-}
-
-app_apk_path() {
-    if [ -n "$zui_control_APK_OVERRIDE" ] &&
-        [ -s "$zui_control_APK_OVERRIDE" ]; then
-        printf '%s\n' "$zui_control_APK_OVERRIDE"
-        return 0
-    fi
-    pm path "$APP_PACKAGE" 2>/dev/null | sed -n 's/^package://p' | head -n 1
-}
-
-performance_profiles_have_entries() {
-    [ -s "$PERFORMANCE_PROFILES" ] || return 1
-    grep -q '^[[:space:]]*[^#[:space:]]' "$PERFORMANCE_PROFILES" 2>/dev/null
-}
-
-generate_performance_xml() {
-    init_active_xml || return 1
-    mkdir -p "$ZUI_STAGING_DIR"
-    rm -f "$PERFORMANCE_SUMMARY"
-    profiles_empty=0
-    performance_profiles_have_entries || profiles_empty=1
-    apk="$(app_apk_path)"
-    if [ ! -s "$apk" ]; then
-        if [ "$profiles_empty" = "1" ] &&
-            stage_xml_pair_from_pair "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" \
-                "empty performance profiles fallback"; then
-            {
-                echo "profiles=0"
-                echo "generator=unavailable"
-                echo "staging_game_policy=$(file_sha "$STAGING_GAME_POLICY")"
-                echo "staging_performanceconfig=$(file_sha "$STAGING_PERF_CONFIG")"
-            } > "$PERFORMANCE_SUMMARY"
-            chmod 0664 "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" \
-                "$PERFORMANCE_SUMMARY" 2>/dev/null
-            publish_performance_state
-            log_line "performance generator missing; staged baked baseline fallback"
-            return 0
-        fi
-        log_line "XML generator APK missing"
-        set_xml_error "XML generator APK missing"
-        return 1
-    fi
-    if CLASSPATH="$apk" app_process /system/bin com.zui.zuicontrol.XmlProfileGenerator \
-        "$BAKED_GAME_POLICY" "$BAKED_PERF_CONFIG" "$PERFORMANCE_PROFILES" \
-        "$SYSTEM_REFRESH_PROFILES" \
-        "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" \
-        > "$PERFORMANCE_SUMMARY.tmp" 2>&1; then
-        validate_xml_pair "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "staging" || {
-            mv "$PERFORMANCE_SUMMARY.tmp" "$PERFORMANCE_SUMMARY" 2>/dev/null
-            publish_performance_state
-            return 1
-        }
-        {
-            echo "staging_game_policy=$(file_sha "$STAGING_GAME_POLICY")"
-            echo "staging_performanceconfig=$(file_sha "$STAGING_PERF_CONFIG")"
-        } >> "$PERFORMANCE_SUMMARY.tmp"
-        mv "$PERFORMANCE_SUMMARY.tmp" "$PERFORMANCE_SUMMARY"
-        chmod 0664 "$STAGING_GAME_POLICY" "$STAGING_PERF_CONFIG" "$PERFORMANCE_SUMMARY" 2>/dev/null
-        publish_performance_state
-        log_line "performance XML generated into staging"
-        return 0
-    fi
-    mv "$PERFORMANCE_SUMMARY.tmp" "$PERFORMANCE_SUMMARY" 2>/dev/null
-    publish_performance_state
-    log_line "performance XML generation failed: $(tail -n 1 "$PERFORMANCE_SUMMARY" 2>/dev/null)"
-    return 1
-}
-
-sync_xml_refresh() {
-    if generate_performance_xml && promote_staging_to_active; then
-        publish_performance_state
-        set_status "daemon=running" "last=sync_xml_refresh_ok"
-        return 0
-    fi
-    publish_performance_state
-    set_status "daemon=running" "last=sync_xml_refresh_failed"
-    return 1
-}
-
-apply_performance() {
-    if generate_performance_xml && promote_staging_to_active; then
-        set_status "daemon=running" "last=apply_performance_ok"
-        return 0
-    fi
-    set_status "daemon=running" "last=apply_performance_failed"
-    return 1
-}
-
-export_logs() {
-    publish_state
-    export_text="ZuiControl 运行记录
-导出时间：$(ts)
-
-[状态]
-$(cat "$STATUS_FILE" 2>/dev/null)
-
-[刷新率规则]
-$(cat "$REFRESH_RULES" 2>/dev/null)
-
-[Uperf 全局模式]
-$(cat "$UPERF_MODE" 2>/dev/null)
-
-[Uperf 实际档位 / ROM 前端]
-$(cat "$UPERF_EFFECTIVE_MODE" 2>/dev/null)
-scene=$(settings_get_clean "$UPERF_SCENE_KEY")
-screen=$(settings_get_clean "$UPERF_SCREEN_KEY")
-
-[Uperf 分应用规则]
-$(cat "$UPERF_PERAPP" 2>/dev/null)
-
-[调度健康状态]
-$(settings_get_clean "$ASOUL_HEALTH_KEY")
-
-[守护服务日志末尾]
-$(tail -n 120 "$LOG_FILE" 2>/dev/null)
-
-[Uperf 日志末尾]
-$(tail -n 80 "$UPERF_LOG" 2>/dev/null)"
-    settings_put_quiet "$LOG_EXPORT_KEY" "$export_text"
-    set_status "daemon=running" "last=export_logs"
-}
-
-archive_request() {
-    file="$1"
-    base="$(basename "$file")"
-    stamp="$(date '+%Y%m%d_%H%M%S')"
-    mkdir -p "$DONE_DIR"
-    mv "$file" "$DONE_DIR/$stamp.$base" 2>/dev/null || rm -f "$file"
-}
-
-prop_value() {
-    key="$1"
-    file="$2"
-    sed -n "s/^$key=//p" "$file" 2>/dev/null | tail -n 1 | tr -d '\r'
-}
-
-request_field() {
-    printf '%s\n' "$1" | cut -d '|' -f "$2"
-}
-
-request_field_count() {
-    printf '%s\n' "$1" | awk -F '|' 'NR == 1 { print NF; exit }'
-}
-
-sanitize_request_ack_field() {
-    printf '%s' "$1" | tr '|\r\n' '   '
-}
-
-request_ack_text() {
-    ack_id="$(sanitize_request_ack_field "$1")"
-    ack_state="$(sanitize_request_ack_field "$2")"
-    ack_cmd="$(sanitize_request_ack_field "$3")"
-    ack_detail="$(sanitize_request_ack_field "$4")"
-    printf '%s|%s|%s|%s\n' "$ack_id" "$ack_state" "$ack_cmd" "$ack_detail"
-}
-
-publish_request_ack() {
-    ack_text="$(request_ack_text "$1" "$2" "$3" "$4")"
-    settings_put_quiet "$REQUEST_ACK_KEY" "$ack_text"
-}
-
-publish_request_progress() {
-    [ -n "$CURRENT_REQUEST_ID" ] && [ -n "$CURRENT_REQUEST_CMD" ] || return 0
-    publish_request_ack "$CURRENT_REQUEST_ID" processing "$CURRENT_REQUEST_CMD" "$1"
-}
-
-persist_settings_request_completion() {
-    completed_request="$1"
-    completed_ack="$2"
-    completed_receipt="$completed_request
-$completed_ack"
-    atomic_write_text "$LAST_REQUEST_RECEIPT_FILE" "$completed_receipt" || return 1
-    durable_sync_paths "$LAST_REQUEST_RECEIPT_FILE" "$CONTROL_DIR" || return 1
-    LAST_SETTINGS_REQUEST_TEXT="$completed_request"
-    rm -f "$LAST_REQUEST_FILE"
-    return 0
-}
-
-load_last_request_receipt() {
-    [ -s "$LAST_REQUEST_RECEIPT_FILE" ] || return 1
-    [ "$(sed -n '$=' "$LAST_REQUEST_RECEIPT_FILE" 2>/dev/null)" = "2" ] || return 1
-    replay_request="$(sed -n '1p' "$LAST_REQUEST_RECEIPT_FILE" 2>/dev/null | tr -d '\r')"
-    replay_ack="$(sed -n '2p' "$LAST_REQUEST_RECEIPT_FILE" 2>/dev/null | tr -d '\r')"
-    replay_request_id="$(request_field "$replay_request" 1)"
-    replay_request_cmd="$(request_field "$replay_request" 2)"
-    replay_ack_id="$(request_field "$replay_ack" 1)"
-    replay_ack_state="$(request_field "$replay_ack" 2)"
-    replay_ack_cmd="$(request_field "$replay_ack" 3)"
-    [ "$(request_field_count "$replay_ack")" = "4" ] || return 1
-    [ -n "$replay_request_id" ] && [ -n "$replay_request_cmd" ] &&
-        [ "$replay_request_id" = "$replay_ack_id" ] &&
-        [ "$replay_request_cmd" = "$replay_ack_cmd" ] || return 1
-    case "$replay_ack_state" in
-        done|failed) ;;
-        *) return 1 ;;
-    esac
-    return 0
-}
-
-replay_last_request_ack() {
-    load_last_request_receipt || return 0
-    if [ "$(settings_get_clean "$REQUEST_ACK_KEY")" != "$replay_ack" ]; then
-        settings_put_quiet "$REQUEST_ACK_KEY" "$replay_ack"
-    fi
-}
-
-finish_atomic_settings_request() {
-    completed_request="$1"
-    completed_id="$2"
-    completed_cmd="$3"
-    completed_result="$4"
-    completed_detail="$5"
-    if [ "$completed_result" = "0" ]; then
-        completed_state=done
-        completed_detail="${completed_detail:-ok}"
-    else
-        completed_state=failed
-        completed_detail="${completed_detail:-command_failed}"
-    fi
-    completed_ack="$(request_ack_text "$completed_id" "$completed_state" \
-        "$completed_cmd" "$completed_detail")"
-    if ! persist_settings_request_completion "$completed_request" "$completed_ack"; then
-        log_line "request completion persistence failed: id=$completed_id cmd=$completed_cmd"
-        set_status "daemon=running" "last=request_ack_persist_failed" \
-            "cmd=$completed_cmd"
-        return 1
-    fi
-    if ! settings_put_quiet "$REQUEST_ACK_KEY" "$completed_ack"; then
-        log_line "request terminal ACK publish deferred: id=$completed_id cmd=$completed_cmd"
-    fi
-    CURRENT_REQUEST_ID=
-    CURRENT_REQUEST_CMD=
-    return "$completed_result"
-}
-
-handle_request() {
-    source="$1"
-    cmd="$2"
-    rate="$3"
-    pkg="$4"
-    mode="$5"
-    little_max="$6"
-    little_min="$7"
-    big_max="$8"
-    big_min="$9"
-    shift 9
-    titan_max="$1"
-    titan_min="$2"
-    mega_max="$3"
-    mega_min="$4"
-    gpu_max="$5"
-    gpu_min="$6"
-    log_line "request: $source cmd=$cmd rate=$rate pkg=$pkg mode=$mode"
-
-    result=0
-    case "$cmd" in
-        status)
-            publish_state
-            set_status "daemon=running" "last=status"
-            ;;
-        set_refresh|restore_refresh|remove_refresh_rule)
-            ignore_legacy_refresh_request "$cmd"
-            result=0
-            ;;
-        sync_xml_refresh)
-            publish_xml_state
-            REQUEST_RESULT_DETAIL="owner=uperf;p2=retired"
-            result=0
-            ;;
-        set_performance_profile|set_performance_profile_staged|remove_performance_profile|apply_performance|apply_zuipp|restore_zuipp|restore_last_good|restore_official_original|set_appopt_rule|remove_appopt_rule|replace_appopt_rules|stop_appopt|apply_asoul|restore_asoul)
-            REQUEST_RESULT_DETAIL="owner=uperf;legacy_command=$cmd"
-            result=1
-            ;;
-        set_uperf_mode) set_uperf_mode "$mode"; result=$? ;;
-        set_uperf_app) set_uperf_app_mode "$pkg" "$mode"; result=$? ;;
-        remove_uperf_app) remove_uperf_app_mode "$pkg"; result=$? ;;
-        restart_scheduler) restart_scheduler; result=$? ;;
-        start_asoul) start_asoul; result=$? ;;
-        stop_asoul) stop_asoul; result=$? ;;
-        export_logs) export_logs; result=$? ;;
-        *)
-            log_line "unknown request: $cmd"
-            set_status "daemon=running" "last=unknown_request" "cmd=$cmd"
-            result=1
-            ;;
-    esac
-    trim_log
-    return "$result"
-}
-
-process_request_file() {
-    file="$1"
-    [ -s "$file" ] || return 0
-    cpu_max="$(prop_value cpu_max "$file")"
-    cpu_min="$(prop_value cpu_min "$file")"
-    little_max="$(prop_value little_max "$file")"
-    little_min="$(prop_value little_min "$file")"
-    big_max="$(prop_value big_max "$file")"
-    big_min="$(prop_value big_min "$file")"
-    titan_max="$(prop_value titan_max "$file")"
-    titan_min="$(prop_value titan_min "$file")"
-    mega_max="$(prop_value mega_max "$file")"
-    mega_min="$(prop_value mega_min "$file")"
-    if [ -n "$cpu_max" ] || [ -n "$cpu_min" ]; then
-        little_max="${little_max:-$cpu_max}"
-        little_min="${little_min:-$cpu_min}"
-        big_max="${big_max:-$cpu_max}"
-        big_min="${big_min:-$cpu_min}"
-        titan_max="${titan_max:-$cpu_max}"
-        titan_min="${titan_min:-$cpu_min}"
-        mega_max="${mega_max:-$cpu_max}"
-        mega_min="${mega_min:-$cpu_min}"
-    fi
-    handle_request "$file" \
-        "$(prop_value cmd "$file")" \
-        "$(prop_value rate "$file")" \
-        "$(prop_value package "$file")" \
-        "$(prop_value mode "$file")" \
-        "$little_max" \
-        "$little_min" \
-        "$big_max" \
-        "$big_min" \
-        "$titan_max" \
-        "$titan_min" \
-        "$mega_max" \
-        "$mega_min" \
-        "$(prop_value gpu_max "$file")" \
-        "$(prop_value gpu_min "$file")"
-    archive_request "$file"
-}
-
-process_atomic_settings_request() {
-    request="$(settings_get_clean "$REQ_TEXT_KEY")"
-    if [ -z "$request" ]; then
-        return 0
-    fi
-    if [ "$request" = "$LAST_SETTINGS_REQUEST_TEXT" ]; then
-        replay_last_request_ack
-        return 0
-    fi
-
-    field_count="$(request_field_count "$request")"
-    id="$(request_field "$request" 1)"
-    cmd="$(request_field "$request" 2)"
-    rate="$(request_field "$request" 3)"
-    pkg="$(request_field "$request" 4)"
-    mode="$(request_field "$request" 5)"
-    field6="$(request_field "$request" 6)"
-    field7="$(request_field "$request" 7)"
-    field8="$(request_field "$request" 8)"
-    field9="$(request_field "$request" 9)"
-    field10="$(request_field "$request" 10)"
-    field11="$(request_field "$request" 11)"
-    field12="$(request_field "$request" 12)"
-    field13="$(request_field "$request" 13)"
-    field14="$(request_field "$request" 14)"
-    field15="$(request_field "$request" 15)"
-    REQUEST_RESULT_DETAIL=
-
-    if [ -z "$id" ] || [ -z "$cmd" ]; then
-        log_line "invalid atomic request: missing id/cmd"
-        set_status "daemon=running" "last=invalid_request"
-        finish_atomic_settings_request "$request" "${id:-invalid}" \
-            "${cmd:-invalid}" 1 "invalid_request"
-        return $?
-    fi
-
-    CURRENT_REQUEST_ID="$id"
-    CURRENT_REQUEST_CMD="$cmd"
-
-    case "$cmd" in
-        set_performance_profile|set_performance_profile_staged|remove_performance_profile|apply_performance|apply_zuipp|restore_zuipp|restore_last_good|restore_official_original|set_appopt_rule|remove_appopt_rule|replace_appopt_rules|apply_asoul|restore_asoul)
-            publish_request_ack "$id" processing "$cmd" validating || true
-            finish_atomic_settings_request "$request" "$id" "$cmd" 1 \
-                "owner=uperf;legacy_command=$cmd"
-            return $?
-            ;;
-    esac
-
-    if [ "$field_count" -gt 15 ]; then
-        log_line "invalid atomic request: too many fields cmd=$cmd"
-        set_status "daemon=running" "last=invalid_request" "cmd=$cmd"
-        finish_atomic_settings_request "$request" "$id" "$cmd" 1 "invalid_request"
-        return $?
-    fi
-
-    if [ "$cmd" = "set_performance_profile_staged" ]; then
-        if [ "$field_count" -ne 5 ] && [ "$field_count" -ne 7 ] && [ "$field_count" -ne 8 ]; then
-            log_line "invalid staged request: fields=$field_count"
-            set_status "daemon=running" "last=invalid_request" "cmd=$cmd"
-            finish_atomic_settings_request "$request" "$id" "$cmd" 1 "invalid_request"
-            return $?
-        fi
-        publish_request_ack "$id" processing "$cmd" validating ||
-            log_line "request processing ACK publish failed: id=$id cmd=$cmd"
-        stage_payload="$rate"
-        if [ "$field_count" -eq 7 ]; then
-            log_line "request: settings:$id cmd=$cmd pkg=$pkg mode=$mode policy=$field6 frame=$field7"
-            set_performance_profile_staged "$pkg" "$mode" "$stage_payload" \
-                "$field6" "$field7"
-        elif [ "$field_count" -eq 8 ]; then
-            log_line "request: settings:$id cmd=$cmd pkg=$pkg mode=$mode policy=$field6 refresh=$field7 powersave=$field8"
-            set_performance_profile_staged "$pkg" "$mode" "$stage_payload" \
-                "$field6" "$field7" "$field8"
-        else
-            handle_request "settings:$id" "$cmd" \
-                "$stage_payload" "$pkg" "$mode" \
-                "" "" "" "" "" "" "" "" "" ""
-        fi
-        result=$?
-        trim_log
-        finish_atomic_settings_request "$request" "$id" "$cmd" "$result" \
-            "${REQUEST_RESULT_DETAIL:-$([ "$result" = "0" ] && printf 'ok' || printf 'command_failed')}"
-        return $?
-    fi
-
-    if [ "$cmd" = "replace_appopt_rules" ]; then
-        if [ "$field_count" -ne 3 ]; then
-            log_line "invalid AppOpt replacement request: fields=$field_count"
-            set_status "daemon=running" "last=invalid_request" "cmd=$cmd"
-            finish_atomic_settings_request "$request" "$id" "$cmd" 1 "invalid_request"
-            return $?
-        fi
-        publish_request_ack "$id" processing "$cmd" validating ||
-            log_line "request processing ACK publish failed: id=$id cmd=$cmd"
-        log_line "request: settings:$id cmd=$cmd"
-        replace_appopt_rules "$rate"
-        result=$?
-        trim_log
-        finish_atomic_settings_request "$request" "$id" "$cmd" "$result" \
-            "${REQUEST_RESULT_DETAIL:-$([ "$result" = "0" ] && printf 'ok' || printf 'command_failed')}"
-        return $?
-    fi
-
-    publish_request_ack "$id" processing "$cmd" validating ||
-        log_line "request processing ACK publish failed: id=$id cmd=$cmd"
-    if [ "$cmd" = "set_performance_profile" ] &&
-        [ -z "$field10$field11$field12$field13$field14$field15" ]; then
-        cpu_max="$field6"
-        cpu_min="$field7"
-        handle_request "settings:$id" "$cmd" \
-            "$rate" "$pkg" "$mode" \
-            "$cpu_max" "$cpu_min" \
-            "$cpu_max" "$cpu_min" \
-            "$cpu_max" "$cpu_min" \
-            "$cpu_max" "$cpu_min" \
-            "$field8" "$field9"
-        result=$?
-        finish_atomic_settings_request "$request" "$id" "$cmd" "$result" \
-            "${REQUEST_RESULT_DETAIL:-$([ "$result" = "0" ] && printf 'ok' || printf 'command_failed')}"
-        return $?
-    fi
-    handle_request "settings:$id" "$cmd" \
-        "$rate" "$pkg" "$mode" \
-        "$field6" "$field7" \
-        "$field8" "$field9" \
-        "$field10" "$field11" \
-        "$field12" "$field13" \
-        "$field14" "$field15"
-    result=$?
-    finish_atomic_settings_request "$request" "$id" "$cmd" "$result" \
-        "${REQUEST_RESULT_DETAIL:-$([ "$result" = "0" ] && printf 'ok' || printf 'command_failed')}"
-    return $?
-}
-
-boot_restore() {
-    log_line "scheduler owner=uperf; restoring stock ZuiPP XML and stopping AppOpt"
-    trigger_init_action "$PROP_ZUIPP" restore || true
-    trigger_init_action "$PROP_APPOPT" stop || true
-    rm -f "$APPOPT_ENABLED"
-    wait_prop_value "$PROP_ZUIPP" restored 10 || true
-    rm -rf "$APPOPT_DIR" "$ZUI_DIR"
-    rm -f "$APPOPT_LOG"
-    settings_put_quiet "$XML_STATE_KEY" "state=retired;owner=uperf"
-}
-
 init_request_state() {
-    LAST_SETTINGS_REQUEST_TEXT=
-    if load_last_request_receipt; then
-        LAST_SETTINGS_REQUEST_TEXT="$replay_request"
-        rm -f "$LAST_REQUEST_FILE"
-        replay_last_request_ack
-        return 0
+    LAST_SETTINGS_REQUEST=
+    if load_last_receipt; then
+        LAST_SETTINGS_REQUEST="$replay_request"
+        settings_put_quiet "$REQUEST_ACK_KEY" "$replay_ack"
+    else
+        rm -f "$LAST_REQUEST_RECEIPT"
     fi
-
-    if [ -s "$LAST_REQUEST_FILE" ]; then
-        legacy_request="$(cat "$LAST_REQUEST_FILE" 2>/dev/null)"
-        legacy_id="$(request_field "$legacy_request" 1)"
-        legacy_cmd="$(request_field "$legacy_request" 2)"
-        if [ -n "$legacy_id" ] && [ -n "$legacy_cmd" ]; then
-            legacy_ack="$(request_ack_text "$legacy_id" failed "$legacy_cmd" \
-                migrated_legacy)"
-            persist_settings_request_completion "$legacy_request" "$legacy_ack" || {
-                log_line "legacy request receipt migration failed: id=$legacy_id"
-                return 1
-            }
-            settings_put_quiet "$REQUEST_ACK_KEY" "$legacy_ack" || true
-            log_line "legacy request migrated to terminal receipt: id=$legacy_id cmd=$legacy_cmd"
-            return 0
-        fi
-        rm -f "$LAST_REQUEST_FILE"
-    fi
-    rm -f "$LAST_REQUEST_RECEIPT_FILE"
-    return 0
 }
 
 main_loop() {
-    init_dirs || {
-        log_line "zui_controld initialization failed"
-        return 1
-    }
-    init_request_state || {
-        log_line "zui_controld request receipt initialization failed"
-        return 1
-    }
-    log_line "zui_controld v19 start"
-    boot_restore
-    sync_uperf_frontend || log_line "Uperf ROM frontend initial sync failed"
-    LAST_REFRESH_RATE="$BASE_REFRESH_RATE"
-    log_line "daemon refresh disabled: refresh_owner=$REFRESH_OWNER"
-    publish_state
-    set_status "daemon=running" "last=init" "refresh_owner=$REFRESH_OWNER"
+    init_dirs || return 1
+    init_request_state
+    log_line "zui_controld v49 start: scheduler=uperf+asoul"
+    publish_refresh_state
+    sync_uperf_frontend || log_line "Uperf frontend initial sync deferred"
+    publish_scheduler_health
+    set_status "daemon=running" "last=init" "refresh_owner=system"
     notify_quick_service
-    maybe_patch_safecenter_keepalive || true
 
     while true; do
-        process_atomic_settings_request
-        process_request_file "$ADB_REQUEST"
-        sync_uperf_frontend || true
-        if [ "$SAFE_CENTER_KEEPALIVE_DONE" != "1" ]; then
-            SAFE_CENTER_KEEPALIVE_TICKS=$((SAFE_CENTER_KEEPALIVE_TICKS + 1))
-            if [ "$SAFE_CENTER_KEEPALIVE_TICKS" -ge 20 ]; then
-                maybe_patch_safecenter_keepalive || true
-                SAFE_CENTER_KEEPALIVE_TICKS=0
-            fi
-        fi
+        process_settings_request
+        sync_uperf_frontend >/dev/null 2>&1 || true
         HEALTH_TICKS=$((HEALTH_TICKS + 1))
         if [ "$HEALTH_TICKS" -ge 20 ]; then
             ensure_scheduler_running
-            publish_appopt_health
-            publish_xml_state
+            publish_scheduler_health
             HEALTH_TICKS=0
         fi
-        sleep "$LOOP_SLEEP_SECONDS"
+        sleep 1
     done
 }
 

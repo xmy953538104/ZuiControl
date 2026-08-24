@@ -1,7 +1,7 @@
 package com.zui.zuicontrol
 
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,29 +19,14 @@ class ZuiControlRequestTest {
 
     @Test
     fun onlyExactTerminalAckClearsPendingRequest() {
-        val request = "request-1|status||||"
+        val request = "request-1|status|||"
 
         assertTrue(ZuiControlRequest.hasPendingRequest(request, ""))
-        assertTrue(ZuiControlRequest.hasPendingRequest(
-            request,
-            "request-1|processing|status|",
-        ))
-        assertTrue(ZuiControlRequest.hasPendingRequest(
-            request,
-            "request-2|done|status|",
-        ))
-        assertTrue(ZuiControlRequest.hasPendingRequest(
-            request,
-            "request-1|done|wrong_command|",
-        ))
-        assertFalse(ZuiControlRequest.hasPendingRequest(
-            request,
-            "request-1|done|status|",
-        ))
-        assertFalse(ZuiControlRequest.hasPendingRequest(
-            request,
-            "request-1|failed|status|rejected",
-        ))
+        assertTrue(ZuiControlRequest.hasPendingRequest(request, "request-1|processing|status|"))
+        assertTrue(ZuiControlRequest.hasPendingRequest(request, "request-2|done|status|"))
+        assertTrue(ZuiControlRequest.hasPendingRequest(request, "request-1|done|wrong|"))
+        assertFalse(ZuiControlRequest.hasPendingRequest(request, "request-1|done|status|"))
+        assertFalse(ZuiControlRequest.hasPendingRequest(request, "request-1|failed|status|rejected"))
     }
 
     @Test
@@ -50,61 +35,32 @@ class ZuiControlRequestTest {
     }
 
     @Test
-    fun buildsAppOptCommandsInGenericFifteenFieldFormat() {
-        val emptyExtras = List(10) { "" }
-
+    fun buildsMinimalFiveFieldRequest() {
         assertEquals(
-            "id|set_appopt_rule||com.xmy.ap|5-7||||||||||",
-            ZuiControlRequest.buildGenericRequestText(
+            "id|set_uperf_app||com.example.game|performance",
+            ZuiControlRequest.buildRequestText(
                 "id",
-                ZuiControlContract.CMD_SET_APPOPT_RULE,
-                "",
-                "com.xmy.ap",
-                "5-7",
-                emptyExtras,
+                ZuiControlContract.CMD_SET_UPERF_APP,
+                "com.example.game",
+                "performance",
             ),
         )
         assertEquals(
-            "id|remove_appopt_rule||com.xmy.ap|||||||||||",
-            ZuiControlRequest.buildGenericRequestText(
+            "id|restart_scheduler|||",
+            ZuiControlRequest.buildRequestText(
                 "id",
-                ZuiControlContract.CMD_REMOVE_APPOPT_RULE,
-                "",
-                "com.xmy.ap",
-                "",
-                emptyExtras,
-            ),
-        )
-        assertEquals(
-            "id|restore_asoul|||||||||||||",
-            ZuiControlRequest.buildGenericRequestText(
-                "id",
-                ZuiControlContract.CMD_STOP_APPOPT,
+                ZuiControlContract.CMD_RESTART_SCHEDULER,
                 "",
                 "",
-                "",
-                emptyExtras,
             ),
         )
     }
 
     @Test
-    fun buildsValidatedBatchAppOptRequest() {
-        val payload = "com.example.one=2-6;com.example.one{RenderThread}=2-4;" +
-            "com.example.one{GameThread}=7"
-        assertEquals(
-            "id|replace_appopt_rules|$payload",
-            ZuiControlRequest.buildAppOptReplaceRequestText("id", payload),
-        )
-    }
-
-    @Test
-    fun mapsDaemonStagesToUserProgress() {
-        assertEquals("正在等待 ZuiPP 新进程稳定（3 秒）", ZuiControlRequest.progressLabel("waiting_zuipp"))
-        assertEquals("正在准备游戏助手", ZuiControlRequest.progressLabel("stopping_game_helper"))
-        assertEquals("正在初始化 ZuiPP 调度通道", ZuiControlRequest.progressLabel("initializing_zuipp_connect"))
-        assertEquals("正在恢复游戏识别", ZuiControlRequest.progressLabel("preparing_game_helper"))
-        assertEquals("正在重启并检查 AppOpt", ZuiControlRequest.progressLabel("restarting_appopt"))
+    fun mapsCurrentDaemonStages() {
+        assertEquals("正在校验请求", ZuiControlRequest.progressLabel("validating"))
+        assertEquals("正在校验目标应用", ZuiControlRequest.progressLabel("validating_target"))
+        assertEquals("正在重启 Uperf 与线程服务", ZuiControlRequest.progressLabel("restarting_scheduler"))
         assertEquals("custom stage", ZuiControlRequest.progressLabel("custom stage"))
     }
 }

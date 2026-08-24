@@ -3,5 +3,5 @@
 /system/bin/AsoulOpt u:object_r:performanced_exec:s0
 /system/bin/dumpsys u:object_r:toolbox_exec:s0
 /data/system/zui_control(/.*)? u:object_r:system_data_file:s0
-/data/adb/naki(/.*)? u:object_r:zui_control_data_file:s0
+/data/vendor/asopt\.conf u:object_r:zui_control_data_file:s0
 /data/vendor/zui_control(/.*)? u:object_r:zui_control_data_file:s0

@@ -1,6 +1,5 @@
 # ZuiControl Uperf per-app modes.
-# Exact package rules are evaluated before the screen-off and default rules.
+# Screen-off is evaluated first. Exact packages override the global mode while lit.
 com.kurogame.mingchao performance
 com.kurogame.wutheringwaves.global performance
 - powersave
-* balance

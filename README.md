@@ -23,7 +23,7 @@ files and AppOpt is removed from the production payload.
 - `/system/bin/uperf`: CPU power-model scheduler driven by the ROM scene frontend.
 - `/system/bin/AsoulOpt`: thread placement with the verified `mode=0`, `rt=0` policy.
 - `/data/system/zui_control/profiles.prop`: refresh scene profiles.
-- `/data/vendor/zui_control/`: daemon runtime state, XML work files, and logs.
+- `/data/vendor/zui_control/`: daemon runtime state, editable scheduler configuration, and logs.
 
 The Uperf UI supports a global fallback mode plus validated per-app overrides.
 The production defaults use global `balance`, screen-off `powersave`, and
@@ -54,7 +54,7 @@ Run the `Build ZuiControl` workflow manually. It will:
 2. Run Android unit tests and lint.
 3. Decode the release keystore from GitHub Actions secrets.
 4. Build signed `app-release.apk`.
-5. Stage it into `payload/system/priv-app/ZuiControlV45/ZuiControl.apk`.
+5. Stage it into `payload/system/priv-app/ZuiControlV49/ZuiControl.apk`.
 6. Upload both the APK and staged payload as artifacts.
 
 Required repository secrets:
@@ -66,7 +66,7 @@ Required repository secrets:
 
 ## Payload Usage
 
-After the APK exists in `payload/system/priv-app/ZuiControlV45/ZuiControl.apk`,
+After the APK exists in `payload/system/priv-app/ZuiControlV49/ZuiControl.apk`,
 apply the payload to an unpacked image tree:
 
 ```bash
@@ -77,6 +77,9 @@ Runtime logs on device:
 
 - `/data/vendor/zui_control/log/controld.log`
 - `/data/vendor/zui_control/log/uperf.log`
+- `/data/vendor/zui_control/uperf/cur_powermode.txt`
+- `/data/vendor/zui_control/uperf/perapp_powermode.txt`
+- `/data/vendor/zui_control/asoul/asopt.conf`
 
 ## Validation Anchors
 
@@ -88,7 +91,8 @@ Runtime logs on device:
 - `logcat -b all | grep -i ZuiControl`
 - `ps -AZ | grep -E 'uperf|AsoulOpt'`
 - `settings get system zui_control_uperf_health`
+- `readlink /data/vendor/asopt.conf`
 
 The expected steady state is `refreshOwner=system`,
-`daemonRefreshDisabled=true`, Uperf/A-SOUL in `performanced`, and
-`zui_control_xml_state=state=retired;owner=uperf`.
+`daemonRefreshDisabled=true`, Uperf/A-SOUL in `performanced`, four global Uperf
+modes with exact per-app overrides, and no AppOpt or XML scheduler runtime.

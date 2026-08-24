@@ -360,7 +360,7 @@
         },
         {
           "name": "Other system processes",
-          "regex": "^(/system|/vendor|magiskd|zygiskd)|@|-service$",
+          "regex": "^(/system|/vendor)|@|-service$",
           "pinned": false,
           "rules": [
             {

@@ -2,16 +2,14 @@ on post-fs-data
     mkdir /data/vendor/zui_control 0775 root shell
     mkdir /data/vendor/zui_control/uperf 0775 root shell
     mkdir /data/vendor/zui_control/asoul 0775 root shell
+    rm /data/vendor/asopt.conf
+    symlink /data/vendor/zui_control/asoul/asopt.conf /data/vendor/asopt.conf
+    restorecon_recursive /data/vendor/zui_control
+    restorecon /data/vendor/asopt.conf
     stop vendor.perfservice
     stop performance
     stop poweropt-service
     stop perf2-hal-1-0
-    mkdir /data/adb/naki 0755 root root
-    write /data/adb/naki/asopt.conf ""
-    chown root root /data/adb/naki/asopt.conf
-    chmod 0644 /data/adb/naki/asopt.conf
-    restorecon_recursive /data/vendor/zui_control
-    restorecon_recursive /data/adb/naki
 
 on property:sys.boot_completed=1
     exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh
@@ -22,9 +20,6 @@ on zui-scheduler-start
     stop performance
     stop poweropt-service
     stop perf2-hal-1-0
-    umount /data/adb/naki/asopt.conf
-    mount none /data/vendor/zui_control/asoul/asopt.conf /data/adb/naki/asopt.conf bind
-    restorecon /data/adb/naki/asopt.conf
     start zui_asoulopt
     setprop zui_control.asoul started
     start zui_uperf

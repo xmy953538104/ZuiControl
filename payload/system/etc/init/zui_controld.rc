@@ -6,13 +6,6 @@ on post-fs-data
 on property:sys.boot_completed=1
     start zui_controld
 
-on property:zui_control.zuipp=restore
-    umount /system/etc/game_policy.xml
-    umount /system/etc/performanceconfig.xml
-    rm /data/vendor/zui_control/zuipp/active/game_policy.xml
-    rm /data/vendor/zui_control/zuipp/active/performanceconfig.xml
-    setprop zui_control.zuipp restored
-
 service zui_controld /system/bin/sh /system/bin/zui_controld
     class late_start
     disabled

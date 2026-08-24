@@ -6,8 +6,8 @@ LOG=/data/vendor/zui_control/log/uperf.log
 # Uperf daemonizes. Keep this init service alive so init owns and can reliably
 # stop the entire service cgroup, including the detached Uperf children.
 # The author's module moves Uperf itself out of the foreground cpuset; children
-# inherit this placement while their writes still control the configured CPU
-# and GPU policy nodes.
+# inherit this placement while their writes control the configured CPU and
+# system policy nodes.
 echo $$ > /dev/cpuset/background/tasks 2>/dev/null || true
 : > "$LOG" 2>/dev/null || true
 /system/bin/uperf "$CONFIG" -o "$LOG" || exit 1

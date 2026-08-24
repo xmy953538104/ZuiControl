@@ -40,7 +40,8 @@ jobs:
         run: |
           python3 -m py_compile scripts/ApplyZuiControlPayload.py
           python3 -m py_compile scripts/PatchZuiControlFramework.py
-          python3 scripts/TestXmlProfileGenerator.py
+          python3 -m py_compile tools/PatchAsoulOptConfigPath.py
+          python3 tools/PatchAsoulOptConfigPath.py payload/system/bin/AsoulOpt
           bash -n payload/system/bin/zui_controld
           bash -n payload/system/bin/zui_uperf_service
           bash scripts/TestZuiControldTransactions.sh
@@ -70,10 +71,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV38 payload/system/priv-app/ZuiControlV39 payload/system/priv-app/ZuiControlV40
           rm -rf payload/system/priv-app/ZuiControlV41 payload/system/priv-app/ZuiControlV42 payload/system/priv-app/ZuiControlV43
           rm -rf payload/system/priv-app/ZuiControlV44 payload/system/priv-app/ZuiControlV45 payload/system/priv-app/ZuiControlV46
-          rm -rf payload/system/priv-app/ZuiControlV47
-          mkdir -p payload/system/priv-app/ZuiControlV48
+          rm -rf payload/system/priv-app/ZuiControlV47 payload/system/priv-app/ZuiControlV48
+          mkdir -p payload/system/priv-app/ZuiControlV49
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV48/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV49/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

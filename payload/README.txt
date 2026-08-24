@@ -1,7 +1,7 @@
 ZuiControl v19 payload
 
 System components:
-- /system/priv-app/ZuiControlV48/ZuiControl.apk
+- /system/priv-app/ZuiControlV49/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/uperf
 - /system/bin/zui_uperf_service
@@ -24,6 +24,7 @@ Runtime data:
 - /data/vendor/zui_control/uperf/cur_powermode.txt
 - /data/vendor/zui_control/uperf/effective_powermode.txt
 - /data/vendor/zui_control/asoul/asopt.conf
+- /data/vendor/asopt.conf -> /data/vendor/zui_control/asoul/asopt.conf
 - /data/vendor/zui_control/log/
 
 Behavior:
@@ -33,7 +34,7 @@ Behavior:
 - Qualcomm perfservice/perf2, poweropt, and Lenovo performance bridges are stopped only while Uperf owns scheduling and are restored by the scheduler kill switch.
 - KGSL DVFS and OEM thermal services remain active; the inspected 8 Gen 3 profile does not own Adreno clocks, and this payload does not replace thermal configuration.
 - Shiroko A-SOUL runs as the thread-placement companion with mode=0 and rt=0. Here rt=0 selects WALT per-task boost and does not assign real-time policy.
-- AppOpt and the P2 XML scheduler owner are retired and cannot run in parallel with Uperf/A-SOUL.
+- Uperf and A-SOUL are the only production performance/thread schedulers in this payload.
 - No production path directly writes CPU/GPU sysfs from zui_controld, calls provider_direct/GameModeProvider, or restores cloud blocking.
 - SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input methods, and overlays are transient refresh-rate scenes. Launcher remains configurable.
 - 144/165 are displayHz lock targets only; generic UID FPS cap is not delivered.
