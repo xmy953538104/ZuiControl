@@ -96,6 +96,7 @@ $arguments = @(
     '--loader-path', $loader,
     '--storage-type', 'ufs',
     '--reset-mode', 'system',
+    '--read-back-verify',
     '--print-firehose-log',
     'flasher', '-p', $xml
 )
