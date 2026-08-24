@@ -18,8 +18,8 @@ $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $Avbtool = Join-Path $ToolsDir 'downloaded\avbtool_aosp_c0af371_1.2.0.py'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '45'
-$ExpectedVersionName = '0.21.8'
+$ExpectedVersionCode = '46'
+$ExpectedVersionName = '0.21.9'
 $ExpectedUperfSha256 = 'f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8'
 $ExpectedAsoulSha256 = '7ed7beb2a2680ac91a61dad6b7d64de2eb7eb5711d09c85fc21050b62a3243bd'
 $ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371'
@@ -225,7 +225,7 @@ try {
     $System = Join-Path $SystemRoot 'system'
     $PlatSelinux = Join-Path $System 'etc\selinux'
     $VendorSelinux = Join-Path $VendorRoot 'etc\selinux'
-    $AppApk = Join-Path $System 'priv-app\ZuiControlV45\ZuiControl.apk'
+    $AppApk = Join-Path $System 'priv-app\ZuiControlV46\ZuiControl.apk'
     $Daemon = Join-Path $System 'bin\zui_controld'
     $Uperf = Join-Path $System 'bin\uperf'
     $UperfService = Join-Path $System 'bin\zui_uperf_service'
@@ -253,7 +253,7 @@ try {
         (Join-Path $SystemRoot 'AppOpt.json')
     )) { Assert-Missing $path 'retired AppOpt runtime' }
     Assert-Missing (Join-Path $System 'etc\zui_control\zui_cloud_block.sh') 'cloud-control block script'
-    foreach ($old in 30..44) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
+    foreach ($old in 30..45) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
     Assert-Missing (Join-Path $System 'priv-app\ZuiControl') 'legacy unversioned ZuiControl directory'
 
     Assert-UperfConfig $UperfConfig
@@ -271,11 +271,15 @@ try {
     Assert-Contains $SchedulerRc 'mount none /data/vendor/zui_control/asoul/asopt.conf /data/adb/naki/asopt.conf bind' 'canonical A-SOUL config bind'
     Assert-Contains $SchedulerRc 'trigger zui-scheduler-start' 'scheduler boot trigger'
     Assert-NotContains $SchedulerRc 'seclabel u:r:shell:s0' 'shell-domain scheduler service'
-    Assert-Contains $UperfService 'while pidof uperf' 'Uperf supervisor health loop'
+    Assert-Contains $UperfService 'process_count="$(pidof uperf' 'Uperf process-count health check'
+    Assert-Contains $UperfService "grep -q ' I Uperf is running`$'" 'Uperf ready-log health check'
+    Assert-Contains $UperfService "grep -q ' I Failed to start uperf'" 'Uperf failed-start rejection'
     Assert-Contains $UperfService 'killall -15 uperf' 'exclusive Uperf ownership fence'
     Assert-Contains $UperfService 'echo $$ > /dev/cpuset/background/tasks' 'background placement for Uperf itself'
     Assert-Contains $SchedulerPrepare 'setprop zui_control.appopt stop' 'retired AppOpt stop fence'
     Assert-Contains $SchedulerPrepare 'setprop zui_control.zuipp restore' 'stock ZuiPP XML restore fence'
+    Assert-Contains $SchedulerPrepare "printf 'auto\n'" 'automatic per-app Uperf control mode'
+    Assert-Contains $SchedulerPrepare '.auto_mode_v46' 'V45 fixed-mode migration marker'
     Assert-NotContains $SchedulerPrepare '/data/adb' 'shell-domain access to protected Magisk data'
     foreach ($forbidden in @('killall', 'thermal', '/sdcard', 'busybox', 'zui_cloud')) {
         Assert-NotContains $SchedulerPrepare $forbidden 'copied third-party unsafe setup logic'
@@ -286,6 +290,10 @@ try {
     Assert-Contains $Daemon 'set_uperf_mode)' 'Uperf global mode command'
     Assert-Contains $Daemon 'set_uperf_app)' 'Uperf per-app command'
     Assert-Contains $Daemon 'restart_scheduler)' 'scheduler restart command'
+    Assert-Contains $Daemon 'auto|powersave|balance|performance|fast' 'automatic Uperf control mode validation'
+    Assert-Contains $Daemon 'valid_uperf_preset "$requested_mode"' 'per-app preset-only validation'
+    Assert-Contains $Daemon "grep -q ' I Uperf is running`$'" 'strict Uperf daemon health check'
+    Assert-Contains $Daemon 'rm -rf "$APPOPT_DIR" "$ZUI_DIR"' 'retired AppOpt and ZuiPP runtime cleanup'
     Assert-Contains $Daemon '线程参数：mode=0 · rt=0' 'verified A-SOUL mode state'
     Assert-Contains $Daemon 'KGSL DVFS 与热保护保留' 'bounded GPU ownership statement'
     foreach ($forbidden in @('/sys/class/kgsl/kgsl-3d0', '/sys/devices/system/cpu/cpufreq', 'provider_direct', 'GameModeProvider/contact', 'zui_control.cloud_block', 'cloud_block.log')) {
@@ -325,9 +333,19 @@ try {
     foreach ($rule in @(
         '(genfscon proc "/sys/walt/input_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
         '(genfscon proc "/sys/walt/sched_per_task_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
+        '(allow performanced activity_service (service_manager (find)))',
+        '(allow system_server performanced (binder (call)))',
+        '(allow system_server performanced (fd (use)))',
+        '(allow system_server performanced (fifo_file (write)))',
+        '(allow performanced self (capability (chown dac_override fowner kill)))',
+        '(allow performanced appdomain (dir (getattr open read search)))',
+        '(allow performanced appdomain (file (getattr open read)))',
+        '(allow performanced appdomain (process (getsched setsched signull)))',
+        '(allow performanced adb_data_file (dir (search)))',
         '(allow performanced sysfs_devices_system_cpu (file (getattr open read write append setattr)))',
         '(allow performanced cgroup (file (ioctl read write create getattr setattr lock append map open unlink)))',
         '(allow performanced zui_scheduler_proc (file (getattr open read write append)))',
+        '(allow performanced input_device (dir (ioctl read getattr lock open watch watch_reads search)))',
         '(allow performanced input_device (chr_file (ioctl read getattr lock map open)))',
         '(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))',
         '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))'
@@ -335,7 +353,7 @@ try {
 
     $VendorPolicy = Join-Path $VendorSelinux 'vendor_sepolicy.cil'
     Assert-Contains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_kgsl (file (ioctl read write getattr lock append map open)))' 'Uperf KGSL vendor rule'
-    Assert-Contains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr lock append map open)))' 'Uperf msm_performance vendor rule'
+    Assert-Contains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr setattr lock append map open)))' 'Uperf msm_performance vendor rule'
     Assert-NotContains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (' 'legacy shell KGSL permission'
 
     $hashes = [ordered]@{

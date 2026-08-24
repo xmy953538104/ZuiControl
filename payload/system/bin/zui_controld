@@ -758,6 +758,7 @@ publish_xml_state() {
 
 publish_appopt_health() {
     uperf_pid="$(pidof uperf 2>/dev/null | awk '{print $1}')"
+    uperf_processes="$(pidof uperf 2>/dev/null | awk '{print NF}')"
     asoul_pid="$(pidof AsoulOpt 2>/dev/null | awk '{print $1}')"
     uperf_domain=
     asoul_domain=
@@ -768,13 +769,15 @@ publish_appopt_health() {
     current_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
     valid_uperf_mode "$current_mode" || current_mode=unknown
     default_mode="$(awk '$1 == "*" {print $2; exit}' "$UPERF_PERAPP" 2>/dev/null)"
-    valid_uperf_mode "$default_mode" || default_mode=balance
+    valid_uperf_preset "$default_mode" || default_mode=balance
+    effective_rule="$(sed -n "s/.* Perapp '\([^']*\)' -> '\([^']*\)'.*/\1 → \2/p" "$UPERF_LOG" 2>/dev/null | tail -n 1)"
+    [ -n "$effective_rule" ] || effective_rule="等待前台事件"
     qti_perf_bridge="$(getprop init.svc.vendor.perfservice 2>/dev/null)"
     [ -n "$qti_perf_bridge" ] || qti_perf_bridge=unknown
     log_size=0
     [ -f "$UPERF_LOG" ] && log_size="$(wc -c < "$UPERF_LOG" 2>/dev/null)"
-    health="Uperf：${uperf_pid:-未运行}（${uperf_domain:-未识别}）
-当前模式：$current_mode · 全局默认：$default_mode
+    health="Uperf：${uperf_pid:-未运行}（${uperf_processes:-0} 进程 · ${uperf_domain:-未识别}）
+控制模式：$current_mode · 自动命中：$effective_rule · 默认：$default_mode
 GPU：Uperf 仅管理安全上下界，KGSL DVFS 与热保护保留
 QTI Perf 桥：$qti_perf_bridge（调度接管时应为 stopped）
 A-SOUL：${asoul_pid:-未运行}（${asoul_domain:-未识别}）
@@ -783,12 +786,19 @@ AppOpt：已退役
 日志：${log_size:-0} 字节"
     settings_put_quiet "$ASOUL_HEALTH_KEY" "$health"
     settings_put_quiet "$UPERF_HEALTH_KEY" "$health"
-    settings_put_quiet "$UPERF_MODE_KEY" "$default_mode"
+    settings_put_quiet "$UPERF_MODE_KEY" "$current_mode"
     publish_uperf_rules_state
     settings_put_quiet "$APPOPT_RULES_KEY" ""
 }
 
 valid_uperf_mode() {
+    case "$1" in
+        auto|powersave|balance|performance|fast) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+valid_uperf_preset() {
     case "$1" in
         powersave|balance|performance|fast) return 0 ;;
         *) return 1 ;;
@@ -801,7 +811,7 @@ publish_uperf_rules_state() {
         [ -z "$extra" ] || continue
         case "$rule_pkg" in ''|'#'*|'-'|'*') continue ;; esac
         valid_package_name "$rule_pkg" || continue
-        valid_uperf_mode "$rule_mode" || continue
+        valid_uperf_preset "$rule_mode" || continue
         rules="${rules}${rule_pkg}|${rule_mode}
 "
     done < "$UPERF_PERAPP" 2>/dev/null
@@ -813,29 +823,34 @@ set_uperf_mode() {
     valid_uperf_mode "$requested_mode" || return 1
     old_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
     valid_uperf_mode "$old_mode" || old_mode=balance
-    tmp="$UPERF_PERAPP.tmp"
-    awk -v mode="$requested_mode" '
-        $1 == "*" {
-            if (!written) print "* " mode
-            written=1
-            next
+    tmp=
+    if [ "$requested_mode" != "auto" ]; then
+        tmp="$UPERF_PERAPP.tmp"
+        awk -v mode="$requested_mode" '
+            $1 == "*" {
+                if (!written) print "* " mode
+                written=1
+                next
+            }
+            { print }
+            END { if (!written) print "* " mode }
+        ' "$UPERF_PERAPP" > "$tmp" || {
+            rm -f "$tmp"
+            return 1
         }
-        { print }
-        END { if (!written) print "* " mode }
-    ' "$UPERF_PERAPP" > "$tmp" || {
-        rm -f "$tmp"
-        return 1
-    }
+    fi
     printf '%s\n' "$requested_mode" > "$UPERF_MODE" || {
-        rm -f "$tmp"
+        [ -z "$tmp" ] || rm -f "$tmp"
         return 1
     }
-    cat "$tmp" > "$UPERF_PERAPP" || {
-        printf '%s\n' "$old_mode" > "$UPERF_MODE" 2>/dev/null
+    if [ -n "$tmp" ]; then
+        cat "$tmp" > "$UPERF_PERAPP" || {
+            printf '%s\n' "$old_mode" > "$UPERF_MODE" 2>/dev/null
+            rm -f "$tmp"
+            return 1
+        }
         rm -f "$tmp"
-        return 1
-    }
-    rm -f "$tmp"
+    fi
     chmod 0644 "$UPERF_MODE" 2>/dev/null
     chmod 0644 "$UPERF_PERAPP" 2>/dev/null
     sync "$UPERF_MODE" "$UPERF_PERAPP" 2>/dev/null || sync
@@ -866,7 +881,7 @@ set_uperf_app_mode() {
     requested_mode="$2"
     valid_package_name "$requested_pkg" || return 1
     appopt_package_is_user_app "$requested_pkg" || return 1
-    valid_uperf_mode "$requested_mode" || return 1
+    valid_uperf_preset "$requested_mode" || return 1
     tmp="$UPERF_PERAPP.tmp"
     awk -v pkg="$requested_pkg" -v mode="$requested_mode" '
         $1 == pkg { next }
@@ -906,7 +921,7 @@ restart_scheduler() {
     tries=20
     while [ "$tries" -gt 0 ]; do
         sleep 1
-        if [ -n "$(pidof uperf 2>/dev/null)" ] && [ -n "$(pidof AsoulOpt 2>/dev/null)" ]; then
+        if uperf_is_healthy && [ -n "$(pidof AsoulOpt 2>/dev/null)" ]; then
             UPERF_MISSES=0
             publish_appopt_health
             REQUEST_RESULT_DETAIL="uperf=running;asoul=running"
@@ -937,7 +952,7 @@ stop_asoul() {
 ensure_scheduler_running() {
     [ "$(getprop "$PROP_SCHEDULER" 2>/dev/null)" != "stopped" ] || return 0
     asoul_state="$(getprop "$PROP_ASOUL" 2>/dev/null)"
-    if [ -n "$(pidof uperf 2>/dev/null)" ] &&
+    if uperf_is_healthy &&
         { [ "$asoul_state" = "stopped" ] || [ -n "$(pidof AsoulOpt 2>/dev/null)" ]; }; then
         UPERF_MISSES=0
         return 0
@@ -948,6 +963,12 @@ ensure_scheduler_running() {
         restart_scheduler || log_line "Uperf health restart failed"
         UPERF_MISSES=0
     fi
+}
+
+uperf_is_healthy() {
+    [ "$(pidof uperf 2>/dev/null | awk '{print NF}')" -ge 2 ] 2>/dev/null &&
+        grep -q ' I Uperf is running$' "$UPERF_LOG" 2>/dev/null &&
+        ! grep -q ' I Failed to start uperf' "$UPERF_LOG" 2>/dev/null
 }
 
 publish_state() {
@@ -1060,22 +1081,15 @@ maybe_patch_safecenter_keepalive() {
 }
 
 init_dirs() {
-    mkdir -p "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" "$ZUI_BAKED_DIR" \
-        "$ZUI_ACTIVE_DIR" "$ZUI_STAGING_DIR" "$ZUI_LAST_GOOD_DIR" \
-        "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR" "$APPOPT_DIR" \
-        "$UPERF_DIR" "$ASOUL_DIR" \
+    mkdir -p "$CONTROL_DIR" "$DONE_DIR" "$UPERF_DIR" "$ASOUL_DIR" \
         "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR"
-    chmod 0775 "$DATA_ROOT" "$CONTROL_DIR" "$DONE_DIR" "$ZUI_DIR" \
-        "$ZUI_BAKED_DIR" "$ZUI_ACTIVE_DIR" "$ZUI_STAGING_DIR" \
-        "$ZUI_LAST_GOOD_DIR" "$ZUI_STATE_DIR" "$ZUI_OFFICIAL_DIR" \
-        "$APPOPT_DIR" "$UPERF_DIR" "$ASOUL_DIR" \
+    chmod 0775 "$DATA_ROOT" "$CONTROL_DIR" "$DONE_DIR" \
+        "$UPERF_DIR" "$ASOUL_DIR" \
         "$REFRESH_DIR" "$PERFORMANCE_DIR" "$LOG_DIR" 2>/dev/null
     restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
-    invalidate_zuipp_reload_receipt_on_start || return 1
-    copy_if_missing "$DEFAULT_APPLIST" "$APPOPT_CONFIG"
     [ -e "$REFRESH_RULES" ] || : > "$REFRESH_RULES"
     [ -e "$PERFORMANCE_PROFILES" ] || : > "$PERFORMANCE_PROFILES"
-    chmod 0664 "$APPOPT_CONFIG" "$REFRESH_RULES" "$PERFORMANCE_PROFILES" 2>/dev/null
+    chmod 0664 "$REFRESH_RULES" "$PERFORMANCE_PROFILES" 2>/dev/null
     settings_put_quiet "$XML_STATE_KEY" "state=retired;owner=uperf"
     migrate_refresh_rules
     rm -f "$REFRESH_DIR/enabled.flag"
@@ -3174,6 +3188,9 @@ boot_restore() {
     trigger_init_action "$PROP_ZUIPP" restore || true
     trigger_init_action "$PROP_APPOPT" stop || true
     rm -f "$APPOPT_ENABLED"
+    wait_prop_value "$PROP_ZUIPP" restored 10 || true
+    rm -rf "$APPOPT_DIR" "$ZUI_DIR"
+    rm -f "$APPOPT_LOG"
     settings_put_quiet "$XML_STATE_KEY" "state=retired;owner=uperf"
 }
 

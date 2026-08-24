@@ -16,13 +16,22 @@ sleep 1
 
 tries=20
 while [ "$tries" -gt 0 ]; do
-    pidof uperf >/dev/null 2>&1 && break
+    process_count="$(pidof uperf 2>/dev/null | awk '{print NF}')"
+    if [ "${process_count:-0}" -ge 2 ] &&
+        grep -q ' I Uperf is running$' "$LOG" 2>/dev/null &&
+        ! grep -q ' I Failed to start uperf' "$LOG" 2>/dev/null; then
+        break
+    fi
     sleep 1
     tries=$((tries - 1))
 done
-pidof uperf >/dev/null 2>&1 || exit 1
+[ "$tries" -gt 0 ] || {
+    killall -15 uperf 2>/dev/null || true
+    exit 1
+}
 
-while pidof uperf >/dev/null 2>&1; do
+while true; do
     sleep 5
+    process_count="$(pidof uperf 2>/dev/null | awk '{print NF}')"
+    [ "${process_count:-0}" -ge 2 ] || exit 1
 done
-exit 1

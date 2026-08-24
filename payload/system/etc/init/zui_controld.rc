@@ -1,11 +1,5 @@
 on post-fs-data
     mkdir /data/vendor/zui_control 0775 root shell
-    mkdir /data/vendor/zui_control/zuipp 0775 root shell
-    mkdir /data/vendor/zui_control/zuipp/baked_baseline 0775 root shell
-    mkdir /data/vendor/zui_control/zuipp/active 0775 root shell
-    mkdir /data/vendor/zui_control/zuipp/staging 0775 root shell
-    mkdir /data/vendor/zui_control/zuipp/last_good 0775 root shell
-    mkdir /data/vendor/zui_control/zuipp/state 0775 root shell
     mkdir /data/vendor/zui_control/log 0775 root shell
     restorecon_recursive /data/vendor/zui_control
 

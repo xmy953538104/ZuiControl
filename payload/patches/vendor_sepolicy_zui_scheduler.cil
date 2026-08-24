@@ -5,4 +5,4 @@
 (allow performanced_34_0 vendor_sysfs_kgsl (file (ioctl read write getattr lock append map open)))
 (allow performanced_34_0 vendor_sysfs_kgsl (lnk_file (ioctl read getattr lock map open)))
 (allow performanced_34_0 vendor_sysfs_msm_perf (dir (ioctl read getattr lock open search)))
-(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr lock append map open)))
+(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr setattr lock append map open)))

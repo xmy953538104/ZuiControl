@@ -32,7 +32,7 @@ setup_state() {
     REQUEST_RESULT_DETAIL=
     mkdir -p "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR" "$CONTROL_DIR" "$(dirname "$APPOPT_ENABLED")"
     cp "$DEFAULT_PERAPP" "$UPERF_PERAPP"
-    printf 'balance\n' > "$UPERF_MODE"
+    printf 'auto\n' > "$UPERF_MODE"
     : > "$UPERF_LOG"
 
     declare -gA TEST_SETTINGS=()
@@ -70,6 +70,11 @@ test_mode_updates() (
     grep -qx '\* performance' "$UPERF_PERAPP" || fail 'global per-app fallback not updated'
     grep -qx -- '- powersave' "$UPERF_PERAPP" || fail 'screen-off rule changed with global mode'
     [[ "${TEST_SETTINGS[$UPERF_MODE_KEY]}" == performance ]] || fail 'mode state not published'
+    set_uperf_mode auto || fail 'automatic per-app mode rejected'
+    [[ "$(tr -d '\r\n ' < "$UPERF_MODE")" == auto ]] || fail 'automatic mode file not updated'
+    grep -qx '\* performance' "$UPERF_PERAPP" || fail 'automatic mode corrupted the per-app fallback'
+    ! grep -q '^\* auto$' "$UPERF_PERAPP" || fail 'automatic mode was written as an invalid preset'
+    [[ "${TEST_SETTINGS[$UPERF_MODE_KEY]}" == auto ]] || fail 'automatic mode state not published'
     cp "$UPERF_MODE" "$TEST_ROOT/mode.before"
     set_uperf_mode crazy && fail 'unsupported crazy mode accepted'
     cmp -s "$UPERF_MODE" "$TEST_ROOT/mode.before" || fail 'invalid mode changed file'
@@ -133,9 +138,10 @@ test_scheduler_lifecycle() (
     declare -a ACTIONS=()
     trigger_init_action() { ACTIONS+=("$1=$2"); return 0; }
     pidof() {
-        case "$1" in uperf) printf '101\n' ;; AsoulOpt) printf '102\n' ;; *) return 1 ;; esac
+        case "$1" in uperf) printf '101 103\n' ;; AsoulOpt) printf '102\n' ;; *) return 1 ;; esac
     }
-    ps() { printf 'u:r:performanced:s0 root 101 1 uperf\nu:r:performanced:s0 root 102 1 AsoulOpt\n'; }
+    ps() { printf 'u:r:performanced:s0 root 101 1 uperf\nu:r:performanced:s0 root 102 1 AsoulOpt\nu:r:performanced:s0 root 103 101 uperf\n'; }
+    printf '00:00:00 I Uperf is running\n' > "$UPERF_LOG"
 
     restart_scheduler || fail 'scheduler restart failed with both services present'
     [[ "${ACTIONS[*]}" == *'zui_control.scheduler=restart'* ]] || fail 'scheduler restart property not triggered'

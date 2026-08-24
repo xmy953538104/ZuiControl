@@ -126,8 +126,8 @@ if ($booted -ne '1') {
     throw "Flash succeeded but Android did not finish booting within $BootTimeoutSeconds seconds. Log: $log"
 }
 $package = & $AdbPath -s $ConfirmAdbSerial shell dumpsys package com.zui.zuicontrol 2>&1
-if (($package -join "`n") -notmatch 'versionCode=45\b' -or
-    ($package -join "`n") -notmatch 'versionName=0\.21\.8\b') {
-    throw "Device rebooted, but ZuiControl is not 45/0.21.8. Log: $log"
+if (($package -join "`n") -notmatch 'versionCode=46\b' -or
+    ($package -join "`n") -notmatch 'versionName=0\.21\.9\b') {
+    throw "Device rebooted, but ZuiControl is not 46/0.21.9. Log: $log"
 }
-Write-Host "9008 flash and reboot passed; device reports ZuiControl 45/0.21.8. Log: $log"
+Write-Host "9008 flash and reboot passed; device reports ZuiControl 46/0.21.9. Log: $log"

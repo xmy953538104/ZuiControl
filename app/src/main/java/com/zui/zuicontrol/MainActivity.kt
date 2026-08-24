@@ -447,7 +447,7 @@ class MainActivity : Activity() {
             ))
             addView(sectionTitle("全局模式"), sectionMargins())
             val selected = UperfMode.fromId(setting(ZuiControlContract.KEY_UPERF_MODE))
-                ?: UperfMode.BALANCE
+                ?: UperfMode.AUTO
             UperfMode.entries.chunked(2).forEach { modes ->
                 addView(horizontalRow().apply {
                     background = null
@@ -519,7 +519,7 @@ class MainActivity : Activity() {
     }
 
     private fun showUperfAppDialog(pkg: String, current: UperfMode? = uperfRules[pkg]) {
-        val modes = UperfMode.entries
+        val modes = UperfMode.entries.filterNot { it == UperfMode.AUTO }
         val picker = traySpinner(modes.map { it.title }) {}
         picker.setSelection(modes.indexOf(current ?: UperfMode.PERFORMANCE))
         AlertDialog.Builder(this)
@@ -2535,6 +2535,7 @@ class MainActivity : Activity() {
     }
 
     private enum class UperfMode(val id: String, val title: String) {
+        AUTO("auto", "按应用"),
         POWERSAVE("powersave", "节能"),
         BALANCE("balance", "均衡"),
         PERFORMANCE("performance", "性能"),
