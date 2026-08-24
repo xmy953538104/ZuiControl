@@ -4,34 +4,43 @@ CONFIG=/data/vendor/zui_control/uperf/uperf.json
 LOG=/data/vendor/zui_control/log/uperf.log
 
 # Uperf daemonizes. Keep this init service alive so init owns and can reliably
-# stop the entire service cgroup, including the detached Uperf child.
+# stop the entire service cgroup, including the detached Uperf children.
 # The author's module moves Uperf itself out of the foreground cpuset; children
 # inherit this placement while their writes still control the configured CPU
 # and GPU policy nodes.
 echo $$ > /dev/cpuset/background/tasks 2>/dev/null || true
-killall -15 uperf 2>/dev/null || true
-sleep 1
 : > "$LOG" 2>/dev/null || true
 /system/bin/uperf "$CONFIG" -o "$LOG" || exit 1
 
+service_cgroup="$(sed -n 's/^0:://p' /proc/self/cgroup 2>/dev/null)"
+cgroup_procs="/sys/fs/cgroup${service_cgroup}/cgroup.procs"
+[ -n "$service_cgroup" ] && [ -r "$cgroup_procs" ] || exit 1
+
+uperf_process_count() {
+    count=0
+    while read -r process_id; do
+        [ -r "/proc/$process_id/comm" ] || continue
+        IFS= read -r process_name < "/proc/$process_id/comm" || continue
+        [ "$process_name" = "uperf" ] && count=$((count + 1))
+    done < "$cgroup_procs"
+    printf '%s\n' "$count"
+}
+
+uperf_ready() {
+    [ "$(uperf_process_count)" -ge 2 ] 2>/dev/null &&
+        grep -q ' I Uperf is running$' "$LOG" 2>/dev/null &&
+        ! grep -q ' I Failed to start uperf' "$LOG" 2>/dev/null
+}
+
 tries=20
 while [ "$tries" -gt 0 ]; do
-    process_count="$(pidof uperf 2>/dev/null | awk '{print NF}')"
-    if [ "${process_count:-0}" -ge 2 ] &&
-        grep -q ' I Uperf is running$' "$LOG" 2>/dev/null &&
-        ! grep -q ' I Failed to start uperf' "$LOG" 2>/dev/null; then
-        break
-    fi
+    uperf_ready && break
     sleep 1
     tries=$((tries - 1))
 done
-[ "$tries" -gt 0 ] || {
-    killall -15 uperf 2>/dev/null || true
-    exit 1
-}
+[ "$tries" -gt 0 ] || exit 1
 
 while true; do
     sleep 5
-    process_count="$(pidof uperf 2>/dev/null | awk '{print NF}')"
-    [ "${process_count:-0}" -ge 2 ] || exit 1
+    uperf_ready || exit 1
 done

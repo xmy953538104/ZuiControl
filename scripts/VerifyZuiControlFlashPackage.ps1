@@ -271,10 +271,13 @@ try {
     Assert-Contains $SchedulerRc 'mount none /data/vendor/zui_control/asoul/asopt.conf /data/adb/naki/asopt.conf bind' 'canonical A-SOUL config bind'
     Assert-Contains $SchedulerRc 'trigger zui-scheduler-start' 'scheduler boot trigger'
     Assert-NotContains $SchedulerRc 'seclabel u:r:shell:s0' 'shell-domain scheduler service'
-    Assert-Contains $UperfService 'process_count="$(pidof uperf' 'Uperf process-count health check'
+    Assert-Contains $UperfService '/proc/self/cgroup' 'init-owned Uperf cgroup discovery'
+    Assert-Contains $UperfService 'cgroup.procs' 'Uperf cgroup health source'
+    Assert-Contains $UperfService 'uperf_process_count' 'Uperf process-count health check'
     Assert-Contains $UperfService "grep -q ' I Uperf is running`$'" 'Uperf ready-log health check'
     Assert-Contains $UperfService "grep -q ' I Failed to start uperf'" 'Uperf failed-start rejection'
-    Assert-Contains $UperfService 'killall -15 uperf' 'exclusive Uperf ownership fence'
+    Assert-NotContains $UperfService 'pidof uperf' 'cross-domain proc scanner in Uperf supervisor'
+    Assert-NotContains $UperfService 'killall' 'cross-domain process scanner in Uperf supervisor'
     Assert-Contains $UperfService 'echo $$ > /dev/cpuset/background/tasks' 'background placement for Uperf itself'
     Assert-Contains $SchedulerPrepare 'setprop zui_control.appopt stop' 'retired AppOpt stop fence'
     Assert-Contains $SchedulerPrepare 'setprop zui_control.zuipp restore' 'stock ZuiPP XML restore fence'
@@ -338,12 +341,15 @@ try {
         '(allow system_server performanced (fd (use)))',
         '(allow system_server performanced (fifo_file (write)))',
         '(allow performanced self (capability (chown dac_override fowner kill)))',
+        '(allow performanced self (file (getattr open read)))',
         '(allow performanced appdomain (dir (getattr open read search)))',
         '(allow performanced appdomain (file (getattr open read)))',
         '(allow performanced appdomain (process (getsched setsched signull)))',
         '(allow performanced adb_data_file (dir (search)))',
         '(allow performanced sysfs_devices_system_cpu (file (getattr open read write append setattr)))',
         '(allow performanced cgroup (file (ioctl read write create getattr setattr lock append map open unlink)))',
+        '(allow performanced cgroup_v2 (dir (getattr open read search)))',
+        '(allow performanced cgroup_v2 (file (getattr open read)))',
         '(allow performanced zui_scheduler_proc (file (getattr open read write append)))',
         '(allow performanced input_device (dir (ioctl read getattr lock open watch watch_reads search)))',
         '(allow performanced input_device (chr_file (ioctl read getattr lock map open)))',
