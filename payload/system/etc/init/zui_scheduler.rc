@@ -3,6 +3,9 @@ on post-fs-data
     mkdir /data/vendor/zui_control/uperf 0775 root shell
     mkdir /data/vendor/zui_control/asoul 0775 root shell
     mkdir /data/adb/naki 0755 root root
+    write /data/adb/naki/asopt.conf ""
+    chown root root /data/adb/naki/asopt.conf
+    chmod 0644 /data/adb/naki/asopt.conf
     restorecon_recursive /data/vendor/zui_control
     restorecon_recursive /data/adb/naki
 

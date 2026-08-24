@@ -18,8 +18,8 @@ $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $Avbtool = Join-Path $ToolsDir 'downloaded\avbtool_aosp_c0af371_1.2.0.py'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '44'
-$ExpectedVersionName = '0.21.7'
+$ExpectedVersionCode = '45'
+$ExpectedVersionName = '0.21.8'
 $ExpectedUperfSha256 = 'f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8'
 $ExpectedAsoulSha256 = '7ed7beb2a2680ac91a61dad6b7d64de2eb7eb5711d09c85fc21050b62a3243bd'
 $ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371'
@@ -225,7 +225,7 @@ try {
     $System = Join-Path $SystemRoot 'system'
     $PlatSelinux = Join-Path $System 'etc\selinux'
     $VendorSelinux = Join-Path $VendorRoot 'etc\selinux'
-    $AppApk = Join-Path $System 'priv-app\ZuiControlV44\ZuiControl.apk'
+    $AppApk = Join-Path $System 'priv-app\ZuiControlV45\ZuiControl.apk'
     $Daemon = Join-Path $System 'bin\zui_controld'
     $Uperf = Join-Path $System 'bin\uperf'
     $UperfService = Join-Path $System 'bin\zui_uperf_service'
@@ -253,7 +253,7 @@ try {
         (Join-Path $SystemRoot 'AppOpt.json')
     )) { Assert-Missing $path 'retired AppOpt runtime' }
     Assert-Missing (Join-Path $System 'etc\zui_control\zui_cloud_block.sh') 'cloud-control block script'
-    foreach ($old in 30..43) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
+    foreach ($old in 30..44) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
     Assert-Missing (Join-Path $System 'priv-app\ZuiControl') 'legacy unversioned ZuiControl directory'
 
     Assert-UperfConfig $UperfConfig
@@ -267,6 +267,7 @@ try {
     Assert-Contains $SchedulerRc 'service zui_asoulopt /system/bin/AsoulOpt' 'A-SOUL init service'
     Assert-Contains $SchedulerRc '    stop vendor.perfservice' 'QTI userspace perf bridge ownership fence'
     Assert-Contains $SchedulerRc '    start vendor.perfservice' 'QTI userspace perf bridge rollback'
+    Assert-Contains $SchedulerRc 'write /data/adb/naki/asopt.conf ""' 'init-owned A-SOUL bind target creation'
     Assert-Contains $SchedulerRc 'mount none /data/vendor/zui_control/asoul/asopt.conf /data/adb/naki/asopt.conf bind' 'canonical A-SOUL config bind'
     Assert-Contains $SchedulerRc 'trigger zui-scheduler-start' 'scheduler boot trigger'
     Assert-NotContains $SchedulerRc 'seclabel u:r:shell:s0' 'shell-domain scheduler service'
@@ -275,6 +276,7 @@ try {
     Assert-Contains $UperfService 'echo $$ > /dev/cpuset/background/tasks' 'background placement for Uperf itself'
     Assert-Contains $SchedulerPrepare 'setprop zui_control.appopt stop' 'retired AppOpt stop fence'
     Assert-Contains $SchedulerPrepare 'setprop zui_control.zuipp restore' 'stock ZuiPP XML restore fence'
+    Assert-NotContains $SchedulerPrepare '/data/adb' 'shell-domain access to protected Magisk data'
     foreach ($forbidden in @('killall', 'thermal', '/sdcard', 'busybox', 'zui_cloud')) {
         Assert-NotContains $SchedulerPrepare $forbidden 'copied third-party unsafe setup logic'
     }
