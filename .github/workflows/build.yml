@@ -70,9 +70,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV38 payload/system/priv-app/ZuiControlV39 payload/system/priv-app/ZuiControlV40
           rm -rf payload/system/priv-app/ZuiControlV41 payload/system/priv-app/ZuiControlV42 payload/system/priv-app/ZuiControlV43
           rm -rf payload/system/priv-app/ZuiControlV44 payload/system/priv-app/ZuiControlV45 payload/system/priv-app/ZuiControlV46
-          mkdir -p payload/system/priv-app/ZuiControlV47
+          rm -rf payload/system/priv-app/ZuiControlV47
+          mkdir -p payload/system/priv-app/ZuiControlV48
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV47/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV48/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

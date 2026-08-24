@@ -11,7 +11,7 @@ from datetime import datetime
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
-APP_APK_PATH = "system/priv-app/ZuiControlV47/ZuiControl.apk"
+APP_APK_PATH = "system/priv-app/ZuiControlV48/ZuiControl.apk"
 LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -150,6 +150,7 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV44",
         "system_a/system/priv-app/ZuiControlV45",
         "system_a/system/priv-app/ZuiControlV46",
+        "system_a/system/priv-app/ZuiControlV47",
         "system_a/system/priv-app/ZuiperfCtl",
         "system_a/system/bin/zui_perfctld",
         "system_a/system/etc/init/zui_perfctld.rc",
@@ -211,6 +212,7 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV44",
         "system_a/system/priv-app/ZuiControlV45",
         "system_a/system/priv-app/ZuiControlV46",
+        "system_a/system/priv-app/ZuiControlV47",
         "system_a/system/etc/zui_control/clear_package_cache",
     ]
     targets = [
@@ -599,6 +601,13 @@ def main():
     cleanup_legacy_payload(unpack, args.dry_run, report)
     cleanup_legacy_metadata(image_root, unpack, args.dry_run, report)
     entries = copy_payload(payload, unpack, args.dry_run, report)
+    dumpsys_rel = "system_a/system/bin/dumpsys"
+    entries.append((
+        "ctx",
+        "system_a",
+        file_context_regex(dumpsys_rel),
+        f"{file_context_regex(dumpsys_rel)} u:object_r:toolbox_exec:s0",
+    ))
     patch_property_contexts(unpack, payload, args.dry_run, report)
     patch_service_contexts(unpack, payload, args.dry_run, report)
     patch_file_contexts(unpack, payload, args.dry_run, report)

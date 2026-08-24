@@ -1,7 +1,7 @@
 ZuiControl v19 payload
 
 System components:
-- /system/priv-app/ZuiControlV47/ZuiControl.apk
+- /system/priv-app/ZuiControlV48/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/uperf
 - /system/bin/zui_uperf_service
@@ -30,7 +30,7 @@ Behavior:
 - system_server remains the sole refresh-rate owner; P1 behavior is unchanged.
 - Uperf owns CPU scheduling while its supervised service runs.
 - The ROM frontend consumes the authoritative system_server scene and screen state, then writes the effective Uperf mode; Scene/YC Manager and Uperf's legacy top-app detector are not required.
-- Qualcomm perfservice is stopped only while Uperf owns scheduling and is restored by the scheduler kill switch.
+- Qualcomm perfservice/perf2, poweropt, and Lenovo performance bridges are stopped only while Uperf owns scheduling and are restored by the scheduler kill switch.
 - KGSL DVFS and OEM thermal services remain active; the inspected 8 Gen 3 profile does not own Adreno clocks, and this payload does not replace thermal configuration.
 - Shiroko A-SOUL runs as the thread-placement companion with mode=0 and rt=0. Here rt=0 selects WALT per-task boost and does not assign real-time policy.
 - AppOpt and the P2 XML scheduler owner are retired and cannot run in parallel with Uperf/A-SOUL.

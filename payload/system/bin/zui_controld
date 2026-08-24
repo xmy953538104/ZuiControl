@@ -834,25 +834,28 @@ publish_appopt_health() {
     asoul_pid="$(pidof AsoulOpt 2>/dev/null | awk '{print $1}')"
     uperf_domain=
     asoul_domain=
-    [ -n "$uperf_pid" ] &&
-        uperf_domain="$(ps -AZ 2>/dev/null | awk -v wanted="$uperf_pid" '$3 == wanted {print $1; exit}')"
-    [ -n "$asoul_pid" ] &&
-        asoul_domain="$(ps -AZ 2>/dev/null | awk -v wanted="$asoul_pid" '$3 == wanted {print $1; exit}')"
+    [ -n "$uperf_pid" ] && uperf_domain=u:r:performanced:s0
+    [ -n "$asoul_pid" ] && asoul_domain=u:r:performanced:s0
     current_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
     valid_uperf_mode "$current_mode" || current_mode=unknown
     effective_mode="$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE" 2>/dev/null)"
     valid_uperf_preset "$effective_mode" || effective_mode=unknown
     default_mode="$(awk '$1 == "*" {print $2; exit}' "$UPERF_PERAPP" 2>/dev/null)"
     valid_uperf_preset "$default_mode" || default_mode=balance
-    qti_perf_bridge="$(getprop init.svc.vendor.perfservice 2>/dev/null)"
-    [ -n "$qti_perf_bridge" ] || qti_perf_bridge=unknown
+    oem_perf_bridges=
+    for bridge in vendor.perfservice performance poweropt-service perf2-hal-1-0; do
+        bridge_state="$(getprop "init.svc.$bridge" 2>/dev/null)"
+        [ -n "$bridge_state" ] || bridge_state=absent
+        [ -z "$oem_perf_bridges" ] || oem_perf_bridges="$oem_perf_bridges · "
+        oem_perf_bridges="${oem_perf_bridges}${bridge}=${bridge_state}"
+    done
     log_size=0
     [ -f "$UPERF_LOG" ] && log_size="$(wc -c < "$UPERF_LOG" 2>/dev/null)"
     health="Uperf：${uperf_pid:-未运行}（${uperf_processes:-0} 进程 · ${uperf_domain:-未识别}）
 控制模式：$current_mode · 实际档位：$effective_mode · 规则：${UPERF_FRONTEND_SOURCE:-*} · 默认：$default_mode
 前端：ROM system_server 场景 ${UPERF_FRONTEND_SCENE:-*} · 亮屏：$UPERF_FRONTEND_SCREEN
 GPU：原厂 KGSL DVFS 与热保护保留，本阶段不伪造 Uperf GPU 接管
-QTI Perf 桥：$qti_perf_bridge（调度接管时应为 stopped）
+OEM Perf 桥：$oem_perf_bridges（存在的服务均应为 stopped）
 A-SOUL：${asoul_pid:-未运行}（${asoul_domain:-未识别}）
 线程参数：mode=0 · rt=0
 AppOpt：已退役
@@ -1003,6 +1006,13 @@ stop_asoul() {
 
 ensure_scheduler_running() {
     [ "$(getprop "$PROP_SCHEDULER" 2>/dev/null)" != "stopped" ] || return 0
+    for bridge in vendor.perfservice performance poweropt-service perf2-hal-1-0; do
+        if [ "$(getprop "init.svc.$bridge" 2>/dev/null)" = "running" ]; then
+            log_line "OEM perf bridge escaped ownership fence: $bridge"
+            trigger_init_action "$PROP_SCHEDULER" fence || true
+            break
+        fi
+    done
     asoul_state="$(getprop "$PROP_ASOUL" 2>/dev/null)"
     if uperf_is_healthy &&
         { [ "$asoul_state" = "stopped" ] || [ -n "$(pidof AsoulOpt 2>/dev/null)" ]; }; then

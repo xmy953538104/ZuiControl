@@ -18,8 +18,8 @@ $ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'apktool.jar'
 $Avbtool = Join-Path $ToolsDir 'downloaded\avbtool_aosp_c0af371_1.2.0.py'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '47'
-$ExpectedVersionName = '0.21.10'
+$ExpectedVersionCode = '48'
+$ExpectedVersionName = '0.21.11'
 $ExpectedUperfSha256 = 'f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8'
 $ExpectedAsoulSha256 = '7ed7beb2a2680ac91a61dad6b7d64de2eb7eb5711d09c85fc21050b62a3243bd'
 $ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371'
@@ -208,15 +208,17 @@ try {
 
     $SystemRoot = Join-Path $ExtractDir 'system_a'
     $VendorRoot = Join-Path $ExtractDir 'vendor_a'
+    $SystemImageContexts = Join-Path $ExtractDir 'config\system_a_file_contexts'
     $System = Join-Path $SystemRoot 'system'
     $PlatSelinux = Join-Path $System 'etc\selinux'
     $VendorSelinux = Join-Path $VendorRoot 'etc\selinux'
-    $AppApk = Join-Path $System 'priv-app\ZuiControlV47\ZuiControl.apk'
+    $AppApk = Join-Path $System 'priv-app\ZuiControlV48\ZuiControl.apk'
     $Daemon = Join-Path $System 'bin\zui_controld'
     $Uperf = Join-Path $System 'bin\uperf'
     $UperfService = Join-Path $System 'bin\zui_uperf_service'
     $Asoul = Join-Path $System 'bin\AsoulOpt'
     $SchedulerRc = Join-Path $System 'etc\init\zui_scheduler.rc'
+    $DaemonRc = Join-Path $System 'etc\init\zui_controld.rc'
     $SchedulerPrepare = Join-Path $System 'etc\zui_control\zui_scheduler_prepare.sh'
     $UperfConfig = Join-Path $System 'etc\zui_control\uperf-sm8650.json'
     $UperfPerApp = Join-Path $System 'etc\zui_control\default_uperf_perapp.txt'
@@ -225,7 +227,7 @@ try {
     $GameTemplate = Join-Path $System 'etc\zui_control\default_game_policy.xml'
     $PerfTemplate = Join-Path $System 'etc\zui_control\default_performanceconfig.xml'
     $ZuippPower = Join-Path $System 'etc\zuipp_powercfg.xml'
-    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $SchedulerPrepare, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $GameTemplate, $PerfTemplate, $ZuippPower)) {
+    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $DaemonRc, $SchedulerPrepare, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $GameTemplate, $PerfTemplate, $ZuippPower)) {
         Require-File $file
     }
 
@@ -241,7 +243,7 @@ try {
     )) { Assert-Missing $path 'retired AppOpt runtime' }
     Assert-Missing (Join-Path $System 'etc\zui_control\zui_cloud_block.sh') 'cloud-control block script'
     Assert-Missing (Join-Path $System 'etc\zui_control\promote_zuipp_xml.sh') 'retired ZuiPP promotion script'
-    foreach ($old in 30..46) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
+    foreach ($old in 30..47) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
     Assert-Missing (Join-Path $System 'priv-app\ZuiControl') 'legacy unversioned ZuiControl directory'
 
     Assert-UperfConfig $UperfConfig
@@ -255,10 +257,17 @@ try {
     Assert-Contains $SchedulerRc 'service zui_asoulopt /system/bin/AsoulOpt' 'A-SOUL init service'
     Assert-Contains $SchedulerRc '    stop vendor.perfservice' 'QTI userspace perf bridge ownership fence'
     Assert-Contains $SchedulerRc '    start vendor.perfservice' 'QTI userspace perf bridge rollback'
+    foreach ($bridge in @('performance', 'poweropt-service', 'perf2-hal-1-0')) {
+        Assert-Contains $SchedulerRc "    stop $bridge" 'OEM perf bridge ownership fence'
+        Assert-Contains $SchedulerRc "    start $bridge" 'OEM perf bridge rollback'
+    }
     Assert-Contains $SchedulerRc 'write /data/adb/naki/asopt.conf ""' 'init-owned A-SOUL bind target creation'
     Assert-Contains $SchedulerRc 'mount none /data/vendor/zui_control/asoul/asopt.conf /data/adb/naki/asopt.conf bind' 'canonical A-SOUL config bind'
     Assert-Contains $SchedulerRc 'trigger zui-scheduler-start' 'scheduler boot trigger'
+    Assert-Contains $SchedulerRc 'on property:zui_control.scheduler=fence' 'OEM perf bridge re-entry fence'
     Assert-NotContains $SchedulerRc 'seclabel u:r:shell:s0' 'shell-domain scheduler service'
+    Assert-Contains $DaemonRc 'rm /data/vendor/zui_control/zuipp/active/game_policy.xml' 'retired ZuiPP game XML cleanup'
+    Assert-Contains $DaemonRc 'rm /data/vendor/zui_control/zuipp/active/performanceconfig.xml' 'retired ZuiPP performance XML cleanup'
     Assert-Contains $UperfService '/proc/self/cgroup' 'init-owned Uperf cgroup discovery'
     Assert-Contains $UperfService 'cgroup.procs' 'Uperf cgroup health source'
     Assert-Contains $UperfService 'uperf_process_count' 'Uperf process-count health check'
@@ -293,6 +302,9 @@ try {
     Assert-Contains $Daemon 'valid_uperf_preset "$frontend_mode" || return 1' 'effective-mode preset-only fence'
     Assert-Contains $Daemon "grep -q ' I Uperf is running`$'" 'strict Uperf daemon health check'
     Assert-Contains $Daemon 'rm -rf "$APPOPT_DIR" "$ZUI_DIR"' 'retired AppOpt and ZuiPP runtime cleanup'
+    Assert-NotContains $Daemon 'ps -AZ' 'cross-domain health scanner'
+    Assert-Contains $Daemon 'OEM Perf 桥：$oem_perf_bridges' 'all OEM perf bridge health states'
+    Assert-Contains $Daemon 'OEM perf bridge escaped ownership fence' 'OEM perf bridge supervision'
     Assert-Contains $Daemon '线程参数：mode=0 · rt=0' 'verified A-SOUL mode state'
     Assert-Contains $Daemon '不伪造 Uperf GPU 接管' 'honest GPU ownership statement'
     foreach ($forbidden in @('/sys/class/kgsl/kgsl-3d0', '/sys/devices/system/cpu/cpufreq', 'provider_direct', 'GameModeProvider/contact', 'zui_control.cloud_block', 'cloud_block.log')) {
@@ -326,6 +338,8 @@ try {
     Assert-Contains $FileContexts '/system/bin/uperf u:object_r:performanced_exec:s0' 'Uperf file context'
     Assert-Contains $FileContexts '/system/bin/zui_uperf_service u:object_r:performanced_exec:s0' 'Uperf supervisor file context'
     Assert-Contains $FileContexts '/system/bin/AsoulOpt u:object_r:performanced_exec:s0' 'A-SOUL file context'
+    Assert-Contains $FileContexts '/system/bin/dumpsys u:object_r:toolbox_exec:s0' 'bounded A-SOUL dumpsys execution context'
+    Assert-Contains $SystemImageContexts '/system_a/system/bin/dumpsys u:object_r:toolbox_exec:s0' 'final EROFS dumpsys inode context'
     Assert-Contains $FileContexts '/data/adb/naki(/.*)? u:object_r:zui_control_data_file:s0' 'A-SOUL compatibility data context'
     Assert-Contains $FileContexts '/data/vendor/zui_control(/.*)? u:object_r:zui_control_data_file:s0' 'scheduler data context'
     Assert-NotContains $FileContexts '/data/vendor/zui_control/zuipp/active/game_policy\.xml' 'retired ZuiPP game XML context'
