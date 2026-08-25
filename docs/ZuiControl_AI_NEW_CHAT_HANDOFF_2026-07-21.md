@@ -13,7 +13,116 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.16 2026-08-22 鸣潮卡顿与杜比状态同步复查（当前最新）
+### 0.18 2026-08-25 V49 内置 Uperf/asoulOpt、最终刷入与调度验收（当前最新）
+
+本节覆盖 0.17 的 Scene/P2/AppOpt 当前方向与下一步；0.17 及以前只保留为历史证据。设备 `HA25HSZM` 已通过固定七项 9008 流程持久刷入 `49/0.21.12/ZuiControlV49`，当前不是待刷状态。生产性能调度已从 P2 XML/AppOpt/Scene 切换为 ROM 内置 Uperf + asoulOpt；没有修改 thermal conf、P1 或 FPS cap，也没有恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 XML/ZuiPP/AppOpt 生产链。
+
+#### 当前生产成品与发布事实
+
+- 设备/系统：TB321FU / `TB321FU_CN_OPEN_USER_Q00040.0_U_ZUI_16.1.11.072_ST_241118`；槽 `_a`，Verified Boot `green`，SELinux `Enforcing`。
+- 生产 HEAD：`032c82e03192287f8e788fbf8fb9d1a0bb7f919b`（`fix: allow integrated scheduler runtime IPC`），已与 `origin/main` 同步。Uperf 主体为 `fdf2051`，恢复 UI/OEM 遥测为 `bc53077`，删除 QQ 音乐预装为 `015800a`。
+- GitHub Actions run `32809284592` success；保留 artifact：`D:\3.VScode\Mi\work\ci_artifacts\zuicontrol_32809284592`。release 证书 SHA-256：`3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94`。
+- 最终成品：`D:\3.VScode\Mi\【B刷机】072`。最终 `super.img` 已反抽全部动态分区、system EROFS、策略文本和 `services.jar`，verifier 返回 `ok=true`；Windows 侧仍没有独立完成 `secilc` 编译级验证，最终以本节刷后 Enforcing/AVC 实测为准。
+- 固定安全包只含七项：LUN0 的 `super`、`vbmeta_system_a/b`，LUN4 的 `boot_a/b`、`vbmeta_a/b`。正式最终刷写日志：`D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-25_12-51-00.log`；Firehose 返回 `All went well! Resetting to system`，脚本随后确认 072、boot completed 与 49/0.21.12。
+
+```text
+e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371  boot.img
+9b4c06aeb2a366846954c1ba1a48451b6fcc6e7b9a2589e17a8834906f5a8e33  super.img
+4d476c646efaae1daad99888504dbbbc39de03b50b9c746e74252ebf31f54946  vbmeta_system.img
+bb756ee076bff3d3bab92b62a53e2926fc37c665235c6522924c7d5e23699774  vbmeta.img
+3389454bacd9532182bba4e705f2c68c709ffa3451edacae2d96b30f58c0d659  ZuiControl-v19-release.apk
+3389454bacd9532182bba4e705f2c68c709ffa3451edacae2d96b30f58c0d659  ZuiControl-v19-system.apk
+```
+
+- `boot.img` 仍逐字来自用户指定的 `D:\3.VScode\Mi\072必刷镜像\boot.img`，用于当前 APatch 开发/诊断环境；Uperf、asoulOpt 与 ZuiControl 本身均由 ROM init/system_server 托管，不调用 su、Magisk module 或 `/data/adb`。以后恢复原版 072 boot 后，调度链按设计仍可运行。
+- 为满足 system AVB data 上限，只从本次 072 system 工作树删除 `/system/preload/QQMusic/QQMusic.apk`（180737432 bytes）；WPS 保留，官方 A072 原包未改。实机 `pm` 中 QQ 音乐不存在、`cn.wps.moffice_eng` 存在。
+
+#### 当前调度架构与模式语义
+
+- init 直接托管 `/system/bin/uperf`、`/system/bin/zui_uperf_service` 和 `/system/bin/AsoulOpt`。Uperf 处理模块明确配置的 CPU power-model、WALT governor、core_ctl 等；不宣称直接接管 Adreno KGSL 频率，也不移除系统热保护。
+- 全局模式只有 `powersave`、`balance`、`performance`、`fast`：分别对应节能、日常均衡、更积极的持续性能、最积极的短时/峰值响应；它们是成套调度参数，不是四个固定 GHz。
+- 有效档位解析顺序固定为：熄屏 `powersave` > 精确应用覆盖 > 全局模式。`cur_powermode.txt` 只存全局档；`perapp_powermode.txt` 当前为两条鸣潮 `performance` 与一条 `- powersave` 熄屏规则，不含 `*` 全局兜底。
+- Uperf 自带线程调度保持关闭。线程放置只由 asoulOpt 执行；当前 `mode=0`、`rt=0`，保留旧 Shiroko 二进制的硬亲和与 WALT per-task boost，不启用实时调度。
+- 旧二进制的硬编码路径已等长修改为 `/data/vendor/asopt.conf`，init 将它软链接到持久、可编辑的 `/data/vendor/zui_control/asoul/asopt.conf`。实机链接 context 为 `zui_control_data_file`，`/data/adb/naki` 不存在。
+- 旧 asoulOpt 二进制的应用/线程匹配表仍编译在闭源二进制中；外部 conf 只有 mode/rt/opt。不能把任意新 App 的线程规则编辑能力冒充成已经交付；若要通用可扩展规则，必须有源码兼容实现或替换引擎，不能同时运行 AppOpt。
+
+#### 最终 Enforcing 实机验收
+
+- PackageManager 与 `/system/priv-app/ZuiControlV49/ZuiControl.apk` 均为 49/0.21.12；系统 APK SHA-256 与 CI 的 `3389454...d659` 一致。`zui_control` 存在，Launcher raw/current/last/applied 正确，target/actual 为 120/120，`refreshOwner=system`、`daemonRefreshDisabled=true`、`displayVote=adaptiveRender`。
+- shell UID 可读取公开版本事务；调用受保护状态事务得到 `caller package is not ZuiControl`，证明包名/签名授权门禁实际执行。
+- 干净重启后及一次受控 `zui_control.scheduler=restart` 后：`zui_controld` 一个 init 子进程；A-SOUL 一个 init 子进程；Uperf 一个 wrapper、一个主进程和一个子进程。五次、约 40 秒无负载采样中 PID 不变，三项调度 init service 与 `performance`、`poweropt-service`、`perf2-hal-1-0` 三项 OEM 遥测服务始终 running；`vendor.perfservice` 保持 stopped。
+- 四个全局档逐一通过 daemon 正式 request/ACK 协议，`cur` 与 `effective` 依次成为 `powersave/balance/performance/fast`；最终终态 ACK 为 `global=balance;effective=balance`。熄屏实测 `balance -> powersave`，亮屏后恢复 `balance`。
+- 第一版刷后曾发现 `system_server -> performanced binder call` 与 A-SOUL 读取 `/data/vendor/asopt.conf` 软链接两条 AVC。最终 032c82e 精确加入 Binder call 与 `zui_control_data_file:lnk_file { getattr read }`；重制、二次刷入并从干净开机复测后，调度重启和真实 ZuiControl Activity 生命周期均未再出现这两类 AVC，相关 crash/ANR 为零。072 原生/当前 root 环境仍有 system_server capability、CachedAppOptimizer、Lenovo 键盘等非项目 AVC，不为它们扩大 ZuiControl 策略。
+- 鸣潮当前已安装：`com.kurogame.mingchao` 3.6.0，versionCode 176520875，base APK SHA-256 `1ed062517f87dd9685be7b6d33206f36a823ba56516b28b26e1ffb366800433b`；Uperf 精确覆盖为 `performance`。本轮尚未在最终二次刷入后从亮屏 Launcher 重入游戏，因此不把旧日志或测试包冒充最终真实游戏/线程 mask 结论。
+- P1 未改，profile 当前只有 `default|0|120|0|DISPLAY_ONLY`。AppOpt、XML bind/ZuiPP bridge、SafeCenter/su 生产逻辑和旧命名进程均不存在。
+
+#### UI、游戏助手与当前剩余一步
+
+- V49 代码已经恢复原有底栏/侧栏、字体、间距、圆角与页面结构，只替换调度页面的后端内容；全局四档为同一行，下面是“自定义应用 +”入口。OEM 三项性能遥测服务已恢复并保持运行，避免因误停原厂 HAL 使游戏助手 CPU/GPU/FPS 全为 0。
+- 但最终二次刷入后的设备当前被 keyguard 挡住，尚未完成竖屏/横屏截图与游戏助手非零读数的视觉复核。必须等待用户手动解锁；禁止用 ADB 绕过锁屏，也不能在完成前写成 UI/游戏遥测已最终验收。
+- 解锁后最短步骤：停在亮屏 Launcher，先截图复核 ZuiControl 竖/横屏布局；再从 Launcher 正常进入鸣潮，只验证 Uperf 精确覆盖、OEM 游戏助手读数和真实线程 mask，不用测试包代替，不主动持续高温负载。若 UI 或读数仍异常，再在本版本上迭代，禁止转去 thermal/P1/FPS cap。
+
+#### 工作区清理
+
+- 新增 `scripts/CleanupZuiControlReleaseWorkspace.ps1`：固定 allowlist、保留成品/当前 CI 门禁、工作区边界检查、默认 dry-run，只有 `-Execute` 才清理。
+- 已删除本轮可重建的 `work/unpack`、`work/img`、`work/flash_img`、中间 `work/super.img`、QQ 音乐隔离副本、两份旧 CI 和三个反编译/审计临时目录。D 盘可用空间由 62.38GiB 增至 103.36GiB，实际恢复约 40.98GiB；官方 A072、`072必刷镜像`、最终 B072、固定安全包、当前 CI、仓库与刷写日志均保留。
+
+### 0.17 2026-08-23 Scene 实机调度对照与 P2 KGSL 落实缺口（历史，已被 0.18 覆盖）
+
+本节覆盖 0.16 的鸣潮卡顿判断和“冷机重启 A/B”下一步，但不改写 0.15/0.16 已完成的 072/V43 刷写与杜比调查事实。设备仍为已持久刷入并验收的 `43/0.21.6/ZuiControlV43`，不是待刷状态。仓库 `main` 当前 HEAD 为 `71bf71c fix: synchronize Dolby quick settings state`，相对 `origin/main` ahead 1；这是 `44/0.21.7/ZuiControlV44` 杜比草案，尚未推送 CI、制作镜像或刷入设备。本轮没有修改 thermal conf、P1、FPS cap、P2 XML、CPU/GPU sysfs、Scene 配置或 AppOpt 配置。
+
+#### 本轮对照条件
+
+- 当前系统 P2 仍保持启用；AppOpt 已由用户停用，`init.svc.zui_appopt=stopped`，没有 AppOpt/AsoulOpt PID。
+- 用户安装并启用了 Scene 9.4.11（`com.omarea.vtools`）。Scene EP 已开启，鸣潮单独为 `fast`/极速模式，Scene 自带鸣潮线程放置也已开启；`scene-daemon` 运行于 `u:r:magisk:s0`。
+- 因此本轮可用的真实对照是：此前同一 072/V43 的 **P2-only**，对比当前 **P2 + Scene EP + Scene 线程放置**。不能把它写成“纯 Scene、P2 完全关闭”的实验。
+- 使用 ADB 正常亮屏、解锁、启动鸣潮、处理更新重启、点击连接并进入开放世界；没有修改任何性能或热控节点。接近预设 90C 保护线后立即回桌面，最终强停鸣潮并恢复 `svc power stayon false`。
+
+#### 实机关键数据
+
+| 阶段 | 画面/叠加层 | KGSL 实际/min/max | thermal_pwrlevel | CPU/温度要点 |
+|---|---|---|---:|---|
+| 冷态重新进入开放世界 | 60FPS，CPU 瞬时 3.30GHz，GPU 903MHz，显示温度 33.8C | `903/903/903MHz` | 0 | 证明 072 的 3.3024GHz 与 GPU 903MHz 都能实际进入 |
+| 登录/加载升温中 | 56–60FPS，GPU 629MHz，显示温度约 43–44C | `629/903/629MHz` | 5 | Scene 仍请求 min=903，但 KGSL 热控上限裁到 629 |
+| 热态开放世界 | 约 45FPS，GPU 500MHz，显示温度 45.4C | `500/903/500MHz` | 7 | CPU2–5 最高约 89.9C，GPU 热点最高约 89.6C；到线即停止 |
+| 回桌面/强停后 | 无游戏进程 | `231/231/903MHz` | 0 | 最终 cpuss 约 38.6–39.4C、八个 gpuss 约 37.7–38.9C，正常释放 |
+
+- `thermal-engine-v2` 与 QTI Thermal HAL 全程运行，HAL cooling device 曾为 `gpu=3`。Scene 没有绕过或关闭系统热控；热控介入后实际 GPU 由 903 依次降为 629、500MHz。
+- 游戏叠加层显示的约 34–45C 不是 CPU/GPU 最高 junction。用户看到“温度高仍 903MHz”可以发生在界面温度已升高但 junction 尚未触发 KGSL cap 的阶段；一旦本轮 junction 接近 90C，903MHz 已不能继续保持。
+- SurfaceFlinger `--latency` 在本轮图层生命周期中只返回刷新周期 `8333333`，Scene 的“帧率记录”也为空，因此本轮没有合格的 P95/1% low 帧时间统计。不要把叠加层瞬时 FPS 冒充微卡量化结论。
+
+证据截图保存在：
+
+```text
+D:\3.VScode\Mi\work\scene_runtime_test\14_mingchao_settings.png  冷态 903MHz/60FPS/3.30GHz
+D:\3.VScode\Mi\work\scene_runtime_test\07_resource_state.png     升温中 629MHz/60FPS
+D:\3.VScode\Mi\work\scene_runtime_test\09_world_state.png        热态开放世界 500MHz/约45FPS
+D:\3.VScode\Mi\work\scene_runtime_test\13_scene_adjust.png       Scene EP 已开启的 UI 现场
+```
+
+#### Scene 比当前设计多做了什么
+
+- Scene 的鸣潮 `fast` 配置会设置四簇 CPU 最低/最高请求：约 `1.017/1.804GHz`、`1.498/3.149GHz`、`1.075/1.402GHz`、`1.478/3.302GHz`；实际值仍会随负载和热控收缩。
+- WALT 现场读到中核 `hispeed_freq=1708800`、`hispeed_load=90`，up/down rate limit 均为 `2000us`。Scene 不是只做线程亲合度，而是同时管理 CPU 响应参数和频率请求。
+- Scene 的鸣潮线程规则为：主线程 `2-6`、GameThread `7`、RenderThread/RHIThread `2-4`、其它线程 `2-6`，关键线程带 RR/负 nice 处理。这与此前 AppOpt 的核心放置几乎相同，所以“线程放置本身”不足以解释流畅度差异。
+- Scene 文件存在鸣潮专用 FAS 修正 `com.kurogame.mingchao=-20`；此前对当前 9.4.11 APK 的静态检查还确认其有 FAS/FEAS 帧感知、动态频率响应、cluster target/margin 以及 daemon `@gpu_freq_min`/`@gpu_freq_max` 接口。结合现场 `min_clock_mhz=903`，Scene 的优势来自持续运行的帧反馈/频率控制，而不只是一次性 profile。
+- Scene 通用 `limiter_off` 配置中提到 `/proc/game_opt`、`migt`、`perfmgr`，但这些具体路径在当前 072 上不存在，不能把本机流畅归因于这些未命中的兼容项。
+
+#### 对 P2 的新结论
+
+- 当前 P2 active `performanceconfig.xml` 本身已经包含 `<PerfLockConfig code="0x4280C000" param="903000"/> <!-- minGPUFreq -->`，两条 P2 XML 的 `8_0_-1` / `7_0_-1` 方向也仍正确。因此不是“XML 忘写 903”或 GPU level 方向写反。
+- 但此前 P2-only 现场在 GPU busy 约 70–72% 时仍出现实际 231MHz，而 Scene 运行时 KGSL `min_clock_mhz` 确实成为 903MHz，退出后恢复 231MHz。当前最可信的根因是：**ZuiPP/GameHelper 的 PerfLock 没有被稳定建立、持有，或在热控/场景变化后没有重新落实；Scene 的运行时控制器持续持有/重申了请求。**
+- 所以“XML 数字正确”不等于“KGSL 运行时锁实际生效”。下一步应先查清 `0x4280C000` PerfLock 的建立、生命周期、释放与热控切档后的重申，不要继续盲改 XML 数字，也不要把 AppOpt/Scene 线程放置当成主因。
+
+#### 当前设备终态与最短下一步
+
+- 鸣潮已强停；GPU `231MHz`、允许 `231–903MHz`、`thermal_pwrlevel=0`；USB 保持亮屏已关闭。Scene daemon 保持用户原状态运行，AppOpt 保持 stopped。
+- 未经用户当次确认，不要切换 Scene EP/线程放置选项，不要写 CPU/GPU 节点，不要改 P2 XML、thermal conf、P1 或 FPS cap，也不要制作/刷写镜像。
+- 若继续量化，先做同温同场景的受控 A/B，并把 Scene 线程放置固定不变，只切换 Scene 的频率/帧感知调度；用 Perfetto/FrameTimeline 或可用的 SurfaceFlinger 图层统计 P50/P95/P99/1% low，同时记录 KGSL min/max/thermal 和 CPU WALT。切换 Scene 设置属于配置变更，必须先征得用户当次确认。
+- 修复优先级仍应是原厂链：先让 ZuiPP PerfLock 在官方 HAL/PerfLock 路径可靠持有和重申。只有确认原厂链无法做到、且用户明确同意改变当前架构边界后，才能另做独立、默认关闭、可回滚且不覆盖 KGSL thermal cap 的运行时实验；不要直接把 Scene 式 sysfs 控制塞进生产 P2。
+- V44 杜比草案与本调度问题相互独立；只有用户明确决定发布杜比小修时，才推 CI、制包和刷机。
+
+### 0.16 2026-08-22 鸣潮卡顿与杜比状态同步复查（历史，已被 0.17 覆盖）
 
 本节覆盖 0.15 的“当前现场”和下一步，但不改写 0.15 已完成的 072 刷写事实。设备仍是已持久刷入并验收的 `43/0.21.6/ZuiControlV43`，当前不是待刷状态。仓库已起草 `44/0.21.7/ZuiControlV44` 的杜比小修，Debug 构建和单元测试通过；尚未推送 CI、制作镜像或刷入设备。本轮没有修改 thermal conf、P1、FPS cap、P2 XML、direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。
 
@@ -1336,4 +1445,4 @@ ZuiControl/scripts/VerifyZuiControlFlashPackage.ps1
 
 ## 9. 新聊天首条消息
 
-本节原先保存过 30/0.20.1 的复制文本，现已作废。新聊天不要复制历史段落；直接使用同目录的 `AI交接记录_ZuiControl_2026-07-21_当前主入口.txt`，它与本文第 0.13 节保持一致。
+本节原先保存过旧版复制文本，现已作废。新聊天不要复制历史段落；直接使用同目录的 `AI交接记录_ZuiControl_2026-07-21_当前主入口.txt`，它与本文第 0.18 节保持一致。

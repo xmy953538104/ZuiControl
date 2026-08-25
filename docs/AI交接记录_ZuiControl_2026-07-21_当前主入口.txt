@@ -1,53 +1,110 @@
-ZuiControl 新聊天当前主入口 - 2026-08-21 0.14
+ZuiControl 新聊天当前主入口 - 2026-08-25 0.18
 
 一、先读什么
 
 1. D:\3.VScode\Mi\AGENTS.md
 2. D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md
-3. 涉及 P2 XML/ThermalConfig 时再读：
+3. 涉及 P2 XML/ThermalConfig 时必须再完整读取：
    D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md
-4. 涉及自动 9008 刷机时再读：
+4. 涉及 9008 发布时使用已安装的 zuicontrol-release-flow skill，并按需读取：
    D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_9008_AUTOMATION_GUIDE_2026-08-18.md
 
-旧的 2026-06-21 P2-I/asoulOpt、187 温控现场和大篇历史文档只保留证据。当前事实以 AGENTS.md、主交接第 0.14 节和本入口为准。
+旧的 2026-06-21 P2-I/asoulOpt、187 温控现场、Scene/P2/AppOpt 和大篇历史文档只保留证据。若冲突，以 AGENTS.md、主交接第 0.18 节和本入口为准。
 
-二、当前成品和设备
+二、当前成品、仓库和设备
 
 - 工作区：D:\3.VScode\Mi
 - 仓库：D:\3.VScode\Mi\ZuiControl
 - 设备：HA25HSZM / TB321FU / ZUI 16.1.11.072
-- 已持久刷入并验收：versionCode=40 / versionName=0.21.3 / ZuiControlV40
-- 生产代码 commit：5163afeef9e798d04563b32bcf165248d3fa6ff6
-- GitHub Actions run：32489793335（success）
-- 成品：D:\3.VScode\Mi\【B刷机】072
-- 安全 9008 包：D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE_072
-- 刷写日志：D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-21_22-16-41.log
-- super SHA256：3d1702c91bcde81af31086c639ffc15b4a277d4525d2c30be5c097dc96dbd9ed
-- APK SHA256：0675617c8348a5d763bb5901b16aa5391f40a4b07a2d8c83595319dfef5fe666
-- 最终 super 反抽 verifier：ok=true
-- 当前不是待刷、临时 bind 或 187 残留状态。
+- 已持久刷入：versionCode=49 / versionName=0.21.12 / ZuiControlV49
+- 生产 commit：032c82e03192287f8e788fbf8fb9d1a0bb7f919b（已推 origin/main）
+- GitHub Actions run：32809284592（success）
+- CI/system APK SHA-256：3389454bacd9532182bba4e705f2c68c709ffa3451edacae2d96b30f58c0d659
+- 最终成品：D:\3.VScode\Mi\【B刷机】072
+- 最终正式刷写日志：D:\3.VScode\Mi\flash\Log\ZuiControl_qdlrs_2026-08-25_12-51-00.log
+- 当前不是待刷状态。固定七项刷写已完成，Firehose 返回 All went well，设备已回到 072 Android。
 
-三、当前功能和配置
+最终镜像 SHA-256：
 
-- P1 已在 072 实机验收，system_server 是唯一 refresh owner；当前默认 Launcher 120/120，profileCount=1，没有显式 profile 文件。不要进入 FPS cap，不改 P1。
-- 当前 P2 有 com.kurogame.mingchao 和 bin.mt.plus.canary 两条 canonical profile。active/system bind hash：game 5e7d43726796c98b81a2d38ca2c44ad8d57f3bbd18f4cae763a7cf09d6e7eda2；performance 861ee1df41eb37df1b1b554b7d8bfe63e6d79bf48ec20af196f3c6e8fac2a1d8。
-- 鸣潮默认 GPU 422–903MHz 写为 8_0_-1；42/48C 的 500–903MHz 写为 7_0_-1。鸣潮和 MT 条目均为 ThermalConfig=0 0 0。
-- AppOpt 后端已升级为作者 2.2.3；测试 App 30/30 线程 mask 验证通过，comm="AppOpt" AVC 为 0。
-- 当前三条权威鸣潮规则：com.kurogame.mingchao=2-6、RenderThread=2-4、GameThread=7。AppOpt init service 当前 running。
-- 相机、云控删除、SELinux 项目运行域、072 安全 9008 流程均已实机验收。
+e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371  boot.img
+9b4c06aeb2a366846954c1ba1a48451b6fcc6e7b9a2589e17a8834906f5a8e33  super.img
+4d476c646efaae1daad99888504dbbbc39de03b50b9c746e74252ebf31f54946  vbmeta_system.img
+bb756ee076bff3d3bab92b62a53e2926fc37c665235c6522924c7d5e23699774  vbmeta.img
 
-四、明确边界和下一步
+boot 仍是用户指定的 APatch 开发 boot；它只用于当前诊断便利。ZuiControl、Uperf、asoulOpt 的 ROM 集成本身不依赖 su、Magisk module、/data/adb 或 App 常驻，未来换回原版 072 boot 后设计上仍会运行。
 
-- 降级后的 /data 没有安装鸣潮和 bin.mt.plus.canary。不能声称真实鸣潮 game-start 四段链或三条真实鸣潮线程已在 072 验证；P2 XML 事务和 AppOpt 引擎本身已分别通过实机测试。
-- 如果安装鸣潮前不重启，当前 AppOpt 已等待其进程；如果先重启，daemon 会因目标包未安装停止 AppOpt但保留配置。安装后在 ZuiControl AppOpt 页重新保存/应用一次，再验证真实线程 mask。
-- 从亮屏 Launcher 正常进入新安装的鸣潮后，再确认 onGameAppStart -> initGameHelper -> notifyPerfStatus 11/17 -> writeSavageMode open=1。不要用 adb 强拉、provider rows 或测试包冒充。
-- 187 上 thermal_pwrlevel=6/max=578MHz 未释放只作历史。072 重新建立温控基线；不要主动烧到 95C，不改 thermal conf，不直写 CPU/GPU sysfs。
-- 不恢复 provider_direct、云控或旧 AsoulOpt。
+三、当前生产架构
 
-五、新聊天直接复制的首条消息
+P1：
 
-请先完整读取 D:\3.VScode\Mi\AGENTS.md、D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md；若涉及 P2/ThermalConfig，必须再完整读取 D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md。旧的 2026-06-21 P2-I/asoulOpt、187 温控现场和大篇历史文档只作历史；若冲突，以 AGENTS.md、主交接第 0.14 节和当前主入口为准。
+- system_server 是唯一刷新率 owner；Launcher 未配置默认 120Hz。
+- 实机 target/actual=120/120，refreshOwner=system，daemonRefreshDisabled=true。
+- shell 对受保护 Binder 事务被 caller package is not ZuiControl 拒绝。
+- 不改 P1，不进入 FPS cap。
 
-当前工作区 D:\3.VScode\Mi，仓库 D:\3.VScode\Mi\ZuiControl。设备 HA25HSZM 已在 ZUI 16.1.11.072 上持久刷入并验收 40/0.21.3/ZuiControlV40，不是待刷状态。最终 B072、CI/hash、P1/P2/P3、相机、云控删除和 SELinux 事实见主交接 0.14。当前不要制作镜像、不要改 thermal conf、不要进入 FPS cap、不要改 P1，也不要恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 AsoulOpt。
+Uperf：
 
-鸣潮和 MT 目前未安装；两条 P2 profile 与三条鸣潮 AppOpt 配置已恢复。下一步等我安装鸣潮后，只读确认当前版本/profile/hash/AppOpt，再从亮屏 Launcher 正常进入鸣潮，闭合 OEM 四段链并采样真实线程 mask。不要用测试包冒充鸣潮结论，也不要主动高温烧机。
+- /system/bin/uperf 与 /system/bin/zui_uperf_service 由 init 托管。
+- 只提供 powersave、balance、performance、fast 四档。
+- 顺序是熄屏 powersave > 精确应用覆盖 > 全局模式。
+- cur_powermode.txt 只存全局；perapp 当前为两条鸣潮 performance 与一条“- powersave”，没有“*”全局规则。
+- Uperf 负责模块配置明确要求的 CPU power-model、WALT、core_ctl 等；不宣称直接接管 KGSL，也不关闭热保护。
+- 四档已逐一走正式 request/ACK 实测，最终恢复 balance；熄屏/亮屏实测 balance -> powersave -> balance。
+
+asoulOpt：
+
+- /system/bin/AsoulOpt 由 init 托管；当前 mode=0、rt=0。
+- /data/vendor/asopt.conf 软链接到 /data/vendor/zui_control/asoul/asopt.conf；配置持久可编辑，/data/adb/naki 不存在。
+- Uperf 自带线程模块关闭，线程放置只归 asoulOpt。
+- 旧 Shiroko 二进制的应用/线程表编译在二进制中，外部 conf 只有 mode/rt/opt。任意新 App 的通用线程规则编辑能力尚未交付；要实现必须有源码兼容替代或换引擎，不能与 AppOpt 同时跑。
+
+已经退出生产：
+
+- P2 XML 生成/bind/ZuiPP bridge/provider_direct
+- AppOpt
+- Scene/Magisk 调度基础
+- SafeCenter/su 生产逻辑
+- direct CPU/GPU sysfs
+- 云控脚本和旧命名组件
+
+四、最终刷后验收事实
+
+- 槽 _a、Verified Boot green、SELinux Enforcing；system APK hash 与 CI 一致。
+- zui_controld 一个 init 子进程；A-SOUL 一个 init 子进程；Uperf 一个 wrapper、主进程和子进程。
+- 受控 scheduler restart 后五次约 40 秒采样 PID 不变；三项调度服务始终 running。
+- performance、poweropt-service、perf2-hal-1-0 三项 OEM 遥测服务始终 running；vendor.perfservice stopped。
+- 第一版刷后发现 system_server -> performanced binder call 和 A-SOUL 读取 asopt 软链接两条 AVC。032c82e 精确修复后重新制包、反抽、二次刷入；干净开机的 scheduler restart 与真实 ZuiControl Activity 均不再出现目标 AVC，相关 crash/ANR 为 0。
+- Windows 未单独完成 secilc 编译级验证；最终 super 策略反抽和上述 Enforcing live AVC 是当前证据边界。
+
+鸣潮只读事实：
+
+- 包名 com.kurogame.mingchao
+- 版本 3.6.0 / versionCode 176520875
+- base APK SHA-256：1ed062517f87dd9685be7b6d33206f36a823ba56516b28b26e1ffb366800433b
+- Uperf 精确覆盖 performance
+- 当前刷新率 profile 只有 default 120，没有单独鸣潮 display profile
+
+本轮最终二次刷入后尚未从亮屏 Launcher 重新进入鸣潮，因此不要把旧日志、测试包或配置文本冒充最终真实游戏/线程 mask 结论。
+
+五、UI、游戏助手与当前唯一待办
+
+- V49 代码已恢复原有底栏/侧栏、字体、间距、圆角和页面结构；Uperf 四档同一行，下面是自定义应用“+”。
+- OEM 遥测服务已恢复，后端不再主动破坏游戏助手读取链。
+- 设备当前仍被 keyguard 挡住，最终二次刷入后的竖/横屏 UI 和游戏助手 CPU/GPU/FPS 非零读数尚未做视觉验收。不能提前写成全部通过，也不能用 ADB 绕过锁屏。
+- 等用户手动解锁并停在亮屏 Launcher：先截图复核 ZuiControl 竖/横屏；再从 Launcher 正常进入鸣潮，只验证精确 Uperf 档、OEM 游戏助手读数和真实线程 mask，不主动高温烧机。发现异常就在 V49 上继续迭代。
+
+六、预装清理和工作区清理
+
+- 只从本轮 system 删除 /system/preload/QQMusic/QQMusic.apk（180737432 bytes）；WPS 保留，官方 A072 原包未改。
+- 实机 QQ 音乐 package 不存在，cn.wps.moffice_eng 存在。
+- scripts/CleanupZuiControlReleaseWorkspace.ps1 已加入固定 allowlist、成品/CI 保留门禁、工作区边界检查和默认 dry-run。
+- 本轮已删除 work/unpack、work/img、work/flash_img、中间 work/super.img、QQ 音乐隔离副本、两份旧 CI 和三个反编译临时目录。
+- D 盘可用空间由 62.38GiB 增至 103.36GiB，恢复约 40.98GiB。官方 A072、072必刷镜像、最终 B072、固定安全包、当前 CI、仓库和刷写日志保留。
+
+七、禁止项
+
+- 不改 thermal conf。
+- 不改 P1，不进入 FPS cap。
+- 不恢复 direct CPU/GPU sysfs、provider_direct、云控、XML/ZuiPP/AppOpt 或 Scene 基础。
+- 不让 Uperf 与第二套线程调度并行。
+- 不用测试包代替鸣潮结论，不主动持续高温负载。
