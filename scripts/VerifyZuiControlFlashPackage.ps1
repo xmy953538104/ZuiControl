@@ -390,6 +390,7 @@ try {
         '(allow performanced activity_service (service_manager (find)))',
         '(allow system_server performanced (fd (use)))',
         '(allow system_server performanced (fifo_file (write)))',
+        '(allow system_server performanced (binder (call)))',
         '(allow performanced self (capability (chown dac_override fowner kill)))',
         '(allow performanced self (file (getattr open read)))',
         '(allow performanced appdomain (dir (getattr open read search)))',
@@ -403,11 +404,11 @@ try {
         '(allow performanced input_device (dir (ioctl read getattr lock open watch watch_reads search)))',
         '(allow performanced input_device (chr_file (ioctl read getattr lock map open)))',
         '(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))',
-        '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))'
+        '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))',
+        '(allow performanced zui_control_data_file (lnk_file (getattr read)))'
     )) { Assert-Contains $PlatPolicy $rule 'scheduler SELinux rule' }
     foreach ($retiredRule in @(
-        '(allow performanced adb_data_file (dir (search)))',
-        '(allow system_server performanced (binder (call)))'
+        '(allow performanced adb_data_file (dir (search)))'
     )) { Assert-NotContains $PlatPolicy $retiredRule 'retired scheduler SELinux rule' }
     foreach ($retiredProcAccess in @(
         '(allow performanced system_server (dir ',
