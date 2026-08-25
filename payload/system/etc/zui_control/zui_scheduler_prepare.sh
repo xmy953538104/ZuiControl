@@ -3,6 +3,7 @@
 DATA_ROOT=/data/vendor/zui_control
 UPERF_DIR=$DATA_ROOT/uperf
 ASOUL_DIR=$DATA_ROOT/asoul
+LOG_DIR=$DATA_ROOT/log
 SYSTEM_UPERF=/system/etc/zui_control/uperf-sm8650.json
 SYSTEM_PERAPP=/system/etc/zui_control/default_uperf_perapp.txt
 SYSTEM_ASOUL=/system/etc/zui_control/default_asopt.conf
@@ -77,6 +78,11 @@ restorecon /data/vendor/asopt.conf >/dev/null 2>&1 || true
 # One-release migration cleanup: no retired scheduler remains active or visible.
 rm -rf "$DATA_ROOT/appopt" "$DATA_ROOT/zuipp" \
     "$DATA_ROOT/performance" "$DATA_ROOT/refresh"
+rm -f "$DATA_ROOT/safecenter_keepalive_backup.flag" \
+    "$DATA_ROOT/safecenter_keepalive_done.flag" \
+    "$LOG_DIR/safecenter_keepalive.log" \
+    "$UPERF_DIR/.auto_mode_v46" \
+    "$UPERF_DIR/.rom_frontend_v47"
 for key in zui_control_performance_profiles_text zui_control_performance_summary \
     zui_control_zuipp_reload_state zui_control_appopt_rules_text zui_control_xml_state; do
     settings delete system "$key" >/dev/null 2>&1 || true

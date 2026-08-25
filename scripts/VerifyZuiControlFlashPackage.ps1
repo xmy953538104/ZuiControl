@@ -24,7 +24,9 @@ $ExpectedUperfSha256 = 'f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215a
 $ExpectedAsoulSha256 = '7a2ee5d67ba7c057066176334eca9256e376427916429d66b7593cbb5538ec86'
 $ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371'
 $ExpectedBuildFingerprintMarker = 'ZUI_16.1.11.072_241118_PRC'
+$ForbiddenBuildFingerprintMarker = 'ZUI_16.1.11.187_250227_PRC'
 $MinimumAvbRollbackIndex = [int64]1736035200
+$OfficialB072Dir = Join-Path $WorkspaceRoot '【A官方】072'
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Missing file: $Path" }
@@ -68,6 +70,19 @@ function Read-AvbRollbackIndex([string]$Info, [string]$Label) {
     $match = [regex]::Match($Info, 'Rollback Index:\s+(\d+)')
     if (-not $match.Success) { throw "Missing rollback index in $Label" }
     return [int64]$match.Groups[1].Value
+}
+
+function Read-AvbHashDigest([string]$Info, [string]$Partition, [string]$Label) {
+    $blocks = [regex]::Split($Info, '(?m)(?=^\s*(?:Hash|Hashtree|Chain Partition) descriptor:)')
+    foreach ($block in $blocks) {
+        if ($block -notmatch '(?m)^\s*Hash descriptor:\s*$') { continue }
+        $partitionMatch = [regex]::Match($block, '(?m)^\s*Partition Name:\s+([^\r\n]+)\s*$')
+        if (-not $partitionMatch.Success -or $partitionMatch.Groups[1].Value.Trim() -ne $Partition) { continue }
+        $digestMatch = [regex]::Match($block, '(?m)^\s*Digest:\s+([0-9a-fA-F]+)\s*$')
+        if (-not $digestMatch.Success) { throw "Missing digest for $Partition in $Label" }
+        return $digestMatch.Groups[1].Value.ToLowerInvariant()
+    }
+    throw "Missing hash descriptor for $Partition in $Label"
 }
 
 function Find-AndroidTool([string]$Name) {
@@ -137,6 +152,11 @@ function Assert-UperfConfig([string]$Path) {
     if ($json.modules.sfanalysis.enable -ne $false -or $json.modules.sched.enable -ne $false) {
         throw 'Bundled Uperf must leave SurfaceFlinger injection off and delegate thread placement to A-SOUL'
     }
+    $presets = @($json.presets.psobject.Properties.Name | Sort-Object)
+    $expectedPresets = @('balance', 'fast', 'performance', 'powersave')
+    if (Compare-Object $presets $expectedPresets) {
+        throw "Uperf must expose exactly four presets: $($presets -join ', ')"
+    }
     foreach ($governor in @('governor0', 'governor2', 'governor5', 'governor7')) {
         if ($json.initials.sysfs.$governor -ne 'walt') { throw "Uperf $governor is not walt" }
     }
@@ -161,12 +181,31 @@ if ($BootHash -ne $ExpectedBootSha256) {
     throw "Unexpected B072 boot image: $BootHash"
 }
 $BootAvbInfo = Read-AvbInfo $Boot
+$VbmetaAvbInfo = Read-AvbInfo $Vbmeta
 $VbmetaSystemAvbInfo = Read-AvbInfo $VbmetaSystem
 if (-not $BootAvbInfo.Contains($ExpectedBuildFingerprintMarker)) {
     throw 'boot.img is not from the target B072 build'
 }
 if (-not $VbmetaSystemAvbInfo.Contains($ExpectedBuildFingerprintMarker)) {
     throw 'vbmeta_system.img is not from the target B072 build'
+}
+if ($VbmetaAvbInfo.Contains($ForbiddenBuildFingerprintMarker) -or
+    $VbmetaSystemAvbInfo.Contains($ForbiddenBuildFingerprintMarker)) {
+    throw 'AVB metadata contains 187 descriptors even though the fixed flash allowlist leaves those partitions on B072'
+}
+foreach ($entry in @(
+    @{ Partition = 'dtbo'; ParentInfo = $VbmetaAvbInfo; ParentLabel = 'vbmeta.img' },
+    @{ Partition = 'init_boot'; ParentInfo = $VbmetaAvbInfo; ParentLabel = 'vbmeta.img' },
+    @{ Partition = 'vendor_boot'; ParentInfo = $VbmetaAvbInfo; ParentLabel = 'vbmeta.img' },
+    @{ Partition = 'pvmfw'; ParentInfo = $VbmetaSystemAvbInfo; ParentLabel = 'vbmeta_system.img' }
+)) {
+    $officialImage = Join-Path $OfficialB072Dir ($entry.Partition + '.img')
+    Require-File $officialImage
+    $expectedDigest = Read-AvbHashDigest (Read-AvbInfo $officialImage) $entry.Partition "official B072 $($entry.Partition).img"
+    $actualDigest = Read-AvbHashDigest $entry.ParentInfo $entry.Partition $entry.ParentLabel
+    if ($actualDigest -ne $expectedDigest) {
+        throw "$($entry.ParentLabel) points $($entry.Partition) at a non-B072 digest: $actualDigest != $expectedDigest"
+    }
 }
 $BootRollbackIndex = Read-AvbRollbackIndex $BootAvbInfo 'boot.img'
 $VbmetaSystemRollbackIndex = Read-AvbRollbackIndex $VbmetaSystemAvbInfo 'vbmeta_system.img'
@@ -245,8 +284,8 @@ try {
     Assert-Contains $SchedulerRc '    stop vendor.perfservice' 'QTI userspace perf bridge ownership fence'
     Assert-Contains $SchedulerRc '    start vendor.perfservice' 'QTI userspace perf bridge rollback'
     foreach ($bridge in @('performance', 'poweropt-service', 'perf2-hal-1-0')) {
-        Assert-Contains $SchedulerRc "    stop $bridge" 'OEM perf bridge ownership fence'
-        Assert-Contains $SchedulerRc "    start $bridge" 'OEM perf bridge rollback'
+        Assert-NotContains $SchedulerRc "    stop $bridge" 'OEM telemetry service stop action'
+        Assert-NotContains $SchedulerRc "    start $bridge" 'OEM telemetry service ownership action'
     }
     Assert-Contains $SchedulerRc 'symlink /data/vendor/zui_control/asoul/asopt.conf /data/vendor/asopt.conf' 'canonical A-SOUL config symlink'
     Assert-NotContains $SchedulerRc 'write /data/vendor/zui_control/asoul/asopt.conf' 'boot-time A-SOUL config truncation'
@@ -267,6 +306,8 @@ try {
     Assert-Contains $SchedulerPrepare 'effective_powermode.txt' 'effective Uperf mode preparation'
     Assert-Contains $SchedulerPrepare '$1 != "*"' 'retired per-app global fallback removal'
     Assert-Contains $SchedulerPrepare 'mode == 1 && rt == 1 && opt == 1' 'persistent A-SOUL config validation'
+    Assert-Contains $SchedulerPrepare 'safecenter_keepalive_backup.flag' 'retired SafeCenter data cleanup'
+    Assert-Contains $SchedulerPrepare '.rom_frontend_v47' 'retired Uperf frontend marker cleanup'
     Assert-NotContains $SchedulerPrepare 'setprop zui_control.appopt' 'retired AppOpt property'
     Assert-NotContains $SchedulerPrepare 'setprop zui_control.zuipp' 'retired XML property'
     Assert-NotContains $SchedulerPrepare '/data/adb' 'shell-domain access to protected Magisk data'
@@ -289,8 +330,10 @@ try {
     Assert-Contains $Daemon 'effective="$global_mode"' 'global fallback resolution order'
     Assert-Contains $Daemon "grep -q ' I Uperf is running`$'" 'strict Uperf daemon health check'
     Assert-NotContains $Daemon 'ps -AZ' 'cross-domain health scanner'
-    Assert-Contains $Daemon 'OEM Perf 桥：$(oem_bridge_state)' 'all OEM perf bridge health states'
+    Assert-Contains $Daemon '调度围栏：vendor.perfservice=' 'narrow QTI scheduler fence health state'
+    Assert-Contains $Daemon 'OEM 遥测：$(oem_telemetry_state)' 'OEM telemetry health states'
     Assert-Contains $Daemon 'OEM perf bridge escaped fence' 'OEM perf bridge supervision'
+    Assert-NotContains $Daemon 'for bridge in vendor.perfservice performance poweropt-service perf2-hal-1-0' 'broad OEM telemetry fence'
     Assert-Contains $Daemon '线程参数：$(tr' 'runtime A-SOUL mode state'
     Assert-Contains $Daemon 'GPU：原厂 KGSL DVFS 与热保护保留' 'honest GPU ownership statement'
     foreach ($forbidden in @('/sys/class/kgsl/kgsl-3d0', '/sys/devices/system/cpu/cpufreq', 'provider_direct', 'GameModeProvider/contact', 'zui_control.cloud_block', 'cloud_block.log')) {
@@ -344,6 +387,8 @@ try {
         '(genfscon proc "/sys/walt/input_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
         '(genfscon proc "/sys/walt/sched_per_task_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
         '(allow performanced activity_service (service_manager (find)))',
+        '(allow system_server performanced (fd (use)))',
+        '(allow system_server performanced (fifo_file (write)))',
         '(allow performanced self (capability (chown dac_override fowner kill)))',
         '(allow performanced self (file (getattr open read)))',
         '(allow performanced appdomain (dir (getattr open read search)))',
@@ -361,9 +406,7 @@ try {
     )) { Assert-Contains $PlatPolicy $rule 'scheduler SELinux rule' }
     foreach ($retiredRule in @(
         '(allow performanced adb_data_file (dir (search)))',
-        '(allow system_server performanced (binder (call)))',
-        '(allow system_server performanced (fd (use)))',
-        '(allow system_server performanced (fifo_file (write)))'
+        '(allow system_server performanced (binder (call)))'
     )) { Assert-NotContains $PlatPolicy $retiredRule 'retired scheduler SELinux rule' }
     foreach ($retiredProcAccess in @(
         '(allow performanced system_server (dir ',

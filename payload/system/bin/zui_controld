@@ -201,9 +201,9 @@ publish_uperf_rules_state() {
     settings_put_quiet "$UPERF_RULES_KEY" "$(printf '%s' "$rules" | sed '/^$/d')"
 }
 
-oem_bridge_state() {
+oem_telemetry_state() {
     result=
-    for bridge in vendor.perfservice performance poweropt-service perf2-hal-1-0; do
+    for bridge in performance poweropt-service perf2-hal-1-0; do
         state="$(getprop "init.svc.$bridge" 2>/dev/null)"
         [ -n "$state" ] || state=absent
         [ -z "$result" ] || result="$result · "
@@ -228,7 +228,8 @@ publish_scheduler_health() {
 全局模式：$global_mode · 实际档位：$effective · 来源：${UPERF_FRONTEND_SOURCE:-global}
 前端场景：${UPERF_FRONTEND_SCENE:-无} · 亮屏：$UPERF_FRONTEND_SCREEN
 GPU：原厂 KGSL DVFS 与热保护保留
-OEM Perf 桥：$(oem_bridge_state)（存在的服务均应为 stopped）
+调度围栏：vendor.perfservice=$(getprop init.svc.vendor.perfservice 2>/dev/null)（存在时应为 stopped）
+OEM 遥测：$(oem_telemetry_state)（存在时应为 running）
 A-SOUL：${asoul_pid:-未运行}（u:r:performanced:s0）
 线程参数：$(tr '\n' ' ' < "$ASOUL_CONFIG" 2>/dev/null)
 日志：${log_size:-0} 字节"
@@ -358,13 +359,10 @@ stop_asoul() {
 
 ensure_scheduler_running() {
     [ "$(getprop "$PROP_SCHEDULER" 2>/dev/null)" != "stopped" ] || return 0
-    for bridge in vendor.perfservice performance poweropt-service perf2-hal-1-0; do
-        if [ "$(getprop "init.svc.$bridge" 2>/dev/null)" = "running" ]; then
-            log_line "OEM perf bridge escaped fence: $bridge"
-            trigger_init_action "$PROP_SCHEDULER" fence || true
-            break
-        fi
-    done
+    if [ "$(getprop init.svc.vendor.perfservice 2>/dev/null)" = "running" ]; then
+        log_line "OEM perf bridge escaped fence: vendor.perfservice"
+        trigger_init_action "$PROP_SCHEDULER" fence || true
+    fi
     asoul_state="$(getprop "$PROP_ASOUL" 2>/dev/null)"
     if uperf_is_healthy &&
         { [ "$asoul_state" = "stopped" ] || [ -n "$(pidof AsoulOpt 2>/dev/null)" ]; }; then

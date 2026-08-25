@@ -117,36 +117,48 @@ class MainActivity : Activity() {
     private fun header(): View = horizontalRow().apply {
         background = null
         elevation = 0f
-        setPadding(0, 0, 0, dp(8))
+        setPadding(0, 0, 0, dp(12))
         addView(vertical().apply {
-            addView(label("ZuiControl", 24f, COLOR_TEXT, Typeface.BOLD))
+            addView(label("ZuiControl", 28f, COLOR_TEXT, Typeface.BOLD))
             headerStatus = label(headerStatusText(), 12f, COLOR_SUBTLE, Typeface.NORMAL)
             addView(headerStatus)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        settingsButton = iconButton(R.drawable.ic_nav_system, "系统") { showPage(Page.SYSTEM) }
-        addView(settingsButton, LinearLayout.LayoutParams(dp(46), dp(46)))
+        addView(iconButton(R.drawable.ic_action_refresh, "刷新状态") {
+            runCommand("正在刷新", refreshNotification = true) {
+                ZuiControlRequest.send(this@MainActivity, ZuiControlContract.CMD_STATUS)
+            }
+        }, LinearLayout.LayoutParams(dp(44), dp(44)))
+        settingsButton = iconButton(R.drawable.ic_nav_system, "设置") { showPage(Page.SYSTEM) }
+        addView(settingsButton, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+            setMargins(dp(8), 0, 0, 0)
+        })
     }
 
     private fun pageTabs(horizontal: Boolean): View {
         val row = LinearLayout(this).apply {
             orientation = if (horizontal) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = rounded(COLOR_SURFACE, dp(24), Color.TRANSPARENT)
-            setPadding(dp(6), dp(6), dp(6), dp(6))
+            setBackgroundColor(COLOR_BG)
         }
         val map = linkedMapOf<Page, TextView>()
         Page.entries.filter { it != Page.SYSTEM }.forEach { page ->
-            val button = label(page.title, 11f, COLOR_SUBTLE, Typeface.BOLD).apply {
+            val button = label(page.title, 12f, COLOR_SUBTLE, Typeface.BOLD).apply {
                 gravity = Gravity.CENTER
+                includeFontPadding = false
                 setCompoundDrawablesRelativeWithIntrinsicBounds(0, page.iconRes, 0, 0)
-                compoundDrawablePadding = dp(3)
+                compoundDrawablePadding = dp(4)
+                setPadding(dp(10), dp(7), dp(10), dp(6))
                 setOnClickListener { showPage(page) }
             }
             map[page] = button
-            row.addView(button, if (horizontal) {
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-            } else {
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            row.addView(button, LinearLayout.LayoutParams(
+                if (horizontal) dp(108) else dp(96),
+                if (horizontal) dp(62) else dp(76),
+            ).apply {
+                if (row.childCount > 0) {
+                    if (horizontal) setMargins(dp(8), 0, 0, 0)
+                    else setMargins(0, dp(8), 0, 0)
+                }
             })
         }
         tabButtons = map
@@ -199,16 +211,60 @@ class MainActivity : Activity() {
         return "v$version · ${displayHz}Hz"
     }
 
-    private fun buildRefreshPage(): View = listPage(
-        "点击右下角 + 添加应用",
-        refreshRules.entries.map { (pkg, rate) ->
-            appCard(pkg, "${rate}Hz") { showRefreshRateDialog(pkg, rate) }
-        },
-    ) {
-        showPackagePicker("选择刷新率应用") { entry ->
-            labelCache[entry.info.packageName] = entry.label()
-            showRefreshRateDialog(entry.info.packageName, refreshRules[entry.info.packageName])
+    private fun isWideLayout(): Boolean {
+        val config = resources.configuration
+        return config.screenWidthDp >= 700 &&
+            config.orientation == Configuration.ORIENTATION_LANDSCAPE
+    }
+
+    private fun buildRefreshPage(): View {
+        val root = FrameLayout(this)
+        val content = vertical().apply { setPadding(0, 0, 0, dp(76)) }
+        if (refreshRules.isEmpty()) {
+            content.addView(emptyText("点击右下角 + 添加应用"), matchWrap())
+        } else {
+            val columns = if (isWideLayout()) 3 else 2
+            refreshRules.entries.chunked(columns).forEach { entries ->
+                val row = horizontalRow().apply {
+                    background = null
+                    elevation = 0f
+                    setPadding(0, 0, 0, 0)
+                }
+                entries.forEachIndexed { index, (pkg, rate) ->
+                    val card = horizontalRow().apply {
+                        setPadding(dp(12), dp(10), dp(12), dp(10))
+                        background = rounded(Color.WHITE, dp(20), Color.TRANSPARENT)
+                        elevation = 0f
+                        addView(appIcon(pkg), LinearLayout.LayoutParams(dp(42), dp(42)))
+                        addView(label(labelForPackage(pkg), 12f, COLOR_TEXT, Typeface.BOLD).apply {
+                            gravity = Gravity.CENTER_VERTICAL
+                            maxLines = 1
+                        }, LinearLayout.LayoutParams(
+                            0, ViewGroup.LayoutParams.MATCH_PARENT, 1f,
+                        ).apply { setMargins(dp(10), 0, dp(8), 0) })
+                        addView(rateBadge("${rate}Hz"), LinearLayout.LayoutParams(dp(78), dp(38)))
+                        setOnClickListener { showRefreshRateDialog(pkg, rate) }
+                    }
+                    row.addView(card, LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f,
+                    ).apply { if (index > 0) setMargins(dp(8), 0, 0, 0) })
+                }
+                repeat(columns - entries.size) { index ->
+                    row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply {
+                        if (entries.isNotEmpty() || index > 0) setMargins(dp(8), 0, 0, 0)
+                    })
+                }
+                content.addView(row, cardMargins())
+            }
         }
+        root.addView(ScrollView(this).apply { addView(content) }, matchMatchFrame())
+        addFloatingButton(root) {
+            showPackagePicker("选择刷新率应用") { entry ->
+                labelCache[entry.info.packageName] = entry.label()
+                showRefreshRateDialog(entry.info.packageName, refreshRules[entry.info.packageName])
+            }
+        }
+        return root
     }
 
     private fun showRefreshRateDialog(pkg: String, currentRate: Int?) {
@@ -250,9 +306,6 @@ class MainActivity : Activity() {
         val root = FrameLayout(this)
         val content = vertical().apply {
             setPadding(0, 0, 0, dp(76))
-            addView(compactNote(setting(ZuiControlContract.KEY_UPERF_HEALTH).ifBlank {
-                "Uperf 状态等待系统服务上报"
-            }))
             addView(sectionTitle("全局模式"), sectionMargins())
             val selected = UperfMode.fromId(setting(ZuiControlContract.KEY_UPERF_MODE))
                 ?: UperfMode.BALANCE
@@ -330,9 +383,6 @@ class MainActivity : Activity() {
     private fun buildThreadsPage(): View = ScrollView(this).apply {
         addView(vertical().apply {
             setPadding(0, 0, 0, dp(20))
-            addView(compactNote(setting(ZuiControlContract.KEY_ASOUL_HEALTH).ifBlank {
-                "A-SOUL 状态等待系统服务上报"
-            }))
             addView(sectionTitle("Shiroko A-SOUL"), sectionMargins())
             addView(compactNote(
                 "mode=0 使用硬亲和，rt=0 保留默认调度策略。配置由 ROM 持久目录提供，" +
@@ -406,19 +456,6 @@ class MainActivity : Activity() {
         runCatching {
             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(pendingExportText) }
         }.onSuccess { toast("日志已导出") }.onFailure { toast("日志导出失败") }
-    }
-
-    private fun listPage(emptyText: String, entries: List<View>, onAdd: () -> Unit): View {
-        val root = FrameLayout(this)
-        val content = vertical().apply {
-            setPadding(0, 0, 0, dp(76))
-            if (entries.isEmpty()) addView(emptyText(emptyText)) else entries.forEach {
-                addView(it, cardMargins())
-            }
-        }
-        root.addView(ScrollView(this).apply { addView(content) }, matchMatchFrame())
-        addFloatingButton(root, onAdd)
-        return root
     }
 
     private fun addFloatingButton(root: FrameLayout, action: () -> Unit) {

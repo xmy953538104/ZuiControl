@@ -15,6 +15,12 @@ param(
 $ErrorActionPreference = "Stop"
 $prepare = Join-Path $PSScriptRoot 'PrepareZuiControl9008Package.ps1'
 & $prepare -SourceDir $SourceDir -PlatformDir $PlatformDir -OutputDir $SafePackageDir
+$verify = Join-Path $PSScriptRoot 'VerifyZuiControlFlashPackage.ps1'
+if ([string]::IsNullOrWhiteSpace($SourceDir)) {
+    & $verify
+} else {
+    & $verify -FlashDir $SourceDir
+}
 if ($Mode -eq 'Preflight') {
     Write-Host 'Preflight only: the device was not rebooted and nothing was flashed.'
     return

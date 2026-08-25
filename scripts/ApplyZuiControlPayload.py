@@ -190,6 +190,7 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "AsoulOpt",
         "zui_asoulopt",
         "asopt.conf",
+        "/data/adb/naki",
         "zui_cloud_block",
         "AppOpt",
         "zui_appopt",
@@ -394,6 +395,8 @@ def patch_plat_sepolicy(unpack, payload, dry_run, report):
         "(allow shell platform_app (process (signal sigkill)))",
         "(allow init shell_data_file (dir (getattr open read search write add_name remove_name)))",
         "(allow init shell_data_file (file (getattr open read write create unlink setattr relabelfrom)))",
+        "(allow performanced adb_data_file (dir (search)))",
+        "(allow system_server performanced (binder (call)))",
     ]
     removed = remove_lines_containing(target, obsolete, dry_run)
     patch_lines = read_patch_lines(patch)

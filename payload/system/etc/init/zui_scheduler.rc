@@ -7,9 +7,6 @@ on post-fs-data
     restorecon_recursive /data/vendor/zui_control
     restorecon /data/vendor/asopt.conf
     stop vendor.perfservice
-    stop performance
-    stop poweropt-service
-    stop perf2-hal-1-0
 
 on property:sys.boot_completed=1
     exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh
@@ -17,9 +14,6 @@ on property:sys.boot_completed=1
 
 on zui-scheduler-start
     stop vendor.perfservice
-    stop performance
-    stop poweropt-service
-    stop perf2-hal-1-0
     start zui_asoulopt
     setprop zui_control.asoul started
     start zui_uperf
@@ -33,17 +27,11 @@ on property:zui_control.scheduler=restart
 
 on property:zui_control.scheduler=fence
     stop vendor.perfservice
-    stop performance
-    stop poweropt-service
-    stop perf2-hal-1-0
     setprop zui_control.scheduler fenced
 
 on property:zui_control.scheduler=stop
     stop zui_uperf
     stop zui_asoulopt
-    start perf2-hal-1-0
-    start poweropt-service
-    start performance
     start vendor.perfservice
     setprop zui_control.scheduler stopped
 
