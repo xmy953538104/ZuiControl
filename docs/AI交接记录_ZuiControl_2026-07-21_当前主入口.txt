@@ -84,14 +84,19 @@ asoulOpt：
 - Uperf 精确覆盖 performance
 - 当前刷新率 profile 只有 default 120，没有单独鸣潮 display profile
 
-本轮最终二次刷入后尚未从亮屏 Launcher 重新进入鸣潮，因此不要把旧日志、测试包或配置文本冒充最终真实游戏/线程 mask 结论。
+本轮最终二次刷入后已从亮屏 Launcher 的真实“鸣潮”图标正常进入，不是 am start 或测试包：
 
-五、UI、游戏助手与当前唯一待办
+- system_server 的 raw/current/last/applied 均为 com.kurogame.mingchao，target/actual=120/120。
+- 全局保持 balance，鸣潮前台时 effective=performance；退出后 effective 恢复 balance。
+- 开放世界 PID 8908 共采样 208 个存活线程：206 个为 2-6；主线程 8908 为 2-6；GameThread 9284 为 7；RenderThread 2 的 10203 为 2-4。真实 asoulOpt 硬亲和已闭合。
 
-- V49 代码已恢复原有底栏/侧栏、字体、间距、圆角和页面结构；Uperf 四档同一行，下面是自定义应用“+”。
-- OEM 遥测服务已恢复，后端不再主动破坏游戏助手读取链。
-- 设备当前仍被 keyguard 挡住，最终二次刷入后的竖/横屏 UI 和游戏助手 CPU/GPU/FPS 非零读数尚未做视觉验收。不能提前写成全部通过，也不能用 ADB 绕过锁屏。
-- 等用户手动解锁并停在亮屏 Launcher：先截图复核 ZuiControl 竖/横屏；再从 Launcher 正常进入鸣潮，只验证精确 Uperf 档、OEM 游戏助手读数和真实线程 mask，不主动高温烧机。发现异常就在 V49 上继续迭代。
+五、UI、游戏助手与最终视觉验收
+
+- V49 竖屏刷新率/Uperf 页面、横屏 Uperf/线程页面均已截图复核：底栏/侧栏、字体、间距、圆角、选中态、FAB 和页面结构正常；四档同一行，下方是自定义应用卡片和“+”，无溢出错位。
+- OEM performance、poweropt-service、perf2-hal-1-0 始终 running。原厂 com.zui.game.service 的 FloatingHwInfo 两次实机显示 CPU 3.30GHz / GPU 366MHz / 10FPS / 32.0C，以及 CPU 3.30GHz / GPU 500MHz / 59FPS / 33.2C，CPU/GPU/FPS 全 0 问题已恢复。
+- 证据目录：D:\3.VScode\Mi\work\validation_v49_20260825。关键图：zui_v49_app_portrait.png、zui_v49_uperf_portrait.png、zui_v49_uperf_landscape.png、zui_v49_thread_landscape.png、gameassistant_nonzero_final.png。
+- 短时遥测复核退出后 CPU junction 瞬时到 89.9C，已立即回桌面并强停；20 秒后 cpuss 36.3-37.4C、gpuss 35.4-36.6C、skin 35.9C、battery 33.9C。游戏助手 33.2C 不是最高 junction，后续不要主动高温烧机。
+- 最终鸣潮无 PID，焦点 Launcher，target/actual=120/120，global/effective=balance，自动旋转已恢复；目标 AVC、FATAL、ANR 均为 0。当前 V49 调度、真实鸣潮线程和 OEM 遥测验收已完成，不再有“等待解锁后验证”的待办。
 
 六、预装清理和工作区清理
 
@@ -100,6 +105,7 @@ asoulOpt：
 - scripts/CleanupZuiControlReleaseWorkspace.ps1 已加入固定 allowlist、成品/CI 保留门禁、工作区边界检查和默认 dry-run。
 - 本轮已删除 work/unpack、work/img、work/flash_img、中间 work/super.img、QQ 音乐隔离副本、两份旧 CI 和三个反编译临时目录。
 - D 盘可用空间由 62.38GiB 增至 103.36GiB，恢复约 40.98GiB。官方 A072、072必刷镜像、最终 B072、固定安全包、当前 CI、仓库和刷写日志保留。
+- 最终游戏助手调查完成后，另删 gamehelper_v49_ui_audit、services_v49_gesture_audit 和拉取的 APK/JAR，约 590MiB；仅保留 validation_v49_20260825 的视觉证据。
 
 七、禁止项
 

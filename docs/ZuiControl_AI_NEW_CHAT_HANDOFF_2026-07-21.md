@@ -53,19 +53,23 @@ bb756ee076bff3d3bab92b62a53e2926fc37c665235c6522924c7d5e23699774  vbmeta.img
 - 干净重启后及一次受控 `zui_control.scheduler=restart` 后：`zui_controld` 一个 init 子进程；A-SOUL 一个 init 子进程；Uperf 一个 wrapper、一个主进程和一个子进程。五次、约 40 秒无负载采样中 PID 不变，三项调度 init service 与 `performance`、`poweropt-service`、`perf2-hal-1-0` 三项 OEM 遥测服务始终 running；`vendor.perfservice` 保持 stopped。
 - 四个全局档逐一通过 daemon 正式 request/ACK 协议，`cur` 与 `effective` 依次成为 `powersave/balance/performance/fast`；最终终态 ACK 为 `global=balance;effective=balance`。熄屏实测 `balance -> powersave`，亮屏后恢复 `balance`。
 - 第一版刷后曾发现 `system_server -> performanced binder call` 与 A-SOUL 读取 `/data/vendor/asopt.conf` 软链接两条 AVC。最终 032c82e 精确加入 Binder call 与 `zui_control_data_file:lnk_file { getattr read }`；重制、二次刷入并从干净开机复测后，调度重启和真实 ZuiControl Activity 生命周期均未再出现这两类 AVC，相关 crash/ANR 为零。072 原生/当前 root 环境仍有 system_server capability、CachedAppOptimizer、Lenovo 键盘等非项目 AVC，不为它们扩大 ZuiControl 策略。
-- 鸣潮当前已安装：`com.kurogame.mingchao` 3.6.0，versionCode 176520875，base APK SHA-256 `1ed062517f87dd9685be7b6d33206f36a823ba56516b28b26e1ffb366800433b`；Uperf 精确覆盖为 `performance`。本轮尚未在最终二次刷入后从亮屏 Launcher 重入游戏，因此不把旧日志或测试包冒充最终真实游戏/线程 mask 结论。
+- 鸣潮当前已安装：`com.kurogame.mingchao` 3.6.0，versionCode 176520875，base APK SHA-256 `1ed062517f87dd9685be7b6d33206f36a823ba56516b28b26e1ffb366800433b`。最终二次刷入后已从亮屏 Launcher 的真实“鸣潮”图标正常进入；system_server 的 raw/current/last/applied 均为鸣潮，target/actual 为 120/120，全局仍为 `balance`、Uperf effective 精确切到 `performance`，退出后又恢复 `balance`。
+- 开放世界真实 PID 8908 共采到 208 个存活线程：206 个为 `2-6`，`GameThread` TID 9284 为 `7`，`RenderThread 2` TID 10203 为 `2-4`；主线程 TID 8908 为 `2-6`。这闭合了旧 Shiroko 表在真实鸣潮上的硬亲和效果，不是测试包结论。
 - P1 未改，profile 当前只有 `default|0|120|0|DISPLAY_ONLY`。AppOpt、XML bind/ZuiPP bridge、SafeCenter/su 生产逻辑和旧命名进程均不存在。
 
-#### UI、游戏助手与当前剩余一步
+#### UI、游戏助手与最终视觉/游戏验收
 
-- V49 代码已经恢复原有底栏/侧栏、字体、间距、圆角与页面结构，只替换调度页面的后端内容；全局四档为同一行，下面是“自定义应用 +”入口。OEM 三项性能遥测服务已恢复并保持运行，避免因误停原厂 HAL 使游戏助手 CPU/GPU/FPS 全为 0。
-- 但最终二次刷入后的设备当前被 keyguard 挡住，尚未完成竖屏/横屏截图与游戏助手非零读数的视觉复核。必须等待用户手动解锁；禁止用 ADB 绕过锁屏，也不能在完成前写成 UI/游戏遥测已最终验收。
-- 解锁后最短步骤：停在亮屏 Launcher，先截图复核 ZuiControl 竖/横屏布局；再从 Launcher 正常进入鸣潮，只验证 Uperf 精确覆盖、OEM 游戏助手读数和真实线程 mask，不用测试包代替，不主动持续高温负载。若 UI 或读数仍异常，再在本版本上迭代，禁止转去 thermal/P1/FPS cap。
+- V49 竖屏已复核刷新率页和 Uperf 页，横屏已复核 Uperf 页和线程页：原有底栏/侧栏、选中态、字体、间距、圆角、FAB 与页面结构一致；全局四档同一行，下面是两条鸣潮自定义应用卡片和“+”入口，没有溢出或错位。
+- OEM `performance`、`poweropt-service`、`perf2-hal-1-0` 始终 running。正常 Launcher 入场后，原厂 `FloatingHwInfo` 窗口实际存在；两次截图分别显示 CPU 3.30GHz / GPU 366MHz / 10FPS / 32.0C，以及 CPU 3.30GHz / GPU 500MHz / 59FPS / 33.2C，确认 CPU/GPU/FPS 不再全为 0，且读数来自 `com.zui.game.service` 原厂游戏助手而非 ZuiControl 自制层。
+- 证据目录为 `D:\3.VScode\Mi\work\validation_v49_20260825`；核心图片是 `zui_v49_app_portrait.png`、`zui_v49_uperf_portrait.png`、`zui_v49_uperf_landscape.png`、`zui_v49_thread_landscape.png`、`second_launch_8s.png` 和 `gameassistant_nonzero_final.png`。
+- 实测只做短时入场/采样。开放世界首轮 CPU/GPU junction 上升后已立即强停；最终遥测复核虽只持续约十秒，退出后 thermalservice 的 CPU junction 峰值仍瞬时到 89.9C，因此再次立即停止。20 秒后 cpuss 已回到 36.3-37.4C、gpuss 35.4-36.6C、skin 35.9C、battery 33.9C。不要把游戏助手显示的 33.2C 当成最高 junction，也不要继续主动高温烧机。
+- 游戏退出终态：鸣潮无 PID，焦点回 Launcher，target/actual 120/120，global/effective 均为 `balance`，自动旋转恢复 `accelerometer_rotation=1` / `user_rotation=0`；游戏阶段及退出后目标调度 AVC、FATAL、ANR 均为零。
 
 #### 工作区清理
 
 - 新增 `scripts/CleanupZuiControlReleaseWorkspace.ps1`：固定 allowlist、保留成品/当前 CI 门禁、工作区边界检查、默认 dry-run，只有 `-Execute` 才清理。
 - 已删除本轮可重建的 `work/unpack`、`work/img`、`work/flash_img`、中间 `work/super.img`、QQ 音乐隔离副本、两份旧 CI 和三个反编译/审计临时目录。D 盘可用空间由 62.38GiB 增至 103.36GiB，实际恢复约 40.98GiB；官方 A072、`072必刷镜像`、最终 B072、固定安全包、当前 CI、仓库与刷写日志均保留。
+- 最终游戏助手调查完成后又删除 `gamehelper_v49_ui_audit`、`services_v49_gesture_audit` 及两份拉取的 APK/JAR，约 590MiB 可重建材料；只保留 `work/validation_v49_20260825` 中的截图、UI XML 和小型标记证据。
 
 ### 0.17 2026-08-23 Scene 实机调度对照与 P2 KGSL 落实缺口（历史，已被 0.18 覆盖）
 
