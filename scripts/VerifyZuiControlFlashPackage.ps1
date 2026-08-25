@@ -269,6 +269,7 @@ try {
     )) { Assert-Missing $path 'retired AppOpt runtime' }
     Assert-Missing (Join-Path $System 'etc\zui_control\zui_cloud_block.sh') 'cloud-control block script'
     Assert-Missing (Join-Path $System 'etc\zui_control\promote_zuipp_xml.sh') 'retired ZuiPP promotion script'
+    Assert-Missing (Join-Path $System 'preinstall\QQMusic') 'removed third-party QQ Music preinstall'
     foreach ($old in 30..48) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
     Assert-Missing (Join-Path $System 'priv-app\ZuiControl') 'legacy unversioned ZuiControl directory'
 

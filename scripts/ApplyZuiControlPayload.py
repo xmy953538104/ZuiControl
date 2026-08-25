@@ -174,6 +174,7 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/etc/zui_control/zui_appopt_prepare.sh",
         "system_a/system/etc/zui_control/promote_zuipp_xml.sh",
         "system_a/AppOpt.json",
+        "system_a/system/preinstall/QQMusic",
     ]
     for rel in legacy:
         remove_path(unpack / rel, dry_run, removed)
@@ -217,6 +218,7 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV47",
         "system_a/system/priv-app/ZuiControlV48",
         "system_a/system/etc/zui_control/clear_package_cache",
+        "system_a/system/preinstall/QQMusic",
     ]
     targets = [
         unpack / "config" / "system_a_fs_config",
