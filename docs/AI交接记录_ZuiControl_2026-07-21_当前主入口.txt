@@ -1,4 +1,4 @@
-ZuiControl 新聊天当前主入口 - 2026-08-25 0.18
+ZuiControl 新聊天当前主入口 - 2026-08-28 0.19
 
 一、先读什么
 
@@ -9,7 +9,7 @@ ZuiControl 新聊天当前主入口 - 2026-08-25 0.18
 4. 涉及 9008 发布时使用已安装的 zuicontrol-release-flow skill，并按需读取：
    D:\3.VScode\Mi\ZuiControl\docs\ZuiControl_9008_AUTOMATION_GUIDE_2026-08-18.md
 
-旧的 2026-06-21 P2-I/asoulOpt、187 温控现场、Scene/P2/AppOpt 和大篇历史文档只保留证据。若冲突，以 AGENTS.md、主交接第 0.18 节和本入口为准。
+旧的 2026-06-21 P2-I/asoulOpt、187 温控现场、Scene/P2/AppOpt 和大篇历史文档只保留证据。若冲突，以 AGENTS.md、主交接第 0.19 节和本入口为准。
 
 二、当前成品、仓库和设备
 
@@ -33,7 +33,21 @@ bb756ee076bff3d3bab92b62a53e2926fc37c665235c6522924c7d5e23699774  vbmeta.img
 
 boot 仍是用户指定的 APatch 开发 boot；它只用于当前诊断便利。ZuiControl、Uperf、asoulOpt 的 ROM 集成本身不依赖 su、Magisk module、/data/adb 或 App 常驻，未来换回原版 072 boot 后设计上仍会运行。
 
-三、当前生产架构
+三、2026-08-28 只读审查、切档时延与 GPU 所有权新事实
+
+- 本轮按用户的 AI 审查清单完整扫描 91 个跟踪文件，并生成 `D:\3.VScode\Mi\ZuiControl\AI_AUDIT_PACKAGE`：20 份专题报告、总入口、91 行源码索引和脱敏源码 zip。
+- 本轮没有改产品代码、thermal conf、P1、FPS cap 或设备系统，没有制作/刷写镜像，也没有主动高温烧机。只做构建/静态检查和短时、可逆真机诊断。
+- Uperf 切档不是毫秒级即时回调。App 写 Settings request，`zui_controld` 每约 1 秒轮询，App 每 200ms 查终态 ACK；真机本轮有效变化约 0.97-2.07 秒。
+- 有效档顺序仍是熄屏 > 精确应用 > 全局。鸣潮 exact 为 `performance` 时，把 global 从 balance 改为 fast，鸣潮 effective 仍是 performance；必须改鸣潮 exact 才改变它。测试结束已恢复 global=balance、鸣潮 exact=performance、熄屏 `- powersave`。
+- 当前设备 `perapp_powermode.txt` 是一条 `com.kurogame.mingchao performance` 加一条 `- powersave`，不是 0.18 记录的“两条鸣潮”。
+- 当前 Uperf JSON 没有 KGSL/Adreno 模块，不能请求 903/834 等 GPU 档。真机低温启动鸣潮时，OEM GameHelper/`com.zui.pp` 仍执行 `onGameAppStart` 并下发 stock LimitConfig：`GPUMax=5`、`GPUMin=9`，按当前频表对应约 629MHz/366MHz；thermal-engine 同时切入游戏 case。
+- 因此用户看到 CPU 显得激进而 GPU 长期 500-629MHz 的最可信根因是两套性能链重叠：Uperf 在调 CPU/WALT/core_ctl，OEM ZuiPP/GameHelper 仍限制 CPU/GPU。此前“游戏助手读数非 0”只证明遥测恢复，不证明 GPU 调度正确。
+- 桌面自然低温时标准 GPU cooling devices 都为 state 0，但 KGSL 仍有 `thermal_pwrlevel=3/max_clock_mhz=720`，说明限制不能简单归因于当前表面温度；完整来源仍需冷态同步时间序列确认。
+- 当前规则同时禁止 direct KGSL、旧 XML/ZuiPP 生产链和 thermal 修改，所以本轮不做临时 GPU 修补。下一阶段必须先由用户选择唯一 GPU owner：明确接受 OEM 管 GPU，或单独授权设计 Uperf/KGSL 原生 GPU 策略并精确 fence OEM LimitConfig、保留游戏助手遥测。
+- 另有两个高优先级代码事实：性能命令使用未认证的 Settings 单槽而非 Binder；`ZuiControlClient.call()` 会把 `ok=0` 误判为成功。详见审查包风险表。本轮遵照“不要修改项目”的审查要求没有修复。
+- 终态：鸣潮已退出，焦点 Launcher，global/effective=balance，鸣潮 exact=performance；没有遗留本轮临时 powersave/fast 设置。
+
+四、当前生产架构
 
 P1：
 
@@ -47,7 +61,7 @@ Uperf：
 - /system/bin/uperf 与 /system/bin/zui_uperf_service 由 init 托管。
 - 只提供 powersave、balance、performance、fast 四档。
 - 顺序是熄屏 powersave > 精确应用覆盖 > 全局模式。
-- cur_powermode.txt 只存全局；perapp 当前为两条鸣潮 performance 与一条“- powersave”，没有“*”全局规则。
+- cur_powermode.txt 只存全局；当前实机 perapp 为一条鸣潮 performance 与一条“- powersave”，没有“*”全局规则。
 - Uperf 负责模块配置明确要求的 CPU power-model、WALT、core_ctl 等；不宣称直接接管 KGSL，也不关闭热保护。
 - 四档已逐一走正式 request/ACK 实测，最终恢复 balance；熄屏/亮屏实测 balance -> powersave -> balance。
 
@@ -67,7 +81,7 @@ asoulOpt：
 - direct CPU/GPU sysfs
 - 云控脚本和旧命名组件
 
-四、最终刷后验收事实
+五、最终刷后验收事实
 
 - 槽 _a、Verified Boot green、SELinux Enforcing；system APK hash 与 CI 一致。
 - zui_controld 一个 init 子进程；A-SOUL 一个 init 子进程；Uperf 一个 wrapper、主进程和子进程。
@@ -90,7 +104,7 @@ asoulOpt：
 - 全局保持 balance，鸣潮前台时 effective=performance；退出后 effective 恢复 balance。
 - 开放世界 PID 8908 共采样 208 个存活线程：206 个为 2-6；主线程 8908 为 2-6；GameThread 9284 为 7；RenderThread 2 的 10203 为 2-4。真实 asoulOpt 硬亲和已闭合。
 
-五、UI、游戏助手与最终视觉验收
+六、UI、游戏助手与最终视觉验收
 
 - V49 竖屏刷新率/Uperf 页面、横屏 Uperf/线程页面均已截图复核：底栏/侧栏、字体、间距、圆角、选中态、FAB 和页面结构正常；四档同一行，下方是自定义应用卡片和“+”，无溢出错位。
 - OEM performance、poweropt-service、perf2-hal-1-0 始终 running。原厂 com.zui.game.service 的 FloatingHwInfo 两次实机显示 CPU 3.30GHz / GPU 366MHz / 10FPS / 32.0C，以及 CPU 3.30GHz / GPU 500MHz / 59FPS / 33.2C，CPU/GPU/FPS 全 0 问题已恢复。
@@ -98,7 +112,7 @@ asoulOpt：
 - 短时遥测复核退出后 CPU junction 瞬时到 89.9C，已立即回桌面并强停；20 秒后 cpuss 36.3-37.4C、gpuss 35.4-36.6C、skin 35.9C、battery 33.9C。游戏助手 33.2C 不是最高 junction，后续不要主动高温烧机。
 - 最终鸣潮无 PID，焦点 Launcher，target/actual=120/120，global/effective=balance，自动旋转已恢复；目标 AVC、FATAL、ANR 均为 0。当前 V49 调度、真实鸣潮线程和 OEM 遥测验收已完成，不再有“等待解锁后验证”的待办。
 
-六、预装清理和工作区清理
+七、预装清理和工作区清理
 
 - 只从本轮 system 删除 /system/preload/QQMusic/QQMusic.apk（180737432 bytes）；WPS 保留，官方 A072 原包未改。
 - 实机 QQ 音乐 package 不存在，cn.wps.moffice_eng 存在。
@@ -107,7 +121,7 @@ asoulOpt：
 - D 盘可用空间由 62.38GiB 增至 103.36GiB，恢复约 40.98GiB。官方 A072、072必刷镜像、最终 B072、固定安全包、当前 CI、仓库和刷写日志保留。
 - 最终游戏助手调查完成后，另删 gamehelper_v49_ui_audit、services_v49_gesture_audit 和拉取的 APK/JAR，约 590MiB；仅保留 validation_v49_20260825 的视觉证据。
 
-七、禁止项
+八、禁止项
 
 - 不改 thermal conf。
 - 不改 P1，不进入 FPS cap。

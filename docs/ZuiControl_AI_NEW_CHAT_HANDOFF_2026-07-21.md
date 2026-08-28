@@ -13,7 +13,38 @@
 
 旧的 `D:\3.VScode\Mi\docs\ZuiControl_CONTEXT.md`、`ZuiControl_V19_VERIFY_AND_NEXT.md`、`ZuiControl_HANDOFF.md`、`ZuiControl_ROADMAP.md` 保存完整历史，但其中“当前阶段”“推荐包”“下一步”若与本文件冲突，以本文件为准。
 
-### 0.18 2026-08-25 V49 内置 Uperf/asoulOpt、最终刷入与调度验收（当前最新）
+### 0.19 2026-08-28 全项目只读审查、切档实测与 GPU 双调度链（当前最新）
+
+本节覆盖 0.18 对“当前调度已完成验收”的判断，但不改写其刷包、P1、线程 mask、SELinux 和 UI 历史事实。设备仍是已持久刷入的 `49/0.21.12/ZuiControlV49`，当前不是待刷状态。本轮没有修改产品代码、thermal conf、P1、FPS cap 或设备系统，没有制作/刷写镜像，也没有主动高温烧机。
+
+#### 审查交付与验证边界
+
+- 按用户提供的完整审查清单读取仓库 91 个 Git 跟踪文件、当前主入口、主交接和 ThermalConfig guide；生成 `AI_AUDIT_PACKAGE`，包括 20 份编号报告、`README_FOR_AI_REVIEW.md`、91 行 `SOURCE_FILE_INDEX.csv` 和排除秘密/构建物/设备 dump 的 `AI_REVIEW_SOURCE.zip`。
+- `:app:testDebugUnitTest :app:lintDebug :app:assembleDebug` 通过：5 tests 全过，Lint 0 errors/17 warnings，Debug APK SHA-256 为 `ab9b20d1f2c048546cac35e791c1fb0cce5dfbf5dac76712486fee1035688cbb`。Python/JSON/source XML/shell、daemon transaction 和 framework 最小 javac 也通过。
+- 没有 instrumentation/UI、完整 072 framework/secilc、release 签名、最终 super、本轮刷写、Doze/低内存/配置损坏/system_server 故障和长时稳定性验证；不能据此宣称多场景全部稳定。
+
+#### Uperf 切档的真实响应语义
+
+- App 通过 Settings 单槽写 request，`zui_controld` 的 `main_loop()` 每约一秒处理/同步，App 每 200ms 查询终态 ACK。因此它是约 1-2 秒响应，不是 Binder event 级即时；本轮可逆真机测试有效变化约 0.97-2.07 秒。
+- 解析顺序仍是熄屏 powersave > exact app > global。鸣潮 exact=performance 时，切 global=fast 的 ACK 明确显示 `effective=performance`；把鸣潮 exact 临时改为 powersave 后约 2.07 秒生效。测试结束已恢复 global/effective=balance、鸣潮 exact=performance、熄屏 `- powersave`。
+- 从鸣潮切到 ZuiControl 时 raw focus 是 ZuiControl，但 system_server 的 business scene 保持鸣潮，所以修改鸣潮 exact 可在 ZuiControl 前台作用，返回游戏沿用。只修改 global 不会覆盖已有 exact。
+- 当前设备 perapp 是一条 `com.kurogame.mingchao performance` 加一条 `- powersave`，不是 0.18 所写“两条鸣潮”。
+
+#### GPU 500-629MHz 的新 P0 根因
+
+- 当前 `payload/system/etc/zui_control/uperf-sm8650.json` 只有 CPU power-model、WALT governor、core_ctl/cpuset/msm_performance 等模块，没有 KGSL/Adreno GPU 频率模块。当前 Uperf 无法请求 903/834/770 等 GPU 档。
+- 真机自然低温 Launcher 基线：KGSL governor=`msm-adreno-tz`，频表含 903 至 231MHz，current=231、min=231、max_clock=720、thermal_pwrlevel=3；quiet/back/front/battery 约 31-32C，Thermal Status 0，两个标准 GPU cooling devices 均为 state 0。故 pwrlevel 3 不是当前标准 GPU cooling state 直接造成，仍可能是残留/另一 OEM 约束。
+- 真实从 Launcher 短时进入鸣潮时，OEM `onGameAppStart` 仍触发；`com.zui.pp` PerformanceConnect 下发鸣潮 stock LimitConfig，其中 `GPUMax=5`、`GPUMin=9`，按当时频表对应约 629MHz/366MHz。GameHelper 同时 `writeSavageMode open=1`，thermal-engine 切入游戏 cpu/gpu/battery case；退出后回到默认 case。
+- 这证明 0.18 的“旧 XML/ZuiPP 生产链退出”只对 ZuiControl 自己的生成/bind/bridge 成立，并没有让 OEM GameHelper/ZuiPP 的原生 LimitConfig 停止。当前实际是 Uperf 推 CPU/WALT/core_ctl，OEM 仍给 CPU/GPU 限制；用户看到 CPU 3.3GHz 与 GPU 500-629MHz 不对称符合这条双调度链。0.18 的游戏助手非零截图只证明 telemetry 修复，不证明 GPU 调度正确。
+- CPU 3.3GHz 仍需同窗口每核 `scaling_cur_freq` 采样，不能只凭叠加层断言所有核持续锁满；但 OEM/Uperf 双 owner 已由日志直接确认。
+
+#### 当前结论与下一阶段门
+
+- 当前不能继续宣称“Uperf 已全面接管并稳定”。第一 P0 是选择唯一 GPU/游戏性能 owner；第二 P0 是性能命令仍使用未认证 Settings 单槽，任何可写该 setting 的高权限调用者都可改档/重启调度。另有 `ZuiControlClient.call()` 把 `ok=0` 误判成功的 P1 确定 bug。
+- 当前规则禁止 direct CPU/GPU sysfs、旧 XML/ZuiPP/AppOpt/Scene 生产链、thermal conf 和 P1 改动，因此本轮不做快速 KGSL 修补。下一阶段必须由用户明确选择：A）承认 Uperf 只管 CPU/WALT、OEM 管 GPU；或 B）另行授权 Uperf/KGSL 原生 GPU 方案，并精确关闭 OEM LimitConfig、保留 GameHelper telemetry 与热保护。
+- 后续先做自然冷却、同版本、同场景的短时同步 A/B：scene/global/exact/effective、每核 freq/policy、KGSL current/min/max/busy/pwrlevel/cooling、OEM/ZuiPP/thermal 日志。不要主动烧机。
+
+### 0.18 2026-08-25 V49 内置 Uperf/asoulOpt、最终刷入与调度验收（历史，已被 0.19 覆盖）
 
 本节覆盖 0.17 的 Scene/P2/AppOpt 当前方向与下一步；0.17 及以前只保留为历史证据。设备 `HA25HSZM` 已通过固定七项 9008 流程持久刷入 `49/0.21.12/ZuiControlV49`，当前不是待刷状态。生产性能调度已从 P2 XML/AppOpt/Scene 切换为 ROM 内置 Uperf + asoulOpt；没有修改 thermal conf、P1 或 FPS cap，也没有恢复 direct CPU/GPU sysfs、provider_direct、云控或旧 XML/ZuiPP/AppOpt 生产链。
 
