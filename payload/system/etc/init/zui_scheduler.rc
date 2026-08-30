@@ -1,5 +1,5 @@
 on post-fs-data
-    mkdir /data/vendor/zui_control 0775 root shell
+    mkdir /data/vendor/zui_control 0755 root root
     mkdir /data/vendor/zui_control/uperf 0775 root shell
     mkdir /data/vendor/zui_control/asoul 0775 root shell
     rm /data/vendor/asopt.conf
@@ -9,8 +9,20 @@ on post-fs-data
     stop vendor.perfservice
 
 on property:sys.boot_completed=1
-    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh
+    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh ${sys.zui_control.uperf_mode:-unset}
     trigger zui-scheduler-start
+
+on property:sys.zui_control.uperf_mode=powersave
+    write /data/vendor/zui_control/uperf/effective_powermode.txt powersave
+
+on property:sys.zui_control.uperf_mode=balance
+    write /data/vendor/zui_control/uperf/effective_powermode.txt balance
+
+on property:sys.zui_control.uperf_mode=performance
+    write /data/vendor/zui_control/uperf/effective_powermode.txt performance
+
+on property:sys.zui_control.uperf_mode=fast
+    write /data/vendor/zui_control/uperf/effective_powermode.txt fast
 
 on zui-scheduler-start
     stop vendor.perfservice
@@ -21,7 +33,7 @@ on zui-scheduler-start
 on property:zui_control.scheduler=restart
     stop zui_uperf
     stop zui_asoulopt
-    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh
+    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh ${sys.zui_control.uperf_mode:-unset}
     trigger zui-scheduler-start
     setprop zui_control.scheduler restarted
 

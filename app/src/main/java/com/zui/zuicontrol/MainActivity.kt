@@ -63,6 +63,7 @@ class MainActivity : Activity() {
             window.isStatusBarContrastEnforced = false
         }
         reloadState()
+        Thread { ZuiControlRequest.kickPending(this) }.start()
         setContentView(buildRoot())
         val restoredPage = savedInstanceState?.getString(STATE_PAGE)?.let { name ->
             Page.entries.firstOrNull { it.name == name }

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import pathlib
 import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 
 
@@ -17,8 +19,21 @@ def collect_java(root):
 
 
 def rm_tree(path):
+    if not path.exists():
+        return
+
+    def tolerate_disappearing_children(func, target, exc_info):
+        if isinstance(exc_info[1], FileNotFoundError):
+            return
+        try:
+            os.chmod(target, 0o700)
+            func(target)
+        except FileNotFoundError:
+            return
+
+    shutil.rmtree(path, onerror=tolerate_disappearing_children)
     if path.exists():
-        shutil.rmtree(path)
+        raise RuntimeError(f"failed to remove stale build directory: {path}")
 
 
 def compile_sources(repo, mi_root, build_dir, source_dir, dex_name):
@@ -133,8 +148,9 @@ def patch_framework(args):
     if not framework_jar.exists() or not services_jar.exists():
         raise SystemExit(f"Missing framework jars under {fw_dir}")
 
-    build_dir = mi_root / "work" / "zui_control_framework_patch"
-    build_dir.mkdir(parents=True, exist_ok=True)
+    build_root = mi_root / "work" / "zui_control_framework_patch"
+    build_root.mkdir(parents=True, exist_ok=True)
+    build_dir = pathlib.Path(tempfile.mkdtemp(prefix="run_", dir=str(build_root)))
 
     framework_dex = compile_sources(
         repo, mi_root, build_dir,

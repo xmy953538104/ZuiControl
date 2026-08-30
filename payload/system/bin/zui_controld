@@ -10,6 +10,7 @@ LOG_FILE=$LOG_DIR/controld.log
 UPERF_LOG=$LOG_DIR/uperf.log
 STATUS_FILE=$CONTROL_DIR/status.prop
 LAST_REQUEST_RECEIPT=$CONTROL_DIR/last_request_receipt
+ACTIVE_REQUEST_CLAIM=$CONTROL_DIR/active_request_claim
 
 UPERF_MODE=$UPERF_DIR/cur_powermode.txt
 UPERF_EFFECTIVE_MODE=$UPERF_DIR/effective_powermode.txt
@@ -31,20 +32,17 @@ ASOUL_HEALTH_KEY=zui_control_asoul_health
 UPERF_HEALTH_KEY=zui_control_uperf_health
 UPERF_MODE_KEY=zui_control_uperf_mode
 UPERF_RULES_KEY=zui_control_uperf_rules_text
-UPERF_SCENE_KEY=zui_control_top_package
-UPERF_SCREEN_KEY=zui_control_screen_on
 LOG_EXPORT_KEY=zui_control_log_export
 
 LAST_SETTINGS_REQUEST=
+LAST_COMPLETED_REQUEST_ID=
+TERMINAL_ACK_PENDING=0
 CURRENT_REQUEST_ID=
 CURRENT_REQUEST_CMD=
 REQUEST_RESULT_DETAIL=
-HEALTH_TICKS=0
 UPERF_MISSES=0
-UPERF_FRONTEND_SCENE=
-UPERF_FRONTEND_SCREEN=1
-UPERF_FRONTEND_SOURCE=global
-UPERF_FRONTEND_EFFECTIVE=balance
+UPERF_MODE_DIRTY=1
+UPERF_RULES_DIRTY=1
 
 ts() {
     date '+%Y-%m-%d %H:%M:%S'
@@ -63,10 +61,11 @@ settings_put_quiet() {
 atomic_write_text() {
     target="$1"
     value="$2"
+    atomic_mode="${3:-0664}"
     tmp="$target.tmp"
     rm -f "$tmp"
     if printf '%s\n' "$value" > "$tmp" &&
-        chmod 0664 "$tmp" &&
+        chmod "$atomic_mode" "$tmp" &&
         mv -f "$tmp" "$target"; then
         sync "$target" 2>/dev/null || sync
         return 0
@@ -124,70 +123,6 @@ valid_uperf_preset() {
     esac
 }
 
-uperf_rule_for_scene() {
-    wanted="$1"
-    while read -r rule_pkg rule_mode extra; do
-        [ -z "$extra" ] || continue
-        case "$rule_pkg" in ''|'#'*|'-'|'*') continue ;; esac
-        if [ "$rule_pkg" = "$wanted" ] && valid_uperf_preset "$rule_mode"; then
-            printf '%s\n' "$rule_mode"
-            return 0
-        fi
-    done < "$UPERF_PERAPP" 2>/dev/null
-    return 1
-}
-
-write_uperf_effective_mode() {
-    next="$1"
-    valid_uperf_preset "$next" || return 1
-    current="$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE" 2>/dev/null)"
-    [ "$current" != "$next" ] || return 0
-    # Uperf watches this inode, so never replace the effective file with rename(2).
-    if printf '%s\n' "$next" > "$UPERF_EFFECTIVE_MODE" &&
-        chmod 0644 "$UPERF_EFFECTIVE_MODE"; then
-        sync "$UPERF_EFFECTIVE_MODE" 2>/dev/null || sync
-        log_line "Uperf effective=$next source=$UPERF_FRONTEND_SOURCE scene=$UPERF_FRONTEND_SCENE screen=$UPERF_FRONTEND_SCREEN"
-        return 0
-    fi
-    return 1
-}
-
-sync_uperf_frontend() {
-    global_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
-    if ! valid_uperf_preset "$global_mode"; then
-        global_mode=balance
-        atomic_write_text "$UPERF_MODE" "$global_mode" || return 1
-    fi
-
-    scene="$(settings_get_clean "$UPERF_SCENE_KEY")"
-    valid_package_name "$scene" || scene=
-    screen="$(settings_get_clean "$UPERF_SCREEN_KEY")"
-    [ "$screen" = "0" ] || screen=1
-
-    if [ "$screen" = "0" ]; then
-        effective="$(awk '$1 == "-" {print $2; exit}' "$UPERF_PERAPP" 2>/dev/null)"
-        valid_uperf_preset "$effective" || effective=powersave
-        source=screen_off
-    elif [ -n "$scene" ]; then
-        effective="$(uperf_rule_for_scene "$scene")"
-        if valid_uperf_preset "$effective"; then
-            source="app:$scene"
-        else
-            effective="$global_mode"
-            source=global
-        fi
-    else
-        effective="$global_mode"
-        source=global
-    fi
-
-    UPERF_FRONTEND_SCENE="$scene"
-    UPERF_FRONTEND_SCREEN="$screen"
-    UPERF_FRONTEND_SOURCE="$source"
-    UPERF_FRONTEND_EFFECTIVE="$effective"
-    write_uperf_effective_mode "$effective"
-}
-
 publish_uperf_rules_state() {
     rules=
     while read -r rule_pkg rule_mode extra; do
@@ -198,7 +133,15 @@ publish_uperf_rules_state() {
         rules="${rules}${rule_pkg}|${rule_mode}
 "
     done < "$UPERF_PERAPP" 2>/dev/null
-    settings_put_quiet "$UPERF_RULES_KEY" "$(printf '%s' "$rules" | sed '/^$/d')"
+    settings_put_quiet "$UPERF_RULES_KEY" "$(printf '%s' "$rules" | sed '/^$/d')" || return 1
+    UPERF_RULES_DIRTY=0
+}
+
+publish_uperf_mode_state() {
+    published_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
+    valid_uperf_preset "$published_mode" || return 1
+    settings_put_quiet "$UPERF_MODE_KEY" "$published_mode" || return 1
+    UPERF_MODE_DIRTY=0
 }
 
 oem_telemetry_state() {
@@ -213,7 +156,6 @@ oem_telemetry_state() {
 }
 
 publish_scheduler_health() {
-    sync_uperf_frontend >/dev/null 2>&1 || true
     uperf_pids="$(pidof uperf 2>/dev/null)"
     uperf_pid="$(printf '%s\n' "$uperf_pids" | awk '{print $1}')"
     uperf_processes="$(printf '%s\n' "$uperf_pids" | awk '{print NF}')"
@@ -225,8 +167,8 @@ publish_scheduler_health() {
     log_size=0
     [ -f "$UPERF_LOG" ] && log_size="$(wc -c < "$UPERF_LOG" 2>/dev/null)"
     health="Uperf：${uperf_pid:-未运行}（${uperf_processes:-0} 进程 · u:r:performanced:s0）
-全局模式：$global_mode · 实际档位：$effective · 来源：${UPERF_FRONTEND_SOURCE:-global}
-前端场景：${UPERF_FRONTEND_SCENE:-无} · 亮屏：$UPERF_FRONTEND_SCREEN
+全局模式：$global_mode · 实际档位：$effective
+有效档位 owner：system_server → sys.zui_control.uperf_mode → init
 GPU：原厂 KGSL DVFS 与热保护保留
 调度围栏：vendor.perfservice=$(getprop init.svc.vendor.perfservice 2>/dev/null)（存在时应为 stopped）
 OEM 遥测：$(oem_telemetry_state)（存在时应为 running）
@@ -235,18 +177,26 @@ A-SOUL：${asoul_pid:-未运行}（u:r:performanced:s0）
 日志：${log_size:-0} 字节"
     settings_put_quiet "$UPERF_HEALTH_KEY" "$health"
     settings_put_quiet "$ASOUL_HEALTH_KEY" "$health"
-    settings_put_quiet "$UPERF_MODE_KEY" "$global_mode"
-    publish_uperf_rules_state
+    if [ "$UPERF_MODE_DIRTY" = "1" ]; then
+        publish_uperf_mode_state || log_line "Uperf global Settings publication pending"
+    fi
+    if [ "$UPERF_RULES_DIRTY" = "1" ]; then
+        publish_uperf_rules_state || log_line "Uperf rules Settings publication pending"
+    fi
 }
 
 set_uperf_mode() {
     requested="$1"
     valid_uperf_preset "$requested" || return 1
     atomic_write_text "$UPERF_MODE" "$requested" || return 1
-    sync_uperf_frontend || return 1
-    settings_put_quiet "$UPERF_MODE_KEY" "$requested"
-    REQUEST_RESULT_DETAIL="global=$requested;effective=$UPERF_FRONTEND_EFFECTIVE"
-    log_line "Uperf global mode=$requested effective=$UPERF_FRONTEND_EFFECTIVE"
+    UPERF_MODE_DIRTY=1
+    if ! publish_uperf_mode_state; then
+        REQUEST_RESULT_DETAIL=settings_publish_failed
+        log_line "Uperf global mode persisted but Settings publication failed: $requested"
+        return 1
+    fi
+    REQUEST_RESULT_DETAIL="global=$requested"
+    log_line "Uperf global mode=$requested; effective mode delegated to system_server"
 }
 
 write_perapp_without_package() {
@@ -288,8 +238,12 @@ set_uperf_app_mode() {
     rm -f "$tmp"
     chmod 0644 "$UPERF_PERAPP"
     sync "$UPERF_PERAPP" 2>/dev/null || sync
-    publish_uperf_rules_state
-    sync_uperf_frontend || return 1
+    UPERF_RULES_DIRTY=1
+    if ! publish_uperf_rules_state; then
+        REQUEST_RESULT_DETAIL=settings_publish_failed
+        log_line "Uperf app rule persisted but Settings publication failed: $requested_pkg"
+        return 1
+    fi
     REQUEST_RESULT_DETAIL="package=$requested_pkg;mode=$requested_mode"
     log_line "Uperf app package=$requested_pkg mode=$requested_mode"
 }
@@ -298,8 +252,12 @@ remove_uperf_app_mode() {
     requested_pkg="$1"
     valid_package_name "$requested_pkg" || return 1
     write_perapp_without_package "$requested_pkg" || return 1
-    publish_uperf_rules_state
-    sync_uperf_frontend || return 1
+    UPERF_RULES_DIRTY=1
+    if ! publish_uperf_rules_state; then
+        REQUEST_RESULT_DETAIL=settings_publish_failed
+        log_line "Uperf app removal persisted but Settings publication failed: $requested_pkg"
+        return 1
+    fi
     REQUEST_RESULT_DETAIL="package=$requested_pkg;mode=global"
     log_line "Uperf app removed package=$requested_pkg"
 }
@@ -398,8 +356,6 @@ $(cat "$UPERF_MODE" 2>/dev/null)
 
 [Uperf 实际档位]
 $(cat "$UPERF_EFFECTIVE_MODE" 2>/dev/null)
-scene=$(settings_get_clean "$UPERF_SCENE_KEY")
-screen=$(settings_get_clean "$UPERF_SCREEN_KEY")
 
 [Uperf 自定义应用]
 $(cat "$UPERF_PERAPP" 2>/dev/null)
@@ -448,6 +404,23 @@ request_field_count() {
     printf '%s\n' "$1" | awk -F '|' 'NR == 1 {print NF; exit}'
 }
 
+valid_request_id() {
+    [ -n "$1" ] && [ "${#1}" -le 64 ] || return 1
+    case "$1" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+}
+
+valid_sha256() {
+    [ "${#1}" = "64" ] || return 1
+    case "$1" in *[!0-9a-f]*) return 1 ;; esac
+}
+
+request_sha256() {
+    digest_line="$(printf '%s' "$1" | sha256sum 2>/dev/null)" || return 1
+    digest="${digest_line%% *}"
+    valid_sha256 "$digest" || return 1
+    printf '%s\n' "$digest"
+}
+
 load_last_receipt() {
     [ -s "$LAST_REQUEST_RECEIPT" ] || return 1
     [ "$(sed -n '$=' "$LAST_REQUEST_RECEIPT" 2>/dev/null)" = "2" ] || return 1
@@ -459,12 +432,49 @@ load_last_receipt() {
     case "$(request_field "$replay_ack" 2)" in done|failed) ;; *) return 1 ;; esac
 }
 
+load_request_claim() {
+    [ -s "$ACTIVE_REQUEST_CLAIM" ] || return 1
+    [ "$(sed -n '$=' "$ACTIVE_REQUEST_CLAIM" 2>/dev/null)" = "1" ] || return 1
+    claim_request="$(sed -n '1p' "$ACTIVE_REQUEST_CLAIM" | tr -d '\r')"
+    [ "$(request_field_count "$claim_request")" = "5" ] || return 1
+    [ -n "$(request_field "$claim_request" 1)" ] || return 1
+    [ -n "$(request_field "$claim_request" 2)" ] || return 1
+}
+
+persist_request_claim() {
+    [ ! -e "$ACTIVE_REQUEST_CLAIM" ] || return 1
+    atomic_write_text "$ACTIVE_REQUEST_CLAIM" "$1" 0600
+}
+
+clear_request_claim() {
+    completed_request="$1"
+    load_request_claim || {
+        [ ! -e "$ACTIVE_REQUEST_CLAIM" ]
+        return $?
+    }
+    [ "$claim_request" = "$completed_request" ] || return 1
+    rm -f "$ACTIVE_REQUEST_CLAIM" || return 1
+    sync "$CONTROL_DIR" 2>/dev/null || sync
+}
+
 persist_completion() {
     request="$1"
     terminal_ack="$2"
     atomic_write_text "$LAST_REQUEST_RECEIPT" "$request
-$terminal_ack" || return 1
+$terminal_ack" 0600 || return 1
     LAST_SETTINGS_REQUEST="$request"
+    replay_request="$request"
+    replay_ack="$terminal_ack"
+    TERMINAL_ACK_PENDING=1
+}
+
+publish_pending_terminal_ack() {
+    [ "$TERMINAL_ACK_PENDING" = "1" ] || return 0
+    if settings_put_quiet "$REQUEST_ACK_KEY" "$replay_ack"; then
+        TERMINAL_ACK_PENDING=0
+        return 0
+    fi
+    return 1
 }
 
 finish_request() {
@@ -482,7 +492,9 @@ finish_request() {
     fi
     terminal_ack="$(ack_text "$id" "$state" "$cmd" "$detail")"
     persist_completion "$request" "$terminal_ack" || return 1
-    settings_put_quiet "$REQUEST_ACK_KEY" "$terminal_ack"
+    clear_request_claim "$request" >/dev/null 2>&1 || true
+    LAST_COMPLETED_REQUEST_ID="$id"
+    publish_pending_terminal_ack >/dev/null 2>&1 || true
     CURRENT_REQUEST_ID=
     CURRENT_REQUEST_CMD=
     return "$result"
@@ -514,13 +526,26 @@ handle_command() {
 }
 
 process_settings_request() {
-    request="$(settings_get_clean "$REQ_TEXT_KEY")"
+    if [ "$#" -gt 0 ]; then
+        request="$1"
+    else
+        request="$(settings_get_clean "$REQ_TEXT_KEY")"
+    fi
     [ -n "$request" ] || return 0
     if [ "$request" = "$LAST_SETTINGS_REQUEST" ]; then
-        load_last_receipt && settings_put_quiet "$REQUEST_ACK_KEY" "$replay_ack"
+        publish_pending_terminal_ack >/dev/null 2>&1 || true
         return 0
     fi
     id="$(request_field "$request" 1)"
+    if [ -n "$LAST_COMPLETED_REQUEST_ID" ] && [ "$id" = "$LAST_COMPLETED_REQUEST_ID" ]; then
+        if [ "$request" = "$replay_request" ]; then
+            publish_pending_terminal_ack >/dev/null 2>&1 || true
+        else
+            TERMINAL_ACK_PENDING=0
+        fi
+        LAST_SETTINGS_REQUEST="$request"
+        return 0
+    fi
     cmd="$(request_field "$request" 2)"
     pkg="$(request_field "$request" 4)"
     mode="$(request_field "$request" 5)"
@@ -532,6 +557,10 @@ process_settings_request() {
     CURRENT_REQUEST_CMD="$cmd"
     publish_request_progress validating
     log_line "request id=$id cmd=$cmd pkg=$pkg mode=$mode"
+    if ! persist_request_claim "$request"; then
+        log_line "request claim failed id=$id cmd=$cmd; action not started"
+        return 1
+    fi
     handle_command "$cmd" "$pkg" "$mode"
     result=$?
     trim_log
@@ -553,44 +582,117 @@ notify_quick_service() {
 
 init_dirs() {
     mkdir -p "$CONTROL_DIR" "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR" || return 1
-    chmod 0775 "$DATA_ROOT" "$CONTROL_DIR" "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR" 2>/dev/null
+    chown 0:0 "$DATA_ROOT" "$CONTROL_DIR" 2>/dev/null || return 1
+    chmod 0755 "$DATA_ROOT" 2>/dev/null || return 1
+    chmod 0700 "$CONTROL_DIR" 2>/dev/null || return 1
+    chmod 0775 "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR" 2>/dev/null || return 1
     restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
     grant_app_permissions
 }
 
+ensure_request_dirs() {
+    [ -d "$CONTROL_DIR" ] && [ -d "$LOG_DIR" ] && return 0
+    init_dirs
+}
+
 init_request_state() {
     LAST_SETTINGS_REQUEST=
+    LAST_COMPLETED_REQUEST_ID=
+    TERMINAL_ACK_PENDING=0
+    replay_request=
+    replay_ack=
+    if [ "$#" -gt 0 ]; then
+        current_request="$1"
+    else
+        current_request="$(settings_get_clean "$REQ_TEXT_KEY")"
+    fi
     if load_last_receipt; then
-        LAST_SETTINGS_REQUEST="$replay_request"
-        settings_put_quiet "$REQUEST_ACK_KEY" "$replay_ack"
+        LAST_COMPLETED_REQUEST_ID="$(request_field "$replay_request" 1)"
+        TERMINAL_ACK_PENDING=1
+        if [ "$current_request" = "$replay_request" ]; then
+            LAST_SETTINGS_REQUEST="$replay_request"
+            current_ack="$(settings_get_clean "$REQUEST_ACK_KEY")"
+            if [ "$current_ack" = "$replay_ack" ]; then
+                TERMINAL_ACK_PENDING=0
+            else
+                publish_pending_terminal_ack >/dev/null 2>&1 || true
+            fi
+        fi
     else
         rm -f "$LAST_REQUEST_RECEIPT"
     fi
+
+    if load_request_claim; then
+        if [ -n "$replay_request" ] && [ "$claim_request" = "$replay_request" ]; then
+            clear_request_claim "$claim_request" >/dev/null 2>&1 || true
+        else
+            abandoned_request="$claim_request"
+            abandoned_id="$(request_field "$abandoned_request" 1)"
+            abandoned_cmd="$(request_field "$abandoned_request" 2)"
+            abandoned_ack="$(ack_text "$abandoned_id" failed "$abandoned_cmd" indeterminate_after_claim)"
+            if persist_completion "$abandoned_request" "$abandoned_ack"; then
+                clear_request_claim "$abandoned_request" >/dev/null 2>&1 || true
+                LAST_COMPLETED_REQUEST_ID="$abandoned_id"
+                log_line "request recovered without replay id=$abandoned_id cmd=$abandoned_cmd"
+                if [ "$current_request" = "$abandoned_request" ]; then
+                    publish_pending_terminal_ack >/dev/null 2>&1 || true
+                else
+                    TERMINAL_ACK_PENDING=0
+                fi
+            fi
+        fi
+    elif [ -e "$ACTIVE_REQUEST_CLAIM" ]; then
+        log_line "invalid request claim retained for inspection"
+    fi
+}
+
+oneshot_request() {
+    trusted_id="${1:-}"
+    trusted_sha256="${2:-}"
+    [ "$(id -u 2>/dev/null)" = "0" ] || return 126
+    ensure_request_dirs || return 1
+    if ! valid_request_id "$trusted_id" || ! valid_sha256 "$trusted_sha256"; then
+        log_line "request kick rejected: invalid authenticated metadata"
+        return 0
+    fi
+    captured_request="$(settings_get_clean "$REQ_TEXT_KEY")"
+    [ -n "$captured_request" ] || return 0
+    captured_id="$(request_field "$captured_request" 1)"
+    captured_sha256="$(request_sha256 "$captured_request")" || {
+        log_line "request kick rejected: sha256 unavailable"
+        return 1
+    }
+    if [ "$captured_id" != "$trusted_id" ] || [ "$captured_sha256" != "$trusted_sha256" ]; then
+        log_line "request kick rejected: authenticated payload mismatch id=$captured_id"
+        return 0
+    fi
+    init_request_state "$captured_request"
+    process_settings_request "$captured_request"
+    result=$?
+    trim_log
+    return "$result"
 }
 
 main_loop() {
     init_dirs || return 1
-    init_request_state
     log_line "zui_controld v49 start: scheduler=uperf+asoul"
     publish_refresh_state
-    sync_uperf_frontend || log_line "Uperf frontend initial sync deferred"
+    ensure_scheduler_running
     publish_scheduler_health
     set_status "daemon=running" "last=init" "refresh_owner=system"
     notify_quick_service
 
     while true; do
-        process_settings_request
-        sync_uperf_frontend >/dev/null 2>&1 || true
-        HEALTH_TICKS=$((HEALTH_TICKS + 1))
-        if [ "$HEALTH_TICKS" -ge 20 ]; then
-            ensure_scheduler_running
-            publish_scheduler_health
-            HEALTH_TICKS=0
-        fi
-        sleep 1
+        sleep 20
+        ensure_scheduler_running
+        publish_scheduler_health
     done
 }
 
 if [ "${ZUI_CONTROLD_TEST_MODE:-0}" != "1" ]; then
-    main_loop
+    case "${1:-}" in
+        --oneshot-request) shift; oneshot_request "${1:-}" "${2:-}" ;;
+        "") main_loop ;;
+        *) log_line "unknown argument: $1"; exit 2 ;;
+    esac
 fi

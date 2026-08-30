@@ -8,6 +8,7 @@ on:
       - "payload/**"
       - "framework_patch/**"
       - "scripts/**"
+      - "V20_3A_COMMAND_WAKEUP/tests/**"
       - ".github/workflows/build.yml"
       - "*.gradle.kts"
 
@@ -45,6 +46,7 @@ jobs:
           bash -n payload/system/bin/zui_controld
           bash -n payload/system/bin/zui_uperf_service
           bash scripts/TestZuiControldTransactions.sh
+          python3 V20_3A_COMMAND_WAKEUP/tests/TestV20_3APolicy.py
           bash -n payload/system/etc/zui_control/zui_scheduler_prepare.sh
           python3 -m json.tool payload/system/etc/zui_control/uperf-sm8650.json >/dev/null
 

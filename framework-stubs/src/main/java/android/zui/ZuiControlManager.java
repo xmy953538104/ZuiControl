@@ -51,4 +51,8 @@ public final class ZuiControlManager {
     public String exportLog() {
         throw new UnsupportedOperationException("framework stub");
     }
+
+    public String notifyControlRequest(String requestId, String requestSha256) {
+        throw new UnsupportedOperationException("framework stub");
+    }
 }

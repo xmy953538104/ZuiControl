@@ -16,6 +16,7 @@ import android.os.Parcel;
 import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.provider.Settings;
 import android.util.AtomicFile;
@@ -32,6 +33,7 @@ import java.io.PrintWriter;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
@@ -44,6 +46,13 @@ public final class ZuiControlService extends Binder {
     private static final String DATA_DIR = "/data/system/zui_control";
     private static final String PROFILE_FILE = DATA_DIR + "/profiles.prop";
     private static final String SETTING_PEAK_REFRESH_RATE = "peak_refresh_rate";
+    private static final String SETTING_UPERF_MODE = "zui_control_uperf_mode";
+    private static final String SETTING_UPERF_RULES = "zui_control_uperf_rules_text";
+    private static final String SETTING_REQUEST_TEXT = "zui_control_request_text";
+    private static final String PROP_UPERF_MODE = "sys.zui_control.uperf_mode";
+    private static final String PROP_COMMAND_ID = "sys.zui_control.command_id";
+    private static final String PROP_COMMAND_SHA256 = "sys.zui_control.command_sha256";
+    private static final String PROP_COMMAND_SEQ = "sys.zui_control.command_seq";
     private static final String GAME_HELPER_PACKAGE = "com.zui.game.service";
     private static final String RELEASE_CERT =
             "3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94";
@@ -61,6 +70,7 @@ public final class ZuiControlService extends Binder {
     private static final int TX_REFRESH_NOW = 9;
     private static final int TX_SET_MODULE_ENABLED = 10;
     private static final int TX_EXPORT_LOG = 11;
+    private static final int TX_NOTIFY_CONTROL_REQUEST = 12;
     private static final int PRIORITY_ZUI_CONTROL_RENDER = 8; // PRIORITY_AUTH_OPTIMIZER_RENDER_FRAME_RATE
 
     private static final int[] DISPLAY_HZ = new int[] {60, 90, 120, 144, 165};
@@ -71,6 +81,7 @@ public final class ZuiControlService extends Binder {
     private final DisplayManager mDisplayManager;
     private final AtomicFile mProfileFile;
     private final Handler mWorker;
+    private final UperfScenePolicy mUperfScenePolicy;
     private final Map<String, Profile> mProfiles = new HashMap<>();
 
     private String mRawFocusedPackage = "";
@@ -90,6 +101,7 @@ public final class ZuiControlService extends Binder {
     private int mLastAppliedDisplayHz = -1;
     private int mLastSyncedPeakHz = -1;
     private boolean mScreenInteractive = true;
+    private long mCommandSequence;
 
     public ZuiControlService(Context context) {
         mContext = context;
@@ -98,6 +110,7 @@ public final class ZuiControlService extends Binder {
         HandlerThread workerThread = new HandlerThread("ZuiControl");
         workerThread.start();
         mWorker = new Handler(workerThread.getLooper());
+        mUperfScenePolicy = new UperfScenePolicy();
         File dir = new File(DATA_DIR);
         if (!dir.exists() && !dir.mkdirs()) {
             Log.w(TAG, "failed to create " + DATA_DIR);
@@ -108,6 +121,7 @@ public final class ZuiControlService extends Binder {
         attachInterface(null, DESCRIPTOR);
         registerPeakObserver();
         registerScreenObserver();
+        mUperfScenePolicy.start(mCurrentScenePackage, mScreenInteractive);
         publishState();
     }
 
@@ -125,6 +139,7 @@ public final class ZuiControlService extends Binder {
     }
 
     public void onFocusedAppChanged(ActivityRecord record, int displayId) {
+        final long eventNanos = SystemClock.elapsedRealtimeNanos();
         final String pkg;
         final int uid;
         final int userId;
@@ -141,18 +156,21 @@ public final class ZuiControlService extends Binder {
         mWorker.post(new Runnable() {
             @Override
             public void run() {
-                handleFocusedApp(pkg, uid, userId, displayId);
+                handleFocusedApp(pkg, uid, userId, displayId, eventNanos);
             }
         });
     }
 
-    private synchronized void handleFocusedApp(String pkg, int uid, int userId, int displayId) {
+    private synchronized void handleFocusedApp(
+            String pkg, int uid, int userId, int displayId, long eventNanos) {
         mRawFocusedPackage = safe(pkg);
         mCurrentDisplayId = resolveDisplayId(displayId);
         if (APP_PACKAGE.equals(mRawFocusedPackage)) {
             mCurrentUid = uid;
             mCurrentUserId = userId;
             applyProfile(profileFor(APP_PACKAGE, mCurrentUserId), "controlPanel");
+            mUperfScenePolicy.onSystemStateChanged(
+                    mCurrentScenePackage, mScreenInteractive, "controlPanel", eventNanos);
             publishState();
             return;
         }
@@ -163,6 +181,8 @@ public final class ZuiControlService extends Binder {
             if (!scene.isEmpty()) {
                 applyProfile(profileFor(scene, mCurrentUserId), "transient");
             }
+            mUperfScenePolicy.onSystemStateChanged(
+                    mCurrentScenePackage, mScreenInteractive, "transient", eventNanos);
             publishState();
             return;
         }
@@ -171,13 +191,15 @@ public final class ZuiControlService extends Binder {
         mCurrentUid = uid;
         mCurrentUserId = userId;
         applyProfile(profileFor(mCurrentScenePackage, mCurrentUserId), "focus");
+        mUperfScenePolicy.onSystemStateChanged(
+                mCurrentScenePackage, mScreenInteractive, "focus", eventNanos);
         publishState();
     }
 
     @Override
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
         try {
-            if (code >= 1 && code <= TX_EXPORT_LOG) {
+            if (code >= 1 && code <= TX_NOTIFY_CONTROL_REQUEST) {
                 data.enforceInterface(DESCRIPTOR);
             }
             String result;
@@ -223,6 +245,10 @@ public final class ZuiControlService extends Binder {
                 case TX_EXPORT_LOG:
                     enforceCallerAllowed();
                     result = state();
+                    break;
+                case TX_NOTIFY_CONTROL_REQUEST:
+                    enforceCommandCallerAllowed();
+                    result = notifyControlRequest(data.readString(), data.readString());
                     break;
                 default:
                     return super.onTransact(code, data, reply, flags);
@@ -309,6 +335,41 @@ public final class ZuiControlService extends Binder {
         applyProfile(profile, "refreshNow");
         publishState();
         return "ok=1\n" + state();
+    }
+
+    private synchronized String notifyControlRequest(String requestId, String requestSha256) {
+        String id = safe(requestId).trim();
+        String sha256 = safe(requestSha256).trim();
+        if (!validRequestId(id)) {
+            return "ok=0\nerror=invalid_request_id";
+        }
+        if (!validSha256(sha256)) {
+            return "ok=0\nerror=invalid_request_sha256";
+        }
+        String token = Long.toHexString(SystemClock.elapsedRealtimeNanos())
+                + "_" + Long.toHexString(++mCommandSequence);
+        long identity = Binder.clearCallingIdentity();
+        try {
+            String requestText = Settings.System.getString(
+                    mContext.getContentResolver(), SETTING_REQUEST_TEXT);
+            String[] fields = safe(requestText).split("\\|", -1);
+            if (fields.length != 5 || !id.equals(fields[0]) || fields[1].isEmpty()
+                    || !fields[2].isEmpty() || !sha256(safe(requestText)).equals(sha256)) {
+                return "ok=0\nerror=request_payload_mismatch";
+            }
+            if (!id.equals(SystemProperties.get(PROP_COMMAND_ID, ""))) {
+                SystemProperties.set(PROP_COMMAND_ID, id);
+            }
+            if (!sha256.equals(SystemProperties.get(PROP_COMMAND_SHA256, ""))) {
+                SystemProperties.set(PROP_COMMAND_SHA256, sha256);
+            }
+            SystemProperties.set(PROP_COMMAND_SEQ, token);
+            Log.i(TAG, "control_request_kick id=" + id + " sha256="
+                    + sha256.substring(0, 12) + " token=" + token);
+            return "ok=1\nrequestId=" + id + "\ncommandSeq=" + token;
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
     }
 
     private Profile makeProfile(String pkg, int userId, int displayHz, int fpsCap, String mode) {
@@ -445,6 +506,8 @@ public final class ZuiControlService extends Binder {
             return;
         }
         mScreenInteractive = interactive;
+        mUperfScenePolicy.onSystemStateChanged(mCurrentScenePackage, interactive,
+                interactive ? "screenOn" : "screenOff", SystemClock.elapsedRealtimeNanos());
         publishState();
     }
 
@@ -619,6 +682,7 @@ public final class ZuiControlService extends Binder {
                 + "\ntargetFpsCap=" + mTargetFpsCap
                 + "\nmode=" + mTargetMode
                 + "\nscreenInteractive=" + mScreenInteractive
+                + mUperfScenePolicy.stateLines()
                 + "\nrefreshOwner=system"
                 + "\nsystemServiceAlive=true"
                 + "\ndaemonRefreshDisabled=true"
@@ -677,14 +741,29 @@ public final class ZuiControlService extends Binder {
         if (uid == android.os.Process.SYSTEM_UID) {
             return;
         }
+        enforceZuiControlCaller(uid);
+    }
+
+    private void enforceCommandCallerAllowed() {
+        enforceZuiControlCaller(Binder.getCallingUid());
+    }
+
+    private void enforceZuiControlCaller(int uid) {
         String[] packages = mPm.getPackagesForUid(uid);
         if (packages == null || !Arrays.asList(packages).contains(APP_PACKAGE)) {
             throw new SecurityException("caller package is not ZuiControl");
         }
-        boolean certOk = mPm.hasSigningCertificate(uid, hex(RELEASE_CERT),
-                PackageManager.CERT_INPUT_SHA256)
-                || mPm.hasSigningCertificate(uid, hex(DEBUG_CERT),
+        boolean releaseCert = mPm.hasSigningCertificate(uid, hex(RELEASE_CERT),
                 PackageManager.CERT_INPUT_SHA256);
+        boolean debugCert = false;
+        try {
+            ApplicationInfo app = mPm.getApplicationInfo(APP_PACKAGE, 0);
+            debugCert = (app.flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                    && mPm.hasSigningCertificate(uid, hex(DEBUG_CERT),
+                    PackageManager.CERT_INPUT_SHA256);
+        } catch (Throwable ignored) {
+        }
+        boolean certOk = releaseCert || debugCert;
         if (!certOk) {
             throw new SecurityException("ZuiControl cert mismatch");
         }
@@ -827,6 +906,50 @@ public final class ZuiControlService extends Binder {
         return true;
     }
 
+    private static boolean validRequestId(String requestId) {
+        if (requestId == null || requestId.isEmpty() || requestId.length() > 64) {
+            return false;
+        }
+        for (int i = 0; i < requestId.length(); i++) {
+            char c = requestId.charAt(i);
+            if (!(c == '.' || c == '_' || c == '-' || (c >= '0' && c <= '9')
+                    || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean validSha256(String value) {
+        if (value == null || value.length() != 64) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String sha256(String value) {
+        try {
+            byte[] bytes = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            char[] alphabet = "0123456789abcdef".toCharArray();
+            char[] result = new char[bytes.length * 2];
+            for (int i = 0; i < bytes.length; i++) {
+                int b = bytes[i] & 0xff;
+                result[i * 2] = alphabet[b >>> 4];
+                result[i * 2 + 1] = alphabet[b & 0x0f];
+            }
+            return new String(result);
+        } catch (Throwable t) {
+            throw new IllegalStateException("SHA-256 unavailable", t);
+        }
+    }
+
     private static int parseInt(String value, int def) {
         try {
             return Integer.parseInt(value);
@@ -849,6 +972,182 @@ public final class ZuiControlService extends Binder {
             out[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
         }
         return out;
+    }
+
+    private final class UperfScenePolicy {
+        private final Map<String, String> mRules = new HashMap<>();
+        private final Runnable mReloadRunnable = new Runnable() {
+            @Override
+            public void run() {
+                reloadSettings("settings");
+            }
+        };
+        private final ContentObserver mSettingsObserver = new ContentObserver(mWorker) {
+            @Override
+            public void onChange(boolean selfChange) {
+                mWorker.removeCallbacks(mReloadRunnable);
+                mWorker.post(mReloadRunnable);
+            }
+        };
+
+        private String mScenePackage = "";
+        private boolean mInteractive = true;
+        private boolean mSystemStateSeen;
+        private boolean mStartScheduled;
+        private boolean mStarted;
+        private String mGlobalMode = "balance";
+        private String mSceneMode = "balance";
+        private String mDesiredMode = "balance";
+        private String mLastRequestedMode = "";
+        private String mLastAppliedMode = "none";
+        private int mApplyCount;
+        private String mLastReason = "initPending";
+
+        synchronized void start(String scenePackage, boolean interactive) {
+            if (!mSystemStateSeen) {
+                mScenePackage = safe(scenePackage);
+                mInteractive = interactive;
+            }
+            if (mStartScheduled) {
+                return;
+            }
+            mStartScheduled = true;
+            mWorker.post(new Runnable() {
+                @Override
+                public void run() {
+                    startOnWorker();
+                }
+            });
+        }
+
+        private synchronized void startOnWorker() {
+            if (mStarted) {
+                return;
+            }
+            mStarted = true;
+            long token = Binder.clearCallingIdentity();
+            try {
+                mContext.getContentResolver().registerContentObserver(
+                        Settings.System.getUriFor(SETTING_UPERF_MODE), false, mSettingsObserver);
+                mContext.getContentResolver().registerContentObserver(
+                        Settings.System.getUriFor(SETTING_UPERF_RULES), false, mSettingsObserver);
+            } catch (Throwable t) {
+                Log.w(TAG, "Uperf settings observer unavailable", t);
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
+            reloadSettings("startup");
+        }
+
+        synchronized void onSystemStateChanged(
+                String scenePackage, boolean interactive, String reason, long eventNanos) {
+            mSystemStateSeen = true;
+            mScenePackage = safe(scenePackage);
+            mInteractive = interactive;
+            if (mStarted) {
+                reconcile(reason, eventNanos);
+            }
+        }
+
+        private synchronized void reloadSettings(String reason) {
+            String global;
+            String rulesText;
+            long token = Binder.clearCallingIdentity();
+            try {
+                global = Settings.System.getString(
+                        mContext.getContentResolver(), SETTING_UPERF_MODE);
+                rulesText = Settings.System.getString(
+                        mContext.getContentResolver(), SETTING_UPERF_RULES);
+            } catch (Throwable t) {
+                Log.w(TAG, "Uperf settings read failed", t);
+                reconcile(reason + ":settingsReadFailed", SystemClock.elapsedRealtimeNanos());
+                return;
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
+
+            String checkedGlobal = validUperfMode(global) ? global.trim() : "balance";
+            Map<String, String> parsedRules = parseUperfRules(rulesText);
+            mGlobalMode = checkedGlobal;
+            mRules.clear();
+            mRules.putAll(parsedRules);
+            reconcile(reason, SystemClock.elapsedRealtimeNanos());
+        }
+
+        private Map<String, String> parseUperfRules(String rulesText) {
+            Map<String, String> parsed = new HashMap<>();
+            for (String line : safe(rulesText).split("\\r?\\n")) {
+                String text = line.trim();
+                int separator = text.indexOf('|');
+                if (separator <= 0 || separator != text.lastIndexOf('|')) {
+                    continue;
+                }
+                String packageName = text.substring(0, separator).trim();
+                String mode = text.substring(separator + 1).trim();
+                if (validPackage(packageName) && validUperfMode(mode)
+                        && !parsed.containsKey(packageName)) {
+                    parsed.put(packageName, mode);
+                }
+            }
+            return parsed;
+        }
+
+        private void reconcile(String reason, long eventNanos) {
+            String exact = mRules.get(mScenePackage);
+            boolean hasExact = validUperfMode(exact);
+            mSceneMode = hasExact ? exact : mGlobalMode;
+            String source;
+            if (!mInteractive) {
+                mDesiredMode = "powersave";
+                source = "screenOff";
+            } else if (hasExact) {
+                mDesiredMode = exact;
+                source = "exact:" + mScenePackage;
+            } else {
+                mDesiredMode = mGlobalMode;
+                source = "global";
+            }
+            if (mDesiredMode.equals(mLastRequestedMode)) {
+                mLastReason = reason + ":" + source + ":sameTarget";
+                return;
+            }
+            try {
+                long propertySetNanos = SystemClock.elapsedRealtimeNanos();
+                SystemProperties.set(PROP_UPERF_MODE, mDesiredMode);
+                long propertyAckNanos = SystemClock.elapsedRealtimeNanos();
+                mLastRequestedMode = mDesiredMode;
+                mLastAppliedMode = mDesiredMode;
+                mApplyCount++;
+                mLastReason = reason + ":" + source;
+                Log.i(TAG, "uperf_transition eventNs=" + eventNanos
+                        + " propertySetNs=" + propertySetNanos
+                        + " propertyAckNs=" + propertyAckNanos
+                        + " desired=" + mDesiredMode
+                        + " scene=" + mScenePackage
+                        + " reason=" + mLastReason
+                        + " applyCount=" + mApplyCount);
+            } catch (Throwable t) {
+                mLastReason = reason + ":propertySetFailed";
+                Log.w(TAG, "Uperf mode property set failed", t);
+            }
+        }
+
+        synchronized String stateLines() {
+            return "\nuperfGlobalMode=" + mGlobalMode
+                    + "\nuperfSceneMode=" + mSceneMode
+                    + "\nuperfDesiredMode=" + mDesiredMode
+                    + "\nuperfLastAppliedMode=" + mLastAppliedMode
+                    + "\nuperfApplyCount=" + mApplyCount
+                    + "\nuperfLastReason=" + mLastReason;
+        }
+
+        private boolean validUperfMode(String mode) {
+            String value = safe(mode).trim();
+            return "powersave".equals(value)
+                    || "balance".equals(value)
+                    || "performance".equals(value)
+                    || "fast".equals(value);
+        }
     }
 
     private static final class Profile {

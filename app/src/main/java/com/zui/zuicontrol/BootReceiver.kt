@@ -11,8 +11,16 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
             -> {
-                normalizeDolbyTile(context)
-                ZuiControlQuickService.start(context)
+                val pending = goAsync()
+                Thread {
+                    try {
+                        ZuiControlRequest.kickPending(context)
+                    } finally {
+                        pending.finish()
+                    }
+                }.start()
+                runCatching { normalizeDolbyTile(context) }
+                runCatching { ZuiControlQuickService.start(context) }
             }
         }
     }

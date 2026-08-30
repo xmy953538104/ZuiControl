@@ -32,6 +32,20 @@ class ZuiControlRequestTest {
     @Test
     fun emptyRequestHasNoPendingWork() {
         assertFalse(ZuiControlRequest.hasPendingRequest("", ""))
+        assertFalse(ZuiControlRequest.hasPendingRequest("request-without-command", ""))
+        assertFalse(ZuiControlRequest.hasPendingRequest("request-1||||", ""))
+    }
+
+    @Test
+    fun requestDigestBindsExactFiveFieldText() {
+        assertEquals(
+            "e0c252fefc78700aa191832179a69fd21c30135465d037937f2dda13ec9ab1d1",
+            ZuiControlRequest.sha256("id|status|||"),
+        )
+        assertFalse(
+            ZuiControlRequest.sha256("id|status|||") ==
+                ZuiControlRequest.sha256("id|restart_scheduler|||"),
+        )
     }
 
     @Test
@@ -62,5 +76,22 @@ class ZuiControlRequestTest {
         assertEquals("正在校验目标应用", ZuiControlRequest.progressLabel("validating_target"))
         assertEquals("正在重启 Uperf 与线程服务", ZuiControlRequest.progressLabel("restarting_scheduler"))
         assertEquals("custom stage", ZuiControlRequest.progressLabel("custom stage"))
+    }
+
+    @Test
+    fun commandRekickUsesBoundedBackoff() {
+        assertEquals(1_000L, ZuiControlRequest.retryDelayMs(0))
+        assertEquals(2_000L, ZuiControlRequest.retryDelayMs(1))
+        assertEquals(4_000L, ZuiControlRequest.retryDelayMs(2))
+        assertEquals(8_000L, ZuiControlRequest.retryDelayMs(3))
+        assertEquals(8_000L, ZuiControlRequest.retryDelayMs(99))
+        assertEquals(6, ZuiControlRequest.MAX_KICK_RETRIES)
+    }
+
+    @Test
+    fun binderReplyRequiresExactSuccessMarker() {
+        assertTrue(ZuiControlClient.replyIsOk("ok=1\nrequestId=id"))
+        assertFalse(ZuiControlClient.replyIsOk("ok=0\nerror=rejected"))
+        assertFalse(ZuiControlClient.replyIsOk("prefix\nok=1"))
     }
 }

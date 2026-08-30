@@ -46,6 +46,12 @@ def resolve_image_root(root, unpack):
     return root
 
 
+def write_text_lf(path, text):
+    path = pathlib.Path(path)
+    with path.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write(text)
+
+
 def ensure_line(path, key, line, changed, dry_run):
     path = pathlib.Path(path)
     lines = []
@@ -59,7 +65,7 @@ def ensure_line(path, key, line, changed, dry_run):
     if dry_run:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    write_text_lf(path, "\n".join(kept) + "\n")
 
 
 def first_field(line):
@@ -125,7 +131,7 @@ def remove_lines_containing(path, needles, dry_run):
     kept = [line for line in lines if not any(needle in line for needle in needles)]
     removed = [line for line in lines if any(needle in line for needle in needles)]
     if removed and not dry_run:
-        path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        write_text_lf(path, "\n".join(kept) + "\n")
     return removed
 
 
@@ -314,7 +320,7 @@ def cleanup_retired_whitelists(unpack, dry_run, report):
         if kept != lines:
             changed.append(str(path))
             if not dry_run:
-                path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+                write_text_lf(path, "\n".join(kept) + "\n")
     report["retired_whitelists_removed"] = changed
 
 
@@ -338,7 +344,7 @@ def append_unique_lines(target, lines, dry_run):
     additions = [line for line in lines if line not in current]
     if additions and not dry_run:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("\n".join(current + additions) + "\n", encoding="utf-8")
+        write_text_lf(target, "\n".join(current + additions) + "\n")
     return additions
 
 
@@ -356,7 +362,7 @@ def merge_unique_lines_by_key(target, lines, dry_run):
     changed = updated != current
     if changed and not dry_run:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("\n".join(updated) + "\n", encoding="utf-8")
+        write_text_lf(target, "\n".join(updated) + "\n")
     return additions, changed
 
 
@@ -435,7 +441,7 @@ def update_plat_mapping_hash(unpack, report):
     sha_file = sepolicy_dir / "plat_sepolicy_and_mapping.sha256"
     digest = hashlib.sha256(plat.read_bytes() + mapping.read_bytes()).hexdigest()
     old = sha_file.read_text(encoding="utf-8", errors="ignore").strip() if sha_file.exists() else ""
-    sha_file.write_text(digest + "\n", encoding="utf-8")
+    write_text_lf(sha_file, digest + "\n")
     report["plat_sepolicy_and_mapping_sha256"] = {
         "old": old,
         "new": digest,
@@ -507,8 +513,8 @@ def main():
     out_name = f"zui_control_payload_{stamp()}.json"
     if not args.dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / out_name).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        (out_dir / "zui_control_payload_latest.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_text_lf(out_dir / out_name, json.dumps(report, ensure_ascii=False, indent=2))
+        write_text_lf(out_dir / "zui_control_payload_latest.json", json.dumps(report, ensure_ascii=False, indent=2))
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 

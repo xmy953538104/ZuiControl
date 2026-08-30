@@ -1,14 +1,26 @@
 on post-fs-data
-    mkdir /data/vendor/zui_control 0775 root shell
+    mkdir /data/vendor/zui_control 0755 root root
+    mkdir /data/vendor/zui_control/zuicontrol 0700 root root
     mkdir /data/vendor/zui_control/log 0775 root shell
     restorecon_recursive /data/vendor/zui_control
 
 on property:sys.boot_completed=1
     start zui_controld
 
+on property:sys.zui_control.command_seq=*
+    start zui_control_request
+
 service zui_controld /system/bin/sh /system/bin/zui_controld
     class late_start
     disabled
     user root
     group root system shell readproc graphics
+    seclabel u:r:shell:s0
+
+service zui_control_request /system/bin/sh /system/bin/zui_controld --oneshot-request ${sys.zui_control.command_id:-unset} ${sys.zui_control.command_sha256:-unset}
+    class late_start
+    disabled
+    oneshot
+    user root
+    group root system shell readproc
     seclabel u:r:shell:s0

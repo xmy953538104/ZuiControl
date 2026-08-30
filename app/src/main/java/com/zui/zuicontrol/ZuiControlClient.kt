@@ -43,14 +43,21 @@ object ZuiControlClient {
         return call { it.getState() }.text
     }
 
+    fun notifyControlRequest(requestId: String, requestSha256: String): Reply {
+        return call { it.notifyControlRequest(requestId, requestSha256) }
+    }
+
     private fun call(block: (ZuiControlManager) -> String): Reply {
         return try {
             val manager = ZuiControlManager.get()
                 ?: return Reply(false, "zui_control service unavailable")
             val reply = block(manager)
-            Reply(reply.startsWith("ok") || reply.contains("\nok="), reply)
+            Reply(replyIsOk(reply), reply)
         } catch (e: Throwable) {
             Reply(false, e.javaClass.simpleName + ": " + (e.message ?: ""))
         }
     }
+
+    internal fun replyIsOk(reply: String): Boolean =
+        reply.lineSequence().firstOrNull()?.trim() == "ok=1"
 }

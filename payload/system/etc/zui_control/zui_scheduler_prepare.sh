@@ -53,7 +53,13 @@ awk '
 ' "$PERAPP" > "$PERAPP.tmp" || exit 1
 mv -f "$PERAPP.tmp" "$PERAPP" || exit 1
 
-printf '%s\n' "$global_mode" > "$EFFECTIVE_MODE.tmp" || exit 1
+property_mode="${1:-}"
+if valid_preset "$property_mode"; then
+    effective_mode="$property_mode"
+else
+    effective_mode="$global_mode"
+fi
+printf '%s\n' "$effective_mode" > "$EFFECTIVE_MODE.tmp" || exit 1
 chmod 0644 "$EFFECTIVE_MODE.tmp"
 mv -f "$EFFECTIVE_MODE.tmp" "$EFFECTIVE_MODE" || exit 1
 

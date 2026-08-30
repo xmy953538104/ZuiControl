@@ -1,6 +1,8 @@
 param(
     [string]$FlashDir = "",
     [string]$WorkDir = "",
+    [string]$ExpectedVendorImageSha256 = "",
+    [string]$ExpectedVendorApkInventoryPath = "",
     [switch]$KeepWork
 )
 
@@ -28,8 +30,63 @@ $ForbiddenBuildFingerprintMarker = 'ZUI_16.1.11.187_250227_PRC'
 $MinimumAvbRollbackIndex = [int64]1736035200
 $OfficialB072Dir = Join-Path $WorkspaceRoot '【A官方】072'
 
+function Full([string]$Path) { [IO.Path]::GetFullPath($Path).TrimEnd('\') }
+
+function Assert-VerificationWorkBoundary {
+    $workRoot = Full (Join-Path $WorkspaceRoot 'work')
+    $workFull = Full $WorkDir
+    $flashFull = Full $FlashDir
+    if ($workFull -eq $workRoot -or
+        -not $workFull.StartsWith($workRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        (Split-Path -Leaf $workFull) -notlike 'verify_*') {
+        throw "Verification WorkDir escaped the dedicated workspace work/verify_* boundary: $workFull"
+    }
+    if ($workFull -eq $flashFull -or
+        $workFull.StartsWith($flashFull + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $flashFull.StartsWith($workFull + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Verification WorkDir overlaps FlashDir: $workFull ; $flashFull"
+    }
+}
+
+function Remove-VerificationWork {
+    if (-not (Test-Path -LiteralPath $WorkDir)) { return }
+    Assert-VerificationWorkBoundary
+    $expected = Full $WorkDir
+    $item = Get-Item -LiteralPath $WorkDir -Force
+    $resolved = Full (Resolve-Path -LiteralPath $WorkDir).Path
+    if ($item.LinkType -or $resolved -ne $expected) {
+        throw "Verification WorkDir is linked or resolves unexpectedly: $expected -> $resolved"
+    }
+    $links = @(Get-ChildItem -LiteralPath $resolved -Force -Recurse -Attributes ReparsePoint -ErrorAction SilentlyContinue)
+    if ($links.Count) { throw "Verification WorkDir contains a reparse point: $($links[0].FullName)" }
+    Remove-Item -LiteralPath $resolved -Recurse -Force
+}
+
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Missing file: $Path" }
+}
+
+function Snapshot-Apks([string]$Root) {
+    $rootFull = Full $Root
+    $prefix = $rootFull + '\'
+    return @(Get-ChildItem -LiteralPath $rootFull -Recurse -File -Filter '*.apk' |
+        Sort-Object FullName | ForEach-Object {
+            $full = Full $_.FullName
+            if (-not $full.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "APK escaped inventory root: $full"
+            }
+            [pscustomobject][ordered]@{
+                path = $full.Substring($prefix.Length).Replace('\', '/')
+                length = $_.Length
+                sha256 = File-Sha256 $full
+            }
+        })
+}
+
+function Canonical-ApkInventory([object[]]$Apks) {
+    return @($Apks | Sort-Object { [string]$_.path } | ForEach-Object {
+        '{0}|{1}|{2}' -f [string]$_.path, [int64]$_.length, ([string]$_.sha256).ToLowerInvariant()
+    })
 }
 
 function Assert-Missing([string]$Path, [string]$Label) {
@@ -55,9 +112,127 @@ function Assert-NotContains([string]$Path, [string]$Needle, [string]$Label) {
     }
 }
 
+function Get-InitServiceBlock([string]$Path, [string]$ServiceName) {
+    Require-File $Path
+    $lines = [IO.File]::ReadAllLines($Path)
+    $start = -1
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ($lines[$i] -match ('^service\s+' + [regex]::Escape($ServiceName) + '(?:\s|$)')) {
+            if ($start -ge 0) { throw "Duplicate init service block: $ServiceName in $Path" }
+            $start = $i
+        }
+    }
+    if ($start -lt 0) { throw "Missing init service block: $ServiceName in $Path" }
+    $block = [Collections.Generic.List[string]]::new()
+    $block.Add($lines[$start])
+    for ($i = $start + 1; $i -lt $lines.Length; $i++) {
+        if ($lines[$i] -match '^\S') { break }
+        $block.Add($lines[$i])
+    }
+    return @($block)
+}
+
+function Get-SmaliMethodBlock([string]$Path, [string]$MethodName) {
+    Require-File $Path
+    $lines = [IO.File]::ReadAllLines($Path)
+    $starts = @()
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ($lines[$i] -match ('^\.method\b.*\s' + [regex]::Escape($MethodName) + '\(')) {
+            $starts += $i
+        }
+    }
+    if ($starts.Count -ne 1) {
+        throw "Expected one smali method $MethodName in $Path; found $($starts.Count)"
+    }
+    $block = [Collections.Generic.List[string]]::new()
+    for ($i = $starts[0]; $i -lt $lines.Length; $i++) {
+        $block.Add($lines[$i])
+        if ($lines[$i] -ceq '.end method') { return @($block) }
+    }
+    throw "Unterminated smali method $MethodName in $Path"
+}
+
+function Get-ShellFunctionBlock([string]$Path, [string]$FunctionName) {
+    Require-File $Path
+    $text = Get-Content -Raw -LiteralPath $Path
+    $match = [regex]::Match($text,
+        ('(?ms)^' + [regex]::Escape($FunctionName) + '\(\) \{.*?^\}'))
+    if (-not $match.Success) { throw "Missing shell function $FunctionName in $Path" }
+    return $match.Value
+}
+
+function Assert-OrderedText([string]$Text, [string[]]$Needles, [string]$Label) {
+    $position = -1
+    foreach ($needle in $Needles) {
+        $next = $Text.IndexOf($needle, $position + 1, [StringComparison]::Ordinal)
+        if ($next -lt 0) { throw "Missing or out-of-order $Label marker: $needle" }
+        $position = $next
+    }
+}
+
+function Get-ExactAsciiLineCount([byte[]]$Bytes, [string]$Line) {
+    $expected = [Text.Encoding]::ASCII.GetBytes($Line)
+    $count = 0
+    $start = 0
+    for ($i = 0; $i -le $Bytes.Length; $i++) {
+        if ($i -ne $Bytes.Length -and $Bytes[$i] -ne 0x0A) { continue }
+        $end = $i
+        if ($end -gt $start -and $Bytes[$end - 1] -eq 0x0D) { $end-- }
+        if (($end - $start) -eq $expected.Length) {
+            $same = $true
+            for ($j = 0; $j -lt $expected.Length; $j++) {
+                if ($Bytes[$start + $j] -ne $expected[$j]) {
+                    $same = $false
+                    break
+                }
+            }
+            if ($same) { $count++ }
+        }
+        $start = $i + 1
+    }
+    return $count
+}
+
+function Test-ByteSequence([byte[]]$Bytes, [byte[]]$Needle) {
+    if ($Needle.Length -eq 0 -or $Needle.Length -gt $Bytes.Length) { return $false }
+    for ($i = 0; $i -le $Bytes.Length - $Needle.Length; $i++) {
+        $same = $true
+        for ($j = 0; $j -lt $Needle.Length; $j++) {
+            if ($Bytes[$i + $j] -ne $Needle[$j]) {
+                $same = $false
+                break
+            }
+        }
+        if ($same) { return $true }
+    }
+    return $false
+}
+
 function File-Sha256([string]$Path) {
     Require-File $Path
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+}
+
+function Files-ConcatenatedSha256([string[]]$Paths) {
+    $hash = [Security.Cryptography.IncrementalHash]::CreateHash(
+        [Security.Cryptography.HashAlgorithmName]::SHA256)
+    try {
+        $buffer = New-Object byte[] (1024 * 1024)
+        foreach ($path in $Paths) {
+            Require-File $path
+            $stream = [IO.File]::OpenRead($path)
+            try {
+                while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                    $hash.AppendData($buffer, 0, $read)
+                }
+            } finally {
+                $stream.Dispose()
+            }
+        }
+        return ([BitConverter]::ToString($hash.GetHashAndReset()) -replace '-', '').ToLowerInvariant()
+    } finally {
+        $hash.Dispose()
+    }
 }
 
 function Read-AvbInfo([string]$Path) {
@@ -104,6 +279,9 @@ function Assert-Apk([string]$ApkPath, [string]$Label) {
     $badging = & $aapt2 dump badging $ApkPath | Out-String -Width 4096
     if ($LASTEXITCODE -ne 0 -or $badging -notmatch "package: name='com\.zui\.zuicontrol' versionCode='$ExpectedVersionCode' versionName='$ExpectedVersionName'") {
         throw "$Label has the wrong package or version"
+    }
+    if ($badging -match '(?m)^application-debuggable') {
+        throw "$Label must not be debuggable"
     }
     $permissions = & $aapt2 dump permissions $ApkPath | Out-String -Width 4096
     if ($permissions -match 'com\.zui\.performance\.permission\.gamemode') {
@@ -175,6 +353,7 @@ $ReleaseSidecarApk = Join-Path $FlashDir 'ZuiControl-v19-release.apk'
 foreach ($file in @($Python, $LpUnpack, $ExtractErofs, $Apktool, $Avbtool, $Super, $Boot, $Vbmeta, $VbmetaSystem, $SidecarApk, $ReleaseSidecarApk)) {
     Require-File $file
 }
+if ($ExpectedVendorApkInventoryPath) { Require-File $ExpectedVendorApkInventoryPath }
 
 $BootHash = File-Sha256 $Boot
 if ($BootHash -ne $ExpectedBootSha256) {
@@ -217,8 +396,9 @@ if ($VbmetaSystemRollbackIndex -lt $MinimumAvbRollbackIndex) {
 }
 
 $ok = $false
+Assert-VerificationWorkBoundary
 try {
-    if (Test-Path -LiteralPath $WorkDir) { Remove-Item -LiteralPath $WorkDir -Recurse -Force }
+    Remove-VerificationWork
     $ImageDir = Join-Path $WorkDir 'img'
     $ExtractDir = Join-Path $WorkDir 'extract'
     New-Item -ItemType Directory -Path $ImageDir, $ExtractDir | Out-Null
@@ -228,9 +408,34 @@ try {
         Require-File $image
         Invoke-Checked $ExtractErofs '-i' $image '-o' $ExtractDir '-x' '-f'
     }
+    $VendorImageSha256 = File-Sha256 (Join-Path $ImageDir 'vendor_a.img')
+    if ($ExpectedVendorImageSha256 -and
+        $VendorImageSha256 -ne $ExpectedVendorImageSha256.ToLowerInvariant()) {
+        throw "Final super vendor_a hash mismatch: $VendorImageSha256 != $ExpectedVendorImageSha256"
+    }
 
     $SystemRoot = Join-Path $ExtractDir 'system_a'
     $VendorRoot = Join-Path $ExtractDir 'vendor_a'
+    $VendorApkCount = 0
+    $VendorApkInventorySha256 = ''
+    if ($ExpectedVendorApkInventoryPath) {
+        $expectedVendorRecord = Get-Content -Raw -LiteralPath $ExpectedVendorApkInventoryPath | ConvertFrom-Json
+        if (-not [bool]$expectedVendorRecord.unchanged) {
+            throw 'Expected vendor APK inventory was not marked unchanged.'
+        }
+        $expectedVendorApks = @($expectedVendorRecord.apks)
+        $actualVendorApks = @(Snapshot-Apks $VendorRoot)
+        $expectedCanonical = @(Canonical-ApkInventory $expectedVendorApks)
+        $actualCanonical = @(Canonical-ApkInventory $actualVendorApks)
+        if ([int]$expectedVendorRecord.count -ne $expectedVendorApks.Count -or
+            $expectedVendorApks.Count -ne $actualVendorApks.Count -or
+            (Compare-Object $expectedCanonical $actualCanonical)) {
+            throw ('Final super vendor APK inventory mismatch: expected={0}, actual={1}' -f
+                $expectedVendorApks.Count, $actualVendorApks.Count)
+        }
+        $VendorApkCount = $actualVendorApks.Count
+        $VendorApkInventorySha256 = File-Sha256 $ExpectedVendorApkInventoryPath
+    }
     $SystemImageContexts = Join-Path $ExtractDir 'config\system_a_file_contexts'
     $System = Join-Path $SystemRoot 'system'
     $PlatSelinux = Join-Path $System 'etc\selinux'
@@ -292,9 +497,52 @@ try {
     Assert-NotContains $SchedulerRc 'write /data/vendor/zui_control/asoul/asopt.conf' 'boot-time A-SOUL config truncation'
     Assert-NotContains $SchedulerRc '/data/adb' 'retired Magisk config path'
     Assert-Contains $SchedulerRc 'trigger zui-scheduler-start' 'scheduler boot trigger'
+    $schedulerRcBytes = [IO.File]::ReadAllBytes($SchedulerRc)
+    $schedulerRcText = [Text.Encoding]::UTF8.GetString($schedulerRcBytes).Replace("`r`n", "`n")
+    $schedulerRcModeLines = [ordered]@{}
+    foreach ($mode in @('powersave', 'balance', 'performance', 'fast')) {
+        $triggerLine = "on property:sys.zui_control.uperf_mode=$mode"
+        $writeLine = "    write /data/vendor/zui_control/uperf/effective_powermode.txt $mode"
+        if ((Get-ExactAsciiLineCount $schedulerRcBytes $triggerLine) -ne 1) {
+            throw "Final super init rc does not have exactly one $mode trigger"
+        }
+        if ((Get-ExactAsciiLineCount $schedulerRcBytes $writeLine) -ne 1) {
+            throw "Final super init rc does not have the exact bare $mode write bytes"
+        }
+        $actionBlock = "$triggerLine`n$writeLine"
+        if ([regex]::Matches($schedulerRcText, [regex]::Escape($actionBlock)).Count -ne 1) {
+            throw "Final super init rc does not pair the $mode trigger with its exact write action"
+        }
+        $badValue = [Text.Encoding]::ASCII.GetBytes(('"' + $mode + '\n"'))
+        if (Test-ByteSequence $schedulerRcBytes $badValue) {
+            throw "Final super init rc still contains quoted literal backslash-n bytes for $mode"
+        }
+        $writeBytes = [Text.Encoding]::ASCII.GetBytes($writeLine)
+        $schedulerRcModeLines[$mode] = [ordered]@{
+            text = $writeLine
+            hex = (($writeBytes | ForEach-Object { $_.ToString('x2') }) -join '')
+        }
+    }
+    Assert-NotContains $SchedulerRc 'on property:sys.zui_control.uperf_mode=*' 'unbounded Uperf property trigger'
+    Assert-NotContains $SchedulerRc 'exec sh' 'shell-based Uperf property handler'
     Assert-Contains $SchedulerRc 'on property:zui_control.scheduler=fence' 'OEM perf bridge re-entry fence'
     Assert-NotContains $SchedulerRc 'seclabel u:r:shell:s0' 'shell-domain scheduler service'
     Assert-NotContains $DaemonRc 'zui_control.zuipp' 'retired XML property action'
+    Assert-Contains $DaemonRc 'on property:sys.zui_control.command_seq=*' 'event-triggered command doorbell'
+    Assert-Contains $DaemonRc 'service zui_control_request /system/bin/sh /system/bin/zui_controld --oneshot-request ${sys.zui_control.command_id:-unset} ${sys.zui_control.command_sha256:-unset}' 'authenticated oneshot command service'
+    Assert-Contains $DaemonRc 'mkdir /data/vendor/zui_control 0755 root root' 'root-owned transaction parent'
+    Assert-Contains $SchedulerRc 'mkdir /data/vendor/zui_control 0755 root root' 'root-owned scheduler data parent'
+    Assert-Contains $DaemonRc 'mkdir /data/vendor/zui_control/zuicontrol 0700 root root' 'root-private transaction directory'
+    $commandServiceBlock = @(Get-InitServiceBlock $DaemonRc 'zui_control_request')
+    foreach ($line in @('    class late_start', '    disabled', '    oneshot', '    user root',
+            '    group root system shell readproc', '    seclabel u:r:shell:s0')) {
+        if (@($commandServiceBlock | Where-Object { $_ -ceq $line }).Count -ne 1) {
+            throw "Final super command service is missing exact scoped directive: $line"
+        }
+    }
+    if (@($commandServiceBlock | Where-Object { $_ -match '(?:^|\s)graphics(?:\s|$)' }).Count) {
+        throw 'Final super command service unexpectedly has the graphics group.'
+    }
     Assert-Contains $UperfService '/proc/self/cgroup' 'init-owned Uperf cgroup discovery'
     Assert-Contains $UperfService 'cgroup.procs' 'Uperf cgroup health source'
     Assert-Contains $UperfService 'uperf_process_count' 'Uperf process-count health check'
@@ -305,6 +553,10 @@ try {
     Assert-Contains $UperfService 'echo $$ > /dev/cpuset/background/tasks' 'background placement for Uperf itself'
     Assert-Contains $SchedulerPrepare "printf 'balance\n'" 'balanced global default'
     Assert-Contains $SchedulerPrepare 'effective_powermode.txt' 'effective Uperf mode preparation'
+    Assert-Contains $SchedulerPrepare 'property_mode="${1:-}"' 'init-supplied Uperf property recovery input'
+    Assert-Contains $SchedulerPrepare 'if valid_preset "$property_mode"; then' 'validated Uperf property recovery'
+    Assert-Contains $SchedulerPrepare 'effective_mode="$property_mode"' 'Uperf property recovery preference'
+    Assert-Contains $SchedulerPrepare 'effective_mode="$global_mode"' 'durable global recovery fallback'
     Assert-Contains $SchedulerPrepare '$1 != "*"' 'retired per-app global fallback removal'
     Assert-Contains $SchedulerPrepare 'mode == 1 && rt == 1 && opt == 1' 'persistent A-SOUL config validation'
     Assert-Contains $SchedulerPrepare 'safecenter_keepalive_backup.flag' 'retired SafeCenter data cleanup'
@@ -322,13 +574,13 @@ try {
     Assert-Contains $Daemon 'powersave|balance|performance|fast' 'four Uperf modes'
     Assert-NotContains $Daemon 'auto|powersave|balance|performance|fast' 'retired automatic frontend mode'
     Assert-Contains $Daemon 'valid_uperf_preset "$requested_mode"' 'per-app preset validation'
-    Assert-Contains $Daemon 'UPERF_SCENE_KEY=zui_control_top_package' 'system_server scene source'
-    Assert-Contains $Daemon 'UPERF_SCREEN_KEY=zui_control_screen_on' 'system_server screen source'
-    Assert-Contains $Daemon 'sync_uperf_frontend()' 'ROM Uperf frontend'
-    Assert-Contains $Daemon 'effective_powermode.txt' 'ROM effective-mode output'
-    Assert-Contains $Daemon 'if [ "$screen" = "0" ]; then' 'screen-off first resolution order'
-    Assert-Contains $Daemon 'effective="$(uperf_rule_for_scene "$scene")"' 'exact-app second resolution order'
-    Assert-Contains $Daemon 'effective="$global_mode"' 'global fallback resolution order'
+    Assert-NotContains $Daemon 'UPERF_SCENE_KEY=zui_control_top_package' 'retired daemon scene polling source'
+    Assert-NotContains $Daemon 'UPERF_SCREEN_KEY=zui_control_screen_on' 'retired daemon screen polling source'
+    Assert-NotContains $Daemon 'sync_uperf_frontend()' 'retired daemon Uperf frontend'
+    Assert-NotContains $Daemon 'write_uperf_effective_mode()' 'retired daemon effective-mode writer'
+    Assert-NotContains $Daemon '> "$UPERF_EFFECTIVE_MODE"' 'daemon effective-mode write redirection'
+    Assert-Contains $Daemon 'effective_powermode.txt' 'read-only effective-mode health observation'
+    Assert-Contains $Daemon '有效档位 owner：system_server → sys.zui_control.uperf_mode → init' 'event-driven Uperf ownership state'
     Assert-Contains $Daemon "grep -q ' I Uperf is running`$'" 'strict Uperf daemon health check'
     Assert-NotContains $Daemon 'ps -AZ' 'cross-domain health scanner'
     Assert-Contains $Daemon '调度围栏：vendor.perfservice=' 'narrow QTI scheduler fence health state'
@@ -345,6 +597,41 @@ try {
     }
     Assert-Contains $Daemon 'refresh_owner=system;daemon refresh disabled' 'system_server refresh owner state'
     Assert-Contains $Daemon 'LAST_REQUEST_RECEIPT=$CONTROL_DIR/last_request_receipt' 'durable request receipt'
+    Assert-Contains $Daemon 'LAST_COMPLETED_REQUEST_ID=' 'V20.1 terminal request dedup state'
+    Assert-Contains $Daemon 'publish_pending_terminal_ack()' 'V20.1 one-shot terminal ACK recovery'
+    Assert-Contains $Daemon 'ACTIVE_REQUEST_CLAIM=$CONTROL_DIR/active_request_claim' 'pre-action durable claim'
+    Assert-Contains $Daemon 'indeterminate_after_claim' 'at-most-once ambiguous-window recovery'
+    Assert-Contains $Daemon 'oneshot_request()' 'one-request command entry point'
+    Assert-Contains $Daemon '--oneshot-request) shift; oneshot_request "${1:-}" "${2:-}"' 'authenticated one-request argument dispatch'
+    Assert-Contains $Daemon '[ "$(id -u 2>/dev/null)" = "0" ] || return 126' 'non-root direct invocation rejection'
+    Assert-Contains $Daemon 'captured_request="$(settings_get_clean "$REQ_TEXT_KEY")"' 'single request capture'
+    Assert-Contains $Daemon 'captured_sha256="$(request_sha256 "$captured_request")"' 'captured request digest binding'
+    Assert-Contains $Daemon 'init_request_state "$captured_request"' 'single-capture recovery input'
+    Assert-Contains $Daemon 'process_settings_request "$captured_request"' 'single-capture transaction input'
+    Assert-Contains $Daemon 'atomic_write_text "$ACTIVE_REQUEST_CLAIM" "$1" 0600' 'root-private request claim'
+    Assert-Contains $Daemon '$terminal_ack" 0600 || return 1' 'root-private terminal receipt'
+    Assert-Contains $Daemon 'chmod 0755 "$DATA_ROOT"' 'root-owned transaction parent repair'
+    $processRequest = Get-ShellFunctionBlock $Daemon 'process_settings_request'
+    Assert-OrderedText $processRequest @(
+        'persist_request_claim "$request"',
+        'handle_command "$cmd" "$pkg" "$mode"',
+        'finish_request "$request" "$id" "$cmd" "$result"'
+    ) 'claim/action/completion transaction order'
+    $finishRequest = Get-ShellFunctionBlock $Daemon 'finish_request'
+    Assert-OrderedText $finishRequest @(
+        'persist_completion "$request" "$terminal_ack"',
+        'clear_request_claim "$request"',
+        'publish_pending_terminal_ack'
+    ) 'receipt/claim-clear/terminal-ACK order'
+    $daemonText = Get-Content -Raw -LiteralPath $Daemon
+    $mainLoop = [regex]::Match($daemonText, '(?ms)^main_loop\(\) \{.*?^\}').Value
+    if (-not $mainLoop) { throw 'Cannot locate persistent daemon main_loop' }
+    if ($mainLoop.Contains('process_settings_request')) {
+        throw 'Persistent daemon main_loop still processes Settings requests'
+    }
+    if (-not $mainLoop.Contains('sleep 20') -or $mainLoop.Contains('sleep 1')) {
+        throw 'Persistent daemon main_loop is not a direct 20-second health loop'
+    }
 
     foreach ($config in @($ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
         Assert-NotContains $config 'com.zui.zuicontrol' 'retired ZuiControl keepalive whitelist'
@@ -362,12 +649,108 @@ try {
     Invoke-Checked $java.Source '-jar' $Apktool 'd' '-f' '-o' $ServicesDecode $ServicesJar
     $serviceSmali = @(Get-ChildItem -LiteralPath $ServicesDecode -Recurse -File -Filter 'ZuiControlService.smali')
     if ($serviceSmali.Count -ne 1) { throw "Expected one ZuiControlService.smali, found $($serviceSmali.Count)" }
+    $uperfPolicySmali = @(Get-ChildItem -LiteralPath $ServicesDecode -Recurse -File -Filter 'ZuiControlService$UperfScenePolicy.smali')
+    if ($uperfPolicySmali.Count -ne 1) {
+        throw "Expected one ZuiControlService`$UperfScenePolicy.smali, found $($uperfPolicySmali.Count)"
+    }
     Assert-Contains $serviceSmali[0].FullName 'Landroid/os/HandlerThread;' 'asynchronous focus worker'
     Assert-Contains $serviceSmali[0].FullName 'forRenderFrameRates' 'adaptive render refresh vote'
     Assert-Contains $serviceSmali[0].FullName 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-Contains $serviceSmali[0].FullName 'zui_control_screen_on' 'system_server screen-state publication'
     Assert-Contains $serviceSmali[0].FullName 'registerScreenObserver' 'system_server screen observer'
+    Assert-Contains $serviceSmali[0].FullName 'sys.zui_control.uperf_mode' 'event-driven Uperf transport property'
+    Assert-Contains $serviceSmali[0].FullName 'sys.zui_control.command_seq' 'event-triggered command transport property'
+    Assert-Contains $serviceSmali[0].FullName 'sys.zui_control.command_id' 'authenticated request ID property'
+    Assert-Contains $serviceSmali[0].FullName 'sys.zui_control.command_sha256' 'authenticated request digest property'
+    Assert-Contains $serviceSmali[0].FullName 'notifyControlRequest' 'authenticated command doorbell method'
+    Assert-Contains $serviceSmali[0].FullName 'enforceCommandCallerAllowed' 'strict command doorbell authorization'
+    Assert-Contains $serviceSmali[0].FullName 'enforceZuiControlCaller' 'package and certificate command authorization'
+    Assert-Contains $serviceSmali[0].FullName 'control_request_kick' 'command doorbell observability'
+    Assert-Contains $serviceSmali[0].FullName 'request_payload_mismatch' 'Binder payload digest rejection'
+    Assert-Contains $serviceSmali[0].FullName 'SHA-256' 'Binder payload digest implementation'
+    $transactMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'onTransact') -join "`n"
+    Assert-OrderedText $transactMethod @(
+        '->enforceCommandCallerAllowed()V',
+        '->notifyControlRequest(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;'
+    ) 'TX12 authorization before dispatch'
+    $commandAuthMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'enforceCommandCallerAllowed') -join "`n"
+    Assert-OrderedText $commandAuthMethod @(
+        'Landroid/os/Binder;->getCallingUid()I',
+        '->enforceZuiControlCaller(I)V'
+    ) 'TX12 package/certificate authorization'
+    if ($commandAuthMethod.Contains('Landroid/os/Process;') -or $commandAuthMethod.Contains('SYSTEM_UID')) {
+        throw 'TX12 command authorization contains a SYSTEM_UID bypass.'
+    }
+    $notifyMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'notifyControlRequest') -join "`n"
+    foreach ($marker in @('Landroid/provider/Settings$System;->getString', 'request_payload_mismatch', '->sha256')) {
+        if (-not $notifyMethod.Contains($marker)) { throw "TX12 notify method is missing: $marker" }
+    }
+    Assert-OrderedText $notifyMethod @(
+        'sys.zui_control.command_id',
+        'sys.zui_control.command_sha256',
+        'sys.zui_control.command_seq'
+    ) 'authenticated property commit order'
+    Assert-Contains $serviceSmali[0].FullName 'zui_control_uperf_mode' 'cached global Uperf setting'
+    Assert-Contains $serviceSmali[0].FullName 'zui_control_uperf_rules_text' 'cached exact-app Uperf setting'
+    Assert-Contains $uperfPolicySmali[0].FullName 'Landroid/os/SystemProperties;->set' 'system_server property actuator'
+    foreach ($field in @(
+        'uperfGlobalMode=',
+        'uperfSceneMode=',
+        'uperfDesiredMode=',
+        'uperfLastAppliedMode=',
+        'uperfApplyCount=',
+        'uperfLastReason='
+    )) { Assert-Contains $uperfPolicySmali[0].FullName $field 'Uperf dumpsys observability field' }
     Assert-NotContains $serviceSmali[0].FullName 'forPhysicalRefreshRates' 'unsafe physical refresh vote'
+
+    $FrameworkJar = Join-Path $System 'framework\framework.jar'
+    $FrameworkDecode = Join-Path $WorkDir 'framework_decode'
+    Require-File $FrameworkJar
+    Invoke-Checked $java.Source '-jar' $Apktool 'd' '-f' '-o' $FrameworkDecode $FrameworkJar
+    $managerSmali = @(Get-ChildItem -LiteralPath $FrameworkDecode -Recurse -File -Filter 'ZuiControlManager.smali')
+    if ($managerSmali.Count -ne 1) { throw "Expected one ZuiControlManager.smali, found $($managerSmali.Count)" }
+    Assert-Contains $managerSmali[0].FullName 'notifyControlRequest' 'framework command doorbell API'
+    Assert-Contains $managerSmali[0].FullName '0xc' 'framework command doorbell transaction 12'
+
+    $AppDecode = Join-Path $WorkDir 'app_decode'
+    Invoke-Checked $java.Source '-jar' $Apktool 'd' '-f' '-o' $AppDecode $AppApk
+    $requestSmali = @(Get-ChildItem -LiteralPath $AppDecode -Recurse -File -Filter 'ZuiControlRequest.smali')
+    $clientSmali = @(Get-ChildItem -LiteralPath $AppDecode -Recurse -File -Filter 'ZuiControlClient.smali')
+    $bootSmali = @(Get-ChildItem -LiteralPath $AppDecode -Recurse -File -Filter 'BootReceiver.smali')
+    if ($requestSmali.Count -ne 1 -or $clientSmali.Count -ne 1 -or $bootSmali.Count -ne 1) {
+        throw 'Final APK command client classes are missing'
+    }
+    Assert-Contains $requestSmali[0].FullName 'kickPending' 'App launch pending-command reconciliation'
+    Assert-Contains $requestSmali[0].FullName 'retryDelayMs' 'App bounded command re-kick backoff'
+    Assert-Contains $requestSmali[0].FullName 'zui_control_pending_command' 'App private trusted request record'
+    Assert-Contains $requestSmali[0].FullName 'createDeviceProtectedStorageContext' 'direct-boot trusted request storage'
+    Assert-Contains $requestSmali[0].FullName 'SHA-256' 'App exact request digest'
+    Assert-Contains $clientSmali[0].FullName 'notifyControlRequest' 'App Binder command doorbell call'
+    Assert-Contains $bootSmali[0].FullName 'kickPending' 'boot pending-command reconciliation'
+    $sendMethod = (Get-SmaliMethodBlock $requestSmali[0].FullName 'send') -join "`n"
+    Assert-OrderedText $sendMethod @(
+        '->savePending',
+        'Landroid/provider/Settings$System;->putString',
+        'Lcom/zui/zuicontrol/ZuiControlClient;->notifyControlRequest'
+    ) 'App private-pending/request/Binder order'
+    $kickMethod = (Get-SmaliMethodBlock $requestSmali[0].FullName 'kickTrusted') -join "`n"
+    Assert-OrderedText $kickMethod @(
+        'Landroid/provider/Settings$System;->getString',
+        'Landroid/provider/Settings$System;->putString',
+        'Lcom/zui/zuicontrol/ZuiControlClient;->notifyControlRequest'
+    ) 'App trusted request restore before re-kick'
+    $awaitMethod = (Get-SmaliMethodBlock $requestSmali[0].FullName 'awaitTerminalAck') -join "`n"
+    foreach ($marker in @('->loadPending', '->retryDelayMs', '->kickTrusted',
+            'Ljava/lang/Thread;->sleep', '->clearPending')) {
+        if (-not $awaitMethod.Contains($marker)) { throw "App bounded ACK/retry method is missing: $marker" }
+    }
+    $appManifest = Join-Path $AppDecode 'AndroidManifest.xml'
+    Assert-Contains $appManifest 'android:name="com.zui.zuicontrol.BootReceiver"' 'boot receiver manifest declaration'
+    Assert-Contains $appManifest 'android:directBootAware="true"' 'direct-boot receiver/application declaration'
+    Assert-Contains $appManifest 'android.intent.action.LOCKED_BOOT_COMPLETED' 'locked-boot pending reconciliation'
+    Assert-Contains $appManifest 'android.intent.action.BOOT_COMPLETED' 'boot pending reconciliation'
+    Assert-Contains $bootSmali[0].FullName '->goAsync()Landroid/content/BroadcastReceiver$PendingResult;' 'bounded async boot work'
+    Assert-Contains $bootSmali[0].FullName 'Landroid/content/BroadcastReceiver$PendingResult;->finish' 'boot async completion'
 
     $FileContexts = Join-Path $PlatSelinux 'plat_file_contexts'
     Assert-Contains $FileContexts '/system/bin/uperf u:object_r:performanced_exec:s0' 'Uperf file context'
@@ -383,8 +766,39 @@ try {
     Assert-NotContains $FileContexts '/system/bin/AppOpt ' 'retired AppOpt file context'
     Assert-Contains (Join-Path $PlatSelinux 'plat_service_contexts') 'zui_control                               u:object_r:zui_control_service:s0' 'zui_control service context'
 
+    $PropertyContexts = Join-Path $PlatSelinux 'plat_property_contexts'
+    Assert-Contains $PropertyContexts 'sys.zui_control.uperf_mode u:object_r:zui_control_uperf_mode_prop:s0 exact enum powersave balance performance fast' 'dedicated exact-enum Uperf property context'
+    Assert-NotContains $PropertyContexts 'sys.zui_control.uperf_mode u:object_r:shell_prop:s0' 'shell-owned Uperf transport property'
+    Assert-Contains $PropertyContexts 'sys.zui_control.command_seq u:object_r:zui_control_command_seq_prop:s0 exact string' 'dedicated exact command doorbell property context'
+    Assert-NotContains $PropertyContexts 'sys.zui_control.command_seq u:object_r:shell_prop:s0' 'shell-owned command doorbell property'
+    Assert-Contains $PropertyContexts 'sys.zui_control.command_id u:object_r:zui_control_command_auth_prop:s0 exact string' 'dedicated exact command ID property context'
+    Assert-Contains $PropertyContexts 'sys.zui_control.command_sha256 u:object_r:zui_control_command_auth_prop:s0 exact string' 'dedicated exact command digest property context'
+    Assert-NotContains $PropertyContexts 'sys.zui_control.command_id u:object_r:shell_prop:s0' 'shell-owned command ID property'
+    Assert-NotContains $PropertyContexts 'sys.zui_control.command_sha256 u:object_r:shell_prop:s0' 'shell-owned command digest property'
+
     $PlatPolicy = Join-Path $PlatSelinux 'plat_sepolicy.cil'
     foreach ($rule in @(
+        '(type zui_control_uperf_mode_prop)',
+        '(roletype object_r zui_control_uperf_mode_prop)',
+        '(typeattributeset property_type (zui_control_uperf_mode_prop))',
+        '(typeattributeset system_property_type (zui_control_uperf_mode_prop))',
+        '(typeattributeset system_internal_property_type (zui_control_uperf_mode_prop))',
+        '(allow system_server zui_control_uperf_mode_prop (property_service (set)))',
+        '(allow system_server zui_control_uperf_mode_prop (file (getattr map open read)))',
+        '(type zui_control_command_seq_prop)',
+        '(roletype object_r zui_control_command_seq_prop)',
+        '(typeattributeset property_type (zui_control_command_seq_prop))',
+        '(typeattributeset system_property_type (zui_control_command_seq_prop))',
+        '(typeattributeset system_internal_property_type (zui_control_command_seq_prop))',
+        '(allow system_server zui_control_command_seq_prop (property_service (set)))',
+        '(allow system_server zui_control_command_seq_prop (file (getattr map open read)))',
+        '(type zui_control_command_auth_prop)',
+        '(roletype object_r zui_control_command_auth_prop)',
+        '(typeattributeset property_type (zui_control_command_auth_prop))',
+        '(typeattributeset system_property_type (zui_control_command_auth_prop))',
+        '(typeattributeset system_internal_property_type (zui_control_command_auth_prop))',
+        '(allow system_server zui_control_command_auth_prop (property_service (set)))',
+        '(allow system_server zui_control_command_auth_prop (file (getattr map open read)))',
         '(genfscon proc "/sys/walt/input_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
         '(genfscon proc "/sys/walt/sched_per_task_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
         '(allow performanced activity_service (service_manager (find)))',
@@ -418,9 +832,25 @@ try {
     )) {
         Assert-NotContains $PlatPolicy $retiredProcAccess 'retired Uperf top-app proc access'
     }
+    foreach ($forbiddenWriter in @('shell', 'priv_app', 'untrusted_app')) {
+        Assert-NotContains $PlatPolicy "(allow $forbiddenWriter zui_control_uperf_mode_prop (property_service (set)))" 'unauthorized Uperf property writer'
+        Assert-NotContains $PlatPolicy "(allow $forbiddenWriter zui_control_command_seq_prop (property_service (set)))" 'unauthorized command property writer'
+        Assert-NotContains $PlatPolicy "(allow $forbiddenWriter zui_control_command_auth_prop (property_service (set)))" 'unauthorized command authentication writer'
+    }
+
+    $MappingPolicy = Join-Path $PlatSelinux 'mapping\34.0.cil'
+    $PlatMappingHash = Join-Path $PlatSelinux 'plat_sepolicy_and_mapping.sha256'
+    $expectedPlatMappingHash = (Get-Content -Raw -LiteralPath $PlatMappingHash).Trim().ToLowerInvariant()
+    $actualPlatMappingHash = Files-ConcatenatedSha256 @($PlatPolicy, $MappingPolicy)
+    if ($actualPlatMappingHash -ne $expectedPlatMappingHash) {
+        throw "Final plat sepolicy/mapping hash mismatch: $actualPlatMappingHash != $expectedPlatMappingHash"
+    }
 
     $VendorPolicy = Join-Path $VendorSelinux 'vendor_sepolicy.cil'
     Assert-Contains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr setattr lock append map open)))' 'Uperf msm_performance vendor rule'
+    Assert-NotContains $VendorPolicy 'zui_control_uperf_mode_prop' 'vendor access to system-internal Uperf property'
+    Assert-NotContains $VendorPolicy 'zui_control_command_seq_prop' 'vendor access to system-internal command property'
+    Assert-NotContains $VendorPolicy 'zui_control_command_auth_prop' 'vendor access to system-internal command authentication property'
     Assert-NotContains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (' 'legacy shell KGSL permission'
     Assert-NotContains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_kgsl (' 'unsupported Uperf KGSL permission'
 
@@ -452,12 +882,16 @@ try {
         super_sha256 = $hashes.super
         vbmeta_sha256 = $hashes.vbmeta
         vbmeta_system_sha256 = $hashes.vbmeta_system
+        vendor_image_sha256 = $VendorImageSha256
+        vendor_apk_count = $VendorApkCount
+        vendor_apk_inventory_sha256 = $VendorApkInventorySha256
         boot_rollback_index = $BootRollbackIndex
         vbmeta_system_rollback_index = $VbmetaSystemRollbackIndex
+        scheduler_rc_mode_lines = $schedulerRcModeLines
     } | ConvertTo-Json -Depth 4
 } finally {
     if (-not $KeepWork -and (Test-Path -LiteralPath $WorkDir)) {
-        Remove-Item -LiteralPath $WorkDir -Recurse -Force
+        Remove-VerificationWork
     } elseif (-not $ok) {
         Write-Warning "Verification workspace kept for debugging: $WorkDir"
     }

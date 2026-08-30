@@ -20,6 +20,7 @@ public final class ZuiControlManager {
     private static final int TX_REFRESH_NOW = 9;
     private static final int TX_SET_MODULE_ENABLED = 10;
     private static final int TX_EXPORT_LOG = 11;
+    private static final int TX_NOTIFY_CONTROL_REQUEST = 12;
 
     private final IBinder mRemote;
 
@@ -110,6 +111,16 @@ public final class ZuiControlManager {
 
     public String exportLog() {
         return transact(TX_EXPORT_LOG, null);
+    }
+
+    public String notifyControlRequest(final String requestId, final String requestSha256) {
+        return transact(TX_NOTIFY_CONTROL_REQUEST, new Writer() {
+            @Override
+            public void write(Parcel data) {
+                data.writeString(requestId);
+                data.writeString(requestSha256);
+            }
+        });
     }
 
     private String transact(int code, Writer writer) {

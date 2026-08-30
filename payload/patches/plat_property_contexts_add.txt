@@ -1,2 +1,6 @@
+sys.zui_control.uperf_mode u:object_r:zui_control_uperf_mode_prop:s0 exact enum powersave balance performance fast
+sys.zui_control.command_seq u:object_r:zui_control_command_seq_prop:s0 exact string
+sys.zui_control.command_id u:object_r:zui_control_command_auth_prop:s0 exact string
+sys.zui_control.command_sha256 u:object_r:zui_control_command_auth_prop:s0 exact string
 persist.zui_control. u:object_r:shell_prop:s0
 zui_control. u:object_r:shell_prop:s0
