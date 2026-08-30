@@ -1,4 +1,5 @@
 .gradle/
+.kotlin/
 build/
 app/build/
 local.properties
@@ -9,3 +10,15 @@ local.properties
 *.log
 __pycache__/
 work/
+
+# Generated device evidence. Keep reports and tests visible; archive raw output.
+/V*/raw/
+/V*_DEVICE_RESULTS/derived/
+/V20_BASELINE_PACKAGE/device_test_results/
+*.pftrace
+*.perfetto-trace
+/V*.rar
+/V*.rar.sha256
+/V*.zip
+/V*.zip.sha256
+/AI_AUDIT_PACKAGE/

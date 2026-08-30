@@ -1,6 +1,6 @@
-ZuiControl v19 payload
+ZuiControl production payload — V20.3B verified baseline / App V49 target
 
-System components:
+Build/package target:
 - /system/priv-app/ZuiControlV49/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/uperf
@@ -12,10 +12,28 @@ System components:
 - /system/etc/zui_control/default_uperf_perapp.txt
 - /system/etc/zui_control/default_asopt.conf
 
-Framework patch:
+Framework integration:
 - scripts/ApplyZuiControlPayload.py calls scripts/PatchZuiControlFramework.py.
-- framework.jar gets android.zui.ZuiControlManager.
-- services.jar gets the zui_control Binder service and DisplayContent focus hook.
+- framework.jar receives android.zui.ZuiControlManager.
+- services.jar receives the zui_control Binder service and DisplayContent focus hook.
+
+Current runtime ownership:
+- system_server / ZuiControlService is the sole refresh owner.
+- Uperf scene and screen mode are decided event-by-event in system_server.
+- Android init transports Uperf mode, owns scheduler lifecycle, and applies the vendor.perfservice fence only while scheduler_active=1.
+- asoulOpt is the sole per-task affinity/context-scheduler owner; Uperf sched.enable=false.
+- OEM GPU and thermal services remain active safety/clock authorities. This payload does not claim direct KGSL ownership or replace thermal policy.
+
+Command plane:
+- zui_controld.rc has no persistent zui_controld service or start.
+- zui_control_request is disabled + oneshot.
+- /system/bin/zui_controld accepts only --oneshot-request and exits after durable claim/action/receipt/ACK.
+- zui_controld has no refresh writer, scene detector, periodic health publisher, or watchdog role.
+
+Health:
+- App/status health is read on demand through the zui_control Binder service.
+- No persistent zui_controld Settings/Binder heartbeat exists.
+- /system/bin/zui_uperf_service still performs its 5-second service-cgroup/log self-check and exits for init recovery on failure. This execution-plane check has not been removed.
 
 Runtime data:
 - /data/system/zui_control/profiles.prop
@@ -27,14 +45,11 @@ Runtime data:
 - /data/vendor/asopt.conf -> /data/vendor/zui_control/asoul/asopt.conf
 - /data/vendor/zui_control/log/
 
-Behavior:
-- system_server remains the sole refresh-rate owner; P1 behavior is unchanged.
-- Uperf owns CPU scheduling while its supervised service runs.
-- The ROM frontend consumes the authoritative system_server scene and screen state, then writes the effective Uperf mode; Scene/YC Manager and Uperf's legacy top-app detector are not required.
-- Qualcomm perfservice/perf2, poweropt, and Lenovo performance bridges are stopped only while Uperf owns scheduling and are restored by the scheduler kill switch.
-- KGSL DVFS and OEM thermal services remain active; the inspected 8 Gen 3 profile does not own Adreno clocks, and this payload does not replace thermal configuration.
-- Shiroko A-SOUL runs as the thread-placement companion with mode=0 and rt=0. Here rt=0 selects WALT per-task boost and does not assign real-time policy.
-- Uperf and A-SOUL are the only production performance/thread schedulers in this payload.
-- No production path directly writes CPU/GPU sysfs from zui_controld, calls provider_direct/GameModeProvider, or restores cloud blocking.
-- SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input methods, and overlays are transient refresh-rate scenes. Launcher remains configurable.
-- 144/165 are displayHz lock targets only; generic UID FPS cap is not delivered.
+Known V20.4 refresh boundary:
+- SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input methods, and overlays are intended transient scenes; Launcher remains configurable.
+- Current source still has a ZuiControl controlPanel special case that can apply its own/default profile. V20.4 Refresh Correctness / State Machine must fix and verify this with non-120 profiles.
+- Kill-switch release of render vote, AppRequest, and peak bridge is not yet proven complete or immediate.
+- target 120 remains adaptive-render behavior; physical actual may fall to 60 while static.
+- 144/165 are displayHz targets only; generic UID fpsCap is not delivered.
+
+No production path may restore persistent zui_controld, daemon refresh_tick/learn_refresh, Accessibility/App refresh ownership, Uperf Native Auto scene ownership, or a second per-task scheduler.

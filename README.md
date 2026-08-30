@@ -1,98 +1,86 @@
 # ZuiControl
 
-## Current Handoff
+ZuiControl 是 TB321FU / ZUI 16.1.11.072 的 ROM 内置系统控制工具，核心能力是刷新率、Uperf CPU/power-model 调度和 asoulOpt per-task 线程放置。App 只提供 UI、QS、通知快捷控制和配置入口，核心调度不依赖 App 长期存活。
 
-- `docs/ZuiControl_AI_NEW_CHAT_HANDOFF_2026-07-21.md`: current project state, package identity, boundaries, and post-flash verification order.
-- `docs/ZuiControl_P2_XML_THERMALCONFIG_GUIDE_2026-07-21.md`: retained P2 XML/ThermalConfig reference; P2 is not the current scheduler owner.
+## 当前入口
 
-ZuiControl is the v19 system-server refresh-rate and performance control plane.
+新会话按以下顺序读取：
 
-The app is now a privileged UI/QS/config client. Foreground scene detection and
-refresh-rate policy live in `system_server` through the `zui_control` Binder
-service. Performance ownership is now split between the ROM-integrated Uperf
-core and Shiroko A-SOUL thread placement. P2 XML is restored to the stock ZUI
-files and AppOpt is removed from the production payload.
+1. [`AGENTS.md`](AGENTS.md)
+2. [`CURRENT_PROJECT_STATE.md`](CURRENT_PROJECT_STATE.md)
+3. 本文件
+4. 当前生产源码
+5. [`CURRENT_EVIDENCE_INDEX.md`](CURRENT_EVIDENCE_INDEX.md)
 
-## Runtime Split
+V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。最近真机候选仍是 RunId `20260830181816`、App versionCode 49 / versionName 0.21.12；当前第一工作包是 V20.4 Refresh Correctness / State Machine，尚无新的 V20.4 制品或真机 PASS。
 
-- `com.zui.zuicontrol`: privileged Android app UI and quick notification.
-- `android.zui.ZuiControlManager`: thin framework client used by the app.
-- `zui_control`: Binder service published from `system_server`.
-- `ZuiControlService`: service-side display-mode policy owner.
-- `/system/bin/zui_controld`: scheduler control plane, persistent Uperf profiles, health checks, and logs.
-- `/system/bin/uperf`: CPU power-model scheduler driven by the ROM scene frontend.
-- `/system/bin/AsoulOpt`: thread placement with the verified `mode=0`, `rt=0` policy.
-- `/data/system/zui_control/profiles.prop`: refresh scene profiles.
-- `/data/vendor/zui_control/`: daemon runtime state, editable scheduler configuration, and logs.
+旧 handoff、AI 报告、阶段报告和 raw/trace/log 位于仓库外 `D:\3.VScode\Mi\ZuiControl_Archive\`。默认不要扫描 archive；只按 evidence index 定向读取。
 
-The Uperf UI supports a global fallback mode plus validated per-app overrides.
-The production defaults use global `balance`, screen-off `powersave`, and
-`performance` for both Mingchao package names. A-SOUL owns game-thread affinity;
-Uperf's own thread scheduler remains disabled to prevent double placement.
+## 当前架构
 
-Refresh-rate ownership is intentionally not shared: notification clicks call
-`zui_control`; the daemon does not learn refresh rules, restore 120Hz, or write
-`peak_refresh_rate` / `min_refresh_rate`.
+| 能力 | 当前 owner / 路径 |
+| --- | --- |
+| Refresh scene 与执行 | `system_server` / `ZuiControlService` → DisplayManagerInternal / ROM display policy |
+| Uperf scene/screen mode | `system_server` event-driven → protected property → init → `effective_powermode.txt` → Uperf |
+| CPU/power-model 执行 | `/system/bin/uperf`，四档 `powersave|balance|performance|fast` |
+| per-task affinity/context scheduling | asoulOpt；Uperf `sched.enable=false` |
+| OEM `vendor.perfservice` fence | Android init，`scheduler_active=1` gate |
+| Command | authenticated Binder kick → disabled+oneshot `zui_control_request` → `zui_controld --oneshot-request` → durable receipt/ACK → exit |
+| Health/status | 按需 Binder `getState()`；没有 persistent zui_controld heartbeat |
 
-## Layout
+`persistent zui_controld` 已退休：生产 init 中没有 `zui_controld` service/start。`/system/bin/zui_controld` 只保留为 `--oneshot-request` command executor，没有 refresh、scene detector 或后台 health publisher 职责。
 
-- `app/`: Android app source.
-- `framework-stubs/`: compile-only `android.zui` API for the app build.
-- `framework_patch/`: Java sources and stubs injected into framework/services jars.
-- `payload/`: files to inject into `system_a/system`.
-- `scripts/BuildZuiControl.ps1`: local Windows build helper.
-- `scripts/ApplyZuiControlPayload.py`: copies payload, patches SELinux metadata,
-  and invokes the framework/services jar patcher.
-- `scripts/PatchZuiControlFramework.py`: injects `android.zui.ZuiControlManager`,
-  `ZuiControlService`, and the WM focus hook.
+`/system/bin/zui_uperf_service` 仍每 5 秒检查自身 service cgroup 与 Uperf 日志，失败后退出并交给 init 恢复。它是执行面 self-check，不是 Settings/Binder health heartbeat，不能写成已删除。
 
-## CI
+OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno KGSL。Uperf 的全局 cpuset 写入与更广义 knob ownership 留后续独立审计。
 
-Run the `Build ZuiControl` workflow manually. It will:
+## 当前 Refresh Correctness 工作包
 
-1. Run the daemon/Uperf ownership tests and script syntax checks.
-2. Run Android unit tests and lint.
-3. Decode the release keystore from GitHub Actions secrets.
-4. Build signed `app-release.apk`.
-5. Stage it into `payload/system/priv-app/ZuiControlV49/ZuiControl.apk`.
-6. Upload both the APK and staged payload as artifacts.
+第一优先级是修复 ZuiControl `controlPanel` transient 缺陷。当前源码在非 120 业务场景打开 ZuiControl 时可能应用自身/default 120 profile，并污染后续 QS 的 applied scene。
 
-Required repository secrets:
+同一工作包统一处理：
 
-- `KEYSTORE`: base64 encoded keystore.
-- `KEYSTORE_PASSWORD`
-- `KEY_ALIAS`
-- `KEY_PASSWORD`
+- raw/current/last/applied 状态不变量；
+- QS/QuickService 始终修改上一个真实业务场景；
+- 两个 refresh kill switch 的即时触发与恢复；
+- disabled 后 priority-8 vote、AppRequest、peak bridge 的完整释放；
+- apply/skip/fail/disabled 后 `appliedScenePackage` 的真实语义；
+- 60/90/120/144/165 的 transient 与 physical Hz 矩阵。
 
-## Payload Usage
+当前 `displayVote=adaptiveRender`，target=120 时静止 physical actual 可以降到 60；尚未交付 120 hard-lock。`fpsCap` 仍是未交付兼容字段。
 
-After the APK exists in `payload/system/priv-app/ZuiControlV49/ZuiControl.apk`,
-apply the payload to an unpacked image tree:
+## Repository layout
+
+- `app/`：privileged Android App。
+- `framework_patch/`：`android.zui.ZuiControlManager`、`ZuiControlService` 和 WM focus hook。
+- `framework-stubs/`：App 编译期 framework API。
+- `payload/`：注入 system image 的 APK、init、binary、config 和 SELinux payload。
+- `scripts/`：build、payload 应用、framework 注入和 final-package 验证。
+- `V20_3B_DAEMON_RETIREMENT/tests/`：当前 host/device policy 与回归工具；测试代码保留原位。
+- `CURRENT_EVIDENCE_INDEX.md`：当前基线的最小证据入口。
+
+## Build 与验证
+
+本地 payload 入口：
 
 ```bash
 python scripts/ApplyZuiControlPayload.py --unpack /path/to/work/unpack
 ```
 
-Runtime logs on device:
-
-- `/data/vendor/zui_control/log/controld.log`
-- `/data/vendor/zui_control/log/uperf.log`
-- `/data/vendor/zui_control/uperf/cur_powermode.txt`
-- `/data/vendor/zui_control/uperf/perapp_powermode.txt`
-- `/data/vendor/zui_control/asoul/asopt.conf`
-
-## Validation Anchors
+关键验证锚点：
 
 - `service list | grep zui_control`
-- `dumpsys activity service zui_control` or `dumpsys zui_control` if available
-- `settings get system zui_control_top_package`
-- `settings get system zui_control_active_refresh`
-- `dumpsys display` active mode versus the selected scene profile
+- `dumpsys zui_control`
+- `dumpsys display`
+- `ps -AZ | grep -E 'zui_controld|zui_control_request|uperf|AsoulOpt'`
 - `logcat -b all | grep -i ZuiControl`
-- `ps -AZ | grep -E 'uperf|AsoulOpt'`
-- `settings get system zui_control_uperf_health`
-- `readlink /data/vendor/asopt.conf`
+- `/data/vendor/zui_control/uperf/{cur_powermode,perapp_powermode,effective_powermode}.txt`
+- `/data/vendor/zui_control/asoul/asopt.conf`
 
-The expected steady state is `refreshOwner=system`,
-`daemonRefreshDisabled=true`, Uperf/A-SOUL in `performanced`, four global Uperf
-modes with exact per-app overrides, and no AppOpt or XML scheduler runtime.
+Steady-state 预期包含：refresh owner=`system`、persistent `zui_controld` PID=0、idle `zui_control_request` PID=0、Uperf/asoulOpt 由 init 托管。Scheduler health 从按需 Binder/dumpsys 读取，不再使用旧 `zui_control_uperf_health` Settings heartbeat。
+
+任何 ROM 交付仍必须按 `AGENTS.md` 做 final-super 反向内容、context、SHA-256 和刷后 AVC 验证。
+
+## 当前禁止
+
+V20.4 Refresh Correctness 不混入 AppOpt/XML/ZuiPP/fpsCap/KGSL 生产代码清理、thermal 大改、Uperf/asoulOpt 无证据升级、新 persistent daemon/watchdog、Accessibility/App refresh owner。生产代码级历史清理留 V21，GPU ownership 留 V22。
