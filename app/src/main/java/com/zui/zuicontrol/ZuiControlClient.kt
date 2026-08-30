@@ -43,6 +43,11 @@ object ZuiControlClient {
         return call { it.getState() }.text
     }
 
+    internal fun stateValue(state: String, key: String): String? =
+        state.lineSequence()
+            .firstOrNull { it.startsWith("$key=") }
+            ?.substringAfter('=')
+
     fun notifyControlRequest(requestId: String, requestSha256: String): Reply {
         return call { it.notifyControlRequest(requestId, requestSha256) }
     }

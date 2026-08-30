@@ -6,6 +6,7 @@ on post-fs-data
     symlink /data/vendor/zui_control/asoul/asopt.conf /data/vendor/asopt.conf
     restorecon_recursive /data/vendor/zui_control
     restorecon /data/vendor/asopt.conf
+    setprop sys.zui_control.scheduler_active 1
     stop vendor.perfservice
 
 on property:sys.boot_completed=1
@@ -25,29 +26,36 @@ on property:sys.zui_control.uperf_mode=fast
     write /data/vendor/zui_control/uperf/effective_powermode.txt fast
 
 on zui-scheduler-start
+    setprop sys.zui_control.scheduler_active 1
     stop vendor.perfservice
     start zui_asoulopt
     setprop zui_control.asoul started
     start zui_uperf
 
 on property:zui_control.scheduler=restart
+    setprop sys.zui_control.scheduler_active 1
+    stop vendor.perfservice
     stop zui_uperf
     stop zui_asoulopt
     exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh ${sys.zui_control.uperf_mode:-unset}
     trigger zui-scheduler-start
     setprop zui_control.scheduler restarted
 
-on property:zui_control.scheduler=fence
+on property:zui_control.scheduler=fence && property:sys.zui_control.scheduler_active=1
     stop vendor.perfservice
     setprop zui_control.scheduler fenced
 
+on property:init.svc.vendor.perfservice=running && property:sys.zui_control.scheduler_active=1
+    stop vendor.perfservice
+
 on property:zui_control.scheduler=stop
+    setprop sys.zui_control.scheduler_active 0
     stop zui_uperf
     stop zui_asoulopt
     start vendor.perfservice
     setprop zui_control.scheduler stopped
 
-on property:zui_control.asoul=start
+on property:zui_control.asoul=start && property:sys.zui_control.scheduler_active=1
     start zui_asoulopt
     setprop zui_control.asoul started
 

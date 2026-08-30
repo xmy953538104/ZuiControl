@@ -63,7 +63,8 @@ class MainActivity : Activity() {
             window.isStatusBarContrastEnforced = false
         }
         reloadState()
-        Thread { ZuiControlRequest.kickPending(this) }.start()
+        val appContext = applicationContext
+        Thread { runCatching { ZuiControlRequest.recoverPending(appContext) } }.start()
         setContentView(buildRoot())
         val restoredPage = savedInstanceState?.getString(STATE_PAGE)?.let { name ->
             Page.entries.firstOrNull { it.name == name }
@@ -125,7 +126,7 @@ class MainActivity : Activity() {
             addView(headerStatus)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         addView(iconButton(R.drawable.ic_action_refresh, "刷新状态") {
-            runCommand("正在刷新", refreshNotification = true) {
+            runCommand("正在刷新", success = "状态已刷新") {
                 ZuiControlRequest.send(this@MainActivity, ZuiControlContract.CMD_STATUS)
             }
         }, LinearLayout.LayoutParams(dp(44), dp(44)))
@@ -413,12 +414,22 @@ class MainActivity : Activity() {
     private fun buildSystemPage(): View = ScrollView(this).apply {
         addView(vertical().apply {
             setPadding(0, 0, 0, dp(20))
-            val health = setting(ZuiControlContract.KEY_UPERF_HEALTH)
-            addView(compactNote(when {
-                health.isBlank() -> "系统服务状态等待上报"
-                health.contains("Uperf：未运行") -> "系统服务正常 · Uperf 异常"
-                else -> "系统服务正常 · Uperf 已接管 · A-SOUL 系统内置"
-            }))
+            val state = ZuiControlClient.stateText()
+            val active = ZuiControlClient.stateValue(state, "schedulerActive") ?: "unknown"
+            val uperfState = ZuiControlClient.stateValue(state, "uperfServiceState") ?: "unknown"
+            val uperfMode = ZuiControlClient.stateValue(state, "uperfMode") ?: "unknown"
+            val asoulState = ZuiControlClient.stateValue(state, "asoulServiceState") ?: "unknown"
+            val schedulerError = ZuiControlClient.stateValue(state, "schedulerHealth") ?: "unknown"
+            val ownership = when (active) {
+                "1" -> "active"
+                "0" -> "inactive"
+                else -> "unknown"
+            }
+            addView(compactNote(
+                "调度：$ownership · " +
+                    "Uperf：$uperfState / $uperfMode · A-SOUL：$asoulState\n" +
+                    "刷新率 owner：system · health：$schedulerError",
+            ))
             addView(sectionTitle("工具"), sectionMargins())
             addView(settingsAction(
                 R.drawable.ic_action_logs, "导出运行日志", "排查刷新率、Uperf 与 A-SOUL",
@@ -435,7 +446,8 @@ class MainActivity : Activity() {
 
     private fun exportLogs() {
         runCommand("正在整理日志", success = null, onSuccess = {
-            pendingExportText = setting(ZuiControlContract.KEY_LOG_EXPORT)
+            pendingExportText = "[zui_control Binder state]\n${ZuiControlClient.stateText()}\n\n" +
+                setting(ZuiControlContract.KEY_LOG_EXPORT)
             if (pendingExportText.isBlank()) toast("没有可导出的日志") else openExportDocument()
         }) { ZuiControlRequest.send(this, ZuiControlContract.CMD_EXPORT_LOGS) }
     }

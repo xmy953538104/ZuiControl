@@ -41,6 +41,7 @@ import java.util.Map;
 
 public final class ZuiControlService extends Binder {
     private static final String TAG = "ZuiControl";
+    private static final String TIMING_TAG = "ZuiControlTiming";
     private static final String DESCRIPTOR = "android.zui.IZuiControl";
     private static final String APP_PACKAGE = "com.zui.zuicontrol";
     private static final String DATA_DIR = "/data/system/zui_control";
@@ -53,6 +54,9 @@ public final class ZuiControlService extends Binder {
     private static final String PROP_COMMAND_ID = "sys.zui_control.command_id";
     private static final String PROP_COMMAND_SHA256 = "sys.zui_control.command_sha256";
     private static final String PROP_COMMAND_SEQ = "sys.zui_control.command_seq";
+    private static final String PROP_SCHEDULER_ACTIVE = "sys.zui_control.scheduler_active";
+    private static final String PROP_UPERF_SERVICE = "init.svc.zui_uperf";
+    private static final String PROP_ASOUL_SERVICE = "init.svc.zui_asoulopt";
     private static final String GAME_HELPER_PACKAGE = "com.zui.game.service";
     private static final String RELEASE_CERT =
             "3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94";
@@ -96,6 +100,7 @@ public final class ZuiControlService extends Binder {
     private String mTargetMode = "DISPLAY_ONLY";
     private String mLastApply = "init";
     private String mLastError = "";
+    private String mLastSchedulerError = "";
     private int mLastAppliedDisplayId = -1;
     private int mLastAppliedModeId = -1;
     private int mLastAppliedDisplayHz = -1;
@@ -338,8 +343,10 @@ public final class ZuiControlService extends Binder {
     }
 
     private synchronized String notifyControlRequest(String requestId, String requestSha256) {
+        long binderEnterNanos = SystemClock.elapsedRealtimeNanos();
         String id = safe(requestId).trim();
         String sha256 = safe(requestSha256).trim();
+        Log.i(TIMING_TAG, "id=" + id + " phase=T1 ns=" + binderEnterNanos);
         if (!validRequestId(id)) {
             return "ok=0\nerror=invalid_request_id";
         }
@@ -364,6 +371,8 @@ public final class ZuiControlService extends Binder {
                 SystemProperties.set(PROP_COMMAND_SHA256, sha256);
             }
             SystemProperties.set(PROP_COMMAND_SEQ, token);
+            long sequenceSetNanos = SystemClock.elapsedRealtimeNanos();
+            Log.i(TIMING_TAG, "id=" + id + " phase=T2 ns=" + sequenceSetNanos);
             Log.i(TAG, "control_request_kick id=" + id + " sha256="
                     + sha256.substring(0, 12) + " token=" + token);
             return "ok=1\nrequestId=" + id + "\ncommandSeq=" + token;
@@ -672,6 +681,10 @@ public final class ZuiControlService extends Binder {
     }
 
     private synchronized String state() {
+        return state(true);
+    }
+
+    private synchronized String state(boolean observeSchedulerHealth) {
         return "ok=1"
                 + "\nrawFocusedPackage=" + mRawFocusedPackage
                 + "\ncurrentScenePackage=" + mCurrentScenePackage
@@ -683,9 +696,11 @@ public final class ZuiControlService extends Binder {
                 + "\nmode=" + mTargetMode
                 + "\nscreenInteractive=" + mScreenInteractive
                 + mUperfScenePolicy.stateLines()
+                + (observeSchedulerHealth ? schedulerHealthStateLines() : "")
                 + "\nrefreshOwner=system"
                 + "\nsystemServiceAlive=true"
                 + "\ndaemonRefreshDisabled=true"
+                + "\ndaemonRetired=true"
                 + "\nsupportedDisplayHz=" + supportedDisplayHz()
                 + "\npeakBridgeHz=" + mLastSyncedPeakHz
                 + "\ndisplayVote=adaptiveRender"
@@ -693,6 +708,42 @@ public final class ZuiControlService extends Binder {
                 + profileStateLines()
                 + "\nlastApply=" + mLastApply
                 + "\nlastError=" + mLastError;
+    }
+
+    private String schedulerHealthStateLines() {
+        String active = SystemProperties.get(PROP_SCHEDULER_ACTIVE, "unknown");
+        String uperfState = SystemProperties.get(PROP_UPERF_SERVICE, "unknown");
+        String uperfMode = SystemProperties.get(PROP_UPERF_MODE, "unknown");
+        String asoulState = SystemProperties.get(PROP_ASOUL_SERVICE, "unknown");
+        String currentError = "";
+        if ("1".equals(SystemProperties.get("sys.boot_completed", "0"))) {
+            if (!"0".equals(active) && !"1".equals(active)) {
+                currentError = "invalid_scheduler_active";
+            } else if ("1".equals(active)) {
+                if ("stopped".equals(uperfState)) {
+                    currentError = "uperf_stopped_while_active";
+                } else if (!isUperfMode(uperfMode)) {
+                    currentError = "invalid_uperf_mode";
+                }
+            } else if ("running".equals(uperfState) || "running".equals(asoulState)) {
+                currentError = "zui_scheduler_running_while_inactive";
+            }
+        }
+        if (!currentError.isEmpty()) {
+            mLastSchedulerError = currentError;
+        }
+        return "\nschedulerActive=" + active
+                + "\nuperfServiceState=" + uperfState
+                + "\nuperfMode=" + uperfMode
+                + "\nasoulServiceState=" + asoulState
+                + "\nschedulerHealth=" + (currentError.isEmpty() ? "ok" : currentError)
+                + "\nlastSchedulerError="
+                + (mLastSchedulerError.isEmpty() ? "none" : mLastSchedulerError);
+    }
+
+    private static boolean isUperfMode(String value) {
+        return "powersave".equals(value) || "balance".equals(value)
+                || "performance".equals(value) || "fast".equals(value);
     }
 
     private String profileStateLines() {
@@ -729,7 +780,7 @@ public final class ZuiControlService extends Binder {
             Settings.System.putString(mContext.getContentResolver(),
                     "zui_control_screen_on", mScreenInteractive ? "1" : "0");
             Settings.System.putString(mContext.getContentResolver(),
-                    "zui_control_status_text", state());
+                    "zui_control_status_text", state(false));
         } catch (Throwable ignored) {
         } finally {
             Binder.restoreCallingIdentity(token);

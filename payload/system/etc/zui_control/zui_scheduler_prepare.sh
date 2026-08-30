@@ -81,6 +81,18 @@ chmod 0644 "$UPERF_DIR/uperf.json" "$GLOBAL_MODE" "$EFFECTIVE_MODE" \
 restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
 restorecon /data/vendor/asopt.conf >/dev/null 2>&1 || true
 
+# system_server consumes these Settings values through its existing observers.
+# Publish once during boot/restart preparation; no resident health publisher exists.
+settings put system zui_control_uperf_mode "$global_mode" >/dev/null 2>&1 || true
+rules_text="$(awk '
+    NF == 2 && $1 != "-" && $1 != "*" {
+        if (length(out)) out=out "\n"
+        out=out $1 "|" $2
+    }
+    END {print out}
+' "$PERAPP")"
+settings put system zui_control_uperf_rules_text "$rules_text" >/dev/null 2>&1 || true
+
 # One-release migration cleanup: no retired scheduler remains active or visible.
 rm -rf "$DATA_ROOT/appopt" "$DATA_ROOT/zuipp" \
     "$DATA_ROOT/performance" "$DATA_ROOT/refresh"

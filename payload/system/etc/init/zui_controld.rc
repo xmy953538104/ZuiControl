@@ -3,19 +3,15 @@ on post-fs-data
     mkdir /data/vendor/zui_control/zuicontrol 0700 root root
     mkdir /data/vendor/zui_control/log 0775 root shell
     restorecon_recursive /data/vendor/zui_control
-
-on property:sys.boot_completed=1
-    start zui_controld
+    chown root root /data/vendor/zui_control/zuicontrol/last_request_receipt
+    chmod 0600 /data/vendor/zui_control/zuicontrol/last_request_receipt
+    restorecon /data/vendor/zui_control/zuicontrol/last_request_receipt
+    chown root root /data/vendor/zui_control/zuicontrol/active_request_claim
+    chmod 0600 /data/vendor/zui_control/zuicontrol/active_request_claim
+    restorecon /data/vendor/zui_control/zuicontrol/active_request_claim
 
 on property:sys.zui_control.command_seq=*
     start zui_control_request
-
-service zui_controld /system/bin/sh /system/bin/zui_controld
-    class late_start
-    disabled
-    user root
-    group root system shell readproc graphics
-    seclabel u:r:shell:s0
 
 service zui_control_request /system/bin/sh /system/bin/zui_controld --oneshot-request ${sys.zui_control.command_id:-unset} ${sys.zui_control.command_sha256:-unset}
     class late_start

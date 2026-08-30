@@ -55,6 +55,7 @@ setup_state() {
     TEST_RULES_STATE=
     TEST_CONFIG_PUTS=0
     TEST_CONFIG_PUT_FAILURES=0
+    TEST_TIMING=
 
     settings_get_clean() {
         case "$1" in
@@ -95,6 +96,10 @@ setup_state() {
         esac
     }
     log_line() { :; }
+    timing_mark() {
+        TEST_TIMING="${TEST_TIMING}${1}|${2}|${3:-unknown}
+"
+    }
     sync() { :; }
     sleep() { :; }
     pidof() { return 0; }
@@ -223,15 +228,15 @@ assert_command_wakeup_policy() {
     grep -Fq 'chmod 0755 "$DATA_ROOT"' "$DAEMON" ||
         fail 'daemon does not preserve root-only mutation of the transaction parent'
 
-    main_body="$(sed -n '/^main_loop() {/,/^}/p' "$DAEMON")"
     oneshot_body="$(sed -n '/^oneshot_request() {/,/^}/p' "$DAEMON")"
-    if printf '%s\n' "$main_body" | grep -Fq 'process_settings_request'; then
-        fail 'persistent daemon still polls the Settings request slot'
+    if grep -Eq '^service[[:space:]]+zui_controld([[:space:]]|$)' "$CONTROL_RC"; then
+        fail 'persistent zui_controld init service still exists'
     fi
-    printf '%s\n' "$main_body" | grep -Fq 'sleep 20' ||
-        fail 'persistent daemon does not use a direct 20-second health cadence'
-    if printf '%s\n' "$main_body" | grep -Fq 'sleep 1'; then
-        fail 'persistent daemon still has a one-second wakeup'
+    if grep -Eq '^[[:space:]]+start[[:space:]]+zui_controld([[:space:]]|$)' "$CONTROL_RC"; then
+        fail 'boot or another init action still starts persistent zui_controld'
+    fi
+    if grep -Fq 'main_loop()' "$DAEMON" || grep -Fq 'publish_scheduler_health' "$DAEMON"; then
+        fail 'retired persistent health loop remains in zui_controld'
     fi
     printf '%s\n' "$oneshot_body" | grep -Fq 'init_request_state' ||
         fail 'oneshot request path does not recover transaction state'
@@ -243,6 +248,82 @@ assert_command_wakeup_policy() {
         fail 'active request claim is not root-private'
     grep -Fq '$terminal_ack" 0600 || return 1' "$DAEMON" ||
         fail 'terminal receipt is not root-private'
+}
+
+assert_receipt_dac_policy() {
+    for file in last_request_receipt active_request_claim; do
+        grep -Fqx "    chown root root /data/vendor/zui_control/zuicontrol/$file" "$CONTROL_RC" ||
+            fail "$file owner is not repaired during post-fs-data"
+        grep -Fqx "    chmod 0600 /data/vendor/zui_control/zuicontrol/$file" "$CONTROL_RC" ||
+            fail "$file mode is not repaired during post-fs-data"
+        grep -Fqx "    restorecon /data/vendor/zui_control/zuicontrol/$file" "$CONTROL_RC" ||
+            fail "$file SELinux context is not repaired during post-fs-data"
+    done
+    [ "$(grep -Fc 'atomic_write_text "$ACTIVE_REQUEST_CLAIM" "$1" 0600' "$DAEMON")" -eq 1 ] ||
+        fail 'active claim is not atomically created with mode 0600'
+    [ "$(grep -Fc 'atomic_write_text "$LAST_REQUEST_RECEIPT"' "$DAEMON")" -eq 1 ] ||
+        fail 'terminal receipt does not have one atomic writer'
+}
+
+assert_timing_policy() {
+    for phase in T4 T5 T6 T7 T8; do
+        [ "$(grep -Ec "timing_mark .* ${phase}( |\")" "$DAEMON")" -eq 1 ] ||
+            fail "$phase must have exactly one shell timing mark"
+    done
+    oneshot_body="$(sed -n '/^oneshot_request() {/,/^}/p' "$DAEMON")"
+    process_body="$(sed -n '/^process_settings_request() {/,/^}/p' "$DAEMON")"
+    finish_body="$(sed -n '/^finish_request() {/,/^}/p' "$DAEMON")"
+    ack_body="$(sed -n '/^publish_pending_terminal_ack() {/,/^}/p' "$DAEMON")"
+    printf '%s\n' "$oneshot_body" | grep -Eq 'timing_mark .* T4([[:space:]]|$)' ||
+        fail 'T4 does not mark authenticated oneshot entry'
+    printf '%s\n' "$process_body" | grep -Fq 'timing_mark "$id" T5' ||
+        fail 'T5 does not follow the durable claim path'
+    printf '%s\n' "$process_body" | grep -Fq 'timing_mark "$id" T6' ||
+        fail 'T6 does not mark action completion'
+    printf '%s\n' "$finish_body" | grep -Fq 'timing_mark "$id" T7' ||
+        fail 'T7 does not mark durable terminal receipt completion'
+    printf '%s\n' "$ack_body" | grep -Eq 'timing_mark .* T8([[:space:]]|$)' ||
+        fail 'T8 does not mark successful terminal ACK publication'
+}
+
+assert_oem_fence_ownership_policy() {
+    grep -Fqx 'sys.zui_control.scheduler_active u:object_r:zui_control_scheduler_active_prop:s0 exact enum 0 1' "$PROPERTY_CONTEXTS" ||
+        fail 'scheduler ownership property is not an exact 0/1 enum'
+    grep -Fqx '(allow init zui_control_scheduler_active_prop (property_service (set)))' "$PLAT_SEPOLICY" ||
+        fail 'init cannot set scheduler ownership'
+    grep -Fqx '(allow system_server zui_control_scheduler_active_prop (file (getattr map open read)))' "$PLAT_SEPOLICY" ||
+        fail 'system_server cannot read scheduler ownership'
+    if grep -Eq '^\(allow (system_server|shell|priv_app|untrusted_app) zui_control_scheduler_active_prop .*property_service.*set' "$PLAT_SEPOLICY"; then
+        fail 'a non-init domain can set scheduler ownership'
+    fi
+    [ "$(grep -Fxc 'on property:init.svc.vendor.perfservice=running && property:sys.zui_control.scheduler_active=1' "$SCHEDULER_RC")" -eq 1 ] ||
+        fail 'OEM fence is not exactly conditional on active scheduler ownership'
+    if grep -F 'on property:init.svc.vendor.perfservice=running' "$SCHEDULER_RC" |
+        grep -Fvq '&& property:sys.zui_control.scheduler_active=1'; then
+        fail 'an unconditional OEM perfservice fence remains'
+    fi
+    grep -Fqx 'on property:zui_control.scheduler=fence && property:sys.zui_control.scheduler_active=1' "$SCHEDULER_RC" ||
+        fail 'manual compatibility fence ignores scheduler ownership'
+    grep -Fqx 'on property:zui_control.asoul=start && property:sys.zui_control.scheduler_active=1' "$SCHEDULER_RC" ||
+        fail 'A-SOUL start bypasses inactive scheduler ownership'
+
+    stop_body="$(sed -n '/^on property:zui_control.scheduler=stop$/,/^$/p' "$SCHEDULER_RC")"
+    printf '%s\n' "$stop_body" | grep -Fq '    setprop sys.zui_control.scheduler_active 0' ||
+        fail 'scheduler stop does not release ownership'
+    printf '%s\n' "$stop_body" | grep -Fq '    start vendor.perfservice' ||
+        fail 'scheduler stop does not restore OEM perfservice'
+    release_line="$(printf '%s\n' "$stop_body" | grep -nF 'setprop sys.zui_control.scheduler_active 0' | cut -d: -f1)"
+    restore_line="$(printf '%s\n' "$stop_body" | grep -nF 'start vendor.perfservice' | cut -d: -f1)"
+    [ "$release_line" -lt "$restore_line" ] ||
+        fail 'scheduler ownership is not released before OEM perfservice starts'
+}
+
+test_noarg_entrypoint_is_closed() {
+    set +e
+    sh "$DAEMON" >/dev/null 2>&1
+    result=$?
+    set -e
+    [ "$result" -eq 2 ] || fail "no-argument zui_controld returned $result instead of 2"
 }
 
 test_control_plane_does_not_write_effective() (
@@ -317,6 +398,13 @@ test_minimal_request_and_receipt() (
         fail 'request receipt missing request'
     [ "$(sed -n '2p' "$LAST_REQUEST_RECEIPT")" = "$TEST_ACK" ] ||
         fail 'request receipt missing ACK'
+    mode_probe="$TEST_ROOT/mode_probe"
+    : > "$mode_probe"
+    chmod 0600 "$mode_probe"
+    if [ "$(stat -c %a "$mode_probe")" = 600 ]; then
+        [ "$(stat -c %a "$LAST_REQUEST_RECEIPT")" = 600 ] ||
+            fail 'request receipt was not created with mode 0600'
+    fi
 )
 
 test_config_publication_failure_is_terminal_and_recoverable() (
@@ -346,10 +434,26 @@ test_config_publication_failure_is_terminal_and_recoverable() (
     [ "$UPERF_MODE_DIRTY" -eq 0 ] || fail 'recovered publication remained dirty'
     [ "$TEST_MODE_STATE" = performance ] || fail 'recovered publication used the wrong mode'
     publish_uperf_rules_state || fail 'startup rules publication did not succeed'
-    config_puts="$TEST_CONFIG_PUTS"
-    publish_scheduler_health
-    [ "$TEST_CONFIG_PUTS" -eq "$config_puts" ] ||
-        fail 'clean health pass repeated Uperf configuration Settings publication'
+)
+
+test_timing_phase_sequence() (
+    ZUI_CONTROLD_TEST_MODE=1
+    export ZUI_CONTROLD_TEST_MODE
+    . "$DAEMON"
+    setup_state
+    trap 'rm -rf "$TEST_ROOT"' EXIT
+    ensure_request_dirs() { :; }
+
+    TEST_REQUEST='timing-id|status|||'
+    authenticated_oneshot || fail 'timing request failed'
+    phases="$(printf '%s' "$TEST_TIMING" | awk -F '|' '
+        NF { if (out != "") out=out ","; out=out $2 }
+        END { print out }
+    ')"
+    [ "$phases" = 'T4,T5,T6,T7,T8' ] ||
+        fail "shell timing sequence mismatch: $phases"
+    [ "$TEST_ACK" = 'timing-id|done|status|state=binder' ] ||
+        fail 'timing request terminal ACK mismatch'
 )
 
 test_terminal_request_dedup_and_recovery() (
@@ -669,10 +773,15 @@ test_oneshot_failure_windows() (
 assert_default_policy
 assert_event_transport_policy
 assert_command_wakeup_policy
+assert_receipt_dac_policy
+assert_timing_policy
+assert_oem_fence_ownership_policy
+test_noarg_entrypoint_is_closed
 test_control_plane_does_not_write_effective
 test_custom_app_lifecycle
 test_minimal_request_and_receipt
 test_config_publication_failure_is_terminal_and_recoverable
+test_timing_phase_sequence
 test_terminal_request_dedup_and_recovery
 test_new_request_survives_old_receipt_on_restart
 test_late_settings_visibility_recovers_once

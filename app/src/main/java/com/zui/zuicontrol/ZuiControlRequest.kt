@@ -3,6 +3,7 @@ package com.zui.zuicontrol
 import android.content.Context
 import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
@@ -51,6 +52,7 @@ object ZuiControlRequest {
         )
         val pending = PendingRequest(requestId, requestText, sha256(requestText))
         check(savePending(context, pending)) { "系统命令认证状态写入失败" }
+        Log.i(TIMING_TAG, "id=$requestId phase=T0 ns=${SystemClock.elapsedRealtimeNanos()}")
         try {
             check(Settings.System.putString(
                 resolver, ZuiControlContract.KEY_REQUEST_TEXT, requestText,
@@ -76,6 +78,11 @@ object ZuiControlRequest {
         return kickTrusted(context, pending)
     }
 
+    fun recoverPending(context: Context): Ack? {
+        val requestId = kickPending(context) ?: return null
+        return awaitTerminalAck(context, requestId)
+    }
+
     fun awaitTerminalAck(
         context: Context,
         requestId: String,
@@ -96,6 +103,10 @@ object ZuiControlRequest {
             ).orEmpty())
             if (ack?.requestId == requestId && ack.command == requestCommand) {
                 if (ack.isTerminal) {
+                    Log.i(
+                        TIMING_TAG,
+                        "id=$requestId phase=T9 ns=${SystemClock.elapsedRealtimeNanos()}",
+                    )
                     clearPending(context, requestId)
                     return ack
                 }
@@ -230,6 +241,7 @@ object ZuiControlRequest {
     private const val PREF_REQUEST_ID = "request_id"
     private const val PREF_REQUEST_TEXT = "request_text"
     private const val PREF_REQUEST_SHA256 = "request_sha256"
+    private const val TIMING_TAG = "ZuiControlTiming"
     internal const val MAX_KICK_RETRIES = 6
     const val ACK_TIMEOUT_MS = 120_000L
 }

@@ -8,7 +8,6 @@ LOG_DIR=$DATA_ROOT/log
 
 LOG_FILE=$LOG_DIR/controld.log
 UPERF_LOG=$LOG_DIR/uperf.log
-STATUS_FILE=$CONTROL_DIR/status.prop
 LAST_REQUEST_RECEIPT=$CONTROL_DIR/last_request_receipt
 ACTIVE_REQUEST_CLAIM=$CONTROL_DIR/active_request_claim
 
@@ -17,19 +16,11 @@ UPERF_EFFECTIVE_MODE=$UPERF_DIR/effective_powermode.txt
 UPERF_PERAPP=$UPERF_DIR/perapp_powermode.txt
 ASOUL_CONFIG=$ASOUL_DIR/asopt.conf
 
-APP_PACKAGE=com.zui.zuicontrol
-APP_SERVICE_COMPONENT=$APP_PACKAGE/$APP_PACKAGE.ZuiControlQuickService
 PROP_SCHEDULER=zui_control.scheduler
 PROP_ASOUL=zui_control.asoul
 
 REQ_TEXT_KEY=zui_control_request_text
 REQUEST_ACK_KEY=zui_control_request_ack
-STATUS_TIME_KEY=zui_control_status_time
-STATUS_LAST_KEY=zui_control_status_last
-DAEMON_STATUS_KEY=zui_control_daemon_status_text
-DAEMON_REFRESH_STATE_KEY=zui_control_daemon_refresh_state
-ASOUL_HEALTH_KEY=zui_control_asoul_health
-UPERF_HEALTH_KEY=zui_control_uperf_health
 UPERF_MODE_KEY=zui_control_uperf_mode
 UPERF_RULES_KEY=zui_control_uperf_rules_text
 LOG_EXPORT_KEY=zui_control_log_export
@@ -40,7 +31,6 @@ TERMINAL_ACK_PENDING=0
 CURRENT_REQUEST_ID=
 CURRENT_REQUEST_CMD=
 REQUEST_RESULT_DETAIL=
-UPERF_MISSES=0
 UPERF_MODE_DIRTY=1
 UPERF_RULES_DIRTY=1
 
@@ -61,7 +51,7 @@ settings_put_quiet() {
 atomic_write_text() {
     target="$1"
     value="$2"
-    atomic_mode="${3:-0664}"
+    atomic_mode="${3:-0644}"
     tmp="$target.tmp"
     rm -f "$tmp"
     if printf '%s\n' "$value" > "$tmp" &&
@@ -72,6 +62,15 @@ atomic_write_text() {
     fi
     rm -f "$tmp"
     return 1
+}
+
+timing_mark() {
+    timing_id="$1"
+    timing_phase="$2"
+    timing_cmd="${3:-${CURRENT_REQUEST_CMD:-unknown}}"
+    read -r timing_uptime timing_idle < /proc/uptime || timing_uptime=unknown
+    printf 'timing id=%s phase=%s uptime=%s cmd=%s\n' \
+        "$timing_id" "$timing_phase" "$timing_uptime" "$timing_cmd" >> "$LOG_FILE"
 }
 
 log_line() {
@@ -86,21 +85,6 @@ trim_log() {
         tail -n 2000 "$LOG_FILE" > "$LOG_FILE.tmp" 2>/dev/null &&
             mv -f "$LOG_FILE.tmp" "$LOG_FILE"
     fi
-}
-
-set_status() {
-    {
-        echo "time=$(ts)"
-        for line in "$@"; do echo "$line"; done
-    } > "$STATUS_FILE"
-    chmod 0664 "$STATUS_FILE" 2>/dev/null
-    last=
-    for line in "$@"; do
-        case "$line" in last=*) last="${line#last=}" ;; esac
-    done
-    settings_put_quiet "$STATUS_TIME_KEY" "$(ts)"
-    settings_put_quiet "$STATUS_LAST_KEY" "$last"
-    settings_put_quiet "$DAEMON_STATUS_KEY" "$(tr '\n' ';' < "$STATUS_FILE" 2>/dev/null)"
 }
 
 valid_package_name() {
@@ -142,47 +126,6 @@ publish_uperf_mode_state() {
     valid_uperf_preset "$published_mode" || return 1
     settings_put_quiet "$UPERF_MODE_KEY" "$published_mode" || return 1
     UPERF_MODE_DIRTY=0
-}
-
-oem_telemetry_state() {
-    result=
-    for bridge in performance poweropt-service perf2-hal-1-0; do
-        state="$(getprop "init.svc.$bridge" 2>/dev/null)"
-        [ -n "$state" ] || state=absent
-        [ -z "$result" ] || result="$result · "
-        result="${result}${bridge}=${state}"
-    done
-    printf '%s\n' "$result"
-}
-
-publish_scheduler_health() {
-    uperf_pids="$(pidof uperf 2>/dev/null)"
-    uperf_pid="$(printf '%s\n' "$uperf_pids" | awk '{print $1}')"
-    uperf_processes="$(printf '%s\n' "$uperf_pids" | awk '{print NF}')"
-    asoul_pid="$(pidof AsoulOpt 2>/dev/null | awk '{print $1}')"
-    global_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
-    valid_uperf_preset "$global_mode" || global_mode=unknown
-    effective="$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE" 2>/dev/null)"
-    valid_uperf_preset "$effective" || effective=unknown
-    log_size=0
-    [ -f "$UPERF_LOG" ] && log_size="$(wc -c < "$UPERF_LOG" 2>/dev/null)"
-    health="Uperf：${uperf_pid:-未运行}（${uperf_processes:-0} 进程 · u:r:performanced:s0）
-全局模式：$global_mode · 实际档位：$effective
-有效档位 owner：system_server → sys.zui_control.uperf_mode → init
-GPU：原厂 KGSL DVFS 与热保护保留
-调度围栏：vendor.perfservice=$(getprop init.svc.vendor.perfservice 2>/dev/null)（存在时应为 stopped）
-OEM 遥测：$(oem_telemetry_state)（存在时应为 running）
-A-SOUL：${asoul_pid:-未运行}（u:r:performanced:s0）
-线程参数：$(tr '\n' ' ' < "$ASOUL_CONFIG" 2>/dev/null)
-日志：${log_size:-0} 字节"
-    settings_put_quiet "$UPERF_HEALTH_KEY" "$health"
-    settings_put_quiet "$ASOUL_HEALTH_KEY" "$health"
-    if [ "$UPERF_MODE_DIRTY" = "1" ]; then
-        publish_uperf_mode_state || log_line "Uperf global Settings publication pending"
-    fi
-    if [ "$UPERF_RULES_DIRTY" = "1" ]; then
-        publish_uperf_rules_state || log_line "Uperf rules Settings publication pending"
-    fi
 }
 
 set_uperf_mode() {
@@ -288,14 +231,11 @@ restart_scheduler() {
     while [ "$tries" -gt 0 ]; do
         sleep 1
         if uperf_is_healthy && [ -n "$(pidof AsoulOpt 2>/dev/null)" ]; then
-            UPERF_MISSES=0
-            publish_scheduler_health
             REQUEST_RESULT_DETAIL="uperf=running;asoul=running"
             return 0
         fi
         tries=$((tries - 1))
     done
-    publish_scheduler_health
     return 1
 }
 
@@ -303,7 +243,6 @@ start_asoul() {
     trigger_init_action "$PROP_ASOUL" start || return 1
     sleep 1
     [ -n "$(pidof AsoulOpt 2>/dev/null)" ] || return 1
-    publish_scheduler_health
     REQUEST_RESULT_DETAIL="asoul=running;mode=0;rt=0"
 }
 
@@ -311,45 +250,17 @@ stop_asoul() {
     trigger_init_action "$PROP_ASOUL" stop || return 1
     sleep 1
     [ -z "$(pidof AsoulOpt 2>/dev/null)" ] || return 1
-    publish_scheduler_health
     REQUEST_RESULT_DETAIL="asoul=stopped"
 }
 
-ensure_scheduler_running() {
-    [ "$(getprop "$PROP_SCHEDULER" 2>/dev/null)" != "stopped" ] || return 0
-    if [ "$(getprop init.svc.vendor.perfservice 2>/dev/null)" = "running" ]; then
-        log_line "OEM perf bridge escaped fence: vendor.perfservice"
-        trigger_init_action "$PROP_SCHEDULER" fence || true
-    fi
-    asoul_state="$(getprop "$PROP_ASOUL" 2>/dev/null)"
-    if uperf_is_healthy &&
-        { [ "$asoul_state" = "stopped" ] || [ -n "$(pidof AsoulOpt 2>/dev/null)" ]; }; then
-        UPERF_MISSES=0
-        return 0
-    fi
-    UPERF_MISSES=$((UPERF_MISSES + 1))
-    if [ "$UPERF_MISSES" -ge 3 ]; then
-        log_line "scheduler health restart after $UPERF_MISSES misses"
-        restart_scheduler || log_line "scheduler health restart failed"
-        UPERF_MISSES=0
-    fi
-}
-
-publish_refresh_state() {
-    settings_put_quiet "$DAEMON_REFRESH_STATE_KEY" \
-        "refresh_owner=system;daemon refresh disabled"
-}
-
 export_logs() {
-    publish_scheduler_health
     export_text="ZuiControl 运行记录
 导出时间：$(ts)
 
-[状态]
-$(cat "$STATUS_FILE" 2>/dev/null)
-
-[刷新率 owner]
-$(settings_get_clean "$DAEMON_REFRESH_STATE_KEY")
+[控制面]
+healthSource=zui_control Binder
+refreshOwner=system
+persistentDaemon=retired
 
 [Uperf 全局模式]
 $(cat "$UPERF_MODE" 2>/dev/null)
@@ -363,16 +274,13 @@ $(cat "$UPERF_PERAPP" 2>/dev/null)
 [A-SOUL 配置]
 $(cat "$ASOUL_CONFIG" 2>/dev/null)
 
-[调度健康状态]
-$(settings_get_clean "$UPERF_HEALTH_KEY")
-
-[守护服务日志末尾]
+[按需命令日志末尾]
 $(tail -n 120 "$LOG_FILE" 2>/dev/null)
 
 [Uperf 日志末尾]
 $(tail -n 80 "$UPERF_LOG" 2>/dev/null)"
     settings_put_quiet "$LOG_EXPORT_KEY" "$export_text"
-    set_status "daemon=running" "last=export_logs"
+    REQUEST_RESULT_DETAIL="logs=exported"
 }
 
 sanitize_ack_field() {
@@ -471,6 +379,11 @@ $terminal_ack" 0600 || return 1
 publish_pending_terminal_ack() {
     [ "$TERMINAL_ACK_PENDING" = "1" ] || return 0
     if settings_put_quiet "$REQUEST_ACK_KEY" "$replay_ack"; then
+        timing_ack_id="${replay_ack%%|*}"
+        timing_ack_tail="${replay_ack#*|}"
+        timing_ack_tail="${timing_ack_tail#*|}"
+        timing_ack_cmd="${timing_ack_tail%%|*}"
+        timing_mark "$timing_ack_id" T8 "$timing_ack_cmd"
         TERMINAL_ACK_PENDING=0
         return 0
     fi
@@ -492,6 +405,7 @@ finish_request() {
     fi
     terminal_ack="$(ack_text "$id" "$state" "$cmd" "$detail")"
     persist_completion "$request" "$terminal_ack" || return 1
+    timing_mark "$id" T7 "$cmd"
     clear_request_claim "$request" >/dev/null 2>&1 || true
     LAST_COMPLETED_REQUEST_ID="$id"
     publish_pending_terminal_ack >/dev/null 2>&1 || true
@@ -507,9 +421,7 @@ handle_command() {
     REQUEST_RESULT_DETAIL=
     case "$cmd" in
         status)
-            publish_refresh_state
-            publish_scheduler_health
-            set_status "daemon=running" "last=status"
+            REQUEST_RESULT_DETAIL="state=binder"
             ;;
         set_uperf_mode) set_uperf_mode "$mode" ;;
         set_uperf_app)
@@ -561,23 +473,12 @@ process_settings_request() {
         log_line "request claim failed id=$id cmd=$cmd; action not started"
         return 1
     fi
+    timing_mark "$id" T5 "$cmd"
     handle_command "$cmd" "$pkg" "$mode"
     result=$?
+    timing_mark "$id" T6 "$cmd"
     trim_log
     finish_request "$request" "$id" "$cmd" "$result" "$REQUEST_RESULT_DETAIL"
-}
-
-grant_app_permissions() {
-    pm grant "$APP_PACKAGE" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1
-    appops set "$APP_PACKAGE" POST_NOTIFICATION allow >/dev/null 2>&1
-    appops set "$APP_PACKAGE" WRITE_SETTINGS allow >/dev/null 2>&1
-}
-
-notify_quick_service() {
-    am start-foreground-service \
-        -a com.zui.zuicontrol.action.REFRESH_NOTIFICATION \
-        -n "$APP_SERVICE_COMPONENT" >/dev/null 2>&1 ||
-        am startservice -n "$APP_SERVICE_COMPONENT" >/dev/null 2>&1
 }
 
 init_dirs() {
@@ -587,7 +488,6 @@ init_dirs() {
     chmod 0700 "$CONTROL_DIR" 2>/dev/null || return 1
     chmod 0775 "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR" 2>/dev/null || return 1
     restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
-    grant_app_permissions
 }
 
 ensure_request_dirs() {
@@ -650,6 +550,7 @@ oneshot_request() {
     trusted_id="${1:-}"
     trusted_sha256="${2:-}"
     [ "$(id -u 2>/dev/null)" = "0" ] || return 126
+    timing_mark "${trusted_id:-invalid}" T4 unknown
     ensure_request_dirs || return 1
     if ! valid_request_id "$trusted_id" || ! valid_sha256 "$trusted_sha256"; then
         log_line "request kick rejected: invalid authenticated metadata"
@@ -673,26 +574,10 @@ oneshot_request() {
     return "$result"
 }
 
-main_loop() {
-    init_dirs || return 1
-    log_line "zui_controld v49 start: scheduler=uperf+asoul"
-    publish_refresh_state
-    ensure_scheduler_running
-    publish_scheduler_health
-    set_status "daemon=running" "last=init" "refresh_owner=system"
-    notify_quick_service
-
-    while true; do
-        sleep 20
-        ensure_scheduler_running
-        publish_scheduler_health
-    done
-}
-
 if [ "${ZUI_CONTROLD_TEST_MODE:-0}" != "1" ]; then
     case "${1:-}" in
         --oneshot-request) shift; oneshot_request "${1:-}" "${2:-}" ;;
-        "") main_loop ;;
+        "") exit 2 ;;
         *) log_line "unknown argument: $1"; exit 2 ;;
     esac
 fi

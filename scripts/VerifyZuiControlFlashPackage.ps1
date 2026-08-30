@@ -489,6 +489,12 @@ try {
     Assert-Contains $SchedulerRc 'service zui_asoulopt /system/bin/AsoulOpt' 'A-SOUL init service'
     Assert-Contains $SchedulerRc '    stop vendor.perfservice' 'QTI userspace perf bridge ownership fence'
     Assert-Contains $SchedulerRc '    start vendor.perfservice' 'QTI userspace perf bridge rollback'
+    Assert-Contains $SchedulerRc '    setprop sys.zui_control.scheduler_active 1' 'init-owned active scheduler state'
+    Assert-Contains $SchedulerRc '    setprop sys.zui_control.scheduler_active 0' 'init-owned inactive scheduler state'
+    Assert-Contains $SchedulerRc 'on property:init.svc.vendor.perfservice=running && property:sys.zui_control.scheduler_active=1' 'init-native conditional OEM fence'
+    Assert-Contains $SchedulerRc 'on property:zui_control.asoul=start && property:sys.zui_control.scheduler_active=1' 'active-only A-SOUL start action'
+    Assert-Contains $SchedulerRc 'on property:zui_control.scheduler=fence && property:sys.zui_control.scheduler_active=1' 'active-only compatibility OEM fence'
+    Assert-NotContains $SchedulerRc "on property:zui_control.scheduler=fence`n    stop vendor.perfservice" 'unconditional legacy OEM fence'
     foreach ($bridge in @('performance', 'poweropt-service', 'perf2-hal-1-0')) {
         Assert-NotContains $SchedulerRc "    stop $bridge" 'OEM telemetry service stop action'
         Assert-NotContains $SchedulerRc "    start $bridge" 'OEM telemetry service ownership action'
@@ -525,14 +531,23 @@ try {
     }
     Assert-NotContains $SchedulerRc 'on property:sys.zui_control.uperf_mode=*' 'unbounded Uperf property trigger'
     Assert-NotContains $SchedulerRc 'exec sh' 'shell-based Uperf property handler'
-    Assert-Contains $SchedulerRc 'on property:zui_control.scheduler=fence' 'OEM perf bridge re-entry fence'
     Assert-NotContains $SchedulerRc 'seclabel u:r:shell:s0' 'shell-domain scheduler service'
     Assert-NotContains $DaemonRc 'zui_control.zuipp' 'retired XML property action'
     Assert-Contains $DaemonRc 'on property:sys.zui_control.command_seq=*' 'event-triggered command doorbell'
     Assert-Contains $DaemonRc 'service zui_control_request /system/bin/sh /system/bin/zui_controld --oneshot-request ${sys.zui_control.command_id:-unset} ${sys.zui_control.command_sha256:-unset}' 'authenticated oneshot command service'
+    Assert-NotContains $DaemonRc 'service zui_controld /system/bin/sh /system/bin/zui_controld' 'retired persistent daemon service'
+    Assert-NotContains $DaemonRc 'start zui_controld' 'retired persistent daemon boot start'
     Assert-Contains $DaemonRc 'mkdir /data/vendor/zui_control 0755 root root' 'root-owned transaction parent'
     Assert-Contains $SchedulerRc 'mkdir /data/vendor/zui_control 0755 root root' 'root-owned scheduler data parent'
     Assert-Contains $DaemonRc 'mkdir /data/vendor/zui_control/zuicontrol 0700 root root' 'root-private transaction directory'
+    foreach ($line in @(
+        '    chown root root /data/vendor/zui_control/zuicontrol/last_request_receipt',
+        '    chmod 0600 /data/vendor/zui_control/zuicontrol/last_request_receipt',
+        '    restorecon /data/vendor/zui_control/zuicontrol/last_request_receipt',
+        '    chown root root /data/vendor/zui_control/zuicontrol/active_request_claim',
+        '    chmod 0600 /data/vendor/zui_control/zuicontrol/active_request_claim',
+        '    restorecon /data/vendor/zui_control/zuicontrol/active_request_claim'
+    )) { Assert-Contains $DaemonRc $line 'proactive transaction metadata repair' }
     $commandServiceBlock = @(Get-InitServiceBlock $DaemonRc 'zui_control_request')
     foreach ($line in @('    class late_start', '    disabled', '    oneshot', '    user root',
             '    group root system shell readproc', '    seclabel u:r:shell:s0')) {
@@ -561,6 +576,19 @@ try {
     Assert-Contains $SchedulerPrepare 'mode == 1 && rt == 1 && opt == 1' 'persistent A-SOUL config validation'
     Assert-Contains $SchedulerPrepare 'safecenter_keepalive_backup.flag' 'retired SafeCenter data cleanup'
     Assert-Contains $SchedulerPrepare '.rom_frontend_v47' 'retired Uperf frontend marker cleanup'
+    $schedulerPrepareText = Get-Content -Raw -LiteralPath $SchedulerPrepare
+    foreach ($publication in @(
+        'settings put system zui_control_uperf_mode "$global_mode"',
+        'settings put system zui_control_uperf_rules_text "$rules_text"'
+    )) {
+        if ([regex]::Matches($schedulerPrepareText, [regex]::Escape($publication)).Count -ne 1) {
+            throw "Scheduler prepare must publish exactly once per boot/restart: $publication"
+        }
+    }
+    foreach ($healthKey in @('zui_control_uperf_health', 'zui_control_asoul_health',
+            'zui_control_daemon_status_text')) {
+        Assert-NotContains $SchedulerPrepare $healthKey 'retired periodic health publication'
+    }
     Assert-NotContains $SchedulerPrepare 'setprop zui_control.appopt' 'retired AppOpt property'
     Assert-NotContains $SchedulerPrepare 'setprop zui_control.zuipp' 'retired XML property'
     Assert-NotContains $SchedulerPrepare '/data/adb' 'shell-domain access to protected Magisk data'
@@ -579,23 +607,29 @@ try {
     Assert-NotContains $Daemon 'sync_uperf_frontend()' 'retired daemon Uperf frontend'
     Assert-NotContains $Daemon 'write_uperf_effective_mode()' 'retired daemon effective-mode writer'
     Assert-NotContains $Daemon '> "$UPERF_EFFECTIVE_MODE"' 'daemon effective-mode write redirection'
-    Assert-Contains $Daemon 'effective_powermode.txt' 'read-only effective-mode health observation'
-    Assert-Contains $Daemon '有效档位 owner：system_server → sys.zui_control.uperf_mode → init' 'event-driven Uperf ownership state'
-    Assert-Contains $Daemon "grep -q ' I Uperf is running`$'" 'strict Uperf daemon health check'
     Assert-NotContains $Daemon 'ps -AZ' 'cross-domain health scanner'
-    Assert-Contains $Daemon '调度围栏：vendor.perfservice=' 'narrow QTI scheduler fence health state'
-    Assert-Contains $Daemon 'OEM 遥测：$(oem_telemetry_state)' 'OEM telemetry health states'
-    Assert-Contains $Daemon 'OEM perf bridge escaped fence' 'OEM perf bridge supervision'
     Assert-NotContains $Daemon 'for bridge in vendor.perfservice performance poweropt-service perf2-hal-1-0' 'broad OEM telemetry fence'
-    Assert-Contains $Daemon '线程参数：$(tr' 'runtime A-SOUL mode state'
-    Assert-Contains $Daemon 'GPU：原厂 KGSL DVFS 与热保护保留' 'honest GPU ownership statement'
+    Assert-Contains $Daemon 'persistentDaemon=retired' 'on-demand export persistent-daemon state'
+    Assert-Contains $Daemon 'REQUEST_RESULT_DETAIL="state=binder"' 'Binder-owned status command'
+    foreach ($retiredHealth in @(
+        'main_loop()',
+        'sleep 20',
+        'publish_scheduler_health()',
+        'ensure_scheduler_running()',
+        'set_status()',
+        'zui_control_status_time',
+        'zui_control_status_last',
+        'zui_control_daemon_status_text',
+        'zui_control_uperf_health',
+        'zui_control_asoul_health'
+    )) { Assert-NotContains $Daemon $retiredHealth 'retired persistent health polling path' }
     foreach ($forbidden in @('/sys/class/kgsl/kgsl-3d0', '/sys/devices/system/cpu/cpufreq', 'provider_direct', 'GameModeProvider/contact', 'zui_control.cloud_block', 'cloud_block.log')) {
         Assert-NotContains $Daemon $forbidden 'retired direct/provider/cloud runtime'
     }
     foreach ($retired in @('AppOpt', 'APPOPT_', 'ZUIPP_', 'XML_STATE', 'SafeCenter', 'safecenter', '/data/adb', 'su ')) {
         Assert-NotContains $Daemon $retired 'retired scheduler implementation'
     }
-    Assert-Contains $Daemon 'refresh_owner=system;daemon refresh disabled' 'system_server refresh owner state'
+    Assert-Contains $Daemon 'refreshOwner=system' 'system_server refresh owner state'
     Assert-Contains $Daemon 'LAST_REQUEST_RECEIPT=$CONTROL_DIR/last_request_receipt' 'durable request receipt'
     Assert-Contains $Daemon 'LAST_COMPLETED_REQUEST_ID=' 'V20.1 terminal request dedup state'
     Assert-Contains $Daemon 'publish_pending_terminal_ack()' 'V20.1 one-shot terminal ACK recovery'
@@ -611,27 +645,41 @@ try {
     Assert-Contains $Daemon 'atomic_write_text "$ACTIVE_REQUEST_CLAIM" "$1" 0600' 'root-private request claim'
     Assert-Contains $Daemon '$terminal_ack" 0600 || return 1' 'root-private terminal receipt'
     Assert-Contains $Daemon 'chmod 0755 "$DATA_ROOT"' 'root-owned transaction parent repair'
+    Assert-Contains $Daemon 'atomic_mode="${3:-0644}"' 'non-sensitive atomic file default DAC'
+    foreach ($timingMarker in @(
+        'timing_mark "${trusted_id:-invalid}" T4 unknown',
+        'timing_mark "$id" T5 "$cmd"',
+        'timing_mark "$id" T6 "$cmd"',
+        'timing_mark "$id" T7 "$cmd"',
+        'timing_mark "$timing_ack_id" T8 "$timing_ack_cmd"'
+    )) { Assert-Contains $Daemon $timingMarker 'command latency timing marker' }
     $processRequest = Get-ShellFunctionBlock $Daemon 'process_settings_request'
     Assert-OrderedText $processRequest @(
         'persist_request_claim "$request"',
+        'timing_mark "$id" T5 "$cmd"',
         'handle_command "$cmd" "$pkg" "$mode"',
+        'timing_mark "$id" T6 "$cmd"',
         'finish_request "$request" "$id" "$cmd" "$result"'
-    ) 'claim/action/completion transaction order'
+    ) 'claim/T5/action/T6/completion transaction order'
     $finishRequest = Get-ShellFunctionBlock $Daemon 'finish_request'
     Assert-OrderedText $finishRequest @(
         'persist_completion "$request" "$terminal_ack"',
+        'timing_mark "$id" T7 "$cmd"',
         'clear_request_claim "$request"',
         'publish_pending_terminal_ack'
-    ) 'receipt/claim-clear/terminal-ACK order'
-    $daemonText = Get-Content -Raw -LiteralPath $Daemon
-    $mainLoop = [regex]::Match($daemonText, '(?ms)^main_loop\(\) \{.*?^\}').Value
-    if (-not $mainLoop) { throw 'Cannot locate persistent daemon main_loop' }
-    if ($mainLoop.Contains('process_settings_request')) {
-        throw 'Persistent daemon main_loop still processes Settings requests'
-    }
-    if (-not $mainLoop.Contains('sleep 20') -or $mainLoop.Contains('sleep 1')) {
-        throw 'Persistent daemon main_loop is not a direct 20-second health loop'
-    }
+    ) 'receipt/T7/claim-clear/terminal-ACK order'
+    $publishAck = Get-ShellFunctionBlock $Daemon 'publish_pending_terminal_ack'
+    Assert-OrderedText $publishAck @(
+        'settings_put_quiet "$REQUEST_ACK_KEY" "$replay_ack"',
+        'timing_mark "$timing_ack_id" T8'
+    ) 'terminal-ACK/T8 order'
+    $oneshotRequest = Get-ShellFunctionBlock $Daemon 'oneshot_request'
+    Assert-OrderedText $oneshotRequest @(
+        'timing_mark "${trusted_id:-invalid}" T4 unknown',
+        'captured_request="$(settings_get_clean "$REQ_TEXT_KEY")"',
+        'process_settings_request "$captured_request"'
+    ) 'T4/request-capture/dispatch order'
+    Assert-Contains $Daemon '") exit 2 ;;' 'argument-less persistent daemon rejection'
 
     foreach ($config in @($ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
         Assert-NotContains $config 'com.zui.zuicontrol' 'retired ZuiControl keepalive whitelist'
@@ -668,6 +716,30 @@ try {
     Assert-Contains $serviceSmali[0].FullName 'control_request_kick' 'command doorbell observability'
     Assert-Contains $serviceSmali[0].FullName 'request_payload_mismatch' 'Binder payload digest rejection'
     Assert-Contains $serviceSmali[0].FullName 'SHA-256' 'Binder payload digest implementation'
+    Assert-Contains $serviceSmali[0].FullName 'ZuiControlTiming' 'system_server command latency tag'
+    Assert-Contains $serviceSmali[0].FullName 'phase=T1' 'Binder-entry latency marker'
+    Assert-Contains $serviceSmali[0].FullName 'phase=T2' 'init-doorbell latency marker'
+    foreach ($stateMarker in @(
+        'sys.zui_control.scheduler_active',
+        'init.svc.zui_uperf',
+        'init.svc.zui_asoulopt',
+        'schedulerActive=',
+        'uperfServiceState=',
+        'asoulServiceState=',
+        'schedulerHealth=',
+        'lastSchedulerError=',
+        'daemonRetired=true'
+    )) { Assert-Contains $serviceSmali[0].FullName $stateMarker 'on-demand scheduler health field' }
+    $schedulerHealthMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'schedulerHealthStateLines') -join "`n"
+    if (-not $schedulerHealthMethod.Contains('Landroid/os/SystemProperties;->get')) {
+        throw 'On-demand scheduler health does not read init/system properties directly.'
+    }
+    foreach ($forbiddenHealthMechanism in @('Ljava/lang/Runtime;', 'Ljava/lang/ProcessBuilder;',
+            'Ljava/io/File;', 'Ljava/lang/Thread;->sleep', 'Landroid/provider/Settings')) {
+        if ($schedulerHealthMethod.Contains($forbiddenHealthMechanism)) {
+            throw "On-demand scheduler health unexpectedly uses a shell/file/polling mechanism: $forbiddenHealthMechanism"
+        }
+    }
     $transactMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'onTransact') -join "`n"
     Assert-OrderedText $transactMethod @(
         '->enforceCommandCallerAllowed()V',
@@ -686,10 +758,12 @@ try {
         if (-not $notifyMethod.Contains($marker)) { throw "TX12 notify method is missing: $marker" }
     }
     Assert-OrderedText $notifyMethod @(
+        'phase=T1',
         'sys.zui_control.command_id',
         'sys.zui_control.command_sha256',
-        'sys.zui_control.command_seq'
-    ) 'authenticated property commit order'
+        'sys.zui_control.command_seq',
+        'phase=T2'
+    ) 'T1/authenticated property commit/T2 order'
     Assert-Contains $serviceSmali[0].FullName 'zui_control_uperf_mode' 'cached global Uperf setting'
     Assert-Contains $serviceSmali[0].FullName 'zui_control_uperf_rules_text' 'cached exact-app Uperf setting'
     Assert-Contains $uperfPolicySmali[0].FullName 'Landroid/os/SystemProperties;->set' 'system_server property actuator'
@@ -717,22 +791,32 @@ try {
     $requestSmali = @(Get-ChildItem -LiteralPath $AppDecode -Recurse -File -Filter 'ZuiControlRequest.smali')
     $clientSmali = @(Get-ChildItem -LiteralPath $AppDecode -Recurse -File -Filter 'ZuiControlClient.smali')
     $bootSmali = @(Get-ChildItem -LiteralPath $AppDecode -Recurse -File -Filter 'BootReceiver.smali')
-    if ($requestSmali.Count -ne 1 -or $clientSmali.Count -ne 1 -or $bootSmali.Count -ne 1) {
+    $mainActivitySmali = @(Get-ChildItem -LiteralPath $AppDecode -Recurse -File -Filter 'MainActivity*.smali')
+    if ($requestSmali.Count -ne 1 -or $clientSmali.Count -ne 1 -or $bootSmali.Count -ne 1 -or
+        $mainActivitySmali.Count -lt 1) {
         throw 'Final APK command client classes are missing'
     }
     Assert-Contains $requestSmali[0].FullName 'kickPending' 'App launch pending-command reconciliation'
+    Assert-Contains $requestSmali[0].FullName 'recoverPending' 'same-session pending-command completion'
     Assert-Contains $requestSmali[0].FullName 'retryDelayMs' 'App bounded command re-kick backoff'
     Assert-Contains $requestSmali[0].FullName 'zui_control_pending_command' 'App private trusted request record'
     Assert-Contains $requestSmali[0].FullName 'createDeviceProtectedStorageContext' 'direct-boot trusted request storage'
     Assert-Contains $requestSmali[0].FullName 'SHA-256' 'App exact request digest'
+    Assert-Contains $requestSmali[0].FullName 'ZuiControlTiming' 'App command latency tag'
+    Assert-Contains $requestSmali[0].FullName 'phase=T0' 'App durable-pending latency marker'
+    Assert-Contains $requestSmali[0].FullName 'phase=T9' 'App terminal-observed latency marker'
     Assert-Contains $clientSmali[0].FullName 'notifyControlRequest' 'App Binder command doorbell call'
     Assert-Contains $bootSmali[0].FullName 'kickPending' 'boot pending-command reconciliation'
+    if (-not (Select-String -LiteralPath @($mainActivitySmali.FullName) -SimpleMatch -Pattern 'recoverPending' -Quiet)) {
+        throw 'Final APK MainActivity does not perform first cold-launch same-session recovery.'
+    }
     $sendMethod = (Get-SmaliMethodBlock $requestSmali[0].FullName 'send') -join "`n"
     Assert-OrderedText $sendMethod @(
         '->savePending',
+        'phase=T0',
         'Landroid/provider/Settings$System;->putString',
         'Lcom/zui/zuicontrol/ZuiControlClient;->notifyControlRequest'
-    ) 'App private-pending/request/Binder order'
+    ) 'App private-pending/T0/request/Binder order'
     $kickMethod = (Get-SmaliMethodBlock $requestSmali[0].FullName 'kickTrusted') -join "`n"
     Assert-OrderedText $kickMethod @(
         'Landroid/provider/Settings$System;->getString',
@@ -744,6 +828,15 @@ try {
             'Ljava/lang/Thread;->sleep', '->clearPending')) {
         if (-not $awaitMethod.Contains($marker)) { throw "App bounded ACK/retry method is missing: $marker" }
     }
+    Assert-OrderedText $awaitMethod @(
+        'phase=T9',
+        '->clearPending'
+    ) 'terminal-observed T9 before pending clear'
+    $recoverMethod = (Get-SmaliMethodBlock $requestSmali[0].FullName 'recoverPending') -join "`n"
+    Assert-OrderedText $recoverMethod @(
+        '->kickPending',
+        '->awaitTerminalAck'
+    ) 'same-session pending command recovery'
     $appManifest = Join-Path $AppDecode 'AndroidManifest.xml'
     Assert-Contains $appManifest 'android:name="com.zui.zuicontrol.BootReceiver"' 'boot receiver manifest declaration'
     Assert-Contains $appManifest 'android:directBootAware="true"' 'direct-boot receiver/application declaration'
@@ -775,6 +868,8 @@ try {
     Assert-Contains $PropertyContexts 'sys.zui_control.command_sha256 u:object_r:zui_control_command_auth_prop:s0 exact string' 'dedicated exact command digest property context'
     Assert-NotContains $PropertyContexts 'sys.zui_control.command_id u:object_r:shell_prop:s0' 'shell-owned command ID property'
     Assert-NotContains $PropertyContexts 'sys.zui_control.command_sha256 u:object_r:shell_prop:s0' 'shell-owned command digest property'
+    Assert-Contains $PropertyContexts 'sys.zui_control.scheduler_active u:object_r:zui_control_scheduler_active_prop:s0 exact enum 0 1' 'dedicated exact-enum scheduler ownership property context'
+    Assert-NotContains $PropertyContexts 'sys.zui_control.scheduler_active u:object_r:shell_prop:s0' 'shell-owned scheduler ownership property'
 
     $PlatPolicy = Join-Path $PlatSelinux 'plat_sepolicy.cil'
     foreach ($rule in @(
@@ -799,6 +894,13 @@ try {
         '(typeattributeset system_internal_property_type (zui_control_command_auth_prop))',
         '(allow system_server zui_control_command_auth_prop (property_service (set)))',
         '(allow system_server zui_control_command_auth_prop (file (getattr map open read)))',
+        '(type zui_control_scheduler_active_prop)',
+        '(roletype object_r zui_control_scheduler_active_prop)',
+        '(typeattributeset property_type (zui_control_scheduler_active_prop))',
+        '(typeattributeset system_property_type (zui_control_scheduler_active_prop))',
+        '(typeattributeset system_internal_property_type (zui_control_scheduler_active_prop))',
+        '(allow init zui_control_scheduler_active_prop (property_service (set)))',
+        '(allow system_server zui_control_scheduler_active_prop (file (getattr map open read)))',
         '(genfscon proc "/sys/walt/input_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
         '(genfscon proc "/sys/walt/sched_per_task_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
         '(allow performanced activity_service (service_manager (find)))',
@@ -836,6 +938,15 @@ try {
         Assert-NotContains $PlatPolicy "(allow $forbiddenWriter zui_control_uperf_mode_prop (property_service (set)))" 'unauthorized Uperf property writer'
         Assert-NotContains $PlatPolicy "(allow $forbiddenWriter zui_control_command_seq_prop (property_service (set)))" 'unauthorized command property writer'
         Assert-NotContains $PlatPolicy "(allow $forbiddenWriter zui_control_command_auth_prop (property_service (set)))" 'unauthorized command authentication writer'
+        Assert-NotContains $PlatPolicy "(allow $forbiddenWriter zui_control_scheduler_active_prop (property_service (set)))" 'unauthorized scheduler ownership writer'
+    }
+    Assert-NotContains $PlatPolicy '(allow system_server zui_control_scheduler_active_prop (property_service (set)))' 'system_server scheduler ownership writer'
+    $schedulerWriterMatches = [regex]::Matches(
+        (Get-Content -Raw -LiteralPath $PlatPolicy),
+        '\(allow\s+([^\s()]+)\s+zui_control_scheduler_active_prop\s+\(property_service\s+\(set\)\)\)')
+    if ($schedulerWriterMatches.Count -ne 1 -or
+        $schedulerWriterMatches[0].Groups[1].Value -ne 'init') {
+        throw 'sys.zui_control.scheduler_active must have init as its only SELinux writer.'
     }
 
     $MappingPolicy = Join-Path $PlatSelinux 'mapping\34.0.cil'
@@ -851,6 +962,7 @@ try {
     Assert-NotContains $VendorPolicy 'zui_control_uperf_mode_prop' 'vendor access to system-internal Uperf property'
     Assert-NotContains $VendorPolicy 'zui_control_command_seq_prop' 'vendor access to system-internal command property'
     Assert-NotContains $VendorPolicy 'zui_control_command_auth_prop' 'vendor access to system-internal command authentication property'
+    Assert-NotContains $VendorPolicy 'zui_control_scheduler_active_prop' 'vendor access to system-internal scheduler ownership property'
     Assert-NotContains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (' 'legacy shell KGSL permission'
     Assert-NotContains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_kgsl (' 'unsupported Uperf KGSL permission'
 
