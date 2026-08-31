@@ -1,5 +1,5 @@
 on property:persist.zui_control.disable=*
-    exec_background u:r:shell:s0 shell shell -- /system/bin/service call zui_control 1599295570
+    exec_background u:r:shell:s0 shell shell -- /system/bin/sh -c "exec /system/bin/service call zui_control 1599295570"
 
 on property:persist.zui_control.refresh.disable=*
-    exec_background u:r:shell:s0 shell shell -- /system/bin/service call zui_control 1599295570
+    exec_background u:r:shell:s0 shell shell -- /system/bin/sh -c "exec /system/bin/service call zui_control 1599295570"

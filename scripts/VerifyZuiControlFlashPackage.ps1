@@ -170,6 +170,23 @@ function Assert-OrderedText([string]$Text, [string[]]$Needles, [string]$Label) {
     }
 }
 
+function Assert-SmaliDispatchAuthorized(
+        [string]$Text,
+        [string]$AuthNeedle,
+        [string]$DispatchNeedle,
+        [string]$Label) {
+    $dispatch = $Text.IndexOf($DispatchNeedle, [StringComparison]::Ordinal)
+    if ($dispatch -lt 0 -or
+            $Text.IndexOf($DispatchNeedle, $dispatch + 1, [StringComparison]::Ordinal) -ge 0) {
+        throw "Final services.jar must contain exactly one $Label dispatch."
+    }
+    $arm = $Text.LastIndexOf(':pswitch_', $dispatch, [StringComparison]::Ordinal)
+    $auth = $Text.LastIndexOf($AuthNeedle, $dispatch, [StringComparison]::Ordinal)
+    if ($arm -lt 0 -or $auth -lt $arm) {
+        throw "Final services.jar $Label dispatch is not strictly authorized in its switch arm."
+    }
+}
+
 function Get-ExactAsciiLineCount([byte[]]$Bytes, [string]$Line) {
     $expected = [Text.Encoding]::ASCII.GetBytes($Line)
     $count = 0
@@ -543,7 +560,7 @@ try {
     Assert-Contains $DaemonRc 'mkdir /data/vendor/zui_control/zuicontrol 0700 root root' 'root-private transaction directory'
     Assert-Contains $RefreshKillRc 'on property:persist.zui_control.disable=*' 'global disable edge trigger'
     Assert-Contains $RefreshKillRc 'on property:persist.zui_control.refresh.disable=*' 'refresh disable edge trigger'
-    $pokeLine = '    exec_background u:r:shell:s0 shell shell -- /system/bin/service call zui_control 1599295570'
+    $pokeLine = '    exec_background u:r:shell:s0 shell shell -- /system/bin/sh -c "exec /system/bin/service call zui_control 1599295570"'
     if ((Get-ExactAsciiLineCount ([IO.File]::ReadAllBytes($RefreshKillRc)) $pokeLine) -ne 2) {
         throw 'Final super refresh kill switch must contain exactly two standard sysprop poke actions.'
     }
@@ -763,12 +780,10 @@ try {
     if (([regex]::Matches($transactMethod, [regex]::Escape($strictAuthNeedle))).Count -ne 2) {
         throw 'Final services.jar must contain exactly two strict-auth dispatches (TX10 and TX12).'
     }
-    Assert-OrderedText $transactMethod @(
-        $strictAuthNeedle,
-        '->setModuleEnabled(Ljava/lang/String;Z)Ljava/lang/String;',
-        $strictAuthNeedle,
-        '->notifyControlRequest(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;'
-    ) 'TX10 and TX12 strict authorization before dispatch'
+    Assert-SmaliDispatchAuthorized $transactMethod $strictAuthNeedle `
+        '->setModuleEnabled(Ljava/lang/String;Z)Ljava/lang/String;' 'TX10'
+    Assert-SmaliDispatchAuthorized $transactMethod $strictAuthNeedle `
+        '->notifyControlRequest(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;' 'TX12'
     $moduleMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'setModuleEnabled') -join "`n"
     Assert-OrderedText $moduleMethod @(
         'Landroid/os/SystemProperties;->set',

@@ -624,6 +624,7 @@ class ProductionBindingTest(unittest.TestCase):
         )
         cls.framework_patcher = read("scripts/PatchZuiControlFramework.py")
         cls.final_super_verifier = read("scripts/VerifyZuiControlFinalSuper.ps1")
+        cls.flash_verifier = read("scripts/VerifyZuiControlFlashPackage.ps1")
         cls.client = read("app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt")
         cls.main = read("app/src/main/java/com/zui/zuicontrol/MainActivity.kt")
         cls.tile = read("app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt")
@@ -809,6 +810,11 @@ class ProductionBindingTest(unittest.TestCase):
         self.assertIn("on property:persist.zui_control.disable=*", self.kill_rc)
         self.assertIn("on property:persist.zui_control.refresh.disable=*", self.kill_rc)
         self.assertEqual(2, self.kill_rc.count("exec_background u:r:shell:s0 shell shell"))
+        self.assertEqual(2, self.kill_rc.count('/system/bin/sh -c "exec /system/bin/service call'))
+        self.assertNotIn("-- /system/bin/service call", self.kill_rc)
+        self.assertIn("Assert-SmaliDispatchAuthorized", self.flash_verifier)
+        self.assertIn("'TX10'", self.flash_verifier)
+        self.assertIn("'TX12'", self.flash_verifier)
         for forbidden in ("service zui_", "postDelayed", "while ", "sleep "):
             self.assertNotIn(forbidden, self.kill_rc)
 
