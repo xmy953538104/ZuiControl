@@ -447,6 +447,7 @@ try {
     $Asoul = Join-Path $System 'bin\AsoulOpt'
     $SchedulerRc = Join-Path $System 'etc\init\zui_scheduler.rc'
     $DaemonRc = Join-Path $System 'etc\init\zui_controld.rc'
+    $RefreshKillRc = Join-Path $System 'etc\init\zui_refresh_kill_switch.rc'
     $SchedulerPrepare = Join-Path $System 'etc\zui_control\zui_scheduler_prepare.sh'
     $UperfConfig = Join-Path $System 'etc\zui_control\uperf-sm8650.json'
     $UperfPerApp = Join-Path $System 'etc\zui_control\default_uperf_perapp.txt'
@@ -456,7 +457,7 @@ try {
     $MemCleaner = Join-Path $System 'etc\ZuiMemCleanerConfig.xml'
     $PowerPolicy = Join-Path $System 'etc\ZuiPowerPolicyConfig.xml'
     $AutoRun = Join-Path $System 'etc\motorola\bgintents\com.zui.safecenter.autorun.xml'
-    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $DaemonRc, $SchedulerPrepare, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
+    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $DaemonRc, $RefreshKillRc, $SchedulerPrepare, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
         Require-File $file
     }
 
@@ -540,6 +541,15 @@ try {
     Assert-Contains $DaemonRc 'mkdir /data/vendor/zui_control 0755 root root' 'root-owned transaction parent'
     Assert-Contains $SchedulerRc 'mkdir /data/vendor/zui_control 0755 root root' 'root-owned scheduler data parent'
     Assert-Contains $DaemonRc 'mkdir /data/vendor/zui_control/zuicontrol 0700 root root' 'root-private transaction directory'
+    Assert-Contains $RefreshKillRc 'on property:persist.zui_control.disable=*' 'global disable edge trigger'
+    Assert-Contains $RefreshKillRc 'on property:persist.zui_control.refresh.disable=*' 'refresh disable edge trigger'
+    $pokeLine = '    exec_background u:r:shell:s0 shell shell -- /system/bin/service call zui_control 1599295570'
+    if ((Get-ExactAsciiLineCount ([IO.File]::ReadAllBytes($RefreshKillRc)) $pokeLine) -ne 2) {
+        throw 'Final super refresh kill switch must contain exactly two standard sysprop poke actions.'
+    }
+    foreach ($forbidden in @('zui_controld', 'postDelayed', 'while ', 'sleep ', 'Timer')) {
+        Assert-NotContains $RefreshKillRc $forbidden 'polling or persistent refresh kill transport'
+    }
     foreach ($line in @(
         '    chown root root /data/vendor/zui_control/zuicontrol/last_request_receipt',
         '    chmod 0600 /data/vendor/zui_control/zuicontrol/last_request_receipt',
@@ -706,6 +716,14 @@ try {
     Assert-Contains $serviceSmali[0].FullName 'displayVote=adaptiveRender' 'adaptive render state marker'
     Assert-Contains $serviceSmali[0].FullName 'zui_control_screen_on' 'system_server screen-state publication'
     Assert-Contains $serviceSmali[0].FullName 'registerScreenObserver' 'system_server screen observer'
+    Assert-Contains $serviceSmali[0].FullName 'setModuleEnabled' 'authenticated direct refresh kill transaction'
+    Assert-Contains $serviceSmali[0].FullName 'unsupported_module' 'exact refresh module gate'
+    Assert-Contains $serviceSmali[0].FullName 'refresh_property_set' 'persistent refresh kill write diagnostics'
+    Assert-Contains $serviceSmali[0].FullName 'emptyFocusPolicy=retainLastNonEmptyWindow' 'empty window retain policy'
+    Assert-Contains $serviceSmali[0].FullName 'latestWindowFocusEmpty=' 'empty window live state'
+    Assert-Contains $serviceSmali[0].FullName 'emptyFocusTransitionCount=' 'empty window transition counter'
+    Assert-Contains $serviceSmali[0].FullName 'com.lenovo.screensplit' 'Lenovo split selector exact transient'
+    Assert-Contains $serviceSmali[0].FullName 'com.zui.freeform.sidebar' 'ZUI freeform sidebar exact transient'
     Assert-Contains $serviceSmali[0].FullName 'sys.zui_control.uperf_mode' 'event-driven Uperf transport property'
     Assert-Contains $serviceSmali[0].FullName 'sys.zui_control.command_seq' 'event-triggered command transport property'
     Assert-Contains $serviceSmali[0].FullName 'sys.zui_control.command_id' 'authenticated request ID property'
@@ -741,17 +759,29 @@ try {
         }
     }
     $transactMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'onTransact') -join "`n"
+    $strictAuthNeedle = '->enforceCommandCallerAllowed()V'
+    if (([regex]::Matches($transactMethod, [regex]::Escape($strictAuthNeedle))).Count -ne 2) {
+        throw 'Final services.jar must contain exactly two strict-auth dispatches (TX10 and TX12).'
+    }
     Assert-OrderedText $transactMethod @(
-        '->enforceCommandCallerAllowed()V',
+        $strictAuthNeedle,
+        '->setModuleEnabled(Ljava/lang/String;Z)Ljava/lang/String;',
+        $strictAuthNeedle,
         '->notifyControlRequest(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;'
-    ) 'TX12 authorization before dispatch'
+    ) 'TX10 and TX12 strict authorization before dispatch'
+    $moduleMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'setModuleEnabled') -join "`n"
+    Assert-OrderedText $moduleMethod @(
+        'Landroid/os/SystemProperties;->set',
+        '->readRefreshDisableMask()I',
+        '->onRefreshPropertiesChanged(I)V'
+    ) 'TX10 persistent write before direct state transition'
     $commandAuthMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'enforceCommandCallerAllowed') -join "`n"
     Assert-OrderedText $commandAuthMethod @(
         'Landroid/os/Binder;->getCallingUid()I',
         '->enforceZuiControlCaller(I)V'
-    ) 'TX12 package/certificate authorization'
+    ) 'sensitive Binder package/certificate authorization'
     if ($commandAuthMethod.Contains('Landroid/os/Process;') -or $commandAuthMethod.Contains('SYSTEM_UID')) {
-        throw 'TX12 command authorization contains a SYSTEM_UID bypass.'
+        throw 'Sensitive Binder authorization contains a SYSTEM_UID bypass.'
     }
     $notifyMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'notifyControlRequest') -join "`n"
     foreach ($marker in @('Landroid/provider/Settings$System;->getString', 'request_payload_mismatch', '->sha256')) {
@@ -870,6 +900,8 @@ try {
     Assert-NotContains $PropertyContexts 'sys.zui_control.command_sha256 u:object_r:shell_prop:s0' 'shell-owned command digest property'
     Assert-Contains $PropertyContexts 'sys.zui_control.scheduler_active u:object_r:zui_control_scheduler_active_prop:s0 exact enum 0 1' 'dedicated exact-enum scheduler ownership property context'
     Assert-NotContains $PropertyContexts 'sys.zui_control.scheduler_active u:object_r:shell_prop:s0' 'shell-owned scheduler ownership property'
+    Assert-Contains $PropertyContexts 'persist.zui_control.disable u:object_r:zui_control_refresh_disable_prop:s0 exact bool' 'dedicated global disable property context'
+    Assert-Contains $PropertyContexts 'persist.zui_control.refresh.disable u:object_r:zui_control_refresh_disable_prop:s0 exact bool' 'dedicated refresh disable property context'
 
     $PlatPolicy = Join-Path $PlatSelinux 'plat_sepolicy.cil'
     foreach ($rule in @(
@@ -901,6 +933,15 @@ try {
         '(typeattributeset system_internal_property_type (zui_control_scheduler_active_prop))',
         '(allow init zui_control_scheduler_active_prop (property_service (set)))',
         '(allow system_server zui_control_scheduler_active_prop (file (getattr map open read)))',
+        '(type zui_control_refresh_disable_prop)',
+        '(roletype object_r zui_control_refresh_disable_prop)',
+        '(typeattributeset property_type (zui_control_refresh_disable_prop))',
+        '(typeattributeset system_property_type (zui_control_refresh_disable_prop))',
+        '(typeattributeset system_restricted_property_type (zui_control_refresh_disable_prop))',
+        '(allow system_server zui_control_refresh_disable_prop (property_service (set)))',
+        '(allow system_server zui_control_refresh_disable_prop (file (getattr map open read)))',
+        '(allow shell zui_control_refresh_disable_prop (property_service (set)))',
+        '(allow shell zui_control_refresh_disable_prop (file (getattr map open read)))',
         '(genfscon proc "/sys/walt/input_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
         '(genfscon proc "/sys/walt/sched_per_task_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
         '(allow performanced activity_service (service_manager (find)))',
@@ -923,6 +964,10 @@ try {
         '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))',
         '(allow performanced zui_control_data_file (lnk_file (getattr read)))'
     )) { Assert-Contains $PlatPolicy $rule 'scheduler SELinux rule' }
+    Assert-NotContains $PlatPolicy '(allow system_server shell_prop (property_service (set)))' 'broad system_server shell property write grant'
+    foreach ($forbiddenWriter in @('priv_app', 'untrusted_app')) {
+        Assert-NotContains $PlatPolicy "(allow $forbiddenWriter zui_control_refresh_disable_prop (property_service (set)))" 'unauthorized refresh disable property writer'
+    }
     foreach ($retiredRule in @(
         '(allow performanced adb_data_file (dir (search)))'
     )) { Assert-NotContains $PlatPolicy $retiredRule 'retired scheduler SELinux rule' }

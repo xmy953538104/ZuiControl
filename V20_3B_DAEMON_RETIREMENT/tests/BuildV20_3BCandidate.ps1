@@ -139,6 +139,7 @@ if ($Phase -eq 'V20_4') {
         'app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt',
         'framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java',
         'framework_patch/stubs/com/android/server/wm/WindowManagerInternal.java',
+        'payload/system/etc/init/zui_refresh_kill_switch.rc',
         'scripts/VerifyZuiControlFinalSuper.ps1',
         'V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py',
         'V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1'

@@ -18,6 +18,8 @@ def is_transient(package_name: str) -> bool:
     return not package_name or package_name in {
         "android",
         "com.android.systemui",
+        "com.lenovo.screensplit",
+        "com.zui.freeform.sidebar",
         "com.zui.game.service",
         "com.zui.zuicontrol",
     } or any(token in package_name for token in (
@@ -34,10 +36,12 @@ def is_transient(package_name: str) -> bool:
 class RefreshModel:
     """Small executable contract; Android integration is checked separately below."""
 
-    def __init__(self) -> None:
+    def __init__(self, persisted_disable_mask: int = 0) -> None:
         self.profiles: dict[str, int] = {}
         self.activity = ""
         self.window_seen = False
+        self.window_empty = False
+        self.empty_focus_count = 0
         self.raw = ""
         self.raw_transient = True
         self.non_ime_raw = ""
@@ -50,7 +54,8 @@ class RefreshModel:
         self.target_hz = 120
         self.attempted_hz = 0
         self.applied_hz = 0
-        self.disable_mask = 0
+        self.property_disable_mask = persisted_disable_mask
+        self.disable_mask = persisted_disable_mask
         self.observed_disable_hint = 0
         self.request_owned = False
         self.handoff_pending = False
@@ -73,6 +78,7 @@ class RefreshModel:
         """Convenience for a correlated Activity + window-focus edge."""
         self.activity = package_name or ""
         self.window_seen = True
+        self.window_empty = False
         return self._set_physical_focus(package_name, "windowFocus")
 
     def activity_focus(self, package_name: str) -> str:
@@ -82,6 +88,12 @@ class RefreshModel:
         return self._set_physical_focus(package_name, "focus")
 
     def window_focus(self, package_name: str) -> str:
+        if not package_name:
+            if not self.window_empty:
+                self.empty_focus_count += 1
+            self.window_empty = True
+            return "emptyFocusRetained"
+        self.window_empty = False
         self.window_seen = True
         return self._set_physical_focus(package_name, "windowFocus")
 
@@ -196,6 +208,23 @@ class RefreshModel:
         self.last_reason = f"propertyDisableMaskChanged:{mask}"
         return "maskOnly"
 
+    def raw_setprop(self, mask: int) -> str:
+        """Property-area truth changes, but no process callback is implied."""
+        self.property_disable_mask = mask
+        return "propertyOnly"
+
+    def sysprops_poke(self) -> str:
+        return self.consume_property_hint(
+            self.property_disable_mask, self.property_disable_mask
+        )
+
+    def binder_set_refresh_enabled(self, enabled: bool) -> str:
+        if enabled:
+            self.property_disable_mask &= ~2
+        else:
+            self.property_disable_mask |= 2
+        return self.set_disable_mask(self.property_disable_mask)
+
     def consume_property_hint(self, observed_mask: int, real_mask: int) -> str:
         """A generic callback is only a wakeup; worker-side truth wins."""
         self.observed_disable_hint = observed_mask
@@ -244,21 +273,58 @@ class RefreshStateModelTest(unittest.TestCase):
             "com.android.permissioncontroller",
             "com.android.intentresolver",
             "com.example.overlay",
-            "",
+            "com.lenovo.screensplit",
+            "com.zui.freeform.sidebar",
         ):
             model.focus(package_name)
             self.assertEqual("app.b", model.last_business)
             self.assertEqual(("default", 120), (model.desired, model.applied_hz))
             self.assertNotIn(package_name, model.profiles)
 
-    def test_empty_and_known_overlay_window_owner_are_neutral(self) -> None:
+    def test_empty_window_retains_last_nonempty_owner(self) -> None:
         model = RefreshModel()
         model.profiles["app.a"] = 90
         model.focus("app.a")
-        for owner in ("", "vendor.example.overlay"):
-            model.window_focus(owner)
-            self.assertEqual(("default", 120), (model.desired, model.applied_hz))
-            self.assertEqual("app.a", model.last_business)
+        before = (model.raw, model.desired, model.applied_hz, model.apply_count)
+        self.assertEqual("emptyFocusRetained", model.window_focus(""))
+        self.assertEqual(before,
+                         (model.raw, model.desired, model.applied_hz,
+                          model.apply_count))
+        self.assertEqual((True, 1), (model.window_empty, model.empty_focus_count))
+
+    def test_known_overlay_window_owner_is_neutral(self) -> None:
+        model = RefreshModel()
+        model.profiles["app.a"] = 90
+        model.focus("app.a")
+        model.window_focus("vendor.example.overlay")
+        self.assertEqual(("default", 120), (model.desired, model.applied_hz))
+        self.assertEqual("app.a", model.last_business)
+
+    def test_activity_b_then_empty_window_then_b_has_no_default_apply(self) -> None:
+        model = RefreshModel()
+        model.profiles.update({"app.a": 90, "app.b": 60})
+        model.focus("app.a")
+        self.assertEqual("metadataOnly", model.activity_focus("app.b"))
+        self.assertEqual("emptyFocusRetained", model.window_focus(""))
+        self.assertEqual(("app.a", "app.a", 90, [90]),
+                         (model.raw, model.desired, model.applied_hz,
+                          model.apply_history))
+        self.assertEqual("applied", model.window_focus("app.b"))
+        self.assertEqual(("app.b", 60, [90, 60], 1),
+                         (model.desired, model.applied_hz,
+                          model.apply_history, model.empty_focus_count))
+
+    def test_empty_window_with_unknown_activity_retains_last_policy(self) -> None:
+        model = RefreshModel()
+        model.profiles.update({"app.a": 90, "app.b": 60})
+        model.focus("app.a")
+        self.assertEqual("metadataOnly", model.activity_focus(""))
+        self.assertEqual("emptyFocusRetained", model.window_focus(""))
+        self.assertEqual(("app.a", 90, [90]),
+                         (model.desired, model.applied_hz, model.apply_history))
+        model.window_focus("app.b")
+        self.assertEqual(("app.b", 60, [90, 60]),
+                         (model.desired, model.applied_hz, model.apply_history))
 
     def test_ime_hide_restores_pre_ime_transient_window(self) -> None:
         model = RefreshModel()
@@ -380,6 +446,51 @@ class RefreshStateModelTest(unittest.TestCase):
             model.focus("app.a")
         self.assertEqual(200, model.apply_count - base)
 
+    def test_100_app_handoffs_with_empty_gaps_apply_once_per_owner(self) -> None:
+        model = RefreshModel()
+        model.profiles.update({"app.a": 90, "app.b": 60})
+        model.focus("app.a")
+        base = model.apply_count
+        for _ in range(100):
+            model.activity_focus("app.b")
+            model.window_focus("")
+            model.window_focus("app.b")
+            model.activity_focus("app.a")
+            model.window_focus("")
+            model.window_focus("app.a")
+        self.assertEqual(200, model.apply_count - base)
+        self.assertEqual(200, model.empty_focus_count)
+        self.assertNotIn(120, model.apply_history)
+
+    def test_nonempty_systemui_and_ime_remain_neutral_after_empty_gap(self) -> None:
+        model = RefreshModel()
+        model.profiles["app.a"] = 90
+        model.focus("app.a")
+        model.window_focus("")
+        model.window_focus("com.android.systemui")
+        self.assertEqual(("default", 120), (model.desired, model.applied_hz))
+        model.set_ime_visible(True)
+        self.assertEqual(("default", 120), (model.desired, model.applied_hz))
+
+    def test_exact_oem_controls_do_not_pollute_business_target(self) -> None:
+        for control in ("com.lenovo.screensplit", "com.zui.freeform.sidebar"):
+            model = RefreshModel()
+            model.profiles["app.a"] = 90
+            model.focus("app.a")
+            model.window_focus(control)
+            self.assertEqual(("app.a", "app.a", "default", 120),
+                             (model.current, model.last_business,
+                              model.desired, model.applied_hz))
+            self.assertEqual("transient_package_not_configurable",
+                             model.set_explicit_profile(control, 60))
+
+    def test_business_packages_are_not_caught_by_oem_registry(self) -> None:
+        for package_name in (
+            "com.zui.launcher", "com.zui.notes", "com.android.calculator2",
+            "com.android.settings",
+        ):
+            self.assertFalse(is_transient(package_name), package_name)
+
     def test_kill_switch_releases_and_reenables_current_raw(self) -> None:
         model = RefreshModel()
         model.profiles["app.b"] = 90
@@ -397,6 +508,39 @@ class RefreshStateModelTest(unittest.TestCase):
         self.assertEqual("applied", model.set_disable_mask(0))
         self.assertEqual(("default", 120), (model.applied, model.applied_hz))
 
+    def test_raw_setprop_requires_process_poke(self) -> None:
+        model = RefreshModel()
+        model.profiles["app.b"] = 90
+        model.focus("app.b")
+        self.assertEqual("propertyOnly", model.raw_setprop(2))
+        self.assertEqual((2, 0, "app.b", 90),
+                         (model.property_disable_mask, model.disable_mask,
+                          model.applied, model.applied_hz))
+        self.assertEqual("releaseRequested", model.sysprops_poke())
+        self.assertEqual((2, "", 0),
+                         (model.disable_mask, model.applied, model.applied_hz))
+
+    def test_persisted_kill_state_is_read_at_boot(self) -> None:
+        model = RefreshModel(persisted_disable_mask=2)
+        self.assertEqual((2, 2),
+                         (model.property_disable_mask, model.disable_mask))
+        self.assertEqual("disabled", model.focus("app.a"))
+        self.assertFalse(model.request_owned or model.vote_owned or model.peak_owned)
+
+    def test_authenticated_binder_path_persists_and_transitions_directly(self) -> None:
+        model = RefreshModel()
+        model.profiles["app.b"] = 90
+        model.focus("app.b")
+        self.assertEqual("releaseRequested",
+                         model.binder_set_refresh_enabled(False))
+        self.assertEqual((2, 2, "", 0),
+                         (model.property_disable_mask, model.disable_mask,
+                          model.applied, model.applied_hz))
+        self.assertEqual("applied", model.binder_set_refresh_enabled(True))
+        self.assertEqual((0, 0, "app.b", 90),
+                         (model.property_disable_mask, model.disable_mask,
+                          model.applied, model.applied_hz))
+
     def test_rapid_toggle_converges_to_the_final_mask(self) -> None:
         model = RefreshModel()
         model.profiles["app.b"] = 90
@@ -412,6 +556,12 @@ class RefreshStateModelTest(unittest.TestCase):
         self.assertEqual(3, model.disable_mask)
         self.assertFalse(model.request_owned or model.vote_owned or model.peak_owned)
         self.assertEqual(("", 0), (model.applied, model.applied_hz))
+
+        for mask in (0, 2, 0, 3, 0):
+            model.raw_setprop(mask)
+        self.assertEqual("applied", model.sysprops_poke())
+        self.assertEqual((0, "app.b", 90),
+                         (model.disable_mask, model.applied, model.applied_hz))
 
     def test_stale_property_hint_cannot_override_worker_truth(self) -> None:
         model = RefreshModel()
@@ -479,6 +629,12 @@ class ProductionBindingTest(unittest.TestCase):
         cls.tile = read("app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt")
         cls.quick = read("app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt")
         cls.system_properties = read("framework_patch/stubs/android/os/SystemProperties.java")
+        cls.manager = read(
+            "framework_patch/src/framework/android/zui/ZuiControlManager.java"
+        )
+        cls.kill_rc = read("payload/system/etc/init/zui_refresh_kill_switch.rc")
+        cls.property_contexts = read("payload/patches/plat_property_contexts_add.txt")
+        cls.sepolicy = read("payload/patches/plat_sepolicy_zui_control.cil")
         cls.wm_internal = read(
             "framework_patch/stubs/com/android/server/wm/WindowManagerInternal.java"
         )
@@ -556,9 +712,30 @@ class ProductionBindingTest(unittest.TestCase):
         self.assertIn("if (!windowAuthority)", activity_hook)
         self.assertIn("handleFocusedActivity(activityFocus, windowAuthority", activity_hook)
         self.assertNotIn("!pkg.equals", window_hook)
-        self.assertIn("pkg.isEmpty() || isTransientPackage(pkg)", window_hook)
+        self.assertIn("if (pkg.isEmpty())", window_hook)
+        self.assertIn("handleEmptyFocusTransition(activityFocus)", window_hook)
+        self.assertLess(window_hook.index("if (pkg.isEmpty())"),
+                        window_hook.index("mLatestWindowFocusSeen = true"))
+        self.assertLess(window_hook.index("if (pkg.isEmpty())"),
+                        window_hook.index("mLatestNonImeFocus = windowFocus"))
+        self.assertIn("boolean wasEmpty = mLatestWindowFocusEmpty", window_hook)
+        self.assertIn("!firstWindowFocus && !wasEmpty", window_hook)
+        self.assertLess(window_hook.index("mLatestFocus = windowFocus"),
+                        window_hook.index("mLatestWindowFocusEmpty = false"))
+        self.assertIn("return !mLatestWindowFocusEmpty", self.service)
+        self.assertIn("error=empty_focus_transition", self.service)
+        self.assertIn("&& !mLatestWindowFocusEmpty", self.service)
         self.assertIn("volatile FocusSnapshot mLatestActivityFocus", self.service)
         self.assertIn("volatile FocusSnapshot mLatestNonImeFocus", self.service)
+
+    def test_exact_oem_registry_has_no_broad_vendor_rule(self) -> None:
+        self.assertIn('p.equals(SCREEN_SPLIT_CONTROL_PACKAGE)', self.service)
+        self.assertIn('p.equals(FREEFORM_SIDEBAR_PACKAGE)', self.service)
+        self.assertIn('"com.lenovo.screensplit"', self.service)
+        self.assertIn('"com.zui.freeform.sidebar"', self.service)
+        for forbidden in ('p.startsWith("com.zui.")', 'FLAG_SYSTEM',
+                          'isSystemApp'):
+            self.assertNotIn(forbidden, self.service)
 
     def test_configuration_and_physical_axes_are_separate(self) -> None:
         for field in (
@@ -607,6 +784,58 @@ class ProductionBindingTest(unittest.TestCase):
         ]
         for forbidden in ("postDelayed", "sleep(", "Timer", "while ("):
             self.assertNotIn(forbidden, property_section)
+
+    def test_kill_switch_uses_direct_binder_and_edge_only_process_poke(self) -> None:
+        transact = self.service[
+            self.service.index("protected boolean onTransact"):
+            self.service.index("protected synchronized void dump")
+        ]
+        self.assertLess(transact.index("case TX_SET_MODULE_ENABLED"),
+                        transact.index("result = setModuleEnabled"))
+        tx10 = transact[transact.index("case TX_SET_MODULE_ENABLED"):
+                        transact.index("case TX_EXPORT_LOG")]
+        self.assertLess(tx10.index("enforceCommandCallerAllowed()"),
+                        tx10.index("setModuleEnabled"))
+        module_method = self.service[
+            self.service.index("private synchronized String setModuleEnabled"):
+            self.service.index("private String setProfileLocked")
+        ]
+        self.assertIn('if (!"refresh".equals(module))', module_method)
+        self.assertIn("SystemProperties.set(PROP_REFRESH_DISABLE", module_method)
+        self.assertIn("onRefreshPropertiesChanged(readRefreshDisableMask())", module_method)
+        self.assertIn("setModuleEnabled(final String module", self.manager)
+
+        self.assertEqual(2, self.kill_rc.count("1599295570"))
+        self.assertIn("on property:persist.zui_control.disable=*", self.kill_rc)
+        self.assertIn("on property:persist.zui_control.refresh.disable=*", self.kill_rc)
+        self.assertEqual(2, self.kill_rc.count("exec_background u:r:shell:s0 shell shell"))
+        for forbidden in ("service zui_", "postDelayed", "while ", "sleep "):
+            self.assertNotIn(forbidden, self.kill_rc)
+
+        for context in (
+            "persist.zui_control.disable u:object_r:"
+            "zui_control_refresh_disable_prop:s0 exact bool",
+            "persist.zui_control.refresh.disable u:object_r:"
+            "zui_control_refresh_disable_prop:s0 exact bool",
+        ):
+            self.assertIn(context, self.property_contexts)
+        for rule in (
+            "(type zui_control_refresh_disable_prop)",
+            "(typeattributeset system_restricted_property_type "
+            "(zui_control_refresh_disable_prop))",
+            "(allow system_server zui_control_refresh_disable_prop "
+            "(property_service (set)))",
+            "(allow shell zui_control_refresh_disable_prop "
+            "(property_service (set)))",
+        ):
+            self.assertIn(rule, self.sepolicy)
+        self.assertNotIn("(allow system_server shell_prop", self.sepolicy)
+        for domain in ("priv_app", "untrusted_app"):
+            self.assertNotIn(
+                f"(allow {domain} zui_control_refresh_disable_prop "
+                "(property_service (set)))",
+                self.sepolicy,
+            )
 
     def test_cleanup_uses_owner_safe_vote_and_wm_handoff(self) -> None:
         self.assertIn('"updateGlobalVote", int.class, voteClass', self.service)

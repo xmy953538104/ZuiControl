@@ -61,6 +61,8 @@ public final class ZuiControlService extends Binder {
     private static final String PROP_GLOBAL_DISABLE = "persist.zui_control.disable";
     private static final String PROP_REFRESH_DISABLE = "persist.zui_control.refresh.disable";
     private static final String GAME_HELPER_PACKAGE = "com.zui.game.service";
+    private static final String SCREEN_SPLIT_CONTROL_PACKAGE = "com.lenovo.screensplit";
+    private static final String FREEFORM_SIDEBAR_PACKAGE = "com.zui.freeform.sidebar";
     private static final String DEFAULT_SCENE = "default";
     private static final String IME_SCENE = "@ime";
     private static final String RELEASE_CERT =
@@ -99,6 +101,7 @@ public final class ZuiControlService extends Binder {
     private volatile FocusSnapshot mLatestNonImeFocus = new FocusSnapshot(
             "", -1, 0, Display.DEFAULT_DISPLAY, true);
     private volatile boolean mLatestWindowFocusSeen;
+    private volatile boolean mLatestWindowFocusEmpty;
     private volatile boolean mLatestImeVisible;
     private String mActivityFocusedPackage = "";
     private int mActivityFocusedUid = -1;
@@ -111,6 +114,10 @@ public final class ZuiControlService extends Binder {
     private boolean mNonImeFocusTransient = true;
     private boolean mWindowFocusSeen;
     private boolean mImeVisible;
+    private boolean mEmptyFocusTransitionPending;
+    private int mEmptyFocusTransitionCount;
+    private String mLastEmptyFocusActivityPackage = "";
+    private String mLastEmptyFocusRetainedPackage = "";
     private String mRawFocusedPackage = "";
     private int mRawFocusedUserId = 0;
     private int mRawFocusedDisplayId = Display.DEFAULT_DISPLAY;
@@ -245,11 +252,26 @@ public final class ZuiControlService extends Binder {
             return;
         }
         final String pkg = safe(packageName);
-        final boolean transientFocus = pkg.isEmpty() || isTransientPackage(pkg);
+        if (pkg.isEmpty()) {
+            if (mLatestWindowFocusEmpty) {
+                return;
+            }
+            mLatestWindowFocusEmpty = true;
+            final FocusSnapshot activityFocus = mLatestActivityFocus;
+            mWorker.post(new Runnable() {
+                @Override
+                public void run() {
+                    handleEmptyFocusTransition(activityFocus);
+                }
+            });
+            return;
+        }
+        boolean wasEmpty = mLatestWindowFocusEmpty;
+        final boolean transientFocus = isTransientPackage(pkg);
         boolean firstWindowFocus = !mLatestWindowFocusSeen;
         mLatestWindowFocusSeen = true;
         FocusSnapshot previousFocus = mLatestNonImeFocus;
-        if (!firstWindowFocus && pkg.equals(previousFocus.packageName)
+        if (!firstWindowFocus && !wasEmpty && pkg.equals(previousFocus.packageName)
                 && displayId == previousFocus.displayId
                 && transientFocus == previousFocus.transientFocus) {
             return;
@@ -262,6 +284,7 @@ public final class ZuiControlService extends Binder {
         if (!mLatestImeVisible) {
             mLatestFocus = windowFocus;
         }
+        mLatestWindowFocusEmpty = false;
         mWorker.post(new Runnable() {
             @Override
             public void run() {
@@ -342,6 +365,7 @@ public final class ZuiControlService extends Binder {
 
     private synchronized void handleFocusedWindow(
             FocusSnapshot windowFocus, long eventNanos) {
+        mEmptyFocusTransitionPending = false;
         mWindowFocusSeen = true;
         setNonImeFocus(windowFocus.packageName, windowFocus.uid,
                 windowFocus.userId, windowFocus.displayId,
@@ -353,6 +377,13 @@ public final class ZuiControlService extends Binder {
         handleEffectiveFocus(windowFocus.packageName, windowFocus.uid,
                 windowFocus.userId, windowFocus.displayId,
                 windowFocus.transientFocus, "windowFocus", eventNanos);
+    }
+
+    private synchronized void handleEmptyFocusTransition(FocusSnapshot activityFocus) {
+        mEmptyFocusTransitionPending = true;
+        mEmptyFocusTransitionCount++;
+        mLastEmptyFocusActivityPackage = activityFocus.packageName;
+        mLastEmptyFocusRetainedPackage = mRawFocusedPackage;
     }
 
     private synchronized void handleImeVisibility(
@@ -453,9 +484,8 @@ public final class ZuiControlService extends Binder {
                     result = refreshNow();
                     break;
                 case TX_SET_MODULE_ENABLED:
-                    enforceCallerAllowed();
-                    result = "ok=1\nmodule=" + safe(data.readString())
-                            + "\nenabled=" + (data.readInt() != 0);
+                    enforceCommandCallerAllowed();
+                    result = setModuleEnabled(data.readString(), data.readInt() != 0);
                     break;
                 case TX_EXPORT_LOG:
                     enforceCallerAllowed();
@@ -504,6 +534,27 @@ public final class ZuiControlService extends Binder {
         }
         return setProfileLocked(pkg, userId, displayHz, fpsCap, mode,
                 isForegroundBusinessPackage(pkg, userId));
+    }
+
+    private synchronized String setModuleEnabled(String module, boolean enabled) {
+        if (!"refresh".equals(module)) {
+            return "ok=0\nerror=unsupported_module";
+        }
+        String persistentValue = enabled ? "0" : "1";
+        try {
+            if (!persistentValue.equals(SystemProperties.get(PROP_REFRESH_DISABLE, "0"))) {
+                SystemProperties.set(PROP_REFRESH_DISABLE, persistentValue);
+            }
+            onRefreshPropertiesChanged(readRefreshDisableMask());
+            return "ok=1\nmodule=refresh"
+                    + "\nrequestedEnabled=" + enabled
+                    + "\nrefreshDisabled=" + mRefreshDisabled
+                    + "\nrefreshDisableMask=" + mRefreshDisableMask
+                    + "\npersistentValue=" + persistentValue;
+        } catch (Throwable t) {
+            mLastError = "refresh_property_set:" + throwableText(t);
+            return "ok=0\nerror=" + mLastError;
+        }
     }
 
     private String setProfileLocked(String pkg, int userId, int displayHz, int fpsCap,
@@ -593,6 +644,9 @@ public final class ZuiControlService extends Binder {
     }
 
     private synchronized String refreshNow() {
+        if (mLatestWindowFocusEmpty) {
+            return "ok=0\nerror=empty_focus_transition";
+        }
         FocusSnapshot latestFocus = mLatestFocus;
         if (!latestFocus.packageName.equals(mRawFocusedPackage)
                 || latestFocus.userId != mRawFocusedUserId
@@ -977,7 +1031,8 @@ public final class ZuiControlService extends Binder {
 
     private boolean latestFocusMatchesRaw() {
         FocusSnapshot latestFocus = mLatestFocus;
-        return latestFocus.packageName.equals(mRawFocusedPackage)
+        return !mLatestWindowFocusEmpty
+                && latestFocus.packageName.equals(mRawFocusedPackage)
                 && latestFocus.userId == mRawFocusedUserId
                 && resolveDisplayId(latestFocus.displayId) == mRawFocusedDisplayId
                 && latestFocus.transientFocus == mRawFocusTransient;
@@ -1302,6 +1357,12 @@ public final class ZuiControlService extends Binder {
                 + "\nactivityFocusedPackage=" + mActivityFocusedPackage
                 + "\nnonImeFocusedPackage=" + mNonImeFocusedPackage
                 + "\nwindowFocusSeen=" + mWindowFocusSeen
+                + "\nlatestWindowFocusEmpty=" + mLatestWindowFocusEmpty
+                + "\nemptyFocusPolicy=retainLastNonEmptyWindow"
+                + "\nemptyFocusTransitionPending=" + mEmptyFocusTransitionPending
+                + "\nemptyFocusTransitionCount=" + mEmptyFocusTransitionCount
+                + "\nlastEmptyFocusActivityPackage=" + mLastEmptyFocusActivityPackage
+                + "\nlastEmptyFocusRetainedPackage=" + mLastEmptyFocusRetainedPackage
                 + "\nimeVisible=" + mImeVisible
                 + "\ncurrentScenePackage=" + mCurrentScenePackage
                 + "\nlastNonTransientScenePackage=" + mLastNonTransientScenePackage
@@ -1474,6 +1535,7 @@ public final class ZuiControlService extends Binder {
         String cleanPackage = safe(pkg);
         FocusSnapshot latestFocus = mLatestFocus;
         return !cleanPackage.isEmpty()
+                && !mLatestWindowFocusEmpty
                 && !mImeVisible
                 && !mLatestImeVisible
                 && !mRawFocusTransient
@@ -1569,6 +1631,8 @@ public final class ZuiControlService extends Binder {
         return p.equals("com.android.systemui")
                 || p.equals(GAME_HELPER_PACKAGE)
                 || p.equals(APP_PACKAGE)
+                || p.equals(SCREEN_SPLIT_CONTROL_PACKAGE)
+                || p.equals(FREEFORM_SIDEBAR_PACKAGE)
                 || p.equals(IME_SCENE)
                 || p.equals("android")
                 || p.contains("permissioncontroller")
