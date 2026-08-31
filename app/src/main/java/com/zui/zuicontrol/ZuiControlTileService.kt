@@ -11,18 +11,18 @@ class ZuiControlTileService : TileService() {
 
     override fun onStartListening() {
         super.onStartListening()
-        updateTile(ZuiControlClient.currentDisplayHz())
+        updateTile(ZuiControlClient.editableDisplayHz())
     }
 
     override fun onClick() {
         super.onClick()
-        val current = ZuiControlClient.currentDisplayHz()
+        val current = ZuiControlClient.editableDisplayHz()
         val next = nextRate(current)
         updateTile(next)
         Thread {
             val reply = ZuiControlClient.setCurrentSceneDisplayHz(next)
             val refreshed = if (reply.ok) {
-                ZuiControlClient.currentDisplayHz() ?: next
+                ZuiControlClient.editableDisplayHz() ?: next
             } else {
                 current
             }

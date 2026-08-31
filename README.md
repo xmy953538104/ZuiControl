@@ -36,12 +36,12 @@ OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno
 
 ## 当前 Refresh Correctness 工作包
 
-第一优先级是修复 ZuiControl `controlPanel` transient 缺陷。当前源码在非 120 业务场景打开 ZuiControl 时可能应用自身/default 120 profile，并污染后续 QS 的 applied scene。
+第一优先级是收敛 foreground-only refresh state machine：业务 App 真正 foreground 时使用自身 profile；SystemUI、ZuiControl、IME、权限/Resolver/overlay 等 transient 真正 foreground 时使用 neutral/default 120，返回业务 App 后恢复。`lastNonTransientScenePackage` 只用于 QS/ZuiControl 编辑对象，不再用于继承当前物理 Hz。
 
 同一工作包统一处理：
 
-- raw/current/last/applied 状态不变量；
-- QS/QuickService 始终修改上一个真实业务场景；
+- raw/current/last 与 desired/attempted/applied/physical 状态不变量；
+- 删除 `controlPanel` 独立 profile-owner 特判；QS/QuickService 始终修改上一个真实业务场景，transient 前台只保存；
 - 两个 refresh kill switch 的即时触发与恢复；
 - disabled 后 priority-8 vote、AppRequest、peak bridge 的完整释放；
 - apply/skip/fail/disabled 后 `appliedScenePackage` 的真实语义；

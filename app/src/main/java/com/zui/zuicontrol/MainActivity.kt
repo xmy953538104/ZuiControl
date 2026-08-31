@@ -588,9 +588,11 @@ class MainActivity : Activity() {
             .filter { it.startsWith("profile=") }
             .forEach { line ->
                 val parts = line.substringAfter('=').split('|')
+                val userId = parts.getOrNull(0)?.toIntOrNull()
                 val pkg = parts.getOrNull(1).orEmpty()
                 val rate = parts.getOrNull(2)?.toIntOrNull()
-                if (parts.size >= 5 && PackageNames.isValid(pkg) &&
+                if (parts.size >= 5 && userId == ZuiControlClient.currentUserId() &&
+                    PackageNames.isValid(pkg) &&
                     rate != null && rate in ZuiControlContract.rates &&
                     rate != RefreshSceneController.BASE_REFRESH_RATE) {
                     refreshRules[pkg] = rate

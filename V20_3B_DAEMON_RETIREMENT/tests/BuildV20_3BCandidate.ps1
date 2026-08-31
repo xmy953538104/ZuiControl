@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$WorkspaceRoot = 'D:\3.VScode\Mi',
+    [ValidateSet('V20_3B', 'V20_4')]
+    [string]$Phase = 'V20_3B',
     [Parameter(Mandatory)]
     [ValidatePattern('^\d{14}$')]
     [string]$RunId,
@@ -18,8 +20,17 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$phaseSlug = $Phase.ToLowerInvariant()
+$phaseDisplay = if ($Phase -eq 'V20_4') { 'V20.4' } else { 'V20.3B' }
+$phaseDirectory = if ($Phase -eq 'V20_4') {
+    'V20_4_REFRESH_CORRECTNESS'
+} else {
+    'V20_3B_DAEMON_RETIREMENT'
+}
+$scratchPrefix = "${phaseSlug}_scratch_"
+$candidatePrefix = "${phaseSlug}_candidate_"
 if (-not $Execute) {
-    throw 'Preview guard: re-run with -Execute. This builds and signs an isolated V20.3B candidate; it never prepares or flashes a 9008 package.'
+    throw "Preview guard: re-run with -Execute. This builds and signs an isolated $phaseDisplay candidate; it never prepares or flashes a 9008 package."
 }
 
 function Full([string]$Path) { [IO.Path]::GetFullPath($Path).TrimEnd('\') }
@@ -50,10 +61,10 @@ function Invoke-CheckedLogged([string]$Exe, [Parameter(ValueFromRemainingArgumen
 $workspace = Full $WorkspaceRoot
 $repo = Join-Path $workspace 'ZuiControl'
 $workRoot = Join-Path $workspace 'work'
-$scratch = Join-Path $workRoot "v20_3b_scratch_$RunId"
+$scratch = Join-Path $workRoot "$scratchPrefix$RunId"
 $scratchRepo = Join-Path $scratch 'repo'
-$candidate = Join-Path $workRoot "v20_3b_candidate_$RunId"
-$evidenceRoot = Join-Path $repo 'V20_3B_DAEMON_RETIREMENT\raw'
+$candidate = Join-Path $workRoot "$candidatePrefix$RunId"
+$evidenceRoot = Join-Path $repo "$phaseDirectory\raw"
 $evidence = Join-Path $evidenceRoot "build_$RunId"
 $official = Join-Path $workspace '【A官方】072'
 $template = Join-Path $workspace '072必刷镜像'
@@ -91,10 +102,10 @@ if ((Get-Item -LiteralPath $declaredCiArtifact -Force).LinkType -or $ciLinks.Cou
 foreach ($fresh in @($scratch, $candidate, $evidence)) {
     if (Test-Path -LiteralPath $fresh) { throw "Fresh path required: $fresh" }
 }
-if (-not (Full $scratch).StartsWith((Full $workRoot) + '\v20_3b_scratch_', [StringComparison]::OrdinalIgnoreCase) -or
-    -not (Full $candidate).StartsWith((Full $workRoot) + '\v20_3b_candidate_', [StringComparison]::OrdinalIgnoreCase) -or
+if (-not (Full $scratch).StartsWith((Full $workRoot) + "\$scratchPrefix", [StringComparison]::OrdinalIgnoreCase) -or
+    -not (Full $candidate).StartsWith((Full $workRoot) + "\$candidatePrefix", [StringComparison]::OrdinalIgnoreCase) -or
     -not (Full $evidence).StartsWith((Full $evidenceRoot) + '\build_', [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'A generated path escaped the V20.3B approved roots.'
+    throw "A generated path escaped the $phaseDisplay approved roots."
 }
 if ((Get-PSDrive D).Free -lt 80GB) { throw 'At least 80 GiB free is required before the isolated build.' }
 
@@ -122,6 +133,17 @@ $trackedBuildPaths = @(
     'V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py',
     'V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1'
 )
+if ($Phase -eq 'V20_4') {
+    $trackedBuildPaths += @(
+        'app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt',
+        'app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt',
+        'framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java',
+        'framework_patch/stubs/com/android/server/wm/WindowManagerInternal.java',
+        'scripts/VerifyZuiControlFinalSuper.ps1',
+        'V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py',
+        'V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1'
+    )
+}
 
 function Snapshot-Files([string]$Root, [string]$ExcludePattern = '') {
     $rootFull = Full $Root
@@ -283,7 +305,7 @@ function Remove-ScratchTree {
     Remove-ExpectedJunction (Join-Path $scratch 'tools') (Join-Path $workspace 'tools')
     Remove-ExpectedJunction (Join-Path $scratch 'work\android-sdk') (Join-Path $workRoot 'android-sdk')
     Remove-ExpectedJunction (Join-Path $scratch '【A官方】072') $official
-    Remove-OwnedTree $scratch $workRoot 'v20_3b_scratch_'
+    Remove-OwnedTree $scratch $workRoot $scratchPrefix
 }
 
 try {
@@ -299,7 +321,7 @@ try {
     & git -C $repo diff --binary "--output=$sourcePatch" $sourceParent $SourceCommit -- @trackedBuildPaths
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $sourcePatch -PathType Leaf) -or
         (Get-Item -LiteralPath $sourcePatch).Length -eq 0) {
-        throw 'The allowlisted V20.3B source patch is empty or failed.'
+        throw "The allowlisted $phaseDisplay source patch is empty or failed."
     }
     $changedPaths = @((Invoke-Captured git -C $repo diff --name-only $sourceParent $SourceCommit --).Split("`n") |
         ForEach-Object { $_.Trim() } | Where-Object { $_ })
@@ -310,9 +332,10 @@ try {
         -not $allowSet.Contains($_)
     })
     if ($unexpectedProduction.Count) {
-        throw "SourceCommit changes production paths outside the V20.3B allowlist: $($unexpectedProduction -join ', ')"
+        throw "SourceCommit changes production paths outside the $phaseDisplay allowlist: $($unexpectedProduction -join ', ')"
     }
     [ordered]@{
+        phase = $Phase
         source_commit = $SourceCommit
         parent_commit = $sourceParent
         allowlist = $trackedBuildPaths
@@ -403,6 +426,9 @@ try {
         throw 'Scratch source commit mismatch.'
     }
     Invoke-Checked $python (Join-Path $scratchRepo 'V20_3B_DAEMON_RETIREMENT\tests\TestV20_3BPolicy.py')
+    if ($Phase -eq 'V20_4') {
+        Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_REFRESH_CORRECTNESS\tests\TestV20_4RefreshPolicy.py')
+    }
     $sourcePayloadInventory = @(Snapshot-Files (Join-Path $scratchRepo 'payload') '^system/priv-app/[^/]+/[^/]+\.apk$')
     $ciPayloadInventory = @(Snapshot-Files $ciPayload '^system/priv-app/[^/]+/[^/]+\.apk$')
     if (($sourcePayloadInventory | ConvertTo-Json -Depth 4 -Compress) -ne
@@ -429,6 +455,7 @@ try {
     }
 
     @(
+        "phase=$Phase",
         "run_id=$RunId",
         "source_commit=$SourceCommit",
         "source_patch_sha256=$(Hash $sourcePatch)",
@@ -581,13 +608,18 @@ try {
     [IO.File]::WriteAllLines((Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt'), $sumLines, [Text.UTF8Encoding]::new($false))
     Copy-Item -LiteralPath (Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt') -Destination (Join-Path $evidence 'candidate_sha256.txt')
 
-    $verifier = Join-Path $scratchRepo 'scripts\VerifyZuiControlFlashPackage.ps1'
-    & $verifier -FlashDir $candidate -WorkDir (Join-Path $scratch 'work\verify_v20_3b_final') `
+    $verifierName = if ($Phase -eq 'V20_4') {
+        'VerifyZuiControlFinalSuper.ps1'
+    } else {
+        'VerifyZuiControlFlashPackage.ps1'
+    }
+    $verifier = Join-Path $scratchRepo "scripts\$verifierName"
+    & $verifier -FlashDir $candidate -WorkDir (Join-Path $scratch "work\verify_${phaseSlug}_final") `
         -ExpectedVendorImageSha256 $signedVendorHash `
         -ExpectedVendorApkInventoryPath (Join-Path $evidence 'vendor_apk_preservation.json') *>&1 |
         Tee-Object -FilePath $verifyLog
     if ($LASTEXITCODE -ne 0 -or -not (Select-String -LiteralPath $verifyLog -SimpleMatch '"ok": true' -Quiet)) {
-        throw 'Final candidate reverse verifier did not report ok=true.'
+        throw "$phaseDisplay final candidate reverse verifier did not report ok=true."
     }
     Record-Space after_verifier
 
@@ -599,6 +631,7 @@ try {
 
     [ordered]@{
         ok = $true
+        phase = $Phase
         candidate = $candidate
         run_id = $RunId
         source_commit = $SourceCommit
@@ -623,7 +656,7 @@ try {
     if (-not $KeepScratch) {
         try {
             Remove-ScratchTree
-            Remove-OwnedTree $candidate $workRoot 'v20_3b_candidate_'
+            Remove-OwnedTree $candidate $workRoot $candidatePrefix
             Write-Warning "Build failed; scratch/candidate cleaned, compact evidence retained: $evidence"
         } catch {
             if (Test-Path -LiteralPath $evidence -PathType Container) {

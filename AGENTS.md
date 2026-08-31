@@ -164,15 +164,18 @@ App 保存 DP pending + Settings request
 场景至少区分：
 
 - `rawFocusedPackage`：系统真实焦点；
-- `currentScenePackage`：当前业务场景；
-- `lastNonTransientScenePackage`：最近真实业务场景；
-- `appliedScenePackage`：当前实现的“最近尝试应用 profile 标签”，不能自动等同成功物理场景。
+- `currentScenePackage`：最近真正成为 foreground 的业务场景，transient 期间保留；
+- `lastNonTransientScenePackage`：最近真实业务场景，只作为 QS/ZuiControl 的配置对象；
+- `desiredScenePackage` / `attemptedScenePackage` / `appliedScenePackage`：分别表示当前物理策略、最近平台尝试、最近完整成功；
+- `targetDisplayHz` / `appliedDisplayHz` / `physicalDisplayHz`：分别表示期望、平台请求成功和面板观测，三者不得混写。
 
 SystemUI、ZuiControl、android 伪包、PermissionController、PackageInstaller、Resolver/Chooser、IME、overlay、null/空包名应视为 transient。Launcher 不得盲目过滤。
 
-QS/App 只发 Binder 命令，由 system_server 使用 `lastNonTransientScenePackage` 决定修改对象；不得学习或写入 SystemUI/ZuiControl profile。
+**Foreground-only 产品语义：** physical target 永远由当前真实 foreground/window focus 决定。业务 App 有 profile 时使用其 Hz；未配置业务 App及 SystemUI、ZuiControl、IME、权限/Resolver/overlay/null 等 transient 都使用 neutral/default 120。transient 不得继承 `lastNonTransientScenePackage` 的 Hz。
 
-当前已确认缺陷：`com.zui.zuicontrol` 在通用 transient 判断前走 `controlPanel` 特判并应用自身/default profile。非 120 业务场景下源码会尝试切回默认 120，且之后的 QS 可能继续复用被污染的 `appliedScenePackage`。它是 V20.4 Refresh Correctness / State Machine 的第一优先级，必须用 60/90 等非 120 profile 真机闭环，不能写成纯诊断字段问题。
+QS/App 只发 Binder 命令，由 system_server 使用 `lastNonTransientScenePackage` 决定修改对象；不得学习或写入 SystemUI/ZuiControl profile。QS/ZuiControl 前台时修改上一个业务 App 只保存配置，当前 physical target 仍为 120；该业务 App 再次 foreground 时才应用新 Hz。
+
+历史 `controlPanel` 缺陷的正确表述是：ZuiControl 曾拥有独立 profile/apply 特判并污染 applied/config 语义。该特判必须删除；但 ZuiControl 真正 foreground 时切到 neutral/default 120 是当前产品要求，不再把 `90 → 120 → 90` 本身写成缺陷。
 
 ## 5. Uperf 与 asoulOpt
 
@@ -281,13 +284,13 @@ V20.3B 阶段已关闭；persistent daemon retirement architecture = PASS。下�
 
 按当前事实排序：
 
-1. 修复 ZuiControl `controlPanel` 特判，使自身真正按 transient 处理；用非 120 profile 验证 App → ZuiControl → QS → 返回 App。
-2. 定义 `rawFocusedPackage`、`currentScenePackage`、`lastNonTransientScenePackage`、`appliedScenePackage` 的状态不变量；`applied` 不得在 apply/skip/fail/disabled 后伪装成 physical success。
-3. 保证 QS Tile、通知 QuickService 和 App 修改的始终是上一个真实业务场景，不学习 SystemUI/ZuiControl。
+1. 删除 ZuiControl `controlPanel` profile-owner 特判；按 foreground-only 语义验证非 120 App → ZuiControl/SystemUI/IME neutral 120 → 返回 App 恢复。
+2. 定义 raw/current/last 与 desired/attempted/applied/physical 的状态不变量；`applied` 不得在 apply/fail/disabled 后伪装成 physical success。
+3. 保证 QS Tile、通知 QuickService 和 App 修改的始终是上一个真实业务场景，但 transient 前台只保存、不把后台业务 Hz 应用到当前屏幕。
 4. 为两个 refresh kill switch 定义即时触发/恢复事件，并完整释放或重建 priority-8 vote、`setDisplayProperties()` AppRequest 与 peak compatibility bridge。
 5. 把 partial apply、unsupported mode、skipSame、disabled、失败回退和防抖纳入同一状态机与可观测结果。
 6. 回归 profile 校验、AtomicFile 损坏恢复、当前场景 apply、userId 和 IME/PermissionController/Resolver/SystemUI/ZuiControl transient 矩阵。
-7. 在 60/90/120/144/165 下记录 current/last/applied、target/actual、vote/AppRequest、peak 和 profile hash；transient 仍是第一优先级。
+7. 在 60/90/120/144/165 下记录 current/last/desired/attempted/applied/physical、vote/AppRequest、peak 和 profile hash；transient 仍是第一优先级。
 
 本工作包不得修改 command transaction、Uperf/asoulOpt 生产策略、120 hard-lock 决策或 Binder 安全契约，不得引入 App/daemon 第二 owner、polling 或 watchdog。
 

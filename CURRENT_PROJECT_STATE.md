@@ -63,12 +63,12 @@ V20.3B 阶段已经关闭。关闭不等于所有补充矩阵 PASS；未闭环�
 
 这是当前第一工作包，统一处理四个原本分散的问题：ZuiControl transient、kill switch 非即时、disabled 后 AppRequest/vote/peak 是否完整释放，以及 `appliedScenePackage` 不代表 physical success。
 
-1. **第一优先级：ZuiControl transient。** 删除 `controlPanel` 自身/default profile 应用路径；用 60/90 等非 120 profile 做 App → ZuiControl → QS → 返回 App 真机矩阵。
-2. **状态不变量。** 明确定义 raw/current/last/applied；apply、skipSame、fail、disabled 后的 `appliedScenePackage` 不得伪装成成功物理场景。
-3. **QS/QuickService。** 永远修改上一个真实业务场景，不学习或写入 SystemUI/ZuiControl。
+1. **第一优先级：foreground-only transient。** 删除 `controlPanel` 的独立 profile-owner 特判。业务 App 有自定义 profile 时按自身 Hz；SystemUI、ZuiControl、IME、权限/Resolver/overlay 等真正前台时使用 neutral/default 120；返回业务 App 后恢复其 profile。不得继承 last business Hz。
+2. **状态不变量。** 明确定义 raw/current/last、desired/attempted/applied/physical；apply、skipSame、fail、disabled 后的 `appliedScenePackage` 不得伪装成成功物理场景。
+3. **QS/QuickService。** 永远修改上一个真实业务场景，不学习或写入 SystemUI/ZuiControl；transient 前台修改只保存，等目标业务 App 回到 foreground 才应用。
 4. **Kill switch 完整释放。** 定义即时触发/恢复事件，验证 priority-8 vote、`setDisplayProperties()` AppRequest 和 peak compatibility bridge 的释放与重建。
 5. **Apply 与 profile 边界。** 纳入 unsupported mode、partial apply、失败回退、防抖、AtomicFile 损坏恢复、package/userId 校验。
-6. **Transient 与档位矩阵。** 覆盖 IME、PermissionController、Resolver、SystemUI、ZuiControl，以及 60/90/120/144/165 的 target/actual、vote/AppRequest、peak、profile hash。
+6. **Transient 与档位矩阵。** 覆盖 IME、PermissionController、Resolver、SystemUI、ZuiControl，以及 `60/90/144/165 → neutral 120 → 原业务 Hz`、target/physical、vote/AppRequest、peak、profile hash。
 
 本包不修改 command transaction、Uperf/asoulOpt 策略、120 hard-lock 决策或 Binder 安全契约，不引入第二 owner、polling 或 watchdog。
 

@@ -9,6 +9,7 @@ on:
       - "framework_patch/**"
       - "scripts/**"
       - "V20_3B_DAEMON_RETIREMENT/tests/**"
+      - "V20_4_REFRESH_CORRECTNESS/tests/**"
       - ".github/workflows/build.yml"
       - "*.gradle.kts"
 
@@ -47,6 +48,7 @@ jobs:
           bash -n payload/system/bin/zui_uperf_service
           bash scripts/TestZuiControldTransactions.sh
           python3 V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py
+          python3 V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
           bash -n payload/system/etc/zui_control/zui_scheduler_prepare.sh
           python3 -m json.tool payload/system/etc/zui_control/uperf-sm8650.json >/dev/null
 

@@ -14,4 +14,7 @@ public final class SystemProperties {
 
     public static void set(String key, String value) {
     }
+
+    public static void addChangeCallback(Runnable callback) {
+    }
 }

@@ -134,6 +134,83 @@ def patch_services_smali(dec_dir):
     invoke-static {p1, v0}, Lcom/zui/server/control/ZuiControlHooks;->onFocusedAppChanged(Lcom/android/server/wm/ActivityRecord;I)V
 
     invoke-virtual {p0}, Lcom/android/server/wm/DisplayContent;->getInputMonitor()Lcom/android/server/wm/InputMonitor;
+             """),
+        ])
+
+    display_text = display_content.read_text(encoding="utf-8")
+    if "Lcom/zui/server/control/ZuiControlHooks;->onFocusedWindowChanged" not in display_text:
+        patch_text_file(display_content, [
+            ("""    .line 4241
+    iput-object v0, p0, Lcom/android/server/wm/DisplayContent;->mCurrentFocus:Lcom/android/server/wm/WindowState;
+
+    const-string v7, "ZuiIms"
+""",
+             """    .line 4241
+    iput-object v0, p0, Lcom/android/server/wm/DisplayContent;->mCurrentFocus:Lcom/android/server/wm/WindowState;
+
+    const/4 v7, 0x0
+
+    if-eqz v0, :zui_control_window_focus
+
+    invoke-virtual {v0}, Lcom/android/server/wm/WindowState;->getOwningPackage()Ljava/lang/String;
+
+    move-result-object v7
+
+    :zui_control_window_focus
+    invoke-virtual {p0}, Lcom/android/server/wm/DisplayContent;->getDisplayId()I
+
+    move-result v8
+
+    invoke-static {v7, v8}, Lcom/zui/server/control/ZuiControlHooks;->onFocusedWindowChanged(Ljava/lang/String;I)V
+
+    const-string v7, "ZuiIms"
+"""),
+        ])
+
+    display_text = display_content.read_text(encoding="utf-8")
+    if "Lcom/zui/server/control/ZuiControlHooks;->onImeVisibilityChanged" not in display_text:
+        patch_text_file(display_content, [
+            ("""    :cond_1
+    iget-object p1, p0, Lcom/android/server/wm/WindowContainer;->mWmService:Lcom/android/server/wm/WindowManagerService;
+
+    iget-object p1, p1, Lcom/android/server/wm/WindowManagerService;->mAccessibilityController:Lcom/android/server/wm/AccessibilityController;
+""",
+             """    :cond_1
+    const/4 v1, 0x0
+
+    iget-object p1, p0, Lcom/android/server/wm/DisplayContent;->mImeControlTarget:Lcom/android/server/wm/InsetsControlTarget;
+
+    if-eqz p1, :zui_control_ime_visibility
+
+    invoke-static {}, Landroid/view/WindowInsets$Type;->ime()I
+
+    move-result v2
+
+    invoke-interface {p1, v2}, Lcom/android/server/wm/InsetsControlTarget;->isRequestedVisible(I)Z
+
+    move-result v1
+
+    :zui_control_ime_visibility
+    const/4 p1, 0x0
+
+    if-eqz v1, :zui_control_ime_dispatch
+
+    iget-object p1, p0, Lcom/android/server/wm/DisplayContent;->mInputMethodWindow:Lcom/android/server/wm/WindowState;
+
+    if-eqz p1, :zui_control_ime_dispatch
+
+    invoke-virtual {p1}, Lcom/android/server/wm/WindowState;->getOwningPackage()Ljava/lang/String;
+
+    move-result-object p1
+
+    :zui_control_ime_dispatch
+    iget v2, p0, Lcom/android/server/wm/DisplayContent;->mDisplayId:I
+
+    invoke-static {p1, v1, v2}, Lcom/zui/server/control/ZuiControlHooks;->onImeVisibilityChanged(Ljava/lang/String;ZI)V
+
+    iget-object p1, p0, Lcom/android/server/wm/WindowContainer;->mWmService:Lcom/android/server/wm/WindowManagerService;
+
+    iget-object p1, p1, Lcom/android/server/wm/WindowManagerService;->mAccessibilityController:Lcom/android/server/wm/AccessibilityController;
 """),
         ])
 

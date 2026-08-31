@@ -1,9 +1,11 @@
 package com.zui.zuicontrol
 
 import android.zui.ZuiControlManager
+import android.os.Process
 
 object ZuiControlClient {
     private const val MODE_DISPLAY_ONLY = "DISPLAY_ONLY"
+    private const val PER_USER_RANGE = 100_000
 
     data class Reply(
         val ok: Boolean,
@@ -16,37 +18,48 @@ object ZuiControlClient {
         }
     }
 
-    fun setPackageDisplayHz(packageName: String, displayHz: Int, userId: Int = 0): Reply {
+    fun setPackageDisplayHz(
+        packageName: String,
+        displayHz: Int,
+        userId: Int = currentUserId(),
+    ): Reply {
         return call {
             it.setProfile(packageName, userId, displayHz, 0, MODE_DISPLAY_ONLY)
         }
     }
 
-    fun removePackageProfile(packageName: String, userId: Int = 0): Reply {
+    fun removePackageProfile(packageName: String, userId: Int = currentUserId()): Reply {
         return call {
             it.removeProfile(packageName, userId)
         }
     }
 
     fun currentDisplayHz(): Int? {
-        val state = call { it.getState() }
-        if (!state.ok) {
-            return null
-        }
-        return state.text.lineSequence()
-            .firstOrNull { it.startsWith("targetDisplayHz=") }
-            ?.substringAfter('=')
-            ?.toIntOrNull()
+        return stateInt("targetDisplayHz")
+    }
+
+    fun editableDisplayHz(): Int? {
+        return stateInt("editableDisplayHz")?.takeIf { it > 0 }
     }
 
     fun stateText(): String {
         return call { it.getState() }.text
     }
 
+    fun currentUserId(): Int = Process.myUid() / PER_USER_RANGE
+
     internal fun stateValue(state: String, key: String): String? =
         state.lineSequence()
             .firstOrNull { it.startsWith("$key=") }
             ?.substringAfter('=')
+
+    private fun stateInt(key: String): Int? {
+        val state = call { it.getState() }
+        if (!state.ok) {
+            return null
+        }
+        return stateValue(state.text, key)?.toIntOrNull()
+    }
 
     fun notifyControlRequest(requestId: String, requestSha256: String): Reply {
         return call { it.notifyControlRequest(requestId, requestSha256) }

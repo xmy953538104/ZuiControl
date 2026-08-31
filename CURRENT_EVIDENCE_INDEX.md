@@ -25,7 +25,7 @@ Archive 根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.m
 
 ## V20.4 Refresh Correctness 直接证据
 
-当前源码审计已确认：ZuiControl `controlPanel` 分支在通用 transient 判断前应用自身/default profile；120Hz 样本的 `skipSame` 掩盖了非 120 风险。它与 kill switch、AppRequest/vote/peak 释放、`appliedScenePackage` 成功语义统一属于 Refresh Correctness / State Machine。
+V20.3B 历史源码审计确认：ZuiControl 曾通过 `controlPanel` 分支拥有独立 profile/apply 语义，并与 current/applied/config target 混在一起。当前产品语义已经明确为 foreground-only：ZuiControl/SystemUI/IME 等真正前台时 physical target 应为 neutral/default 120；`lastNonTransientScenePackage` 只保留为配置对象。因此历史证据用于证明字段分裂与旧特判，不再用于主张 transient 应继承业务 App Hz。
 
 最小 raw：
 
@@ -35,7 +35,7 @@ Archive 根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.m
 - [`transient_after_back.txt`](../ZuiControl_Archive/V20_3B_DAEMON_RETIREMENT/raw/device_validation_20260830_194022/phase_supplement_final/transient_after_back.txt)
 - [`TRANSIENT_CLASSIFICATION.txt`](../ZuiControl_Archive/V20_3B_DAEMON_RETIREMENT/raw/device_validation_20260830_194022/phase_supplement_final/TRANSIENT_CLASSIFICATION.txt)
 
-这些文件只证明默认 120 场景下的字段分裂；60/90/144/165、kill switch 完整释放和 physical Hz 尚未验收。
+这些文件只证明 V20.3B 默认 120 场景下的字段分裂；它们不验证新的 foreground-only 非 120 往返语义。60/90/144/165 → transient 120 → 返回恢复、kill switch release request 与 physical Hz 仍需 V20.4 candidate 真机矩阵。
 
 ## Final runtime 边界
 

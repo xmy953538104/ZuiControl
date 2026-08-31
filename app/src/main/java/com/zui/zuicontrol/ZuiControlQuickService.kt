@@ -45,12 +45,16 @@ class ZuiControlQuickService : Service() {
             }
         }
         if (rate != null) {
-            pendingRate = rate
-            pendingRateUntilMs = SystemClock.elapsedRealtime() + PENDING_RATE_TIMEOUT_MS
-            ZuiControlClient.setCurrentSceneDisplayHz(rate)
+            val reply = ZuiControlClient.setCurrentSceneDisplayHz(rate)
+            pendingRate = if (reply.ok) rate else null
+            pendingRateUntilMs = if (reply.ok) {
+                SystemClock.elapsedRealtime() + PENDING_RATE_TIMEOUT_MS
+            } else {
+                0L
+            }
             handler.removeCallbacks(refreshNotificationRunnable)
             handler.removeCallbacks(settlePendingRateRunnable)
-            updateNotification(rate)
+            updateNotification(if (reply.ok) rate else currentRate())
             handler.postDelayed(settlePendingRateRunnable, PENDING_RATE_TIMEOUT_MS + 80L)
         } else {
             updateNotification(preferPending = false)
@@ -188,7 +192,7 @@ class ZuiControlQuickService : Service() {
     }
 
     private fun currentRate(): Int {
-        return ZuiControlClient.currentDisplayHz() ?: RefreshSceneController.currentRate(this)
+        return ZuiControlClient.editableDisplayHz() ?: RefreshSceneController.currentRate(this)
     }
 
     private fun createChannel() {

@@ -25,6 +25,7 @@ import android.view.Display;
 
 import com.android.server.LocalServices;
 import com.android.server.wm.ActivityRecord;
+import com.android.server.wm.WindowManagerInternal;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -57,7 +58,11 @@ public final class ZuiControlService extends Binder {
     private static final String PROP_SCHEDULER_ACTIVE = "sys.zui_control.scheduler_active";
     private static final String PROP_UPERF_SERVICE = "init.svc.zui_uperf";
     private static final String PROP_ASOUL_SERVICE = "init.svc.zui_asoulopt";
+    private static final String PROP_GLOBAL_DISABLE = "persist.zui_control.disable";
+    private static final String PROP_REFRESH_DISABLE = "persist.zui_control.refresh.disable";
     private static final String GAME_HELPER_PACKAGE = "com.zui.game.service";
+    private static final String DEFAULT_SCENE = "default";
+    private static final String IME_SCENE = "@ime";
     private static final String RELEASE_CERT =
             "3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94";
     private static final String DEBUG_CERT =
@@ -75,8 +80,7 @@ public final class ZuiControlService extends Binder {
     private static final int TX_SET_MODULE_ENABLED = 10;
     private static final int TX_EXPORT_LOG = 11;
     private static final int TX_NOTIFY_CONTROL_REQUEST = 12;
-    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8; // PRIORITY_AUTH_OPTIMIZER_RENDER_FRAME_RATE
-
+    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;
     private static final int[] DISPLAY_HZ = new int[] {60, 90, 120, 144, 165};
     private static volatile ZuiControlService sInstance;
 
@@ -88,26 +92,73 @@ public final class ZuiControlService extends Binder {
     private final UperfScenePolicy mUperfScenePolicy;
     private final Map<String, Profile> mProfiles = new HashMap<>();
 
+    private volatile FocusSnapshot mLatestFocus = new FocusSnapshot(
+            "", 0, Display.DEFAULT_DISPLAY, true);
+    private volatile String mLatestActivityPackage = "";
+    private volatile int mLatestActivityUid = -1;
+    private volatile int mLatestActivityUserId = 0;
+    private volatile int mLatestActivityDisplayId = Display.DEFAULT_DISPLAY;
+    private volatile String mLatestNonImeFocusedPackage = "";
+    private volatile int mLatestNonImeFocusedUid = -1;
+    private volatile int mLatestNonImeFocusedUserId = 0;
+    private volatile int mLatestNonImeFocusedDisplayId = Display.DEFAULT_DISPLAY;
+    private volatile boolean mLatestNonImeFocusTransient = true;
+    private volatile boolean mLatestWindowFocusSeen;
+    private volatile boolean mLatestImeVisible;
+    private String mActivityFocusedPackage = "";
+    private int mActivityFocusedUid = -1;
+    private int mActivityFocusedUserId = 0;
+    private int mActivityFocusedDisplayId = Display.DEFAULT_DISPLAY;
+    private String mNonImeFocusedPackage = "";
+    private int mNonImeFocusedUid = -1;
+    private int mNonImeFocusedUserId = 0;
+    private int mNonImeFocusedDisplayId = Display.DEFAULT_DISPLAY;
+    private boolean mNonImeFocusTransient = true;
+    private boolean mWindowFocusSeen;
+    private boolean mImeVisible;
     private String mRawFocusedPackage = "";
+    private int mRawFocusedUserId = 0;
+    private int mRawFocusedDisplayId = Display.DEFAULT_DISPLAY;
+    private boolean mRawFocusTransient = true;
     private String mCurrentScenePackage = "";
     private String mLastNonTransientScenePackage = "";
+    private String mDesiredScenePackage = DEFAULT_SCENE;
+    private String mAttemptedScenePackage = "";
     private String mAppliedScenePackage = "";
     private int mCurrentUserId = 0;
     private int mCurrentUid = -1;
-    private int mCurrentDisplayId = Display.DEFAULT_DISPLAY;
     private int mTargetDisplayHz = 120;
+    private int mAttemptedDisplayHz = 0;
+    private int mAppliedDisplayHz = 0;
     private int mTargetFpsCap = 0;
     private String mTargetMode = "DISPLAY_ONLY";
-    private String mLastApply = "init";
+    private String mLastApplyReason = "init";
+    private String mLastApplyError = "";
     private String mLastError = "";
     private String mLastSchedulerError = "";
     private int mLastAppliedDisplayId = -1;
     private int mLastAppliedModeId = -1;
     private int mLastAppliedDisplayHz = -1;
     private int mLastSyncedPeakHz = -1;
+    private boolean mPeakBridgeOwned;
+    private String mPeakRestoreValue;
+    private String mPeakLastWritten = "";
+    private String mPeakReleaseStatus = "notOwned";
+    private boolean mRenderVoteOwned;
+    private int mRenderVoteHz;
+    private String mRenderVoteReleaseStatus = "notOwned";
+    private boolean mAppRequestOwned;
+    private String mAppRequestHandoff = "notRequested";
+    private boolean mAppRequestHandoffPending;
+    private boolean mRefreshDisabled;
+    private int mRefreshDisableMask;
+    private volatile int mObservedRefreshDisableMask;
+    private final Object mRefreshPropertyLock = new Object();
+    private boolean mDisableReleaseRetryPosted;
+    private int mRefreshApplyCount;
+    private int mSkipSameCount;
     private boolean mScreenInteractive = true;
     private long mCommandSequence;
-
     public ZuiControlService(Context context) {
         mContext = context;
         mPm = context.getPackageManager();
@@ -122,9 +173,13 @@ public final class ZuiControlService extends Binder {
         }
         mProfileFile = new AtomicFile(new File(PROFILE_FILE));
         loadProfiles();
+        mRefreshDisableMask = readRefreshDisableMask();
+        mObservedRefreshDisableMask = mRefreshDisableMask;
+        mRefreshDisabled = mRefreshDisableMask != 0;
         sInstance = this;
         attachInterface(null, DESCRIPTOR);
         registerPeakObserver();
+        registerRefreshPropertyObserver();
         registerScreenObserver();
         mUperfScenePolicy.start(mCurrentScenePackage, mScreenInteractive);
         publishState();
@@ -144,6 +199,9 @@ public final class ZuiControlService extends Binder {
     }
 
     public void onFocusedAppChanged(ActivityRecord record, int displayId) {
+        if (displayId != Display.DEFAULT_DISPLAY) {
+            return;
+        }
         final long eventNanos = SystemClock.elapsedRealtimeNanos();
         final String pkg;
         final int uid;
@@ -158,47 +216,189 @@ public final class ZuiControlService extends Binder {
                     ? record.info.applicationInfo.uid : -1;
             userId = record.mUserId;
         }
+        mLatestActivityPackage = pkg;
+        mLatestActivityUid = uid;
+        mLatestActivityUserId = userId;
+        mLatestActivityDisplayId = displayId;
+        final String effectivePkg = mLatestWindowFocusSeen
+                ? mLatestNonImeFocusedPackage : pkg;
+        final boolean transientFocus = effectivePkg.isEmpty()
+                || isTransientPackage(effectivePkg) || !effectivePkg.equals(pkg);
+        setLatestNonImeFocus(effectivePkg, uid, userId, displayId, transientFocus);
+        if (!mLatestImeVisible) {
+            setLatestEffectiveFocus(effectivePkg, userId, displayId, transientFocus);
+        }
         mWorker.post(new Runnable() {
             @Override
             public void run() {
-                handleFocusedApp(pkg, uid, userId, displayId, eventNanos);
+                handleFocusedActivity(pkg, uid, userId, displayId, effectivePkg,
+                        transientFocus, eventNanos);
             }
         });
     }
 
-    private synchronized void handleFocusedApp(
-            String pkg, int uid, int userId, int displayId, long eventNanos) {
-        mRawFocusedPackage = safe(pkg);
-        mCurrentDisplayId = resolveDisplayId(displayId);
-        if (APP_PACKAGE.equals(mRawFocusedPackage)) {
-            mCurrentUid = uid;
-            mCurrentUserId = userId;
-            applyProfile(profileFor(APP_PACKAGE, mCurrentUserId), "controlPanel");
-            mUperfScenePolicy.onSystemStateChanged(
-                    mCurrentScenePackage, mScreenInteractive, "controlPanel", eventNanos);
-            publishState();
+    public void onFocusedWindowChanged(String packageName, int displayId) {
+        if (displayId != Display.DEFAULT_DISPLAY) {
             return;
         }
-        if (mRawFocusedPackage.isEmpty() || isTransientPackage(mRawFocusedPackage)) {
-            String scene = !mAppliedScenePackage.isEmpty()
-                    ? mAppliedScenePackage : (!mCurrentScenePackage.isEmpty()
-                    ? mCurrentScenePackage : mLastNonTransientScenePackage);
-            if (!scene.isEmpty()) {
-                applyProfile(profileFor(scene, mCurrentUserId), "transient");
+        final String pkg = safe(packageName);
+        final boolean transientFocus = pkg.isEmpty() || isTransientPackage(pkg)
+                || !pkg.equals(mLatestActivityPackage);
+        boolean firstWindowFocus = !mLatestWindowFocusSeen;
+        mLatestWindowFocusSeen = true;
+        if (!firstWindowFocus && pkg.equals(mLatestNonImeFocusedPackage)
+                && displayId == mLatestNonImeFocusedDisplayId
+                && transientFocus == mLatestNonImeFocusTransient) {
+            return;
+        }
+        final int userId = mLatestActivityUserId;
+        final int uid = mLatestActivityUid;
+        final long eventNanos = SystemClock.elapsedRealtimeNanos();
+        setLatestNonImeFocus(pkg, uid, userId, displayId, transientFocus);
+        if (!mLatestImeVisible) {
+            setLatestEffectiveFocus(pkg, userId, displayId, transientFocus);
+        }
+        mWorker.post(new Runnable() {
+            @Override
+            public void run() {
+                handleFocusedWindow(pkg, uid, userId, displayId,
+                        transientFocus, eventNanos);
             }
+        });
+    }
+
+    public void onImeVisibilityChanged(String packageName, boolean visible, int displayId) {
+        if (displayId != Display.DEFAULT_DISPLAY) {
+            return;
+        }
+        final String pkg = visible && safe(packageName).isEmpty()
+                ? IME_SCENE : safe(packageName);
+        FocusSnapshot latestFocus = mLatestFocus;
+        if (mLatestImeVisible == visible
+                && (!visible || (pkg.equals(latestFocus.packageName)
+                && displayId == latestFocus.displayId))) {
+            return;
+        }
+        final long eventNanos = SystemClock.elapsedRealtimeNanos();
+        mLatestImeVisible = visible;
+        if (visible) {
+            setLatestEffectiveFocus(pkg, mLatestActivityUserId, displayId, true);
+        } else {
+            setLatestEffectiveFocus(mLatestNonImeFocusedPackage,
+                    mLatestNonImeFocusedUserId, mLatestNonImeFocusedDisplayId,
+                    mLatestNonImeFocusTransient);
+        }
+        mWorker.post(new Runnable() {
+            @Override
+            public void run() {
+                handleImeVisibility(pkg, visible, displayId, eventNanos);
+            }
+        });
+    }
+
+    private void setLatestNonImeFocus(String pkg, int uid, int userId, int displayId,
+            boolean transientFocus) {
+        mLatestNonImeFocusedPackage = safe(pkg);
+        mLatestNonImeFocusedUid = uid;
+        mLatestNonImeFocusedUserId = userId;
+        mLatestNonImeFocusedDisplayId = displayId;
+        mLatestNonImeFocusTransient = transientFocus;
+    }
+
+    private void setLatestEffectiveFocus(String pkg, int userId, int displayId,
+            boolean transientFocus) {
+        mLatestFocus = new FocusSnapshot(safe(pkg), userId, displayId, transientFocus);
+    }
+
+    private synchronized void handleFocusedActivity(
+            String pkg, int uid, int userId, int displayId, String effectivePkg,
+            boolean transientFocus, long eventNanos) {
+        mActivityFocusedPackage = safe(pkg);
+        mActivityFocusedUid = uid;
+        mActivityFocusedUserId = userId;
+        mActivityFocusedDisplayId = resolveDisplayId(displayId);
+        setNonImeFocus(effectivePkg, uid, userId, displayId, transientFocus);
+        if (!transientFocus) {
+            updateBusinessScene(effectivePkg, uid, userId, displayId);
+        }
+        if (mImeVisible) {
             mUperfScenePolicy.onSystemStateChanged(
-                    mCurrentScenePackage, mScreenInteractive, "transient", eventNanos);
+                    mCurrentScenePackage, mScreenInteractive, "focusBehindIme", eventNanos);
             publishState();
             return;
         }
-        mCurrentScenePackage = mRawFocusedPackage;
-        mLastNonTransientScenePackage = mRawFocusedPackage;
+        handleEffectiveFocus(effectivePkg, uid, userId, displayId,
+                transientFocus, "focus", eventNanos);
+    }
+
+    private synchronized void handleFocusedWindow(
+            String pkg, int uid, int userId, int displayId,
+            boolean transientFocus, long eventNanos) {
+        mWindowFocusSeen = true;
+        setNonImeFocus(pkg, uid, userId, displayId, transientFocus);
+        if (mImeVisible) {
+            publishState();
+            return;
+        }
+        handleEffectiveFocus(pkg, uid, userId, displayId,
+                transientFocus, "windowFocus", eventNanos);
+    }
+
+    private synchronized void handleImeVisibility(
+            String pkg, boolean visible, int displayId, long eventNanos) {
+        mImeVisible = visible;
+        if (visible) {
+            handleEffectiveFocus(pkg, -1, mActivityFocusedUserId,
+                    displayId, true, "imeVisible", eventNanos);
+        } else {
+            handleEffectiveFocus(mNonImeFocusedPackage, mNonImeFocusedUid,
+                    mNonImeFocusedUserId, mNonImeFocusedDisplayId,
+                    mNonImeFocusTransient, "imeHidden", eventNanos);
+        }
+    }
+
+    private void setNonImeFocus(String pkg, int uid, int userId, int displayId,
+            boolean transientFocus) {
+        mNonImeFocusedPackage = safe(pkg);
+        mNonImeFocusedUid = uid;
+        mNonImeFocusedUserId = userId;
+        mNonImeFocusedDisplayId = resolveDisplayId(displayId);
+        mNonImeFocusTransient = transientFocus;
+    }
+
+    private void handleEffectiveFocus(
+            String pkg, int uid, int userId, int displayId, boolean forceTransient,
+            String source, long eventNanos) {
+        mRawFocusedPackage = safe(pkg);
+        mRawFocusedUserId = userId;
+        mRawFocusedDisplayId = resolveDisplayId(displayId);
+        Profile refreshProfile;
+        boolean transientFocus = forceTransient || mImeVisible || mRawFocusedPackage.isEmpty()
+                || isTransientPackage(mRawFocusedPackage);
+        mRawFocusTransient = transientFocus;
+        if (transientFocus) {
+            refreshProfile = neutralProfile(userId);
+        } else {
+            updateBusinessScene(mRawFocusedPackage, uid, userId, mRawFocusedDisplayId);
+            refreshProfile = profileFor(mCurrentScenePackage, mCurrentUserId);
+        }
+        String reason = transientFocus
+                ? source + "Transient" : source;
+        applyProfile(refreshProfile, reason, false);
+        mUperfScenePolicy.onSystemStateChanged(
+                mCurrentScenePackage, mScreenInteractive, reason, eventNanos);
+        publishState();
+    }
+
+    private void updateBusinessScene(
+            String pkg, int uid, int userId, int displayId) {
+        if (safe(pkg).isEmpty() || isTransientPackage(pkg)) {
+            return;
+        }
+        mCurrentScenePackage = pkg;
+        mLastNonTransientScenePackage = pkg;
         mCurrentUid = uid;
         mCurrentUserId = userId;
-        applyProfile(profileFor(mCurrentScenePackage, mCurrentUserId), "focus");
-        mUperfScenePolicy.onSystemStateChanged(
-                mCurrentScenePackage, mScreenInteractive, "focus", eventNanos);
-        publishState();
     }
 
     @Override
@@ -221,8 +421,7 @@ public final class ZuiControlService extends Binder {
                     break;
                 case TX_GET_CURRENT_SCENE:
                     enforceCallerAllowed();
-                    result = "ok=1\ncurrentScenePackage=" + mCurrentScenePackage
-                            + "\nlastNonTransientScenePackage=" + mLastNonTransientScenePackage;
+                    result = currentSceneState();
                     break;
                 case TX_CYCLE_CURRENT_SCENE:
                 case TX_SET_CURRENT_SCENE_PROFILE:
@@ -279,17 +478,21 @@ public final class ZuiControlService extends Binder {
             return "ok=0\nerror=no_current_scene";
         }
         return setProfileLocked(pkg, mCurrentUserId, displayHz, fpsCap, mode,
-                !isControlPanelContext());
+                isForegroundBusinessPackage(pkg, mCurrentUserId));
     }
 
     private synchronized String setProfile(String pkg, int userId, int displayHz, int fpsCap, String mode) {
         if (!validPackage(pkg)) {
             return "ok=0\nerror=invalid_package";
         }
+        if (isTransientPackage(pkg)) {
+            return "ok=0\nerror=transient_package_not_configurable";
+        }
         if (!packageExists(pkg)) {
             return "ok=0\nerror=package_not_found";
         }
-        return setProfileLocked(pkg, userId, displayHz, fpsCap, mode, shouldApplyPackageNow(pkg));
+        return setProfileLocked(pkg, userId, displayHz, fpsCap, mode,
+                isForegroundBusinessPackage(pkg, userId));
     }
 
     private String setProfileLocked(String pkg, int userId, int displayHz, int fpsCap,
@@ -299,47 +502,106 @@ public final class ZuiControlService extends Binder {
             return "ok=0\nerror=" + mLastError;
         }
         if (!"default".equals(pkg) && isDefaultEquivalent(profile)) {
-            mProfiles.remove(key(userId, pkg));
-            saveProfiles();
+            String profileKey = key(userId, pkg);
+            Profile previous = mProfiles.remove(profileKey);
+            if (!saveProfiles()) {
+                if (previous != null) {
+                    mProfiles.put(profileKey, previous);
+                }
+                return "ok=0\nerror=" + mLastError;
+            }
             Profile fallback = profileFor(pkg, userId);
+            String applyStatus = "savedOnly";
             if (applyNow) {
-                applyProfile(fallback, "restoreDefault");
+                applyStatus = applyProfile(fallback, "restoreDefault", false);
             }
             publishState();
+            if ("failed".equals(applyStatus)) {
+                return "ok=0\nerror=refresh_apply_failed\nprofileSaved=1"
+                        + "\npackage=" + pkg + "\nremovedProfile=1"
+                        + "\napplyError=" + mLastApplyError;
+            }
             return "ok=1\npackage=" + pkg + "\nremovedProfile=1"
                     + "\ndisplayHz=" + fallback.displayHz
-                    + "\nfpsCap=" + fallback.fpsCap + "\nmode=" + fallback.mode;
+                    + "\nfpsCap=" + fallback.fpsCap + "\nmode=" + fallback.mode
+                    + "\napplyStatus=" + applyStatus
+                    + "\napplyError="
+                    + ("savedOnly".equals(applyStatus) ? "" : mLastApplyError);
         }
-        mProfiles.put(key(userId, pkg), profile);
-        saveProfiles();
+        String profileKey = key(userId, pkg);
+        Profile previous = mProfiles.put(profileKey, profile);
+        if (!saveProfiles()) {
+            if (previous == null) {
+                mProfiles.remove(profileKey);
+            } else {
+                mProfiles.put(profileKey, previous);
+            }
+            return "ok=0\nerror=" + mLastError;
+        }
+        String applyStatus = "savedOnly";
         if (applyNow) {
-            applyProfile(profile, "binder");
+            applyStatus = applyProfile(profile, "binder", false);
         }
         publishState();
+        if ("failed".equals(applyStatus)) {
+            return "ok=0\nerror=refresh_apply_failed\nprofileSaved=1"
+                    + "\npackage=" + pkg + "\napplyError=" + mLastApplyError;
+        }
         return "ok=1\npackage=" + pkg + "\ndisplayHz=" + profile.displayHz
-                + "\nfpsCap=" + profile.fpsCap + "\nmode=" + profile.mode;
+                + "\nfpsCap=" + profile.fpsCap + "\nmode=" + profile.mode
+                + "\napplyStatus=" + applyStatus
+                + "\napplyError="
+                + ("savedOnly".equals(applyStatus) ? "" : mLastApplyError);
     }
 
     private synchronized String removeProfile(String pkg, int userId) {
         if (!validPackage(pkg)) {
             return "ok=0\nerror=invalid_package";
         }
-        mProfiles.remove(key(userId, pkg));
-        saveProfiles();
-        if (shouldApplyPackageNow(pkg)) {
-            applyProfile(profileFor(pkg, userId), "remove");
+        String profileKey = key(userId, pkg);
+        Profile previous = mProfiles.remove(profileKey);
+        if (!saveProfiles()) {
+            if (previous != null) {
+                mProfiles.put(profileKey, previous);
+            }
+            return "ok=0\nerror=" + mLastError;
+        }
+        String applyStatus = "savedOnly";
+        if (isForegroundBusinessPackage(pkg, userId)) {
+            applyStatus = applyProfile(profileFor(pkg, userId), "remove", false);
         }
         publishState();
-        return "ok=1\nremoved=" + pkg;
+        if ("failed".equals(applyStatus)) {
+            return "ok=0\nerror=refresh_apply_failed\nprofileSaved=1"
+                    + "\nremoved=" + pkg + "\napplyError=" + mLastApplyError;
+        }
+        return "ok=1\nremoved=" + pkg
+                + "\napplyStatus=" + applyStatus
+                + "\napplyError="
+                + ("savedOnly".equals(applyStatus) ? "" : mLastApplyError);
     }
 
     private synchronized String refreshNow() {
-        String pkg = !mAppliedScenePackage.isEmpty() ? mAppliedScenePackage : mCurrentScenePackage;
-        Profile profile = pkg.isEmpty()
-                ? defaultProfile(mCurrentUserId) : profileFor(pkg, mCurrentUserId);
-        applyProfile(profile, "refreshNow");
+        FocusSnapshot latestFocus = mLatestFocus;
+        if (!latestFocus.packageName.equals(mRawFocusedPackage)
+                || latestFocus.userId != mRawFocusedUserId
+                || resolveDisplayId(latestFocus.displayId) != mRawFocusedDisplayId
+                || latestFocus.transientFocus != mRawFocusTransient) {
+            return "ok=0\nerror=focus_update_pending";
+        }
+        String applyStatus = reconcileFocusedProfile("refreshNow", true);
         publishState();
-        return "ok=1\n" + state();
+        if ("failed".equals(applyStatus)) {
+            return "ok=0\nerror=" + mLastApplyError + "\n" + state();
+        }
+        return "ok=1\napplyStatus=" + applyStatus + "\n" + state();
+    }
+
+    private synchronized String currentSceneState() {
+        return "ok=1\ncurrentScenePackage=" + mCurrentScenePackage
+                + "\nlastNonTransientScenePackage=" + mLastNonTransientScenePackage
+                + "\neditableScenePackage=" + editableScenePackage()
+                + "\neditableDisplayHz=" + editableDisplayHz();
     }
 
     private synchronized String notifyControlRequest(String requestId, String requestSha256) {
@@ -398,77 +660,212 @@ public final class ZuiControlService extends Binder {
         return new Profile(pkg, userId, displayHz, fpsCap, cleanMode);
     }
 
-    private void applyProfile(Profile profile, String reason) {
-        mAppliedScenePackage = profile.packageName;
+    private String reconcileFocusedProfile(String reason, boolean force) {
+        Profile profile = mRawFocusTransient || mImeVisible || mRawFocusedPackage.isEmpty()
+                || isTransientPackage(mRawFocusedPackage)
+                ? neutralProfile(mRawFocusedUserId)
+                : profileFor(mRawFocusedPackage, mRawFocusedUserId);
+        return applyProfile(profile, reason, force);
+    }
+
+    private String applyProfile(Profile profile, String reason, boolean force) {
+        mDesiredScenePackage = profile.packageName;
         mTargetDisplayHz = profile.displayHz;
         mTargetFpsCap = profile.fpsCap;
         mTargetMode = profile.mode;
-        if (SystemProperties.getBoolean("persist.zui_control.disable", false)
-                || SystemProperties.getBoolean("persist.zui_control.refresh.disable", false)) {
-            clearDisplayVote(mCurrentDisplayId);
-            syncPeakRefreshRate(120);
-            resetLastApplied();
-            mLastApply = "disabled:" + reason;
-            return;
+        if (mRefreshDisabled || readRefreshDisableMask() != 0) {
+            if (mRefreshDisabled && hasResidualRefreshOwnership()) {
+                scheduleDisableReleaseRetry();
+            }
+            if (mLastApplyError.isEmpty()) {
+                mLastApplyReason = reason + ":disabled";
+            }
+            return "disabled";
         }
-        ModeMatch match = findMode(profile.displayHz, mCurrentDisplayId);
+        ModeMatch match = findMode(profile.displayHz, mRawFocusedDisplayId);
         if (match == null) {
-            mLastError = "no_display_mode_" + profile.displayHz;
-            mLastApply = "failed:" + reason;
-            return;
+            return failApplyBeforeMutation(reason, "no_display_mode_" + profile.displayHz);
+        }
+        DisplayManagerInternal dmi = LocalServices.getService(DisplayManagerInternal.class);
+        if (dmi == null) {
+            return failApplyBeforeMutation(reason, "DisplayManagerInternal_unavailable");
+        }
+        if (!force && mAppRequestOwned && mRenderVoteOwned
+                && mRenderVoteHz == profile.displayHz
+                && mLastAppliedDisplayId == match.displayId
+                && mLastAppliedModeId == match.modeId
+                && mLastAppliedDisplayHz == profile.displayHz) {
+            mAppliedScenePackage = profile.packageName;
+            mAppliedDisplayHz = profile.displayHz;
+            mSkipSameCount++;
+            mLastApplyError = "";
+            mLastError = "";
+            mLastApplyReason = reason + ":display=" + match.displayId
+                    + ":mode=" + match.modeId + ":skipSame";
+            return "skipSame";
+        }
+
+        mAttemptedScenePackage = profile.packageName;
+        mAttemptedDisplayHz = profile.displayHz;
+        int peakHz;
+        try {
+            peakHz = syncPeakRefreshRate(profile.displayHz);
+        } catch (Throwable t) {
+            return failApplyAfterMutation(reason, "peak:" + throwableText(t), false);
         }
         try {
-            DisplayManagerInternal dmi = LocalServices.getService(DisplayManagerInternal.class);
-            if (dmi == null) {
-                mLastError = "DisplayManagerInternal unavailable";
-                mLastApply = "failed:" + reason;
-                return;
-            }
-            int peakHz = syncPeakRefreshRate(profile.displayHz);
-            if (mLastAppliedDisplayId == match.displayId
-                    && mLastAppliedModeId == match.modeId
-                    && mLastAppliedDisplayHz == profile.displayHz
-                    && !"refreshNow".equals(reason)) {
-                mLastError = "";
-                mLastApply = reason + ":display=" + match.displayId + ":mode=" + match.modeId
-                        + ":renderVoteMax=" + profile.displayHz
-                        + ":peakBridge=" + peakHz
-                        + ":skipSame";
-                return;
-            }
-            applyRenderVote(dmi, match.displayId, profile.displayHz);
+            applyGlobalRenderVote(dmi, profile.displayHz);
+        } catch (Throwable t) {
+            return failApplyAfterMutation(reason, "renderVote:" + throwableText(t), false);
+        }
+        try {
             dmi.setDisplayProperties(match.displayId, true, profile.displayHz,
                     match.modeId, 0.0f, profile.displayHz, false, false, false);
+            mAppRequestOwned = true;
+            mAppRequestHandoff = "active";
+            mAppRequestHandoffPending = false;
             mLastAppliedDisplayId = match.displayId;
             mLastAppliedModeId = match.modeId;
             mLastAppliedDisplayHz = profile.displayHz;
+            mAppliedScenePackage = profile.packageName;
+            mAppliedDisplayHz = profile.displayHz;
+            mRefreshApplyCount++;
+            mLastApplyError = "";
             mLastError = "";
-            mLastApply = reason + ":display=" + match.displayId + ":mode=" + match.modeId
-                    + ":renderVoteMax=" + profile.displayHz
-                    + ":peakBridge=" + peakHz;
+            mLastApplyReason = reason + ":display=" + match.displayId
+                    + ":mode=" + match.modeId + ":peakBridge=" + peakHz + ":applied";
+            return "applied";
         } catch (Throwable t) {
-            mLastError = t.getClass().getSimpleName() + ":" + safe(t.getMessage());
-            mLastApply = "failed:" + reason;
             Log.w(TAG, "apply display failed", t);
+            return failApplyAfterMutation(reason, "appRequest:" + throwableText(t), true);
         }
+    }
+
+    private String failApplyBeforeMutation(String reason, String error) {
+        mLastApplyError = error;
+        mLastError = error;
+        mLastApplyReason = reason + ":failedBeforeMutation";
+        return "failed";
+    }
+
+    private String failApplyAfterMutation(String reason, String error,
+            boolean appRequestMayHaveChanged) {
+        StringBuilder cleanupError = new StringBuilder();
+        if (!clearGlobalRenderVote()) {
+            cleanupError.append(";renderVoteReleaseFailed");
+        }
+        if (!releasePeakBridge()) {
+            cleanupError.append(";peakRestoreFailed");
+        }
+        if ((appRequestMayHaveChanged || mAppRequestOwned)
+                && !requestWindowManagerHandoff("applyFailure")) {
+            cleanupError.append(";appRequestHandoffFailed");
+        }
+        clearAppliedState();
+        mLastApplyError = error + cleanupError;
+        mLastError = mLastApplyError;
+        mLastApplyReason = reason + ":failedAfterMutation";
+        return "failed";
     }
 
     private int syncPeakRefreshRate(int targetHz) {
         int peakHz = targetHz > 120 ? targetHz : 120;
         String desired = peakHz + ".0";
+        String current = readPeakSetting();
+        if (desired.equals(current)) {
+            if (mPeakBridgeOwned && !desired.equals(mPeakLastWritten)) {
+                clearPeakOwnership("externalAlreadyDesired");
+            }
+            mLastSyncedPeakHz = peakHz;
+            return peakHz;
+        }
+        boolean acquireOwnership = !mPeakBridgeOwned;
+        String restoreValue = current;
+        String previousLastWritten = mPeakLastWritten;
+        if (!acquireOwnership && !safe(mPeakLastWritten).equals(current)) {
+            mPeakRestoreValue = current;
+        }
+        if (acquireOwnership) {
+            mPeakBridgeOwned = true;
+            mPeakRestoreValue = restoreValue;
+        }
+        mPeakLastWritten = desired;
+        mPeakReleaseStatus = "applyPending";
+        try {
+            if (!writePeakSetting(desired)) {
+                throw new IllegalStateException("peak_write_rejected");
+            }
+        } catch (RuntimeException e) {
+            try {
+                if (!desired.equals(readPeakSetting())) {
+                    if (acquireOwnership) {
+                        clearPeakOwnership("writeNotObserved");
+                    } else {
+                        mPeakLastWritten = previousLastWritten;
+                        mPeakReleaseStatus = "writeNotObserved";
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            throw e;
+        }
+        mPeakReleaseStatus = "active";
+        mLastSyncedPeakHz = peakHz;
+        return peakHz;
+    }
+
+    private String readPeakSetting() {
         long token = Binder.clearCallingIdentity();
         try {
-            String current = Settings.System.getString(mContext.getContentResolver(),
+            return Settings.System.getString(mContext.getContentResolver(),
                     SETTING_PEAK_REFRESH_RATE);
-            if (!desired.equals(current)) {
-                Settings.System.putString(mContext.getContentResolver(),
-                        SETTING_PEAK_REFRESH_RATE, desired);
-            }
         } finally {
             Binder.restoreCallingIdentity(token);
         }
-        mLastSyncedPeakHz = peakHz;
-        return peakHz;
+    }
+
+    private boolean writePeakSetting(String value) {
+        long token = Binder.clearCallingIdentity();
+        try {
+            return Settings.System.putString(mContext.getContentResolver(),
+                    SETTING_PEAK_REFRESH_RATE, value);
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
+    private boolean releasePeakBridge() {
+        if (!mPeakBridgeOwned) {
+            mLastSyncedPeakHz = -1;
+            mPeakReleaseStatus = "notOwned";
+            return true;
+        }
+        try {
+            String current = readPeakSetting();
+            if (safe(mPeakLastWritten).equals(current)) {
+                if (!writePeakSetting(mPeakRestoreValue)) {
+                    mPeakReleaseStatus = "restoreRejected";
+                    return false;
+                }
+                mPeakReleaseStatus = "restored";
+            } else {
+                mPeakReleaseStatus = "externalPreserved";
+            }
+            clearPeakOwnership(mPeakReleaseStatus);
+            return true;
+        } catch (Throwable t) {
+            mPeakReleaseStatus = "restoreFailed:" + throwableText(t);
+            Log.w(TAG, "peak bridge release failed", t);
+            return false;
+        }
+    }
+
+    private void clearPeakOwnership(String releaseStatus) {
+        mPeakBridgeOwned = false;
+        mPeakRestoreValue = null;
+        mPeakLastWritten = "";
+        mLastSyncedPeakHz = -1;
+        mPeakReleaseStatus = releaseStatus;
     }
 
     private void registerPeakObserver() {
@@ -485,6 +882,120 @@ public final class ZuiControlService extends Binder {
         } catch (Throwable t) {
             Log.w(TAG, "peak observer unavailable", t);
         }
+    }
+
+    private void registerRefreshPropertyObserver() {
+        try {
+            SystemProperties.addChangeCallback(new Runnable() {
+                @Override
+                public void run() {
+                    enqueueRefreshDisableMask(readRefreshDisableMask());
+                }
+            });
+            enqueueRefreshDisableMask(readRefreshDisableMask());
+        } catch (Throwable t) {
+            mLastApplyError = "propertyObserver:" + throwableText(t);
+            Log.w(TAG, "refresh property observer unavailable", t);
+        }
+    }
+
+    private void enqueueRefreshDisableMask(final int disableMask) {
+        synchronized (mRefreshPropertyLock) {
+            if (disableMask == mObservedRefreshDisableMask) {
+                return;
+            }
+            mObservedRefreshDisableMask = disableMask;
+            mWorker.post(new Runnable() {
+                @Override
+                public void run() {
+                    onRefreshPropertiesChanged(disableMask);
+                }
+            });
+        }
+    }
+
+    private synchronized void onRefreshPropertiesChanged(int disableMask) {
+        if (disableMask == mRefreshDisableMask) {
+            return;
+        }
+        boolean wasDisabled = mRefreshDisabled;
+        mRefreshDisableMask = disableMask;
+        boolean disabled = disableMask != 0;
+        mRefreshDisabled = disabled;
+        if (!wasDisabled && disabled) {
+            if (!releaseRefreshOwnership("propertyDisable")) {
+                scheduleDisableReleaseRetry();
+            }
+        } else if (wasDisabled && !disabled) {
+            if (latestFocusMatchesRaw()) {
+                reconcileFocusedProfile("propertyEnable", true);
+            } else {
+                mLastApplyReason = "propertyEnable:focusPending";
+                mWorker.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        reconcileAfterPropertyEnable();
+                    }
+                });
+            }
+        } else {
+            if (disabled && hasResidualRefreshOwnership()) {
+                if (!releaseRefreshOwnership("propertyDisableMaskChanged:" + disableMask)) {
+                    scheduleDisableReleaseRetry();
+                }
+            } else {
+                mLastApplyReason = "propertyDisableMaskChanged:" + disableMask;
+            }
+        }
+        publishState();
+    }
+
+    private synchronized void reconcileAfterPropertyEnable() {
+        if (mRefreshDisabled) {
+            return;
+        }
+        if (latestFocusMatchesRaw()) {
+            reconcileFocusedProfile("propertyEnableAfterFocus", true);
+            publishState();
+        }
+    }
+
+    private boolean latestFocusMatchesRaw() {
+        FocusSnapshot latestFocus = mLatestFocus;
+        return latestFocus.packageName.equals(mRawFocusedPackage)
+                && latestFocus.userId == mRawFocusedUserId
+                && resolveDisplayId(latestFocus.displayId) == mRawFocusedDisplayId
+                && latestFocus.transientFocus == mRawFocusTransient;
+    }
+
+    private boolean hasResidualRefreshOwnership() {
+        return mRenderVoteOwned || mPeakBridgeOwned || mAppRequestOwned;
+    }
+
+    private synchronized void scheduleDisableReleaseRetry() {
+        if (mDisableReleaseRetryPosted) {
+            return;
+        }
+        mDisableReleaseRetryPosted = true;
+        mWorker.post(new Runnable() {
+            @Override
+            public void run() {
+                retryDisabledRelease();
+            }
+        });
+    }
+
+    private synchronized void retryDisabledRelease() {
+        mDisableReleaseRetryPosted = false;
+        if (mRefreshDisabled && hasResidualRefreshOwnership()) {
+            releaseRefreshOwnership("propertyDisableRetry");
+            publishState();
+        }
+    }
+
+    private static int readRefreshDisableMask() {
+        int mask = SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false) ? 1 : 0;
+        return SystemProperties.getBoolean(PROP_REFRESH_DISABLE, false) ? mask | 2 : mask;
     }
 
     private void registerScreenObserver() {
@@ -521,34 +1032,92 @@ public final class ZuiControlService extends Binder {
     }
 
     private synchronized void onPeakRefreshRateChanged() {
-        if (SystemProperties.getBoolean("persist.zui_control.disable", false)
-                || SystemProperties.getBoolean("persist.zui_control.refresh.disable", false)) {
+        if (mRefreshDisabled || !mAppRequestOwned || mAppliedDisplayHz <= 0) {
             return;
         }
-        if (!isPeakRefreshRateSynced(mTargetDisplayHz)) {
-            int peakHz = syncPeakRefreshRate(mTargetDisplayHz);
-            mLastError = "";
-            mLastApply = "peakObserver:target=" + mTargetDisplayHz + ":peakBridge=" + peakHz;
-            publishState();
+        if (!isPeakRefreshRateSynced(mAppliedDisplayHz)) {
+            try {
+                int peakHz = syncPeakRefreshRate(mAppliedDisplayHz);
+                mLastApplyError = "";
+                mLastError = "";
+                mLastApplyReason = "peakObserver:target=" + mAppliedDisplayHz
+                        + ":peakBridge=" + peakHz;
+                publishState();
+            } catch (Throwable t) {
+                mLastApplyError = "peakObserver:" + throwableText(t);
+                mLastError = mLastApplyError;
+                mLastApplyReason = "peakObserver:failed";
+                publishState();
+            }
         }
     }
 
     private boolean isPeakRefreshRateSynced(int targetHz) {
         int peakHz = targetHz > 120 ? targetHz : 120;
         String desired = peakHz + ".0";
-        long token = Binder.clearCallingIdentity();
+        return desired.equals(readPeakSetting());
+    }
+
+    private boolean releaseRefreshOwnership(String reason) {
+        boolean renderVoteReleased = clearGlobalRenderVote();
+        boolean peakReleased = releasePeakBridge();
+        boolean hadAppRequest = mAppRequestOwned;
+        boolean appRequestReleased = !hadAppRequest
+                || requestWindowManagerHandoff(reason);
+        if (!mAppRequestOwned && appRequestReleased
+                && !mAppRequestHandoff.startsWith("requested:")) {
+            mAppRequestHandoff = "notOwned";
+        }
+        clearAppliedState();
+        if (appRequestReleased && renderVoteReleased && peakReleased) {
+            String priorApplyError = mLastApplyError;
+            mLastApplyError = "";
+            if (mLastError.equals(priorApplyError)) {
+                mLastError = "";
+            }
+            mLastApplyReason = reason + (hadAppRequest
+                    ? ":releaseRequested" : ":released");
+            return true;
+        }
+        mLastApplyError = (!appRequestReleased ? "appRequest_handoff_failed" : "")
+                + (!renderVoteReleased ? (appRequestReleased ? "" : ";")
+                + "render_vote_release_failed" : "")
+                + (!peakReleased ? (appRequestReleased && renderVoteReleased ? "" : ";")
+                + "peak_restore_failed" : "");
+        mLastError = mLastApplyError;
+        mLastApplyReason = reason + ":releasePartial";
+        return false;
+    }
+
+    private boolean requestWindowManagerHandoff(String reason) {
         try {
-            return desired.equals(Settings.System.getString(mContext.getContentResolver(),
-                    SETTING_PEAK_REFRESH_RATE));
-        } finally {
-            Binder.restoreCallingIdentity(token);
+            WindowManagerInternal wmi = LocalServices.getService(WindowManagerInternal.class);
+            if (wmi == null) {
+                mAppRequestHandoff = "failed:WindowManagerInternal_unavailable";
+                return false;
+            }
+            wmi.requestTraversalFromDisplayManager();
+            mAppRequestOwned = false;
+            mAppRequestHandoff = "requested:" + reason;
+            mAppRequestHandoffPending = true;
+            return true;
+        } catch (Throwable t) {
+            mAppRequestHandoff = "failed:" + throwableText(t);
+            Log.w(TAG, "WindowManager AppRequest handoff failed", t);
+            return false;
         }
     }
 
-    private void resetLastApplied() {
+    private void clearAppliedState() {
+        mAppliedScenePackage = "";
+        mAppliedDisplayHz = 0;
         mLastAppliedDisplayId = -1;
         mLastAppliedModeId = -1;
         mLastAppliedDisplayHz = -1;
+    }
+
+    private static String throwableText(Throwable t) {
+        return t.getClass().getSimpleName() + ":" + safe(t.getMessage());
     }
 
     private Profile profileFor(String pkg, int userId) {
@@ -562,8 +1131,11 @@ public final class ZuiControlService extends Binder {
     }
 
     private Profile defaultProfile(int userId) {
-        Profile profile = mProfiles.get(key(userId, "default"));
-        return profile != null ? profile : new Profile("default", userId, 120, 0, "DISPLAY_ONLY");
+        return neutralProfile(userId);
+    }
+
+    private Profile neutralProfile(int userId) {
+        return new Profile(DEFAULT_SCENE, userId, 120, 0, "DISPLAY_ONLY");
     }
 
     private boolean isDefaultEquivalent(Profile profile) {
@@ -586,11 +1158,12 @@ public final class ZuiControlService extends Binder {
                 String[] parts = line.split("\\|");
                 Profile p = null;
                 if (parts.length == 5 && "default".equals(parts[0])) {
-                    p = makeProfile("default", parseInt(parts[1], 0), parseInt(parts[2], 120),
-                            parseInt(parts[3], 0), parts[4]);
+                    p = neutralProfile(parseInt(parts[1], 0));
                 } else if (parts.length == 6 && "pkg".equals(parts[0])) {
-                    p = makeProfile(parts[2], parseInt(parts[1], 0), parseInt(parts[3], 120),
-                            parseInt(parts[4], 0), parts[5]);
+                    if (!isTransientPackage(parts[2])) {
+                        p = makeProfile(parts[2], parseInt(parts[1], 0),
+                                parseInt(parts[3], 120), parseInt(parts[4], 0), parts[5]);
+                    }
                 }
                 if (p != null && ("default".equals(p.packageName) || !isDefaultEquivalent(p))) {
                     mProfiles.put(key(p.userId, p.packageName), p);
@@ -604,7 +1177,7 @@ public final class ZuiControlService extends Binder {
         }
     }
 
-    private void saveProfiles() {
+    private boolean saveProfiles() {
         FileOutputStream out = null;
         try {
             StringBuilder sb = new StringBuilder();
@@ -623,31 +1196,53 @@ public final class ZuiControlService extends Binder {
             out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
             mProfileFile.finishWrite(out);
             out = null;
+            return true;
         } catch (Throwable t) {
             mLastError = "profile_save:" + t.getClass().getSimpleName();
             if (out != null) {
-                mProfileFile.failWrite(out);
+                try {
+                    mProfileFile.failWrite(out);
+                } catch (Throwable rollbackError) {
+                    Log.w(TAG, "profile rollback failed", rollbackError);
+                }
             }
+            return false;
         }
     }
 
-    private void applyRenderVote(DisplayManagerInternal dmi, int displayId, int hz) throws Exception {
-        updateRenderVote(dmi, displayId, Float.valueOf(hz));
+    private void applyGlobalRenderVote(DisplayManagerInternal dmi, int hz) throws Exception {
+        mRenderVoteOwned = true;
+        mRenderVoteHz = hz;
+        mRenderVoteReleaseStatus = "applyPending";
+        updateGlobalRenderVote(dmi, Integer.valueOf(hz));
+        mRenderVoteReleaseStatus = "active";
     }
 
-    private void clearDisplayVote(int displayId) {
+    private boolean clearGlobalRenderVote() {
+        if (!mRenderVoteOwned) {
+            mRenderVoteReleaseStatus = "notOwned";
+            mRenderVoteHz = 0;
+            return true;
+        }
         try {
             DisplayManagerInternal dmi = LocalServices.getService(DisplayManagerInternal.class);
-            if (dmi != null) {
-                updateRenderVote(dmi, displayId, null);
+            if (dmi == null) {
+                mRenderVoteReleaseStatus = "failed:DisplayManagerInternal_unavailable";
+                return false;
             }
-            resetLastApplied();
+            updateGlobalRenderVote(dmi, null);
+            mRenderVoteOwned = false;
+            mRenderVoteHz = 0;
+            mRenderVoteReleaseStatus = "released";
+            return true;
         } catch (Throwable t) {
-            Log.w(TAG, "clear display vote failed", t);
+            mRenderVoteReleaseStatus = "failed:" + throwableText(t);
+            Log.w(TAG, "global render vote release failed", t);
+            return false;
         }
     }
 
-    private void updateRenderVote(DisplayManagerInternal dmi, int displayId, Float hz)
+    private void updateGlobalRenderVote(DisplayManagerInternal dmi, Integer hz)
             throws Exception {
         Object displayManagerService = readField(dmi, "this$0");
         Object director = readField(displayManagerService, "mDisplayModeDirector");
@@ -660,10 +1255,10 @@ public final class ZuiControlService extends Binder {
             forRender.setAccessible(true);
             vote = forRender.invoke(null, 0.0f, hz.floatValue());
         }
-        Method updateVote = votesStorage.getClass().getDeclaredMethod("updateVote",
-                int.class, int.class, voteClass);
+        Method updateVote = votesStorage.getClass().getDeclaredMethod(
+                "updateGlobalVote", int.class, voteClass);
         updateVote.setAccessible(true);
-        updateVote.invoke(votesStorage, displayId, PRIORITY_ZUI_CONTROL_RENDER, vote);
+        updateVote.invoke(votesStorage, PRIORITY_ZUI_CONTROL_RENDER, vote);
     }
 
     private static Object readField(Object target, String name) throws Exception {
@@ -685,13 +1280,26 @@ public final class ZuiControlService extends Binder {
     }
 
     private synchronized String state(boolean observeSchedulerHealth) {
+        int physicalDisplayHz = actualHz();
         return "ok=1"
                 + "\nrawFocusedPackage=" + mRawFocusedPackage
+                + "\nrawFocusTransient=" + mRawFocusTransient
+                + "\nactivityFocusedPackage=" + mActivityFocusedPackage
+                + "\nnonImeFocusedPackage=" + mNonImeFocusedPackage
+                + "\nwindowFocusSeen=" + mWindowFocusSeen
+                + "\nimeVisible=" + mImeVisible
                 + "\ncurrentScenePackage=" + mCurrentScenePackage
                 + "\nlastNonTransientScenePackage=" + mLastNonTransientScenePackage
+                + "\neditableScenePackage=" + editableScenePackage()
+                + "\neditableDisplayHz=" + editableDisplayHz()
+                + "\ndesiredScenePackage=" + mDesiredScenePackage
+                + "\nattemptedScenePackage=" + mAttemptedScenePackage
                 + "\nappliedScenePackage=" + mAppliedScenePackage
                 + "\ntargetDisplayHz=" + mTargetDisplayHz
-                + "\nactualDisplayHz=" + actualHz()
+                + "\nattemptedDisplayHz=" + mAttemptedDisplayHz
+                + "\nappliedDisplayHz=" + mAppliedDisplayHz
+                + "\nphysicalDisplayHz=" + physicalDisplayHz
+                + "\nactualDisplayHz=" + physicalDisplayHz
                 + "\ntargetFpsCap=" + mTargetFpsCap
                 + "\nmode=" + mTargetMode
                 + "\nscreenInteractive=" + mScreenInteractive
@@ -701,12 +1309,29 @@ public final class ZuiControlService extends Binder {
                 + "\nsystemServiceAlive=true"
                 + "\ndaemonRefreshDisabled=true"
                 + "\ndaemonRetired=true"
+                + "\nrefreshDisabled=" + mRefreshDisabled
+                + "\nrefreshDisableMask=" + mRefreshDisableMask
                 + "\nsupportedDisplayHz=" + supportedDisplayHz()
                 + "\npeakBridgeHz=" + mLastSyncedPeakHz
+                + "\npeakBridgeOwned=" + mPeakBridgeOwned
+                + "\npeakReleaseStatus=" + mPeakReleaseStatus
                 + "\ndisplayVote=adaptiveRender"
+                + "\nrenderVoteScope=globalPriority8"
+                + "\nrenderVoteOwned=" + mRenderVoteOwned
+                + "\nrenderVoteHz=" + mRenderVoteHz
+                + "\nrenderVoteReleaseStatus=" + mRenderVoteReleaseStatus
+                + "\nappRequestOwned=" + mAppRequestOwned
+                + "\nappRequestOwnership=sharedNoToken"
+                + "\nappRequestHandoff=" + mAppRequestHandoff
+                + "\nappRequestHandoffPending=" + mAppRequestHandoffPending
+                + "\nrefreshDisplayScope=defaultDisplayOnly"
+                + "\nrefreshApplyCount=" + mRefreshApplyCount
+                + "\nskipSameCount=" + mSkipSameCount
                 + "\nprofileCount=" + mProfiles.size()
                 + profileStateLines()
-                + "\nlastApply=" + mLastApply
+                + "\nlastApplyReason=" + mLastApplyReason
+                + "\nlastApply=" + mLastApplyReason
+                + "\nlastApplyError=" + mLastApplyError
                 + "\nlastError=" + mLastError;
     }
 
@@ -820,13 +1445,30 @@ public final class ZuiControlService extends Binder {
         }
     }
 
-    private boolean isControlPanelContext() {
-        return APP_PACKAGE.equals(mRawFocusedPackage)
-                || APP_PACKAGE.equals(mAppliedScenePackage);
+    private String editableScenePackage() {
+        return !mLastNonTransientScenePackage.isEmpty()
+                ? mLastNonTransientScenePackage : mCurrentScenePackage;
     }
 
-    private boolean shouldApplyPackageNow(String pkg) {
-        return safe(pkg).equals(mAppliedScenePackage);
+    private int editableDisplayHz() {
+        String pkg = editableScenePackage();
+        return pkg.isEmpty() ? 0 : profileFor(pkg, mCurrentUserId).displayHz;
+    }
+
+    private boolean isForegroundBusinessPackage(String pkg, int userId) {
+        String cleanPackage = safe(pkg);
+        FocusSnapshot latestFocus = mLatestFocus;
+        return !cleanPackage.isEmpty()
+                && !mImeVisible
+                && !mLatestImeVisible
+                && !mRawFocusTransient
+                && !latestFocus.transientFocus
+                && !isTransientPackage(cleanPackage)
+                && cleanPackage.equals(mRawFocusedPackage)
+                && cleanPackage.equals(latestFocus.packageName)
+                && userId == mRawFocusedUserId
+                && userId == latestFocus.userId
+                && resolveDisplayId(latestFocus.displayId) == mRawFocusedDisplayId;
     }
 
     private boolean packageExists(String pkg) {
@@ -853,7 +1495,7 @@ public final class ZuiControlService extends Binder {
         if (!isDisplayHzAllowed(hz)) {
             return false;
         }
-        return findMode(hz, resolveDisplayId(mCurrentDisplayId)) != null;
+        return findMode(hz, resolveDisplayId(mRawFocusedDisplayId)) != null;
     }
 
     private boolean isDisplayHzAllowed(int hz) {
@@ -870,17 +1512,7 @@ public final class ZuiControlService extends Binder {
             return null;
         }
         Display preferred = mDisplayManager.getDisplay(preferredDisplayId);
-        ModeMatch match = findModeOnDisplay(preferred, hz);
-        if (match != null) {
-            return match;
-        }
-        for (Display display : mDisplayManager.getDisplays()) {
-            match = findModeOnDisplay(display, hz);
-            if (match != null) {
-                return match;
-            }
-        }
-        return null;
+        return findModeOnDisplay(preferred, hz);
     }
 
     private ModeMatch findModeOnDisplay(Display display, int hz) {
@@ -909,7 +1541,8 @@ public final class ZuiControlService extends Binder {
     }
 
     private int actualHz() {
-        Display display = mDisplayManager == null ? null : mDisplayManager.getDisplay(mCurrentDisplayId);
+        Display display = mDisplayManager == null
+                ? null : mDisplayManager.getDisplay(mRawFocusedDisplayId);
         if (display == null || display.getMode() == null) {
             return 0;
         }
@@ -921,6 +1554,7 @@ public final class ZuiControlService extends Binder {
         return p.equals("com.android.systemui")
                 || p.equals(GAME_HELPER_PACKAGE)
                 || p.equals(APP_PACKAGE)
+                || p.equals(IME_SCENE)
                 || p.equals("android")
                 || p.contains("permissioncontroller")
                 || p.contains("packageinstaller")
@@ -1198,6 +1832,21 @@ public final class ZuiControlService extends Binder {
                     || "balance".equals(value)
                     || "performance".equals(value)
                     || "fast".equals(value);
+        }
+    }
+
+    private static final class FocusSnapshot {
+        final String packageName;
+        final int userId;
+        final int displayId;
+        final boolean transientFocus;
+
+        FocusSnapshot(String packageName, int userId, int displayId,
+                boolean transientFocus) {
+            this.packageName = packageName;
+            this.userId = userId;
+            this.displayId = displayId;
+            this.transientFocus = transientFocus;
         }
     }
 
