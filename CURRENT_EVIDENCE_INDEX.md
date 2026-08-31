@@ -1,11 +1,13 @@
 # ZuiControl Current Evidence Index
 
 更新时间：2026-08-31  
-当前冻结基线：V20.3B / RunId `20260830181816` / branch `v20-3b-gate-20260830` / HEAD `30fe138a7ef531aeffbcf951e9113f4ae0d17cfe`
+当前真机冻结基线：V20.3B / RunId `20260830181816` / source `30fe138a7ef531aeffbcf951e9113f4ae0d17cfe`
+
+当前未刷机候选：V20.4 Refresh Correctness / RunId `20260831094239` / source `3865cf9c99cb89a8df2b705b9b3dbb2711b311ec` / CI `33348269219` / final-super PASS / device PENDING
 
 本文件是未来会话的默认证据入口。先读结论和最小证据；只有数字受到质疑时，才打开对应 raw。不要递归扫描 `D:\3.VScode\Mi\ZuiControl_Archive\`。
 
-V20.3B 阶段已关闭；daemon-retirement architecture = PASS。历史 `PARTIAL / HOLD` 不再是进入 V20.4 的 gate，但 rapid Uperf storm、T8 request-ID、transient 等未闭环结论仍然有效。
+V20.3B 阶段已关闭；daemon-retirement architecture = PASS。历史 `PARTIAL / HOLD` 不再是进入 V20.4 的 gate；rapid Uperf storm与 T8 request-ID仍是 carry-forward。历史 transient缺陷已进入 V20.4 candidate，但未刷机前不能改写成真机 PASS。
 
 Archive 根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md)
 
@@ -25,7 +27,19 @@ Archive 根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.m
 
 ## V20.4 Refresh Correctness 直接证据
 
-V20.3B 历史源码审计确认：ZuiControl 曾通过 `controlPanel` 分支拥有独立 profile/apply 语义，并与 current/applied/config target 混在一起。当前产品语义已经明确为 foreground-only：ZuiControl/SystemUI/IME 等真正前台时 physical target 应为 neutral/default 120；`lastNonTransientScenePackage` 只保留为配置对象。因此历史证据用于证明字段分裂与旧特判，不再用于主张 transient 应继承业务 App Hz。
+当前结论：source/host/CI/ROM build/final-super = PASS；device validation = PENDING。foreground-only语义、configuration/physical两轴、kill-switch property edge、desired/attempted/applied/physical状态和 owner-safe cleanup已进入 candidate。`controlPanel` marker在最终 super中必须不存在。shared AppRequest没有 owner token，只能请求 WindowManager traversal并观察 handoff，因此完整释放仍是明确 device gate。
+
+最小当前证据：
+
+- [`V20_4_REFRESH_DECISION.md`](V20_4_REFRESH_DECISION.md)
+- [`05_HOST_TESTS.md`](V20_4_REFRESH_CORRECTNESS/05_HOST_TESTS.md)
+- [`06_BUILD_VERIFY.md`](V20_4_REFRESH_CORRECTNESS/06_BUILD_VERIFY.md)
+- [`build_result.json`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831094239/build_result.json)
+- [`ci_run_provenance.json`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831094239/ci_run_provenance.json)
+- [`candidate_sha256.txt`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831094239/candidate_sha256.txt)
+- [`final_super_verifier.log`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831094239/final_super_verifier.log)
+
+V20.3B 历史源码审计确认：ZuiControl 曾通过 `controlPanel` 分支拥有独立 profile/apply语义，并与 current/applied/config target混在一起。当前产品语义是 foreground-only：ZuiControl/SystemUI/IME等真正前台时 physical target为 neutral/default 120；`lastNonTransientScenePackage`只保留为配置对象。历史证据只用于证明字段分裂与旧特判，不再用于主张 transient应继承业务 App Hz。
 
 最小 raw：
 
@@ -35,7 +49,7 @@ V20.3B 历史源码审计确认：ZuiControl 曾通过 `controlPanel` 分支拥�
 - [`transient_after_back.txt`](../ZuiControl_Archive/V20_3B_DAEMON_RETIREMENT/raw/device_validation_20260830_194022/phase_supplement_final/transient_after_back.txt)
 - [`TRANSIENT_CLASSIFICATION.txt`](../ZuiControl_Archive/V20_3B_DAEMON_RETIREMENT/raw/device_validation_20260830_194022/phase_supplement_final/TRANSIENT_CLASSIFICATION.txt)
 
-这些文件只证明 V20.3B 默认 120 场景下的字段分裂；它们不验证新的 foreground-only 非 120 往返语义。60/90/144/165 → transient 120 → 返回恢复、kill switch release request 与 physical Hz 仍需 V20.4 candidate 真机矩阵。
+这些文件只证明 V20.3B 默认 120场景下的字段分裂；它们不验证新的 foreground-only非 120往返语义。60/90/144/165 → transient 120 → 返回恢复、kill switch release/handoff与 physical Hz仍需 V20.4 candidate真机矩阵。
 
 ## Final runtime 边界
 

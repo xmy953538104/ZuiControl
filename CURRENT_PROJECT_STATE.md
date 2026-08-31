@@ -4,13 +4,13 @@
 
 ## 1. 当前结论
 
-V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**。历史 decision 的 `PARTIAL / HOLD` 是当时的阶段转换 gate，现已解除。rapid Uperf crash storm、T8 request-ID、ZuiControl transient 等未闭环发现保持原结论并 carry forward，不得改写成 PASS，也不得再阻止或要求重做 V20.3B。
+V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**。历史 decision 的 `PARTIAL / HOLD` 是当时的阶段转换 gate，现已解除。rapid Uperf crash storm、T8 request-ID 等未闭环发现保持原结论并 carry forward，不得改写成 PASS，也不得再阻止或要求重做 V20.3B。历史 ZuiControl transient 已在 V20.4 源码中修复，但尚未完成真机矩阵。
 
-当前工程阶段是 **V20.4 — Final Stability & Efficiency**，第一工作包为 **Refresh Correctness / State Machine**。尚未生成、构建或真机验证新的 V20.4 生产包；设备仍运行 V20.3B/V49 候选。
+当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 已完成 source/host/CI/ROM build/final-super 静态闭环，生成了未刷机 candidate；设备仍运行 V20.3B/V49 候选，V20.4 device matrix尚未执行。
 
 设备/系统：TB321FU / ZUI 16.1.11.072。
 
-最近完整真机候选：RunId `20260830181816`。生产仓库当前 HEAD 为 `30fe138a7ef531aeffbcf951e9113f4ae0d17cfe`（`v20-3b-gate-20260830`）；App 制品仍为 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`。工程阶段号与 App/Binder 版本号是不同概念。
+最近完整真机基线：V20.3B RunId `20260830181816`。当前 V20.4 未刷机候选为 RunId `20260831094239`，refresh source commit `3865cf9c99cb89a8df2b705b9b3dbb2711b311ec`，CI run `33348269219`；App 制品仍为 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`。工程阶段号与 App/Binder 版本号是不同概念。
 
 ## 2. 当前真实架构
 
@@ -61,16 +61,20 @@ V20.3B 阶段已经关闭。关闭不等于所有补充矩阵 PASS；未闭环�
 
 ## 5. V20.4 Refresh Correctness / State Machine
 
-这是当前第一工作包，统一处理四个原本分散的问题：ZuiControl transient、kill switch 非即时、disabled 后 AppRequest/vote/peak 是否完整释放，以及 `appliedScenePackage` 不代表 physical success。
+这是当前第一工作包，统一处理四个原本分散的问题：ZuiControl transient、kill switch 非即时、disabled 后 AppRequest/vote/peak 是否完整释放，以及 `appliedScenePackage` 不代表 physical success。源码实现与 host/build gate已完成；以下语义已经写入 candidate，但仍需真机验证：
 
-1. **第一优先级：foreground-only transient。** 删除 `controlPanel` 的独立 profile-owner 特判。业务 App 有自定义 profile 时按自身 Hz；SystemUI、ZuiControl、IME、权限/Resolver/overlay 等真正前台时使用 neutral/default 120；返回业务 App 后恢复其 profile。不得继承 last business Hz。
+1. **第一优先级：foreground-only transient。** `controlPanel` 独立 profile-owner 特判已删除。业务 App 有自定义 profile 时按自身 Hz；SystemUI、ZuiControl、IME、权限/Resolver/overlay 等真正前台时使用 neutral/default 120；返回业务 App 后恢复其 profile。不得继承 last business Hz。
 2. **状态不变量。** 明确定义 raw/current/last、desired/attempted/applied/physical；apply、skipSame、fail、disabled 后的 `appliedScenePackage` 不得伪装成成功物理场景。
 3. **QS/QuickService。** 永远修改上一个真实业务场景，不学习或写入 SystemUI/ZuiControl；transient 前台修改只保存，等目标业务 App 回到 foreground 才应用。
-4. **Kill switch 完整释放。** 定义即时触发/恢复事件，验证 priority-8 vote、`setDisplayProperties()` AppRequest 和 peak compatibility bridge 的释放与重建。
-5. **Apply 与 profile 边界。** 纳入 unsupported mode、partial apply、失败回退、防抖、AtomicFile 损坏恢复、package/userId 校验。
+4. **Kill switch 释放。** `SystemProperties.addChangeCallback` 已实现属性 edge；priority-8 vote与 owned peak做定向清理。`setDisplayProperties()` 是无 owner token的 shared AppRequest，只能请求 WindowManager traversal并显式报告 handoff pending；完整运行时释放时序必须真机确认。
+5. **Apply 与 profile 边界。** 纳入 unsupported mode、partial apply、失败回退、防抖和 AtomicFile保存失败回滚；Binder写入校验与 current-user路由已实现。profile-file load的非法 package/package existence验证及多用户真机切换仍待闭环。
 6. **Transient 与档位矩阵。** 覆盖 IME、PermissionController、Resolver、SystemUI、ZuiControl，以及 `60/90/144/165 → neutral 120 → 原业务 Hz`、target/physical、vote/AppRequest、peak、profile hash。
 
 本包不修改 command transaction、Uperf/asoulOpt 策略、120 hard-lock 决策或 Binder 安全契约，不引入第二 owner、polling 或 watchdog。
+
+Host regression：V20.4 19/19、V20.3B 5/5、Java 8/D8、Gradle test/lint/debug assemble、B072 smali probe均 PASS。Exact source commit经 CI成功构建签名 APK/payload；isolated official 072流程完成 `SignNoFec`、签名后 `PackSuper`，最终 `super.img` 的基础 verifier与 V20.4 44-marker verifier均为 `ok=true`。Candidate路径：`D:\3.VScode\Mi\work\v20_4_candidate_20260831094239`，`super.img` SHA-256 `9774b6aa8e72b5dc6c0514c366786da453bf509106a09946be9356969e43d3d9`；`production_b072_unchanged=true`、`flashed=false`。
+
+因此当前结论是 **FLASH CANDIDATE READY / DEVICE VALIDATION PENDING**，不是 V20.4 refresh真机 PASS。待验证边界包括物理 mode、IME动画/硬键盘、disable→enable快速边、shared AppRequest traversal完成、外部 peak writer竞态、Enforcing/AVC以及 100次 dedup矩阵。
 
 ## 6. 其它 carry-forward backlog
 
@@ -100,5 +104,7 @@ V20.4 Refresh Correctness 不混入 GPU/KGSL 正式接管、thermal 大改、App
 下一会话默认只读：`AGENTS.md` → `CURRENT_PROJECT_STATE.md` → `README.md` → 当前生产源码 → `CURRENT_EVIDENCE_INDEX.md`。不要默认扫描 `D:\3.VScode\Mi\ZuiControl_Archive\`；质疑具体数字时才按 index 定向读取。
 
 V20_3B_STAGE=CLOSED
-V20_4_REFRESH_STATE_MACHINE_READY=YES
+V20_4_REFRESH_SOURCE_HOST_BUILD=PASS
+V20_4_REFRESH_FLASH_CANDIDATE_READY=YES
+V20_4_REFRESH_DEVICE_VALIDATION=PENDING
 TAKEOVER_READY=YES

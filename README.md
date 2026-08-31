@@ -12,7 +12,7 @@ ZuiControl 是 TB321FU / ZUI 16.1.11.072 的 ROM 内置系统控制工具，核�
 4. 当前生产源码
 5. [`CURRENT_EVIDENCE_INDEX.md`](CURRENT_EVIDENCE_INDEX.md)
 
-V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。最近真机候选仍是 RunId `20260830181816`、App versionCode 49 / versionName 0.21.12；当前第一工作包是 V20.4 Refresh Correctness / State Machine，尚无新的 V20.4 制品或真机 PASS。
+V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。最近真机基线仍是 RunId `20260830181816`；V20.4 Refresh Correctness / State Machine 已生成未刷机 candidate RunId `20260831094239`，source/host/CI/ROM build/final-super PASS，device validation PENDING。App 仍是 versionCode 49 / versionName 0.21.12。
 
 旧 handoff、AI 报告、阶段报告和 raw/trace/log 位于仓库外 `D:\3.VScode\Mi\ZuiControl_Archive\`。默认不要扫描 archive；只按 evidence index 定向读取。
 
@@ -36,14 +36,14 @@ OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno
 
 ## 当前 Refresh Correctness 工作包
 
-第一优先级是收敛 foreground-only refresh state machine：业务 App 真正 foreground 时使用自身 profile；SystemUI、ZuiControl、IME、权限/Resolver/overlay 等 transient 真正 foreground 时使用 neutral/default 120，返回业务 App 后恢复。`lastNonTransientScenePackage` 只用于 QS/ZuiControl 编辑对象，不再用于继承当前物理 Hz。
+第一优先级已经按 foreground-only state machine 实现：业务 App 真正 foreground 时使用自身 profile；SystemUI、ZuiControl、IME、权限/Resolver/overlay 等 transient 真正 foreground 时使用 neutral/default 120，返回业务 App 后恢复。`lastNonTransientScenePackage` 只用于 QS/ZuiControl 编辑对象，不再用于继承当前物理 Hz。
 
 同一工作包统一处理：
 
 - raw/current/last 与 desired/attempted/applied/physical 状态不变量；
 - 删除 `controlPanel` 独立 profile-owner 特判；QS/QuickService 始终修改上一个真实业务场景，transient 前台只保存；
-- 两个 refresh kill switch 的即时触发与恢复；
-- disabled 后 priority-8 vote、AppRequest、peak bridge 的完整释放；
+- 两个 refresh kill switch 通过 property callback 投递到 HandlerThread，并按最新 focus snapshot 恢复；
+- disabled 后定向清 priority-8 vote、compare/restore peak，并请求 shared AppRequest 的 WindowManager traversal handoff；该无 token AppRequest 的实际完成时序留真机验证；
 - apply/skip/fail/disabled 后 `appliedScenePackage` 的真实语义；
 - 60/90/120/144/165 的 transient 与 physical Hz 矩阵。
 
@@ -57,6 +57,7 @@ OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno
 - `payload/`：注入 system image 的 APK、init、binary、config 和 SELinux payload。
 - `scripts/`：build、payload 应用、framework 注入和 final-package 验证。
 - `V20_3B_DAEMON_RETIREMENT/tests/`：当前 host/device policy 与回归工具；测试代码保留原位。
+- `V20_4_REFRESH_CORRECTNESS/`：refresh 状态模型、host/build 证据、final-super verifier 结果与 device plan。
 - `CURRENT_EVIDENCE_INDEX.md`：当前基线的最小证据入口。
 
 ## Build 与验证
@@ -80,6 +81,8 @@ python scripts/ApplyZuiControlPayload.py --unpack /path/to/work/unpack
 Steady-state 预期包含：refresh owner=`system`、persistent `zui_controld` PID=0、idle `zui_control_request` PID=0、Uperf/asoulOpt 由 init 托管。Scheduler health 从按需 Binder/dumpsys 读取，不再使用旧 `zui_control_uperf_health` Settings heartbeat。
 
 任何 ROM 交付仍必须按 `AGENTS.md` 做 final-super 反向内容、context、SHA-256 和刷后 AVC 验证。
+
+当前未刷机候选：`D:\3.VScode\Mi\work\v20_4_candidate_20260831094239`。它绑定 source commit `3865cf9c99cb89a8df2b705b9b3dbb2711b311ec` 与 CI run [`33348269219`](https://github.com/xmy953538104/ZuiControl/actions/runs/33348269219)；最终 `super.img` SHA-256 为 `9774b6aa8e72b5dc6c0514c366786da453bf509106a09946be9356969e43d3d9`，基础与 V20.4 final-super verifier 均 PASS。该结论只允许进入 device matrix，不等于真机验证完成。
 
 ## 当前禁止
 

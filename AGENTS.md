@@ -6,9 +6,9 @@
 
 当前设备/系统：TB321FU / ZUI 16.1.11.072。
 
-当前工程阶段：**V20.4 — Final Stability & Efficiency**。当前第一工作包是 **V20.4 Refresh Correctness / State Machine**；尚未生成或验证新的 V20.4 生产包。
+当前工程阶段：**V20.4 — Final Stability & Efficiency**。第一工作包 **V20.4 Refresh Correctness / State Machine** 已完成 source/host/CI/ROM build/final-super 静态闭环；未刷机，device matrix 仍待执行，不得写成真机 PASS。
 
-最近一次完整真机基线：V20.3B，RunId `20260830181816`。V20.3B persistent daemon retirement architecture = **PASS**，V20.3B 阶段已经关闭。历史 decision 中的 `PARTIAL / HOLD FOR HUMAN REVIEW` 是当时的阶段转换 gate，现已解除，不得再用它阻止 V20.4，也不得要求重做 V20.3B。rapid Uperf crash storm、T8 request-ID、ZuiControl transient 等未闭环发现没有变成 PASS，而是按归属正式 carry forward 到 V20.4 工作包或后续 backlog。
+最近一次完整真机基线：V20.3B，RunId `20260830181816`。V20.3B persistent daemon retirement architecture = **PASS**，V20.3B 阶段已经关闭。历史 decision 中的 `PARTIAL / HOLD FOR HUMAN REVIEW` 是当时的阶段转换 gate，现已解除，不得再用它阻止 V20.4，也不得要求重做 V20.3B。rapid Uperf crash storm、T8 request-ID 等未闭环发现没有变成 PASS，而是按归属正式 carry forward；历史 ZuiControl transient 已在 V20.4 源码中按 foreground-only 语义修复，但仍需 candidate 真机矩阵确认。
 
 当前生产 App 源码仍是 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`，Binder version 仍返回 19。这些是已验证候选的制品标识，不是当前工程阶段号，不得据此把规则退回 V19。
 
@@ -173,9 +173,9 @@ SystemUI、ZuiControl、android 伪包、PermissionController、PackageInstaller
 
 **Foreground-only 产品语义：** physical target 永远由当前真实 foreground/window focus 决定。业务 App 有 profile 时使用其 Hz；未配置业务 App及 SystemUI、ZuiControl、IME、权限/Resolver/overlay/null 等 transient 都使用 neutral/default 120。transient 不得继承 `lastNonTransientScenePackage` 的 Hz。
 
-QS/App 只发 Binder 命令，由 system_server 使用 `lastNonTransientScenePackage` 决定修改对象；不得学习或写入 SystemUI/ZuiControl profile。QS/ZuiControl 前台时修改上一个业务 App 只保存配置，当前 physical target 仍为 120；该业务 App 再次 foreground 时才应用新 Hz。
+QS/当前场景快捷入口只发 Binder命令，由 system_server使用 `lastNonTransientScenePackage`决定修改对象；Main显式 package editor按用户实际选择的业务包操作。两条路径都不得学习或写入 SystemUI/ZuiControl profile。QS/ZuiControl前台时修改后台业务 App只保存配置，当前 physical target仍为 120；该业务 App再次 foreground时才应用新 Hz。
 
-历史 `controlPanel` 缺陷的正确表述是：ZuiControl 曾拥有独立 profile/apply 特判并污染 applied/config 语义。该特判必须删除；但 ZuiControl 真正 foreground 时切到 neutral/default 120 是当前产品要求，不再把 `90 → 120 → 90` 本身写成缺陷。
+历史 `controlPanel` 缺陷的正确表述是：ZuiControl 曾拥有独立 profile/apply 特判并污染 applied/config 语义。该特判已从 V20.4 源码删除，final-super verifier也要求 marker不存在；但 ZuiControl 真正 foreground 时切到 neutral/default 120 是当前产品要求，不再把 `90 → 120 → 90` 本身写成缺陷。
 
 ## 5. Uperf 与 asoulOpt
 
@@ -207,7 +207,7 @@ QS/App 只发 Binder 命令，由 system_server 使用 `lastNonTransientScenePac
 
 `persist.zui_control.daemon_refresh.disable` 只属于已退休 daemon 的历史兼容语义；新代码不得重新依赖它。
 
-预期：全局 disable/refresh disable 停止刷新率策略，但不能误停 Uperf/asoulOpt。当前源码没有 property observer，只有后续 focus/refresh/peak 事件才重新读取；disabled 路径清 priority-8 render vote，但尚未用真机证明完整清除既有 `setDisplayProperties()` AppRequest。kill switch 的触发事件、priority-8 vote、AppRequest 和 peak bridge 释放语义统一归入 V20.4 Refresh Correctness / State Machine；在闭环前不得宣称即时或完整释放。
+全局 disable/refresh disable 只停止刷新率策略，不能误停 Uperf/asoulOpt。V20.4 源码已使用 `SystemProperties.addChangeCallback` 把属性 edge投递到 ZuiControl HandlerThread，并在 enable edge按最新 atomic focus snapshot立即重算；disabled路径只清 ZuiControl priority-8 vote、compare/restore peak，并请求 WindowManager traversal接管 shared `setDisplayProperties()` AppRequest。该 AppRequest API没有 owner token或同步 clear，因此源码只报告 `sharedNoToken` / `releaseRequested` / `appRequestHandoffPending`，不得宣称同步完整释放；真实即时性和 handoff完成仍是 device gate。
 
 Uperf rapid crash storm 当前是 carry-forward 未闭环项。后续稳定性工作包要定义 fail-safe、UI/health 可见性、安全 balance 或 OEM fallback；不得用 persistent watchdog 对抗 Android init，也不得为测试扩大 SELinux。它不属于当前 refresh state-machine 修改。
 
@@ -238,7 +238,7 @@ Uperf rapid crash storm 当前是 carry-forward 未闭环项。后续稳定性�
 - profile 写入使用 AtomicFile；配置损坏不能导致 system_server 崩溃；
 - 保存前校验 package、Display.Mode、displayHz、fpsCap 和 mode；
 - claim/receipt 保持 root:root 0600 与正确 SELinux context；
-- 当前 profile 文件加载路径未完整验证非法 package/package existence，多用户 UI 仍固定 userId=0；不得宣称这两项已闭环。
+- 当前 profile文件加载路径仍未完整验证非法 package/package existence。V20.4显式 API已从 calling UID派生 current user，Main也按当前用户过滤；但多用户切换和真机路由尚未验收，不得宣称 load validation或 multi-user整体闭环。
 
 ## 8. SELinux 与 final-super 硬门
 
@@ -282,15 +282,15 @@ V20.3B 阶段已关闭；persistent daemon retirement architecture = PASS。下�
 
 ### 10.1 Refresh Correctness / State Machine（当前第一工作包）
 
-按当前事实排序：
+Source commit `3865cf9c99cb89a8df2b705b9b3dbb2711b311ec` 已完成 foreground-only 状态机、host 19/19、CI run `33348269219`、isolated ROM build与 final-super 44-marker verifier。候选 RunId `20260831094239` 未刷机；以下现在是 device acceptance gate，而不是继续扩展源码的许可：
 
-1. 删除 ZuiControl `controlPanel` profile-owner 特判；按 foreground-only 语义验证非 120 App → ZuiControl/SystemUI/IME neutral 120 → 返回 App 恢复。
-2. 定义 raw/current/last 与 desired/attempted/applied/physical 的状态不变量；`applied` 不得在 apply/fail/disabled 后伪装成 physical success。
-3. 保证 QS Tile、通知 QuickService 和 App 修改的始终是上一个真实业务场景，但 transient 前台只保存、不把后台业务 Hz 应用到当前屏幕。
-4. 为两个 refresh kill switch 定义即时触发/恢复事件，并完整释放或重建 priority-8 vote、`setDisplayProperties()` AppRequest 与 peak compatibility bridge。
-5. 把 partial apply、unsupported mode、skipSame、disabled、失败回退和防抖纳入同一状态机与可观测结果。
-6. 回归 profile 校验、AtomicFile 损坏恢复、当前场景 apply、userId 和 IME/PermissionController/Resolver/SystemUI/ZuiControl transient 矩阵。
-7. 在 60/90/120/144/165 下记录 current/last/desired/attempted/applied/physical、vote/AppRequest、peak 和 profile hash；transient 仍是第一优先级。
+1. 验证非 120 App → ZuiControl/SystemUI/IME neutral 120 → 返回 App 恢复；不得恢复旧 inheritance语义。
+2. 验证 raw/current/last 与 desired/attempted/applied/physical 的状态不变量；`applied` 不得在 apply/fail/disabled 后伪装成 physical success。
+3. 验证 QS Tile、通知 QuickService 和 App 修改的始终是上一个真实业务场景，但 transient 前台只保存、不把后台业务 Hz 应用到当前屏幕。
+4. 验证两个 refresh kill switch 的属性 edge无需切 App即可触发；确认 priority-8 vote、shared AppRequest handoff与 peak compatibility bridge的实际释放/重建时序。
+5. 验证 partial apply、unsupported mode、skipSame、disabled、失败回退和防抖的真实平台结果。
+6. 回归 profile校验、AtomicFile损坏恢复、当前场景 apply、userId和 IME/PermissionController/Resolver/SystemUI/ZuiControl transient矩阵。
+7. 在 60/90/120/144/165 下记录 current/last/desired/attempted/applied/physical、vote/AppRequest、peak和 profile hash；transient仍是第一优先级。
 
 本工作包不得修改 command transaction、Uperf/asoulOpt 生产策略、120 hard-lock 决策或 Binder 安全契约，不得引入 App/daemon 第二 owner、polling 或 watchdog。
 

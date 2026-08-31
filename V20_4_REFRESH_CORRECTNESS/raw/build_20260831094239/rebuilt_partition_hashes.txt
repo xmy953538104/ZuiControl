@@ -1,0 +1,7 @@
+
+Algorithm Hash                                                             Path
+--------- ----                                                             ----
+SHA256    046792C062E9AA9406684D2310B3D2D87BFC6417675CC8CE5DF25A47B9B1A102 D:\3.VScode\Mi\work\v20_4_scratch_2026083109…
+SHA256    2B18F2CDB02850C5264A81C597FB8EBCE24643AB4DEDB55B130A1D7295C37D3C D:\3.VScode\Mi\work\v20_4_scratch_2026083109…
+
+

@@ -1,6 +1,6 @@
 # V20.4 Refresh Correctness Device Test Plan
 
-状态：candidate 生成后执行；本工作包不自动刷机。
+状态：candidate RunId `20260831094239` 已生成并通过 final-super verifier；待授权刷机后执行，本工作包不自动刷机。
 语义基线：foreground-only。所有断言同时记录 raw/current/last/desired/applied/target/physical，不能只看 App UI。
 
 ## 1. 每个 edge 的采集

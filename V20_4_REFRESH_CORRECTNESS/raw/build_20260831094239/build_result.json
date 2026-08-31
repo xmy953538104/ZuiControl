@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "phase": "V20_4",
+  "candidate": "D:\\3.VScode\\Mi\\work\\v20_4_candidate_20260831094239",
+  "run_id": "20260831094239",
+  "source_commit": "3865cf9c99cb89a8df2b705b9b3dbb2711b311ec",
+  "source_patch_sha256": "e7b1370714b3b0f5fa8ec9da912fe97211c5d2f6faa63248a36c0a67fa760454",
+  "ci_run_id": "33348269219",
+  "declared_ci_artifact_path": "D:\\3.VScode\\Mi\\work\\ci_artifacts\\zuicontrol_33348269219",
+  "authoritative_ci_artifact_path": "D:\\3.VScode\\Mi\\work\\v20_4_scratch_20260831094239\\ci_artifacts\\zuicontrol_33348269219",
+  "ci_apk_sha256": "ad11f1525949d7392e458a2a68498a999212973fb4438c4bdcfa65a7fcb2e29b",
+  "super_sha256": "9774b6aa8e72b5dc6c0514c366786da453bf509106a09946be9356969e43d3d9",
+  "verifier_log": "D:\\3.VScode\\Mi\\ZuiControl\\V20_4_REFRESH_CORRECTNESS\\raw\\build_20260831094239\\final_super_verifier.log",
+  "production_b072_unchanged": true,
+  "flashed": false
+}

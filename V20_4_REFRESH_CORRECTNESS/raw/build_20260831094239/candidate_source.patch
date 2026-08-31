@@ -1,0 +1,2384 @@
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index 66ef037..a1cf37f 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -9,6 +9,7 @@ on:
+       - "framework_patch/**"
+       - "scripts/**"
+       - "V20_3B_DAEMON_RETIREMENT/tests/**"
++      - "V20_4_REFRESH_CORRECTNESS/tests/**"
+       - ".github/workflows/build.yml"
+       - "*.gradle.kts"
+ 
+@@ -47,6 +48,7 @@ jobs:
+           bash -n payload/system/bin/zui_uperf_service
+           bash scripts/TestZuiControldTransactions.sh
+           python3 V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py
++          python3 V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
+           bash -n payload/system/etc/zui_control/zui_scheduler_prepare.sh
+           python3 -m json.tool payload/system/etc/zui_control/uperf-sm8650.json >/dev/null
+ 
+diff --git a/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1 b/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
+index c97c25e..6583337 100644
+--- a/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
++++ b/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
+@@ -1,6 +1,8 @@
+ [CmdletBinding()]
+ param(
+     [string]$WorkspaceRoot = 'D:\3.VScode\Mi',
++    [ValidateSet('V20_3B', 'V20_4')]
++    [string]$Phase = 'V20_3B',
+     [Parameter(Mandatory)]
+     [ValidatePattern('^\d{14}$')]
+     [string]$RunId,
+@@ -18,8 +20,17 @@ param(
+ 
+ $ErrorActionPreference = 'Stop'
+ Set-StrictMode -Version Latest
++$phaseSlug = $Phase.ToLowerInvariant()
++$phaseDisplay = if ($Phase -eq 'V20_4') { 'V20.4' } else { 'V20.3B' }
++$phaseDirectory = if ($Phase -eq 'V20_4') {
++    'V20_4_REFRESH_CORRECTNESS'
++} else {
++    'V20_3B_DAEMON_RETIREMENT'
++}
++$scratchPrefix = "${phaseSlug}_scratch_"
++$candidatePrefix = "${phaseSlug}_candidate_"
+ if (-not $Execute) {
+-    throw 'Preview guard: re-run with -Execute. This builds and signs an isolated V20.3B candidate; it never prepares or flashes a 9008 package.'
++    throw "Preview guard: re-run with -Execute. This builds and signs an isolated $phaseDisplay candidate; it never prepares or flashes a 9008 package."
+ }
+ 
+ function Full([string]$Path) { [IO.Path]::GetFullPath($Path).TrimEnd('\') }
+@@ -50,10 +61,10 @@ function Invoke-CheckedLogged([string]$Exe, [Parameter(ValueFromRemainingArgumen
+ $workspace = Full $WorkspaceRoot
+ $repo = Join-Path $workspace 'ZuiControl'
+ $workRoot = Join-Path $workspace 'work'
+-$scratch = Join-Path $workRoot "v20_3b_scratch_$RunId"
++$scratch = Join-Path $workRoot "$scratchPrefix$RunId"
+ $scratchRepo = Join-Path $scratch 'repo'
+-$candidate = Join-Path $workRoot "v20_3b_candidate_$RunId"
+-$evidenceRoot = Join-Path $repo 'V20_3B_DAEMON_RETIREMENT\raw'
++$candidate = Join-Path $workRoot "$candidatePrefix$RunId"
++$evidenceRoot = Join-Path $repo "$phaseDirectory\raw"
+ $evidence = Join-Path $evidenceRoot "build_$RunId"
+ $official = Join-Path $workspace '【A官方】072'
+ $template = Join-Path $workspace '072必刷镜像'
+@@ -91,10 +102,10 @@ if ((Get-Item -LiteralPath $declaredCiArtifact -Force).LinkType -or $ciLinks.Cou
+ foreach ($fresh in @($scratch, $candidate, $evidence)) {
+     if (Test-Path -LiteralPath $fresh) { throw "Fresh path required: $fresh" }
+ }
+-if (-not (Full $scratch).StartsWith((Full $workRoot) + '\v20_3b_scratch_', [StringComparison]::OrdinalIgnoreCase) -or
+-    -not (Full $candidate).StartsWith((Full $workRoot) + '\v20_3b_candidate_', [StringComparison]::OrdinalIgnoreCase) -or
++if (-not (Full $scratch).StartsWith((Full $workRoot) + "\$scratchPrefix", [StringComparison]::OrdinalIgnoreCase) -or
++    -not (Full $candidate).StartsWith((Full $workRoot) + "\$candidatePrefix", [StringComparison]::OrdinalIgnoreCase) -or
+     -not (Full $evidence).StartsWith((Full $evidenceRoot) + '\build_', [StringComparison]::OrdinalIgnoreCase)) {
+-    throw 'A generated path escaped the V20.3B approved roots.'
++    throw "A generated path escaped the $phaseDisplay approved roots."
+ }
+ if ((Get-PSDrive D).Free -lt 80GB) { throw 'At least 80 GiB free is required before the isolated build.' }
+ 
+@@ -122,6 +133,17 @@ $trackedBuildPaths = @(
+     'V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py',
+     'V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1'
+ )
++if ($Phase -eq 'V20_4') {
++    $trackedBuildPaths += @(
++        'app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt',
++        'app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt',
++        'framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java',
++        'framework_patch/stubs/com/android/server/wm/WindowManagerInternal.java',
++        'scripts/VerifyZuiControlFinalSuper.ps1',
++        'V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py',
++        'V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1'
++    )
++}
+ 
+ function Snapshot-Files([string]$Root, [string]$ExcludePattern = '') {
+     $rootFull = Full $Root
+@@ -283,7 +305,7 @@ function Remove-ScratchTree {
+     Remove-ExpectedJunction (Join-Path $scratch 'tools') (Join-Path $workspace 'tools')
+     Remove-ExpectedJunction (Join-Path $scratch 'work\android-sdk') (Join-Path $workRoot 'android-sdk')
+     Remove-ExpectedJunction (Join-Path $scratch '【A官方】072') $official
+-    Remove-OwnedTree $scratch $workRoot 'v20_3b_scratch_'
++    Remove-OwnedTree $scratch $workRoot $scratchPrefix
+ }
+ 
+ try {
+@@ -299,7 +321,7 @@ try {
+     & git -C $repo diff --binary "--output=$sourcePatch" $sourceParent $SourceCommit -- @trackedBuildPaths
+     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $sourcePatch -PathType Leaf) -or
+         (Get-Item -LiteralPath $sourcePatch).Length -eq 0) {
+-        throw 'The allowlisted V20.3B source patch is empty or failed.'
++        throw "The allowlisted $phaseDisplay source patch is empty or failed."
+     }
+     $changedPaths = @((Invoke-Captured git -C $repo diff --name-only $sourceParent $SourceCommit --).Split("`n") |
+         ForEach-Object { $_.Trim() } | Where-Object { $_ })
+@@ -310,9 +332,10 @@ try {
+         -not $allowSet.Contains($_)
+     })
+     if ($unexpectedProduction.Count) {
+-        throw "SourceCommit changes production paths outside the V20.3B allowlist: $($unexpectedProduction -join ', ')"
++        throw "SourceCommit changes production paths outside the $phaseDisplay allowlist: $($unexpectedProduction -join ', ')"
+     }
+     [ordered]@{
++        phase = $Phase
+         source_commit = $SourceCommit
+         parent_commit = $sourceParent
+         allowlist = $trackedBuildPaths
+@@ -403,6 +426,9 @@ try {
+         throw 'Scratch source commit mismatch.'
+     }
+     Invoke-Checked $python (Join-Path $scratchRepo 'V20_3B_DAEMON_RETIREMENT\tests\TestV20_3BPolicy.py')
++    if ($Phase -eq 'V20_4') {
++        Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_REFRESH_CORRECTNESS\tests\TestV20_4RefreshPolicy.py')
++    }
+     $sourcePayloadInventory = @(Snapshot-Files (Join-Path $scratchRepo 'payload') '^system/priv-app/[^/]+/[^/]+\.apk$')
+     $ciPayloadInventory = @(Snapshot-Files $ciPayload '^system/priv-app/[^/]+/[^/]+\.apk$')
+     if (($sourcePayloadInventory | ConvertTo-Json -Depth 4 -Compress) -ne
+@@ -429,6 +455,7 @@ try {
+     }
+ 
+     @(
++        "phase=$Phase",
+         "run_id=$RunId",
+         "source_commit=$SourceCommit",
+         "source_patch_sha256=$(Hash $sourcePatch)",
+@@ -581,13 +608,18 @@ try {
+     [IO.File]::WriteAllLines((Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt'), $sumLines, [Text.UTF8Encoding]::new($false))
+     Copy-Item -LiteralPath (Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt') -Destination (Join-Path $evidence 'candidate_sha256.txt')
+ 
+-    $verifier = Join-Path $scratchRepo 'scripts\VerifyZuiControlFlashPackage.ps1'
+-    & $verifier -FlashDir $candidate -WorkDir (Join-Path $scratch 'work\verify_v20_3b_final') `
++    $verifierName = if ($Phase -eq 'V20_4') {
++        'VerifyZuiControlFinalSuper.ps1'
++    } else {
++        'VerifyZuiControlFlashPackage.ps1'
++    }
++    $verifier = Join-Path $scratchRepo "scripts\$verifierName"
++    & $verifier -FlashDir $candidate -WorkDir (Join-Path $scratch "work\verify_${phaseSlug}_final") `
+         -ExpectedVendorImageSha256 $signedVendorHash `
+         -ExpectedVendorApkInventoryPath (Join-Path $evidence 'vendor_apk_preservation.json') *>&1 |
+         Tee-Object -FilePath $verifyLog
+     if ($LASTEXITCODE -ne 0 -or -not (Select-String -LiteralPath $verifyLog -SimpleMatch '"ok": true' -Quiet)) {
+-        throw 'Final candidate reverse verifier did not report ok=true.'
++        throw "$phaseDisplay final candidate reverse verifier did not report ok=true."
+     }
+     Record-Space after_verifier
+ 
+@@ -599,6 +631,7 @@ try {
+ 
+     [ordered]@{
+         ok = $true
++        phase = $Phase
+         candidate = $candidate
+         run_id = $RunId
+         source_commit = $SourceCommit
+@@ -623,7 +656,7 @@ try {
+     if (-not $KeepScratch) {
+         try {
+             Remove-ScratchTree
+-            Remove-OwnedTree $candidate $workRoot 'v20_3b_candidate_'
++            Remove-OwnedTree $candidate $workRoot $candidatePrefix
+             Write-Warning "Build failed; scratch/candidate cleaned, compact evidence retained: $evidence"
+         } catch {
+             if (Test-Path -LiteralPath $evidence -PathType Container) {
+diff --git a/V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1 b/V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1
+new file mode 100644
+index 0000000..d73a10b
+--- /dev/null
++++ b/V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1
+@@ -0,0 +1,26 @@
++[CmdletBinding()]
++param(
++    [string]$WorkspaceRoot = 'D:\3.VScode\Mi',
++    [Parameter(Mandatory)]
++    [ValidatePattern('^\d{14}$')]
++    [string]$RunId,
++    [Parameter(Mandatory)]
++    [ValidatePattern('^[0-9a-fA-F]{40}$')]
++    [string]$SourceCommit,
++    [Parameter(Mandatory)]
++    [ValidatePattern('^\d{6,20}$')]
++    [string]$CiRunId,
++    [Parameter(Mandatory)]
++    [string]$CiArtifactPath,
++    [switch]$KeepScratch,
++    [switch]$Execute
++)
++
++$ErrorActionPreference = 'Stop'
++Set-StrictMode -Version Latest
++$builder = Join-Path $PSScriptRoot '..\..\V20_3B_DAEMON_RETIREMENT\tests\BuildV20_3BCandidate.ps1'
++if (-not (Test-Path -LiteralPath $builder -PathType Leaf)) {
++    throw "Missing shared candidate builder: $builder"
++}
++
++& $builder @PSBoundParameters -Phase V20_4
+diff --git a/V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py b/V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
+new file mode 100644
+index 0000000..835a1ab
+--- /dev/null
++++ b/V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
+@@ -0,0 +1,437 @@
++#!/usr/bin/env python3
++"""Host-only state-machine and production-binding tests for V20.4 WP1."""
++
++from pathlib import Path
++import unittest
++
++
++ROOT = Path(__file__).resolve().parents[2]
++ALLOWED_HZ = (60, 90, 120, 144, 165)
++
++
++def read(relative: str) -> str:
++    return (ROOT / relative).read_text(encoding="utf-8")
++
++
++def is_transient(package_name: str) -> bool:
++    package_name = (package_name or "").lower()
++    return not package_name or package_name in {
++        "android",
++        "com.android.systemui",
++        "com.zui.game.service",
++        "com.zui.zuicontrol",
++    } or any(token in package_name for token in (
++        "permissioncontroller",
++        "packageinstaller",
++        "resolver",
++        "chooser",
++        "inputmethod",
++        "keyboard",
++        "overlay",
++    ))
++
++
++class RefreshModel:
++    """Small executable contract; Android integration is checked separately below."""
++
++    def __init__(self) -> None:
++        self.profiles: dict[str, int] = {}
++        self.raw = ""
++        self.raw_transient = True
++        self.non_ime_raw = ""
++        self.non_ime_transient = True
++        self.current = ""
++        self.last_business = ""
++        self.desired = "default"
++        self.attempted = ""
++        self.applied = ""
++        self.target_hz = 120
++        self.attempted_hz = 0
++        self.applied_hz = 0
++        self.disable_mask = 0
++        self.request_owned = False
++        self.vote_owned = False
++        self.peak_owned = False
++        self.apply_count = 0
++        self.skip_count = 0
++        self.last_reason = "init"
++        self.last_error = ""
++        self.fail_stage = ""
++        self.uperf = "running"
++        self.asoul = "running"
++        self.command = "available"
++
++    def hz_for(self, package_name: str) -> int:
++        return self.profiles.get(package_name, 120)
++
++    def focus(self, package_name: str) -> str:
++        self.raw = package_name or ""
++        self.raw_transient = is_transient(self.raw)
++        self.non_ime_raw = self.raw
++        self.non_ime_transient = self.raw_transient
++        if not self.raw_transient:
++            self.current = self.raw
++            self.last_business = self.raw
++        return self.reconcile("focusTransient" if self.raw_transient else "focus")
++
++    def window_focus(self, package_name: str, activity_package: str) -> str:
++        self.raw = package_name or ""
++        self.raw_transient = (not self.raw or is_transient(self.raw)
++                              or self.raw != activity_package)
++        self.non_ime_raw = self.raw
++        self.non_ime_transient = self.raw_transient
++        return self.reconcile("windowFocusTransient" if self.raw_transient
++                              else "windowFocus")
++
++    def set_ime_visible(self, visible: bool) -> str:
++        if visible:
++            self.raw = "@ime"
++            self.raw_transient = True
++            return self.reconcile("imeVisibleTransient")
++        self.raw = self.non_ime_raw
++        self.raw_transient = self.non_ime_transient
++        return self.reconcile("imeHiddenTransient" if self.raw_transient else "imeHidden")
++
++    def reconcile(self, reason: str, force: bool = False) -> str:
++        self.desired = "default" if self.raw_transient else self.raw
++        self.target_hz = 120 if self.desired == "default" else self.hz_for(self.raw)
++        if self.disable_mask:
++            self.last_reason = f"{reason}:disabled"
++            return "disabled"
++        if self.target_hz not in ALLOWED_HZ:
++            self.last_error = f"no_display_mode_{self.target_hz}"
++            self.last_reason = f"{reason}:failedBeforeMutation"
++            return "failed"
++        if (not force and self.request_owned and self.vote_owned
++                and self.applied_hz == self.target_hz):
++            self.applied = self.desired
++            self.skip_count += 1
++            self.last_error = ""
++            self.last_reason = f"{reason}:skipSame"
++            return "skipSame"
++        self.attempted = self.desired
++        self.attempted_hz = self.target_hz
++        if self.fail_stage == "peak":
++            return self.fail_after_mutation(reason, "peak_failed")
++        self.peak_owned = True
++        if self.fail_stage == "vote":
++            return self.fail_after_mutation(reason, "vote_failed")
++        self.vote_owned = True
++        if self.fail_stage == "app_request":
++            return self.fail_after_mutation(reason, "app_request_failed")
++        self.request_owned = True
++        self.applied = self.desired
++        self.applied_hz = self.target_hz
++        self.apply_count += 1
++        self.last_error = ""
++        self.last_reason = f"{reason}:applied"
++        return "applied"
++
++    def fail_after_mutation(self, reason: str, error: str) -> str:
++        self.request_owned = False
++        self.vote_owned = False
++        self.peak_owned = False
++        self.applied = ""
++        self.applied_hz = 0
++        self.last_error = error
++        self.last_reason = f"{reason}:failedAfterMutation"
++        return "failed"
++
++    def set_current_profile(self, hz: int) -> str:
++        package_name = self.last_business or self.current
++        if not package_name:
++            return "no_current_scene"
++        if hz not in ALLOWED_HZ:
++            return "unsupported"
++        if hz == 120:
++            self.profiles.pop(package_name, None)
++        else:
++            self.profiles[package_name] = hz
++        if self.raw == package_name and not self.raw_transient:
++            return self.reconcile("binder")
++        return "savedOnly"
++
++    def set_explicit_profile(self, package_name: str, hz: int) -> str:
++        if is_transient(package_name):
++            return "transient_package_not_configurable"
++        if hz not in ALLOWED_HZ:
++            return "unsupported"
++        self.profiles[package_name] = hz
++        if self.raw == package_name and not self.raw_transient:
++            return self.reconcile("binder")
++        return "savedOnly"
++
++    def set_disable_mask(self, mask: int) -> str:
++        was_disabled = bool(self.disable_mask)
++        self.disable_mask = mask
++        disabled = bool(mask)
++        if not was_disabled and disabled:
++            self.request_owned = False
++            self.vote_owned = False
++            self.peak_owned = False
++            self.applied = ""
++            self.applied_hz = 0
++            self.last_reason = "propertyDisable:released"
++            return "released"
++        if was_disabled and not disabled:
++            return self.reconcile("propertyEnable", force=True)
++        self.last_reason = f"propertyDisableMaskChanged:{mask}"
++        return "maskOnly"
++
++
++class RefreshStateModelTest(unittest.TestCase):
++    def test_zuicontrol_is_neutral_foreground_not_inheritance(self) -> None:
++        model = RefreshModel()
++        model.profiles["app.a"] = 90
++        self.assertEqual("applied", model.focus("app.a"))
++        self.assertEqual(("app.a", "app.a", 90),
++                         (model.last_business, model.applied, model.applied_hz))
++
++        self.assertEqual("applied", model.focus("com.zui.zuicontrol"))
++        self.assertEqual("app.a", model.current)
++        self.assertEqual("app.a", model.last_business)
++        self.assertEqual(("default", "default", 120),
++                         (model.desired, model.applied, model.applied_hz))
++
++        self.assertEqual("applied", model.focus("app.a"))
++        self.assertEqual(("app.a", 90), (model.applied, model.applied_hz))
++
++    def test_qs_edits_last_business_but_stays_neutral(self) -> None:
++        model = RefreshModel()
++        model.profiles["launcher"] = 90
++        model.focus("launcher")
++        model.focus("com.android.systemui")
++
++        self.assertEqual("savedOnly", model.set_current_profile(144))
++        self.assertEqual(144, model.profiles["launcher"])
++        self.assertEqual(("default", 120), (model.applied, model.applied_hz))
++        self.assertNotIn("com.android.systemui", model.profiles)
++
++        model.focus("launcher")
++        self.assertEqual(("launcher", 144), (model.applied, model.applied_hz))
++
++    def test_all_transient_classes_use_default_without_learning(self) -> None:
++        model = RefreshModel()
++        model.profiles["app.b"] = 90
++        model.focus("app.b")
++        for package_name in (
++            "com.android.systemui",
++            "com.zui.zuicontrol",
++            "com.example.inputmethod.latin",
++            "com.android.permissioncontroller",
++            "com.android.intentresolver",
++            "com.example.overlay",
++            "",
++        ):
++            model.focus(package_name)
++            self.assertEqual("app.b", model.last_business)
++            self.assertEqual(("default", 120), (model.desired, model.applied_hz))
++            self.assertNotIn(package_name, model.profiles)
++
++    def test_empty_and_unknown_window_owner_are_neutral(self) -> None:
++        model = RefreshModel()
++        model.profiles["app.a"] = 90
++        model.focus("app.a")
++        for owner in ("", "vendor.popup.window"):
++            model.window_focus(owner, "app.a")
++            self.assertEqual(("default", 120), (model.desired, model.applied_hz))
++            self.assertEqual("app.a", model.last_business)
++
++    def test_ime_hide_restores_pre_ime_transient_window(self) -> None:
++        model = RefreshModel()
++        model.profiles["app.a"] = 90
++        model.focus("app.a")
++        model.window_focus("com.android.systemui", "app.a")
++        model.set_ime_visible(True)
++        model.set_ime_visible(False)
++        self.assertEqual("com.android.systemui", model.raw)
++        self.assertEqual(("default", 120), (model.desired, model.applied_hz))
++
++    def test_120_to_default_is_strict_dedup(self) -> None:
++        model = RefreshModel()
++        model.focus("unconfigured.app")
++        apply_count = model.apply_count
++        self.assertEqual("skipSame", model.focus("com.zui.zuicontrol"))
++        self.assertEqual(apply_count, model.apply_count)
++        self.assertEqual("default", model.applied)
++        self.assertEqual(1, model.skip_count)
++
++    def test_non_120_round_trips_are_real_applies(self) -> None:
++        model = RefreshModel()
++        model.profiles["app.a"] = 90
++        model.focus("app.a")
++        base = model.apply_count
++        for _ in range(100):
++            model.focus("com.zui.zuicontrol")
++            model.focus("app.a")
++        self.assertEqual(200, model.apply_count - base)
++
++    def test_kill_switch_releases_and_reenables_current_raw(self) -> None:
++        model = RefreshModel()
++        model.profiles["app.b"] = 90
++        model.focus("app.b")
++        self.assertEqual("released", model.set_disable_mask(2))
++        self.assertFalse(model.request_owned or model.vote_owned or model.peak_owned)
++        self.assertEqual(("", 0), (model.applied, model.applied_hz))
++        self.assertEqual("applied", model.set_disable_mask(0))
++        self.assertEqual(("app.b", 90), (model.applied, model.applied_hz))
++
++        model.focus("com.android.systemui")
++        model.set_disable_mask(1)
++        self.assertEqual("applied", model.set_disable_mask(0))
++        self.assertEqual(("default", 120), (model.applied, model.applied_hz))
++
++    def test_global_disable_does_not_touch_other_planes(self) -> None:
++        model = RefreshModel()
++        before = (model.uperf, model.asoul, model.command)
++        model.focus("app.a")
++        model.set_disable_mask(1)
++        self.assertEqual(before, (model.uperf, model.asoul, model.command))
++
++    def test_five_rates_and_unsupported_are_exact(self) -> None:
++        for hz in ALLOWED_HZ:
++            model = RefreshModel()
++            self.assertEqual("savedOnly", model.set_explicit_profile("app.rate", hz))
++            model.focus("app.rate")
++            self.assertEqual(hz, model.applied_hz)
++
++        model = RefreshModel()
++        model.focus("app.rate")
++        applied = (model.applied, model.applied_hz, model.apply_count)
++        self.assertEqual("unsupported", model.set_explicit_profile("app.rate", 75))
++        self.assertEqual(applied, (model.applied, model.applied_hz, model.apply_count))
++
++    def test_failure_does_not_pollute_applied(self) -> None:
++        model = RefreshModel()
++        model.profiles["app.a"] = 90
++        model.focus("app.a")
++        model.fail_stage = "app_request"
++        result = model.focus("com.zui.zuicontrol")
++        self.assertEqual("failed", result)
++        self.assertEqual(("default", 120), (model.desired, model.attempted_hz))
++        self.assertEqual(("", 0), (model.applied, model.applied_hz))
++        self.assertTrue(model.last_error)
++        self.assertEqual(1, model.apply_count)
++
++
++class ProductionBindingTest(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls) -> None:
++        cls.service = read(
++            "framework_patch/src/services/com/zui/server/control/ZuiControlService.java"
++        )
++        cls.hooks = read(
++            "framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java"
++        )
++        cls.framework_patcher = read("scripts/PatchZuiControlFramework.py")
++        cls.client = read("app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt")
++        cls.main = read("app/src/main/java/com/zui/zuicontrol/MainActivity.kt")
++        cls.tile = read("app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt")
++        cls.quick = read("app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt")
++        cls.system_properties = read("framework_patch/stubs/android/os/SystemProperties.java")
++        cls.wm_internal = read(
++            "framework_patch/stubs/com/android/server/wm/WindowManagerInternal.java"
++        )
++
++    def test_transient_is_neutral_and_not_profile_owner(self) -> None:
++        self.assertNotIn("controlPanel", self.service)
++        self.assertNotIn("profileFor(APP_PACKAGE", self.service)
++        self.assertIn('source + "Transient"', self.service)
++        self.assertIn("refreshProfile = neutralProfile(userId);", self.service)
++        self.assertIn('new Profile(DEFAULT_SCENE, userId, 120, 0, "DISPLAY_ONLY")',
++                      self.service)
++        self.assertIn('error=transient_package_not_configurable', self.service)
++        self.assertIn("if (!isTransientPackage(parts[2]))", self.service)
++        self.assertIn("mImeVisible || mRawFocusedPackage.isEmpty()", self.service)
++
++    def test_window_and_ime_edges_are_lightweight_posts(self) -> None:
++        self.assertIn("onFocusedWindowChanged", self.hooks)
++        self.assertIn("onImeVisibilityChanged", self.hooks)
++        self.assertIn("mWorker.post(new Runnable()", self.service)
++        self.assertIn("onFocusedWindowChanged(Ljava/lang/String;I)V", self.framework_patcher)
++        self.assertIn("onImeVisibilityChanged(Ljava/lang/String;ZI)V", self.framework_patcher)
++        self.assertIn("mImeControlTarget", self.framework_patcher)
++        for forbidden in ("Thread.sleep", "Runtime.getRuntime", "ProcessBuilder"):
++            self.assertNotIn(forbidden, self.hooks)
++
++    def test_configuration_and_physical_axes_are_separate(self) -> None:
++        for field in (
++            "editableScenePackage",
++            "editableDisplayHz",
++            "desiredScenePackage",
++            "attemptedScenePackage",
++            "appliedScenePackage",
++            "attemptedDisplayHz",
++            "appliedDisplayHz",
++            "physicalDisplayHz",
++            "lastApplyReason",
++            "lastApplyError",
++            "refreshApplyCount",
++            "skipSameCount",
++        ):
++            self.assertIn(f'"\\n{field}="', self.service)
++        self.assertIn("isForegroundBusinessPackage(pkg, mCurrentUserId)", self.service)
++        self.assertIn('return stateInt("editableDisplayHz")', self.client)
++        self.assertIn("ZuiControlClient.editableDisplayHz()", self.tile)
++        self.assertIn("ZuiControlClient.editableDisplayHz()", self.quick)
++
++    def test_apply_success_order_and_failure_cleanup(self) -> None:
++        apply_method = self.service[
++            self.service.index("private String applyProfile("):
++            self.service.index("private String failApplyBeforeMutation(")
++        ]
++        self.assertLess(
++            apply_method.index("mDesiredScenePackage = profile.packageName"),
++            apply_method.index("mAttemptedScenePackage = profile.packageName"),
++        )
++        platform_call = apply_method.index("dmi.setDisplayProperties")
++        success_write = apply_method.index("mAppliedScenePackage = profile.packageName", platform_call)
++        self.assertLess(platform_call, success_write)
++        self.assertIn("failApplyAfterMutation", apply_method)
++        self.assertIn("clearAppliedState();", self.service)
++
++    def test_kill_switch_is_event_driven_without_polling(self) -> None:
++        self.assertIn("SystemProperties.addChangeCallback", self.service)
++        self.assertIn("addChangeCallback", self.system_properties)
++        self.assertIn("enqueueRefreshDisableMask(readRefreshDisableMask())", self.service)
++        self.assertIn("onRefreshPropertiesChanged(disableMask)", self.service)
++        self.assertNotIn("removeCallbacks(mRefreshPropertyRunnable)", self.service)
++        self.assertIn("readRefreshDisableMask()", self.service)
++        property_section = self.service[
++            self.service.index("private void registerRefreshPropertyObserver"):
++            self.service.index("private void registerScreenObserver")
++        ]
++        for forbidden in ("postDelayed", "sleep(", "Timer", "while ("):
++            self.assertNotIn(forbidden, property_section)
++
++    def test_cleanup_uses_owner_safe_vote_and_wm_handoff(self) -> None:
++        self.assertIn('"updateGlobalVote", int.class, voteClass', self.service)
++        self.assertNotIn('"updateVote", int.class, int.class', self.service)
++        self.assertIn("updateGlobalRenderVote(dmi, null)", self.service)
++        self.assertIn("requestTraversalFromDisplayManager()", self.service)
++        self.assertIn("appRequestHandoffPending", self.service)
++        self.assertIn("requestTraversalFromDisplayManager", self.wm_internal)
++        self.assertEqual(1, self.service.count("dmi.setDisplayProperties("))
++        self.assertNotIn("SETTING_MIN_REFRESH_RATE", self.service)
++
++    def test_peak_is_compare_and_restore(self) -> None:
++        self.assertIn("mPeakRestoreValue = restoreValue", self.service)
++        self.assertIn("safe(mPeakLastWritten).equals(current)", self.service)
++        self.assertIn("writePeakSetting(mPeakRestoreValue)", self.service)
++        self.assertIn('mPeakReleaseStatus = "externalPreserved"', self.service)
++
++    def test_window_context_and_storage_fail_closed(self) -> None:
++        self.assertIn("mRawFocusTransient", self.service)
++        self.assertIn("volatile FocusSnapshot mLatestFocus", self.service)
++        self.assertIn("mLatestNonImeFocusedPackage", self.service)
++        self.assertIn("mNonImeFocusedPackage", self.service)
++        self.assertIn("displayId != Display.DEFAULT_DISPLAY", self.service)
++        self.assertIn("private boolean saveProfiles()", self.service)
++        self.assertIn('return "ok=0\\nerror=" + mLastError;', self.service)
++        self.assertIn("profileSaved=1", self.service)
++        self.assertIn("userId: Int = currentUserId()", self.client)
++        self.assertIn("userId == ZuiControlClient.currentUserId()", self.main)
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)
+diff --git a/app/src/main/java/com/zui/zuicontrol/MainActivity.kt b/app/src/main/java/com/zui/zuicontrol/MainActivity.kt
+index 09a0a71..1084980 100644
+--- a/app/src/main/java/com/zui/zuicontrol/MainActivity.kt
++++ b/app/src/main/java/com/zui/zuicontrol/MainActivity.kt
+@@ -588,9 +588,11 @@ class MainActivity : Activity() {
+             .filter { it.startsWith("profile=") }
+             .forEach { line ->
+                 val parts = line.substringAfter('=').split('|')
++                val userId = parts.getOrNull(0)?.toIntOrNull()
+                 val pkg = parts.getOrNull(1).orEmpty()
+                 val rate = parts.getOrNull(2)?.toIntOrNull()
+-                if (parts.size >= 5 && PackageNames.isValid(pkg) &&
++                if (parts.size >= 5 && userId == ZuiControlClient.currentUserId() &&
++                    PackageNames.isValid(pkg) &&
+                     rate != null && rate in ZuiControlContract.rates &&
+                     rate != RefreshSceneController.BASE_REFRESH_RATE) {
+                     refreshRules[pkg] = rate
+diff --git a/app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt b/app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt
+index dfd993b..3c447ee 100644
+--- a/app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt
++++ b/app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt
+@@ -1,9 +1,11 @@
+ package com.zui.zuicontrol
+ 
+ import android.zui.ZuiControlManager
++import android.os.Process
+ 
+ object ZuiControlClient {
+     private const val MODE_DISPLAY_ONLY = "DISPLAY_ONLY"
++    private const val PER_USER_RANGE = 100_000
+ 
+     data class Reply(
+         val ok: Boolean,
+@@ -16,38 +18,49 @@ object ZuiControlClient {
+         }
+     }
+ 
+-    fun setPackageDisplayHz(packageName: String, displayHz: Int, userId: Int = 0): Reply {
++    fun setPackageDisplayHz(
++        packageName: String,
++        displayHz: Int,
++        userId: Int = currentUserId(),
++    ): Reply {
+         return call {
+             it.setProfile(packageName, userId, displayHz, 0, MODE_DISPLAY_ONLY)
+         }
+     }
+ 
+-    fun removePackageProfile(packageName: String, userId: Int = 0): Reply {
++    fun removePackageProfile(packageName: String, userId: Int = currentUserId()): Reply {
+         return call {
+             it.removeProfile(packageName, userId)
+         }
+     }
+ 
+     fun currentDisplayHz(): Int? {
+-        val state = call { it.getState() }
+-        if (!state.ok) {
+-            return null
+-        }
+-        return state.text.lineSequence()
+-            .firstOrNull { it.startsWith("targetDisplayHz=") }
+-            ?.substringAfter('=')
+-            ?.toIntOrNull()
++        return stateInt("targetDisplayHz")
++    }
++
++    fun editableDisplayHz(): Int? {
++        return stateInt("editableDisplayHz")?.takeIf { it > 0 }
+     }
+ 
+     fun stateText(): String {
+         return call { it.getState() }.text
+     }
+ 
++    fun currentUserId(): Int = Process.myUid() / PER_USER_RANGE
++
+     internal fun stateValue(state: String, key: String): String? =
+         state.lineSequence()
+             .firstOrNull { it.startsWith("$key=") }
+             ?.substringAfter('=')
+ 
++    private fun stateInt(key: String): Int? {
++        val state = call { it.getState() }
++        if (!state.ok) {
++            return null
++        }
++        return stateValue(state.text, key)?.toIntOrNull()
++    }
++
+     fun notifyControlRequest(requestId: String, requestSha256: String): Reply {
+         return call { it.notifyControlRequest(requestId, requestSha256) }
+     }
+diff --git a/app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt b/app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt
+index 9c64188..5924885 100644
+--- a/app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt
++++ b/app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt
+@@ -45,12 +45,16 @@ class ZuiControlQuickService : Service() {
+             }
+         }
+         if (rate != null) {
+-            pendingRate = rate
+-            pendingRateUntilMs = SystemClock.elapsedRealtime() + PENDING_RATE_TIMEOUT_MS
+-            ZuiControlClient.setCurrentSceneDisplayHz(rate)
++            val reply = ZuiControlClient.setCurrentSceneDisplayHz(rate)
++            pendingRate = if (reply.ok) rate else null
++            pendingRateUntilMs = if (reply.ok) {
++                SystemClock.elapsedRealtime() + PENDING_RATE_TIMEOUT_MS
++            } else {
++                0L
++            }
+             handler.removeCallbacks(refreshNotificationRunnable)
+             handler.removeCallbacks(settlePendingRateRunnable)
+-            updateNotification(rate)
++            updateNotification(if (reply.ok) rate else currentRate())
+             handler.postDelayed(settlePendingRateRunnable, PENDING_RATE_TIMEOUT_MS + 80L)
+         } else {
+             updateNotification(preferPending = false)
+@@ -188,7 +192,7 @@ class ZuiControlQuickService : Service() {
+     }
+ 
+     private fun currentRate(): Int {
+-        return ZuiControlClient.currentDisplayHz() ?: RefreshSceneController.currentRate(this)
++        return ZuiControlClient.editableDisplayHz() ?: RefreshSceneController.currentRate(this)
+     }
+ 
+     private fun createChannel() {
+diff --git a/app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt b/app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt
+index 2d530e1..3eb2846 100644
+--- a/app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt
++++ b/app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt
+@@ -11,18 +11,18 @@ class ZuiControlTileService : TileService() {
+ 
+     override fun onStartListening() {
+         super.onStartListening()
+-        updateTile(ZuiControlClient.currentDisplayHz())
++        updateTile(ZuiControlClient.editableDisplayHz())
+     }
+ 
+     override fun onClick() {
+         super.onClick()
+-        val current = ZuiControlClient.currentDisplayHz()
++        val current = ZuiControlClient.editableDisplayHz()
+         val next = nextRate(current)
+         updateTile(next)
+         Thread {
+             val reply = ZuiControlClient.setCurrentSceneDisplayHz(next)
+             val refreshed = if (reply.ok) {
+-                ZuiControlClient.currentDisplayHz() ?: next
++                ZuiControlClient.editableDisplayHz() ?: next
+             } else {
+                 current
+             }
+diff --git a/framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java b/framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java
+index 887c78d..882bddb 100644
+--- a/framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java
++++ b/framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java
+@@ -12,4 +12,19 @@ public final class ZuiControlHooks {
+             service.onFocusedAppChanged(record, displayId);
+         }
+     }
++
++    public static void onFocusedWindowChanged(String packageName, int displayId) {
++        ZuiControlService service = ZuiControlService.getInstance();
++        if (service != null) {
++            service.onFocusedWindowChanged(packageName, displayId);
++        }
++    }
++
++    public static void onImeVisibilityChanged(
++            String packageName, boolean visible, int displayId) {
++        ZuiControlService service = ZuiControlService.getInstance();
++        if (service != null) {
++            service.onImeVisibilityChanged(packageName, visible, displayId);
++        }
++    }
+ }
+diff --git a/framework_patch/src/services/com/zui/server/control/ZuiControlService.java b/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
+index 464bf2f..0eb8090 100644
+--- a/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
++++ b/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
+@@ -25,6 +25,7 @@ import android.view.Display;
+ 
+ import com.android.server.LocalServices;
+ import com.android.server.wm.ActivityRecord;
++import com.android.server.wm.WindowManagerInternal;
+ 
+ import java.io.File;
+ import java.io.FileOutputStream;
+@@ -57,7 +58,11 @@ public final class ZuiControlService extends Binder {
+     private static final String PROP_SCHEDULER_ACTIVE = "sys.zui_control.scheduler_active";
+     private static final String PROP_UPERF_SERVICE = "init.svc.zui_uperf";
+     private static final String PROP_ASOUL_SERVICE = "init.svc.zui_asoulopt";
++    private static final String PROP_GLOBAL_DISABLE = "persist.zui_control.disable";
++    private static final String PROP_REFRESH_DISABLE = "persist.zui_control.refresh.disable";
+     private static final String GAME_HELPER_PACKAGE = "com.zui.game.service";
++    private static final String DEFAULT_SCENE = "default";
++    private static final String IME_SCENE = "@ime";
+     private static final String RELEASE_CERT =
+             "3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94";
+     private static final String DEBUG_CERT =
+@@ -75,8 +80,7 @@ public final class ZuiControlService extends Binder {
+     private static final int TX_SET_MODULE_ENABLED = 10;
+     private static final int TX_EXPORT_LOG = 11;
+     private static final int TX_NOTIFY_CONTROL_REQUEST = 12;
+-    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8; // PRIORITY_AUTH_OPTIMIZER_RENDER_FRAME_RATE
+-
++    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;
+     private static final int[] DISPLAY_HZ = new int[] {60, 90, 120, 144, 165};
+     private static volatile ZuiControlService sInstance;
+ 
+@@ -88,26 +92,73 @@ public final class ZuiControlService extends Binder {
+     private final UperfScenePolicy mUperfScenePolicy;
+     private final Map<String, Profile> mProfiles = new HashMap<>();
+ 
++    private volatile FocusSnapshot mLatestFocus = new FocusSnapshot(
++            "", 0, Display.DEFAULT_DISPLAY, true);
++    private volatile String mLatestActivityPackage = "";
++    private volatile int mLatestActivityUid = -1;
++    private volatile int mLatestActivityUserId = 0;
++    private volatile int mLatestActivityDisplayId = Display.DEFAULT_DISPLAY;
++    private volatile String mLatestNonImeFocusedPackage = "";
++    private volatile int mLatestNonImeFocusedUid = -1;
++    private volatile int mLatestNonImeFocusedUserId = 0;
++    private volatile int mLatestNonImeFocusedDisplayId = Display.DEFAULT_DISPLAY;
++    private volatile boolean mLatestNonImeFocusTransient = true;
++    private volatile boolean mLatestWindowFocusSeen;
++    private volatile boolean mLatestImeVisible;
++    private String mActivityFocusedPackage = "";
++    private int mActivityFocusedUid = -1;
++    private int mActivityFocusedUserId = 0;
++    private int mActivityFocusedDisplayId = Display.DEFAULT_DISPLAY;
++    private String mNonImeFocusedPackage = "";
++    private int mNonImeFocusedUid = -1;
++    private int mNonImeFocusedUserId = 0;
++    private int mNonImeFocusedDisplayId = Display.DEFAULT_DISPLAY;
++    private boolean mNonImeFocusTransient = true;
++    private boolean mWindowFocusSeen;
++    private boolean mImeVisible;
+     private String mRawFocusedPackage = "";
++    private int mRawFocusedUserId = 0;
++    private int mRawFocusedDisplayId = Display.DEFAULT_DISPLAY;
++    private boolean mRawFocusTransient = true;
+     private String mCurrentScenePackage = "";
+     private String mLastNonTransientScenePackage = "";
++    private String mDesiredScenePackage = DEFAULT_SCENE;
++    private String mAttemptedScenePackage = "";
+     private String mAppliedScenePackage = "";
+     private int mCurrentUserId = 0;
+     private int mCurrentUid = -1;
+-    private int mCurrentDisplayId = Display.DEFAULT_DISPLAY;
+     private int mTargetDisplayHz = 120;
++    private int mAttemptedDisplayHz = 0;
++    private int mAppliedDisplayHz = 0;
+     private int mTargetFpsCap = 0;
+     private String mTargetMode = "DISPLAY_ONLY";
+-    private String mLastApply = "init";
++    private String mLastApplyReason = "init";
++    private String mLastApplyError = "";
+     private String mLastError = "";
+     private String mLastSchedulerError = "";
+     private int mLastAppliedDisplayId = -1;
+     private int mLastAppliedModeId = -1;
+     private int mLastAppliedDisplayHz = -1;
+     private int mLastSyncedPeakHz = -1;
++    private boolean mPeakBridgeOwned;
++    private String mPeakRestoreValue;
++    private String mPeakLastWritten = "";
++    private String mPeakReleaseStatus = "notOwned";
++    private boolean mRenderVoteOwned;
++    private int mRenderVoteHz;
++    private String mRenderVoteReleaseStatus = "notOwned";
++    private boolean mAppRequestOwned;
++    private String mAppRequestHandoff = "notRequested";
++    private boolean mAppRequestHandoffPending;
++    private boolean mRefreshDisabled;
++    private int mRefreshDisableMask;
++    private volatile int mObservedRefreshDisableMask;
++    private final Object mRefreshPropertyLock = new Object();
++    private boolean mDisableReleaseRetryPosted;
++    private int mRefreshApplyCount;
++    private int mSkipSameCount;
+     private boolean mScreenInteractive = true;
+     private long mCommandSequence;
+-
+     public ZuiControlService(Context context) {
+         mContext = context;
+         mPm = context.getPackageManager();
+@@ -122,9 +173,13 @@ public final class ZuiControlService extends Binder {
+         }
+         mProfileFile = new AtomicFile(new File(PROFILE_FILE));
+         loadProfiles();
++        mRefreshDisableMask = readRefreshDisableMask();
++        mObservedRefreshDisableMask = mRefreshDisableMask;
++        mRefreshDisabled = mRefreshDisableMask != 0;
+         sInstance = this;
+         attachInterface(null, DESCRIPTOR);
+         registerPeakObserver();
++        registerRefreshPropertyObserver();
+         registerScreenObserver();
+         mUperfScenePolicy.start(mCurrentScenePackage, mScreenInteractive);
+         publishState();
+@@ -144,6 +199,9 @@ public final class ZuiControlService extends Binder {
+     }
+ 
+     public void onFocusedAppChanged(ActivityRecord record, int displayId) {
++        if (displayId != Display.DEFAULT_DISPLAY) {
++            return;
++        }
+         final long eventNanos = SystemClock.elapsedRealtimeNanos();
+         final String pkg;
+         final int uid;
+@@ -158,49 +216,191 @@ public final class ZuiControlService extends Binder {
+                     ? record.info.applicationInfo.uid : -1;
+             userId = record.mUserId;
+         }
++        mLatestActivityPackage = pkg;
++        mLatestActivityUid = uid;
++        mLatestActivityUserId = userId;
++        mLatestActivityDisplayId = displayId;
++        final String effectivePkg = mLatestWindowFocusSeen
++                ? mLatestNonImeFocusedPackage : pkg;
++        final boolean transientFocus = effectivePkg.isEmpty()
++                || isTransientPackage(effectivePkg) || !effectivePkg.equals(pkg);
++        setLatestNonImeFocus(effectivePkg, uid, userId, displayId, transientFocus);
++        if (!mLatestImeVisible) {
++            setLatestEffectiveFocus(effectivePkg, userId, displayId, transientFocus);
++        }
+         mWorker.post(new Runnable() {
+             @Override
+             public void run() {
+-                handleFocusedApp(pkg, uid, userId, displayId, eventNanos);
++                handleFocusedActivity(pkg, uid, userId, displayId, effectivePkg,
++                        transientFocus, eventNanos);
+             }
+         });
+     }
+ 
+-    private synchronized void handleFocusedApp(
+-            String pkg, int uid, int userId, int displayId, long eventNanos) {
+-        mRawFocusedPackage = safe(pkg);
+-        mCurrentDisplayId = resolveDisplayId(displayId);
+-        if (APP_PACKAGE.equals(mRawFocusedPackage)) {
+-            mCurrentUid = uid;
+-            mCurrentUserId = userId;
+-            applyProfile(profileFor(APP_PACKAGE, mCurrentUserId), "controlPanel");
+-            mUperfScenePolicy.onSystemStateChanged(
+-                    mCurrentScenePackage, mScreenInteractive, "controlPanel", eventNanos);
+-            publishState();
++    public void onFocusedWindowChanged(String packageName, int displayId) {
++        if (displayId != Display.DEFAULT_DISPLAY) {
++            return;
++        }
++        final String pkg = safe(packageName);
++        final boolean transientFocus = pkg.isEmpty() || isTransientPackage(pkg)
++                || !pkg.equals(mLatestActivityPackage);
++        boolean firstWindowFocus = !mLatestWindowFocusSeen;
++        mLatestWindowFocusSeen = true;
++        if (!firstWindowFocus && pkg.equals(mLatestNonImeFocusedPackage)
++                && displayId == mLatestNonImeFocusedDisplayId
++                && transientFocus == mLatestNonImeFocusTransient) {
++            return;
++        }
++        final int userId = mLatestActivityUserId;
++        final int uid = mLatestActivityUid;
++        final long eventNanos = SystemClock.elapsedRealtimeNanos();
++        setLatestNonImeFocus(pkg, uid, userId, displayId, transientFocus);
++        if (!mLatestImeVisible) {
++            setLatestEffectiveFocus(pkg, userId, displayId, transientFocus);
++        }
++        mWorker.post(new Runnable() {
++            @Override
++            public void run() {
++                handleFocusedWindow(pkg, uid, userId, displayId,
++                        transientFocus, eventNanos);
++            }
++        });
++    }
++
++    public void onImeVisibilityChanged(String packageName, boolean visible, int displayId) {
++        if (displayId != Display.DEFAULT_DISPLAY) {
++            return;
++        }
++        final String pkg = visible && safe(packageName).isEmpty()
++                ? IME_SCENE : safe(packageName);
++        FocusSnapshot latestFocus = mLatestFocus;
++        if (mLatestImeVisible == visible
++                && (!visible || (pkg.equals(latestFocus.packageName)
++                && displayId == latestFocus.displayId))) {
+             return;
+         }
+-        if (mRawFocusedPackage.isEmpty() || isTransientPackage(mRawFocusedPackage)) {
+-            String scene = !mAppliedScenePackage.isEmpty()
+-                    ? mAppliedScenePackage : (!mCurrentScenePackage.isEmpty()
+-                    ? mCurrentScenePackage : mLastNonTransientScenePackage);
+-            if (!scene.isEmpty()) {
+-                applyProfile(profileFor(scene, mCurrentUserId), "transient");
++        final long eventNanos = SystemClock.elapsedRealtimeNanos();
++        mLatestImeVisible = visible;
++        if (visible) {
++            setLatestEffectiveFocus(pkg, mLatestActivityUserId, displayId, true);
++        } else {
++            setLatestEffectiveFocus(mLatestNonImeFocusedPackage,
++                    mLatestNonImeFocusedUserId, mLatestNonImeFocusedDisplayId,
++                    mLatestNonImeFocusTransient);
++        }
++        mWorker.post(new Runnable() {
++            @Override
++            public void run() {
++                handleImeVisibility(pkg, visible, displayId, eventNanos);
+             }
++        });
++    }
++
++    private void setLatestNonImeFocus(String pkg, int uid, int userId, int displayId,
++            boolean transientFocus) {
++        mLatestNonImeFocusedPackage = safe(pkg);
++        mLatestNonImeFocusedUid = uid;
++        mLatestNonImeFocusedUserId = userId;
++        mLatestNonImeFocusedDisplayId = displayId;
++        mLatestNonImeFocusTransient = transientFocus;
++    }
++
++    private void setLatestEffectiveFocus(String pkg, int userId, int displayId,
++            boolean transientFocus) {
++        mLatestFocus = new FocusSnapshot(safe(pkg), userId, displayId, transientFocus);
++    }
++
++    private synchronized void handleFocusedActivity(
++            String pkg, int uid, int userId, int displayId, String effectivePkg,
++            boolean transientFocus, long eventNanos) {
++        mActivityFocusedPackage = safe(pkg);
++        mActivityFocusedUid = uid;
++        mActivityFocusedUserId = userId;
++        mActivityFocusedDisplayId = resolveDisplayId(displayId);
++        setNonImeFocus(effectivePkg, uid, userId, displayId, transientFocus);
++        if (!transientFocus) {
++            updateBusinessScene(effectivePkg, uid, userId, displayId);
++        }
++        if (mImeVisible) {
+             mUperfScenePolicy.onSystemStateChanged(
+-                    mCurrentScenePackage, mScreenInteractive, "transient", eventNanos);
++                    mCurrentScenePackage, mScreenInteractive, "focusBehindIme", eventNanos);
+             publishState();
+             return;
+         }
+-        mCurrentScenePackage = mRawFocusedPackage;
+-        mLastNonTransientScenePackage = mRawFocusedPackage;
+-        mCurrentUid = uid;
+-        mCurrentUserId = userId;
+-        applyProfile(profileFor(mCurrentScenePackage, mCurrentUserId), "focus");
++        handleEffectiveFocus(effectivePkg, uid, userId, displayId,
++                transientFocus, "focus", eventNanos);
++    }
++
++    private synchronized void handleFocusedWindow(
++            String pkg, int uid, int userId, int displayId,
++            boolean transientFocus, long eventNanos) {
++        mWindowFocusSeen = true;
++        setNonImeFocus(pkg, uid, userId, displayId, transientFocus);
++        if (mImeVisible) {
++            publishState();
++            return;
++        }
++        handleEffectiveFocus(pkg, uid, userId, displayId,
++                transientFocus, "windowFocus", eventNanos);
++    }
++
++    private synchronized void handleImeVisibility(
++            String pkg, boolean visible, int displayId, long eventNanos) {
++        mImeVisible = visible;
++        if (visible) {
++            handleEffectiveFocus(pkg, -1, mActivityFocusedUserId,
++                    displayId, true, "imeVisible", eventNanos);
++        } else {
++            handleEffectiveFocus(mNonImeFocusedPackage, mNonImeFocusedUid,
++                    mNonImeFocusedUserId, mNonImeFocusedDisplayId,
++                    mNonImeFocusTransient, "imeHidden", eventNanos);
++        }
++    }
++
++    private void setNonImeFocus(String pkg, int uid, int userId, int displayId,
++            boolean transientFocus) {
++        mNonImeFocusedPackage = safe(pkg);
++        mNonImeFocusedUid = uid;
++        mNonImeFocusedUserId = userId;
++        mNonImeFocusedDisplayId = resolveDisplayId(displayId);
++        mNonImeFocusTransient = transientFocus;
++    }
++
++    private void handleEffectiveFocus(
++            String pkg, int uid, int userId, int displayId, boolean forceTransient,
++            String source, long eventNanos) {
++        mRawFocusedPackage = safe(pkg);
++        mRawFocusedUserId = userId;
++        mRawFocusedDisplayId = resolveDisplayId(displayId);
++        Profile refreshProfile;
++        boolean transientFocus = forceTransient || mImeVisible || mRawFocusedPackage.isEmpty()
++                || isTransientPackage(mRawFocusedPackage);
++        mRawFocusTransient = transientFocus;
++        if (transientFocus) {
++            refreshProfile = neutralProfile(userId);
++        } else {
++            updateBusinessScene(mRawFocusedPackage, uid, userId, mRawFocusedDisplayId);
++            refreshProfile = profileFor(mCurrentScenePackage, mCurrentUserId);
++        }
++        String reason = transientFocus
++                ? source + "Transient" : source;
++        applyProfile(refreshProfile, reason, false);
+         mUperfScenePolicy.onSystemStateChanged(
+-                mCurrentScenePackage, mScreenInteractive, "focus", eventNanos);
++                mCurrentScenePackage, mScreenInteractive, reason, eventNanos);
+         publishState();
+     }
+ 
++    private void updateBusinessScene(
++            String pkg, int uid, int userId, int displayId) {
++        if (safe(pkg).isEmpty() || isTransientPackage(pkg)) {
++            return;
++        }
++        mCurrentScenePackage = pkg;
++        mLastNonTransientScenePackage = pkg;
++        mCurrentUid = uid;
++        mCurrentUserId = userId;
++    }
++
+     @Override
+     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
+         try {
+@@ -221,8 +421,7 @@ public final class ZuiControlService extends Binder {
+                     break;
+                 case TX_GET_CURRENT_SCENE:
+                     enforceCallerAllowed();
+-                    result = "ok=1\ncurrentScenePackage=" + mCurrentScenePackage
+-                            + "\nlastNonTransientScenePackage=" + mLastNonTransientScenePackage;
++                    result = currentSceneState();
+                     break;
+                 case TX_CYCLE_CURRENT_SCENE:
+                 case TX_SET_CURRENT_SCENE_PROFILE:
+@@ -279,17 +478,21 @@ public final class ZuiControlService extends Binder {
+             return "ok=0\nerror=no_current_scene";
+         }
+         return setProfileLocked(pkg, mCurrentUserId, displayHz, fpsCap, mode,
+-                !isControlPanelContext());
++                isForegroundBusinessPackage(pkg, mCurrentUserId));
+     }
+ 
+     private synchronized String setProfile(String pkg, int userId, int displayHz, int fpsCap, String mode) {
+         if (!validPackage(pkg)) {
+             return "ok=0\nerror=invalid_package";
+         }
++        if (isTransientPackage(pkg)) {
++            return "ok=0\nerror=transient_package_not_configurable";
++        }
+         if (!packageExists(pkg)) {
+             return "ok=0\nerror=package_not_found";
+         }
+-        return setProfileLocked(pkg, userId, displayHz, fpsCap, mode, shouldApplyPackageNow(pkg));
++        return setProfileLocked(pkg, userId, displayHz, fpsCap, mode,
++                isForegroundBusinessPackage(pkg, userId));
+     }
+ 
+     private String setProfileLocked(String pkg, int userId, int displayHz, int fpsCap,
+@@ -299,47 +502,106 @@ public final class ZuiControlService extends Binder {
+             return "ok=0\nerror=" + mLastError;
+         }
+         if (!"default".equals(pkg) && isDefaultEquivalent(profile)) {
+-            mProfiles.remove(key(userId, pkg));
+-            saveProfiles();
++            String profileKey = key(userId, pkg);
++            Profile previous = mProfiles.remove(profileKey);
++            if (!saveProfiles()) {
++                if (previous != null) {
++                    mProfiles.put(profileKey, previous);
++                }
++                return "ok=0\nerror=" + mLastError;
++            }
+             Profile fallback = profileFor(pkg, userId);
++            String applyStatus = "savedOnly";
+             if (applyNow) {
+-                applyProfile(fallback, "restoreDefault");
++                applyStatus = applyProfile(fallback, "restoreDefault", false);
+             }
+             publishState();
++            if ("failed".equals(applyStatus)) {
++                return "ok=0\nerror=refresh_apply_failed\nprofileSaved=1"
++                        + "\npackage=" + pkg + "\nremovedProfile=1"
++                        + "\napplyError=" + mLastApplyError;
++            }
+             return "ok=1\npackage=" + pkg + "\nremovedProfile=1"
+                     + "\ndisplayHz=" + fallback.displayHz
+-                    + "\nfpsCap=" + fallback.fpsCap + "\nmode=" + fallback.mode;
++                    + "\nfpsCap=" + fallback.fpsCap + "\nmode=" + fallback.mode
++                    + "\napplyStatus=" + applyStatus
++                    + "\napplyError="
++                    + ("savedOnly".equals(applyStatus) ? "" : mLastApplyError);
++        }
++        String profileKey = key(userId, pkg);
++        Profile previous = mProfiles.put(profileKey, profile);
++        if (!saveProfiles()) {
++            if (previous == null) {
++                mProfiles.remove(profileKey);
++            } else {
++                mProfiles.put(profileKey, previous);
++            }
++            return "ok=0\nerror=" + mLastError;
+         }
+-        mProfiles.put(key(userId, pkg), profile);
+-        saveProfiles();
++        String applyStatus = "savedOnly";
+         if (applyNow) {
+-            applyProfile(profile, "binder");
++            applyStatus = applyProfile(profile, "binder", false);
+         }
+         publishState();
++        if ("failed".equals(applyStatus)) {
++            return "ok=0\nerror=refresh_apply_failed\nprofileSaved=1"
++                    + "\npackage=" + pkg + "\napplyError=" + mLastApplyError;
++        }
+         return "ok=1\npackage=" + pkg + "\ndisplayHz=" + profile.displayHz
+-                + "\nfpsCap=" + profile.fpsCap + "\nmode=" + profile.mode;
++                + "\nfpsCap=" + profile.fpsCap + "\nmode=" + profile.mode
++                + "\napplyStatus=" + applyStatus
++                + "\napplyError="
++                + ("savedOnly".equals(applyStatus) ? "" : mLastApplyError);
+     }
+ 
+     private synchronized String removeProfile(String pkg, int userId) {
+         if (!validPackage(pkg)) {
+             return "ok=0\nerror=invalid_package";
+         }
+-        mProfiles.remove(key(userId, pkg));
+-        saveProfiles();
+-        if (shouldApplyPackageNow(pkg)) {
+-            applyProfile(profileFor(pkg, userId), "remove");
++        String profileKey = key(userId, pkg);
++        Profile previous = mProfiles.remove(profileKey);
++        if (!saveProfiles()) {
++            if (previous != null) {
++                mProfiles.put(profileKey, previous);
++            }
++            return "ok=0\nerror=" + mLastError;
++        }
++        String applyStatus = "savedOnly";
++        if (isForegroundBusinessPackage(pkg, userId)) {
++            applyStatus = applyProfile(profileFor(pkg, userId), "remove", false);
+         }
+         publishState();
+-        return "ok=1\nremoved=" + pkg;
++        if ("failed".equals(applyStatus)) {
++            return "ok=0\nerror=refresh_apply_failed\nprofileSaved=1"
++                    + "\nremoved=" + pkg + "\napplyError=" + mLastApplyError;
++        }
++        return "ok=1\nremoved=" + pkg
++                + "\napplyStatus=" + applyStatus
++                + "\napplyError="
++                + ("savedOnly".equals(applyStatus) ? "" : mLastApplyError);
+     }
+ 
+     private synchronized String refreshNow() {
+-        String pkg = !mAppliedScenePackage.isEmpty() ? mAppliedScenePackage : mCurrentScenePackage;
+-        Profile profile = pkg.isEmpty()
+-                ? defaultProfile(mCurrentUserId) : profileFor(pkg, mCurrentUserId);
+-        applyProfile(profile, "refreshNow");
++        FocusSnapshot latestFocus = mLatestFocus;
++        if (!latestFocus.packageName.equals(mRawFocusedPackage)
++                || latestFocus.userId != mRawFocusedUserId
++                || resolveDisplayId(latestFocus.displayId) != mRawFocusedDisplayId
++                || latestFocus.transientFocus != mRawFocusTransient) {
++            return "ok=0\nerror=focus_update_pending";
++        }
++        String applyStatus = reconcileFocusedProfile("refreshNow", true);
+         publishState();
+-        return "ok=1\n" + state();
++        if ("failed".equals(applyStatus)) {
++            return "ok=0\nerror=" + mLastApplyError + "\n" + state();
++        }
++        return "ok=1\napplyStatus=" + applyStatus + "\n" + state();
++    }
++
++    private synchronized String currentSceneState() {
++        return "ok=1\ncurrentScenePackage=" + mCurrentScenePackage
++                + "\nlastNonTransientScenePackage=" + mLastNonTransientScenePackage
++                + "\neditableScenePackage=" + editableScenePackage()
++                + "\neditableDisplayHz=" + editableDisplayHz();
+     }
+ 
+     private synchronized String notifyControlRequest(String requestId, String requestSha256) {
+@@ -398,77 +660,212 @@ public final class ZuiControlService extends Binder {
+         return new Profile(pkg, userId, displayHz, fpsCap, cleanMode);
+     }
+ 
+-    private void applyProfile(Profile profile, String reason) {
+-        mAppliedScenePackage = profile.packageName;
++    private String reconcileFocusedProfile(String reason, boolean force) {
++        Profile profile = mRawFocusTransient || mImeVisible || mRawFocusedPackage.isEmpty()
++                || isTransientPackage(mRawFocusedPackage)
++                ? neutralProfile(mRawFocusedUserId)
++                : profileFor(mRawFocusedPackage, mRawFocusedUserId);
++        return applyProfile(profile, reason, force);
++    }
++
++    private String applyProfile(Profile profile, String reason, boolean force) {
++        mDesiredScenePackage = profile.packageName;
+         mTargetDisplayHz = profile.displayHz;
+         mTargetFpsCap = profile.fpsCap;
+         mTargetMode = profile.mode;
+-        if (SystemProperties.getBoolean("persist.zui_control.disable", false)
+-                || SystemProperties.getBoolean("persist.zui_control.refresh.disable", false)) {
+-            clearDisplayVote(mCurrentDisplayId);
+-            syncPeakRefreshRate(120);
+-            resetLastApplied();
+-            mLastApply = "disabled:" + reason;
+-            return;
++        if (mRefreshDisabled || readRefreshDisableMask() != 0) {
++            if (mRefreshDisabled && hasResidualRefreshOwnership()) {
++                scheduleDisableReleaseRetry();
++            }
++            if (mLastApplyError.isEmpty()) {
++                mLastApplyReason = reason + ":disabled";
++            }
++            return "disabled";
+         }
+-        ModeMatch match = findMode(profile.displayHz, mCurrentDisplayId);
++        ModeMatch match = findMode(profile.displayHz, mRawFocusedDisplayId);
+         if (match == null) {
+-            mLastError = "no_display_mode_" + profile.displayHz;
+-            mLastApply = "failed:" + reason;
+-            return;
++            return failApplyBeforeMutation(reason, "no_display_mode_" + profile.displayHz);
++        }
++        DisplayManagerInternal dmi = LocalServices.getService(DisplayManagerInternal.class);
++        if (dmi == null) {
++            return failApplyBeforeMutation(reason, "DisplayManagerInternal_unavailable");
++        }
++        if (!force && mAppRequestOwned && mRenderVoteOwned
++                && mRenderVoteHz == profile.displayHz
++                && mLastAppliedDisplayId == match.displayId
++                && mLastAppliedModeId == match.modeId
++                && mLastAppliedDisplayHz == profile.displayHz) {
++            mAppliedScenePackage = profile.packageName;
++            mAppliedDisplayHz = profile.displayHz;
++            mSkipSameCount++;
++            mLastApplyError = "";
++            mLastError = "";
++            mLastApplyReason = reason + ":display=" + match.displayId
++                    + ":mode=" + match.modeId + ":skipSame";
++            return "skipSame";
++        }
++
++        mAttemptedScenePackage = profile.packageName;
++        mAttemptedDisplayHz = profile.displayHz;
++        int peakHz;
++        try {
++            peakHz = syncPeakRefreshRate(profile.displayHz);
++        } catch (Throwable t) {
++            return failApplyAfterMutation(reason, "peak:" + throwableText(t), false);
++        }
++        try {
++            applyGlobalRenderVote(dmi, profile.displayHz);
++        } catch (Throwable t) {
++            return failApplyAfterMutation(reason, "renderVote:" + throwableText(t), false);
+         }
+         try {
+-            DisplayManagerInternal dmi = LocalServices.getService(DisplayManagerInternal.class);
+-            if (dmi == null) {
+-                mLastError = "DisplayManagerInternal unavailable";
+-                mLastApply = "failed:" + reason;
+-                return;
+-            }
+-            int peakHz = syncPeakRefreshRate(profile.displayHz);
+-            if (mLastAppliedDisplayId == match.displayId
+-                    && mLastAppliedModeId == match.modeId
+-                    && mLastAppliedDisplayHz == profile.displayHz
+-                    && !"refreshNow".equals(reason)) {
+-                mLastError = "";
+-                mLastApply = reason + ":display=" + match.displayId + ":mode=" + match.modeId
+-                        + ":renderVoteMax=" + profile.displayHz
+-                        + ":peakBridge=" + peakHz
+-                        + ":skipSame";
+-                return;
+-            }
+-            applyRenderVote(dmi, match.displayId, profile.displayHz);
+             dmi.setDisplayProperties(match.displayId, true, profile.displayHz,
+                     match.modeId, 0.0f, profile.displayHz, false, false, false);
++            mAppRequestOwned = true;
++            mAppRequestHandoff = "active";
++            mAppRequestHandoffPending = false;
+             mLastAppliedDisplayId = match.displayId;
+             mLastAppliedModeId = match.modeId;
+             mLastAppliedDisplayHz = profile.displayHz;
++            mAppliedScenePackage = profile.packageName;
++            mAppliedDisplayHz = profile.displayHz;
++            mRefreshApplyCount++;
++            mLastApplyError = "";
+             mLastError = "";
+-            mLastApply = reason + ":display=" + match.displayId + ":mode=" + match.modeId
+-                    + ":renderVoteMax=" + profile.displayHz
+-                    + ":peakBridge=" + peakHz;
++            mLastApplyReason = reason + ":display=" + match.displayId
++                    + ":mode=" + match.modeId + ":peakBridge=" + peakHz + ":applied";
++            return "applied";
+         } catch (Throwable t) {
+-            mLastError = t.getClass().getSimpleName() + ":" + safe(t.getMessage());
+-            mLastApply = "failed:" + reason;
+             Log.w(TAG, "apply display failed", t);
++            return failApplyAfterMutation(reason, "appRequest:" + throwableText(t), true);
++        }
++    }
++
++    private String failApplyBeforeMutation(String reason, String error) {
++        mLastApplyError = error;
++        mLastError = error;
++        mLastApplyReason = reason + ":failedBeforeMutation";
++        return "failed";
++    }
++
++    private String failApplyAfterMutation(String reason, String error,
++            boolean appRequestMayHaveChanged) {
++        StringBuilder cleanupError = new StringBuilder();
++        if (!clearGlobalRenderVote()) {
++            cleanupError.append(";renderVoteReleaseFailed");
++        }
++        if (!releasePeakBridge()) {
++            cleanupError.append(";peakRestoreFailed");
+         }
++        if ((appRequestMayHaveChanged || mAppRequestOwned)
++                && !requestWindowManagerHandoff("applyFailure")) {
++            cleanupError.append(";appRequestHandoffFailed");
++        }
++        clearAppliedState();
++        mLastApplyError = error + cleanupError;
++        mLastError = mLastApplyError;
++        mLastApplyReason = reason + ":failedAfterMutation";
++        return "failed";
+     }
+ 
+     private int syncPeakRefreshRate(int targetHz) {
+         int peakHz = targetHz > 120 ? targetHz : 120;
+         String desired = peakHz + ".0";
++        String current = readPeakSetting();
++        if (desired.equals(current)) {
++            if (mPeakBridgeOwned && !desired.equals(mPeakLastWritten)) {
++                clearPeakOwnership("externalAlreadyDesired");
++            }
++            mLastSyncedPeakHz = peakHz;
++            return peakHz;
++        }
++        boolean acquireOwnership = !mPeakBridgeOwned;
++        String restoreValue = current;
++        String previousLastWritten = mPeakLastWritten;
++        if (!acquireOwnership && !safe(mPeakLastWritten).equals(current)) {
++            mPeakRestoreValue = current;
++        }
++        if (acquireOwnership) {
++            mPeakBridgeOwned = true;
++            mPeakRestoreValue = restoreValue;
++        }
++        mPeakLastWritten = desired;
++        mPeakReleaseStatus = "applyPending";
++        try {
++            if (!writePeakSetting(desired)) {
++                throw new IllegalStateException("peak_write_rejected");
++            }
++        } catch (RuntimeException e) {
++            try {
++                if (!desired.equals(readPeakSetting())) {
++                    if (acquireOwnership) {
++                        clearPeakOwnership("writeNotObserved");
++                    } else {
++                        mPeakLastWritten = previousLastWritten;
++                        mPeakReleaseStatus = "writeNotObserved";
++                    }
++                }
++            } catch (Throwable ignored) {
++            }
++            throw e;
++        }
++        mPeakReleaseStatus = "active";
++        mLastSyncedPeakHz = peakHz;
++        return peakHz;
++    }
++
++    private String readPeakSetting() {
+         long token = Binder.clearCallingIdentity();
+         try {
+-            String current = Settings.System.getString(mContext.getContentResolver(),
++            return Settings.System.getString(mContext.getContentResolver(),
+                     SETTING_PEAK_REFRESH_RATE);
+-            if (!desired.equals(current)) {
+-                Settings.System.putString(mContext.getContentResolver(),
+-                        SETTING_PEAK_REFRESH_RATE, desired);
+-            }
+         } finally {
+             Binder.restoreCallingIdentity(token);
+         }
+-        mLastSyncedPeakHz = peakHz;
+-        return peakHz;
++    }
++
++    private boolean writePeakSetting(String value) {
++        long token = Binder.clearCallingIdentity();
++        try {
++            return Settings.System.putString(mContext.getContentResolver(),
++                    SETTING_PEAK_REFRESH_RATE, value);
++        } finally {
++            Binder.restoreCallingIdentity(token);
++        }
++    }
++
++    private boolean releasePeakBridge() {
++        if (!mPeakBridgeOwned) {
++            mLastSyncedPeakHz = -1;
++            mPeakReleaseStatus = "notOwned";
++            return true;
++        }
++        try {
++            String current = readPeakSetting();
++            if (safe(mPeakLastWritten).equals(current)) {
++                if (!writePeakSetting(mPeakRestoreValue)) {
++                    mPeakReleaseStatus = "restoreRejected";
++                    return false;
++                }
++                mPeakReleaseStatus = "restored";
++            } else {
++                mPeakReleaseStatus = "externalPreserved";
++            }
++            clearPeakOwnership(mPeakReleaseStatus);
++            return true;
++        } catch (Throwable t) {
++            mPeakReleaseStatus = "restoreFailed:" + throwableText(t);
++            Log.w(TAG, "peak bridge release failed", t);
++            return false;
++        }
++    }
++
++    private void clearPeakOwnership(String releaseStatus) {
++        mPeakBridgeOwned = false;
++        mPeakRestoreValue = null;
++        mPeakLastWritten = "";
++        mLastSyncedPeakHz = -1;
++        mPeakReleaseStatus = releaseStatus;
+     }
+ 
+     private void registerPeakObserver() {
+@@ -487,6 +884,120 @@ public final class ZuiControlService extends Binder {
+         }
+     }
+ 
++    private void registerRefreshPropertyObserver() {
++        try {
++            SystemProperties.addChangeCallback(new Runnable() {
++                @Override
++                public void run() {
++                    enqueueRefreshDisableMask(readRefreshDisableMask());
++                }
++            });
++            enqueueRefreshDisableMask(readRefreshDisableMask());
++        } catch (Throwable t) {
++            mLastApplyError = "propertyObserver:" + throwableText(t);
++            Log.w(TAG, "refresh property observer unavailable", t);
++        }
++    }
++
++    private void enqueueRefreshDisableMask(final int disableMask) {
++        synchronized (mRefreshPropertyLock) {
++            if (disableMask == mObservedRefreshDisableMask) {
++                return;
++            }
++            mObservedRefreshDisableMask = disableMask;
++            mWorker.post(new Runnable() {
++                @Override
++                public void run() {
++                    onRefreshPropertiesChanged(disableMask);
++                }
++            });
++        }
++    }
++
++    private synchronized void onRefreshPropertiesChanged(int disableMask) {
++        if (disableMask == mRefreshDisableMask) {
++            return;
++        }
++        boolean wasDisabled = mRefreshDisabled;
++        mRefreshDisableMask = disableMask;
++        boolean disabled = disableMask != 0;
++        mRefreshDisabled = disabled;
++        if (!wasDisabled && disabled) {
++            if (!releaseRefreshOwnership("propertyDisable")) {
++                scheduleDisableReleaseRetry();
++            }
++        } else if (wasDisabled && !disabled) {
++            if (latestFocusMatchesRaw()) {
++                reconcileFocusedProfile("propertyEnable", true);
++            } else {
++                mLastApplyReason = "propertyEnable:focusPending";
++                mWorker.post(new Runnable() {
++                    @Override
++                    public void run() {
++                        reconcileAfterPropertyEnable();
++                    }
++                });
++            }
++        } else {
++            if (disabled && hasResidualRefreshOwnership()) {
++                if (!releaseRefreshOwnership("propertyDisableMaskChanged:" + disableMask)) {
++                    scheduleDisableReleaseRetry();
++                }
++            } else {
++                mLastApplyReason = "propertyDisableMaskChanged:" + disableMask;
++            }
++        }
++        publishState();
++    }
++
++    private synchronized void reconcileAfterPropertyEnable() {
++        if (mRefreshDisabled) {
++            return;
++        }
++        if (latestFocusMatchesRaw()) {
++            reconcileFocusedProfile("propertyEnableAfterFocus", true);
++            publishState();
++        }
++    }
++
++    private boolean latestFocusMatchesRaw() {
++        FocusSnapshot latestFocus = mLatestFocus;
++        return latestFocus.packageName.equals(mRawFocusedPackage)
++                && latestFocus.userId == mRawFocusedUserId
++                && resolveDisplayId(latestFocus.displayId) == mRawFocusedDisplayId
++                && latestFocus.transientFocus == mRawFocusTransient;
++    }
++
++    private boolean hasResidualRefreshOwnership() {
++        return mRenderVoteOwned || mPeakBridgeOwned || mAppRequestOwned;
++    }
++
++    private synchronized void scheduleDisableReleaseRetry() {
++        if (mDisableReleaseRetryPosted) {
++            return;
++        }
++        mDisableReleaseRetryPosted = true;
++        mWorker.post(new Runnable() {
++            @Override
++            public void run() {
++                retryDisabledRelease();
++            }
++        });
++    }
++
++    private synchronized void retryDisabledRelease() {
++        mDisableReleaseRetryPosted = false;
++        if (mRefreshDisabled && hasResidualRefreshOwnership()) {
++            releaseRefreshOwnership("propertyDisableRetry");
++            publishState();
++        }
++    }
++
++    private static int readRefreshDisableMask() {
++        int mask = SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false) ? 1 : 0;
++        return SystemProperties.getBoolean(PROP_REFRESH_DISABLE, false) ? mask | 2 : mask;
++    }
++
+     private void registerScreenObserver() {
+         try {
+             PowerManager power = (PowerManager) mContext.getSystemService(PowerManager.class);
+@@ -521,36 +1032,94 @@ public final class ZuiControlService extends Binder {
+     }
+ 
+     private synchronized void onPeakRefreshRateChanged() {
+-        if (SystemProperties.getBoolean("persist.zui_control.disable", false)
+-                || SystemProperties.getBoolean("persist.zui_control.refresh.disable", false)) {
++        if (mRefreshDisabled || !mAppRequestOwned || mAppliedDisplayHz <= 0) {
+             return;
+         }
+-        if (!isPeakRefreshRateSynced(mTargetDisplayHz)) {
+-            int peakHz = syncPeakRefreshRate(mTargetDisplayHz);
+-            mLastError = "";
+-            mLastApply = "peakObserver:target=" + mTargetDisplayHz + ":peakBridge=" + peakHz;
+-            publishState();
++        if (!isPeakRefreshRateSynced(mAppliedDisplayHz)) {
++            try {
++                int peakHz = syncPeakRefreshRate(mAppliedDisplayHz);
++                mLastApplyError = "";
++                mLastError = "";
++                mLastApplyReason = "peakObserver:target=" + mAppliedDisplayHz
++                        + ":peakBridge=" + peakHz;
++                publishState();
++            } catch (Throwable t) {
++                mLastApplyError = "peakObserver:" + throwableText(t);
++                mLastError = mLastApplyError;
++                mLastApplyReason = "peakObserver:failed";
++                publishState();
++            }
+         }
+     }
+ 
+     private boolean isPeakRefreshRateSynced(int targetHz) {
+         int peakHz = targetHz > 120 ? targetHz : 120;
+         String desired = peakHz + ".0";
+-        long token = Binder.clearCallingIdentity();
++        return desired.equals(readPeakSetting());
++    }
++
++    private boolean releaseRefreshOwnership(String reason) {
++        boolean renderVoteReleased = clearGlobalRenderVote();
++        boolean peakReleased = releasePeakBridge();
++        boolean hadAppRequest = mAppRequestOwned;
++        boolean appRequestReleased = !hadAppRequest
++                || requestWindowManagerHandoff(reason);
++        if (!mAppRequestOwned && appRequestReleased
++                && !mAppRequestHandoff.startsWith("requested:")) {
++            mAppRequestHandoff = "notOwned";
++        }
++        clearAppliedState();
++        if (appRequestReleased && renderVoteReleased && peakReleased) {
++            String priorApplyError = mLastApplyError;
++            mLastApplyError = "";
++            if (mLastError.equals(priorApplyError)) {
++                mLastError = "";
++            }
++            mLastApplyReason = reason + (hadAppRequest
++                    ? ":releaseRequested" : ":released");
++            return true;
++        }
++        mLastApplyError = (!appRequestReleased ? "appRequest_handoff_failed" : "")
++                + (!renderVoteReleased ? (appRequestReleased ? "" : ";")
++                + "render_vote_release_failed" : "")
++                + (!peakReleased ? (appRequestReleased && renderVoteReleased ? "" : ";")
++                + "peak_restore_failed" : "");
++        mLastError = mLastApplyError;
++        mLastApplyReason = reason + ":releasePartial";
++        return false;
++    }
++
++    private boolean requestWindowManagerHandoff(String reason) {
+         try {
+-            return desired.equals(Settings.System.getString(mContext.getContentResolver(),
+-                    SETTING_PEAK_REFRESH_RATE));
+-        } finally {
+-            Binder.restoreCallingIdentity(token);
++            WindowManagerInternal wmi = LocalServices.getService(WindowManagerInternal.class);
++            if (wmi == null) {
++                mAppRequestHandoff = "failed:WindowManagerInternal_unavailable";
++                return false;
++            }
++            wmi.requestTraversalFromDisplayManager();
++            mAppRequestOwned = false;
++            mAppRequestHandoff = "requested:" + reason;
++            mAppRequestHandoffPending = true;
++            return true;
++        } catch (Throwable t) {
++            mAppRequestHandoff = "failed:" + throwableText(t);
++            Log.w(TAG, "WindowManager AppRequest handoff failed", t);
++            return false;
+         }
+     }
+ 
+-    private void resetLastApplied() {
++    private void clearAppliedState() {
++        mAppliedScenePackage = "";
++        mAppliedDisplayHz = 0;
+         mLastAppliedDisplayId = -1;
+         mLastAppliedModeId = -1;
+         mLastAppliedDisplayHz = -1;
+     }
+ 
++    private static String throwableText(Throwable t) {
++        return t.getClass().getSimpleName() + ":" + safe(t.getMessage());
++    }
++
+     private Profile profileFor(String pkg, int userId) {
+         Profile profile = mProfiles.get(key(userId, pkg));
+         if (profile != null) {
+@@ -562,8 +1131,11 @@ public final class ZuiControlService extends Binder {
+     }
+ 
+     private Profile defaultProfile(int userId) {
+-        Profile profile = mProfiles.get(key(userId, "default"));
+-        return profile != null ? profile : new Profile("default", userId, 120, 0, "DISPLAY_ONLY");
++        return neutralProfile(userId);
++    }
++
++    private Profile neutralProfile(int userId) {
++        return new Profile(DEFAULT_SCENE, userId, 120, 0, "DISPLAY_ONLY");
+     }
+ 
+     private boolean isDefaultEquivalent(Profile profile) {
+@@ -586,11 +1158,12 @@ public final class ZuiControlService extends Binder {
+                 String[] parts = line.split("\\|");
+                 Profile p = null;
+                 if (parts.length == 5 && "default".equals(parts[0])) {
+-                    p = makeProfile("default", parseInt(parts[1], 0), parseInt(parts[2], 120),
+-                            parseInt(parts[3], 0), parts[4]);
++                    p = neutralProfile(parseInt(parts[1], 0));
+                 } else if (parts.length == 6 && "pkg".equals(parts[0])) {
+-                    p = makeProfile(parts[2], parseInt(parts[1], 0), parseInt(parts[3], 120),
+-                            parseInt(parts[4], 0), parts[5]);
++                    if (!isTransientPackage(parts[2])) {
++                        p = makeProfile(parts[2], parseInt(parts[1], 0),
++                                parseInt(parts[3], 120), parseInt(parts[4], 0), parts[5]);
++                    }
+                 }
+                 if (p != null && ("default".equals(p.packageName) || !isDefaultEquivalent(p))) {
+                     mProfiles.put(key(p.userId, p.packageName), p);
+@@ -604,7 +1177,7 @@ public final class ZuiControlService extends Binder {
+         }
+     }
+ 
+-    private void saveProfiles() {
++    private boolean saveProfiles() {
+         FileOutputStream out = null;
+         try {
+             StringBuilder sb = new StringBuilder();
+@@ -623,31 +1196,53 @@ public final class ZuiControlService extends Binder {
+             out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
+             mProfileFile.finishWrite(out);
+             out = null;
++            return true;
+         } catch (Throwable t) {
+             mLastError = "profile_save:" + t.getClass().getSimpleName();
+             if (out != null) {
+-                mProfileFile.failWrite(out);
++                try {
++                    mProfileFile.failWrite(out);
++                } catch (Throwable rollbackError) {
++                    Log.w(TAG, "profile rollback failed", rollbackError);
++                }
+             }
++            return false;
+         }
+     }
+ 
+-    private void applyRenderVote(DisplayManagerInternal dmi, int displayId, int hz) throws Exception {
+-        updateRenderVote(dmi, displayId, Float.valueOf(hz));
++    private void applyGlobalRenderVote(DisplayManagerInternal dmi, int hz) throws Exception {
++        mRenderVoteOwned = true;
++        mRenderVoteHz = hz;
++        mRenderVoteReleaseStatus = "applyPending";
++        updateGlobalRenderVote(dmi, Integer.valueOf(hz));
++        mRenderVoteReleaseStatus = "active";
+     }
+ 
+-    private void clearDisplayVote(int displayId) {
++    private boolean clearGlobalRenderVote() {
++        if (!mRenderVoteOwned) {
++            mRenderVoteReleaseStatus = "notOwned";
++            mRenderVoteHz = 0;
++            return true;
++        }
+         try {
+             DisplayManagerInternal dmi = LocalServices.getService(DisplayManagerInternal.class);
+-            if (dmi != null) {
+-                updateRenderVote(dmi, displayId, null);
++            if (dmi == null) {
++                mRenderVoteReleaseStatus = "failed:DisplayManagerInternal_unavailable";
++                return false;
+             }
+-            resetLastApplied();
++            updateGlobalRenderVote(dmi, null);
++            mRenderVoteOwned = false;
++            mRenderVoteHz = 0;
++            mRenderVoteReleaseStatus = "released";
++            return true;
+         } catch (Throwable t) {
+-            Log.w(TAG, "clear display vote failed", t);
++            mRenderVoteReleaseStatus = "failed:" + throwableText(t);
++            Log.w(TAG, "global render vote release failed", t);
++            return false;
+         }
+     }
+ 
+-    private void updateRenderVote(DisplayManagerInternal dmi, int displayId, Float hz)
++    private void updateGlobalRenderVote(DisplayManagerInternal dmi, Integer hz)
+             throws Exception {
+         Object displayManagerService = readField(dmi, "this$0");
+         Object director = readField(displayManagerService, "mDisplayModeDirector");
+@@ -660,10 +1255,10 @@ public final class ZuiControlService extends Binder {
+             forRender.setAccessible(true);
+             vote = forRender.invoke(null, 0.0f, hz.floatValue());
+         }
+-        Method updateVote = votesStorage.getClass().getDeclaredMethod("updateVote",
+-                int.class, int.class, voteClass);
++        Method updateVote = votesStorage.getClass().getDeclaredMethod(
++                "updateGlobalVote", int.class, voteClass);
+         updateVote.setAccessible(true);
+-        updateVote.invoke(votesStorage, displayId, PRIORITY_ZUI_CONTROL_RENDER, vote);
++        updateVote.invoke(votesStorage, PRIORITY_ZUI_CONTROL_RENDER, vote);
+     }
+ 
+     private static Object readField(Object target, String name) throws Exception {
+@@ -685,13 +1280,26 @@ public final class ZuiControlService extends Binder {
+     }
+ 
+     private synchronized String state(boolean observeSchedulerHealth) {
++        int physicalDisplayHz = actualHz();
+         return "ok=1"
+                 + "\nrawFocusedPackage=" + mRawFocusedPackage
++                + "\nrawFocusTransient=" + mRawFocusTransient
++                + "\nactivityFocusedPackage=" + mActivityFocusedPackage
++                + "\nnonImeFocusedPackage=" + mNonImeFocusedPackage
++                + "\nwindowFocusSeen=" + mWindowFocusSeen
++                + "\nimeVisible=" + mImeVisible
+                 + "\ncurrentScenePackage=" + mCurrentScenePackage
+                 + "\nlastNonTransientScenePackage=" + mLastNonTransientScenePackage
++                + "\neditableScenePackage=" + editableScenePackage()
++                + "\neditableDisplayHz=" + editableDisplayHz()
++                + "\ndesiredScenePackage=" + mDesiredScenePackage
++                + "\nattemptedScenePackage=" + mAttemptedScenePackage
+                 + "\nappliedScenePackage=" + mAppliedScenePackage
+                 + "\ntargetDisplayHz=" + mTargetDisplayHz
+-                + "\nactualDisplayHz=" + actualHz()
++                + "\nattemptedDisplayHz=" + mAttemptedDisplayHz
++                + "\nappliedDisplayHz=" + mAppliedDisplayHz
++                + "\nphysicalDisplayHz=" + physicalDisplayHz
++                + "\nactualDisplayHz=" + physicalDisplayHz
+                 + "\ntargetFpsCap=" + mTargetFpsCap
+                 + "\nmode=" + mTargetMode
+                 + "\nscreenInteractive=" + mScreenInteractive
+@@ -701,12 +1309,29 @@ public final class ZuiControlService extends Binder {
+                 + "\nsystemServiceAlive=true"
+                 + "\ndaemonRefreshDisabled=true"
+                 + "\ndaemonRetired=true"
++                + "\nrefreshDisabled=" + mRefreshDisabled
++                + "\nrefreshDisableMask=" + mRefreshDisableMask
+                 + "\nsupportedDisplayHz=" + supportedDisplayHz()
+                 + "\npeakBridgeHz=" + mLastSyncedPeakHz
++                + "\npeakBridgeOwned=" + mPeakBridgeOwned
++                + "\npeakReleaseStatus=" + mPeakReleaseStatus
+                 + "\ndisplayVote=adaptiveRender"
++                + "\nrenderVoteScope=globalPriority8"
++                + "\nrenderVoteOwned=" + mRenderVoteOwned
++                + "\nrenderVoteHz=" + mRenderVoteHz
++                + "\nrenderVoteReleaseStatus=" + mRenderVoteReleaseStatus
++                + "\nappRequestOwned=" + mAppRequestOwned
++                + "\nappRequestOwnership=sharedNoToken"
++                + "\nappRequestHandoff=" + mAppRequestHandoff
++                + "\nappRequestHandoffPending=" + mAppRequestHandoffPending
++                + "\nrefreshDisplayScope=defaultDisplayOnly"
++                + "\nrefreshApplyCount=" + mRefreshApplyCount
++                + "\nskipSameCount=" + mSkipSameCount
+                 + "\nprofileCount=" + mProfiles.size()
+                 + profileStateLines()
+-                + "\nlastApply=" + mLastApply
++                + "\nlastApplyReason=" + mLastApplyReason
++                + "\nlastApply=" + mLastApplyReason
++                + "\nlastApplyError=" + mLastApplyError
+                 + "\nlastError=" + mLastError;
+     }
+ 
+@@ -820,13 +1445,30 @@ public final class ZuiControlService extends Binder {
+         }
+     }
+ 
+-    private boolean isControlPanelContext() {
+-        return APP_PACKAGE.equals(mRawFocusedPackage)
+-                || APP_PACKAGE.equals(mAppliedScenePackage);
++    private String editableScenePackage() {
++        return !mLastNonTransientScenePackage.isEmpty()
++                ? mLastNonTransientScenePackage : mCurrentScenePackage;
+     }
+ 
+-    private boolean shouldApplyPackageNow(String pkg) {
+-        return safe(pkg).equals(mAppliedScenePackage);
++    private int editableDisplayHz() {
++        String pkg = editableScenePackage();
++        return pkg.isEmpty() ? 0 : profileFor(pkg, mCurrentUserId).displayHz;
++    }
++
++    private boolean isForegroundBusinessPackage(String pkg, int userId) {
++        String cleanPackage = safe(pkg);
++        FocusSnapshot latestFocus = mLatestFocus;
++        return !cleanPackage.isEmpty()
++                && !mImeVisible
++                && !mLatestImeVisible
++                && !mRawFocusTransient
++                && !latestFocus.transientFocus
++                && !isTransientPackage(cleanPackage)
++                && cleanPackage.equals(mRawFocusedPackage)
++                && cleanPackage.equals(latestFocus.packageName)
++                && userId == mRawFocusedUserId
++                && userId == latestFocus.userId
++                && resolveDisplayId(latestFocus.displayId) == mRawFocusedDisplayId;
+     }
+ 
+     private boolean packageExists(String pkg) {
+@@ -853,7 +1495,7 @@ public final class ZuiControlService extends Binder {
+         if (!isDisplayHzAllowed(hz)) {
+             return false;
+         }
+-        return findMode(hz, resolveDisplayId(mCurrentDisplayId)) != null;
++        return findMode(hz, resolveDisplayId(mRawFocusedDisplayId)) != null;
+     }
+ 
+     private boolean isDisplayHzAllowed(int hz) {
+@@ -870,17 +1512,7 @@ public final class ZuiControlService extends Binder {
+             return null;
+         }
+         Display preferred = mDisplayManager.getDisplay(preferredDisplayId);
+-        ModeMatch match = findModeOnDisplay(preferred, hz);
+-        if (match != null) {
+-            return match;
+-        }
+-        for (Display display : mDisplayManager.getDisplays()) {
+-            match = findModeOnDisplay(display, hz);
+-            if (match != null) {
+-                return match;
+-            }
+-        }
+-        return null;
++        return findModeOnDisplay(preferred, hz);
+     }
+ 
+     private ModeMatch findModeOnDisplay(Display display, int hz) {
+@@ -909,7 +1541,8 @@ public final class ZuiControlService extends Binder {
+     }
+ 
+     private int actualHz() {
+-        Display display = mDisplayManager == null ? null : mDisplayManager.getDisplay(mCurrentDisplayId);
++        Display display = mDisplayManager == null
++                ? null : mDisplayManager.getDisplay(mRawFocusedDisplayId);
+         if (display == null || display.getMode() == null) {
+             return 0;
+         }
+@@ -921,6 +1554,7 @@ public final class ZuiControlService extends Binder {
+         return p.equals("com.android.systemui")
+                 || p.equals(GAME_HELPER_PACKAGE)
+                 || p.equals(APP_PACKAGE)
++                || p.equals(IME_SCENE)
+                 || p.equals("android")
+                 || p.contains("permissioncontroller")
+                 || p.contains("packageinstaller")
+@@ -1201,6 +1835,21 @@ public final class ZuiControlService extends Binder {
+         }
+     }
+ 
++    private static final class FocusSnapshot {
++        final String packageName;
++        final int userId;
++        final int displayId;
++        final boolean transientFocus;
++
++        FocusSnapshot(String packageName, int userId, int displayId,
++                boolean transientFocus) {
++            this.packageName = packageName;
++            this.userId = userId;
++            this.displayId = displayId;
++            this.transientFocus = transientFocus;
++        }
++    }
++
+     private static final class Profile {
+         final String packageName;
+         final int userId;
+diff --git a/framework_patch/stubs/android/os/SystemProperties.java b/framework_patch/stubs/android/os/SystemProperties.java
+index 14f387f..3e6ddb6 100644
+--- a/framework_patch/stubs/android/os/SystemProperties.java
++++ b/framework_patch/stubs/android/os/SystemProperties.java
+@@ -14,4 +14,7 @@ public final class SystemProperties {
+ 
+     public static void set(String key, String value) {
+     }
++
++    public static void addChangeCallback(Runnable callback) {
++    }
+ }
+diff --git a/framework_patch/stubs/com/android/server/wm/WindowManagerInternal.java b/framework_patch/stubs/com/android/server/wm/WindowManagerInternal.java
+new file mode 100644
+index 0000000..11e53b3
+--- /dev/null
++++ b/framework_patch/stubs/com/android/server/wm/WindowManagerInternal.java
+@@ -0,0 +1,5 @@
++package com.android.server.wm;
++
++public abstract class WindowManagerInternal {
++    public abstract void requestTraversalFromDisplayManager();
++}
+diff --git a/scripts/PatchZuiControlFramework.py b/scripts/PatchZuiControlFramework.py
+index 0ea4fb6..e9db2cb 100644
+--- a/scripts/PatchZuiControlFramework.py
++++ b/scripts/PatchZuiControlFramework.py
+@@ -134,6 +134,83 @@ def patch_services_smali(dec_dir):
+     invoke-static {p1, v0}, Lcom/zui/server/control/ZuiControlHooks;->onFocusedAppChanged(Lcom/android/server/wm/ActivityRecord;I)V
+ 
+     invoke-virtual {p0}, Lcom/android/server/wm/DisplayContent;->getInputMonitor()Lcom/android/server/wm/InputMonitor;
++             """),
++        ])
++
++    display_text = display_content.read_text(encoding="utf-8")
++    if "Lcom/zui/server/control/ZuiControlHooks;->onFocusedWindowChanged" not in display_text:
++        patch_text_file(display_content, [
++            ("""    .line 4241
++    iput-object v0, p0, Lcom/android/server/wm/DisplayContent;->mCurrentFocus:Lcom/android/server/wm/WindowState;
++
++    const-string v7, "ZuiIms"
++""",
++             """    .line 4241
++    iput-object v0, p0, Lcom/android/server/wm/DisplayContent;->mCurrentFocus:Lcom/android/server/wm/WindowState;
++
++    const/4 v7, 0x0
++
++    if-eqz v0, :zui_control_window_focus
++
++    invoke-virtual {v0}, Lcom/android/server/wm/WindowState;->getOwningPackage()Ljava/lang/String;
++
++    move-result-object v7
++
++    :zui_control_window_focus
++    invoke-virtual {p0}, Lcom/android/server/wm/DisplayContent;->getDisplayId()I
++
++    move-result v8
++
++    invoke-static {v7, v8}, Lcom/zui/server/control/ZuiControlHooks;->onFocusedWindowChanged(Ljava/lang/String;I)V
++
++    const-string v7, "ZuiIms"
++"""),
++        ])
++
++    display_text = display_content.read_text(encoding="utf-8")
++    if "Lcom/zui/server/control/ZuiControlHooks;->onImeVisibilityChanged" not in display_text:
++        patch_text_file(display_content, [
++            ("""    :cond_1
++    iget-object p1, p0, Lcom/android/server/wm/WindowContainer;->mWmService:Lcom/android/server/wm/WindowManagerService;
++
++    iget-object p1, p1, Lcom/android/server/wm/WindowManagerService;->mAccessibilityController:Lcom/android/server/wm/AccessibilityController;
++""",
++             """    :cond_1
++    const/4 v1, 0x0
++
++    iget-object p1, p0, Lcom/android/server/wm/DisplayContent;->mImeControlTarget:Lcom/android/server/wm/InsetsControlTarget;
++
++    if-eqz p1, :zui_control_ime_visibility
++
++    invoke-static {}, Landroid/view/WindowInsets$Type;->ime()I
++
++    move-result v2
++
++    invoke-interface {p1, v2}, Lcom/android/server/wm/InsetsControlTarget;->isRequestedVisible(I)Z
++
++    move-result v1
++
++    :zui_control_ime_visibility
++    const/4 p1, 0x0
++
++    if-eqz v1, :zui_control_ime_dispatch
++
++    iget-object p1, p0, Lcom/android/server/wm/DisplayContent;->mInputMethodWindow:Lcom/android/server/wm/WindowState;
++
++    if-eqz p1, :zui_control_ime_dispatch
++
++    invoke-virtual {p1}, Lcom/android/server/wm/WindowState;->getOwningPackage()Ljava/lang/String;
++
++    move-result-object p1
++
++    :zui_control_ime_dispatch
++    iget v2, p0, Lcom/android/server/wm/DisplayContent;->mDisplayId:I
++
++    invoke-static {p1, v1, v2}, Lcom/zui/server/control/ZuiControlHooks;->onImeVisibilityChanged(Ljava/lang/String;ZI)V
++
++    iget-object p1, p0, Lcom/android/server/wm/WindowContainer;->mWmService:Lcom/android/server/wm/WindowManagerService;
++
++    iget-object p1, p1, Lcom/android/server/wm/WindowManagerService;->mAccessibilityController:Lcom/android/server/wm/AccessibilityController;
+ """),
+         ])
+ 
+diff --git a/scripts/VerifyZuiControlFinalSuper.ps1 b/scripts/VerifyZuiControlFinalSuper.ps1
+new file mode 100644
+index 0000000..d213a4b
+--- /dev/null
++++ b/scripts/VerifyZuiControlFinalSuper.ps1
+@@ -0,0 +1,153 @@
++[CmdletBinding()]
++param(
++    [string]$FlashDir = '',
++    [string]$WorkDir = '',
++    [string]$ExpectedVendorImageSha256 = '',
++    [string]$ExpectedVendorApkInventoryPath = '',
++    [switch]$KeepWork
++)
++
++$ErrorActionPreference = 'Stop'
++Set-StrictMode -Version Latest
++$RepoRoot = Split-Path -Parent $PSScriptRoot
++$WorkspaceRoot = Split-Path -Parent $RepoRoot
++if (-not $FlashDir) { $FlashDir = Join-Path $WorkspaceRoot '【B刷机】072' }
++if (-not $WorkDir) { $WorkDir = Join-Path $WorkspaceRoot 'work\verify_final_super_v20_4' }
++$BaseVerifier = Join-Path $PSScriptRoot 'VerifyZuiControlFlashPackage.ps1'
++
++function Full([string]$Path) { [IO.Path]::GetFullPath($Path).TrimEnd('\') }
++function Require-SingleFile([string]$Root, [string]$Name) {
++    $matches = @(Get-ChildItem -LiteralPath $Root -Recurse -File -Filter $Name)
++    if ($matches.Count -ne 1) {
++        throw "Expected one $Name under $Root; found $($matches.Count)."
++    }
++    return $matches[0].FullName
++}
++function Assert-Contains([string]$Path, [string]$Needle) {
++    if (-not (Select-String -LiteralPath $Path -SimpleMatch -Pattern $Needle -Quiet)) {
++        throw "Missing V20.4 final-super marker in $Path`: $Needle"
++    }
++}
++function Assert-NotContains([string]$Path, [string]$Needle) {
++    if (Select-String -LiteralPath $Path -SimpleMatch -Pattern $Needle -Quiet) {
++        throw "Forbidden pre-V20.4 marker remains in $Path`: $Needle"
++    }
++}
++function Remove-VerificationWork {
++    if (-not (Test-Path -LiteralPath $WorkDir)) { return }
++    $workRoot = Full (Join-Path $WorkspaceRoot 'work')
++    $expected = Full $WorkDir
++    if ($expected -eq $workRoot -or
++        -not $expected.StartsWith($workRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
++        (Split-Path -Leaf $expected) -notlike 'verify_*') {
++        throw "Refusing V20.4 verification cleanup outside work/verify_*: $expected"
++    }
++    $item = Get-Item -LiteralPath $WorkDir -Force
++    $resolved = Full (Resolve-Path -LiteralPath $WorkDir).Path
++    if ($item.LinkType -or $resolved -ne $expected) {
++        throw "Verification WorkDir is linked or resolves unexpectedly: $expected -> $resolved"
++    }
++    $links = @(Get-ChildItem -LiteralPath $resolved -Force -Recurse -Attributes ReparsePoint -ErrorAction SilentlyContinue)
++    if ($links.Count) { throw "Verification WorkDir contains a reparse point: $($links[0].FullName)" }
++    Remove-Item -LiteralPath $resolved -Recurse -Force
++}
++
++if (-not (Test-Path -LiteralPath $BaseVerifier -PathType Leaf)) {
++    throw "Missing base final-package verifier: $BaseVerifier"
++}
++
++$ok = $false
++try {
++    $baseArgs = @{
++        FlashDir = $FlashDir
++        WorkDir = $WorkDir
++        KeepWork = $true
++    }
++    if ($ExpectedVendorImageSha256) {
++        $baseArgs.ExpectedVendorImageSha256 = $ExpectedVendorImageSha256
++    }
++    if ($ExpectedVendorApkInventoryPath) {
++        $baseArgs.ExpectedVendorApkInventoryPath = $ExpectedVendorApkInventoryPath
++    }
++    $baseOutput = @(& $BaseVerifier @baseArgs)
++    $baseOutput | Write-Output
++    if (($baseOutput | Out-String) -notmatch '"ok"\s*:\s*true') {
++        throw 'Base final-package verifier did not report ok=true.'
++    }
++
++    $services = Join-Path $WorkDir 'services_decode'
++    $app = Join-Path $WorkDir 'app_decode'
++    $serviceSmali = Require-SingleFile $services 'ZuiControlService.smali'
++    $focusSnapshotSmali = Require-SingleFile $services 'ZuiControlService$FocusSnapshot.smali'
++    $hooksSmali = Require-SingleFile $services 'ZuiControlHooks.smali'
++    $displayContentSmali = Require-SingleFile $services 'DisplayContent.smali'
++    $wmInternalSmali = Require-SingleFile $services 'WindowManagerInternal.smali'
++    $clientSmali = Require-SingleFile $app 'ZuiControlClient.smali'
++    $tileSmali = Require-SingleFile $app 'ZuiControlTileService.smali'
++    $quickSmali = Require-SingleFile $app 'ZuiControlQuickService.smali'
++
++    $markers = @(
++        @{ Path = $serviceSmali; Needle = '\neditableScenePackage=' },
++        @{ Path = $serviceSmali; Needle = '\neditableDisplayHz=' },
++        @{ Path = $serviceSmali; Needle = '\nrawFocusTransient=' },
++        @{ Path = $serviceSmali; Needle = 'mLatestFocus:Lcom/zui/server/control/ZuiControlService$FocusSnapshot;' },
++        @{ Path = $serviceSmali; Needle = 'latestFocusMatchesRaw' },
++        @{ Path = $focusSnapshotSmali; Needle = '.field final packageName:Ljava/lang/String;' },
++        @{ Path = $focusSnapshotSmali; Needle = '.field final userId:I' },
++        @{ Path = $focusSnapshotSmali; Needle = '.field final displayId:I' },
++        @{ Path = $focusSnapshotSmali; Needle = '.field final transientFocus:Z' },
++        @{ Path = $serviceSmali; Needle = '\nnonImeFocusedPackage=' },
++        @{ Path = $serviceSmali; Needle = '\nwindowFocusSeen=' },
++        @{ Path = $serviceSmali; Needle = '\ndesiredScenePackage=' },
++        @{ Path = $serviceSmali; Needle = '\nattemptedScenePackage=' },
++        @{ Path = $serviceSmali; Needle = '\nappliedScenePackage=' },
++        @{ Path = $serviceSmali; Needle = '\nattemptedDisplayHz=' },
++        @{ Path = $serviceSmali; Needle = '\nappliedDisplayHz=' },
++        @{ Path = $serviceSmali; Needle = '\nphysicalDisplayHz=' },
++        @{ Path = $serviceSmali; Needle = '\nrefreshApplyCount=' },
++        @{ Path = $serviceSmali; Needle = '\nskipSameCount=' },
++        @{ Path = $serviceSmali; Needle = '\nlastApplyReason=' },
++        @{ Path = $serviceSmali; Needle = '\nlastApplyError=' },
++        @{ Path = $serviceSmali; Needle = '\nappRequestHandoffPending=' },
++        @{ Path = $serviceSmali; Needle = '\nrefreshDisplayScope=defaultDisplayOnly' },
++        @{ Path = $serviceSmali; Needle = 'transient_package_not_configurable' },
++        @{ Path = $serviceSmali; Needle = 'profileSaved=1' },
++        @{ Path = $serviceSmali; Needle = 'neutralProfile' },
++        @{ Path = $serviceSmali; Needle = 'Landroid/os/SystemProperties;->addChangeCallback(Ljava/lang/Runnable;)V' },
++        @{ Path = $serviceSmali; Needle = 'enqueueRefreshDisableMask' },
++        @{ Path = $serviceSmali; Needle = 'propertyDisableRetry' },
++        @{ Path = $serviceSmali; Needle = 'releaseRefreshOwnership' },
++        @{ Path = $serviceSmali; Needle = 'updateGlobalVote' },
++        @{ Path = $serviceSmali; Needle = 'requestTraversalFromDisplayManager' },
++        @{ Path = $serviceSmali; Needle = 'externalPreserved' },
++        @{ Path = $serviceSmali; Needle = 'failedBeforeMutation' },
++        @{ Path = $serviceSmali; Needle = 'failedAfterMutation' },
++        @{ Path = $hooksSmali; Needle = 'onFocusedWindowChanged' },
++        @{ Path = $hooksSmali; Needle = 'onImeVisibilityChanged' },
++        @{ Path = $displayContentSmali; Needle = 'Lcom/zui/server/control/ZuiControlHooks;->onFocusedWindowChanged(Ljava/lang/String;I)V' },
++        @{ Path = $displayContentSmali; Needle = 'Lcom/zui/server/control/ZuiControlHooks;->onImeVisibilityChanged(Ljava/lang/String;ZI)V' },
++        @{ Path = $wmInternalSmali; Needle = '.method public abstract requestTraversalFromDisplayManager()V' },
++        @{ Path = $clientSmali; Needle = 'editableDisplayHz' },
++        @{ Path = $tileSmali; Needle = '->editableDisplayHz()Ljava/lang/Integer;' },
++        @{ Path = $quickSmali; Needle = '->editableDisplayHz()Ljava/lang/Integer;' }
++    )
++    foreach ($marker in $markers) {
++        Assert-Contains $marker.Path $marker.Needle
++    }
++    Assert-NotContains $serviceSmali 'controlPanel'
++
++    $ok = $true
++    [pscustomobject]@{
++        ok = $true
++        phase = 'V20_4'
++        flash_dir = (Full $FlashDir)
++        base_verifier = $BaseVerifier
++        marker_count = $markers.Count + 1
++    } | ConvertTo-Json -Depth 3
++} finally {
++    if ($ok -and -not $KeepWork) {
++        Remove-VerificationWork
++    } elseif (-not $ok -and (Test-Path -LiteralPath $WorkDir)) {
++        Write-Warning "V20.4 verification workspace kept for debugging: $WorkDir"
++    }
++}
