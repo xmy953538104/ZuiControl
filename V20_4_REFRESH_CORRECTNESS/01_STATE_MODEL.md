@@ -8,7 +8,7 @@
 
 Refresh physical target 与 configuration target 是两个概念：
 
-- **physical target** 只由当前 `rawFocusedPackage` 决定。当前 focus 是可配置业务 App 时读取该 App profile；未配置业务 App 使用 default 120；SystemUI、ZuiControl、IME、权限 UI、Resolver、临时 overlay 或空 focus 使用 default 120。
+- **physical target** 只由最近一次真实、非空 `rawFocusedPackage` edge 决定。当前非空 focus 是可配置业务 App 时读取该 App profile；未配置业务 App 使用 default 120；SystemUI、ZuiControl、IME、权限 UI、Resolver 或临时 overlay 等真实非空 transient 使用 default 120。空 focus 不是 owner，不产生 default 120 apply，而是保留最后非空 policy 直到下一非空 edge。
 - **configuration target** 使用 `lastNonTransientScenePackage`。它让 QS/ZuiControl 在自身位于前台时仍能修改刚才的业务 App，但不得让该业务 App profile 反向限制当前 transient 屏幕。
 
 因此 `lastNonTransientScenePackage` 绝不参与 physical target 继承。
@@ -17,10 +17,10 @@ Refresh physical target 与 configuration target 是两个概念：
 
 | 字段 | 唯一含义 | 更新时机 | 禁止语义 |
 | --- | --- | --- | --- |
-| `rawFocusedPackage` | default display 上最近一次有效 focused-window owner；window signal 尚未出现时才以 focused Activity fallback；允许为空或 configuration-transient | 每次 window/activity/IME event | 不能直接当 profile 编辑对象 |
+| `rawFocusedPackage` | default display 上最近一次有效非空 focused-window owner；window signal 尚未出现时才以 focused Activity fallback；可以是 configuration-transient | 每次有效非空 window/activity/IME event；空 edge 不覆盖 | 不能直接当 profile 编辑对象；空 edge 不是 owner |
 | `currentScenePackage` | 最近一次真正成为 foreground 的可配置业务 scene；transient 期间保留 | 仅业务 focus | 不能表示当前 physical target 的 owner |
 | `lastNonTransientScenePackage` | 最近一次有效业务 scene，供 QS/ZuiControl 等配置入口定向 | 仅业务 focus | 不能参与 transient 的 physical target 计算 |
-| `desiredScenePackage` | 当前 physical policy key：业务 focus 时为业务 package；transient/空 focus 时为字面 `default` | 每次 focus、profile 变化、refresh enable/recompute | 不代表平台已接受；`default` 不是 SystemUI/ZuiControl profile |
+| `desiredScenePackage` | 当前 physical policy key：业务 focus 时为业务 package；真实非空 transient focus 时为字面 `default`；空 focus 保留最后非空值 | 每次非空 focus、profile 变化、refresh enable/recompute | 不代表平台已接受；`default` 不是 SystemUI/ZuiControl profile；空 edge 不创建 `default` |
 | `attemptedScenePackage` | 最近一次真正进入 platform apply 的 physical policy key | platform apply 前 | disabled 与纯 dedup 不算新 attempt |
 | `appliedScenePackage` | 最近一次 platform request 全部成功，或与成功状态严格同 target 的 physical policy key | apply success；严格 dedup 可重标为等价 key | 不能在尝试开始、失败或 disabled 时预写 |
 | `targetDisplayHz` | `desiredScenePackage` 对应的 desired display Hz | desired policy 确定时 | 不等于 physical Hz |
@@ -36,17 +36,17 @@ Refresh physical target 与 configuration target 是两个概念：
 
 业务 scene 包括 Launcher、普通用户 App，以及具有 profile 的真实业务 App。业务 focus 更新 `currentScenePackage`、`lastNonTransientScenePackage` 和业务 user/display。
 
-configuration-transient 至少包括空/null、SystemUI、ZuiControl、`android` pseudo package、PermissionController、PackageInstaller、Resolver/Chooser、IME/keyboard、temporary overlay 和已确认的 GameHelper overlay。它们：
+configuration-transient 至少包括真实非空的 SystemUI、ZuiControl、`android` pseudo package、PermissionController、PackageInstaller、Resolver/Chooser、IME/keyboard、temporary overlay，以及 exact OEM control UI `com.lenovo.screensplit` 和 `com.zui.freeform.sidebar`。它们：
 
 1. 可以更新 `rawFocusedPackage`；
 2. 不更新 current/last business；
 3. 不可创建或加载自身用户 profile；
-4. physical policy 必须切到 `default`，通常 target 120；
+4. 作为真实非空 focused owner 时，physical policy 必须切到 `default`，通常 target 120；
 5. 不得继承 last business profile。
 
-“transient”在本模型中只描述配置 ownership，不表示 physical refresh no-op。
+“transient”在本模型中只描述配置 ownership，不表示 physical refresh no-op。空/null window 与 transient 分离：`EMPTY_FOCUS_TRANSITION` 只记录诊断和计数，不更新最后非空 raw snapshot、desired 或 target，不 apply，也不改 Uperf/business/configuration；最后非空 policy 保持有效直到下一非空 edge。
 
-focused window 是 physical raw authority。window edge 到达时，owner 为空或命中已知 transient classifier才按 transient/default 120；其它业务 package按自身 profile处理。Activity/window package暂时不一致本身不再是 transient条件，否则 Android 的 Activity-first / window-first 合法事件顺序会制造错误 default 120。
+focused window 是 physical raw authority。非空 window edge 到达时，命中已知 transient classifier才按 transient/default 120；其它业务 package按自身 profile处理。空 window edge不是owner并立即走 `EMPTY_FOCUS_TRANSITION` 保留路径。Activity/window package暂时不一致本身不再是 transient条件，否则 Android 的 Activity-first / window-first 合法事件顺序会制造错误 default 120。
 
 Activity hook只在尚无 window signal时作为 fallback。一旦 `mLatestWindowFocusSeen=true`，Activity变化只更新不可变 metadata snapshot；它不能改写当前 non-IME window的 package/transient分类，也不能触发 physical apply。若 window先到、随后同 package Activity metadata到达，只补全 uid/user tuple，不重新分类或重复 apply。SystemUI、Permission、Resolver与已知 vendor overlay已在真实 window edge被分类为 transient，因此背后 Activity变化不会把它们升级成业务 scene。IME单独覆盖 physical raw；关闭IME时恢复最近 non-IME focused-window snapshot，不能盲目恢复背后的 Activity。
 
@@ -66,6 +66,7 @@ hook线程只分配/替换 immutable `FocusSnapshot` 并向 ZuiControl HandlerTh
 | window=A 时 Activity metadata A→B | 保持 A | 保持 A / A profile Hz | none；等待真实 window edge | none |
 | Activity-first 后 window A→B | 更新为 B | B / B profile Hz | 一次 B apply；无 intermediate default | none |
 | window-first A→B 后 Activity A→B | window edge已更新为 B | 保持 B / B profile Hz | Activity metadata only；不重复 apply | none |
+| empty/null window edge | 保持 | 保持最后非空 key / target | none；只记录 `EMPTY_FOCUS_TRANSITION` | none |
 | explicit edit 当前 raw business | 保持 | 该业务 App / 新 Hz | 立即 apply | 保存该 App |
 | explicit edit非当前 raw package | 保持 | 不变 | none | 只保存 |
 | refresh/global disable edge | 保持 | 保持，便于诊断 | 停止写入并安全 handoff/restore | none |
@@ -95,13 +96,20 @@ peak bridge 只在 ZuiControl 实际改写时记录原值；release 仅在当前
 - apply 前先更新 desired；platform call 前才更新 attempted；成功后才更新 applied。
 - validation/mode 查找失败发生在 platform mutation 前，保留上一份仍可证明的 applied state。
 - platform mutation 发生后失败时执行 best-effort peak rollback 与 WindowManager handoff；不能证明完整旧状态时清空 applied 并写入 `lastApplyError`。
-- `refreshNow` 强制按当前 raw focus 重算与 apply，不使用 applied 或 last business 作为 physical source。
+- `refreshNow` 在存在有效非空 raw focus 时强制按该 focus 重算与 apply，不使用 applied 或 last business 作为 physical source；处于 empty transition 时不使用陈旧 Activity/raw 值 apply，继续保留最后非空 policy，等待下一非空 window edge。
 - profile AtomicFile 保存失败时回滚内存 mutation并返回 `ok=0`；profile 已保存但当前 foreground apply 失败时返回 `ok=0`、`profileSaved=1`，不能让 UI 把 physical apply 伪装成成功。
 
 foreground-only 语义意味着：A=90 ↔ ZuiControl/default=120 或 A=90 ↔ SystemUI/default=120 的每个真实 focus edge 都需要 apply；100 次往返不再以“apply 接近 0”为目标。去重目标是相同 raw focus 的重复事件、120-default ↔ 120-default，以及相同 display/mode/Hz 的重复请求。
 
 ## 7. Kill-switch edge
 
-使用 `SystemProperties.addChangeCallback()`；全局callback读取两个属性形成wakeup hint并post到ZuiControl HandlerThread，worker消费时再读一次两个真实property作为最终truth；注册后立即补读一次关闭read/register窗口。单独稳定的disable和enable都必须无需focus切换而事件驱动收敛；generic property callback不承诺观察极短rapid toggle的每个intermediate value，rapid gate只要求最终可靠收敛到两个属性的真实最新mask。无timer、polling、daemon或App owner。
+kill transport 有两个入口，但最终都由同一 worker 以两个真实 property 的最新值收敛并 dedup：
+
+1. 预留给签名 ZuiControl App 的 authenticated Binder TX10 `setModuleEnabled("refresh", enabled)`，在同一调用内先持久化 `persist.zui_control.refresh.disable`，再同步执行 mask transition 后才返回；它不等待 generic callback 或 init poke。
+2. raw `persist.zui_control.disable` / `persist.zui_control.refresh.disable` edge 由 init 的短命 `exec_background` shell/service 进程发送标准 `SYSPROPS_TRANSACTION`（`service call zui_control 1599295570`），唤醒进程内 `SystemProperties.addChangeCallback()`；callback只post wakeup hint，worker消费时重读两个 property 作为最终 truth，迟到或重复 poke 由 mask dedup。
+
+注册 callback 后立即补读一次关闭 read/register 窗口。单独稳定的disable和enable都必须无需focus切换而事件驱动收敛；generic property callback不承诺观察极短rapid toggle的每个intermediate value，rapid gate只要求最终可靠收敛到两个属性的真实最新mask。没有timer、polling、常驻 notifier、persistent daemon或App refresh owner。
 
 Disable 停止 refresh apply，只删除 ZuiControl 的 global priority-8 vote，compare-and-restore peak，再请求安全 handoff shared AppRequest；不删除 UDFPS 的 per-display priority-8 vote。一次 release 失败时只安排一个 bounded immediate retry，之后保留 partial/error；后续真实 focus/profile 或 disable-mask edge可再触发一次 bounded retry，但没有循环。Enable 必须在 atomic latest-focus snapshot 与 worker raw一致后立即重算：若 App B 仍 foreground 则恢复 B profile；若 SystemUI/ZuiControl 仍 foreground 则应用 default 120。Uperf/asoulOpt 与 command plane 不在该转换内。
+
+system_server 初始启动尚无任何非空 snapshot 时，诊断字段可以保持初始化 `default` / 120；这只是无 owner 的初始化显示，不是一次 empty handoff、不是 platform apply 依据，也不能被写成 AppRequest/physical ownership 已建立。

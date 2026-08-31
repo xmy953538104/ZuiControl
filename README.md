@@ -12,9 +12,9 @@ ZuiControl 是 TB321FU / ZUI 16.1.11.072 的 ROM 内置系统控制工具，核�
 4. 当前生产源码
 5. [`CURRENT_EVIDENCE_INDEX.md`](CURRENT_EVIDENCE_INDEX.md)
 
-V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。当前设备运行 V20.4 fixed RunId `20260831134511`：source/host/CI/ROM build/final-super、final-artifact ART 与 Boot Hard Gate PASS，device validation **PARTIAL**。旧 RunId `20260831094239` 已在刷前拒绝；`20260831104317` 刷后因 ART `VerifyError` Boot Gate FAIL并完成V20.3B恢复，两者均不得再次刷写。App 仍是 versionCode 49 / versionName 0.21.12。
+V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。当前设备运行 V20.4 Runtime Correction RunId `20260831170720`，source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`、CI `33375509612`；host/build/final-artifact/Boot Hard Gate和Targeted Device Gate均PASS。Refresh Correctness / State Machine 工作包现为 **CLOSED WITH EXPLICIT BOUNDARIES**。App 仍是 versionCode 49 / versionName 0.21.12。
 
-三个device blocker的runtime correction已冻结为source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`、未刷入 RunId `20260831170720`、CI `33375509612`。host `39/39 + 5/5`、final-super reverse/56-marker、final-artifact ART、split SELinux CIL及版本化fixed-seven package Preflight均PASS，技术状态 `PRE_FLASH_READY=YES / FLASHED=NO`。预检包位于 `D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_RUNTIME_20260831170720`。当前设备并未运行这份correction；不得把pre-flash结果写成Boot Gate或device PASS。
+旧 RunId `20260831094239` 刷前拒绝；`20260831104317` 因ART `VerifyError` Boot FAIL并完成恢复；`20260831134511` Boot PASS但device因kill switch、null-gap和OEM分类三项为PARTIAL。它们只保留为lineage，均不得再次刷写。当前权威结论见 [`V20_4_REFRESH_RUNTIME_DECISION.md`](V20_4_REFRESH_RUNTIME_DECISION.md) 与 [`08_BOOT_GATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/08_BOOT_GATE.md) 至 [`13_FINAL_RUNTIME_STATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/13_FINAL_RUNTIME_STATE.md)。
 
 旧 handoff、AI 报告、阶段报告和 raw/trace/log 位于仓库外 `D:\3.VScode\Mi\ZuiControl_Archive\`。默认不要扫描 archive；只按 evidence index 定向读取。
 
@@ -40,18 +40,18 @@ OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno
 
 第一优先级已经按 foreground-only state machine 实现：业务 App 真正 foreground 时使用自身 profile；SystemUI、ZuiControl、IME、权限/Resolver/overlay 等 transient 真正 foreground 时使用 neutral/default 120，返回业务 App 后恢复。`lastNonTransientScenePackage` 只用于 QS/ZuiControl 编辑对象，不再用于继承当前物理 Hz。
 
-真实非空focused Window是physical authority：真实window signal出现后，背后的Activity metadata只补充元数据，不得追溯重分类当前window或触发physical apply。已刷RunId把App-to-App临时null Window错当owner并制造intermediate default120；correction把空edge定义为 `EMPTY_FOCUS_TRANSITION`，保留最后非空policy等待下一非空edge。它不改变SystemUI/ZuiControl/IME等真实非空transient的default120语义。
+真实非空focused Window是physical authority：真实window signal出现后，背后的Activity metadata只补充元数据，不得追溯重分类当前window或触发physical apply。空edge是 `EMPTY_FOCUS_TRANSITION`，保留最后非空policy等待下一非空edge，不作为default120 owner。它不改变SystemUI/ZuiControl/IME等真实非空transient的default120语义。
 
 同一工作包统一处理：
 
 - raw/current/last 与 desired/attempted/applied/physical 状态不变量；
 - 删除 `controlPanel` 独立 profile-owner 特判；QS/QuickService 始终修改上一个真实业务场景，transient 前台只保存；
 - kill truth仍由两个persist property组成；raw setprop不会自动report system_server的process-local callback。correction中reserved signed-App TX10直接persist+transition，engineering raw property由init edge-only标准sysprop poke唤醒；
-- disabled 后定向清 priority-8 vote、compare/restore peak，并请求 shared AppRequest 的 WindowManager traversal handoff；该无 token AppRequest 的实际完成时序留真机验证；
+- disabled 后定向清 priority-8 vote、compare/restore peak，并请求 shared AppRequest 的 WindowManager traversal handoff；真机已证明本地ownership释放和外部DMS接管，但该无token API没有同步completion callback；
 - apply/skip/fail/disabled 后 `appliedScenePackage` 的真实语义；
 - 60/90/120/144/165 的 transient 与 physical Hz 矩阵。
 
-当前已刷RunId已证明foreground-only主路径、五档、IME/Resolver、QS编辑对象、dedup、freeform/split/PiP、profile拒绝、peak observer、enabled idle与Binder边界。它的三项blocker必须保留：kill switch property edge不收敛；App-to-App额外default120 apply；`com.lenovo.screensplit`与`com.zui.freeform.sidebar`误分类。correction source已定向实现三项修正，但尚未刷入；其device结论仍pending。UDFPS为`NOT_OBSERVED`，多用户/外接屏未验证。权威旧结果见 [`08_DEVICE_RESULTS.md`](V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md)，correction最小入口见 [`V20_4_REFRESH_RUNTIME_CORRECTION/`](V20_4_REFRESH_RUNTIME_CORRECTION/)。
+当前RunId已证明foreground-only主路径、五档、IME/Resolver/Permission、QS编辑对象、dedup、freeform/split/PiP、kill-switch无人工poke20/20、disabled/enabled boot persistence、App-to-App 100往返0个observed intermediate120，以及两个exact OEM transient不污染business/profile。最终idle worker仍为0。TX10 signed-App device path不可达、UDFPS为`NOT_OBSERVED`、fault injection未执行、多用户/外接屏未验证；这些是保留的非阻断边界，不得写成PASS。旧 [`08_DEVICE_RESULTS.md`](V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md) 仅记录被替代RunId的历史PARTIAL。
 
 当前 `displayVote=adaptiveRender`，target=120 时静止 physical actual 可以降到 60；尚未交付 120 hard-lock。`fpsCap` 仍是未交付兼容字段。
 
@@ -64,7 +64,7 @@ OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno
 - `scripts/`：build、payload 应用、framework 注入和 final-package 验证。
 - `V20_3B_DAEMON_RETIREMENT/tests/`：当前 host/device policy 与回归工具；测试代码保留原位。
 - `V20_4_REFRESH_CORRECTNESS/`：refresh 状态模型、host/build/ART/Boot证据、device plan与真机结果。
-- `V20_4_REFRESH_RUNTIME_CORRECTION/`：三个runtime blocker的根因、定向设计、host/final gate与未来真机计划。
+- `V20_4_REFRESH_RUNTIME_CORRECTION/`：三个runtime blocker的根因、定向设计、host/final gate与当前真机结果。
 - `CURRENT_EVIDENCE_INDEX.md`：当前基线的最小证据入口。
 
 ## Build 与验证
@@ -89,7 +89,7 @@ Steady-state 预期包含：refresh owner=`system`、persistent `zui_controld` P
 
 任何 ROM 交付仍必须按 `AGENTS.md` 做 final-super 反向内容、context、SHA-256 和刷后 AVC 验证。
 
-当前已刷 fixed candidate：`D:\3.VScode\Mi\work\v20_4_candidate_20260831134511`。它绑定 source commit `3c5cd809d5465828fe14356cbd079d45d00347b7` 与 CI run [`33361319072`](https://github.com/xmy953538104/ZuiControl/actions/runs/33361319072)；最终 `super.img` SHA-256 为 `4f01c64d8a3a5860c34967d944510f3768f4e6748bb843eef0345a5c6685800d`，final-super verifier `marker_count=48`，最终 `services.jar` ART gate和刷后Boot Gate均PASS。`build_result.json`中的`flashed=false`是构建完成时的receipt，不表示当前设备未刷。device acceptance仍因上述三项blocker为PARTIAL。
+当前已刷 candidate：`D:\3.VScode\Mi\work\v20_4_candidate_20260831170720`。它绑定 source commit `146e096c6a6bc8b3fee60349b856990fd9fb68d2` 与 CI run `33375509612`；最终 `super.img` SHA-256 为 `dc4fd4bc3e288aa26e80cf382db62211f488e1b74c7cb8767b2d3f9f5f2c269d`，final-super verifier `marker_count=56`，最终ART、Boot与targeted device gate均PASS。pre-flash `build_result.json`中的`flashed=false`只描述构建时点，不表示当前设备未刷。
 
 ## 当前禁止
 

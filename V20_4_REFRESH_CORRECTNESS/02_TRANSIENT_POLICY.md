@@ -11,9 +11,12 @@
 | SystemUI / QS | 保持 | default 120 | last business |
 | ZuiControl | 保持 | default 120 | last business（仅“当前场景”编辑入口） |
 | IME / Permission / Resolver / PackageInstaller / overlay | 保持 | default 120 | 无隐式写入；显式控制入口仍可使用 last business |
-| null / empty | 保持 | default 120 | 保持 last business，不写 profile |
+| exact OEM control UI：`com.lenovo.screensplit` / `com.zui.freeform.sidebar` | 保持 | default 120 | 保持 last business，不写 profile |
+| null / empty | 保持 | 保持最后非空 policy；不 apply | 保持 last business，不写 profile |
 
-最小 classifier 保留明确 package heuristic，不引入大型 window taxonomy。default display 的 focused-window owner 是 raw authority：owner为空或命中SystemUI、ZuiControl、IME、Permission/Resolver/PackageInstaller、overlay等已知heuristic时为transient；Activity/window package暂时不一致本身不再改变当前window分类。`com.zui.zuicontrol`与`com.android.systemui`走同一路径，不再存在`controlPanel` refresh特判。未命中classifier的未知vendor窗口仍是需要真机补充具体package的边界，不能靠背后Activity变化追溯重分类。
+最小 classifier 保留明确 package heuristic，不引入大型 window taxonomy。default display 的非空 focused-window owner 是 raw authority：命中SystemUI、ZuiControl、IME、Permission/Resolver/PackageInstaller、overlay，以及 exact `com.lenovo.screensplit` / `com.zui.freeform.sidebar` 时为transient；Activity/window package暂时不一致本身不再改变当前window分类。`com.zui.zuicontrol`与`com.android.systemui`走同一路径，不再存在`controlPanel` refresh特判。未命中classifier的未知vendor窗口仍是需要真机补充具体package的边界，不能靠背后Activity变化追溯重分类。
+
+空/null window 不属于 transient classifier，也不是 physical owner。`EMPTY_FOCUS_TRANSITION` 只记录诊断与计数，不覆盖最后非空 raw snapshot，不更新 desired/target，不触发 apply；最后非空 policy 保持有效，直到下一次真实非空 window edge。system_server 初始启动尚无非空 snapshot 时可以显示初始化 `default` / 120 诊断值，但该值不是 handoff owner，也不证明 AppRequest 或 physical ownership 已建立。
 
 Activity focus只在尚未收到window signal时作为fallback；已有window snapshot后，Activity变化只更新metadata，绝不重新分类或apply当前window。A window仍foreground时Activity A→B保持A profile；SystemUI/Permission/overlay window仍foreground时保持neutral120；只有新的window-focus edge才能改变physical raw。IME显示期间保留non-IME window snapshot；IME关闭恢复该snapshot，而不是无条件恢复Activity。
 
@@ -38,7 +41,7 @@ Activity focus只在尚未收到window signal时作为fallback；已有window sn
 - `setCurrentSceneProfile` 始终选择 last/current business 作为保存对象。
 - 只有保存对象同时是真正 raw foreground business package/user 时才立即 apply。
 - 显式编辑后台 package 只保存。
-- 对已知 transient package 的新增/更新请求返回 `transient_package_not_configurable`。
+- 对已知 transient package（包括 exact `com.lenovo.screensplit` / `com.zui.freeform.sidebar`）的新增/更新请求返回 `transient_package_not_configurable`。
 - 加载配置时忽略 legacy SystemUI/ZuiControl/IME/overlay profile；remove API 仍可删除遗留项。
 - profile 文件中不得新产生 `com.android.systemui` 或 `com.zui.zuicontrol`。
 - AtomicFile 写入失败必须回滚内存 profile并返回失败；当前 foreground apply 失败时明确返回 `profileSaved=1` 与 apply error。
@@ -49,3 +52,4 @@ Activity focus只在尚未收到window signal时作为fallback；已有window sn
 - App A=120 → transient default=120 可 strict dedup，但 applied policy key 可重标为 `default`。
 - 相同 raw focus 的重复 hook event 不重复写 DisplayManager 或 peak。
 - transient A→B 若二者均 default 120，不重复 apply；raw diagnostics 仍更新。
+- empty/null edge 不参与 120 dedup：它根本不产生 desired/target/apply，只等待下一非空 owner。
