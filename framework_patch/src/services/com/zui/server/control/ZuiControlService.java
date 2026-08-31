@@ -93,16 +93,11 @@ public final class ZuiControlService extends Binder {
     private final Map<String, Profile> mProfiles = new HashMap<>();
 
     private volatile FocusSnapshot mLatestFocus = new FocusSnapshot(
-            "", 0, Display.DEFAULT_DISPLAY, true);
-    private volatile String mLatestActivityPackage = "";
-    private volatile int mLatestActivityUid = -1;
-    private volatile int mLatestActivityUserId = 0;
-    private volatile int mLatestActivityDisplayId = Display.DEFAULT_DISPLAY;
-    private volatile String mLatestNonImeFocusedPackage = "";
-    private volatile int mLatestNonImeFocusedUid = -1;
-    private volatile int mLatestNonImeFocusedUserId = 0;
-    private volatile int mLatestNonImeFocusedDisplayId = Display.DEFAULT_DISPLAY;
-    private volatile boolean mLatestNonImeFocusTransient = true;
+            "", -1, 0, Display.DEFAULT_DISPLAY, true);
+    private volatile FocusSnapshot mLatestActivityFocus = new FocusSnapshot(
+            "", -1, 0, Display.DEFAULT_DISPLAY, true);
+    private volatile FocusSnapshot mLatestNonImeFocus = new FocusSnapshot(
+            "", -1, 0, Display.DEFAULT_DISPLAY, true);
     private volatile boolean mLatestWindowFocusSeen;
     private volatile boolean mLatestImeVisible;
     private String mActivityFocusedPackage = "";
@@ -216,23 +211,31 @@ public final class ZuiControlService extends Binder {
                     ? record.info.applicationInfo.uid : -1;
             userId = record.mUserId;
         }
-        mLatestActivityPackage = pkg;
-        mLatestActivityUid = uid;
-        mLatestActivityUserId = userId;
-        mLatestActivityDisplayId = displayId;
-        final String effectivePkg = mLatestWindowFocusSeen
-                ? mLatestNonImeFocusedPackage : pkg;
-        final boolean transientFocus = effectivePkg.isEmpty()
-                || isTransientPackage(effectivePkg) || !effectivePkg.equals(pkg);
-        setLatestNonImeFocus(effectivePkg, uid, userId, displayId, transientFocus);
-        if (!mLatestImeVisible) {
-            setLatestEffectiveFocus(effectivePkg, userId, displayId, transientFocus);
+        final boolean transientFocus = pkg.isEmpty() || isTransientPackage(pkg);
+        final FocusSnapshot activityFocus = new FocusSnapshot(
+                pkg, uid, userId, displayId, transientFocus);
+        mLatestActivityFocus = activityFocus;
+        final boolean windowAuthority = mLatestWindowFocusSeen;
+        if (!windowAuthority) {
+            mLatestNonImeFocus = activityFocus;
+            if (!mLatestImeVisible) {
+                mLatestFocus = activityFocus;
+            }
+        } else {
+            FocusSnapshot nonImeFocus = mLatestNonImeFocus;
+            if (pkg.equals(nonImeFocus.packageName)) {
+                FocusSnapshot enrichedFocus = new FocusSnapshot(pkg, uid, userId,
+                        nonImeFocus.displayId, nonImeFocus.transientFocus);
+                mLatestNonImeFocus = enrichedFocus;
+                if (!mLatestImeVisible) {
+                    mLatestFocus = enrichedFocus;
+                }
+            }
         }
         mWorker.post(new Runnable() {
             @Override
             public void run() {
-                handleFocusedActivity(pkg, uid, userId, displayId, effectivePkg,
-                        transientFocus, eventNanos);
+                handleFocusedActivity(activityFocus, windowAuthority, eventNanos);
             }
         });
     }
@@ -242,27 +245,27 @@ public final class ZuiControlService extends Binder {
             return;
         }
         final String pkg = safe(packageName);
-        final boolean transientFocus = pkg.isEmpty() || isTransientPackage(pkg)
-                || !pkg.equals(mLatestActivityPackage);
+        final boolean transientFocus = pkg.isEmpty() || isTransientPackage(pkg);
         boolean firstWindowFocus = !mLatestWindowFocusSeen;
         mLatestWindowFocusSeen = true;
-        if (!firstWindowFocus && pkg.equals(mLatestNonImeFocusedPackage)
-                && displayId == mLatestNonImeFocusedDisplayId
-                && transientFocus == mLatestNonImeFocusTransient) {
+        FocusSnapshot previousFocus = mLatestNonImeFocus;
+        if (!firstWindowFocus && pkg.equals(previousFocus.packageName)
+                && displayId == previousFocus.displayId
+                && transientFocus == previousFocus.transientFocus) {
             return;
         }
-        final int userId = mLatestActivityUserId;
-        final int uid = mLatestActivityUid;
+        FocusSnapshot activityFocus = mLatestActivityFocus;
+        final FocusSnapshot windowFocus = new FocusSnapshot(pkg, activityFocus.uid,
+                activityFocus.userId, displayId, transientFocus);
         final long eventNanos = SystemClock.elapsedRealtimeNanos();
-        setLatestNonImeFocus(pkg, uid, userId, displayId, transientFocus);
+        mLatestNonImeFocus = windowFocus;
         if (!mLatestImeVisible) {
-            setLatestEffectiveFocus(pkg, userId, displayId, transientFocus);
+            mLatestFocus = windowFocus;
         }
         mWorker.post(new Runnable() {
             @Override
             public void run() {
-                handleFocusedWindow(pkg, uid, userId, displayId,
-                        transientFocus, eventNanos);
+                handleFocusedWindow(windowFocus, eventNanos);
             }
         });
     }
@@ -282,11 +285,11 @@ public final class ZuiControlService extends Binder {
         final long eventNanos = SystemClock.elapsedRealtimeNanos();
         mLatestImeVisible = visible;
         if (visible) {
-            setLatestEffectiveFocus(pkg, mLatestActivityUserId, displayId, true);
+            FocusSnapshot activityFocus = mLatestActivityFocus;
+            mLatestFocus = new FocusSnapshot(
+                    pkg, -1, activityFocus.userId, displayId, true);
         } else {
-            setLatestEffectiveFocus(mLatestNonImeFocusedPackage,
-                    mLatestNonImeFocusedUserId, mLatestNonImeFocusedDisplayId,
-                    mLatestNonImeFocusTransient);
+            mLatestFocus = mLatestNonImeFocus;
         }
         mWorker.post(new Runnable() {
             @Override
@@ -296,30 +299,35 @@ public final class ZuiControlService extends Binder {
         });
     }
 
-    private void setLatestNonImeFocus(String pkg, int uid, int userId, int displayId,
-            boolean transientFocus) {
-        mLatestNonImeFocusedPackage = safe(pkg);
-        mLatestNonImeFocusedUid = uid;
-        mLatestNonImeFocusedUserId = userId;
-        mLatestNonImeFocusedDisplayId = displayId;
-        mLatestNonImeFocusTransient = transientFocus;
-    }
-
-    private void setLatestEffectiveFocus(String pkg, int userId, int displayId,
-            boolean transientFocus) {
-        mLatestFocus = new FocusSnapshot(safe(pkg), userId, displayId, transientFocus);
-    }
-
     private synchronized void handleFocusedActivity(
-            String pkg, int uid, int userId, int displayId, String effectivePkg,
-            boolean transientFocus, long eventNanos) {
-        mActivityFocusedPackage = safe(pkg);
-        mActivityFocusedUid = uid;
-        mActivityFocusedUserId = userId;
-        mActivityFocusedDisplayId = resolveDisplayId(displayId);
-        setNonImeFocus(effectivePkg, uid, userId, displayId, transientFocus);
-        if (!transientFocus) {
-            updateBusinessScene(effectivePkg, uid, userId, displayId);
+            FocusSnapshot activityFocus, boolean windowAuthority, long eventNanos) {
+        mActivityFocusedPackage = activityFocus.packageName;
+        mActivityFocusedUid = activityFocus.uid;
+        mActivityFocusedUserId = activityFocus.userId;
+        mActivityFocusedDisplayId = resolveDisplayId(activityFocus.displayId);
+        if (windowAuthority) {
+            if (activityFocus.packageName.equals(mNonImeFocusedPackage)) {
+                setNonImeFocus(activityFocus.packageName, activityFocus.uid,
+                        activityFocus.userId, mNonImeFocusedDisplayId,
+                        mNonImeFocusTransient);
+                if (!mImeVisible
+                        && activityFocus.packageName.equals(mRawFocusedPackage)) {
+                    mRawFocusedUserId = activityFocus.userId;
+                    if (!mRawFocusTransient) {
+                        mCurrentUid = activityFocus.uid;
+                        mCurrentUserId = activityFocus.userId;
+                    }
+                }
+            }
+            publishState();
+            return;
+        }
+        setNonImeFocus(activityFocus.packageName, activityFocus.uid,
+                activityFocus.userId, activityFocus.displayId,
+                activityFocus.transientFocus);
+        if (!activityFocus.transientFocus) {
+            updateBusinessScene(activityFocus.packageName, activityFocus.uid,
+                    activityFocus.userId, activityFocus.displayId);
         }
         if (mImeVisible) {
             mUperfScenePolicy.onSystemStateChanged(
@@ -327,21 +335,24 @@ public final class ZuiControlService extends Binder {
             publishState();
             return;
         }
-        handleEffectiveFocus(effectivePkg, uid, userId, displayId,
-                transientFocus, "focus", eventNanos);
+        handleEffectiveFocus(activityFocus.packageName, activityFocus.uid,
+                activityFocus.userId, activityFocus.displayId,
+                activityFocus.transientFocus, "focus", eventNanos);
     }
 
     private synchronized void handleFocusedWindow(
-            String pkg, int uid, int userId, int displayId,
-            boolean transientFocus, long eventNanos) {
+            FocusSnapshot windowFocus, long eventNanos) {
         mWindowFocusSeen = true;
-        setNonImeFocus(pkg, uid, userId, displayId, transientFocus);
+        setNonImeFocus(windowFocus.packageName, windowFocus.uid,
+                windowFocus.userId, windowFocus.displayId,
+                windowFocus.transientFocus);
         if (mImeVisible) {
             publishState();
             return;
         }
-        handleEffectiveFocus(pkg, uid, userId, displayId,
-                transientFocus, "windowFocus", eventNanos);
+        handleEffectiveFocus(windowFocus.packageName, windowFocus.uid,
+                windowFocus.userId, windowFocus.displayId,
+                windowFocus.transientFocus, "windowFocus", eventNanos);
     }
 
     private synchronized void handleImeVisibility(
@@ -914,7 +925,11 @@ public final class ZuiControlService extends Binder {
         }
     }
 
-    private synchronized void onRefreshPropertiesChanged(int disableMask) {
+    private synchronized void onRefreshPropertiesChanged(int observedMask) {
+        int disableMask = readRefreshDisableMask();
+        synchronized (mRefreshPropertyLock) {
+            mObservedRefreshDisableMask = disableMask;
+        }
         if (disableMask == mRefreshDisableMask) {
             return;
         }
@@ -1837,13 +1852,15 @@ public final class ZuiControlService extends Binder {
 
     private static final class FocusSnapshot {
         final String packageName;
+        final int uid;
         final int userId;
         final int displayId;
         final boolean transientFocus;
 
-        FocusSnapshot(String packageName, int userId, int displayId,
+        FocusSnapshot(String packageName, int uid, int userId, int displayId,
                 boolean transientFocus) {
             this.packageName = packageName;
+            this.uid = uid;
             this.userId = userId;
             this.displayId = displayId;
             this.transientFocus = transientFocus;

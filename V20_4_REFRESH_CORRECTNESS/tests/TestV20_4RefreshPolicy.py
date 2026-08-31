@@ -36,6 +36,8 @@ class RefreshModel:
 
     def __init__(self) -> None:
         self.profiles: dict[str, int] = {}
+        self.activity = ""
+        self.window_seen = False
         self.raw = ""
         self.raw_transient = True
         self.non_ime_raw = ""
@@ -49,10 +51,13 @@ class RefreshModel:
         self.attempted_hz = 0
         self.applied_hz = 0
         self.disable_mask = 0
+        self.observed_disable_hint = 0
         self.request_owned = False
+        self.handoff_pending = False
         self.vote_owned = False
         self.peak_owned = False
         self.apply_count = 0
+        self.apply_history: list[int] = []
         self.skip_count = 0
         self.last_reason = "init"
         self.last_error = ""
@@ -65,6 +70,22 @@ class RefreshModel:
         return self.profiles.get(package_name, 120)
 
     def focus(self, package_name: str) -> str:
+        """Convenience for a correlated Activity + window-focus edge."""
+        self.activity = package_name or ""
+        self.window_seen = True
+        return self._set_physical_focus(package_name, "windowFocus")
+
+    def activity_focus(self, package_name: str) -> str:
+        self.activity = package_name or ""
+        if self.window_seen:
+            return "metadataOnly"
+        return self._set_physical_focus(package_name, "focus")
+
+    def window_focus(self, package_name: str) -> str:
+        self.window_seen = True
+        return self._set_physical_focus(package_name, "windowFocus")
+
+    def _set_physical_focus(self, package_name: str, reason: str) -> str:
         self.raw = package_name or ""
         self.raw_transient = is_transient(self.raw)
         self.non_ime_raw = self.raw
@@ -72,16 +93,8 @@ class RefreshModel:
         if not self.raw_transient:
             self.current = self.raw
             self.last_business = self.raw
-        return self.reconcile("focusTransient" if self.raw_transient else "focus")
-
-    def window_focus(self, package_name: str, activity_package: str) -> str:
-        self.raw = package_name or ""
-        self.raw_transient = (not self.raw or is_transient(self.raw)
-                              or self.raw != activity_package)
-        self.non_ime_raw = self.raw
-        self.non_ime_transient = self.raw_transient
-        return self.reconcile("windowFocusTransient" if self.raw_transient
-                              else "windowFocus")
+        suffix = "Transient" if self.raw_transient else ""
+        return self.reconcile(f"{reason}{suffix}")
 
     def set_ime_visible(self, visible: bool) -> str:
         if visible:
@@ -120,9 +133,11 @@ class RefreshModel:
         if self.fail_stage == "app_request":
             return self.fail_after_mutation(reason, "app_request_failed")
         self.request_owned = True
+        self.handoff_pending = False
         self.applied = self.desired
         self.applied_hz = self.target_hz
         self.apply_count += 1
+        self.apply_history.append(self.target_hz)
         self.last_error = ""
         self.last_reason = f"{reason}:applied"
         return "applied"
@@ -166,17 +181,25 @@ class RefreshModel:
         self.disable_mask = mask
         disabled = bool(mask)
         if not was_disabled and disabled:
+            had_request = self.request_owned
             self.request_owned = False
+            self.handoff_pending = had_request
             self.vote_owned = False
             self.peak_owned = False
             self.applied = ""
             self.applied_hz = 0
-            self.last_reason = "propertyDisable:released"
-            return "released"
+            outcome = "releaseRequested" if had_request else "released"
+            self.last_reason = f"propertyDisable:{outcome}"
+            return outcome
         if was_disabled and not disabled:
             return self.reconcile("propertyEnable", force=True)
         self.last_reason = f"propertyDisableMaskChanged:{mask}"
         return "maskOnly"
+
+    def consume_property_hint(self, observed_mask: int, real_mask: int) -> str:
+        """A generic callback is only a wakeup; worker-side truth wins."""
+        self.observed_disable_hint = observed_mask
+        return self.set_disable_mask(real_mask)
 
 
 class RefreshStateModelTest(unittest.TestCase):
@@ -228,12 +251,12 @@ class RefreshStateModelTest(unittest.TestCase):
             self.assertEqual(("default", 120), (model.desired, model.applied_hz))
             self.assertNotIn(package_name, model.profiles)
 
-    def test_empty_and_unknown_window_owner_are_neutral(self) -> None:
+    def test_empty_and_known_overlay_window_owner_are_neutral(self) -> None:
         model = RefreshModel()
         model.profiles["app.a"] = 90
         model.focus("app.a")
-        for owner in ("", "vendor.popup.window"):
-            model.window_focus(owner, "app.a")
+        for owner in ("", "vendor.example.overlay"):
+            model.window_focus(owner)
             self.assertEqual(("default", 120), (model.desired, model.applied_hz))
             self.assertEqual("app.a", model.last_business)
 
@@ -241,11 +264,102 @@ class RefreshStateModelTest(unittest.TestCase):
         model = RefreshModel()
         model.profiles["app.a"] = 90
         model.focus("app.a")
-        model.window_focus("com.android.systemui", "app.a")
+        model.window_focus("com.android.systemui")
         model.set_ime_visible(True)
         model.set_ime_visible(False)
         self.assertEqual("com.android.systemui", model.raw)
         self.assertEqual(("default", 120), (model.desired, model.applied_hz))
+
+    def test_activity_metadata_behind_ime_does_not_replace_underlying_window(self) -> None:
+        model = RefreshModel()
+        model.profiles.update({"app.a": 90, "app.b": 60})
+        model.focus("app.a")
+        model.set_ime_visible(True)
+        self.assertEqual("metadataOnly", model.activity_focus("app.b"))
+        self.assertEqual(("app.a", False),
+                         (model.non_ime_raw, model.non_ime_transient))
+        model.set_ime_visible(False)
+        self.assertEqual(("app.a", "app.a", 90),
+                         (model.raw, model.desired, model.target_hz))
+        model.window_focus("app.b")
+        self.assertEqual(("app.b", 60), (model.desired, model.target_hz))
+
+    def test_activity_first_keeps_existing_window_until_window_edge(self) -> None:
+        model = RefreshModel()
+        model.profiles.update({"app.a": 90, "app.b": 60})
+        model.focus("app.a")
+        before = (model.desired, model.target_hz, model.apply_count,
+                  list(model.apply_history))
+
+        self.assertEqual("metadataOnly", model.activity_focus("app.b"))
+        self.assertEqual(before, (model.desired, model.target_hz,
+                                  model.apply_count, model.apply_history))
+        self.assertEqual(("app.a", False), (model.raw, model.raw_transient))
+
+        self.assertEqual("applied", model.window_focus("app.b"))
+        self.assertEqual(("app.b", 60), (model.desired, model.target_hz))
+        self.assertEqual([90, 60], model.apply_history)
+
+    def test_systemui_stays_neutral_while_background_activity_changes(self) -> None:
+        model = RefreshModel()
+        model.profiles.update({"app.a": 90, "app.b": 60})
+        model.focus("app.a")
+        model.window_focus("com.android.systemui")
+        neutral_count = model.apply_count
+
+        self.assertEqual("metadataOnly", model.activity_focus("app.b"))
+        self.assertEqual(("com.android.systemui", "default", 120),
+                         (model.raw, model.desired, model.target_hz))
+        self.assertEqual(neutral_count, model.apply_count)
+        self.assertEqual("app.a", model.last_business)
+
+        model.window_focus("app.b")
+        self.assertEqual(("app.b", 60), (model.desired, model.target_hz))
+
+    def test_permission_and_overlay_keep_window_classification(self) -> None:
+        for transient_window in (
+            "com.android.permissioncontroller",
+            "com.zui.game.service",
+            "vendor.example.overlay",
+        ):
+            model = RefreshModel()
+            model.profiles.update({"app.a": 90, "app.b": 60})
+            model.focus("app.a")
+            model.window_focus(transient_window)
+            neutral_count = model.apply_count
+
+            self.assertEqual("metadataOnly", model.activity_focus("app.b"))
+            self.assertEqual((transient_window, "default", 120),
+                             (model.raw, model.desired, model.target_hz))
+            self.assertEqual(neutral_count, model.apply_count)
+            self.assertEqual("app.a", model.last_business)
+
+            model.window_focus("app.b")
+            self.assertEqual(("app.b", 60), (model.desired, model.target_hz))
+
+    def test_activity_first_and_window_first_have_same_final_result(self) -> None:
+        activity_first = RefreshModel()
+        activity_first.profiles.update({"app.a": 90, "app.b": 60})
+        activity_first.focus("app.a")
+        activity_first.activity_focus("app.b")
+        self.assertEqual([90], activity_first.apply_history)
+        activity_first.window_focus("app.b")
+
+        window_first = RefreshModel()
+        window_first.profiles.update({"app.a": 90, "app.b": 60})
+        window_first.focus("app.a")
+        window_first.window_focus("app.b")
+        applied_before_metadata = window_first.apply_count
+        self.assertEqual("metadataOnly", window_first.activity_focus("app.b"))
+        self.assertEqual(applied_before_metadata, window_first.apply_count)
+
+        self.assertEqual(("app.b", "app.b", 60, [90, 60]),
+                         (activity_first.raw, activity_first.last_business,
+                          activity_first.target_hz, activity_first.apply_history))
+        self.assertEqual((activity_first.raw, activity_first.last_business,
+                          activity_first.target_hz, activity_first.apply_history),
+                         (window_first.raw, window_first.last_business,
+                          window_first.target_hz, window_first.apply_history))
 
     def test_120_to_default_is_strict_dedup(self) -> None:
         model = RefreshModel()
@@ -270,16 +384,51 @@ class RefreshStateModelTest(unittest.TestCase):
         model = RefreshModel()
         model.profiles["app.b"] = 90
         model.focus("app.b")
-        self.assertEqual("released", model.set_disable_mask(2))
+        self.assertEqual("releaseRequested", model.set_disable_mask(2))
         self.assertFalse(model.request_owned or model.vote_owned or model.peak_owned)
+        self.assertTrue(model.handoff_pending)
         self.assertEqual(("", 0), (model.applied, model.applied_hz))
         self.assertEqual("applied", model.set_disable_mask(0))
+        self.assertFalse(model.handoff_pending)
         self.assertEqual(("app.b", 90), (model.applied, model.applied_hz))
 
         model.focus("com.android.systemui")
         model.set_disable_mask(1)
         self.assertEqual("applied", model.set_disable_mask(0))
         self.assertEqual(("default", 120), (model.applied, model.applied_hz))
+
+    def test_rapid_toggle_converges_to_the_final_mask(self) -> None:
+        model = RefreshModel()
+        model.profiles["app.b"] = 90
+        model.focus("app.b")
+        for mask in (2, 0, 1, 0):
+            model.set_disable_mask(mask)
+        self.assertEqual(0, model.disable_mask)
+        self.assertEqual(("app.b", 90), (model.applied, model.applied_hz))
+        self.assertTrue(model.request_owned and model.vote_owned and model.peak_owned)
+
+        for mask in (2, 0, 3):
+            model.set_disable_mask(mask)
+        self.assertEqual(3, model.disable_mask)
+        self.assertFalse(model.request_owned or model.vote_owned or model.peak_owned)
+        self.assertEqual(("", 0), (model.applied, model.applied_hz))
+
+    def test_stale_property_hint_cannot_override_worker_truth(self) -> None:
+        model = RefreshModel()
+        model.profiles["app.b"] = 90
+        model.focus("app.b")
+
+        self.assertEqual("maskOnly", model.consume_property_hint(2, 0))
+        self.assertEqual((0, "app.b", 90),
+                         (model.disable_mask, model.applied, model.applied_hz))
+
+        self.assertEqual("releaseRequested", model.consume_property_hint(0, 2))
+        self.assertEqual((2, "", 0),
+                         (model.disable_mask, model.applied, model.applied_hz))
+
+        self.assertEqual("applied", model.consume_property_hint(2, 0))
+        self.assertEqual((0, "app.b", 90),
+                         (model.disable_mask, model.applied, model.applied_hz))
 
     def test_global_disable_does_not_touch_other_planes(self) -> None:
         model = RefreshModel()
@@ -353,6 +502,30 @@ class ProductionBindingTest(unittest.TestCase):
         self.assertIn("mImeControlTarget", self.framework_patcher)
         for forbidden in ("Thread.sleep", "Runtime.getRuntime", "ProcessBuilder"):
             self.assertNotIn(forbidden, self.hooks)
+        focus_section = self.service[
+            self.service.index("public void onFocusedAppChanged"):
+            self.service.index("private synchronized void handleFocusedActivity")
+        ]
+        for forbidden in ("Settings.", "getPackagesForUid", "setDisplayProperties",
+                          "postDelayed", "sleep("):
+            self.assertNotIn(forbidden, focus_section)
+
+    def test_window_focus_is_stable_physical_authority(self) -> None:
+        activity_hook = self.service[
+            self.service.index("public void onFocusedAppChanged"):
+            self.service.index("public void onFocusedWindowChanged")
+        ]
+        window_hook = self.service[
+            self.service.index("public void onFocusedWindowChanged"):
+            self.service.index("public void onImeVisibilityChanged")
+        ]
+        self.assertIn("final boolean windowAuthority = mLatestWindowFocusSeen", activity_hook)
+        self.assertIn("if (!windowAuthority)", activity_hook)
+        self.assertIn("handleFocusedActivity(activityFocus, windowAuthority", activity_hook)
+        self.assertNotIn("!pkg.equals", window_hook)
+        self.assertIn("pkg.isEmpty() || isTransientPackage(pkg)", window_hook)
+        self.assertIn("volatile FocusSnapshot mLatestActivityFocus", self.service)
+        self.assertIn("volatile FocusSnapshot mLatestNonImeFocus", self.service)
 
     def test_configuration_and_physical_axes_are_separate(self) -> None:
         for field in (
@@ -393,10 +566,8 @@ class ProductionBindingTest(unittest.TestCase):
     def test_kill_switch_is_event_driven_without_polling(self) -> None:
         self.assertIn("SystemProperties.addChangeCallback", self.service)
         self.assertIn("addChangeCallback", self.system_properties)
-        self.assertIn("enqueueRefreshDisableMask(readRefreshDisableMask())", self.service)
-        self.assertIn("onRefreshPropertiesChanged(disableMask)", self.service)
-        self.assertNotIn("removeCallbacks(mRefreshPropertyRunnable)", self.service)
         self.assertIn("readRefreshDisableMask()", self.service)
+        self.assertIn("int disableMask = readRefreshDisableMask();", self.service)
         property_section = self.service[
             self.service.index("private void registerRefreshPropertyObserver"):
             self.service.index("private void registerScreenObserver")
@@ -423,7 +594,7 @@ class ProductionBindingTest(unittest.TestCase):
     def test_window_context_and_storage_fail_closed(self) -> None:
         self.assertIn("mRawFocusTransient", self.service)
         self.assertIn("volatile FocusSnapshot mLatestFocus", self.service)
-        self.assertIn("mLatestNonImeFocusedPackage", self.service)
+        self.assertIn("mLatestNonImeFocus", self.service)
         self.assertIn("mNonImeFocusedPackage", self.service)
         self.assertIn("displayId != Display.DEFAULT_DISPLAY", self.service)
         self.assertIn("private boolean saveProfiles()", self.service)
