@@ -473,6 +473,7 @@ class ProductionBindingTest(unittest.TestCase):
             "framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java"
         )
         cls.framework_patcher = read("scripts/PatchZuiControlFramework.py")
+        cls.final_super_verifier = read("scripts/VerifyZuiControlFinalSuper.ps1")
         cls.client = read("app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt")
         cls.main = read("app/src/main/java/com/zui/zuicontrol/MainActivity.kt")
         cls.tile = read("app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt")
@@ -500,6 +501,38 @@ class ProductionBindingTest(unittest.TestCase):
         self.assertIn("onFocusedWindowChanged(Ljava/lang/String;I)V", self.framework_patcher)
         self.assertIn("onImeVisibilityChanged(Ljava/lang/String;ZI)V", self.framework_patcher)
         self.assertIn("mImeControlTarget", self.framework_patcher)
+        ime_flow = """    :zui_control_ime_visibility
+    const/4 p1, 0x0
+
+    if-eqz v1, :zui_control_ime_dispatch
+
+    iget-object v2, p0, Lcom/android/server/wm/DisplayContent;->mInputMethodWindow:Lcom/android/server/wm/WindowState;
+
+    if-eqz v2, :zui_control_ime_dispatch
+
+    invoke-virtual {v2}, Lcom/android/server/wm/WindowState;->getOwningPackage()Ljava/lang/String;
+
+    move-result-object p1
+
+    :zui_control_ime_dispatch
+    iget v2, p0, Lcom/android/server/wm/DisplayContent;->mDisplayId:I
+
+    invoke-static {p1, v1, v2}, Lcom/zui/server/control/ZuiControlHooks;->onImeVisibilityChanged(Ljava/lang/String;ZI)V
+"""
+        self.assertIn(ime_flow, self.framework_patcher)
+        self.assertNotIn(
+            "iget-object p1, p0, Lcom/android/server/wm/DisplayContent;"
+            "->mInputMethodWindow:Lcom/android/server/wm/WindowState;",
+            self.framework_patcher,
+        )
+        for verifier_guard in (
+            "const/4 p1, 0x0",
+            "if-eqz v1, :(?<dispatch>[A-Za-z0-9_$]+)",
+            "if-eqz v2, :\\k<dispatch>",
+            ":\\k<dispatch>",
+            "complete guarded flow not found",
+        ):
+            self.assertIn(verifier_guard, self.final_super_verifier)
         for forbidden in ("Thread.sleep", "Runtime.getRuntime", "ProcessBuilder"):
             self.assertNotIn(forbidden, self.hooks)
         focus_section = self.service[

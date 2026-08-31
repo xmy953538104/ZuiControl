@@ -195,11 +195,11 @@ def patch_services_smali(dec_dir):
 
     if-eqz v1, :zui_control_ime_dispatch
 
-    iget-object p1, p0, Lcom/android/server/wm/DisplayContent;->mInputMethodWindow:Lcom/android/server/wm/WindowState;
+    iget-object v2, p0, Lcom/android/server/wm/DisplayContent;->mInputMethodWindow:Lcom/android/server/wm/WindowState;
 
-    if-eqz p1, :zui_control_ime_dispatch
+    if-eqz v2, :zui_control_ime_dispatch
 
-    invoke-virtual {p1}, Lcom/android/server/wm/WindowState;->getOwningPackage()Ljava/lang/String;
+    invoke-virtual {v2}, Lcom/android/server/wm/WindowState;->getOwningPackage()Ljava/lang/String;
 
     move-result-object p1
 

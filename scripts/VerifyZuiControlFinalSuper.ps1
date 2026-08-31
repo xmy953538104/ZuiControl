@@ -140,6 +140,47 @@ try {
     }
     Assert-NotContains $serviceSmali 'controlPanel'
 
+    $displayContent = Get-Content -LiteralPath $displayContentSmali -Raw
+    $imeMethodMatch = [regex]::Match(
+        $displayContent,
+        '(?ms)^\.method public notifyInsetsChanged\(Ljava/util/function/Consumer;\)V\r?\n.*?^\.end method\r?$'
+    )
+    if (-not $imeMethodMatch.Success) {
+        throw 'Missing DisplayContent.notifyInsetsChanged method in final services.jar.'
+    }
+    $imeMethod = $imeMethodMatch.Value
+    $blankLineGap = '[ \t]*\r?\n(?:[ \t]*\r?\n)*[ \t]*'
+    $safeImeFlowPattern = (
+        [regex]::Escape('const/4 v1, 0x0') + $blankLineGap +
+        [regex]::Escape('iget-object p1, p0, Lcom/android/server/wm/DisplayContent;->mImeControlTarget:Lcom/android/server/wm/InsetsControlTarget;') + $blankLineGap +
+        'if-eqz p1, :(?<visibility>[A-Za-z0-9_$]+)' + $blankLineGap +
+        [regex]::Escape('invoke-static {}, Landroid/view/WindowInsets$Type;->ime()I') + $blankLineGap +
+        [regex]::Escape('move-result v2') + $blankLineGap +
+        [regex]::Escape('invoke-interface {p1, v2}, Lcom/android/server/wm/InsetsControlTarget;->isRequestedVisible(I)Z') + $blankLineGap +
+        [regex]::Escape('move-result v1') + $blankLineGap +
+        ':\k<visibility>' + $blankLineGap +
+        [regex]::Escape('const/4 p1, 0x0') + $blankLineGap +
+        'if-eqz v1, :(?<dispatch>[A-Za-z0-9_$]+)' + $blankLineGap +
+        [regex]::Escape('iget-object v2, p0, Lcom/android/server/wm/DisplayContent;->mInputMethodWindow:Lcom/android/server/wm/WindowState;') + $blankLineGap +
+        'if-eqz v2, :\k<dispatch>' + $blankLineGap +
+        [regex]::Escape('invoke-virtual {v2}, Lcom/android/server/wm/WindowState;->getOwningPackage()Ljava/lang/String;') + $blankLineGap +
+        [regex]::Escape('move-result-object p1') + $blankLineGap +
+        ':\k<dispatch>' + $blankLineGap +
+        [regex]::Escape('iget v2, p0, Lcom/android/server/wm/DisplayContent;->mDisplayId:I') + $blankLineGap +
+        [regex]::Escape('invoke-static {p1, v1, v2}, Lcom/zui/server/control/ZuiControlHooks;->onImeVisibilityChanged(Ljava/lang/String;ZI)V')
+    )
+    if (-not [regex]::IsMatch($imeMethod, $safeImeFlowPattern)) {
+        throw 'Unsafe IME hook register flow in final services.jar; complete guarded flow not found.'
+    }
+    foreach ($forbidden in @(
+        'iget-object p1, p0, Lcom/android/server/wm/DisplayContent;->mInputMethodWindow:Lcom/android/server/wm/WindowState;',
+        'invoke-virtual {p1}, Lcom/android/server/wm/WindowState;->getOwningPackage()Ljava/lang/String;'
+    )) {
+        if ($imeMethod.Contains($forbidden)) {
+            throw "Unsafe IME hook register flow remains in final services.jar: $forbidden"
+        }
+    }
+
     $ok = $true
     [pscustomobject]@{
         ok = $true
