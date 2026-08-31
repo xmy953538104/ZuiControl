@@ -1,0 +1,783 @@
+diff --git a/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1 b/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
+index 6583337..aa43b96 100644
+--- a/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
++++ b/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
+@@ -139,6 +139,7 @@ if ($Phase -eq 'V20_4') {
+         'app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt',
+         'framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java',
+         'framework_patch/stubs/com/android/server/wm/WindowManagerInternal.java',
++        'payload/system/etc/init/zui_refresh_kill_switch.rc',
+         'scripts/VerifyZuiControlFinalSuper.ps1',
+         'V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py',
+         'V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1'
+diff --git a/V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py b/V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
+index c1ef491..af4745e 100644
+--- a/V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
++++ b/V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
+@@ -18,6 +18,8 @@ def is_transient(package_name: str) -> bool:
+     return not package_name or package_name in {
+         "android",
+         "com.android.systemui",
++        "com.lenovo.screensplit",
++        "com.zui.freeform.sidebar",
+         "com.zui.game.service",
+         "com.zui.zuicontrol",
+     } or any(token in package_name for token in (
+@@ -34,10 +36,12 @@ def is_transient(package_name: str) -> bool:
+ class RefreshModel:
+     """Small executable contract; Android integration is checked separately below."""
+ 
+-    def __init__(self) -> None:
++    def __init__(self, persisted_disable_mask: int = 0) -> None:
+         self.profiles: dict[str, int] = {}
+         self.activity = ""
+         self.window_seen = False
++        self.window_empty = False
++        self.empty_focus_count = 0
+         self.raw = ""
+         self.raw_transient = True
+         self.non_ime_raw = ""
+@@ -50,7 +54,8 @@ class RefreshModel:
+         self.target_hz = 120
+         self.attempted_hz = 0
+         self.applied_hz = 0
+-        self.disable_mask = 0
++        self.property_disable_mask = persisted_disable_mask
++        self.disable_mask = persisted_disable_mask
+         self.observed_disable_hint = 0
+         self.request_owned = False
+         self.handoff_pending = False
+@@ -73,6 +78,7 @@ class RefreshModel:
+         """Convenience for a correlated Activity + window-focus edge."""
+         self.activity = package_name or ""
+         self.window_seen = True
++        self.window_empty = False
+         return self._set_physical_focus(package_name, "windowFocus")
+ 
+     def activity_focus(self, package_name: str) -> str:
+@@ -82,6 +88,12 @@ class RefreshModel:
+         return self._set_physical_focus(package_name, "focus")
+ 
+     def window_focus(self, package_name: str) -> str:
++        if not package_name:
++            if not self.window_empty:
++                self.empty_focus_count += 1
++            self.window_empty = True
++            return "emptyFocusRetained"
++        self.window_empty = False
+         self.window_seen = True
+         return self._set_physical_focus(package_name, "windowFocus")
+ 
+@@ -196,6 +208,23 @@ class RefreshModel:
+         self.last_reason = f"propertyDisableMaskChanged:{mask}"
+         return "maskOnly"
+ 
++    def raw_setprop(self, mask: int) -> str:
++        """Property-area truth changes, but no process callback is implied."""
++        self.property_disable_mask = mask
++        return "propertyOnly"
++
++    def sysprops_poke(self) -> str:
++        return self.consume_property_hint(
++            self.property_disable_mask, self.property_disable_mask
++        )
++
++    def binder_set_refresh_enabled(self, enabled: bool) -> str:
++        if enabled:
++            self.property_disable_mask &= ~2
++        else:
++            self.property_disable_mask |= 2
++        return self.set_disable_mask(self.property_disable_mask)
++
+     def consume_property_hint(self, observed_mask: int, real_mask: int) -> str:
+         """A generic callback is only a wakeup; worker-side truth wins."""
+         self.observed_disable_hint = observed_mask
+@@ -244,21 +273,58 @@ class RefreshStateModelTest(unittest.TestCase):
+             "com.android.permissioncontroller",
+             "com.android.intentresolver",
+             "com.example.overlay",
+-            "",
++            "com.lenovo.screensplit",
++            "com.zui.freeform.sidebar",
+         ):
+             model.focus(package_name)
+             self.assertEqual("app.b", model.last_business)
+             self.assertEqual(("default", 120), (model.desired, model.applied_hz))
+             self.assertNotIn(package_name, model.profiles)
+ 
+-    def test_empty_and_known_overlay_window_owner_are_neutral(self) -> None:
++    def test_empty_window_retains_last_nonempty_owner(self) -> None:
+         model = RefreshModel()
+         model.profiles["app.a"] = 90
+         model.focus("app.a")
+-        for owner in ("", "vendor.example.overlay"):
+-            model.window_focus(owner)
+-            self.assertEqual(("default", 120), (model.desired, model.applied_hz))
+-            self.assertEqual("app.a", model.last_business)
++        before = (model.raw, model.desired, model.applied_hz, model.apply_count)
++        self.assertEqual("emptyFocusRetained", model.window_focus(""))
++        self.assertEqual(before,
++                         (model.raw, model.desired, model.applied_hz,
++                          model.apply_count))
++        self.assertEqual((True, 1), (model.window_empty, model.empty_focus_count))
++
++    def test_known_overlay_window_owner_is_neutral(self) -> None:
++        model = RefreshModel()
++        model.profiles["app.a"] = 90
++        model.focus("app.a")
++        model.window_focus("vendor.example.overlay")
++        self.assertEqual(("default", 120), (model.desired, model.applied_hz))
++        self.assertEqual("app.a", model.last_business)
++
++    def test_activity_b_then_empty_window_then_b_has_no_default_apply(self) -> None:
++        model = RefreshModel()
++        model.profiles.update({"app.a": 90, "app.b": 60})
++        model.focus("app.a")
++        self.assertEqual("metadataOnly", model.activity_focus("app.b"))
++        self.assertEqual("emptyFocusRetained", model.window_focus(""))
++        self.assertEqual(("app.a", "app.a", 90, [90]),
++                         (model.raw, model.desired, model.applied_hz,
++                          model.apply_history))
++        self.assertEqual("applied", model.window_focus("app.b"))
++        self.assertEqual(("app.b", 60, [90, 60], 1),
++                         (model.desired, model.applied_hz,
++                          model.apply_history, model.empty_focus_count))
++
++    def test_empty_window_with_unknown_activity_retains_last_policy(self) -> None:
++        model = RefreshModel()
++        model.profiles.update({"app.a": 90, "app.b": 60})
++        model.focus("app.a")
++        self.assertEqual("metadataOnly", model.activity_focus(""))
++        self.assertEqual("emptyFocusRetained", model.window_focus(""))
++        self.assertEqual(("app.a", 90, [90]),
++                         (model.desired, model.applied_hz, model.apply_history))
++        model.window_focus("app.b")
++        self.assertEqual(("app.b", 60, [90, 60]),
++                         (model.desired, model.applied_hz, model.apply_history))
+ 
+     def test_ime_hide_restores_pre_ime_transient_window(self) -> None:
+         model = RefreshModel()
+@@ -380,6 +446,51 @@ class RefreshStateModelTest(unittest.TestCase):
+             model.focus("app.a")
+         self.assertEqual(200, model.apply_count - base)
+ 
++    def test_100_app_handoffs_with_empty_gaps_apply_once_per_owner(self) -> None:
++        model = RefreshModel()
++        model.profiles.update({"app.a": 90, "app.b": 60})
++        model.focus("app.a")
++        base = model.apply_count
++        for _ in range(100):
++            model.activity_focus("app.b")
++            model.window_focus("")
++            model.window_focus("app.b")
++            model.activity_focus("app.a")
++            model.window_focus("")
++            model.window_focus("app.a")
++        self.assertEqual(200, model.apply_count - base)
++        self.assertEqual(200, model.empty_focus_count)
++        self.assertNotIn(120, model.apply_history)
++
++    def test_nonempty_systemui_and_ime_remain_neutral_after_empty_gap(self) -> None:
++        model = RefreshModel()
++        model.profiles["app.a"] = 90
++        model.focus("app.a")
++        model.window_focus("")
++        model.window_focus("com.android.systemui")
++        self.assertEqual(("default", 120), (model.desired, model.applied_hz))
++        model.set_ime_visible(True)
++        self.assertEqual(("default", 120), (model.desired, model.applied_hz))
++
++    def test_exact_oem_controls_do_not_pollute_business_target(self) -> None:
++        for control in ("com.lenovo.screensplit", "com.zui.freeform.sidebar"):
++            model = RefreshModel()
++            model.profiles["app.a"] = 90
++            model.focus("app.a")
++            model.window_focus(control)
++            self.assertEqual(("app.a", "app.a", "default", 120),
++                             (model.current, model.last_business,
++                              model.desired, model.applied_hz))
++            self.assertEqual("transient_package_not_configurable",
++                             model.set_explicit_profile(control, 60))
++
++    def test_business_packages_are_not_caught_by_oem_registry(self) -> None:
++        for package_name in (
++            "com.zui.launcher", "com.zui.notes", "com.android.calculator2",
++            "com.android.settings",
++        ):
++            self.assertFalse(is_transient(package_name), package_name)
++
+     def test_kill_switch_releases_and_reenables_current_raw(self) -> None:
+         model = RefreshModel()
+         model.profiles["app.b"] = 90
+@@ -397,6 +508,39 @@ class RefreshStateModelTest(unittest.TestCase):
+         self.assertEqual("applied", model.set_disable_mask(0))
+         self.assertEqual(("default", 120), (model.applied, model.applied_hz))
+ 
++    def test_raw_setprop_requires_process_poke(self) -> None:
++        model = RefreshModel()
++        model.profiles["app.b"] = 90
++        model.focus("app.b")
++        self.assertEqual("propertyOnly", model.raw_setprop(2))
++        self.assertEqual((2, 0, "app.b", 90),
++                         (model.property_disable_mask, model.disable_mask,
++                          model.applied, model.applied_hz))
++        self.assertEqual("releaseRequested", model.sysprops_poke())
++        self.assertEqual((2, "", 0),
++                         (model.disable_mask, model.applied, model.applied_hz))
++
++    def test_persisted_kill_state_is_read_at_boot(self) -> None:
++        model = RefreshModel(persisted_disable_mask=2)
++        self.assertEqual((2, 2),
++                         (model.property_disable_mask, model.disable_mask))
++        self.assertEqual("disabled", model.focus("app.a"))
++        self.assertFalse(model.request_owned or model.vote_owned or model.peak_owned)
++
++    def test_authenticated_binder_path_persists_and_transitions_directly(self) -> None:
++        model = RefreshModel()
++        model.profiles["app.b"] = 90
++        model.focus("app.b")
++        self.assertEqual("releaseRequested",
++                         model.binder_set_refresh_enabled(False))
++        self.assertEqual((2, 2, "", 0),
++                         (model.property_disable_mask, model.disable_mask,
++                          model.applied, model.applied_hz))
++        self.assertEqual("applied", model.binder_set_refresh_enabled(True))
++        self.assertEqual((0, 0, "app.b", 90),
++                         (model.property_disable_mask, model.disable_mask,
++                          model.applied, model.applied_hz))
++
+     def test_rapid_toggle_converges_to_the_final_mask(self) -> None:
+         model = RefreshModel()
+         model.profiles["app.b"] = 90
+@@ -413,6 +557,12 @@ class RefreshStateModelTest(unittest.TestCase):
+         self.assertFalse(model.request_owned or model.vote_owned or model.peak_owned)
+         self.assertEqual(("", 0), (model.applied, model.applied_hz))
+ 
++        for mask in (0, 2, 0, 3, 0):
++            model.raw_setprop(mask)
++        self.assertEqual("applied", model.sysprops_poke())
++        self.assertEqual((0, "app.b", 90),
++                         (model.disable_mask, model.applied, model.applied_hz))
++
+     def test_stale_property_hint_cannot_override_worker_truth(self) -> None:
+         model = RefreshModel()
+         model.profiles["app.b"] = 90
+@@ -474,11 +624,18 @@ class ProductionBindingTest(unittest.TestCase):
+         )
+         cls.framework_patcher = read("scripts/PatchZuiControlFramework.py")
+         cls.final_super_verifier = read("scripts/VerifyZuiControlFinalSuper.ps1")
++        cls.flash_verifier = read("scripts/VerifyZuiControlFlashPackage.ps1")
+         cls.client = read("app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt")
+         cls.main = read("app/src/main/java/com/zui/zuicontrol/MainActivity.kt")
+         cls.tile = read("app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt")
+         cls.quick = read("app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt")
+         cls.system_properties = read("framework_patch/stubs/android/os/SystemProperties.java")
++        cls.manager = read(
++            "framework_patch/src/framework/android/zui/ZuiControlManager.java"
++        )
++        cls.kill_rc = read("payload/system/etc/init/zui_refresh_kill_switch.rc")
++        cls.property_contexts = read("payload/patches/plat_property_contexts_add.txt")
++        cls.sepolicy = read("payload/patches/plat_sepolicy_zui_control.cil")
+         cls.wm_internal = read(
+             "framework_patch/stubs/com/android/server/wm/WindowManagerInternal.java"
+         )
+@@ -556,10 +713,31 @@ class ProductionBindingTest(unittest.TestCase):
+         self.assertIn("if (!windowAuthority)", activity_hook)
+         self.assertIn("handleFocusedActivity(activityFocus, windowAuthority", activity_hook)
+         self.assertNotIn("!pkg.equals", window_hook)
+-        self.assertIn("pkg.isEmpty() || isTransientPackage(pkg)", window_hook)
++        self.assertIn("if (pkg.isEmpty())", window_hook)
++        self.assertIn("handleEmptyFocusTransition(activityFocus)", window_hook)
++        self.assertLess(window_hook.index("if (pkg.isEmpty())"),
++                        window_hook.index("mLatestWindowFocusSeen = true"))
++        self.assertLess(window_hook.index("if (pkg.isEmpty())"),
++                        window_hook.index("mLatestNonImeFocus = windowFocus"))
++        self.assertIn("boolean wasEmpty = mLatestWindowFocusEmpty", window_hook)
++        self.assertIn("!firstWindowFocus && !wasEmpty", window_hook)
++        self.assertLess(window_hook.index("mLatestFocus = windowFocus"),
++                        window_hook.index("mLatestWindowFocusEmpty = false"))
++        self.assertIn("return !mLatestWindowFocusEmpty", self.service)
++        self.assertIn("error=empty_focus_transition", self.service)
++        self.assertIn("&& !mLatestWindowFocusEmpty", self.service)
+         self.assertIn("volatile FocusSnapshot mLatestActivityFocus", self.service)
+         self.assertIn("volatile FocusSnapshot mLatestNonImeFocus", self.service)
+ 
++    def test_exact_oem_registry_has_no_broad_vendor_rule(self) -> None:
++        self.assertIn('p.equals(SCREEN_SPLIT_CONTROL_PACKAGE)', self.service)
++        self.assertIn('p.equals(FREEFORM_SIDEBAR_PACKAGE)', self.service)
++        self.assertIn('"com.lenovo.screensplit"', self.service)
++        self.assertIn('"com.zui.freeform.sidebar"', self.service)
++        for forbidden in ('p.startsWith("com.zui.")', 'FLAG_SYSTEM',
++                          'isSystemApp'):
++            self.assertNotIn(forbidden, self.service)
++
+     def test_configuration_and_physical_axes_are_separate(self) -> None:
+         for field in (
+             "editableScenePackage",
+@@ -608,6 +786,63 @@ class ProductionBindingTest(unittest.TestCase):
+         for forbidden in ("postDelayed", "sleep(", "Timer", "while ("):
+             self.assertNotIn(forbidden, property_section)
+ 
++    def test_kill_switch_uses_direct_binder_and_edge_only_process_poke(self) -> None:
++        transact = self.service[
++            self.service.index("protected boolean onTransact"):
++            self.service.index("protected synchronized void dump")
++        ]
++        self.assertLess(transact.index("case TX_SET_MODULE_ENABLED"),
++                        transact.index("result = setModuleEnabled"))
++        tx10 = transact[transact.index("case TX_SET_MODULE_ENABLED"):
++                        transact.index("case TX_EXPORT_LOG")]
++        self.assertLess(tx10.index("enforceCommandCallerAllowed()"),
++                        tx10.index("setModuleEnabled"))
++        module_method = self.service[
++            self.service.index("private synchronized String setModuleEnabled"):
++            self.service.index("private String setProfileLocked")
++        ]
++        self.assertIn('if (!"refresh".equals(module))', module_method)
++        self.assertIn("SystemProperties.set(PROP_REFRESH_DISABLE", module_method)
++        self.assertIn("onRefreshPropertiesChanged(readRefreshDisableMask())", module_method)
++        self.assertIn("setModuleEnabled(final String module", self.manager)
++
++        self.assertEqual(2, self.kill_rc.count("1599295570"))
++        self.assertIn("on property:persist.zui_control.disable=*", self.kill_rc)
++        self.assertIn("on property:persist.zui_control.refresh.disable=*", self.kill_rc)
++        self.assertEqual(2, self.kill_rc.count("exec_background u:r:shell:s0 shell shell"))
++        self.assertEqual(2, self.kill_rc.count('/system/bin/sh -c "exec /system/bin/service call'))
++        self.assertNotIn("-- /system/bin/service call", self.kill_rc)
++        self.assertIn("Assert-SmaliDispatchAuthorized", self.flash_verifier)
++        self.assertIn("'TX10'", self.flash_verifier)
++        self.assertIn("'TX12'", self.flash_verifier)
++        for forbidden in ("service zui_", "postDelayed", "while ", "sleep "):
++            self.assertNotIn(forbidden, self.kill_rc)
++
++        for context in (
++            "persist.zui_control.disable u:object_r:"
++            "zui_control_refresh_disable_prop:s0 exact bool",
++            "persist.zui_control.refresh.disable u:object_r:"
++            "zui_control_refresh_disable_prop:s0 exact bool",
++        ):
++            self.assertIn(context, self.property_contexts)
++        for rule in (
++            "(type zui_control_refresh_disable_prop)",
++            "(typeattributeset system_restricted_property_type "
++            "(zui_control_refresh_disable_prop))",
++            "(allow system_server zui_control_refresh_disable_prop "
++            "(property_service (set)))",
++            "(allow shell zui_control_refresh_disable_prop "
++            "(property_service (set)))",
++        ):
++            self.assertIn(rule, self.sepolicy)
++        self.assertNotIn("(allow system_server shell_prop", self.sepolicy)
++        for domain in ("priv_app", "untrusted_app"):
++            self.assertNotIn(
++                f"(allow {domain} zui_control_refresh_disable_prop "
++                "(property_service (set)))",
++                self.sepolicy,
++            )
++
+     def test_cleanup_uses_owner_safe_vote_and_wm_handoff(self) -> None:
+         self.assertIn('"updateGlobalVote", int.class, voteClass', self.service)
+         self.assertNotIn('"updateVote", int.class, int.class', self.service)
+diff --git a/framework_patch/src/services/com/zui/server/control/ZuiControlService.java b/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
+index 18a146a..e43fd5d 100644
+--- a/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
++++ b/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
+@@ -61,6 +61,8 @@ public final class ZuiControlService extends Binder {
+     private static final String PROP_GLOBAL_DISABLE = "persist.zui_control.disable";
+     private static final String PROP_REFRESH_DISABLE = "persist.zui_control.refresh.disable";
+     private static final String GAME_HELPER_PACKAGE = "com.zui.game.service";
++    private static final String SCREEN_SPLIT_CONTROL_PACKAGE = "com.lenovo.screensplit";
++    private static final String FREEFORM_SIDEBAR_PACKAGE = "com.zui.freeform.sidebar";
+     private static final String DEFAULT_SCENE = "default";
+     private static final String IME_SCENE = "@ime";
+     private static final String RELEASE_CERT =
+@@ -99,6 +101,7 @@ public final class ZuiControlService extends Binder {
+     private volatile FocusSnapshot mLatestNonImeFocus = new FocusSnapshot(
+             "", -1, 0, Display.DEFAULT_DISPLAY, true);
+     private volatile boolean mLatestWindowFocusSeen;
++    private volatile boolean mLatestWindowFocusEmpty;
+     private volatile boolean mLatestImeVisible;
+     private String mActivityFocusedPackage = "";
+     private int mActivityFocusedUid = -1;
+@@ -111,6 +114,10 @@ public final class ZuiControlService extends Binder {
+     private boolean mNonImeFocusTransient = true;
+     private boolean mWindowFocusSeen;
+     private boolean mImeVisible;
++    private boolean mEmptyFocusTransitionPending;
++    private int mEmptyFocusTransitionCount;
++    private String mLastEmptyFocusActivityPackage = "";
++    private String mLastEmptyFocusRetainedPackage = "";
+     private String mRawFocusedPackage = "";
+     private int mRawFocusedUserId = 0;
+     private int mRawFocusedDisplayId = Display.DEFAULT_DISPLAY;
+@@ -245,11 +252,26 @@ public final class ZuiControlService extends Binder {
+             return;
+         }
+         final String pkg = safe(packageName);
+-        final boolean transientFocus = pkg.isEmpty() || isTransientPackage(pkg);
++        if (pkg.isEmpty()) {
++            if (mLatestWindowFocusEmpty) {
++                return;
++            }
++            mLatestWindowFocusEmpty = true;
++            final FocusSnapshot activityFocus = mLatestActivityFocus;
++            mWorker.post(new Runnable() {
++                @Override
++                public void run() {
++                    handleEmptyFocusTransition(activityFocus);
++                }
++            });
++            return;
++        }
++        boolean wasEmpty = mLatestWindowFocusEmpty;
++        final boolean transientFocus = isTransientPackage(pkg);
+         boolean firstWindowFocus = !mLatestWindowFocusSeen;
+         mLatestWindowFocusSeen = true;
+         FocusSnapshot previousFocus = mLatestNonImeFocus;
+-        if (!firstWindowFocus && pkg.equals(previousFocus.packageName)
++        if (!firstWindowFocus && !wasEmpty && pkg.equals(previousFocus.packageName)
+                 && displayId == previousFocus.displayId
+                 && transientFocus == previousFocus.transientFocus) {
+             return;
+@@ -262,6 +284,7 @@ public final class ZuiControlService extends Binder {
+         if (!mLatestImeVisible) {
+             mLatestFocus = windowFocus;
+         }
++        mLatestWindowFocusEmpty = false;
+         mWorker.post(new Runnable() {
+             @Override
+             public void run() {
+@@ -342,6 +365,7 @@ public final class ZuiControlService extends Binder {
+ 
+     private synchronized void handleFocusedWindow(
+             FocusSnapshot windowFocus, long eventNanos) {
++        mEmptyFocusTransitionPending = false;
+         mWindowFocusSeen = true;
+         setNonImeFocus(windowFocus.packageName, windowFocus.uid,
+                 windowFocus.userId, windowFocus.displayId,
+@@ -355,6 +379,13 @@ public final class ZuiControlService extends Binder {
+                 windowFocus.transientFocus, "windowFocus", eventNanos);
+     }
+ 
++    private synchronized void handleEmptyFocusTransition(FocusSnapshot activityFocus) {
++        mEmptyFocusTransitionPending = true;
++        mEmptyFocusTransitionCount++;
++        mLastEmptyFocusActivityPackage = activityFocus.packageName;
++        mLastEmptyFocusRetainedPackage = mRawFocusedPackage;
++    }
++
+     private synchronized void handleImeVisibility(
+             String pkg, boolean visible, int displayId, long eventNanos) {
+         mImeVisible = visible;
+@@ -453,9 +484,8 @@ public final class ZuiControlService extends Binder {
+                     result = refreshNow();
+                     break;
+                 case TX_SET_MODULE_ENABLED:
+-                    enforceCallerAllowed();
+-                    result = "ok=1\nmodule=" + safe(data.readString())
+-                            + "\nenabled=" + (data.readInt() != 0);
++                    enforceCommandCallerAllowed();
++                    result = setModuleEnabled(data.readString(), data.readInt() != 0);
+                     break;
+                 case TX_EXPORT_LOG:
+                     enforceCallerAllowed();
+@@ -506,6 +536,27 @@ public final class ZuiControlService extends Binder {
+                 isForegroundBusinessPackage(pkg, userId));
+     }
+ 
++    private synchronized String setModuleEnabled(String module, boolean enabled) {
++        if (!"refresh".equals(module)) {
++            return "ok=0\nerror=unsupported_module";
++        }
++        String persistentValue = enabled ? "0" : "1";
++        try {
++            if (!persistentValue.equals(SystemProperties.get(PROP_REFRESH_DISABLE, "0"))) {
++                SystemProperties.set(PROP_REFRESH_DISABLE, persistentValue);
++            }
++            onRefreshPropertiesChanged(readRefreshDisableMask());
++            return "ok=1\nmodule=refresh"
++                    + "\nrequestedEnabled=" + enabled
++                    + "\nrefreshDisabled=" + mRefreshDisabled
++                    + "\nrefreshDisableMask=" + mRefreshDisableMask
++                    + "\npersistentValue=" + persistentValue;
++        } catch (Throwable t) {
++            mLastError = "refresh_property_set:" + throwableText(t);
++            return "ok=0\nerror=" + mLastError;
++        }
++    }
++
+     private String setProfileLocked(String pkg, int userId, int displayHz, int fpsCap,
+             String mode, boolean applyNow) {
+         Profile profile = makeProfile(pkg, userId, displayHz, fpsCap, mode);
+@@ -593,6 +644,9 @@ public final class ZuiControlService extends Binder {
+     }
+ 
+     private synchronized String refreshNow() {
++        if (mLatestWindowFocusEmpty) {
++            return "ok=0\nerror=empty_focus_transition";
++        }
+         FocusSnapshot latestFocus = mLatestFocus;
+         if (!latestFocus.packageName.equals(mRawFocusedPackage)
+                 || latestFocus.userId != mRawFocusedUserId
+@@ -977,7 +1031,8 @@ public final class ZuiControlService extends Binder {
+ 
+     private boolean latestFocusMatchesRaw() {
+         FocusSnapshot latestFocus = mLatestFocus;
+-        return latestFocus.packageName.equals(mRawFocusedPackage)
++        return !mLatestWindowFocusEmpty
++                && latestFocus.packageName.equals(mRawFocusedPackage)
+                 && latestFocus.userId == mRawFocusedUserId
+                 && resolveDisplayId(latestFocus.displayId) == mRawFocusedDisplayId
+                 && latestFocus.transientFocus == mRawFocusTransient;
+@@ -1302,6 +1357,12 @@ public final class ZuiControlService extends Binder {
+                 + "\nactivityFocusedPackage=" + mActivityFocusedPackage
+                 + "\nnonImeFocusedPackage=" + mNonImeFocusedPackage
+                 + "\nwindowFocusSeen=" + mWindowFocusSeen
++                + "\nlatestWindowFocusEmpty=" + mLatestWindowFocusEmpty
++                + "\nemptyFocusPolicy=retainLastNonEmptyWindow"
++                + "\nemptyFocusTransitionPending=" + mEmptyFocusTransitionPending
++                + "\nemptyFocusTransitionCount=" + mEmptyFocusTransitionCount
++                + "\nlastEmptyFocusActivityPackage=" + mLastEmptyFocusActivityPackage
++                + "\nlastEmptyFocusRetainedPackage=" + mLastEmptyFocusRetainedPackage
+                 + "\nimeVisible=" + mImeVisible
+                 + "\ncurrentScenePackage=" + mCurrentScenePackage
+                 + "\nlastNonTransientScenePackage=" + mLastNonTransientScenePackage
+@@ -1474,6 +1535,7 @@ public final class ZuiControlService extends Binder {
+         String cleanPackage = safe(pkg);
+         FocusSnapshot latestFocus = mLatestFocus;
+         return !cleanPackage.isEmpty()
++                && !mLatestWindowFocusEmpty
+                 && !mImeVisible
+                 && !mLatestImeVisible
+                 && !mRawFocusTransient
+@@ -1569,6 +1631,8 @@ public final class ZuiControlService extends Binder {
+         return p.equals("com.android.systemui")
+                 || p.equals(GAME_HELPER_PACKAGE)
+                 || p.equals(APP_PACKAGE)
++                || p.equals(SCREEN_SPLIT_CONTROL_PACKAGE)
++                || p.equals(FREEFORM_SIDEBAR_PACKAGE)
+                 || p.equals(IME_SCENE)
+                 || p.equals("android")
+                 || p.contains("permissioncontroller")
+diff --git a/payload/patches/plat_property_contexts_add.txt b/payload/patches/plat_property_contexts_add.txt
+index 877d8f1..f7a83d9 100644
+--- a/payload/patches/plat_property_contexts_add.txt
++++ b/payload/patches/plat_property_contexts_add.txt
+@@ -3,5 +3,7 @@ sys.zui_control.command_seq u:object_r:zui_control_command_seq_prop:s0 exact str
+ sys.zui_control.command_id u:object_r:zui_control_command_auth_prop:s0 exact string
+ sys.zui_control.command_sha256 u:object_r:zui_control_command_auth_prop:s0 exact string
+ sys.zui_control.scheduler_active u:object_r:zui_control_scheduler_active_prop:s0 exact enum 0 1
++persist.zui_control.disable u:object_r:zui_control_refresh_disable_prop:s0 exact bool
++persist.zui_control.refresh.disable u:object_r:zui_control_refresh_disable_prop:s0 exact bool
+ persist.zui_control. u:object_r:shell_prop:s0
+ zui_control. u:object_r:shell_prop:s0
+diff --git a/payload/patches/plat_sepolicy_zui_control.cil b/payload/patches/plat_sepolicy_zui_control.cil
+index 689ba82..09a7c46 100644
+--- a/payload/patches/plat_sepolicy_zui_control.cil
++++ b/payload/patches/plat_sepolicy_zui_control.cil
+@@ -22,6 +22,11 @@
+ (typeattributeset property_type (zui_control_scheduler_active_prop))
+ (typeattributeset system_property_type (zui_control_scheduler_active_prop))
+ (typeattributeset system_internal_property_type (zui_control_scheduler_active_prop))
++(type zui_control_refresh_disable_prop)
++(roletype object_r zui_control_refresh_disable_prop)
++(typeattributeset property_type (zui_control_refresh_disable_prop))
++(typeattributeset system_property_type (zui_control_refresh_disable_prop))
++(typeattributeset system_restricted_property_type (zui_control_refresh_disable_prop))
+ (type zui_control_data_file)
+ (roletype object_r zui_control_data_file)
+ (typeattributeset file_type (zui_control_data_file))
+@@ -44,6 +49,10 @@
+ (allow system_server zui_control_command_auth_prop (file (getattr map open read)))
+ (allow init zui_control_scheduler_active_prop (property_service (set)))
+ (allow system_server zui_control_scheduler_active_prop (file (getattr map open read)))
++(allow system_server zui_control_refresh_disable_prop (property_service (set)))
++(allow system_server zui_control_refresh_disable_prop (file (getattr map open read)))
++(allow shell zui_control_refresh_disable_prop (property_service (set)))
++(allow shell zui_control_refresh_disable_prop (file (getattr map open read)))
+ (allow performanced activity_service (service_manager (find)))
+ (allow system_server performanced (fd (use)))
+ (allow system_server performanced (fifo_file (write)))
+diff --git a/payload/system/etc/init/zui_refresh_kill_switch.rc b/payload/system/etc/init/zui_refresh_kill_switch.rc
+new file mode 100644
+index 0000000..1e0d292
+--- /dev/null
++++ b/payload/system/etc/init/zui_refresh_kill_switch.rc
+@@ -0,0 +1,5 @@
++on property:persist.zui_control.disable=*
++    exec_background u:r:shell:s0 shell shell -- /system/bin/sh -c "exec /system/bin/service call zui_control 1599295570"
++
++on property:persist.zui_control.refresh.disable=*
++    exec_background u:r:shell:s0 shell shell -- /system/bin/sh -c "exec /system/bin/service call zui_control 1599295570"
+diff --git a/scripts/VerifyZuiControlFinalSuper.ps1 b/scripts/VerifyZuiControlFinalSuper.ps1
+index 5239f5f..934cb70 100644
+--- a/scripts/VerifyZuiControlFinalSuper.ps1
++++ b/scripts/VerifyZuiControlFinalSuper.ps1
+@@ -94,6 +94,11 @@ try {
+         @{ Path = $serviceSmali; Needle = 'mLatestActivityFocus:Lcom/zui/server/control/ZuiControlService$FocusSnapshot;' },
+         @{ Path = $serviceSmali; Needle = 'mLatestNonImeFocus:Lcom/zui/server/control/ZuiControlService$FocusSnapshot;' },
+         @{ Path = $serviceSmali; Needle = 'mLatestWindowFocusSeen:Z' },
++        @{ Path = $serviceSmali; Needle = 'mLatestWindowFocusEmpty:Z' },
++        @{ Path = $serviceSmali; Needle = '\nemptyFocusPolicy=retainLastNonEmptyWindow' },
++        @{ Path = $serviceSmali; Needle = '\nemptyFocusTransitionCount=' },
++        @{ Path = $serviceSmali; Needle = 'com.lenovo.screensplit' },
++        @{ Path = $serviceSmali; Needle = 'com.zui.freeform.sidebar' },
+         @{ Path = $serviceSmali; Needle = 'latestFocusMatchesRaw' },
+         @{ Path = $focusSnapshotSmali; Needle = '.field final packageName:Ljava/lang/String;' },
+         @{ Path = $focusSnapshotSmali; Needle = '.field final uid:I' },
+@@ -119,6 +124,9 @@ try {
+         @{ Path = $serviceSmali; Needle = 'neutralProfile' },
+         @{ Path = $serviceSmali; Needle = 'Landroid/os/SystemProperties;->addChangeCallback(Ljava/lang/Runnable;)V' },
+         @{ Path = $serviceSmali; Needle = 'enqueueRefreshDisableMask' },
++        @{ Path = $serviceSmali; Needle = 'setModuleEnabled' },
++        @{ Path = $serviceSmali; Needle = 'unsupported_module' },
++        @{ Path = $serviceSmali; Needle = 'refresh_property_set' },
+         @{ Path = $serviceSmali; Needle = 'propertyDisableRetry' },
+         @{ Path = $serviceSmali; Needle = 'releaseRefreshOwnership' },
+         @{ Path = $serviceSmali; Needle = 'updateGlobalVote' },
+diff --git a/scripts/VerifyZuiControlFlashPackage.ps1 b/scripts/VerifyZuiControlFlashPackage.ps1
+index 1a443b3..7194519 100644
+--- a/scripts/VerifyZuiControlFlashPackage.ps1
++++ b/scripts/VerifyZuiControlFlashPackage.ps1
+@@ -170,6 +170,23 @@ function Assert-OrderedText([string]$Text, [string[]]$Needles, [string]$Label) {
+     }
+ }
+ 
++function Assert-SmaliDispatchAuthorized(
++        [string]$Text,
++        [string]$AuthNeedle,
++        [string]$DispatchNeedle,
++        [string]$Label) {
++    $dispatch = $Text.IndexOf($DispatchNeedle, [StringComparison]::Ordinal)
++    if ($dispatch -lt 0 -or
++            $Text.IndexOf($DispatchNeedle, $dispatch + 1, [StringComparison]::Ordinal) -ge 0) {
++        throw "Final services.jar must contain exactly one $Label dispatch."
++    }
++    $arm = $Text.LastIndexOf(':pswitch_', $dispatch, [StringComparison]::Ordinal)
++    $auth = $Text.LastIndexOf($AuthNeedle, $dispatch, [StringComparison]::Ordinal)
++    if ($arm -lt 0 -or $auth -lt $arm) {
++        throw "Final services.jar $Label dispatch is not strictly authorized in its switch arm."
++    }
++}
++
+ function Get-ExactAsciiLineCount([byte[]]$Bytes, [string]$Line) {
+     $expected = [Text.Encoding]::ASCII.GetBytes($Line)
+     $count = 0
+@@ -447,6 +464,7 @@ try {
+     $Asoul = Join-Path $System 'bin\AsoulOpt'
+     $SchedulerRc = Join-Path $System 'etc\init\zui_scheduler.rc'
+     $DaemonRc = Join-Path $System 'etc\init\zui_controld.rc'
++    $RefreshKillRc = Join-Path $System 'etc\init\zui_refresh_kill_switch.rc'
+     $SchedulerPrepare = Join-Path $System 'etc\zui_control\zui_scheduler_prepare.sh'
+     $UperfConfig = Join-Path $System 'etc\zui_control\uperf-sm8650.json'
+     $UperfPerApp = Join-Path $System 'etc\zui_control\default_uperf_perapp.txt'
+@@ -456,7 +474,7 @@ try {
+     $MemCleaner = Join-Path $System 'etc\ZuiMemCleanerConfig.xml'
+     $PowerPolicy = Join-Path $System 'etc\ZuiPowerPolicyConfig.xml'
+     $AutoRun = Join-Path $System 'etc\motorola\bgintents\com.zui.safecenter.autorun.xml'
+-    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $DaemonRc, $SchedulerPrepare, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
++    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $DaemonRc, $RefreshKillRc, $SchedulerPrepare, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
+         Require-File $file
+     }
+ 
+@@ -540,6 +558,15 @@ try {
+     Assert-Contains $DaemonRc 'mkdir /data/vendor/zui_control 0755 root root' 'root-owned transaction parent'
+     Assert-Contains $SchedulerRc 'mkdir /data/vendor/zui_control 0755 root root' 'root-owned scheduler data parent'
+     Assert-Contains $DaemonRc 'mkdir /data/vendor/zui_control/zuicontrol 0700 root root' 'root-private transaction directory'
++    Assert-Contains $RefreshKillRc 'on property:persist.zui_control.disable=*' 'global disable edge trigger'
++    Assert-Contains $RefreshKillRc 'on property:persist.zui_control.refresh.disable=*' 'refresh disable edge trigger'
++    $pokeLine = '    exec_background u:r:shell:s0 shell shell -- /system/bin/sh -c "exec /system/bin/service call zui_control 1599295570"'
++    if ((Get-ExactAsciiLineCount ([IO.File]::ReadAllBytes($RefreshKillRc)) $pokeLine) -ne 2) {
++        throw 'Final super refresh kill switch must contain exactly two standard sysprop poke actions.'
++    }
++    foreach ($forbidden in @('zui_controld', 'postDelayed', 'while ', 'sleep ', 'Timer')) {
++        Assert-NotContains $RefreshKillRc $forbidden 'polling or persistent refresh kill transport'
++    }
+     foreach ($line in @(
+         '    chown root root /data/vendor/zui_control/zuicontrol/last_request_receipt',
+         '    chmod 0600 /data/vendor/zui_control/zuicontrol/last_request_receipt',
+@@ -706,6 +733,14 @@ try {
+     Assert-Contains $serviceSmali[0].FullName 'displayVote=adaptiveRender' 'adaptive render state marker'
+     Assert-Contains $serviceSmali[0].FullName 'zui_control_screen_on' 'system_server screen-state publication'
+     Assert-Contains $serviceSmali[0].FullName 'registerScreenObserver' 'system_server screen observer'
++    Assert-Contains $serviceSmali[0].FullName 'setModuleEnabled' 'authenticated direct refresh kill transaction'
++    Assert-Contains $serviceSmali[0].FullName 'unsupported_module' 'exact refresh module gate'
++    Assert-Contains $serviceSmali[0].FullName 'refresh_property_set' 'persistent refresh kill write diagnostics'
++    Assert-Contains $serviceSmali[0].FullName 'emptyFocusPolicy=retainLastNonEmptyWindow' 'empty window retain policy'
++    Assert-Contains $serviceSmali[0].FullName 'latestWindowFocusEmpty=' 'empty window live state'
++    Assert-Contains $serviceSmali[0].FullName 'emptyFocusTransitionCount=' 'empty window transition counter'
++    Assert-Contains $serviceSmali[0].FullName 'com.lenovo.screensplit' 'Lenovo split selector exact transient'
++    Assert-Contains $serviceSmali[0].FullName 'com.zui.freeform.sidebar' 'ZUI freeform sidebar exact transient'
+     Assert-Contains $serviceSmali[0].FullName 'sys.zui_control.uperf_mode' 'event-driven Uperf transport property'
+     Assert-Contains $serviceSmali[0].FullName 'sys.zui_control.command_seq' 'event-triggered command transport property'
+     Assert-Contains $serviceSmali[0].FullName 'sys.zui_control.command_id' 'authenticated request ID property'
+@@ -741,17 +776,27 @@ try {
+         }
+     }
+     $transactMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'onTransact') -join "`n"
+-    Assert-OrderedText $transactMethod @(
+-        '->enforceCommandCallerAllowed()V',
+-        '->notifyControlRequest(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;'
+-    ) 'TX12 authorization before dispatch'
++    $strictAuthNeedle = '->enforceCommandCallerAllowed()V'
++    if (([regex]::Matches($transactMethod, [regex]::Escape($strictAuthNeedle))).Count -ne 2) {
++        throw 'Final services.jar must contain exactly two strict-auth dispatches (TX10 and TX12).'
++    }
++    Assert-SmaliDispatchAuthorized $transactMethod $strictAuthNeedle `
++        '->setModuleEnabled(Ljava/lang/String;Z)Ljava/lang/String;' 'TX10'
++    Assert-SmaliDispatchAuthorized $transactMethod $strictAuthNeedle `
++        '->notifyControlRequest(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;' 'TX12'
++    $moduleMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'setModuleEnabled') -join "`n"
++    Assert-OrderedText $moduleMethod @(
++        'Landroid/os/SystemProperties;->set',
++        '->readRefreshDisableMask()I',
++        '->onRefreshPropertiesChanged(I)V'
++    ) 'TX10 persistent write before direct state transition'
+     $commandAuthMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'enforceCommandCallerAllowed') -join "`n"
+     Assert-OrderedText $commandAuthMethod @(
+         'Landroid/os/Binder;->getCallingUid()I',
+         '->enforceZuiControlCaller(I)V'
+-    ) 'TX12 package/certificate authorization'
++    ) 'sensitive Binder package/certificate authorization'
+     if ($commandAuthMethod.Contains('Landroid/os/Process;') -or $commandAuthMethod.Contains('SYSTEM_UID')) {
+-        throw 'TX12 command authorization contains a SYSTEM_UID bypass.'
++        throw 'Sensitive Binder authorization contains a SYSTEM_UID bypass.'
+     }
+     $notifyMethod = (Get-SmaliMethodBlock $serviceSmali[0].FullName 'notifyControlRequest') -join "`n"
+     foreach ($marker in @('Landroid/provider/Settings$System;->getString', 'request_payload_mismatch', '->sha256')) {
+@@ -870,6 +915,8 @@ try {
+     Assert-NotContains $PropertyContexts 'sys.zui_control.command_sha256 u:object_r:shell_prop:s0' 'shell-owned command digest property'
+     Assert-Contains $PropertyContexts 'sys.zui_control.scheduler_active u:object_r:zui_control_scheduler_active_prop:s0 exact enum 0 1' 'dedicated exact-enum scheduler ownership property context'
+     Assert-NotContains $PropertyContexts 'sys.zui_control.scheduler_active u:object_r:shell_prop:s0' 'shell-owned scheduler ownership property'
++    Assert-Contains $PropertyContexts 'persist.zui_control.disable u:object_r:zui_control_refresh_disable_prop:s0 exact bool' 'dedicated global disable property context'
++    Assert-Contains $PropertyContexts 'persist.zui_control.refresh.disable u:object_r:zui_control_refresh_disable_prop:s0 exact bool' 'dedicated refresh disable property context'
+ 
+     $PlatPolicy = Join-Path $PlatSelinux 'plat_sepolicy.cil'
+     foreach ($rule in @(
+@@ -901,6 +948,15 @@ try {
+         '(typeattributeset system_internal_property_type (zui_control_scheduler_active_prop))',
+         '(allow init zui_control_scheduler_active_prop (property_service (set)))',
+         '(allow system_server zui_control_scheduler_active_prop (file (getattr map open read)))',
++        '(type zui_control_refresh_disable_prop)',
++        '(roletype object_r zui_control_refresh_disable_prop)',
++        '(typeattributeset property_type (zui_control_refresh_disable_prop))',
++        '(typeattributeset system_property_type (zui_control_refresh_disable_prop))',
++        '(typeattributeset system_restricted_property_type (zui_control_refresh_disable_prop))',
++        '(allow system_server zui_control_refresh_disable_prop (property_service (set)))',
++        '(allow system_server zui_control_refresh_disable_prop (file (getattr map open read)))',
++        '(allow shell zui_control_refresh_disable_prop (property_service (set)))',
++        '(allow shell zui_control_refresh_disable_prop (file (getattr map open read)))',
+         '(genfscon proc "/sys/walt/input_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
+         '(genfscon proc "/sys/walt/sched_per_task_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
+         '(allow performanced activity_service (service_manager (find)))',
+@@ -923,6 +979,10 @@ try {
+         '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))',
+         '(allow performanced zui_control_data_file (lnk_file (getattr read)))'
+     )) { Assert-Contains $PlatPolicy $rule 'scheduler SELinux rule' }
++    Assert-NotContains $PlatPolicy '(allow system_server shell_prop (property_service (set)))' 'broad system_server shell property write grant'
++    foreach ($forbiddenWriter in @('priv_app', 'untrusted_app')) {
++        Assert-NotContains $PlatPolicy "(allow $forbiddenWriter zui_control_refresh_disable_prop (property_service (set)))" 'unauthorized refresh disable property writer'
++    }
+     foreach ($retiredRule in @(
+         '(allow performanced adb_data_file (dir (search)))'
+     )) { Assert-NotContains $PlatPolicy $retiredRule 'retired scheduler SELinux rule' }

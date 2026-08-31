@@ -8,11 +8,13 @@ V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**
 
 当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 的 fixed candidate 已通过 source/host/CI/ROM build/final-super、final-artifact ART 与 Boot Hard Gate；device validation 已执行，结论为 **PARTIAL**。
 
+当前必须区分两层：设备仍运行上述fixed RunId `20260831134511`，其三个runtime blocker仍是device FAIL；未刷入的定向correction候选 RunId `20260831170720` 已冻结为source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`，V20.4 host `39/39`与V20.3B回归`5/5`、CI、final-super reverse/56-marker、final-artifact ART、split CIL及官方host init exact-file gate均PASS，技术状态为 `PRE_FLASH_READY=YES / FLASHED=NO`。它的Boot Hard Gate和刷后device结论不得继承旧候选的PASS。
+
 设备/系统：TB321FU / ZUI 16.1.11.072。
 
 最近关闭的完整基线：V20.3B RunId `20260830181816`。当前设备运行 V20.4 fixed RunId `20260831134511`，refresh source commit `3c5cd809d5465828fe14356cbd079d45d00347b7`，CI run `33361319072`；App 制品仍为 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`。工程阶段号与 App/Binder 版本号是不同概念。
 
-候选 lineage：`20260831094239` 在刷前因 event-order漏洞被拒绝；`20260831104317` 静态 gate通过但刷后触发 ART `VerifyError`、Boot Gate FAIL，随后按验证流程恢复 V20.3B；`20260831134511` 对最终 super 中 `services.jar` 增加目标设备 ART/dex2oat gate并通过，经授权 fixed-seven刷入后Boot Gate PASS。旧两个候选均不得再次刷写。
+候选 lineage：`20260831094239` 在刷前因 event-order漏洞被拒绝；`20260831104317` 静态 gate通过但刷后触发 ART `VerifyError`、Boot Gate FAIL，随后按验证流程恢复 V20.3B；`20260831134511` 对最终 super 中 `services.jar` 增加目标设备 ART/dex2oat gate并通过，经授权 fixed-seven刷入后Boot Gate PASS；`20260831170720` 只修正三个已证实runtime blocker并已完成技术pre-flash gate，尚未刷入。旧前两个候选均不得再次刷写。
 
 ## 2. 当前真实架构
 
@@ -63,12 +65,12 @@ V20.3B 阶段已经关闭。关闭不等于所有补充矩阵 PASS；未闭环�
 
 ## 5. V20.4 Refresh Correctness / State Machine
 
-这是当前第一工作包，统一处理四个原本分散的问题：ZuiControl transient、kill switch 非即时、disabled 后 AppRequest/vote/peak 是否完整释放，以及 `appliedScenePackage` 不代表 physical success。源码实现与 host/build gate已完成，下列设计语义已经进入fixed candidate；真机结果必须与设计分开记录：
+这是当前第一工作包，统一处理四个原本分散的问题：ZuiControl transient、kill switch 非即时、disabled 后 AppRequest/vote/peak 是否完整释放，以及 `appliedScenePackage` 不代表 physical success。下列主体设计已进入当前已刷fixed candidate；其三个device FAIL已在未刷入的source `146e096...` / RunId `20260831170720` 中做定向correction。旧device结果、pre-flash candidate与未来刷后结果必须分开记录：
 
 1. **第一优先级：foreground-only transient。** `controlPanel` 独立 profile-owner 特判已删除。业务 App 有自定义 profile 时按自身 Hz；SystemUI、ZuiControl、IME、权限/Resolver/overlay 等真正前台时使用 neutral/default 120；返回业务 App 后恢复其 profile。不得继承 last business Hz。
-2. **状态不变量与 event order。** 明确定义 raw/current/last、desired/attempted/applied/physical；apply、skipSame、fail、disabled 后的 `appliedScenePackage` 不得伪装成成功物理场景。focused window 是 physical authority；真实 window 出现后 Activity 只补 metadata，不能追溯重分类当前 window。Activity-first/window-first 都不得制造错误 intermediate default 120。
+2. **状态不变量与 event order。** 明确定义 raw/current/last、desired/attempted/applied/physical；apply、skipSame、fail、disabled 后的 `appliedScenePackage` 不得伪装成成功物理场景。真实非空focused Window是physical authority；Window已建立权威后Activity只补metadata。空/null Window是 `EMPTY_FOCUS_TRANSITION`，不是default120 owner；correction保留最后非空policy等待下一非空edge，不用sleep/debounce。
 3. **QS/QuickService。** 永远修改上一个真实业务场景，不学习或写入 SystemUI/ZuiControl；transient 前台修改只保存，等目标业务 App 回到 foreground 才应用。
-4. **Kill switch 释放。** `SystemProperties.addChangeCallback` 已实现事件驱动通知，worker 以两个 property 的最新真实 mask 为最终 truth；稳定 disable/enable 必须无需切 App，rapid toggle 只承诺最终收敛。priority-8 vote 与 owned peak 做定向清理。`setDisplayProperties()` 是无 owner token 的 shared AppRequest，只能请求 WindowManager traversal 并显式报告 handoff pending；完整运行时释放时序必须真机确认。
+4. **Kill switch 释放。** 真机已证明raw `setprop`不会自动report system_server进程内callback；标准 `SYSPROPS_TRANSACTION` 后59.772ms从mask0到mask2，恢复poke 56.350ms重建。correction使用严格签名认证TX10直接persist+transition，raw engineering property由init edge-only短进程发送标准poke；无polling/常驻notifier。worker仍以两个property的最新truth收敛。`setDisplayProperties()` 是无owner token的shared AppRequest，只能请求WindowManager traversal并报告handoff pending；最终candidate的release时序、idle和poke wake边界仍须真机确认。
 5. **Apply 与 profile 边界。** 纳入 unsupported mode、partial apply、失败回退、防抖和 AtomicFile保存失败回滚；Binder写入校验与 current-user路由已实现。profile-file load的非法 package/package existence验证及多用户真机切换仍待闭环。
 6. **Transient 与档位矩阵。** 覆盖 IME、PermissionController、Resolver、SystemUI、ZuiControl，以及 `60/90/144/165 → neutral 120 → 原业务 Hz`、target/physical、vote/AppRequest、peak、profile hash。
 
@@ -87,6 +89,8 @@ Host/build：V20.4 27/27、V20.3B 5/5、Java 8/D8、Gradle、B072 smali、CI `33
 - **kill switch不收敛**：refresh/global property=1稳定超过6秒/5.1秒，service仍mask0/disabled false且ownership未释放；rapid-final-disabled同样失败；
 - **App-to-App intermediate default**：10次60↔90启动每次apply `+2`，8次明确采到临时空window→120→目的profile；
 - **vendor overlay误分类**：`com.lenovo.screensplit`、`com.zui.freeform.sidebar`覆盖current/last/editable。
+
+定向runtime-correction已实现：empty Window不apply且不覆盖snapshot；上述两个OEM package以exact registry归为configuration-transient；TX10直接转换，raw property edge以init短进程经shell entrypoint发送标准poke。RunId `20260831170720` 绑定source `146e096...`、CI `33375509612`；host 39/39+5/5、final-super 56-marker、最终 `services.jar` SHA-256 `0b7bb46c644c5559173f72b06579131e82597366fdcc114d3fb30aabb544e8a3`、目标ART `DEX_RC=0/GATE_RC=0`、split CIL `SECILC_RC=0/GATE_RC=0`。当前App UI未接TX10控件，该路径是reserved signed-App API，记为`NOT_EXECUTED`。候选尚未刷入；Boot Gate与刷后100轮/device matrix仍pending。
 
 边界：UDFPS因无fingerprint sensor/service为`NOT_OBSERVED`；fault injection、kill-switch下游AppRequest/vote/peak release与reenable、disabled idle未执行；secondary user不存在，external display未验证；PermissionController/PackageInstaller实际路径未完整覆盖。完整权威结果见 [`08_DEVICE_RESULTS.md`](V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md)。
 
@@ -124,6 +128,11 @@ V20_4_REFRESH_DEVICE_VALIDATION=PARTIAL
 V20_4_REFRESH_KILL_SWITCH_DEVICE=FAIL_NOT_CONVERGED
 V20_4_REFRESH_ACTIVITY_WINDOW_ORDER=FAIL_INTERMEDIATE_DEFAULT
 V20_4_REFRESH_VENDOR_OVERLAY=FAIL_CLASSIFICATION
+V20_4_RUNTIME_CORRECTION_PRE_FLASH_READY=YES
+V20_4_RUNTIME_CORRECTION_FLASHED=NO
+V20_4_RUNTIME_CORRECTION_BOOT_HARD_GATE=PENDING_POST_FLASH
+V20_4_RUNTIME_CORRECTION_DEVICE_VALIDATION=PENDING
+V20_4_RUNTIME_CORRECTION_APP_UI_TX10=NOT_EXECUTED
 UDFPS_LOCAL_VOTE_RUNTIME=NOT_OBSERVED
 FAULT_INJECTION_DEVICE_PATH=NOT_EXECUTED
 SECONDARY_USER_EXTERNAL_DISPLAY=NOT_VALIDATED

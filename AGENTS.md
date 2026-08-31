@@ -12,6 +12,8 @@
 
 当前设备运行 V20.4 fixed RunId `20260831134511`，source `3c5cd809d5465828fe14356cbd079d45d00347b7`，CI `33361319072`。旧 RunId `20260831104317` 曾刷入并因 ART `VerifyError` Boot Gate FAIL，随后已恢复 V20.3B；fixed candidate 在刷前新增 final-artifact ART/dex2oat gate并通过，刷后 Boot Gate PASS。foreground-only 主路径已取得大量 PASS 证据，但 kill switch、App-to-App intermediate default 与 vendor overlay 分类仍失败，权威结论见 `V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md`。
 
+上述三个blocker的定向correction候选为未刷入的 RunId `20260831170720`，source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`，CI `33375509612`。它已通过 final-SHA host tests、apktool/smali rebuild、final-super reverse/56-marker、最终制品ART/dex2oat、split SELinux CIL与官方host init exact-file gate，技术状态 `PRE_FLASH_READY=YES / FLASHED=NO`。这不改变当前设备的PARTIAL结论，也不得写成Boot Gate或刷后device PASS；当前App UI的TX10路径仍为 `NOT_EXECUTED`。
+
 当前生产 App 源码仍是 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`，Binder version 仍返回 19。这些是已验证候选的制品标识，不是当前工程阶段号，不得据此把规则退回 V19。
 
 新会话默认只读：
@@ -171,11 +173,11 @@ App 保存 DP pending + Settings request
 - `desiredScenePackage` / `attemptedScenePackage` / `appliedScenePackage`：分别表示当前物理策略、最近平台尝试、最近完整成功；
 - `targetDisplayHz` / `appliedDisplayHz` / `physicalDisplayHz`：分别表示期望、平台请求成功和面板观测，三者不得混写。
 
-SystemUI、ZuiControl、android 伪包、PermissionController、PackageInstaller、Resolver/Chooser、IME、overlay、null/空包名应视为 transient。Launcher 不得盲目过滤。
+SystemUI、ZuiControl、android 伪包、PermissionController、PackageInstaller、Resolver/Chooser、IME、overlay，以及exact OEM control UI `com.lenovo.screensplit` / `com.zui.freeform.sidebar` 的**非空focused Window**应视为 transient。Launcher 不得盲目过滤，也不得把全部 `com.zui.*` 或全部system App归为transient。
 
-**Foreground-only 产品语义：** physical target 永远由当前真实 foreground/window focus 决定。业务 App 有 profile 时使用其 Hz；未配置业务 App及 SystemUI、ZuiControl、IME、权限/Resolver/overlay/null 等 transient 都使用 neutral/default 120。transient 不得继承 `lastNonTransientScenePackage` 的 Hz。
+**Foreground-only 产品语义：** physical target 永远由当前真实、非空 foreground/window focus决定。业务App有profile时使用其Hz；未配置业务App及SystemUI、ZuiControl、IME、权限/Resolver/overlay等真实非空transient Window使用neutral/default120。transient不得继承 `lastNonTransientScenePackage` 的Hz。`null`/空focused Window不是owner，也不是default120 transient；App-to-App临时空gap必须保留最后已证明的非空Window policy，直到下一非空edge。
 
-focused window 是 physical raw authority。Activity focus 只在尚未收到 window signal 时作为 fallback；一旦真实 window 已出现，后续 Activity metadata 变化不得追溯重分类当前 window，也不得触发 physical apply。只有新的 window-focus edge 才能改变当前 physical scene；IME 关闭恢复最近 non-IME window snapshot。当前保证范围是 TB321FU default display / 当前 active user，多用户切换和未知 vendor window package 仍是 device gate。
+focused window 是 physical raw authority。Activity focus只在尚未收到window signal时作为fallback；一旦真实window已出现，后续Activity metadata变化不得追溯重分类当前window，也不得触发physical apply。空window edge只记录 `EMPTY_FOCUS_TRANSITION`，不覆盖最后非空snapshot、不apply、不改Uperf/business/config；下一非空window edge才改变physical scene。IME关闭恢复最近non-IME window snapshot。当前保证范围是TB321FU default display / 当前active user，多用户切换和未知vendor window package仍是device gate。
 
 QS/当前场景快捷入口只发 Binder命令，由 system_server使用 `lastNonTransientScenePackage`决定修改对象；Main显式 package editor按用户实际选择的业务包操作。两条路径都不得学习或写入 SystemUI/ZuiControl profile。QS/ZuiControl前台时修改后台业务 App只保存配置，当前 physical target仍为 120；该业务 App再次 foreground时才应用新 Hz。
 
@@ -211,9 +213,9 @@ QS/当前场景快捷入口只发 Binder命令，由 system_server使用 `lastNo
 
 `persist.zui_control.daemon_refresh.disable` 只属于已退休 daemon 的历史兼容语义；新代码不得重新依赖它。
 
-全局 disable/refresh disable 只停止刷新率策略，不能误停 Uperf/asoulOpt。V20.4 源码已使用 `SystemProperties.addChangeCallback` 把属性 edge投递到 ZuiControl HandlerThread，并在 enable edge按最新 atomic focus snapshot立即重算；disabled路径只清 ZuiControl priority-8 vote、compare/restore peak，并请求 WindowManager traversal接管 shared `setDisplayProperties()` AppRequest。该 AppRequest API没有 owner token或同步 clear，因此源码只报告 `sharedNoToken` / `releaseRequested` / `appRequestHandoffPending`，不得宣称同步完整释放；真实即时性和 handoff完成仍是 device gate。
+全局disable/refresh disable只停止刷新率策略，不能误停Uperf/asoulOpt。`SystemProperties.addChangeCallback`注册的是system_server进程内callback；raw `setprop`只改property area，不会自动向该进程report。runtime-correction source commit `146e096c6a6bc8b3fee60349b856990fd9fb68d2` 为TX10增加严格package+certificate认证、property持久化和同调用直接mask transition，并为raw property edge增加init `exec_background u:r:shell:s0 ... /system/bin/sh -c "exec /system/bin/service call zui_control 1599295570"` 标准 `SYSPROPS_TRANSACTION` poke；没有polling、timer或常驻notifier。必须经 `shell_exec` entrypoint进入shell domain，不得退回直接以该domain执行 `system_file` 的旧命令。当前App UI未接TX10控件，该接口是reserved signed-App API。disabled路径仍只清ZuiControl priority-8 vote、compare/restore peak，并请求WindowManager traversal接管shared `setDisplayProperties()` AppRequest。该AppRequest API没有owner token或同步clear，因此只能报告 `sharedNoToken` / `releaseRequested` / `appRequestHandoffPending`，不得宣称同步物理释放完成。
 
-RunId `20260831134511` 的真机结果与上述 source contract 冲突：稳定 refresh/global disable property=1 后分别观察超过 6 秒和 5.1 秒，service仍为 mask 0 / `refreshDisabled=false`，render/peak/AppRequest ownership未释放；rapid toggle 最终disabled也未收敛。原因尚未定位。因为没有真正进入disabled，release、reenable、external-CAS-on-disable 与 disabled idle 是 downstream `NOT_EXECUTED`，不得臆测为 PASS 或 FAIL。
+当前已刷RunId `20260831134511` 的旧实现仍有device FAIL：稳定refresh/global disable property=1后分别超过6秒和5.1秒，service仍mask0/false。可逆真机probe已闭环根因：raw setprop后2127.214ms仍mask0；补发标准transaction后59.772ms成为mask2并释放ownership；恢复property后需第二次poke，56.350ms重建。结论固定为 `KILL_SWITCH_ROOT_CAUSE_CONFIRMED=RAW_SETPROP_DOES_NOT_REPORT_PROCESS_SYSPROP_CHANGE`。新transport已通过source/host/CI/final-super/final ART/split CIL的pre-flash证明；刷后release/reenable、external CAS、disabled idle与poke-storm仍是pending device gate，不得提前写PASS。
 
 Uperf rapid crash storm 当前是 carry-forward 未闭环项。后续稳定性工作包要定义 fail-safe、UI/health 可见性、安全 balance 或 OEM fallback；不得用 persistent watchdog 对抗 Android init，也不得为测试扩大 SELinux。它不属于当前 refresh state-machine 修改。
 
