@@ -76,7 +76,9 @@ registry只增加两个有真机证据的exact package：`com.lenovo.screensplit
 - final split CIL：目标live secilc与final-super secilc SHA相同；AOSP r75 boot-equivalent argv得到 `SECILC_RC=0 / GATE_RC=0`、stderr为空；system sidecar与ODM precompiled sidecar不等，故boot不会静默沿用旧policy；
 - final init exact-file：Android CI BuildId `16200779` 官方 `host_init_verifier`，final RC SHA `0161a998...`，GHA run `33378426672`，exit 0、stdout/stderr为空，`HOST_INIT_VERIFIER_EXACT_FILE=PASS`。覆盖只限最终RC单文件grammar/builtin/user/property-context解析，不冒充五分区全树PASS。
 
-证据：[`06_ART_FINAL_GATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/06_ART_FINAL_GATE.md)、[`final-super receipt`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/final_super_receipt_20260831170720.txt)、[`ART raw`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/final_art_gate_20260831170720/)、[`policy raw`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/final_policy_gate_20260831170720/)、[`init gate`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/final_init_gate_20260831170720/)。
+- fixed-seven package Preflight：`D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_RUNTIME_20260831170720`，rawprogram精确7项、1个rawprogram、0个patch XML；四镜像SHA与候选一致，随后source package verifier再次返回 `ok=true`。`-Mode Preflight` 在ADB/EDL分支前返回，设备未重启、未刷写。
+
+证据：[`06_ART_FINAL_GATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/06_ART_FINAL_GATE.md)、[`final-super receipt`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/final_super_receipt_20260831170720.txt)、[`ART raw`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/final_art_gate_20260831170720/)、[`policy raw`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/final_policy_gate_20260831170720/)、[`init gate`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/final_init_gate_20260831170720/)、[`fixed-seven Preflight`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/fixed_seven_preflight_20260831170720/)。
 
 ## 12. 最终候选锚点
 
@@ -90,10 +92,12 @@ boot_sha256=e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371
 vbmeta_system_sha256=5c72c2d63deef95ddba41c825c271866a3041d48a6b5ca1cfd50bc4bc6cc2dda
 vbmeta_sha256=c1f4ea68ea52bae62e464ddc245dadd740569ba3ac3376ee5d23a40204a744f7
 services_jar_sha256=0b7bb46c644c5559173f72b06579131e82597366fdcc114d3fb30aabb544e8a3
+fixed_seven_package=D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_RUNTIME_20260831170720
+fixed_seven_preflight=PASS_EXACT_7_NO_PATCH
 flashed=false
 ```
 
-候选目录：`D:\3.VScode\Mi\work\v20_4_candidate_20260831170720`。完整compact build/provenance：[`build_20260831170720/`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/build_20260831170720/)。
+候选目录：`D:\3.VScode\Mi\work\v20_4_candidate_20260831170720`。版本化fixed-seven package：`D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_RUNTIME_20260831170720`。完整compact build/provenance：[`build_20260831170720/`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/build_20260831170720/)。
 
 ## 13. Pre-Flash决策
 
@@ -105,4 +109,4 @@ DEVICE_CORRECTION_VALIDATION=PENDING
 APP_UI_TX10=NOT_EXECUTED
 ```
 
-全部技术gate已PASS，候选可以交人工Pre-Flash Gate。`PRE_FLASH_READY=YES` 不是刷机授权，也不是Boot或device PASS。取得人工批准后只按 [`07_TARGETED_DEVICE_PLAN.md`](V20_4_REFRESH_RUNTIME_CORRECTION/07_TARGETED_DEVICE_PLAN.md) 执行；不得自动刷机或进入其它V20.4 work package。
+全部技术gate及适用的release-flow fixed-seven Preflight均已PASS，候选可以交人工Pre-Flash Gate。`PRE_FLASH_READY=YES` 不是刷机授权，也不是Boot或device PASS。取得人工批准后只允许使用上述版本化package并按 [`07_TARGETED_DEVICE_PLAN.md`](V20_4_REFRESH_RUNTIME_CORRECTION/07_TARGETED_DEVICE_PLAN.md) 执行；不得自动刷机或进入其它V20.4 work package。

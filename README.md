@@ -14,7 +14,7 @@ ZuiControl 是 TB321FU / ZUI 16.1.11.072 的 ROM 内置系统控制工具，核�
 
 V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。当前设备运行 V20.4 fixed RunId `20260831134511`：source/host/CI/ROM build/final-super、final-artifact ART 与 Boot Hard Gate PASS，device validation **PARTIAL**。旧 RunId `20260831094239` 已在刷前拒绝；`20260831104317` 刷后因 ART `VerifyError` Boot Gate FAIL并完成V20.3B恢复，两者均不得再次刷写。App 仍是 versionCode 49 / versionName 0.21.12。
 
-三个device blocker的runtime correction已冻结为source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`、未刷入 RunId `20260831170720`、CI `33375509612`。host `39/39 + 5/5`、final-super reverse/56-marker、final-artifact ART和split SELinux CIL均PASS，技术状态 `PRE_FLASH_READY=YES / FLASHED=NO`。当前设备并未运行这份correction；不得把pre-flash结果写成Boot Gate或device PASS。
+三个device blocker的runtime correction已冻结为source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`、未刷入 RunId `20260831170720`、CI `33375509612`。host `39/39 + 5/5`、final-super reverse/56-marker、final-artifact ART、split SELinux CIL及版本化fixed-seven package Preflight均PASS，技术状态 `PRE_FLASH_READY=YES / FLASHED=NO`。预检包位于 `D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_RUNTIME_20260831170720`。当前设备并未运行这份correction；不得把pre-flash结果写成Boot Gate或device PASS。
 
 旧 handoff、AI 报告、阶段报告和 raw/trace/log 位于仓库外 `D:\3.VScode\Mi\ZuiControl_Archive\`。默认不要扫描 archive；只按 evidence index 定向读取。
 

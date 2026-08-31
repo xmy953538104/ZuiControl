@@ -12,7 +12,7 @@
 
 当前设备运行 V20.4 fixed RunId `20260831134511`，source `3c5cd809d5465828fe14356cbd079d45d00347b7`，CI `33361319072`。旧 RunId `20260831104317` 曾刷入并因 ART `VerifyError` Boot Gate FAIL，随后已恢复 V20.3B；fixed candidate 在刷前新增 final-artifact ART/dex2oat gate并通过，刷后 Boot Gate PASS。foreground-only 主路径已取得大量 PASS 证据，但 kill switch、App-to-App intermediate default 与 vendor overlay 分类仍失败，权威结论见 `V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md`。
 
-上述三个blocker的定向correction候选为未刷入的 RunId `20260831170720`，source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`，CI `33375509612`。它已通过 final-SHA host tests、apktool/smali rebuild、final-super reverse/56-marker、最终制品ART/dex2oat、split SELinux CIL与官方host init exact-file gate，技术状态 `PRE_FLASH_READY=YES / FLASHED=NO`。这不改变当前设备的PARTIAL结论，也不得写成Boot Gate或刷后device PASS；当前App UI的TX10路径仍为 `NOT_EXECUTED`。
+上述三个blocker的定向correction候选为未刷入的 RunId `20260831170720`，source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`，CI `33375509612`。它已通过 final-SHA host tests、apktool/smali rebuild、final-super reverse/56-marker、最终制品ART/dex2oat、split SELinux CIL、官方host init exact-file gate，以及版本化fixed-seven package Preflight；技术状态 `PRE_FLASH_READY=YES / FLASHED=NO`。预检包位于 `D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_RUNTIME_20260831170720`，rawprogram精确7项且无patch XML。该Preflight在ADB/EDL分支前返回，不改变当前设备的PARTIAL结论，也不得写成Boot Gate或刷后device PASS；当前App UI的TX10路径仍为 `NOT_EXECUTED`。
 
 当前生产 App 源码仍是 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`，Binder version 仍返回 19。这些是已验证候选的制品标识，不是当前工程阶段号，不得据此把规则退回 V19。
 

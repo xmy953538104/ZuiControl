@@ -1,10 +1,10 @@
 # Targeted Device Plan
 
-本文件只供新候选通过人工刷机审核并取得明确授权后执行。`RunId 20260831170720` 已通过技术Pre-Flash Gate，但当前轮明确不刷机；这不等于Boot Hard Gate或device correction PASS。设备在实验后仍运行 fixed RunId `20260831134511`，disable properties=0、Launcher/default120、`system_server` PID2635。
+本文件只供新候选通过人工刷机审核并取得明确授权后执行。`RunId 20260831170720` 已通过技术Gate与fixed-seven package Preflight；唯一允许交授权的包为 `D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_RUNTIME_20260831170720`。当前轮明确不刷机；这不等于Boot Hard Gate或device correction PASS。设备在实验后仍运行 fixed RunId `20260831134511`，disable properties=0、Launcher/default120、`system_server` PID2635。
 
 ## Boot hard gate
 
-- 核对批准的新RunId与四个镜像SHA；只刷fixed seven；禁止userdata/GPT/persist/patch XML。
+- 核对人工批准明确指向上述新RunId、版本化package与四个镜像SHA；只刷其fixed seven；禁止旧RunId、userdata/GPT/persist/patch XML。
 - `sys.boot_completed=1` 后继续观察；system_server PID每10秒记录，至少2分钟稳定。
 - Binder published、Launcher可用、SELinux enforcing、无VerifyError/FATAL/system_server restart/RescueParty escalation。
 - FAIL即停止、单次取证并按已批准恢复流程处理；不连续reboot，不自动生成下一候选。

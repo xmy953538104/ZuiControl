@@ -8,7 +8,7 @@ V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**
 
 当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 的 fixed candidate 已通过 source/host/CI/ROM build/final-super、final-artifact ART 与 Boot Hard Gate；device validation 已执行，结论为 **PARTIAL**。
 
-当前必须区分两层：设备仍运行上述fixed RunId `20260831134511`，其三个runtime blocker仍是device FAIL；未刷入的定向correction候选 RunId `20260831170720` 已冻结为source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`，V20.4 host `39/39`与V20.3B回归`5/5`、CI、final-super reverse/56-marker、final-artifact ART、split CIL及官方host init exact-file gate均PASS，技术状态为 `PRE_FLASH_READY=YES / FLASHED=NO`。它的Boot Hard Gate和刷后device结论不得继承旧候选的PASS。
+当前必须区分两层：设备仍运行上述fixed RunId `20260831134511`，其三个runtime blocker仍是device FAIL；未刷入的定向correction候选 RunId `20260831170720` 已冻结为source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`，V20.4 host `39/39`与V20.3B回归`5/5`、CI、final-super reverse/56-marker、final-artifact ART、split CIL、官方host init exact-file及版本化fixed-seven package Preflight均PASS，技术状态为 `PRE_FLASH_READY=YES / FLASHED=NO`。预检包是 `D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_RUNTIME_20260831170720`；它的Boot Hard Gate和刷后device结论不得继承旧候选的PASS。
 
 设备/系统：TB321FU / ZUI 16.1.11.072。
 
