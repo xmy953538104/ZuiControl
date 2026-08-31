@@ -1,10 +1,10 @@
 ZuiControl V20.4 Refresh Correctness host gate
 Date: 2026-08-31
 
-PASS  V20.4 TestV20_4RefreshPolicy.py: 19/19
+PASS  V20.4 TestV20_4RefreshPolicy.py: 27/27
 PASS  V20.3B TestV20_3BPolicy.py: 5/5
 PASS  javac -source 8 -target 8: 18 service/stub classes
-PASS  D8 --release --min-api 35: zui_control_services.dex 49756 bytes
+PASS  D8 --release --min-api 35: zui_control_services.dex 49304 bytes
 PASS  Gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
       BUILD SUCCESSFUL; 53 actionable tasks (incremental run)
 PASS  B072 DisplayContent window/IME smali injection and apktool rebuild probe
@@ -14,5 +14,6 @@ PASS  PowerShell parser/preview routing for V20.3B and V20.4 builder/verifier
 Not covered by host:
 - device physical Hz and AppRequest traversal completion
 - device UDFPS local priority-8 override/global fallback
+- unknown vendor window package and multi-user switching
 - external display/desktop mode
 - flash/post-boot AVC (no flash authorized in this work package)

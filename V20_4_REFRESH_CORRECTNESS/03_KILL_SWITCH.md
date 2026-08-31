@@ -4,7 +4,7 @@
 
 `persist.zui_control.disable` 与 `persist.zui_control.refresh.disable` 合并成 bit mask：bit 0 是 global disable，bit 1 是 refresh disable。任意非零值只关闭 refresh owner；本工作包不停止 Uperf、asoulOpt 或 command/control plane。
 
-`SystemProperties.addChangeCallback()` 在 property callback 中只读取两个布尔值。每个不同 mask 的快照按顺序 post 到 ZuiControl HandlerThread，避免快速 `0 → 2 → 0` 被折叠成最终 `0`。注册后立即补读一次，关闭 constructor read/register 窗口。没有 polling、timer loop、daemon 或 App foreground owner。
+`SystemProperties.addChangeCallback()`在property callback中读取两个布尔值形成wakeup hint并post到ZuiControl HandlerThread；worker消费时重读两个真实property，避免较旧callback快照在跨线程乱序时覆盖最终truth。注册后立即补读一次，关闭constructor read/register窗口。单独稳定的disable与enable必须各自无需切App而事件驱动生效；generic property notification不承诺观察极短`0 → 2 → 0`中的每一个intermediate mask，rapid toggle只要求最终收敛到两个property的真实最新mask。没有polling、timer loop、daemon或App foreground owner。
 
 ## Disable edge
 
@@ -22,11 +22,13 @@ render/peak/handoff 任一同步步骤失败时，只安排一个 bounded immedi
 
 ROM API 只排队 traversal，没有 completion callback。`appRequestHandoffPending=true`、`appRequestHandoff=requested:*` 与 `lastApplyReason=*:releaseRequested` 只表示 handoff 已请求，不宣称共享 AppRequest 已同步清除。最终释放必须在真机用 `dumpsys display` 证明。
 
-快速 disable→enable 时，迟到的 WM traversal 可能覆盖 shared AppRequest；ZuiControl 的 global render vote仍维持 refresh target，但这不能替代 device matrix 对 AppRequest 的验证。
+快速disable→enable时，迟到的WM traversal可能覆盖shared AppRequest；ZuiControl global render vote只能提供render-rate约束，不能证明AppRequest base mode或physical target已经恢复。最终状态必须由device matrix复采`dumpsys display`验证。
 
 ## Enable edge
 
 mask 回到 0 后，只有 latest focus snapshot 与 worker raw state 一致才立即 reconcile；若 focus event 尚在队列中，投递一次队尾 reconcile，由 focus event先更新 raw。当前 raw 是业务 App则恢复其 profile；当前 raw 是 SystemUI/ZuiControl/IME/unknown window/null则应用 neutral/default 120。无需用户切 App。
+
+Rapid toggle分别覆盖最终enabled与最终disabled；只断言稳定后的真实property mask、owner、desired/applied/physical与AppRequest稳态，不要求每个极短intermediate mask都留下callback reason或计数。
 
 ## Fixed-ROM ownership limits
 

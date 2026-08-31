@@ -2,16 +2,33 @@ diff --git a/V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py b/V20_4_R
 index 835a1ab..fa67f8a 100644
 --- a/V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
 +++ b/V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
-@@ -38,0 +39,2 @@ class RefreshModel:
+@@ -36,6 +36,8 @@ class RefreshModel:
+ 
+     def __init__(self) -> None:
+         self.profiles: dict[str, int] = {}
 +        self.activity = ""
 +        self.window_seen = False
-@@ -51,0 +54 @@ class RefreshModel:
+         self.raw = ""
+         self.raw_transient = True
+         self.non_ime_raw = ""
+@@ -49,10 +51,13 @@ class RefreshModel:
+         self.attempted_hz = 0
+         self.applied_hz = 0
+         self.disable_mask = 0
 +        self.observed_disable_hint = 0
-@@ -52,0 +56 @@ class RefreshModel:
+         self.request_owned = False
 +        self.handoff_pending = False
-@@ -55,0 +60 @@ class RefreshModel:
+         self.vote_owned = False
+         self.peak_owned = False
+         self.apply_count = 0
 +        self.apply_history: list[int] = []
-@@ -67,0 +73,16 @@ class RefreshModel:
+         self.skip_count = 0
+         self.last_reason = "init"
+         self.last_error = ""
+@@ -65,6 +70,22 @@ class RefreshModel:
+         return self.profiles.get(package_name, 120)
+ 
+     def focus(self, package_name: str) -> str:
 +        """Convenience for a correlated Activity + window-focus edge."""
 +        self.activity = package_name or ""
 +        self.window_seen = True
@@ -28,7 +45,13 @@ index 835a1ab..fa67f8a 100644
 +        return self._set_physical_focus(package_name, "windowFocus")
 +
 +    def _set_physical_focus(self, package_name: str, reason: str) -> str:
-@@ -75,10 +96,2 @@ class RefreshModel:
+         self.raw = package_name or ""
+         self.raw_transient = is_transient(self.raw)
+         self.non_ime_raw = self.raw
+@@ -72,16 +93,8 @@ class RefreshModel:
+         if not self.raw_transient:
+             self.current = self.raw
+             self.last_business = self.raw
 -        return self.reconcile("focusTransient" if self.raw_transient else "focus")
 -
 -    def window_focus(self, package_name: str, activity_package: str) -> str:
@@ -41,38 +64,77 @@ index 835a1ab..fa67f8a 100644
 -                              else "windowFocus")
 +        suffix = "Transient" if self.raw_transient else ""
 +        return self.reconcile(f"{reason}{suffix}")
-@@ -122,0 +136 @@ class RefreshModel:
+ 
+     def set_ime_visible(self, visible: bool) -> str:
+         if visible:
+@@ -120,9 +133,11 @@ class RefreshModel:
+         if self.fail_stage == "app_request":
+             return self.fail_after_mutation(reason, "app_request_failed")
+         self.request_owned = True
 +        self.handoff_pending = False
-@@ -125,0 +140 @@ class RefreshModel:
+         self.applied = self.desired
+         self.applied_hz = self.target_hz
+         self.apply_count += 1
 +        self.apply_history.append(self.target_hz)
-@@ -168,0 +184 @@ class RefreshModel:
+         self.last_error = ""
+         self.last_reason = f"{reason}:applied"
+         return "applied"
+@@ -166,18 +181,26 @@ class RefreshModel:
+         self.disable_mask = mask
+         disabled = bool(mask)
+         if not was_disabled and disabled:
 +            had_request = self.request_owned
-@@ -169,0 +186 @@ class RefreshModel:
+             self.request_owned = False
 +            self.handoff_pending = had_request
-@@ -174,2 +191,3 @@ class RefreshModel:
+             self.vote_owned = False
+             self.peak_owned = False
+             self.applied = ""
+             self.applied_hz = 0
 -            self.last_reason = "propertyDisable:released"
 -            return "released"
 +            outcome = "releaseRequested" if had_request else "released"
 +            self.last_reason = f"propertyDisable:{outcome}"
 +            return outcome
-@@ -180,0 +199,5 @@ class RefreshModel:
+         if was_disabled and not disabled:
+             return self.reconcile("propertyEnable", force=True)
+         self.last_reason = f"propertyDisableMaskChanged:{mask}"
+         return "maskOnly"
+ 
 +    def consume_property_hint(self, observed_mask: int, real_mask: int) -> str:
 +        """A generic callback is only a wakeup; worker-side truth wins."""
 +        self.observed_disable_hint = observed_mask
 +        return self.set_disable_mask(real_mask)
 +
-@@ -231 +254 @@ class RefreshStateModelTest(unittest.TestCase):
+ 
+ class RefreshStateModelTest(unittest.TestCase):
+     def test_zuicontrol_is_neutral_foreground_not_inheritance(self) -> None:
+@@ -228,12 +251,12 @@ class RefreshStateModelTest(unittest.TestCase):
+             self.assertEqual(("default", 120), (model.desired, model.applied_hz))
+             self.assertNotIn(package_name, model.profiles)
+ 
 -    def test_empty_and_unknown_window_owner_are_neutral(self) -> None:
 +    def test_empty_and_known_overlay_window_owner_are_neutral(self) -> None:
-@@ -235,2 +258,2 @@ class RefreshStateModelTest(unittest.TestCase):
+         model = RefreshModel()
+         model.profiles["app.a"] = 90
+         model.focus("app.a")
 -        for owner in ("", "vendor.popup.window"):
 -            model.window_focus(owner, "app.a")
 +        for owner in ("", "vendor.example.overlay"):
 +            model.window_focus(owner)
-@@ -244 +267 @@ class RefreshStateModelTest(unittest.TestCase):
+             self.assertEqual(("default", 120), (model.desired, model.applied_hz))
+             self.assertEqual("app.a", model.last_business)
+ 
+@@ -241,12 +264,103 @@ class RefreshStateModelTest(unittest.TestCase):
+         model = RefreshModel()
+         model.profiles["app.a"] = 90
+         model.focus("app.a")
 -        model.window_focus("com.android.systemui", "app.a")
 +        model.window_focus("com.android.systemui")
-@@ -249,0 +273,91 @@ class RefreshStateModelTest(unittest.TestCase):
+         model.set_ime_visible(True)
+         model.set_ime_visible(False)
+         self.assertEqual("com.android.systemui", model.raw)
+         self.assertEqual(("default", 120), (model.desired, model.applied_hz))
+ 
 +    def test_activity_metadata_behind_ime_does_not_replace_underlying_window(self) -> None:
 +        model = RefreshModel()
 +        model.profiles.update({"app.a": 90, "app.b": 60})
@@ -164,14 +226,27 @@ index 835a1ab..fa67f8a 100644
 +                         (window_first.raw, window_first.last_business,
 +                          window_first.target_hz, window_first.apply_history))
 +
-@@ -273 +387 @@ class RefreshStateModelTest(unittest.TestCase):
+     def test_120_to_default_is_strict_dedup(self) -> None:
+         model = RefreshModel()
+         model.focus("unconfigured.app")
+@@ -270,10 +384,12 @@ class RefreshStateModelTest(unittest.TestCase):
+         model = RefreshModel()
+         model.profiles["app.b"] = 90
+         model.focus("app.b")
 -        self.assertEqual("released", model.set_disable_mask(2))
 +        self.assertEqual("releaseRequested", model.set_disable_mask(2))
-@@ -274,0 +389 @@ class RefreshStateModelTest(unittest.TestCase):
+         self.assertFalse(model.request_owned or model.vote_owned or model.peak_owned)
 +        self.assertTrue(model.handoff_pending)
-@@ -276,0 +392 @@ class RefreshStateModelTest(unittest.TestCase):
+         self.assertEqual(("", 0), (model.applied, model.applied_hz))
+         self.assertEqual("applied", model.set_disable_mask(0))
 +        self.assertFalse(model.handoff_pending)
-@@ -283,0 +400,33 @@ class RefreshStateModelTest(unittest.TestCase):
+         self.assertEqual(("app.b", 90), (model.applied, model.applied_hz))
+ 
+         model.focus("com.android.systemui")
+@@ -281,6 +397,39 @@ class RefreshStateModelTest(unittest.TestCase):
+         self.assertEqual("applied", model.set_disable_mask(0))
+         self.assertEqual(("default", 120), (model.applied, model.applied_hz))
+ 
 +    def test_rapid_toggle_converges_to_the_final_mask(self) -> None:
 +        model = RefreshModel()
 +        model.profiles["app.b"] = 90
@@ -205,7 +280,13 @@ index 835a1ab..fa67f8a 100644
 +        self.assertEqual((0, "app.b", 90),
 +                         (model.disable_mask, model.applied, model.applied_hz))
 +
-@@ -355,0 +505,24 @@ class ProductionBindingTest(unittest.TestCase):
+     def test_global_disable_does_not_touch_other_planes(self) -> None:
+         model = RefreshModel()
+         before = (model.uperf, model.asoul, model.command)
+@@ -353,6 +502,30 @@ class ProductionBindingTest(unittest.TestCase):
+         self.assertIn("mImeControlTarget", self.framework_patcher)
+         for forbidden in ("Thread.sleep", "Runtime.getRuntime", "ProcessBuilder"):
+             self.assertNotIn(forbidden, self.hooks)
 +        focus_section = self.service[
 +            self.service.index("public void onFocusedAppChanged"):
 +            self.service.index("private synchronized void handleFocusedActivity")
@@ -230,20 +311,38 @@ index 835a1ab..fa67f8a 100644
 +        self.assertIn("pkg.isEmpty() || isTransientPackage(pkg)", window_hook)
 +        self.assertIn("volatile FocusSnapshot mLatestActivityFocus", self.service)
 +        self.assertIn("volatile FocusSnapshot mLatestNonImeFocus", self.service)
-@@ -396,3 +568,0 @@ class ProductionBindingTest(unittest.TestCase):
+ 
+     def test_configuration_and_physical_axes_are_separate(self) -> None:
+         for field in (
+@@ -393,10 +566,8 @@ class ProductionBindingTest(unittest.TestCase):
+     def test_kill_switch_is_event_driven_without_polling(self) -> None:
+         self.assertIn("SystemProperties.addChangeCallback", self.service)
+         self.assertIn("addChangeCallback", self.system_properties)
 -        self.assertIn("enqueueRefreshDisableMask(readRefreshDisableMask())", self.service)
 -        self.assertIn("onRefreshPropertiesChanged(disableMask)", self.service)
 -        self.assertNotIn("removeCallbacks(mRefreshPropertyRunnable)", self.service)
-@@ -399,0 +570 @@ class ProductionBindingTest(unittest.TestCase):
+         self.assertIn("readRefreshDisableMask()", self.service)
 +        self.assertIn("int disableMask = readRefreshDisableMask();", self.service)
-@@ -426 +597 @@ class ProductionBindingTest(unittest.TestCase):
+         property_section = self.service[
+             self.service.index("private void registerRefreshPropertyObserver"):
+             self.service.index("private void registerScreenObserver")
+@@ -423,7 +594,7 @@ class ProductionBindingTest(unittest.TestCase):
+     def test_window_context_and_storage_fail_closed(self) -> None:
+         self.assertIn("mRawFocusTransient", self.service)
+         self.assertIn("volatile FocusSnapshot mLatestFocus", self.service)
 -        self.assertIn("mLatestNonImeFocusedPackage", self.service)
 +        self.assertIn("mLatestNonImeFocus", self.service)
+         self.assertIn("mNonImeFocusedPackage", self.service)
+         self.assertIn("displayId != Display.DEFAULT_DISPLAY", self.service)
+         self.assertIn("private boolean saveProfiles()", self.service)
 diff --git a/framework_patch/src/services/com/zui/server/control/ZuiControlService.java b/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
 index 0eb8090..18a146a 100644
 --- a/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
 +++ b/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
-@@ -96,10 +96,5 @@ public final class ZuiControlService extends Binder {
+@@ -93,16 +93,11 @@ public final class ZuiControlService extends Binder {
+     private final Map<String, Profile> mProfiles = new HashMap<>();
+ 
+     private volatile FocusSnapshot mLatestFocus = new FocusSnapshot(
 -            "", 0, Display.DEFAULT_DISPLAY, true);
 -    private volatile String mLatestActivityPackage = "";
 -    private volatile int mLatestActivityUid = -1;
@@ -259,7 +358,13 @@ index 0eb8090..18a146a 100644
 +            "", -1, 0, Display.DEFAULT_DISPLAY, true);
 +    private volatile FocusSnapshot mLatestNonImeFocus = new FocusSnapshot(
 +            "", -1, 0, Display.DEFAULT_DISPLAY, true);
-@@ -219,11 +214,20 @@ public final class ZuiControlService extends Binder {
+     private volatile boolean mLatestWindowFocusSeen;
+     private volatile boolean mLatestImeVisible;
+     private String mActivityFocusedPackage = "";
+@@ -216,23 +211,31 @@ public final class ZuiControlService extends Binder {
+                     ? record.info.applicationInfo.uid : -1;
+             userId = record.mUserId;
+         }
 -        mLatestActivityPackage = pkg;
 -        mLatestActivityUid = uid;
 -        mLatestActivityUserId = userId;
@@ -291,15 +396,25 @@ index 0eb8090..18a146a 100644
 +                    mLatestFocus = enrichedFocus;
 +                }
 +            }
-@@ -234,2 +238 @@ public final class ZuiControlService extends Binder {
+         }
+         mWorker.post(new Runnable() {
+             @Override
+             public void run() {
 -                handleFocusedActivity(pkg, uid, userId, displayId, effectivePkg,
 -                        transientFocus, eventNanos);
 +                handleFocusedActivity(activityFocus, windowAuthority, eventNanos);
-@@ -245,2 +248 @@ public final class ZuiControlService extends Binder {
+             }
+         });
+     }
+@@ -242,27 +245,27 @@ public final class ZuiControlService extends Binder {
+             return;
+         }
+         final String pkg = safe(packageName);
 -        final boolean transientFocus = pkg.isEmpty() || isTransientPackage(pkg)
 -                || !pkg.equals(mLatestActivityPackage);
 +        final boolean transientFocus = pkg.isEmpty() || isTransientPackage(pkg);
-@@ -249,3 +251,4 @@ public final class ZuiControlService extends Binder {
+         boolean firstWindowFocus = !mLatestWindowFocusSeen;
+         mLatestWindowFocusSeen = true;
 -        if (!firstWindowFocus && pkg.equals(mLatestNonImeFocusedPackage)
 -                && displayId == mLatestNonImeFocusedDisplayId
 -                && transientFocus == mLatestNonImeFocusTransient) {
@@ -307,33 +422,49 @@ index 0eb8090..18a146a 100644
 +        if (!firstWindowFocus && pkg.equals(previousFocus.packageName)
 +                && displayId == previousFocus.displayId
 +                && transientFocus == previousFocus.transientFocus) {
-@@ -254,2 +257,3 @@ public final class ZuiControlService extends Binder {
+             return;
+         }
 -        final int userId = mLatestActivityUserId;
 -        final int uid = mLatestActivityUid;
 +        FocusSnapshot activityFocus = mLatestActivityFocus;
 +        final FocusSnapshot windowFocus = new FocusSnapshot(pkg, activityFocus.uid,
 +                activityFocus.userId, displayId, transientFocus);
-@@ -257 +261 @@ public final class ZuiControlService extends Binder {
+         final long eventNanos = SystemClock.elapsedRealtimeNanos();
 -        setLatestNonImeFocus(pkg, uid, userId, displayId, transientFocus);
 +        mLatestNonImeFocus = windowFocus;
-@@ -259 +263 @@ public final class ZuiControlService extends Binder {
+         if (!mLatestImeVisible) {
 -            setLatestEffectiveFocus(pkg, userId, displayId, transientFocus);
 +            mLatestFocus = windowFocus;
-@@ -264,2 +268 @@ public final class ZuiControlService extends Binder {
+         }
+         mWorker.post(new Runnable() {
+             @Override
+             public void run() {
 -                handleFocusedWindow(pkg, uid, userId, displayId,
 -                        transientFocus, eventNanos);
 +                handleFocusedWindow(windowFocus, eventNanos);
-@@ -285 +288,3 @@ public final class ZuiControlService extends Binder {
+             }
+         });
+     }
+@@ -282,11 +285,11 @@ public final class ZuiControlService extends Binder {
+         final long eventNanos = SystemClock.elapsedRealtimeNanos();
+         mLatestImeVisible = visible;
+         if (visible) {
 -            setLatestEffectiveFocus(pkg, mLatestActivityUserId, displayId, true);
 +            FocusSnapshot activityFocus = mLatestActivityFocus;
 +            mLatestFocus = new FocusSnapshot(
 +                    pkg, -1, activityFocus.userId, displayId, true);
-@@ -287,3 +292 @@ public final class ZuiControlService extends Binder {
+         } else {
 -            setLatestEffectiveFocus(mLatestNonImeFocusedPackage,
 -                    mLatestNonImeFocusedUserId, mLatestNonImeFocusedDisplayId,
 -                    mLatestNonImeFocusTransient);
 +            mLatestFocus = mLatestNonImeFocus;
-@@ -299,14 +301,0 @@ public final class ZuiControlService extends Binder {
+         }
+         mWorker.post(new Runnable() {
+             @Override
+@@ -296,30 +299,35 @@ public final class ZuiControlService extends Binder {
+         });
+     }
+ 
 -    private void setLatestNonImeFocus(String pkg, int uid, int userId, int displayId,
 -            boolean transientFocus) {
 -        mLatestNonImeFocusedPackage = safe(pkg);
@@ -348,7 +479,7 @@ index 0eb8090..18a146a 100644
 -        mLatestFocus = new FocusSnapshot(safe(pkg), userId, displayId, transientFocus);
 -    }
 -
-@@ -314,9 +303,28 @@ public final class ZuiControlService extends Binder {
+     private synchronized void handleFocusedActivity(
 -            String pkg, int uid, int userId, int displayId, String effectivePkg,
 -            boolean transientFocus, long eventNanos) {
 -        mActivityFocusedPackage = safe(pkg);
@@ -386,48 +517,85 @@ index 0eb8090..18a146a 100644
 +        if (!activityFocus.transientFocus) {
 +            updateBusinessScene(activityFocus.packageName, activityFocus.uid,
 +                    activityFocus.userId, activityFocus.displayId);
-@@ -330,2 +338,3 @@ public final class ZuiControlService extends Binder {
+         }
+         if (mImeVisible) {
+             mUperfScenePolicy.onSystemStateChanged(
+@@ -327,21 +335,24 @@ public final class ZuiControlService extends Binder {
+             publishState();
+             return;
+         }
 -        handleEffectiveFocus(effectivePkg, uid, userId, displayId,
 -                transientFocus, "focus", eventNanos);
 +        handleEffectiveFocus(activityFocus.packageName, activityFocus.uid,
 +                activityFocus.userId, activityFocus.displayId,
 +                activityFocus.transientFocus, "focus", eventNanos);
-@@ -335,2 +344 @@ public final class ZuiControlService extends Binder {
+     }
+ 
+     private synchronized void handleFocusedWindow(
 -            String pkg, int uid, int userId, int displayId,
 -            boolean transientFocus, long eventNanos) {
 +            FocusSnapshot windowFocus, long eventNanos) {
-@@ -338 +346,3 @@ public final class ZuiControlService extends Binder {
+         mWindowFocusSeen = true;
 -        setNonImeFocus(pkg, uid, userId, displayId, transientFocus);
 +        setNonImeFocus(windowFocus.packageName, windowFocus.uid,
 +                windowFocus.userId, windowFocus.displayId,
 +                windowFocus.transientFocus);
-@@ -343,2 +353,3 @@ public final class ZuiControlService extends Binder {
+         if (mImeVisible) {
+             publishState();
+             return;
+         }
 -        handleEffectiveFocus(pkg, uid, userId, displayId,
 -                transientFocus, "windowFocus", eventNanos);
 +        handleEffectiveFocus(windowFocus.packageName, windowFocus.uid,
 +                windowFocus.userId, windowFocus.displayId,
 +                windowFocus.transientFocus, "windowFocus", eventNanos);
-@@ -917 +928,5 @@ public final class ZuiControlService extends Binder {
+     }
+ 
+     private synchronized void handleImeVisibility(
+@@ -914,7 +925,11 @@ public final class ZuiControlService extends Binder {
+         }
+     }
+ 
 -    private synchronized void onRefreshPropertiesChanged(int disableMask) {
 +    private synchronized void onRefreshPropertiesChanged(int observedMask) {
 +        int disableMask = readRefreshDisableMask();
 +        synchronized (mRefreshPropertyLock) {
 +            mObservedRefreshDisableMask = disableMask;
 +        }
-@@ -1839,0 +1855 @@ public final class ZuiControlService extends Binder {
+         if (disableMask == mRefreshDisableMask) {
+             return;
+         }
+@@ -1837,13 +1852,15 @@ public final class ZuiControlService extends Binder {
+ 
+     private static final class FocusSnapshot {
+         final String packageName;
 +        final int uid;
-@@ -1844 +1860 @@ public final class ZuiControlService extends Binder {
+         final int userId;
+         final int displayId;
+         final boolean transientFocus;
+ 
 -        FocusSnapshot(String packageName, int userId, int displayId,
 +        FocusSnapshot(String packageName, int uid, int userId, int displayId,
-@@ -1846,0 +1863 @@ public final class ZuiControlService extends Binder {
+                 boolean transientFocus) {
+             this.packageName = packageName;
 +            this.uid = uid;
+             this.userId = userId;
+             this.displayId = displayId;
+             this.transientFocus = transientFocus;
 diff --git a/scripts/VerifyZuiControlFinalSuper.ps1 b/scripts/VerifyZuiControlFinalSuper.ps1
 index d213a4b..9955545 100644
 --- a/scripts/VerifyZuiControlFinalSuper.ps1
 +++ b/scripts/VerifyZuiControlFinalSuper.ps1
-@@ -93,0 +94,3 @@ try {
+@@ -91,8 +91,12 @@ try {
+         @{ Path = $serviceSmali; Needle = '\neditableDisplayHz=' },
+         @{ Path = $serviceSmali; Needle = '\nrawFocusTransient=' },
+         @{ Path = $serviceSmali; Needle = 'mLatestFocus:Lcom/zui/server/control/ZuiControlService$FocusSnapshot;' },
 +        @{ Path = $serviceSmali; Needle = 'mLatestActivityFocus:Lcom/zui/server/control/ZuiControlService$FocusSnapshot;' },
 +        @{ Path = $serviceSmali; Needle = 'mLatestNonImeFocus:Lcom/zui/server/control/ZuiControlService$FocusSnapshot;' },
 +        @{ Path = $serviceSmali; Needle = 'mLatestWindowFocusSeen:Z' },
-@@ -95,0 +99 @@ try {
+         @{ Path = $serviceSmali; Needle = 'latestFocusMatchesRaw' },
+         @{ Path = $focusSnapshotSmali; Needle = '.field final packageName:Ljava/lang/String;' },
 +        @{ Path = $focusSnapshotSmali; Needle = '.field final uid:I' },
+         @{ Path = $focusSnapshotSmali; Needle = '.field final userId:I' },
+         @{ Path = $focusSnapshotSmali; Needle = '.field final displayId:I' },
+         @{ Path = $focusSnapshotSmali; Needle = '.field final transientFocus:Z' },

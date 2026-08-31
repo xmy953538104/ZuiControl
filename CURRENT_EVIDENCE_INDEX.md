@@ -3,7 +3,7 @@
 更新时间：2026-08-31  
 当前真机冻结基线：V20.3B / RunId `20260830181816` / source `30fe138a7ef531aeffbcf951e9113f4ae0d17cfe`
 
-当前未刷机候选：V20.4 Refresh Correctness / RunId `20260831094239` / source `3865cf9c99cb89a8df2b705b9b3dbb2711b311ec` / CI `33348269219` / final-super PASS / device PENDING
+当前未刷机候选：V20.4 Refresh Correctness / RunId `20260831104317` / source `c4f5ad8d57d21508469e72ff5e4b18adcc2e8c65` / CI `33351448572` / host 27/27 + 5/5 / final-super `marker_count=48` PASS / device PENDING
 
 本文件是未来会话的默认证据入口。先读结论和最小证据；只有数字受到质疑时，才打开对应 raw。不要递归扫描 `D:\3.VScode\Mi\ZuiControl_Archive\`。
 
@@ -27,17 +27,19 @@ Archive 根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.m
 
 ## V20.4 Refresh Correctness 直接证据
 
-当前结论：source/host/CI/ROM build/final-super = PASS；device validation = PENDING。foreground-only语义、configuration/physical两轴、kill-switch property edge、desired/attempted/applied/physical状态和 owner-safe cleanup已进入 candidate。`controlPanel` marker在最终 super中必须不存在。shared AppRequest没有 owner token，只能请求 WindowManager traversal并观察 handoff，因此完整释放仍是明确 device gate。
+当前结论：source/host/CI/ROM build/final-super = PASS；device validation = PENDING。foreground-only 语义、focused-window authority、Activity-first/window-first、configuration/physical 两轴、kill-switch 最新 mask 收敛、desired/attempted/applied/physical 状态和 owner-safe cleanup 已进入 candidate。`controlPanel` marker 在最终 super 中必须不存在。shared AppRequest 没有 owner token，只能请求 WindowManager traversal 并观察 handoff，因此完整释放仍是明确 device gate。
 
 最小当前证据：
 
 - [`V20_4_REFRESH_DECISION.md`](V20_4_REFRESH_DECISION.md)
 - [`05_HOST_TESTS.md`](V20_4_REFRESH_CORRECTNESS/05_HOST_TESTS.md)
 - [`06_BUILD_VERIFY.md`](V20_4_REFRESH_CORRECTNESS/06_BUILD_VERIFY.md)
-- [`build_result.json`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831094239/build_result.json)
-- [`ci_run_provenance.json`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831094239/ci_run_provenance.json)
-- [`candidate_sha256.txt`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831094239/candidate_sha256.txt)
-- [`final_super_verifier.log`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831094239/final_super_verifier.log)
+- [`build_result.json`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831104317/build_result.json)
+- [`ci_run_provenance.json`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831104317/ci_run_provenance.json)
+- [`candidate_sha256.txt`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831104317/candidate_sha256.txt)
+- [`final_super_verifier.log`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831104317/final_super_verifier.log)
+
+被替代候选 `20260831094239` 只保留为审计历史：它的 host 19/19 与 `marker_count=44` 是当时构建事实，但未覆盖 Activity/window event-order 漏洞，人工 Gate 已拒绝刷写。对应 raw 位于 [`raw/build_20260831094239/`](V20_4_REFRESH_CORRECTNESS/raw/build_20260831094239/)；未来默认不得把它当作当前候选或当前源码证据。
 
 V20.3B 历史源码审计确认：ZuiControl 曾通过 `controlPanel` 分支拥有独立 profile/apply语义，并与 current/applied/config target混在一起。当前产品语义是 foreground-only：ZuiControl/SystemUI/IME等真正前台时 physical target为 neutral/default 120；`lastNonTransientScenePackage`只保留为配置对象。历史证据只用于证明字段分裂与旧特判，不再用于主张 transient应继承业务 App Hz。
 

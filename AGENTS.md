@@ -173,6 +173,8 @@ SystemUI、ZuiControl、android 伪包、PermissionController、PackageInstaller
 
 **Foreground-only 产品语义：** physical target 永远由当前真实 foreground/window focus 决定。业务 App 有 profile 时使用其 Hz；未配置业务 App及 SystemUI、ZuiControl、IME、权限/Resolver/overlay/null 等 transient 都使用 neutral/default 120。transient 不得继承 `lastNonTransientScenePackage` 的 Hz。
 
+focused window 是 physical raw authority。Activity focus 只在尚未收到 window signal 时作为 fallback；一旦真实 window 已出现，后续 Activity metadata 变化不得追溯重分类当前 window，也不得触发 physical apply。只有新的 window-focus edge 才能改变当前 physical scene；IME 关闭恢复最近 non-IME window snapshot。当前保证范围是 TB321FU default display / 当前 active user，多用户切换和未知 vendor window package 仍是 device gate。
+
 QS/当前场景快捷入口只发 Binder命令，由 system_server使用 `lastNonTransientScenePackage`决定修改对象；Main显式 package editor按用户实际选择的业务包操作。两条路径都不得学习或写入 SystemUI/ZuiControl profile。QS/ZuiControl前台时修改后台业务 App只保存配置，当前 physical target仍为 120；该业务 App再次 foreground时才应用新 Hz。
 
 历史 `controlPanel` 缺陷的正确表述是：ZuiControl 曾拥有独立 profile/apply 特判并污染 applied/config 语义。该特判已从 V20.4 源码删除，final-super verifier也要求 marker不存在；但 ZuiControl 真正 foreground 时切到 neutral/default 120 是当前产品要求，不再把 `90 → 120 → 90` 本身写成缺陷。
@@ -282,15 +284,15 @@ V20.3B 阶段已关闭；persistent daemon retirement architecture = PASS。下�
 
 ### 10.1 Refresh Correctness / State Machine（当前第一工作包）
 
-Source commit `3865cf9c99cb89a8df2b705b9b3dbb2711b311ec` 已完成 foreground-only 状态机、host 19/19、CI run `33348269219`、isolated ROM build与 final-super 44-marker verifier。候选 RunId `20260831094239` 未刷机；以下现在是 device acceptance gate，而不是继续扩展源码的许可：
+Source commit `c4f5ad8d57d21508469e72ff5e4b18adcc2e8c65` 已完成 foreground-only 状态机及 Activity/window event-order 修正；host V20.4 27/27、V20.3B 5/5，CI run `33351448572`、isolated ROM build 与 final-super 48-marker verifier 均 PASS。当前未刷机候选 RunId `20260831104317`。旧候选 `20260831094239` 因未覆盖 Activity-first/window-first 漏洞被人工 Gate 拒绝并已由当前候选替代，**不得刷写**。以下现在是 device acceptance gate，而不是继续扩展源码的许可：
 
-1. 验证非 120 App → ZuiControl/SystemUI/IME neutral 120 → 返回 App 恢复；不得恢复旧 inheritance语义。
+1. 验证非 120 App → ZuiControl/SystemUI/IME neutral 120 → 返回 App 恢复；同时覆盖 Activity-first/window-first，Activity metadata 不得在真实 window edge 前制造 intermediate default 120；不得恢复旧 inheritance 语义。
 2. 验证 raw/current/last 与 desired/attempted/applied/physical 的状态不变量；`applied` 不得在 apply/fail/disabled 后伪装成 physical success。
 3. 验证 QS Tile、通知 QuickService 和 App 修改的始终是上一个真实业务场景，但 transient 前台只保存、不把后台业务 Hz 应用到当前屏幕。
-4. 验证两个 refresh kill switch 的属性 edge无需切 App即可触发；确认 priority-8 vote、shared AppRequest handoff与 peak compatibility bridge的实际释放/重建时序。
+4. 验证两个 refresh kill switch 的稳定 disable/enable 无需切 App即可触发；rapid toggle 只要求最终收敛到真实最新 mask。确认 priority-8 vote、UDFPS local override、shared AppRequest handoff 与 peak compatibility bridge 的实际释放/重建时序。
 5. 验证 partial apply、unsupported mode、skipSame、disabled、失败回退和防抖的真实平台结果。
 6. 回归 profile校验、AtomicFile损坏恢复、当前场景 apply、userId和 IME/PermissionController/Resolver/SystemUI/ZuiControl transient矩阵。
-7. 在 60/90/120/144/165 下记录 current/last/desired/attempted/applied/physical、vote/AppRequest、peak和 profile hash；transient仍是第一优先级。
+7. 在 60/90/120/144/165 下记录 current/last/desired/attempted/applied/physical、vote/AppRequest、peak 和 profile hash，并做 5min settle + 60s `/proc` + 约 90s Perfetto idle regression；transient 仍是第一优先级。
 
 本工作包不得修改 command transaction、Uperf/asoulOpt 生产策略、120 hard-lock 决策或 Binder 安全契约，不得引入 App/daemon 第二 owner、polling 或 watchdog。
 

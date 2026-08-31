@@ -27,7 +27,7 @@ Refresh physical target 与 configuration target 是两个概念：
 | `attemptedDisplayHz` | 最近一次 platform apply attempt 的 Hz | platform apply 开始时 | 不代表成功 |
 | `appliedDisplayHz` | 最近一次完整 platform apply 成功的 Hz | apply success；干净 disable/release 后为 `0` | 不等于持续 physical Hz |
 | `physicalDisplayHz` | `Display.getMode().getRefreshRate()` 的独立观测值 | Binder/dumpsys state snapshot | target 120 时仍可能因既有 adaptive semantics 降至 60 |
-| `lastApplyReason` | 最近一次 reconcile/release 的 outcome 与触发源，如 `focus:applied`、`focusTransient:skipSame`、`propertyDisable:handoffRequested` | 每次 refresh reconcile/release | 不能替代错误字段 |
+| `lastApplyReason` | 最近一次 reconcile/release 的 outcome 与触发源，如 `focus:applied`、`focusTransient:skipSame`、`propertyDisable:releaseRequested` | 每次 refresh reconcile/release | 不能替代错误字段 |
 | `lastApplyError` | 最近一次 refresh apply/release failure；成功、dedup 或干净 release 后为空 | apply/release outcome | 不能混入 profile I/O、Uperf 或 command error |
 
 兼容字段：`actualDisplayHz` 保留为 `physicalDisplayHz` alias；`lastApply` 保留为 `lastApplyReason` alias；`lastError` 继续承载旧 profile/general error。
@@ -46,9 +46,13 @@ configuration-transient 至少包括空/null、SystemUI、ZuiControl、`android`
 
 “transient”在本模型中只描述配置 ownership，不表示 physical refresh no-op。
 
-focused window 是 physical raw authority。owner 为空、命中已知 transient classifier，或 owner 与 focused Activity package 不同时，均按 transient/default 120；后一条覆盖未知 vendor popup，避免把临时窗口误学习成业务 App。Activity hook 只在尚无 window signal 时 fallback，并始终只做轻量 snapshot/post。IME 单独覆盖 physical raw；关闭 IME 时恢复最近 non-IME focused-window snapshot，不能盲目恢复背后的 Activity。
+focused window 是 physical raw authority。window edge 到达时，owner 为空或命中已知 transient classifier才按 transient/default 120；其它业务 package按自身 profile处理。Activity/window package暂时不一致本身不再是 transient条件，否则 Android 的 Activity-first / window-first 合法事件顺序会制造错误 default 120。
 
-当前产品只面向 TB321FU 内屏；非 default display 的 focus/IME hook 不进入状态机，mode lookup 也不跨 display fallback。global priority-8 的平台作用域仍会覆盖所有 display，外接屏/desktop mode 保留为未验证边界。
+Activity hook只在尚无 window signal时作为 fallback。一旦 `mLatestWindowFocusSeen=true`，Activity变化只更新不可变 metadata snapshot；它不能改写当前 non-IME window的 package/transient分类，也不能触发 physical apply。若 window先到、随后同 package Activity metadata到达，只补全 uid/user tuple，不重新分类或重复 apply。SystemUI、Permission、Resolver与已知 vendor overlay已在真实 window edge被分类为 transient，因此背后 Activity变化不会把它们升级成业务 scene。IME单独覆盖 physical raw；关闭IME时恢复最近 non-IME focused-window snapshot，不能盲目恢复背后的 Activity。
+
+hook线程只分配/替换 immutable `FocusSnapshot` 并向 ZuiControl HandlerThread post；不做 I/O、Settings、package scan、DisplayManager apply、sleep、polling或timer。Activity、non-IME window与effective focus各以单个 volatile snapshot发布，避免 package/user/transient的撕裂读取。
+
+当前产品只面向 TB321FU 内屏；非 default display 的 focus/IME hook 不进入状态机，mode lookup 也不跨 display fallback。global priority-8 的平台作用域仍会覆盖所有 display，外接屏/desktop mode 保留为未验证边界。host 模型只证明当前 active user；window-first 时 uid/user metadata 的跨用户切换结果必须由 device matrix 验证。
 
 ## 4. 状态转换
 
@@ -59,6 +63,9 @@ focused window 是 physical raw authority。owner 为空、命中已知 transien
 | SystemUI/ZuiControl/IME/overlay focus | 保持 | `default` / 120 | 从非 120 target 进入时 apply；same target 可 dedup | none |
 | transient 期间 QS/ZuiControl 修改 | 保持 | 仍为 `default` / 120 | 不为后台业务 App apply | 保存到 last business |
 | 返回业务 A | 更新/确认 A | A / 最新 profile Hz | 立即 apply 或 strict dedup | none |
+| window=A 时 Activity metadata A→B | 保持 A | 保持 A / A profile Hz | none；等待真实 window edge | none |
+| Activity-first 后 window A→B | 更新为 B | B / B profile Hz | 一次 B apply；无 intermediate default | none |
+| window-first A→B 后 Activity A→B | window edge已更新为 B | 保持 B / B profile Hz | Activity metadata only；不重复 apply | none |
 | explicit edit 当前 raw business | 保持 | 该业务 App / 新 Hz | 立即 apply | 保存该 App |
 | explicit edit非当前 raw package | 保持 | 不变 | none | 只保存 |
 | refresh/global disable edge | 保持 | 保持，便于诊断 | 停止写入并安全 handoff/restore | none |
@@ -75,7 +82,7 @@ ROM 反查确认 per-display priority 8 是 `PRIORITY_AUTH_OPTIMIZER_RENDER_FRAM
 
 `setDisplayProperties()` 同样是 WindowManager/DMS 共享 AppRequest，没有 caller token。disable 不写 zero request、不清全局 state，而是停止 ZuiControl 写入并调用 `WindowManagerInternal.requestTraversalFromDisplayManager()`，要求 WindowManager 用当前窗口状态重发其 AppRequest。该动作是安全 handoff request，不虚构为同步清除所有系统 AppRequest。
 
-因此 `appRequestHandoffPending=true` 表示 traversal 已请求、尚无 completion callback 可证明完成；disable 成功结果写作 `releaseRequested` 而不是同步 `released`。最终 AppRequest 是否被 WindowManager 重发必须在 device matrix 用 `dumpsys display` 验证。快速 disable→enable 的迟到 traversal 风险由持久 global render vote维持 target，但仍属于真机验证项。
+因此 `appRequestHandoffPending=true` 表示 traversal 已请求、尚无 completion callback 可证明完成；disable 成功结果写作 `releaseRequested` 而不是同步 `released`。最终 AppRequest 是否被 WindowManager重发必须在device matrix用 `dumpsys display`验证。快速 disable→enable 时 global render vote只能继续提供 render-rate约束，不能证明 shared AppRequest或physical target已经正确恢复；迟到 traversal仍属于真机验证项。
 
 peak bridge 只在 ZuiControl 实际改写时记录原值；release 仅在当前值仍等于 ZuiControl 最后写值时 compare-and-restore。若外部 owner 已改值，则保留外部值。`min_refresh_rate` 从不写。
 
@@ -95,6 +102,6 @@ foreground-only 语义意味着：A=90 ↔ ZuiControl/default=120 或 A=90 ↔ S
 
 ## 7. Kill-switch edge
 
-使用 `SystemProperties.addChangeCallback()`；全局 callback 只读取两个属性形成 mask，并把每个不同 mask 的快照按顺序 post 到 ZuiControl HandlerThread。不能把快速 disable→enable coalesce 成最终值。注册后立即补读一次关闭 read/register 窗口；无 timer、polling、daemon 或 App owner。
+使用 `SystemProperties.addChangeCallback()`；全局callback读取两个属性形成wakeup hint并post到ZuiControl HandlerThread，worker消费时再读一次两个真实property作为最终truth；注册后立即补读一次关闭read/register窗口。单独稳定的disable和enable都必须无需focus切换而事件驱动收敛；generic property callback不承诺观察极短rapid toggle的每个intermediate value，rapid gate只要求最终可靠收敛到两个属性的真实最新mask。无timer、polling、daemon或App owner。
 
 Disable 停止 refresh apply，只删除 ZuiControl 的 global priority-8 vote，compare-and-restore peak，再请求安全 handoff shared AppRequest；不删除 UDFPS 的 per-display priority-8 vote。一次 release 失败时只安排一个 bounded immediate retry，之后保留 partial/error；后续真实 focus/profile 或 disable-mask edge可再触发一次 bounded retry，但没有循环。Enable 必须在 atomic latest-focus snapshot 与 worker raw一致后立即重算：若 App B 仍 foreground 则恢复 B profile；若 SystemUI/ZuiControl 仍 foreground 则应用 default 120。Uperf/asoulOpt 与 command plane 不在该转换内。

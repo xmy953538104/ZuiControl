@@ -13,9 +13,9 @@
 | IME / Permission / Resolver / PackageInstaller / overlay | 保持 | default 120 | 无隐式写入；显式控制入口仍可使用 last business |
 | null / empty | 保持 | default 120 | 保持 last business，不写 profile |
 
-最小 classifier 保留明确 package heuristic，不引入大型 window taxonomy。default display 的 focused-window owner 是 raw authority：owner 为空、命中 heuristic，或 owner 与 focused Activity package 不一致时均为 transient。这样未知 vendor popup 也不会被误学习为业务 profile。`com.zui.zuicontrol` 与 `com.android.systemui` 走同一路径，不再存在 `controlPanel` refresh 特判。
+最小 classifier 保留明确 package heuristic，不引入大型 window taxonomy。default display 的 focused-window owner 是 raw authority：owner为空或命中SystemUI、ZuiControl、IME、Permission/Resolver/PackageInstaller、overlay等已知heuristic时为transient；Activity/window package暂时不一致本身不再改变当前window分类。`com.zui.zuicontrol`与`com.android.systemui`走同一路径，不再存在`controlPanel` refresh特判。未命中classifier的未知vendor窗口仍是需要真机补充具体package的边界，不能靠背后Activity变化追溯重分类。
 
-Activity focus 只在尚未收到 window signal时作为 fallback；已有 window snapshot 后，Activity 变化只更新 metadata并相对新 Activity 重新分类现有 window owner，不能覆盖仍在前台的 Permission/SystemUI/overlay。IME 显示期间保留 non-IME window snapshot；IME 关闭恢复该 snapshot，而不是无条件恢复 Activity。
+Activity focus只在尚未收到window signal时作为fallback；已有window snapshot后，Activity变化只更新metadata，绝不重新分类或apply当前window。A window仍foreground时Activity A→B保持A profile；SystemUI/Permission/overlay window仍foreground时保持neutral120；只有新的window-focus edge才能改变physical raw。IME显示期间保留non-IME window snapshot；IME关闭恢复该snapshot，而不是无条件恢复Activity。
 
 ## Foreground-only 例子
 

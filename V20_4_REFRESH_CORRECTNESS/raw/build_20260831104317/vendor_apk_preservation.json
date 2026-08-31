@@ -1,0 +1,93 @@
+{
+  "unchanged": true,
+  "count": 17,
+  "before_count": 17,
+  "after_count": 17,
+  "apks": [
+    {
+      "path": "app/CACertService/CACertService.apk",
+      "length": 45470,
+      "sha256": "016d8fcd01ac8d6af10449405bdf5b18c0b68d637b0c73fb618cc645a9ef53cf"
+    },
+    {
+      "path": "app/CneApp/CneApp.apk",
+      "length": 328094,
+      "sha256": "5e669c1966b00fec3e992cfc48c18211e9da14a04ade8b38e9fb48b3c0bfab68"
+    },
+    {
+      "path": "app/com.qualcomm.qti.gpudrivers.pineapple.api34/com.qualcomm.qti.gpudrivers.pineapple.api34.apk",
+      "length": 8503,
+      "sha256": "b7dc93acb91610a7a873577d6133d715cc1172bd8a28bf30dc765266916b2f6e"
+    },
+    {
+      "path": "app/ConnectionSecurityService/ConnectionSecurityService.apk",
+      "length": 9646659,
+      "sha256": "70c5b13742fef59e15cbf65222383746d7e7d2c1392e939733f0f421b0a433b8"
+    },
+    {
+      "path": "app/IWlanService/IWlanService.apk",
+      "length": 397726,
+      "sha256": "d5840f8b44c7d382f791630f4af063963e9eb2ca3e49bae094f6ca2a59ce2e05"
+    },
+    {
+      "path": "app/QFingerprintService/QFingerprintService.apk",
+      "length": 217502,
+      "sha256": "a7dd665f54ff0ce603be8af42b2dd3199d017b6bfd9b1cbe52a66eac69b3bccd"
+    },
+    {
+      "path": "app/TimeService/TimeService.apk",
+      "length": 16798,
+      "sha256": "faaa9456e5fcca2341d6efbfeb4adf054e5526a28ed9f7e8de270ad1490bffcd"
+    },
+    {
+      "path": "app/TrustZoneAccessService/TrustZoneAccessService.apk",
+      "length": 49566,
+      "sha256": "49af35f8dc1def02b93eeda1936b21f1d4bc5d55080317c4ffc8e7d008c389cc"
+    },
+    {
+      "path": "app/TxPwrAdmin/TxPwrAdmin.apk",
+      "length": 123294,
+      "sha256": "b78ecb4ea7fe6f01cf7ac7ed3ce4b3cc218cbd85787aa0181eb3c01311fa0c74"
+    },
+    {
+      "path": "overlay/FrameworksResTarget_Vendor.apk",
+      "length": 29319,
+      "sha256": "27eb3275915f3b73f7fc68a4e920b5b93c1120ed27cfd85cdafde7508ab00492"
+    },
+    {
+      "path": "overlay/KirbyPrcBluetoothOverlay.apk",
+      "length": 8542,
+      "sha256": "3ffb25f4bc177297dee71208490327e5f56399416286366772eb50c1640f3abc"
+    },
+    {
+      "path": "overlay/SecureElementResTarget_Vendor.apk",
+      "length": 8542,
+      "sha256": "8c70dedb1bc50c82fad7063399a8d068e78c8c388de40968c1cbd0dfed23ed65"
+    },
+    {
+      "path": "overlay/WifiResMainlineTarget_spf.apk",
+      "length": 12638,
+      "sha256": "f9dd39ce5ff502b7d09f58e1955a84cc9db7db848c69b4d19a09084655965399"
+    },
+    {
+      "path": "overlay/WifiResMainlineTarget.apk",
+      "length": 8542,
+      "sha256": "4fb14a910c33f03faa9e99a3d4ebca400c77d5e9893df86b71102bada95749d3"
+    },
+    {
+      "path": "overlay/WifiResTarget_spf.apk",
+      "length": 12638,
+      "sha256": "4f16989af5ac662bcdae68399c8c9802890d0cbcd402238f6a3aa00bf57911a1"
+    },
+    {
+      "path": "overlay/WifiResTarget.apk",
+      "length": 8542,
+      "sha256": "b370b030a015f1842824ed72bffeae7499db5ac5ed369d0dfeb8c1c782975782"
+    },
+    {
+      "path": "priv-app/pasrservice/pasrservice.apk",
+      "length": 78238,
+      "sha256": "e4463936afad8341ba955b2bf54647f2737db0888e5d247f7a4772c9447a5259"
+    }
+  ]
+}

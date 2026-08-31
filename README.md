@@ -12,7 +12,7 @@ ZuiControl 是 TB321FU / ZUI 16.1.11.072 的 ROM 内置系统控制工具，核�
 4. 当前生产源码
 5. [`CURRENT_EVIDENCE_INDEX.md`](CURRENT_EVIDENCE_INDEX.md)
 
-V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。最近真机基线仍是 RunId `20260830181816`；V20.4 Refresh Correctness / State Machine 已生成未刷机 candidate RunId `20260831094239`，source/host/CI/ROM build/final-super PASS，device validation PENDING。App 仍是 versionCode 49 / versionName 0.21.12。
+V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。最近真机基线仍是 RunId `20260830181816`；V20.4 Refresh Correctness / State Machine 已生成未刷机 candidate RunId `20260831104317`，source/host/CI/ROM build/final-super PASS，device validation PENDING。旧候选 `20260831094239` 已被人工 Gate 拒绝并替代，不得刷写。App 仍是 versionCode 49 / versionName 0.21.12。
 
 旧 handoff、AI 报告、阶段报告和 raw/trace/log 位于仓库外 `D:\3.VScode\Mi\ZuiControl_Archive\`。默认不要扫描 archive；只按 evidence index 定向读取。
 
@@ -37,6 +37,8 @@ OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno
 ## 当前 Refresh Correctness 工作包
 
 第一优先级已经按 foreground-only state machine 实现：业务 App 真正 foreground 时使用自身 profile；SystemUI、ZuiControl、IME、权限/Resolver/overlay 等 transient 真正 foreground 时使用 neutral/default 120，返回业务 App 后恢复。`lastNonTransientScenePackage` 只用于 QS/ZuiControl 编辑对象，不再用于继承当前物理 Hz。
+
+focused window 是 physical authority：真实 window signal 出现后，背后的 Activity metadata 变化只补充元数据，不得追溯重分类当前 window 或触发 physical apply。Activity-first 与 window-first 的 host 路径都已覆盖；设备上的 window/IME/overlay 时序仍须执行完整 matrix。
 
 同一工作包统一处理：
 
@@ -82,7 +84,7 @@ Steady-state 预期包含：refresh owner=`system`、persistent `zui_controld` P
 
 任何 ROM 交付仍必须按 `AGENTS.md` 做 final-super 反向内容、context、SHA-256 和刷后 AVC 验证。
 
-当前未刷机候选：`D:\3.VScode\Mi\work\v20_4_candidate_20260831094239`。它绑定 source commit `3865cf9c99cb89a8df2b705b9b3dbb2711b311ec` 与 CI run [`33348269219`](https://github.com/xmy953538104/ZuiControl/actions/runs/33348269219)；最终 `super.img` SHA-256 为 `9774b6aa8e72b5dc6c0514c366786da453bf509106a09946be9356969e43d3d9`，基础与 V20.4 final-super verifier 均 PASS。该结论只允许进入 device matrix，不等于真机验证完成。
+当前未刷机候选：`D:\3.VScode\Mi\work\v20_4_candidate_20260831104317`。它绑定 source commit `c4f5ad8d57d21508469e72ff5e4b18adcc2e8c65` 与 CI run [`33351448572`](https://github.com/xmy953538104/ZuiControl/actions/runs/33351448572)；最终 `super.img` SHA-256 为 `059e910359c39f585ed280b623bde0d8d97d6d8dd12b1efdfd2df5281b629757`，基础与 V20.4 final-super verifier 均 PASS（`marker_count=48`）。该结论只允许进入 device matrix，不等于真机验证完成。
 
 ## 当前禁止
 
