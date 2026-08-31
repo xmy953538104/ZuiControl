@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$WorkspaceRoot = 'D:\3.VScode\Mi',
-    [ValidateSet('V20_3B', 'V20_4')]
+    [ValidateSet('V20_3B', 'V20_4', 'V20_4_UPERF')]
     [string]$Phase = 'V20_3B',
     [Parameter(Mandatory)]
     [ValidatePattern('^\d{14}$')]
@@ -21,11 +21,15 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $phaseSlug = $Phase.ToLowerInvariant()
-$phaseDisplay = if ($Phase -eq 'V20_4') { 'V20.4' } else { 'V20.3B' }
-$phaseDirectory = if ($Phase -eq 'V20_4') {
-    'V20_4_REFRESH_CORRECTNESS'
-} else {
-    'V20_3B_DAEMON_RETIREMENT'
+$phaseDisplay = switch ($Phase) {
+    'V20_4' { 'V20.4' }
+    'V20_4_UPERF' { 'V20.4 Uperf' }
+    default { 'V20.3B' }
+}
+$phaseDirectory = switch ($Phase) {
+    'V20_4' { 'V20_4_REFRESH_CORRECTNESS' }
+    'V20_4_UPERF' { 'V20_4_UPERF_ARCHITECTURE_REBASE' }
+    default { 'V20_3B_DAEMON_RETIREMENT' }
 }
 $scratchPrefix = "${phaseSlug}_scratch_"
 $candidatePrefix = "${phaseSlug}_candidate_"
@@ -133,7 +137,7 @@ $trackedBuildPaths = @(
     'V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py',
     'V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1'
 )
-if ($Phase -eq 'V20_4') {
+if ($Phase -in @('V20_4', 'V20_4_UPERF')) {
     $trackedBuildPaths += @(
         'app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt',
         'app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt',
@@ -143,6 +147,18 @@ if ($Phase -eq 'V20_4') {
         'scripts/VerifyZuiControlFinalSuper.ps1',
         'V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py',
         'V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1'
+    )
+}
+if ($Phase -eq 'V20_4_UPERF') {
+    $trackedBuildPaths += @(
+        'payload/README.txt',
+        'payload/system/bin/zui_uperf_service',
+        'payload/system/etc/zui_control/zui_uperf_crash_gate.sh',
+        'payload/system/etc/zui_control/uperf-sm8650.json',
+        'scripts/ImportUperfUpstream.py',
+        'V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py',
+        'V20_4_UPERF_ARCHITECTURE_REBASE/tests/BuildV20_4UperfCandidate.ps1',
+        'V20_4_UPERF_ARCHITECTURE_REBASE/tests/host_init_property_contexts'
     )
 }
 
@@ -357,7 +373,9 @@ try {
     }
     $artifactJson = Invoke-Captured $gh.Source api "repos/xmy953538104/ZuiControl/actions/runs/$CiRunId/artifacts"
     $runArtifacts = @((($artifactJson | ConvertFrom-Json).artifacts))
-    $requiredArtifacts = foreach ($name in @('ZuiControl-release-apk', 'zui-control-v19-payload')) {
+    $requiredArtifactNames = @('ZuiControl-release-apk', 'zui-control-v19-payload')
+    if ($Phase -eq 'V20_4_UPERF') { $requiredArtifactNames += 'zui-control-init-gate' }
+    $requiredArtifacts = foreach ($name in $requiredArtifactNames) {
         $match = @($runArtifacts | Where-Object { [string]$_.name -eq $name })
         if ($match.Count -ne 1 -or [bool]$match[0].expired) {
             throw "CI run must expose one non-expired $name artifact."
@@ -414,6 +432,20 @@ try {
         artifacts = @($requiredArtifacts)
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evidence 'ci_run_provenance.json') -Encoding UTF8
 
+    if ($Phase -eq 'V20_4_UPERF') {
+        $initGate = Join-Path $ciArtifact 'zui-control-init-gate'
+        Require-Directory $initGate
+        foreach ($name in @('result.txt', 'exit_code.txt', 'host_init_verifier_sha256.txt', 'input_sha256.txt')) {
+            Require-File (Join-Path $initGate $name)
+        }
+        if ((Get-Content -Raw -LiteralPath (Join-Path $initGate 'result.txt')).Trim() -ne
+            'HOST_INIT_VERIFIER_UPERF_SERVICE=PASS' -or
+            (Get-Content -Raw -LiteralPath (Join-Path $initGate 'exit_code.txt')).Trim() -ne '0') {
+            throw 'CI host_init_verifier receipt is not a PASS.'
+        }
+        Copy-Item -LiteralPath $initGate -Destination (Join-Path $evidence 'host_init_gate') -Recurse
+    }
+
     Assert-ReleaseApk $ciApk
     if ((Hash $ciApk) -ne (Hash $ciPayloadApk)) {
         throw 'CI release APK and the APK staged in the same run payload differ.'
@@ -427,8 +459,11 @@ try {
         throw 'Scratch source commit mismatch.'
     }
     Invoke-Checked $python (Join-Path $scratchRepo 'V20_3B_DAEMON_RETIREMENT\tests\TestV20_3BPolicy.py')
-    if ($Phase -eq 'V20_4') {
+    if ($Phase -in @('V20_4', 'V20_4_UPERF')) {
         Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_REFRESH_CORRECTNESS\tests\TestV20_4RefreshPolicy.py')
+    }
+    if ($Phase -eq 'V20_4_UPERF') {
+        Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_UPERF_ARCHITECTURE_REBASE\tests\TestV20_4UperfHost.py')
     }
     $sourcePayloadInventory = @(Snapshot-Files (Join-Path $scratchRepo 'payload') '^system/priv-app/[^/]+/[^/]+\.apk$')
     $ciPayloadInventory = @(Snapshot-Files $ciPayload '^system/priv-app/[^/]+/[^/]+\.apk$')
@@ -609,7 +644,7 @@ try {
     [IO.File]::WriteAllLines((Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt'), $sumLines, [Text.UTF8Encoding]::new($false))
     Copy-Item -LiteralPath (Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt') -Destination (Join-Path $evidence 'candidate_sha256.txt')
 
-    $verifierName = if ($Phase -eq 'V20_4') {
+    $verifierName = if ($Phase -in @('V20_4', 'V20_4_UPERF')) {
         'VerifyZuiControlFinalSuper.ps1'
     } else {
         'VerifyZuiControlFlashPackage.ps1'

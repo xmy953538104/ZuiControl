@@ -1,12 +1,14 @@
 # ZuiControl Current Evidence Index
 
-更新时间：2026-08-31
+更新时间：2026-09-01
 最近关闭的完整基线：V20.3B / RunId `20260830181816` / source `30fe138a7ef531aeffbcf951e9113f4ae0d17cfe`
 当前设备：V20.4 Runtime Correction RunId `20260831170720` / source `146e096c6a6bc8b3fee60349b856990fd9fb68d2` / CI `33375509612`
 
 本文件是未来会话的默认证据入口。先读结论与最小报告；只有数字受到质疑时才打开对应 raw 或结果RAR。不要递归扫描 `D:\3.VScode\Mi\ZuiControl_Archive\`。
 
 V20.3B 阶段已关闭；daemon-retirement architecture = PASS。rapid Uperf storm与T8 request-ID仍是carry-forward，未被改写成PASS。V20.4 Refresh Correctness / State Machine已由当前Runtime Correction真机Gate关闭，状态为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。
+
+V20.4 Uperf Architecture & Upstream Rebase当前只有source/host与构建前framework gate，不是device证据。upstream审计、scene/lifecycle/ownership设计与host结果分别见[`01_UPSTREAM_AUDIT.md`](V20_4_UPERF_ARCHITECTURE_REBASE/01_UPSTREAM_AUDIT.md)、[`07_SCENE_STATE_MODEL.md`](V20_4_UPERF_ARCHITECTURE_REBASE/07_SCENE_STATE_MODEL.md)、[`04_UPERF_LIFECYCLE.md`](V20_4_UPERF_ARCHITECTURE_REBASE/04_UPERF_LIFECYCLE.md)和[`08_HOST_TESTS.md`](V20_4_UPERF_ARCHITECTURE_REBASE/08_HOST_TESTS.md)。在final artifact与人工Pre-Flash Gate前不得把它覆盖到下方当前设备基线。
 
 Archive根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md)
 

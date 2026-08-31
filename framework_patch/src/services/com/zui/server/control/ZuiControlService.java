@@ -56,6 +56,7 @@ public final class ZuiControlService extends Binder {
     private static final String PROP_COMMAND_SHA256 = "sys.zui_control.command_sha256";
     private static final String PROP_COMMAND_SEQ = "sys.zui_control.command_seq";
     private static final String PROP_SCHEDULER_ACTIVE = "sys.zui_control.scheduler_active";
+    private static final String PROP_UPERF_FAIL_SAFE = "sys.zui_control.uperf_fail_safe";
     private static final String PROP_UPERF_SERVICE = "init.svc.zui_uperf";
     private static final String PROP_ASOUL_SERVICE = "init.svc.zui_asoulopt";
     private static final String PROP_GLOBAL_DISABLE = "persist.zui_control.disable";
@@ -183,7 +184,7 @@ public final class ZuiControlService extends Binder {
         registerPeakObserver();
         registerRefreshPropertyObserver();
         registerScreenObserver();
-        mUperfScenePolicy.start(mCurrentScenePackage, mScreenInteractive);
+        mUperfScenePolicy.start(mScreenInteractive);
         publishState();
     }
 
@@ -243,6 +244,20 @@ public final class ZuiControlService extends Binder {
             @Override
             public void run() {
                 handleFocusedActivity(activityFocus, windowAuthority, eventNanos);
+            }
+        });
+    }
+
+    public void onTopResumedActivityChanged(ActivityRecord record) {
+        final long eventNanos = SystemClock.elapsedRealtimeNanos();
+        final String pkg = record == null ? "" : safe(record.packageName);
+        final int userId = record == null ? 0 : record.mUserId;
+        mWorker.post(new Runnable() {
+            @Override
+            public void run() {
+                mUperfScenePolicy.onTopResumedChanged(
+                        pkg, userId, "topResumed", eventNanos);
+                publishState();
             }
         });
     }
@@ -353,8 +368,6 @@ public final class ZuiControlService extends Binder {
                     activityFocus.userId, activityFocus.displayId);
         }
         if (mImeVisible) {
-            mUperfScenePolicy.onSystemStateChanged(
-                    mCurrentScenePackage, mScreenInteractive, "focusBehindIme", eventNanos);
             publishState();
             return;
         }
@@ -427,8 +440,6 @@ public final class ZuiControlService extends Binder {
         String reason = transientFocus
                 ? source + "Transient" : source;
         applyProfile(refreshProfile, reason, false);
-        mUperfScenePolicy.onSystemStateChanged(
-                mCurrentScenePackage, mScreenInteractive, reason, eventNanos);
         publishState();
     }
 
@@ -1096,7 +1107,7 @@ public final class ZuiControlService extends Binder {
             return;
         }
         mScreenInteractive = interactive;
-        mUperfScenePolicy.onSystemStateChanged(mCurrentScenePackage, interactive,
+        mUperfScenePolicy.onInteractiveChanged(interactive,
                 interactive ? "screenOn" : "screenOff", SystemClock.elapsedRealtimeNanos());
         publishState();
     }
@@ -1415,11 +1426,14 @@ public final class ZuiControlService extends Binder {
         String active = SystemProperties.get(PROP_SCHEDULER_ACTIVE, "unknown");
         String uperfState = SystemProperties.get(PROP_UPERF_SERVICE, "unknown");
         String uperfMode = SystemProperties.get(PROP_UPERF_MODE, "unknown");
+        String uperfFailSafe = SystemProperties.get(PROP_UPERF_FAIL_SAFE, "0");
         String asoulState = SystemProperties.get(PROP_ASOUL_SERVICE, "unknown");
         String currentError = "";
         if ("1".equals(SystemProperties.get("sys.boot_completed", "0"))) {
             if (!"0".equals(active) && !"1".equals(active)) {
                 currentError = "invalid_scheduler_active";
+            } else if ("1".equals(active) && "1".equals(uperfFailSafe)) {
+                currentError = "uperf_fail_safe";
             } else if ("1".equals(active)) {
                 if ("stopped".equals(uperfState)) {
                     currentError = "uperf_stopped_while_active";
@@ -1436,6 +1450,7 @@ public final class ZuiControlService extends Binder {
         return "\nschedulerActive=" + active
                 + "\nuperfServiceState=" + uperfState
                 + "\nuperfMode=" + uperfMode
+                + "\nuperfFailSafe=" + uperfFailSafe
                 + "\nasoulServiceState=" + asoulState
                 + "\nschedulerHealth=" + (currentError.isEmpty() ? "ok" : currentError)
                 + "\nlastSchedulerError="
@@ -1755,8 +1770,9 @@ public final class ZuiControlService extends Binder {
         };
 
         private String mScenePackage = "";
+        private int mSceneUserId;
         private boolean mInteractive = true;
-        private boolean mSystemStateSeen;
+        private boolean mTopResumedSeen;
         private boolean mStartScheduled;
         private boolean mStarted;
         private String mGlobalMode = "balance";
@@ -1767,11 +1783,8 @@ public final class ZuiControlService extends Binder {
         private int mApplyCount;
         private String mLastReason = "initPending";
 
-        synchronized void start(String scenePackage, boolean interactive) {
-            if (!mSystemStateSeen) {
-                mScenePackage = safe(scenePackage);
-                mInteractive = interactive;
-            }
+        synchronized void start(boolean interactive) {
+            mInteractive = interactive;
             if (mStartScheduled) {
                 return;
             }
@@ -1803,10 +1816,18 @@ public final class ZuiControlService extends Binder {
             reloadSettings("startup");
         }
 
-        synchronized void onSystemStateChanged(
-                String scenePackage, boolean interactive, String reason, long eventNanos) {
-            mSystemStateSeen = true;
+        synchronized void onTopResumedChanged(
+                String scenePackage, int userId, String reason, long eventNanos) {
+            mTopResumedSeen = true;
             mScenePackage = safe(scenePackage);
+            mSceneUserId = userId;
+            if (mStarted) {
+                reconcile(reason, eventNanos);
+            }
+        }
+
+        synchronized void onInteractiveChanged(
+                boolean interactive, String reason, long eventNanos) {
             mInteractive = interactive;
             if (mStarted) {
                 reconcile(reason, eventNanos);
@@ -1898,6 +1919,10 @@ public final class ZuiControlService extends Binder {
 
         synchronized String stateLines() {
             return "\nuperfGlobalMode=" + mGlobalMode
+                    + "\nuperfSceneAuthority=topResumedActivity"
+                    + "\nuperfScenePackage=" + mScenePackage
+                    + "\nuperfSceneUserId=" + mSceneUserId
+                    + "\nuperfTopResumedSeen=" + mTopResumedSeen
                     + "\nuperfSceneMode=" + mSceneMode
                     + "\nuperfDesiredMode=" + mDesiredMode
                     + "\nuperfLastAppliedMode=" + mLastAppliedMode

@@ -14,6 +14,8 @@ ZuiControl 是 TB321FU / ZUI 16.1.11.072 的 ROM 内置系统控制工具，核�
 
 V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。当前设备运行 V20.4 Runtime Correction RunId `20260831170720`，source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`、CI `33375509612`；host/build/final-artifact/Boot Hard Gate和Targeted Device Gate均PASS。Refresh Correctness / State Machine 工作包现为 **CLOSED WITH EXPLICIT BOUNDARIES**。App 仍是 versionCode 49 / versionName 0.21.12。
 
+当前源码正在进行第二工作包 **V20.4 Uperf Architecture & Upstream Rebase**。它使用framework top-resumed Activity作为Uperf exact-rule authority，并以event-driven FIFO/init生命周期替代旧5秒wrapper polling；此候选尚未刷机，device scene/idle/crash/knob/performance结果均仍待人工Pre-Flash批准后验证。
+
 旧 RunId `20260831094239` 刷前拒绝；`20260831104317` 因ART `VerifyError` Boot FAIL并完成恢复；`20260831134511` Boot PASS但device因kill switch、null-gap和OEM分类三项为PARTIAL。它们只保留为lineage，均不得再次刷写。当前权威结论见 [`V20_4_REFRESH_RUNTIME_DECISION.md`](V20_4_REFRESH_RUNTIME_DECISION.md) 与 [`08_BOOT_GATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/08_BOOT_GATE.md) 至 [`13_FINAL_RUNTIME_STATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/13_FINAL_RUNTIME_STATE.md)。
 
 旧 handoff、AI 报告、阶段报告和 raw/trace/log 位于仓库外 `D:\3.VScode\Mi\ZuiControl_Archive\`。默认不要扫描 archive；只按 evidence index 定向读取。
@@ -23,7 +25,7 @@ V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。�
 | 能力 | 当前 owner / 路径 |
 | --- | --- |
 | Refresh scene 与执行 | `system_server` / `ZuiControlService` → DisplayManagerInternal / ROM display policy |
-| Uperf scene/screen mode | `system_server` event-driven → protected property → init → `effective_powermode.txt` → Uperf |
+| Uperf scene/screen mode | `system_server` top-resumed Activity/screen event → protected property → init → `effective_powermode.txt` → Uperf |
 | CPU/power-model 执行 | `/system/bin/uperf`，四档 `powersave|balance|performance|fast` |
 | per-task affinity/context scheduling | asoulOpt；Uperf `sched.enable=false` |
 | OEM `vendor.perfservice` fence | Android init，`scheduler_active=1` gate |
@@ -32,7 +34,7 @@ V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。�
 
 `persistent zui_controld` 已退休：生产 init 中没有 `zui_controld` service/start。`/system/bin/zui_controld` 只保留为 `--oneshot-request` command executor，没有 refresh、scene detector 或后台 health publisher 职责。
 
-`/system/bin/zui_uperf_service` 仍每 5 秒检查自身 service cgroup 与 Uperf 日志，失败后退出并交给 init 恢复。它是执行面 self-check，不是 Settings/Binder health heartbeat，不能写成已删除。
+当前Uperf候选的 `/system/bin/zui_uperf_service` 不再做5秒process/grep轮询：startup只有一次bounded FIFO event wait，steady state阻塞等待Uperf自身事件/EOF。正常worker crash由Uperf内建manager恢复；rapid worker或whole-service storm进入显式fail-safe并停止，完整tree EOF由init限速恢复。它没有新增daemon/watchdog/timer；真机行为仍必须按工作包device plan证明。
 
 OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno KGSL。Uperf 的全局 cpuset 写入与更广义 knob ownership 留后续独立审计。
 
@@ -65,6 +67,8 @@ OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno
 - `V20_3B_DAEMON_RETIREMENT/tests/`：当前 host/device policy 与回归工具；测试代码保留原位。
 - `V20_4_REFRESH_CORRECTNESS/`：refresh 状态模型、host/build/ART/Boot证据、device plan与真机结果。
 - `V20_4_REFRESH_RUNTIME_CORRECTION/`：三个runtime blocker的根因、定向设计、host/final gate与当前真机结果。
+- `V20_4_UPERF_ARCHITECTURE_REBASE/`：upstream冻结审计、top-resumed scene、Uperf生命周期、knob ownership、host/build与device plan。
+- `upstream/uperf/1.0.6/`：不可变最小upstream快照；不是production payload。
 - `CURRENT_EVIDENCE_INDEX.md`：当前基线的最小证据入口。
 
 ## Build 与验证

@@ -13,6 +13,13 @@ public final class ZuiControlHooks {
         }
     }
 
+    public static void onTopResumedActivityChanged(ActivityRecord record) {
+        ZuiControlService service = ZuiControlService.getInstance();
+        if (service != null) {
+            service.onTopResumedActivityChanged(record);
+        }
+    }
+
     public static void onFocusedWindowChanged(String packageName, int displayId) {
         ZuiControlService service = ZuiControlService.getInstance();
         if (service != null) {

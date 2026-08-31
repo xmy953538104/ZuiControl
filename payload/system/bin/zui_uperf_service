@@ -2,45 +2,76 @@
 
 CONFIG=/data/vendor/zui_control/uperf/uperf.json
 LOG=/data/vendor/zui_control/log/uperf.log
+LOG_PIPE=/data/vendor/zui_control/uperf/.service_log_pipe
+READY_UPTIME=/data/vendor/zui_control/uperf/.service_ready_uptime
+FAIL_SAFE_PROP=sys.zui_control.uperf_fail_safe
 
-# Uperf daemonizes. Keep this init service alive so init owns and can reliably
-# stop the entire service cgroup, including the detached Uperf children.
-# The author's module moves Uperf itself out of the foreground cpuset; children
-# inherit this placement while their writes control the configured CPU and
-# system policy nodes.
+uptime_seconds() {
+    IFS=' ' read -r value _rest < /proc/uptime || return 1
+    printf '%s\n' "${value%%.*}"
+}
+
+write_log_line() {
+    printf '%s\n' "$1" >&7
+}
+
+# Uperf daemonizes but remains in this init service cgroup. The private FIFO
+# turns its own log/exit stream into an event source, so the wrapper never
+# polls processes or greps a file while idle.
 echo $$ > /dev/cpuset/background/tasks 2>/dev/null || true
-: > "$LOG" 2>/dev/null || true
-/system/bin/uperf "$CONFIG" -o "$LOG" || exit 1
+rm -f "$LOG_PIPE" "$READY_UPTIME"
+mkfifo "$LOG_PIPE" || exit 1
+chmod 0600 "$LOG_PIPE" || exit 1
+exec 7> "$LOG" || exit 1
 
-service_cgroup="$(sed -n 's/^0:://p' /proc/self/cgroup 2>/dev/null)"
-cgroup_procs="/sys/fs/cgroup${service_cgroup}/cgroup.procs"
-[ -n "$service_cgroup" ] && [ -r "$cgroup_procs" ] || exit 1
+# Keep both FIFO ends open only while Uperf opens its logger. FD 9 is closed
+# in the Uperf exec tree so EOF still represents loss of every real writer.
+exec 9<> "$LOG_PIPE" || exit 1
+/system/bin/uperf "$CONFIG" -o "$LOG_PIPE" 9>&- || exit 1
+exec 8< "$LOG_PIPE" || exit 1
+exec 9>&-
+rm -f "$LOG_PIPE"
 
-uperf_process_count() {
-    count=0
-    while read -r process_id; do
-        [ -r "/proc/$process_id/comm" ] || continue
-        IFS= read -r process_name < "/proc/$process_id/comm" || continue
-        [ "$process_name" = "uperf" ] && count=$((count + 1))
-    done < "$cgroup_procs"
-    printf '%s\n' "$count"
-}
-
-uperf_ready() {
-    [ "$(uperf_process_count)" -ge 2 ] 2>/dev/null &&
-        grep -q ' I Uperf is running$' "$LOG" 2>/dev/null &&
-        ! grep -q ' I Failed to start uperf' "$LOG" 2>/dev/null
-}
-
-tries=20
-while [ "$tries" -gt 0 ]; do
-    uperf_ready && break
-    sleep 1
-    tries=$((tries - 1))
+# Startup has one bounded event wait; the steady state below has no timer.
+ready=0
+deadline=$(( $(uptime_seconds) + 20 ))
+while [ "$ready" -eq 0 ]; do
+    now="$(uptime_seconds)" || exit 1
+    remaining=$((deadline - now))
+    [ "$remaining" -gt 0 ] || exit 1
+    IFS= read -r -t "$remaining" line <&8 || exit 1
+    write_log_line "$line"
+    case "$line" in
+        *" I Failed to start "*|*"Failed to start uperf"*) exit 1 ;;
+        *" I Uperf is running") ready=1 ;;
+    esac
 done
-[ "$tries" -gt 0 ] || exit 1
 
-while true; do
-    sleep 5
-    uperf_ready || exit 1
+now="$(uptime_seconds)" || exit 1
+printf '%s\n' "$now" > "$READY_UPTIME.tmp" || exit 1
+chmod 0600 "$READY_UPTIME.tmp" || exit 1
+mv -f "$READY_UPTIME.tmp" "$READY_UPTIME" || exit 1
+
+rapid_first=0
+rapid_count=0
+while IFS= read -r line <&8; do
+    write_log_line "$line"
+    case "$line" in
+        *" terminated unexpectedly, try to get tombstone"*)
+            now="$(uptime_seconds)" || exit 1
+            if [ "$rapid_count" -eq 0 ] || [ $((now - rapid_first)) -gt 20 ]; then
+                rapid_first="$now"
+                rapid_count=1
+            else
+                rapid_count=$((rapid_count + 1))
+            fi
+            if [ "$rapid_count" -ge 3 ]; then
+                setprop "$FAIL_SAFE_PROP" 1 || exit 1
+            fi
+            ;;
+    esac
 done
+
+# FIFO EOF means the complete Uperf writer tree is gone. Exiting delegates the
+# normal whole-service recovery to init; onrestart performs the rapid bound.
+exit 1

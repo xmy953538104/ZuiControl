@@ -1,0 +1,1493 @@
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index a1cf37f..246a658 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -10,6 +10,8 @@ on:
+       - "scripts/**"
+       - "V20_3B_DAEMON_RETIREMENT/tests/**"
+       - "V20_4_REFRESH_CORRECTNESS/tests/**"
++      - "V20_4_UPERF_ARCHITECTURE_REBASE/tests/**"
++      - "upstream/uperf/**"
+       - ".github/workflows/build.yml"
+       - "*.gradle.kts"
+ 
+@@ -42,16 +44,100 @@ jobs:
+         run: |
+           python3 -m py_compile scripts/ApplyZuiControlPayload.py
+           python3 -m py_compile scripts/PatchZuiControlFramework.py
++          python3 -m py_compile scripts/ImportUperfUpstream.py
+           python3 -m py_compile tools/PatchAsoulOptConfigPath.py
+           python3 tools/PatchAsoulOptConfigPath.py payload/system/bin/AsoulOpt
+           bash -n payload/system/bin/zui_controld
+           bash -n payload/system/bin/zui_uperf_service
++          bash -n payload/system/etc/zui_control/zui_uperf_crash_gate.sh
+           bash scripts/TestZuiControldTransactions.sh
+           python3 V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py
+           python3 V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
++          python3 V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py
+           bash -n payload/system/etc/zui_control/zui_scheduler_prepare.sh
+           python3 -m json.tool payload/system/etc/zui_control/uperf-sm8650.json >/dev/null
+ 
++      - name: Download pinned Android 14 init verifier
++        shell: bash
++        run: |
++          set -euo pipefail
++          mkdir -p "$RUNNER_TEMP/init-gate/receipt"
++          python3 - <<'PY'
++          import json
++          import re
++          import shutil
++          import urllib.request
++
++          page_url = (
++              "https://ci.android.com/builds/submitted/16200779/"
++              "aosp_arm64-userdebug/latest/otatools.zip"
++          )
++          with urllib.request.urlopen(page_url, timeout=60) as response:
++              page = response.read().decode("utf-8")
++          match = re.search(r"var JSVariables = (\{.*?\});", page, re.DOTALL)
++          if match is None:
++              raise SystemExit("Android CI artifact metadata was not found")
++          metadata = json.loads(match.group(1))
++          expected = {
++              "artifact": "otatools.zip",
++              "branch": "aosp-android14-gsi",
++              "buildId": "16200779",
++              "target": "aosp_arm64-userdebug",
++          }
++          for key, value in expected.items():
++              if metadata.get(key) != value:
++                  raise SystemExit(f"Android CI metadata mismatch for {key}")
++          with urllib.request.urlopen(metadata["artifactUrl"], timeout=120) as source:
++              with open("otatools.zip", "wb") as destination:
++                  shutil.copyfileobj(source, destination, length=1024 * 1024)
++          with open("%s/init-gate/receipt/android_ci_source.txt" % __import__("os").environ["RUNNER_TEMP"], "w", encoding="utf-8") as out:
++              out.write(f"artifact_page={page_url}\n")
++              for key in ("branch", "buildId", "target", "artifact"):
++                  out.write(f"{key}={metadata[key]}\n")
++          PY
++          unzip -q otatools.zip 'bin/host_init_verifier' 'lib64/*' -d "$RUNNER_TEMP/init-gate/otatools"
++          chmod 0755 "$RUNNER_TEMP/init-gate/otatools/bin/host_init_verifier"
++          verifier_sha="$(sha256sum "$RUNNER_TEMP/init-gate/otatools/bin/host_init_verifier" | cut -d' ' -f1)"
++          printf '%s  host_init_verifier\n' "$verifier_sha" | tee "$RUNNER_TEMP/init-gate/receipt/host_init_verifier_sha256.txt"
++          test "$verifier_sha" = b89a6d6351621a183b615e371f0390c38056644b640a8e829c4f4900379ec2e6
++
++      - name: Verify Uperf init service with official host_init_verifier
++        shell: bash
++        run: |
++          set -uo pipefail
++          receipt="$RUNNER_TEMP/init-gate/receipt"
++          sha256sum payload/system/etc/init/zui_scheduler.rc \
++            V20_4_UPERF_ARCHITECTURE_REBASE/tests/host_init_property_contexts \
++            > "$receipt/input_sha256.txt"
++          cmd=(
++            "$RUNNER_TEMP/init-gate/otatools/bin/host_init_verifier"
++            -p /dev/null
++            "--property-contexts=$PWD/V20_4_UPERF_ARCHITECTURE_REBASE/tests/host_init_property_contexts"
++            "$PWD/payload/system/etc/init/zui_scheduler.rc"
++          )
++          printf '%q ' "${cmd[@]}" > "$receipt/argv.txt"
++          printf '\n' >> "$receipt/argv.txt"
++          set +e
++          LD_LIBRARY_PATH="$RUNNER_TEMP/init-gate/otatools/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
++            "${cmd[@]}" > "$receipt/stdout.txt" 2> "$receipt/stderr.txt"
++          rc=$?
++          set -e
++          printf '%s\n' "$rc" > "$receipt/exit_code.txt"
++          if [[ "$rc" -eq 0 ]]; then
++            printf 'HOST_INIT_VERIFIER_UPERF_SERVICE=PASS\n' | tee "$receipt/result.txt"
++          else
++            printf 'HOST_INIT_VERIFIER_UPERF_SERVICE=FAIL\n' | tee "$receipt/result.txt"
++          fi
++          test "$rc" -eq 0
++
++      - name: Upload init verifier receipt
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: zui-control-init-gate
++          path: ${{ runner.temp }}/init-gate/receipt
++          if-no-files-found: error
++
+       - name: Decode release keystore
+         run: |
+           printf '%s' "${{ secrets.KEYSTORE }}" | base64 -d > "$RUNNER_TEMP/ZuiControl-release.jks"
+diff --git a/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1 b/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
+index aa43b96..2ca0f56 100644
+--- a/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
++++ b/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
+@@ -1,7 +1,7 @@
+ [CmdletBinding()]
+ param(
+     [string]$WorkspaceRoot = 'D:\3.VScode\Mi',
+-    [ValidateSet('V20_3B', 'V20_4')]
++    [ValidateSet('V20_3B', 'V20_4', 'V20_4_UPERF')]
+     [string]$Phase = 'V20_3B',
+     [Parameter(Mandatory)]
+     [ValidatePattern('^\d{14}$')]
+@@ -21,11 +21,15 @@ param(
+ $ErrorActionPreference = 'Stop'
+ Set-StrictMode -Version Latest
+ $phaseSlug = $Phase.ToLowerInvariant()
+-$phaseDisplay = if ($Phase -eq 'V20_4') { 'V20.4' } else { 'V20.3B' }
+-$phaseDirectory = if ($Phase -eq 'V20_4') {
+-    'V20_4_REFRESH_CORRECTNESS'
+-} else {
+-    'V20_3B_DAEMON_RETIREMENT'
++$phaseDisplay = switch ($Phase) {
++    'V20_4' { 'V20.4' }
++    'V20_4_UPERF' { 'V20.4 Uperf' }
++    default { 'V20.3B' }
++}
++$phaseDirectory = switch ($Phase) {
++    'V20_4' { 'V20_4_REFRESH_CORRECTNESS' }
++    'V20_4_UPERF' { 'V20_4_UPERF_ARCHITECTURE_REBASE' }
++    default { 'V20_3B_DAEMON_RETIREMENT' }
+ }
+ $scratchPrefix = "${phaseSlug}_scratch_"
+ $candidatePrefix = "${phaseSlug}_candidate_"
+@@ -133,7 +137,7 @@ $trackedBuildPaths = @(
+     'V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py',
+     'V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1'
+ )
+-if ($Phase -eq 'V20_4') {
++if ($Phase -in @('V20_4', 'V20_4_UPERF')) {
+     $trackedBuildPaths += @(
+         'app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt',
+         'app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt',
+@@ -145,6 +149,18 @@ if ($Phase -eq 'V20_4') {
+         'V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1'
+     )
+ }
++if ($Phase -eq 'V20_4_UPERF') {
++    $trackedBuildPaths += @(
++        'payload/README.txt',
++        'payload/system/bin/zui_uperf_service',
++        'payload/system/etc/zui_control/zui_uperf_crash_gate.sh',
++        'payload/system/etc/zui_control/uperf-sm8650.json',
++        'scripts/ImportUperfUpstream.py',
++        'V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py',
++        'V20_4_UPERF_ARCHITECTURE_REBASE/tests/BuildV20_4UperfCandidate.ps1',
++        'V20_4_UPERF_ARCHITECTURE_REBASE/tests/host_init_property_contexts'
++    )
++}
+ 
+ function Snapshot-Files([string]$Root, [string]$ExcludePattern = '') {
+     $rootFull = Full $Root
+@@ -357,7 +373,9 @@ try {
+     }
+     $artifactJson = Invoke-Captured $gh.Source api "repos/xmy953538104/ZuiControl/actions/runs/$CiRunId/artifacts"
+     $runArtifacts = @((($artifactJson | ConvertFrom-Json).artifacts))
+-    $requiredArtifacts = foreach ($name in @('ZuiControl-release-apk', 'zui-control-v19-payload')) {
++    $requiredArtifactNames = @('ZuiControl-release-apk', 'zui-control-v19-payload')
++    if ($Phase -eq 'V20_4_UPERF') { $requiredArtifactNames += 'zui-control-init-gate' }
++    $requiredArtifacts = foreach ($name in $requiredArtifactNames) {
+         $match = @($runArtifacts | Where-Object { [string]$_.name -eq $name })
+         if ($match.Count -ne 1 -or [bool]$match[0].expired) {
+             throw "CI run must expose one non-expired $name artifact."
+@@ -414,6 +432,20 @@ try {
+         artifacts = @($requiredArtifacts)
+     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evidence 'ci_run_provenance.json') -Encoding UTF8
+ 
++    if ($Phase -eq 'V20_4_UPERF') {
++        $initGate = Join-Path $ciArtifact 'zui-control-init-gate'
++        Require-Directory $initGate
++        foreach ($name in @('result.txt', 'exit_code.txt', 'host_init_verifier_sha256.txt', 'input_sha256.txt')) {
++            Require-File (Join-Path $initGate $name)
++        }
++        if ((Get-Content -Raw -LiteralPath (Join-Path $initGate 'result.txt')).Trim() -ne
++            'HOST_INIT_VERIFIER_UPERF_SERVICE=PASS' -or
++            (Get-Content -Raw -LiteralPath (Join-Path $initGate 'exit_code.txt')).Trim() -ne '0') {
++            throw 'CI host_init_verifier receipt is not a PASS.'
++        }
++        Copy-Item -LiteralPath $initGate -Destination (Join-Path $evidence 'host_init_gate') -Recurse
++    }
++
+     Assert-ReleaseApk $ciApk
+     if ((Hash $ciApk) -ne (Hash $ciPayloadApk)) {
+         throw 'CI release APK and the APK staged in the same run payload differ.'
+@@ -427,9 +459,12 @@ try {
+         throw 'Scratch source commit mismatch.'
+     }
+     Invoke-Checked $python (Join-Path $scratchRepo 'V20_3B_DAEMON_RETIREMENT\tests\TestV20_3BPolicy.py')
+-    if ($Phase -eq 'V20_4') {
++    if ($Phase -in @('V20_4', 'V20_4_UPERF')) {
+         Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_REFRESH_CORRECTNESS\tests\TestV20_4RefreshPolicy.py')
+     }
++    if ($Phase -eq 'V20_4_UPERF') {
++        Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_UPERF_ARCHITECTURE_REBASE\tests\TestV20_4UperfHost.py')
++    }
+     $sourcePayloadInventory = @(Snapshot-Files (Join-Path $scratchRepo 'payload') '^system/priv-app/[^/]+/[^/]+\.apk$')
+     $ciPayloadInventory = @(Snapshot-Files $ciPayload '^system/priv-app/[^/]+/[^/]+\.apk$')
+     if (($sourcePayloadInventory | ConvertTo-Json -Depth 4 -Compress) -ne
+@@ -609,7 +644,7 @@ try {
+     [IO.File]::WriteAllLines((Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt'), $sumLines, [Text.UTF8Encoding]::new($false))
+     Copy-Item -LiteralPath (Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt') -Destination (Join-Path $evidence 'candidate_sha256.txt')
+ 
+-    $verifierName = if ($Phase -eq 'V20_4') {
++    $verifierName = if ($Phase -in @('V20_4', 'V20_4_UPERF')) {
+         'VerifyZuiControlFinalSuper.ps1'
+     } else {
+         'VerifyZuiControlFlashPackage.ps1'
+diff --git a/V20_4_UPERF_ARCHITECTURE_REBASE/tests/BuildV20_4UperfCandidate.ps1 b/V20_4_UPERF_ARCHITECTURE_REBASE/tests/BuildV20_4UperfCandidate.ps1
+new file mode 100644
+index 0000000..29d8a06
+--- /dev/null
++++ b/V20_4_UPERF_ARCHITECTURE_REBASE/tests/BuildV20_4UperfCandidate.ps1
+@@ -0,0 +1,26 @@
++[CmdletBinding()]
++param(
++    [string]$WorkspaceRoot = 'D:\3.VScode\Mi',
++    [Parameter(Mandatory)]
++    [ValidatePattern('^\d{14}$')]
++    [string]$RunId,
++    [Parameter(Mandatory)]
++    [ValidatePattern('^[0-9a-fA-F]{40}$')]
++    [string]$SourceCommit,
++    [Parameter(Mandatory)]
++    [ValidatePattern('^\d{6,20}$')]
++    [string]$CiRunId,
++    [Parameter(Mandatory)]
++    [string]$CiArtifactPath,
++    [switch]$KeepScratch,
++    [switch]$Execute
++)
++
++$ErrorActionPreference = 'Stop'
++Set-StrictMode -Version Latest
++$builder = Join-Path $PSScriptRoot '..\..\V20_3B_DAEMON_RETIREMENT\tests\BuildV20_3BCandidate.ps1'
++if (-not (Test-Path -LiteralPath $builder -PathType Leaf)) {
++    throw "Missing shared candidate builder: $builder"
++}
++
++& $builder @PSBoundParameters -Phase V20_4_UPERF
+diff --git a/V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py b/V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py
+new file mode 100644
+index 0000000..48fe01d
+--- /dev/null
++++ b/V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py
+@@ -0,0 +1,257 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import hashlib
++import json
++import pathlib
++import re
++import subprocess
++import sys
++import tempfile
++import unittest
++import zipfile
++
++
++REPO = pathlib.Path(__file__).resolve().parents[2]
++SERVICE = REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlService.java"
++HOOKS = REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java"
++PATCHER = REPO / "scripts/PatchZuiControlFramework.py"
++FINAL_SUPER_VERIFIER = REPO / "scripts/VerifyZuiControlFinalSuper.ps1"
++RC = REPO / "payload/system/etc/init/zui_scheduler.rc"
++WRAPPER = REPO / "payload/system/bin/zui_uperf_service"
++CRASH_GATE = REPO / "payload/system/etc/zui_control/zui_uperf_crash_gate.sh"
++CONFIG = REPO / "payload/system/etc/zui_control/uperf-sm8650.json"
++PROPERTY_CONTEXTS = REPO / "payload/patches/plat_property_contexts_add.txt"
++POLICY = REPO / "payload/patches/plat_sepolicy_zui_control.cil"
++SNAPSHOT = REPO / "upstream/uperf/1.0.6"
++
++
++def text(path: pathlib.Path) -> str:
++    return path.read_text(encoding="utf-8")
++
++
++def selected_mode(interactive: bool, scene: str, global_mode: str,
++                  rules: dict[str, str]) -> str:
++    if not interactive:
++        return "powersave"
++    return rules.get(scene, global_mode)
++
++
++class ScenePolicyTests(unittest.TestCase):
++    RULES = {"game.fast": "fast", "game.perf": "performance"}
++
++    def test_01_screen_off_wins(self):
++        self.assertEqual(selected_mode(False, "game.fast", "balance", self.RULES), "powersave")
++
++    def test_02_screen_on_recomputes(self):
++        self.assertEqual(selected_mode(True, "game.fast", "balance", self.RULES), "fast")
++
++    def test_03_global_balance(self):
++        self.assertEqual(selected_mode(True, "video", "balance", self.RULES), "balance")
++
++    def test_04_exact_fast(self):
++        self.assertEqual(selected_mode(True, "game.fast", "balance", self.RULES), "fast")
++
++    def test_05_exact_performance(self):
++        self.assertEqual(selected_mode(True, "game.perf", "balance", self.RULES), "performance")
++
++    def test_06_game_to_video_global(self):
++        self.assertEqual(selected_mode(True, "video", "balance", self.RULES), "balance")
++
++    def test_07_game_to_home_global(self):
++        self.assertEqual(selected_mode(True, "home", "balance", self.RULES), "balance")
++
++    def test_08_qs_does_not_replace_top_resumed(self):
++        self.assertEqual(selected_mode(True, "game.fast", "balance", self.RULES), "fast")
++
++    def test_09_zuicontrol_top_resumed_is_global(self):
++        self.assertEqual(selected_mode(True, "com.zui.zuicontrol", "balance", self.RULES), "balance")
++
++    def test_10_freeform_active_game(self):
++        self.assertEqual(selected_mode(True, "game.fast", "balance", self.RULES), "fast")
++
++    def test_11_freeform_inactive_game_does_not_win(self):
++        self.assertEqual(selected_mode(True, "video", "balance", self.RULES), "balance")
++
++    def test_12_split_active_pane_switch(self):
++        self.assertEqual(selected_mode(True, "game.perf", "balance", self.RULES), "performance")
++
++    def test_13_pip_visible_does_not_win(self):
++        self.assertEqual(selected_mode(True, "home", "balance", self.RULES), "balance")
++
++    def test_14_same_target_dedup_contract(self):
++        sequence = ["game.fast", "game.fast", "game.fast"]
++        modes = [selected_mode(True, item, "balance", self.RULES) for item in sequence]
++        writes = sum(1 for index, mode in enumerate(modes) if index == 0 or modes[index - 1] != mode)
++        self.assertEqual(writes, 1)
++
++
++class SourceAuthorityTests(unittest.TestCase):
++    def test_top_resumed_hook_is_unique_and_event_driven(self):
++        hooks = text(HOOKS)
++        patcher = text(PATCHER)
++        service = text(SERVICE)
++        self.assertEqual(hooks.count("void onTopResumedActivityChanged(ActivityRecord record)"), 1)
++        self.assertEqual(patcher.count(
++            "ZuiControlHooks;->onTopResumedActivityChanged(Lcom/android/server/wm/ActivityRecord;)V"), 1)
++        self.assertIn("iput-object v1, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mTopResumedActivity", patcher)
++        self.assertIn("uperfSceneAuthority=topResumedActivity", service)
++        for forbidden in ("dumpsys activity", "top -n", "AccessibilityService", "postDelayed"):
++            self.assertNotIn(forbidden, service)
++
++    def test_refresh_feeds_do_not_drive_uperf(self):
++        service = text(SERVICE)
++        self.assertNotIn("onSystemStateChanged", service)
++        top_calls = service.count("onTopResumedChanged(")
++        screen_calls = service.count("onInteractiveChanged(")
++        self.assertEqual(top_calls, 2)  # call site plus method declaration
++        self.assertEqual(screen_calls, 2)
++        self.assertIn("applyProfile(refreshProfile, reason, false);", service)
++
++    def test_final_super_markers_follow_d8_class_ownership(self):
++        verifier = text(FINAL_SUPER_VERIFIER)
++        self.assertIn(
++            "$uperfScenePolicySmali = Require-SingleFile $services "
++            "'ZuiControlService$UperfScenePolicy.smali'",
++            verifier,
++        )
++        for marker in (
++            r"\nuperfSceneAuthority=topResumedActivity",
++            r"\nuperfScenePackage=",
++            r"\nuperfTopResumedSeen=",
++        ):
++            self.assertIn(
++                "@{ Path = $uperfScenePolicySmali; Needle = '" + marker + "' }",
++                verifier,
++            )
++        self.assertIn(
++            "@{ Path = $serviceSmali; Needle = '\\nuperfFailSafe=' }",
++            verifier,
++        )
++
++
++class LifecycleTests(unittest.TestCase):
++    def test_15_unexpected_tree_exit_uses_fifo_eof_and_init(self):
++        wrapper = text(WRAPPER)
++        rc = text(RC)
++        self.assertIn('mkfifo "$LOG_PIPE"', wrapper)
++        self.assertIn("FIFO EOF", wrapper)
++        self.assertIn("restart_period 5", rc)
++
++    def test_16_explicit_stop_is_not_restart_action(self):
++        rc = text(RC)
++        stop_block = re.search(r"(?ms)^on property:zui_control\.scheduler=stop\n.*?(?=^\S|\Z)", rc)
++        self.assertIsNotNone(stop_block)
++        self.assertIn("stop zui_uperf", stop_block.group())
++        self.assertNotIn("start zui_uperf", stop_block.group())
++        self.assertNotIn("trigger zui-scheduler-start", stop_block.group())
++
++    def test_17_bounded_rapid_crash(self):
++        wrapper = text(WRAPPER)
++        gate = text(CRASH_GATE)
++        self.assertIn('[ "$rapid_count" -ge 3 ]', wrapper)
++        self.assertIn('$((now - rapid_first)) -gt 20', wrapper)
++        self.assertIn('[ "$runtime" -ge 0 ] && [ "$runtime" -le 2 ]', gate)
++        self.assertIn('[ "$count" -lt 3 ] || setprop "$FAIL_SAFE_PROP" 1', gate)
++
++    def test_18_no_periodic_health_polling(self):
++        wrapper = text(WRAPPER)
++        gate = text(CRASH_GATE)
++        for forbidden in ("sleep ", "grep ", "uperf_process_count", "cgroup.procs", "while true"):
++            self.assertNotIn(forbidden, wrapper)
++        self.assertNotIn("sleep ", gate)
++        self.assertNotIn("while ", gate)
++        self.assertEqual(wrapper.count('read -r -t "$remaining"'), 1)
++        self.assertEqual(wrapper.count("while IFS= read -r line <&8; do"), 1)
++
++    def test_19_single_init_instance(self):
++        rc = text(RC)
++        self.assertEqual(len(re.findall(r"(?m)^service zui_uperf\s", rc)), 1)
++
++    def test_20_no_persistent_wrapper_child_churn(self):
++        wrapper = text(WRAPPER)
++        self.assertNotIn("&\n", wrapper)
++        self.assertNotIn("inotifyd", wrapper)
++        self.assertNotIn("tail -", wrapper)
++
++
++class OwnershipTests(unittest.TestCase):
++    def setUp(self):
++        self.raw = text(CONFIG)
++        self.config = json.loads(self.raw)
++
++    def test_21_sched_disabled(self):
++        self.assertIs(self.config["modules"]["sched"]["enable"], False)
++
++    def test_22_native_auto_disabled(self):
++        self.assertEqual(sorted(self.config["presets"]),
++                         ["balance", "fast", "performance", "powersave"])
++        self.assertNotIn('"auto"', json.dumps(self.config["presets"]))
++
++    def test_23_no_gpu_owner(self):
++        active_power_scope = json.dumps({
++            "knob": self.config["modules"]["sysfs"]["knob"],
++            "initials": self.config["initials"]["sysfs"],
++            "presets": self.config["presets"],
++        }).lower()
++        for forbidden in ("kgsl", "adreno", "gpu", "thermal_pwrlevel"):
++            self.assertNotIn(forbidden, active_power_scope)
++
++    def test_24_no_thermal_disable(self):
++        lowered = self.raw.lower()
++        for forbidden in ("mi_thermald", "thermal-engine", "msm_thermal", "thermal_enable"):
++            self.assertNotIn(forbidden, lowered)
++
++    def test_25_asoul_binary_unchanged(self):
++        binary = REPO / "payload/system/bin/AsoulOpt"
++        digest = hashlib.sha256(binary.read_bytes()).hexdigest()
++        self.assertEqual(digest, "7a2ee5d67ba7c057066176334eca9256e376427916429d66b7593cbb5538ec86")
++
++    def test_v106_adopted_fields(self):
++        self.assertIs(self.config["modules"]["sfanalysis"]["enable"], True)
++        self.assertEqual(self.config["presets"]["balance"]["idle"]["cpu.baseSampleTime"], 1.0)
++        self.assertEqual(self.config["presets"]["balance"]["idle"]["cpu.baseSlackTime"], 0.5)
++        self.assertEqual(self.config["presets"]["powersave"]["idle"]["cpu.baseSampleTime"], 1.5)
++        self.assertEqual(self.config["presets"]["powersave"]["idle"]["cpu.baseSlackTime"], 0.8)
++
++    def test_property_and_fifo_policy_are_narrow(self):
++        contexts = text(PROPERTY_CONTEXTS)
++        policy = text(POLICY)
++        self.assertIn("sys.zui_control.uperf_fail_safe u:object_r:zui_control_uperf_fail_safe_prop:s0 exact bool", contexts)
++        self.assertIn("(allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))", policy)
++        self.assertNotRegex(policy, r"allow (?:priv_app|untrusted_app) zui_control_uperf_fail_safe_prop")
++
++
++class ImportWorkflowTests(unittest.TestCase):
++    def test_importer_audits_without_production_write(self):
++        before = {
++            path: hashlib.sha256(path.read_bytes()).hexdigest()
++            for path in (CONFIG, REPO / "payload/system/bin/uperf")
++        }
++        with tempfile.TemporaryDirectory() as temporary:
++            root = pathlib.Path(temporary)
++            archive_path = root / "fixture.zip"
++            with zipfile.ZipFile(archive_path, "w") as archive:
++                for path in sorted(SNAPSHOT.rglob("*")):
++                    if path.is_file() and path.name != "SHA256SUMS.txt":
++                        archive.write(path, path.relative_to(SNAPSHOT).as_posix())
++            output = root / "audit"
++            subprocess.run([
++                sys.executable, str(REPO / "scripts/ImportUperfUpstream.py"),
++                "--zip", str(archive_path), "--output", str(output),
++                "--repo", str(REPO),
++            ], check=True, capture_output=True, text=True)
++            report = json.loads((output / "UPSTREAM_AUDIT.json").read_text(encoding="utf-8"))
++            self.assertTrue(report["binary"]["byte_for_byte_equal"])
++            self.assertFalse(report["production_modified"])
++            self.assertTrue((output / "SM8650_CONFIG_DIFF.json").is_file())
++            self.assertTrue((output / "OWNER_CONFLICT_REPORT.md").is_file())
++        after = {
++            path: hashlib.sha256(path.read_bytes()).hexdigest()
++            for path in before
++        }
++        self.assertEqual(before, after)
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)
+diff --git a/V20_4_UPERF_ARCHITECTURE_REBASE/tests/host_init_property_contexts b/V20_4_UPERF_ARCHITECTURE_REBASE/tests/host_init_property_contexts
+new file mode 100644
+index 0000000..9d04426
+--- /dev/null
++++ b/V20_4_UPERF_ARCHITECTURE_REBASE/tests/host_init_property_contexts
+@@ -0,0 +1,7 @@
++init.svc.vendor. u:object_r:vendor_default_prop:s0 prefix string
++init.svc. u:object_r:init_service_status_private_prop:s0 prefix string
++sys.boot_completed u:object_r:boot_status_prop:s0 exact bool
++sys.zui_control.uperf_mode u:object_r:zui_control_uperf_mode_prop:s0 exact enum powersave balance performance fast
++sys.zui_control.scheduler_active u:object_r:zui_control_scheduler_active_prop:s0 exact enum 0 1
++sys.zui_control.uperf_fail_safe u:object_r:zui_control_uperf_fail_safe_prop:s0 exact bool
++zui_control. u:object_r:shell_prop:s0 prefix string
+diff --git a/framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java b/framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java
+index 882bddb..2a5f7d3 100644
+--- a/framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java
++++ b/framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java
+@@ -13,6 +13,13 @@ public final class ZuiControlHooks {
+         }
+     }
+ 
++    public static void onTopResumedActivityChanged(ActivityRecord record) {
++        ZuiControlService service = ZuiControlService.getInstance();
++        if (service != null) {
++            service.onTopResumedActivityChanged(record);
++        }
++    }
++
+     public static void onFocusedWindowChanged(String packageName, int displayId) {
+         ZuiControlService service = ZuiControlService.getInstance();
+         if (service != null) {
+diff --git a/framework_patch/src/services/com/zui/server/control/ZuiControlService.java b/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
+index e43fd5d..fcdc3d2 100644
+--- a/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
++++ b/framework_patch/src/services/com/zui/server/control/ZuiControlService.java
+@@ -56,6 +56,7 @@ public final class ZuiControlService extends Binder {
+     private static final String PROP_COMMAND_SHA256 = "sys.zui_control.command_sha256";
+     private static final String PROP_COMMAND_SEQ = "sys.zui_control.command_seq";
+     private static final String PROP_SCHEDULER_ACTIVE = "sys.zui_control.scheduler_active";
++    private static final String PROP_UPERF_FAIL_SAFE = "sys.zui_control.uperf_fail_safe";
+     private static final String PROP_UPERF_SERVICE = "init.svc.zui_uperf";
+     private static final String PROP_ASOUL_SERVICE = "init.svc.zui_asoulopt";
+     private static final String PROP_GLOBAL_DISABLE = "persist.zui_control.disable";
+@@ -183,7 +184,7 @@ public final class ZuiControlService extends Binder {
+         registerPeakObserver();
+         registerRefreshPropertyObserver();
+         registerScreenObserver();
+-        mUperfScenePolicy.start(mCurrentScenePackage, mScreenInteractive);
++        mUperfScenePolicy.start(mScreenInteractive);
+         publishState();
+     }
+ 
+@@ -247,6 +248,20 @@ public final class ZuiControlService extends Binder {
+         });
+     }
+ 
++    public void onTopResumedActivityChanged(ActivityRecord record) {
++        final long eventNanos = SystemClock.elapsedRealtimeNanos();
++        final String pkg = record == null ? "" : safe(record.packageName);
++        final int userId = record == null ? 0 : record.mUserId;
++        mWorker.post(new Runnable() {
++            @Override
++            public void run() {
++                mUperfScenePolicy.onTopResumedChanged(
++                        pkg, userId, "topResumed", eventNanos);
++                publishState();
++            }
++        });
++    }
++
+     public void onFocusedWindowChanged(String packageName, int displayId) {
+         if (displayId != Display.DEFAULT_DISPLAY) {
+             return;
+@@ -353,8 +368,6 @@ public final class ZuiControlService extends Binder {
+                     activityFocus.userId, activityFocus.displayId);
+         }
+         if (mImeVisible) {
+-            mUperfScenePolicy.onSystemStateChanged(
+-                    mCurrentScenePackage, mScreenInteractive, "focusBehindIme", eventNanos);
+             publishState();
+             return;
+         }
+@@ -427,8 +440,6 @@ public final class ZuiControlService extends Binder {
+         String reason = transientFocus
+                 ? source + "Transient" : source;
+         applyProfile(refreshProfile, reason, false);
+-        mUperfScenePolicy.onSystemStateChanged(
+-                mCurrentScenePackage, mScreenInteractive, reason, eventNanos);
+         publishState();
+     }
+ 
+@@ -1096,7 +1107,7 @@ public final class ZuiControlService extends Binder {
+             return;
+         }
+         mScreenInteractive = interactive;
+-        mUperfScenePolicy.onSystemStateChanged(mCurrentScenePackage, interactive,
++        mUperfScenePolicy.onInteractiveChanged(interactive,
+                 interactive ? "screenOn" : "screenOff", SystemClock.elapsedRealtimeNanos());
+         publishState();
+     }
+@@ -1415,11 +1426,14 @@ public final class ZuiControlService extends Binder {
+         String active = SystemProperties.get(PROP_SCHEDULER_ACTIVE, "unknown");
+         String uperfState = SystemProperties.get(PROP_UPERF_SERVICE, "unknown");
+         String uperfMode = SystemProperties.get(PROP_UPERF_MODE, "unknown");
++        String uperfFailSafe = SystemProperties.get(PROP_UPERF_FAIL_SAFE, "0");
+         String asoulState = SystemProperties.get(PROP_ASOUL_SERVICE, "unknown");
+         String currentError = "";
+         if ("1".equals(SystemProperties.get("sys.boot_completed", "0"))) {
+             if (!"0".equals(active) && !"1".equals(active)) {
+                 currentError = "invalid_scheduler_active";
++            } else if ("1".equals(active) && "1".equals(uperfFailSafe)) {
++                currentError = "uperf_fail_safe";
+             } else if ("1".equals(active)) {
+                 if ("stopped".equals(uperfState)) {
+                     currentError = "uperf_stopped_while_active";
+@@ -1436,6 +1450,7 @@ public final class ZuiControlService extends Binder {
+         return "\nschedulerActive=" + active
+                 + "\nuperfServiceState=" + uperfState
+                 + "\nuperfMode=" + uperfMode
++                + "\nuperfFailSafe=" + uperfFailSafe
+                 + "\nasoulServiceState=" + asoulState
+                 + "\nschedulerHealth=" + (currentError.isEmpty() ? "ok" : currentError)
+                 + "\nlastSchedulerError="
+@@ -1755,8 +1770,9 @@ public final class ZuiControlService extends Binder {
+         };
+ 
+         private String mScenePackage = "";
++        private int mSceneUserId;
+         private boolean mInteractive = true;
+-        private boolean mSystemStateSeen;
++        private boolean mTopResumedSeen;
+         private boolean mStartScheduled;
+         private boolean mStarted;
+         private String mGlobalMode = "balance";
+@@ -1767,11 +1783,8 @@ public final class ZuiControlService extends Binder {
+         private int mApplyCount;
+         private String mLastReason = "initPending";
+ 
+-        synchronized void start(String scenePackage, boolean interactive) {
+-            if (!mSystemStateSeen) {
+-                mScenePackage = safe(scenePackage);
+-                mInteractive = interactive;
+-            }
++        synchronized void start(boolean interactive) {
++            mInteractive = interactive;
+             if (mStartScheduled) {
+                 return;
+             }
+@@ -1803,10 +1816,18 @@ public final class ZuiControlService extends Binder {
+             reloadSettings("startup");
+         }
+ 
+-        synchronized void onSystemStateChanged(
+-                String scenePackage, boolean interactive, String reason, long eventNanos) {
+-            mSystemStateSeen = true;
++        synchronized void onTopResumedChanged(
++                String scenePackage, int userId, String reason, long eventNanos) {
++            mTopResumedSeen = true;
+             mScenePackage = safe(scenePackage);
++            mSceneUserId = userId;
++            if (mStarted) {
++                reconcile(reason, eventNanos);
++            }
++        }
++
++        synchronized void onInteractiveChanged(
++                boolean interactive, String reason, long eventNanos) {
+             mInteractive = interactive;
+             if (mStarted) {
+                 reconcile(reason, eventNanos);
+@@ -1898,6 +1919,10 @@ public final class ZuiControlService extends Binder {
+ 
+         synchronized String stateLines() {
+             return "\nuperfGlobalMode=" + mGlobalMode
++                    + "\nuperfSceneAuthority=topResumedActivity"
++                    + "\nuperfScenePackage=" + mScenePackage
++                    + "\nuperfSceneUserId=" + mSceneUserId
++                    + "\nuperfTopResumedSeen=" + mTopResumedSeen
+                     + "\nuperfSceneMode=" + mSceneMode
+                     + "\nuperfDesiredMode=" + mDesiredMode
+                     + "\nuperfLastAppliedMode=" + mLastAppliedMode
+diff --git a/payload/README.txt b/payload/README.txt
+index d502fbf..dba953e 100644
+--- a/payload/README.txt
++++ b/payload/README.txt
+@@ -33,7 +33,7 @@ Command plane:
+ Health:
+ - App/status health is read on demand through the zui_control Binder service.
+ - No persistent zui_controld Settings/Binder heartbeat exists.
+-- /system/bin/zui_uperf_service still performs its 5-second service-cgroup/log self-check and exits for init recovery on failure. This execution-plane check has not been removed.
++- The V20.4 Uperf candidate removes the 5-second process/grep loop. Startup uses one bounded FIFO event wait; steady state blocks on Uperf log/EOF events. Uperf's manager handles normal worker exits, init rate-limits whole-service recovery, and bounded rapid storms set the explicit fail-safe property. This remains subject to final-artifact and device validation.
+ 
+ Runtime data:
+ - /data/system/zui_control/profiles.prop
+diff --git a/payload/patches/plat_property_contexts_add.txt b/payload/patches/plat_property_contexts_add.txt
+index f7a83d9..36468b4 100644
+--- a/payload/patches/plat_property_contexts_add.txt
++++ b/payload/patches/plat_property_contexts_add.txt
+@@ -1,4 +1,5 @@
+ sys.zui_control.uperf_mode u:object_r:zui_control_uperf_mode_prop:s0 exact enum powersave balance performance fast
++sys.zui_control.uperf_fail_safe u:object_r:zui_control_uperf_fail_safe_prop:s0 exact bool
+ sys.zui_control.command_seq u:object_r:zui_control_command_seq_prop:s0 exact string
+ sys.zui_control.command_id u:object_r:zui_control_command_auth_prop:s0 exact string
+ sys.zui_control.command_sha256 u:object_r:zui_control_command_auth_prop:s0 exact string
+diff --git a/payload/patches/plat_sepolicy_zui_control.cil b/payload/patches/plat_sepolicy_zui_control.cil
+index 09a7c46..30443af 100644
+--- a/payload/patches/plat_sepolicy_zui_control.cil
++++ b/payload/patches/plat_sepolicy_zui_control.cil
+@@ -7,6 +7,11 @@
+ (typeattributeset property_type (zui_control_uperf_mode_prop))
+ (typeattributeset system_property_type (zui_control_uperf_mode_prop))
+ (typeattributeset system_internal_property_type (zui_control_uperf_mode_prop))
++(type zui_control_uperf_fail_safe_prop)
++(roletype object_r zui_control_uperf_fail_safe_prop)
++(typeattributeset property_type (zui_control_uperf_fail_safe_prop))
++(typeattributeset system_property_type (zui_control_uperf_fail_safe_prop))
++(typeattributeset system_internal_property_type (zui_control_uperf_fail_safe_prop))
+ (type zui_control_command_seq_prop)
+ (roletype object_r zui_control_command_seq_prop)
+ (typeattributeset property_type (zui_control_command_seq_prop))
+@@ -43,6 +48,12 @@
+ (allow priv_app zui_control_service (service_manager (find)))
+ (allow system_server zui_control_uperf_mode_prop (property_service (set)))
+ (allow system_server zui_control_uperf_mode_prop (file (getattr map open read)))
++(allow init zui_control_uperf_fail_safe_prop (property_service (set)))
++(allow shell zui_control_uperf_fail_safe_prop (property_service (set)))
++(allow shell zui_control_uperf_fail_safe_prop (file (getattr map open read)))
++(allow performanced zui_control_uperf_fail_safe_prop (property_service (set)))
++(allow performanced zui_control_uperf_fail_safe_prop (file (getattr map open read)))
++(allow system_server zui_control_uperf_fail_safe_prop (file (getattr map open read)))
+ (allow system_server zui_control_command_seq_prop (property_service (set)))
+ (allow system_server zui_control_command_seq_prop (file (getattr map open read)))
+ (allow system_server zui_control_command_auth_prop (property_service (set)))
+@@ -68,6 +79,7 @@
+ (allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))
+ (allow performanced zui_control_data_file (dir (getattr open read search write add_name remove_name create setattr)))
+ (allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))
++(allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))
+ (allow performanced zui_control_data_file (lnk_file (getattr read)))
+ (allow performanced appdomain (dir (getattr open read search)))
+ (allow performanced appdomain (file (getattr open read)))
+diff --git a/payload/system/bin/zui_uperf_service b/payload/system/bin/zui_uperf_service
+index 4f8d1ef..2f75630 100644
+--- a/payload/system/bin/zui_uperf_service
++++ b/payload/system/bin/zui_uperf_service
+@@ -2,45 +2,76 @@
+ 
+ CONFIG=/data/vendor/zui_control/uperf/uperf.json
+ LOG=/data/vendor/zui_control/log/uperf.log
++LOG_PIPE=/data/vendor/zui_control/uperf/.service_log_pipe
++READY_UPTIME=/data/vendor/zui_control/uperf/.service_ready_uptime
++FAIL_SAFE_PROP=sys.zui_control.uperf_fail_safe
+ 
+-# Uperf daemonizes. Keep this init service alive so init owns and can reliably
+-# stop the entire service cgroup, including the detached Uperf children.
+-# The author's module moves Uperf itself out of the foreground cpuset; children
+-# inherit this placement while their writes control the configured CPU and
+-# system policy nodes.
+-echo $$ > /dev/cpuset/background/tasks 2>/dev/null || true
+-: > "$LOG" 2>/dev/null || true
+-/system/bin/uperf "$CONFIG" -o "$LOG" || exit 1
+-
+-service_cgroup="$(sed -n 's/^0:://p' /proc/self/cgroup 2>/dev/null)"
+-cgroup_procs="/sys/fs/cgroup${service_cgroup}/cgroup.procs"
+-[ -n "$service_cgroup" ] && [ -r "$cgroup_procs" ] || exit 1
+-
+-uperf_process_count() {
+-    count=0
+-    while read -r process_id; do
+-        [ -r "/proc/$process_id/comm" ] || continue
+-        IFS= read -r process_name < "/proc/$process_id/comm" || continue
+-        [ "$process_name" = "uperf" ] && count=$((count + 1))
+-    done < "$cgroup_procs"
+-    printf '%s\n' "$count"
++uptime_seconds() {
++    IFS=' ' read -r value _rest < /proc/uptime || return 1
++    printf '%s\n' "${value%%.*}"
+ }
+ 
+-uperf_ready() {
+-    [ "$(uperf_process_count)" -ge 2 ] 2>/dev/null &&
+-        grep -q ' I Uperf is running$' "$LOG" 2>/dev/null &&
+-        ! grep -q ' I Failed to start uperf' "$LOG" 2>/dev/null
++write_log_line() {
++    printf '%s\n' "$1" >&7
+ }
+ 
+-tries=20
+-while [ "$tries" -gt 0 ]; do
+-    uperf_ready && break
+-    sleep 1
+-    tries=$((tries - 1))
++# Uperf daemonizes but remains in this init service cgroup. The private FIFO
++# turns its own log/exit stream into an event source, so the wrapper never
++# polls processes or greps a file while idle.
++echo $$ > /dev/cpuset/background/tasks 2>/dev/null || true
++rm -f "$LOG_PIPE" "$READY_UPTIME"
++mkfifo "$LOG_PIPE" || exit 1
++chmod 0600 "$LOG_PIPE" || exit 1
++exec 7> "$LOG" || exit 1
++
++# Keep both FIFO ends open only while Uperf opens its logger. FD 9 is closed
++# in the Uperf exec tree so EOF still represents loss of every real writer.
++exec 9<> "$LOG_PIPE" || exit 1
++/system/bin/uperf "$CONFIG" -o "$LOG_PIPE" 9>&- || exit 1
++exec 8< "$LOG_PIPE" || exit 1
++exec 9>&-
++rm -f "$LOG_PIPE"
++
++# Startup has one bounded event wait; the steady state below has no timer.
++ready=0
++deadline=$(( $(uptime_seconds) + 20 ))
++while [ "$ready" -eq 0 ]; do
++    now="$(uptime_seconds)" || exit 1
++    remaining=$((deadline - now))
++    [ "$remaining" -gt 0 ] || exit 1
++    IFS= read -r -t "$remaining" line <&8 || exit 1
++    write_log_line "$line"
++    case "$line" in
++        *" I Failed to start "*|*"Failed to start uperf"*) exit 1 ;;
++        *" I Uperf is running") ready=1 ;;
++    esac
+ done
+-[ "$tries" -gt 0 ] || exit 1
+ 
+-while true; do
+-    sleep 5
+-    uperf_ready || exit 1
++now="$(uptime_seconds)" || exit 1
++printf '%s\n' "$now" > "$READY_UPTIME.tmp" || exit 1
++chmod 0600 "$READY_UPTIME.tmp" || exit 1
++mv -f "$READY_UPTIME.tmp" "$READY_UPTIME" || exit 1
++
++rapid_first=0
++rapid_count=0
++while IFS= read -r line <&8; do
++    write_log_line "$line"
++    case "$line" in
++        *" terminated unexpectedly, try to get tombstone"*)
++            now="$(uptime_seconds)" || exit 1
++            if [ "$rapid_count" -eq 0 ] || [ $((now - rapid_first)) -gt 20 ]; then
++                rapid_first="$now"
++                rapid_count=1
++            else
++                rapid_count=$((rapid_count + 1))
++            fi
++            if [ "$rapid_count" -ge 3 ]; then
++                setprop "$FAIL_SAFE_PROP" 1 || exit 1
++            fi
++            ;;
++    esac
+ done
++
++# FIFO EOF means the complete Uperf writer tree is gone. Exiting delegates the
++# normal whole-service recovery to init; onrestart performs the rapid bound.
++exit 1
+diff --git a/payload/system/etc/init/zui_scheduler.rc b/payload/system/etc/init/zui_scheduler.rc
+index 799105d..dc66f69 100644
+--- a/payload/system/etc/init/zui_scheduler.rc
++++ b/payload/system/etc/init/zui_scheduler.rc
+@@ -7,6 +7,9 @@ on post-fs-data
+     restorecon_recursive /data/vendor/zui_control
+     restorecon /data/vendor/asopt.conf
+     setprop sys.zui_control.scheduler_active 1
++    setprop sys.zui_control.uperf_fail_safe 0
++    rm /data/vendor/zui_control/uperf/.service_ready_uptime
++    rm /data/vendor/zui_control/uperf/.service_rapid_crashes
+     stop vendor.perfservice
+ 
+ on property:sys.boot_completed=1
+@@ -27,6 +30,9 @@ on property:sys.zui_control.uperf_mode=fast
+ 
+ on zui-scheduler-start
+     setprop sys.zui_control.scheduler_active 1
++    setprop sys.zui_control.uperf_fail_safe 0
++    rm /data/vendor/zui_control/uperf/.service_ready_uptime
++    rm /data/vendor/zui_control/uperf/.service_rapid_crashes
+     stop vendor.perfservice
+     start zui_asoulopt
+     setprop zui_control.asoul started
+@@ -50,6 +56,9 @@ on property:init.svc.vendor.perfservice=running && property:sys.zui_control.sche
+ 
+ on property:zui_control.scheduler=stop
+     setprop sys.zui_control.scheduler_active 0
++    setprop sys.zui_control.uperf_fail_safe 0
++    rm /data/vendor/zui_control/uperf/.service_ready_uptime
++    rm /data/vendor/zui_control/uperf/.service_rapid_crashes
+     stop zui_uperf
+     stop zui_asoulopt
+     start vendor.perfservice
+@@ -63,11 +72,16 @@ on property:zui_control.asoul=stop
+     stop zui_asoulopt
+     setprop zui_control.asoul stopped
+ 
++on property:sys.zui_control.uperf_fail_safe=1
++    stop zui_uperf
++
+ service zui_uperf /system/bin/zui_uperf_service
+     class late_start
+     disabled
+     user root
+     group root system readproc graphics input
++    restart_period 5
++    onrestart exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_uperf_crash_gate.sh
+ 
+ service zui_asoulopt /system/bin/AsoulOpt
+     class late_start
+diff --git a/payload/system/etc/zui_control/uperf-sm8650.json b/payload/system/etc/zui_control/uperf-sm8650.json
+index b21422a..612b8f4 100644
+--- a/payload/system/etc/zui_control/uperf-sm8650.json
++++ b/payload/system/etc/zui_control/uperf-sm8650.json
+@@ -31,7 +31,7 @@
+       "holdEnterTime": 1.0
+     },
+     "sfanalysis": {
+-      "enable": false,
++      "enable": true,
+       "renderIdleSlackTime": 0.2
+     },
+     "cpu": {
+@@ -511,8 +511,8 @@
+         "cpu.margin": 0.15
+       },
+       "idle": {
+-        "cpu.baseSampleTime": 0.04,
+-        "cpu.baseSlackTime": 0.08,
++        "cpu.baseSampleTime": 1.0,
++        "cpu.baseSlackTime": 0.5,
+         "cpu.predictThd": 0.2,
+         "cpu.limitEfficiency": true,
+         "sched.scene": "idle"
+@@ -552,8 +552,8 @@
+         "cpu.margin": 0.1
+       },
+       "idle": {
+-        "cpu.baseSampleTime": 0.04,
+-        "cpu.baseSlackTime": 0.08,
++        "cpu.baseSampleTime": 1.5,
++        "cpu.baseSlackTime": 0.8,
+         "cpu.predictThd": 1.0,
+         "cpu.limitEfficiency": true,
+         "sched.scene": "idle"
+diff --git a/payload/system/etc/zui_control/zui_uperf_crash_gate.sh b/payload/system/etc/zui_control/zui_uperf_crash_gate.sh
+new file mode 100644
+index 0000000..4cd9d64
+--- /dev/null
++++ b/payload/system/etc/zui_control/zui_uperf_crash_gate.sh
+@@ -0,0 +1,34 @@
++#!/system/bin/sh
++set -eu
++
++UPERF_DIR=/data/vendor/zui_control/uperf
++READY_UPTIME=$UPERF_DIR/.service_ready_uptime
++CRASH_STATE=$UPERF_DIR/.service_rapid_crashes
++FAIL_SAFE_PROP=sys.zui_control.uperf_fail_safe
++
++[ "$(getprop sys.zui_control.scheduler_active)" = 1 ] || exit 0
++IFS=' ' read -r uptime _rest < /proc/uptime
++now="${uptime%%.*}"
++ready=
++[ ! -r "$READY_UPTIME" ] || IFS= read -r ready < "$READY_UPTIME"
++case "$ready" in ''|*[!0-9]*) rapid=1 ;; *)
++    runtime=$((now - ready))
++    [ "$runtime" -ge 0 ] && [ "$runtime" -le 2 ] && rapid=1 || rapid=0
++    ;;
++esac
++
++count=0
++[ ! -r "$CRASH_STATE" ] || IFS= read -r count < "$CRASH_STATE"
++case "$count" in ''|*[!0-9]*) count=0 ;; esac
++if [ "$rapid" -eq 1 ]; then
++    count=$((count + 1))
++else
++    count=0
++fi
++printf '%s\n' "$count" > "$CRASH_STATE.tmp"
++chmod 0600 "$CRASH_STATE.tmp"
++mv -f "$CRASH_STATE.tmp" "$CRASH_STATE"
++rm -f "$READY_UPTIME"
++
++[ "$count" -lt 3 ] || setprop "$FAIL_SAFE_PROP" 1
++exit 0
+diff --git a/scripts/ImportUperfUpstream.py b/scripts/ImportUperfUpstream.py
+new file mode 100644
+index 0000000..abefb1f
+--- /dev/null
++++ b/scripts/ImportUperfUpstream.py
+@@ -0,0 +1,280 @@
++#!/usr/bin/env python3
++"""Audit a Uperf Magisk ZIP without modifying production files."""
++
++from __future__ import annotations
++
++import argparse
++import difflib
++import hashlib
++import json
++import pathlib
++import re
++import sys
++import zipfile
++
++
++RELEVANT_PATHS = (
++    "module.prop",
++    "bin/uperf",
++    "config/sdm8g3.json",
++    "config/perapp_powermode.txt",
++    "script/initsvc.sh",
++    "script/libpowercfg.sh",
++    "script/libsysinfo.sh",
++    "script/libuperf.sh",
++    "script/powercfg.json",
++    "script/powercfg_main.sh",
++    "script/powercfg_once.sh",
++    "script/setup.sh",
++)
++
++CONFLICT_PATTERNS = {
++    "thermal_disable": re.compile(
++        r"thermal|mi_thermald|msm_thermal|thermal-engine", re.IGNORECASE),
++    "gpu_or_kgsl": re.compile(r"kgsl|adreno|gpu", re.IGNORECASE),
++    "devfreq_or_bus": re.compile(r"devfreq|bus_dcvs|bw_hwm|bw_hwmon", re.IGNORECASE),
++    "oem_service_stop": re.compile(
++        r"\b(?:stop|killall|pkill)\b.*(?:perf|power|thermal)", re.IGNORECASE),
++    "magisk_or_data_adb": re.compile(r"/data/adb|magisk", re.IGNORECASE),
++    "bundled_asoul": re.compile(r"asoul|a-soul", re.IGNORECASE),
++    "native_auto_or_perapp": re.compile(
++        r"perapp_powermode|\bauto\b|game.*(?:list|package)", re.IGNORECASE),
++    "sched_owner": re.compile(r"\bsched\b|affinity|walt", re.IGNORECASE),
++}
++
++
++def sha256_bytes(data: bytes) -> str:
++    return hashlib.sha256(data).hexdigest()
++
++
++def sha256_file(path: pathlib.Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def parse_module_prop(text: str) -> dict[str, str]:
++    values: dict[str, str] = {}
++    for raw in text.splitlines():
++        line = raw.strip()
++        if not line or line.startswith("#") or "=" not in line:
++            continue
++        key, value = line.split("=", 1)
++        values[key.strip()] = value.strip()
++    return values
++
++
++def printable_strings(data: bytes, minimum: int = 5) -> list[str]:
++    return [
++        match.group().decode("ascii", "replace")
++        for match in re.finditer(rb"[\x20-\x7e]{%d,}" % minimum, data)
++    ]
++
++
++def flatten(value: object, prefix: str = "") -> dict[str, object]:
++    result: dict[str, object] = {}
++    if isinstance(value, dict):
++        for key in sorted(value):
++            child = f"{prefix}.{key}" if prefix else str(key)
++            result.update(flatten(value[key], child))
++    elif isinstance(value, list):
++        for index, child_value in enumerate(value):
++            child = f"{prefix}[{index}]"
++            result.update(flatten(child_value, child))
++    else:
++        result[prefix] = value
++    return result
++
++
++def config_diff(upstream: object, production: object) -> dict[str, object]:
++    left = flatten(upstream)
++    right = flatten(production)
++    added = {key: left[key] for key in sorted(left.keys() - right.keys())}
++    removed = {key: right[key] for key in sorted(right.keys() - left.keys())}
++    changed = {
++        key: {"upstream": left[key], "production": right[key]}
++        for key in sorted(left.keys() & right.keys())
++        if left[key] != right[key]
++    }
++    same_count = sum(
++        1 for key in left.keys() & right.keys() if left[key] == right[key])
++    return {
++        "same_leaf_count": same_count,
++        "upstream_only": added,
++        "production_only": removed,
++        "changed": changed,
++    }
++
++
++def normalized_names(archive: zipfile.ZipFile) -> dict[str, str]:
++    result: dict[str, str] = {}
++    for info in archive.infolist():
++        name = info.filename.replace("\\", "/").lstrip("./")
++        path = pathlib.PurePosixPath(name)
++        if path.is_absolute() or ".." in path.parts:
++            raise ValueError(f"unsafe ZIP member: {info.filename}")
++        if name.endswith("/"):
++            continue
++        if name in result:
++            raise ValueError(f"duplicate ZIP member: {name}")
++        result[name] = info.filename
++    return result
++
++
++def choose_previous_snapshot(repo: pathlib.Path, version: str) -> pathlib.Path | None:
++    root = repo / "upstream" / "uperf"
++    if not root.is_dir():
++        return None
++    candidates = [path for path in root.iterdir() if path.is_dir() and path.name != version]
++    return sorted(candidates, key=lambda path: path.name)[-1] if candidates else None
++
++
++def write_text(path: pathlib.Path, text: str) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    with path.open("w", encoding="utf-8", newline="\n") as stream:
++        stream.write(text)
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(
++        description="Generate a read-only Uperf upstream audit report.")
++    parser.add_argument("--zip", required=True, dest="zip_path")
++    parser.add_argument("--output", required=True)
++    parser.add_argument(
++        "--repo",
++        default=str(pathlib.Path(__file__).resolve().parents[1]),
++        help="ZuiControl repository root",
++    )
++    args = parser.parse_args()
++
++    zip_path = pathlib.Path(args.zip_path).resolve()
++    output = pathlib.Path(args.output).resolve()
++    repo = pathlib.Path(args.repo).resolve()
++    production_binary = repo / "payload/system/bin/uperf"
++    production_config = repo / "payload/system/etc/zui_control/uperf-sm8650.json"
++    if output == repo or repo in output.parents:
++        allowed_report_root = repo / "V20_4_UPERF_ARCHITECTURE_REBASE" / "raw"
++        if output != allowed_report_root and allowed_report_root not in output.parents:
++            raise SystemExit("output inside repo is restricted to the Uperf raw report tree")
++    if not zip_path.is_file() or not production_binary.is_file() or not production_config.is_file():
++        raise SystemExit("missing ZIP or production baseline")
++
++    output.mkdir(parents=True, exist_ok=True)
++    with zipfile.ZipFile(zip_path) as archive:
++        names = normalized_names(archive)
++        missing = [name for name in RELEVANT_PATHS if name not in names]
++        if missing:
++            raise SystemExit("missing required ZIP members: " + ", ".join(missing))
++        content = {name: archive.read(names[name]) for name in RELEVANT_PATHS}
++        all_names = sorted(names)
++
++    module = parse_module_prop(content["module.prop"].decode("utf-8", "replace"))
++    raw_version = module.get("version", "unknown")
++    version_match = re.search(r"v?([0-9]+(?:\.[0-9]+)+)", raw_version)
++    version = version_match.group(1) if version_match else raw_version
++    upstream_binary = content["bin/uperf"]
++    strings = printable_strings(upstream_binary)
++    embedded_versions = sorted({
++        item for item in strings
++        if re.fullmatch(r"v[0-9]+\([0-9.]+\)", item)
++    })
++    production_binary_bytes = production_binary.read_bytes()
++    upstream_json = json.loads(content["config/sdm8g3.json"].decode("utf-8"))
++    production_json = json.loads(production_config.read_text(encoding="utf-8"))
++    semantic_diff = config_diff(upstream_json, production_json)
++
++    audit = {
++        "input_zip": {
++            "filename": zip_path.name,
++            "absolute_path": str(zip_path),
++            "size": zip_path.stat().st_size,
++            "sha256": sha256_file(zip_path),
++            "file_count": len(all_names),
++        },
++        "module": {
++            "version": raw_version,
++            "normalized_version": version,
++            "versionCode": module.get("versionCode", "unknown"),
++        },
++        "binary": {
++            "upstream_sha256": sha256_bytes(upstream_binary),
++            "production_sha256": sha256_bytes(production_binary_bytes),
++            "byte_for_byte_equal": upstream_binary == production_binary_bytes,
++            "embedded_versions": embedded_versions,
++        },
++        "sm8650_selection": {
++            "board": "pineapple",
++            "soc_model": "SM8650",
++            "selected_config": "sdm8g3",
++        },
++        "production_modified": False,
++    }
++    write_text(output / "UPSTREAM_AUDIT.json", json.dumps(audit, indent=2, ensure_ascii=False) + "\n")
++    write_text(output / "SM8650_CONFIG_DIFF.json", json.dumps(semantic_diff, indent=2, ensure_ascii=False) + "\n")
++
++    previous = choose_previous_snapshot(repo, version)
++    script_diffs: dict[str, object] = {}
++    for name in RELEVANT_PATHS:
++        if not name.startswith("script/") and name != "config/perapp_powermode.txt":
++            continue
++        previous_path = previous / pathlib.PurePosixPath(name) if previous else None
++        new_text = content[name].decode("utf-8", "replace").splitlines()
++        old_text = (
++            previous_path.read_text(encoding="utf-8", errors="replace").splitlines()
++            if previous_path and previous_path.is_file() else []
++        )
++        script_diffs[name] = {
++            "sha256": sha256_bytes(content[name]),
++            "previous_snapshot": str(previous_path) if previous_path else None,
++            "unified_diff": list(difflib.unified_diff(
++                old_text, new_text,
++                fromfile=str(previous_path) if previous_path else "/dev/null",
++                tofile=f"ZIP/{name}", lineterm="")),
++        }
++    write_text(output / "RELEVANT_SCRIPT_DIFF.json", json.dumps(script_diffs, indent=2, ensure_ascii=False) + "\n")
++
++    scan_text = "\n".join(
++        f"## {name}\n{content[name].decode('utf-8', 'replace')}"
++        for name in RELEVANT_PATHS if name.endswith((".sh", ".json", ".txt", ".prop"))
++    )
++    conflicts = {
++        name: sorted({line.strip() for line in scan_text.splitlines() if pattern.search(line)})
++        for name, pattern in CONFLICT_PATTERNS.items()
++    }
++    conflict_lines = [
++        "# Owner-conflict report",
++        "",
++        "This report is generated from the ZIP only; it does not authorize adoption.",
++        "",
++    ]
++    for name, matches in conflicts.items():
++        conflict_lines.extend([f"## {name}", ""])
++        if matches:
++            conflict_lines.extend(f"- `{line[:240]}`" for line in matches[:40])
++        else:
++            conflict_lines.append("- No lexical match.")
++        conflict_lines.append("")
++    write_text(output / "OWNER_CONFLICT_REPORT.md", "\n".join(conflict_lines))
++
++    changed_count = len(semantic_diff["changed"])
++    candidates = [
++        "# Adoption candidates",
++        "",
++        f"- Upstream module: `{raw_version}` / versionCode `{module.get('versionCode', 'unknown')}`.",
++        f"- Binary changed: `{str(upstream_binary != production_binary_bytes).lower()}`.",
++        f"- SM8650 changed leaves versus production: `{changed_count}`.",
++        "- Candidate scope: CPU/power-model, preset, input and SF-analysis fields only.",
++        "- Manual review required: every changed leaf and every owner-conflict match.",
++        "- Never auto-adopt: Native Auto/perapp, sched, GPU, thermal, OEM-service control, Magisk paths or bundled apps/binaries.",
++        "- Production files were not modified.",
++        "",
++    ]
++    write_text(output / "ADOPTION_CANDIDATES.md", "\n".join(candidates))
++    print(json.dumps(audit, ensure_ascii=False))
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/PatchZuiControlFramework.py b/scripts/PatchZuiControlFramework.py
+index 959381e..6c5509f 100644
+--- a/scripts/PatchZuiControlFramework.py
++++ b/scripts/PatchZuiControlFramework.py
+@@ -102,6 +102,7 @@ def patch_text_file(path, replacements):
+ def patch_services_smali(dec_dir):
+     zui_service = dec_dir / "smali_classes3" / "com" / "zui" / "server" / "performance" / "ZuiPerformanceService.smali"
+     display_content = dec_dir / "smali_classes3" / "com" / "android" / "server" / "wm" / "DisplayContent.smali"
++    activity_task_supervisor = dec_dir / "smali_classes3" / "com" / "android" / "server" / "wm" / "ActivityTaskSupervisor.smali"
+ 
+     zui_text = zui_service.read_text(encoding="utf-8")
+     if "Lcom/zui/server/control/ZuiControlService;->start" not in zui_text:
+@@ -214,6 +215,21 @@ def patch_services_smali(dec_dir):
+ """),
+         ])
+ 
++    supervisor_text = activity_task_supervisor.read_text(encoding="utf-8")
++    if "Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged" not in supervisor_text:
++        patch_text_file(activity_task_supervisor, [
++            ("""    iput-object v1, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mTopResumedActivity:Lcom/android/server/wm/ActivityRecord;
++
++    if-eqz v1, :cond_4
++""",
++             """    iput-object v1, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mTopResumedActivity:Lcom/android/server/wm/ActivityRecord;
++
++    invoke-static {v1}, Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged(Lcom/android/server/wm/ActivityRecord;)V
++
++    if-eqz v1, :cond_4
++"""),
++        ])
++
+ 
+ def patch_framework(args):
+     repo = pathlib.Path(__file__).resolve().parents[1]
+diff --git a/scripts/VerifyZuiControlFinalSuper.ps1 b/scripts/VerifyZuiControlFinalSuper.ps1
+index 934cb70..85147b0 100644
+--- a/scripts/VerifyZuiControlFinalSuper.ps1
++++ b/scripts/VerifyZuiControlFinalSuper.ps1
+@@ -80,7 +80,9 @@ try {
+     $serviceSmali = Require-SingleFile $services 'ZuiControlService.smali'
++    $uperfScenePolicySmali = Require-SingleFile $services 'ZuiControlService$UperfScenePolicy.smali'
+     $focusSnapshotSmali = Require-SingleFile $services 'ZuiControlService$FocusSnapshot.smali'
+     $hooksSmali = Require-SingleFile $services 'ZuiControlHooks.smali'
+     $displayContentSmali = Require-SingleFile $services 'DisplayContent.smali'
++    $activityTaskSupervisorSmali = Require-SingleFile $services 'ActivityTaskSupervisor.smali'
+     $wmInternalSmali = Require-SingleFile $services 'WindowManagerInternal.smali'
+     $clientSmali = Require-SingleFile $app 'ZuiControlClient.smali'
+     $tileSmali = Require-SingleFile $app 'ZuiControlTileService.smali'
+@@ -134,10 +136,16 @@ try {
+         @{ Path = $serviceSmali; Needle = 'externalPreserved' },
+         @{ Path = $serviceSmali; Needle = 'failedBeforeMutation' },
+         @{ Path = $serviceSmali; Needle = 'failedAfterMutation' },
++        @{ Path = $uperfScenePolicySmali; Needle = '\nuperfSceneAuthority=topResumedActivity' },
++        @{ Path = $uperfScenePolicySmali; Needle = '\nuperfScenePackage=' },
++        @{ Path = $uperfScenePolicySmali; Needle = '\nuperfTopResumedSeen=' },
++        @{ Path = $serviceSmali; Needle = '\nuperfFailSafe=' },
+         @{ Path = $hooksSmali; Needle = 'onFocusedWindowChanged' },
+         @{ Path = $hooksSmali; Needle = 'onImeVisibilityChanged' },
++        @{ Path = $hooksSmali; Needle = 'onTopResumedActivityChanged' },
+         @{ Path = $displayContentSmali; Needle = 'Lcom/zui/server/control/ZuiControlHooks;->onFocusedWindowChanged(Ljava/lang/String;I)V' },
+         @{ Path = $displayContentSmali; Needle = 'Lcom/zui/server/control/ZuiControlHooks;->onImeVisibilityChanged(Ljava/lang/String;ZI)V' },
++        @{ Path = $activityTaskSupervisorSmali; Needle = 'Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged(Lcom/android/server/wm/ActivityRecord;)V' },
+         @{ Path = $wmInternalSmali; Needle = '.method public abstract requestTraversalFromDisplayManager()V' },
+         @{ Path = $clientSmali; Needle = 'editableDisplayHz' },
+         @{ Path = $tileSmali; Needle = '->editableDisplayHz()Ljava/lang/Integer;' },
+@@ -148,6 +156,25 @@ try {
+     }
+     Assert-NotContains $serviceSmali 'controlPanel'
+ 
++    $topResumedNeedle = 'invoke-static {v1}, Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged(Lcom/android/server/wm/ActivityRecord;)V'
++    $topResumedText = Get-Content -LiteralPath $activityTaskSupervisorSmali -Raw
++    if ([regex]::Matches($topResumedText, [regex]::Escape($topResumedNeedle)).Count -ne 1) {
++        throw 'Final services.jar must contain exactly one top-resumed Uperf hook.'
++    }
++    $topResumedMethod = [regex]::Match(
++        $topResumedText,
++        '(?ms)^\.method public updateTopResumedActivityIfNeeded\(Ljava/lang/String;\)V\r?\n.*?^\.end method\r?$'
++    )
++    if (-not $topResumedMethod.Success) {
++        throw 'Missing ActivityTaskSupervisor.updateTopResumedActivityIfNeeded in final services.jar.'
++    }
++    $assignment = 'iput-object v1, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mTopResumedActivity:Lcom/android/server/wm/ActivityRecord;'
++    if ($topResumedMethod.Value.IndexOf($assignment, [StringComparison]::Ordinal) -lt 0 -or
++        $topResumedMethod.Value.IndexOf($topResumedNeedle, [StringComparison]::Ordinal) -lt
++            $topResumedMethod.Value.IndexOf($assignment, [StringComparison]::Ordinal)) {
++        throw 'Top-resumed Uperf hook is not placed after the authoritative field assignment.'
++    }
++
+     $displayContent = Get-Content -LiteralPath $displayContentSmali -Raw
+     $imeMethodMatch = [regex]::Match(
+         $displayContent,
+diff --git a/scripts/VerifyZuiControlFlashPackage.ps1 b/scripts/VerifyZuiControlFlashPackage.ps1
+index 7194519..5a60453 100644
+--- a/scripts/VerifyZuiControlFlashPackage.ps1
++++ b/scripts/VerifyZuiControlFlashPackage.ps1
+@@ -344,8 +344,14 @@ function Assert-UperfConfig([string]$Path) {
+     if ($json.modules.switcher.perapp -ne '/data/vendor/zui_control/uperf/perapp_powermode.txt') {
+         throw 'Uperf parser-compatible per-app path is not canonical'
+     }
+-    if ($json.modules.sfanalysis.enable -ne $false -or $json.modules.sched.enable -ne $false) {
+-        throw 'Bundled Uperf must leave SurfaceFlinger injection off and delegate thread placement to A-SOUL'
++    if ($json.modules.sfanalysis.enable -ne $true -or $json.modules.sched.enable -ne $false) {
++        throw 'Bundled Uperf must enable internal SF analysis and delegate thread placement to A-SOUL'
++    }
++    if ($json.presets.balance.idle.'cpu.baseSampleTime' -ne 1.0 -or
++        $json.presets.balance.idle.'cpu.baseSlackTime' -ne 0.5 -or
++        $json.presets.powersave.idle.'cpu.baseSampleTime' -ne 1.5 -or
++        $json.presets.powersave.idle.'cpu.baseSlackTime' -ne 0.8) {
++        throw 'Uperf SM8650 v1.0.6 idle sampling rebase is incomplete'
+     }
+     $presets = @($json.presets.psobject.Properties.Name | Sort-Object)
+     $expectedPresets = @('balance', 'fast', 'performance', 'powersave')
+@@ -466,6 +472,7 @@ try {
+     $DaemonRc = Join-Path $System 'etc\init\zui_controld.rc'
+     $RefreshKillRc = Join-Path $System 'etc\init\zui_refresh_kill_switch.rc'
+     $SchedulerPrepare = Join-Path $System 'etc\zui_control\zui_scheduler_prepare.sh'
++    $UperfCrashGate = Join-Path $System 'etc\zui_control\zui_uperf_crash_gate.sh'
+     $UperfConfig = Join-Path $System 'etc\zui_control\uperf-sm8650.json'
+     $UperfPerApp = Join-Path $System 'etc\zui_control\default_uperf_perapp.txt'
+     $AsoulConfig = Join-Path $System 'etc\zui_control\default_asopt.conf'
+@@ -474,7 +481,7 @@ try {
+     $MemCleaner = Join-Path $System 'etc\ZuiMemCleanerConfig.xml'
+     $PowerPolicy = Join-Path $System 'etc\ZuiPowerPolicyConfig.xml'
+     $AutoRun = Join-Path $System 'etc\motorola\bgintents\com.zui.safecenter.autorun.xml'
+-    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $DaemonRc, $RefreshKillRc, $SchedulerPrepare, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
++    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $DaemonRc, $RefreshKillRc, $SchedulerPrepare, $UperfCrashGate, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
+         Require-File $file
+     }
+ 
+@@ -512,6 +519,10 @@ try {
+     Assert-Contains $SchedulerRc 'on property:init.svc.vendor.perfservice=running && property:sys.zui_control.scheduler_active=1' 'init-native conditional OEM fence'
+     Assert-Contains $SchedulerRc 'on property:zui_control.asoul=start && property:sys.zui_control.scheduler_active=1' 'active-only A-SOUL start action'
+     Assert-Contains $SchedulerRc 'on property:zui_control.scheduler=fence && property:sys.zui_control.scheduler_active=1' 'active-only compatibility OEM fence'
++    Assert-Contains $SchedulerRc 'on property:sys.zui_control.uperf_fail_safe=1' 'Uperf bounded fail-safe trigger'
++    Assert-Contains $SchedulerRc '    setprop sys.zui_control.uperf_fail_safe 0' 'explicit Uperf fail-safe reset'
++    Assert-Contains $SchedulerRc '    restart_period 5' 'rate-limited Uperf whole-service recovery'
++    Assert-Contains $SchedulerRc '    onrestart exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_uperf_crash_gate.sh' 'event-driven Uperf service crash gate'
+     Assert-NotContains $SchedulerRc "on property:zui_control.scheduler=fence`n    stop vendor.perfservice" 'unconditional legacy OEM fence'
+     foreach ($bridge in @('performance', 'poweropt-service', 'perf2-hal-1-0')) {
+         Assert-NotContains $SchedulerRc "    stop $bridge" 'OEM telemetry service stop action'
+@@ -585,14 +596,21 @@ try {
+     if (@($commandServiceBlock | Where-Object { $_ -match '(?:^|\s)graphics(?:\s|$)' }).Count) {
+         throw 'Final super command service unexpectedly has the graphics group.'
+     }
+-    Assert-Contains $UperfService '/proc/self/cgroup' 'init-owned Uperf cgroup discovery'
+-    Assert-Contains $UperfService 'cgroup.procs' 'Uperf cgroup health source'
+-    Assert-Contains $UperfService 'uperf_process_count' 'Uperf process-count health check'
+-    Assert-Contains $UperfService "grep -q ' I Uperf is running`$'" 'Uperf ready-log health check'
+-    Assert-Contains $UperfService "grep -q ' I Failed to start uperf'" 'Uperf failed-start rejection'
++    Assert-Contains $UperfService 'mkfifo "$LOG_PIPE"' 'event-driven Uperf log lifecycle pipe'
++    Assert-Contains $UperfService 'IFS= read -r -t "$remaining" line <&8' 'bounded event-driven Uperf startup gate'
++    Assert-Contains $UperfService 'while IFS= read -r line <&8; do' 'timer-free steady-state Uperf event wait'
++    Assert-Contains $UperfService 'terminated unexpectedly, try to get tombstone' 'Uperf worker crash event gate'
++    Assert-Contains $UperfService 'setprop "$FAIL_SAFE_PROP" 1' 'Uperf rapid-worker fail-safe'
++    Assert-NotContains $UperfService 'uperf_process_count' 'retired periodic process-count health check'
++    Assert-NotContains $UperfService 'grep ' 'retired periodic log scanner'
++    Assert-NotContains $UperfService 'sleep ' 'retired periodic wrapper timer'
+     Assert-NotContains $UperfService 'pidof uperf' 'cross-domain proc scanner in Uperf supervisor'
+     Assert-NotContains $UperfService 'killall' 'cross-domain process scanner in Uperf supervisor'
+     Assert-Contains $UperfService 'echo $$ > /dev/cpuset/background/tasks' 'background placement for Uperf itself'
++    Assert-Contains $UperfCrashGate '[ "$runtime" -ge 0 ] && [ "$runtime" -le 2 ]' 'rapid whole-service lifetime classification'
++    Assert-Contains $UperfCrashGate '[ "$count" -lt 3 ] || setprop "$FAIL_SAFE_PROP" 1' 'bounded whole-service crash fail-safe'
++    Assert-NotContains $UperfCrashGate 'while ' 'no crash-gate loop'
++    Assert-NotContains $UperfCrashGate 'sleep ' 'no crash-gate timer'
+     Assert-Contains $SchedulerPrepare "printf 'balance\n'" 'balanced global default'
+     Assert-Contains $SchedulerPrepare 'effective_powermode.txt' 'effective Uperf mode preparation'
+     Assert-Contains $SchedulerPrepare 'property_mode="${1:-}"' 'init-supplied Uperf property recovery input'
+@@ -906,6 +924,7 @@ try {
+ 
+     $PropertyContexts = Join-Path $PlatSelinux 'plat_property_contexts'
+     Assert-Contains $PropertyContexts 'sys.zui_control.uperf_mode u:object_r:zui_control_uperf_mode_prop:s0 exact enum powersave balance performance fast' 'dedicated exact-enum Uperf property context'
++    Assert-Contains $PropertyContexts 'sys.zui_control.uperf_fail_safe u:object_r:zui_control_uperf_fail_safe_prop:s0 exact bool' 'dedicated exact Uperf fail-safe property context'
+     Assert-NotContains $PropertyContexts 'sys.zui_control.uperf_mode u:object_r:shell_prop:s0' 'shell-owned Uperf transport property'
+     Assert-Contains $PropertyContexts 'sys.zui_control.command_seq u:object_r:zui_control_command_seq_prop:s0 exact string' 'dedicated exact command doorbell property context'
+     Assert-NotContains $PropertyContexts 'sys.zui_control.command_seq u:object_r:shell_prop:s0' 'shell-owned command doorbell property'
+@@ -927,6 +946,15 @@ try {
+         '(typeattributeset system_internal_property_type (zui_control_uperf_mode_prop))',
+         '(allow system_server zui_control_uperf_mode_prop (property_service (set)))',
+         '(allow system_server zui_control_uperf_mode_prop (file (getattr map open read)))',
++        '(type zui_control_uperf_fail_safe_prop)',
++        '(roletype object_r zui_control_uperf_fail_safe_prop)',
++        '(typeattributeset property_type (zui_control_uperf_fail_safe_prop))',
++        '(typeattributeset system_property_type (zui_control_uperf_fail_safe_prop))',
++        '(typeattributeset system_internal_property_type (zui_control_uperf_fail_safe_prop))',
++        '(allow init zui_control_uperf_fail_safe_prop (property_service (set)))',
++        '(allow shell zui_control_uperf_fail_safe_prop (property_service (set)))',
++        '(allow performanced zui_control_uperf_fail_safe_prop (property_service (set)))',
++        '(allow system_server zui_control_uperf_fail_safe_prop (file (getattr map open read)))',
+         '(type zui_control_command_seq_prop)',
+         '(roletype object_r zui_control_command_seq_prop)',
+         '(typeattributeset property_type (zui_control_command_seq_prop))',
+@@ -977,6 +1005,7 @@ try {
+         '(allow performanced input_device (chr_file (ioctl read getattr lock map open)))',
+         '(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))',
+         '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))',
++        '(allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))',
+         '(allow performanced zui_control_data_file (lnk_file (getattr read)))'
+     )) { Assert-Contains $PlatPolicy $rule 'scheduler SELinux rule' }
+     Assert-NotContains $PlatPolicy '(allow system_server shell_prop (property_service (set)))' 'broad system_server shell property write grant'

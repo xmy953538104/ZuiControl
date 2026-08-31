@@ -31,7 +31,7 @@
       "holdEnterTime": 1.0
     },
     "sfanalysis": {
-      "enable": false,
+      "enable": true,
       "renderIdleSlackTime": 0.2
     },
     "cpu": {
@@ -511,8 +511,8 @@
         "cpu.margin": 0.15
       },
       "idle": {
-        "cpu.baseSampleTime": 0.04,
-        "cpu.baseSlackTime": 0.08,
+        "cpu.baseSampleTime": 1.0,
+        "cpu.baseSlackTime": 0.5,
         "cpu.predictThd": 0.2,
         "cpu.limitEfficiency": true,
         "sched.scene": "idle"
@@ -552,8 +552,8 @@
         "cpu.margin": 0.1
       },
       "idle": {
-        "cpu.baseSampleTime": 0.04,
-        "cpu.baseSlackTime": 0.08,
+        "cpu.baseSampleTime": 1.5,
+        "cpu.baseSlackTime": 0.8,
         "cpu.predictThd": 1.0,
         "cpu.limitEfficiency": true,
         "sched.scene": "idle"

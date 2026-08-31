@@ -7,6 +7,9 @@ on post-fs-data
     restorecon_recursive /data/vendor/zui_control
     restorecon /data/vendor/asopt.conf
     setprop sys.zui_control.scheduler_active 1
+    setprop sys.zui_control.uperf_fail_safe 0
+    rm /data/vendor/zui_control/uperf/.service_ready_uptime
+    rm /data/vendor/zui_control/uperf/.service_rapid_crashes
     stop vendor.perfservice
 
 on property:sys.boot_completed=1
@@ -27,6 +30,9 @@ on property:sys.zui_control.uperf_mode=fast
 
 on zui-scheduler-start
     setprop sys.zui_control.scheduler_active 1
+    setprop sys.zui_control.uperf_fail_safe 0
+    rm /data/vendor/zui_control/uperf/.service_ready_uptime
+    rm /data/vendor/zui_control/uperf/.service_rapid_crashes
     stop vendor.perfservice
     start zui_asoulopt
     setprop zui_control.asoul started
@@ -50,6 +56,9 @@ on property:init.svc.vendor.perfservice=running && property:sys.zui_control.sche
 
 on property:zui_control.scheduler=stop
     setprop sys.zui_control.scheduler_active 0
+    setprop sys.zui_control.uperf_fail_safe 0
+    rm /data/vendor/zui_control/uperf/.service_ready_uptime
+    rm /data/vendor/zui_control/uperf/.service_rapid_crashes
     stop zui_uperf
     stop zui_asoulopt
     start vendor.perfservice
@@ -63,11 +72,16 @@ on property:zui_control.asoul=stop
     stop zui_asoulopt
     setprop zui_control.asoul stopped
 
+on property:sys.zui_control.uperf_fail_safe=1
+    stop zui_uperf
+
 service zui_uperf /system/bin/zui_uperf_service
     class late_start
     disabled
     user root
     group root system readproc graphics input
+    restart_period 5
+    onrestart exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_uperf_crash_gate.sh
 
 service zui_asoulopt /system/bin/AsoulOpt
     class late_start

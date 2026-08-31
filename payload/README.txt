@@ -33,7 +33,7 @@ Command plane:
 Health:
 - App/status health is read on demand through the zui_control Binder service.
 - No persistent zui_controld Settings/Binder heartbeat exists.
-- /system/bin/zui_uperf_service still performs its 5-second service-cgroup/log self-check and exits for init recovery on failure. This execution-plane check has not been removed.
+- The V20.4 Uperf candidate removes the 5-second process/grep loop. Startup uses one bounded FIFO event wait; steady state blocks on Uperf log/EOF events. Uperf's manager handles normal worker exits, init rate-limits whole-service recovery, and bounded rapid storms set the explicit fail-safe property. This remains subject to final-artifact and device validation.
 
 Runtime data:
 - /data/system/zui_control/profiles.prop

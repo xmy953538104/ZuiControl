@@ -102,6 +102,7 @@ def patch_text_file(path, replacements):
 def patch_services_smali(dec_dir):
     zui_service = dec_dir / "smali_classes3" / "com" / "zui" / "server" / "performance" / "ZuiPerformanceService.smali"
     display_content = dec_dir / "smali_classes3" / "com" / "android" / "server" / "wm" / "DisplayContent.smali"
+    activity_task_supervisor = dec_dir / "smali_classes3" / "com" / "android" / "server" / "wm" / "ActivityTaskSupervisor.smali"
 
     zui_text = zui_service.read_text(encoding="utf-8")
     if "Lcom/zui/server/control/ZuiControlService;->start" not in zui_text:
@@ -211,6 +212,21 @@ def patch_services_smali(dec_dir):
     iget-object p1, p0, Lcom/android/server/wm/WindowContainer;->mWmService:Lcom/android/server/wm/WindowManagerService;
 
     iget-object p1, p1, Lcom/android/server/wm/WindowManagerService;->mAccessibilityController:Lcom/android/server/wm/AccessibilityController;
+"""),
+        ])
+
+    supervisor_text = activity_task_supervisor.read_text(encoding="utf-8")
+    if "Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged" not in supervisor_text:
+        patch_text_file(activity_task_supervisor, [
+            ("""    iput-object v1, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mTopResumedActivity:Lcom/android/server/wm/ActivityRecord;
+
+    if-eqz v1, :cond_4
+""",
+             """    iput-object v1, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mTopResumedActivity:Lcom/android/server/wm/ActivityRecord;
+
+    invoke-static {v1}, Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged(Lcom/android/server/wm/ActivityRecord;)V
+
+    if-eqz v1, :cond_4
 """),
         ])
 

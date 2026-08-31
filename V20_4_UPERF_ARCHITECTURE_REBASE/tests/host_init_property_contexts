@@ -1,0 +1,7 @@
+init.svc.vendor. u:object_r:vendor_default_prop:s0 prefix string
+init.svc. u:object_r:init_service_status_private_prop:s0 prefix string
+sys.boot_completed u:object_r:boot_status_prop:s0 exact bool
+sys.zui_control.uperf_mode u:object_r:zui_control_uperf_mode_prop:s0 exact enum powersave balance performance fast
+sys.zui_control.scheduler_active u:object_r:zui_control_scheduler_active_prop:s0 exact enum 0 1
+sys.zui_control.uperf_fail_safe u:object_r:zui_control_uperf_fail_safe_prop:s0 exact bool
+zui_control. u:object_r:shell_prop:s0 prefix string

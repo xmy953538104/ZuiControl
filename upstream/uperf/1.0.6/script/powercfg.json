@@ -1,0 +1,18 @@
+{
+    "name": "Uperf 游戏增强",
+    "author": "亿根葱",
+#    "version": "v1.0.5（BETA）     By亿根葱",
+    "version": "v1.0.6（Stable version）     By亿根葱",
+    "versionCode": 106,
+    "features": {
+        "strict": true,
+        "pedestal": true,
+        "reboot": false,
+        "fas": true,
+        "limiter": true
+    },
+    "module": "uperf,sfanalysis",
+    "state": "/sdcard/Android/yc/uperf/cur_powermode.txt",
+    "entry": "/data/powercfg.sh",
+    "projectUrl": "https://github.com/yc9559/uperf"
+}

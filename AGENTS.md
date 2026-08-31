@@ -6,7 +6,7 @@
 
 当前设备/系统：TB321FU / ZUI 16.1.11.072。
 
-当前工程阶段：**V20.4 — Final Stability & Efficiency**。第一工作包 **V20.4 Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。下一会话不得再返回旧三个blocker重做，也不得自动开始其它V20.4工作包或V21。
+当前工程阶段：**V20.4 — Final Stability & Efficiency**。第一工作包 **V20.4 Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。当前第二工作包是 **V20.4 Uperf Architecture & Upstream Rebase**；仓库实现处于静态/构建验证阶段，未刷机、未做device validation，不得提前写成Production PASS。下一会话不得返回旧Refresh blocker重做，也不得自动开始V21。
 
 最近一次关闭的完整基线是 V20.3B RunId `20260830181816`。V20.3B persistent daemon retirement architecture = **PASS**，阶段已经关闭。历史 decision 中的 `PARTIAL / HOLD FOR HUMAN REVIEW` 是当时的阶段转换 gate，现已解除，不得再用它阻止 V20.4，也不得要求重做 V20.3B。rapid Uperf crash storm、T8 request-ID 等未闭环发现没有变成 PASS，而是按归属正式 carry forward。
 
@@ -112,7 +112,7 @@ system_server 是刷新率决策/执行的唯一 owner，也是 Uperf mode 的�
 
 Uperf 链：
 
-scene/screen event
+`ActivityTaskSupervisor.mTopResumedActivity` change / screen event
 → `ZuiControlService.UperfScenePolicy`
 → `sys.zui_control.uperf_mode`
 → Android init property trigger
@@ -131,7 +131,7 @@ Android init 负责：
 
 Uperf 是 CPU/power-model 执行 owner；asoulOpt 是唯一 per-task affinity/context-scheduler owner；OEM/thermal 继续保留 GPU/热安全裁决边界。Uperf sysfs 模块仍会写全局 cpuset mask，因此更广义的 topology/knob ownership 必须在后续独立 scheduler-ownership 工作包审计，不能混入当前 refresh state-machine 修改。
 
-`/system/bin/zui_uperf_service` 有 5 秒一次的本 service-cgroup 自检，失败后退出交给 init 恢复。它不是 Settings/Binder health publisher，也不是已退休的控制面 heartbeat；文档不得把“无 health heartbeat”扩大成“整个执行面绝无任何周期自检”。
+V20.4 Uperf候选已删除 `/system/bin/zui_uperf_service` 的5秒process/grep自检：启动只做一次bounded FIFO event wait，steady state阻塞读Uperf自身log/exit event。正常worker crash由Uperf内建SIGCHLD/wait manager恢复；完整writer tree EOF才退出交给init。三次20秒内worker crash或三次连续sub-2s whole-service death进入`sys.zui_control.uperf_fail_safe=1`并停止服务；没有新增daemon/watchdog/timer。上述是当前候选设计，刷前final gate和刷后normal/rapid/idle验证仍必须完成。
 
 ### 3.4 command 与 health
 
@@ -191,6 +191,7 @@ QS/当前场景快捷入口只发 Binder命令，由 system_server使用 `lastNo
 - 决策优先级固定：screen off powersave > exact user-app rule > global mode。
 - exact rule 当前契约只接受 `/data/app/*` 用户 App；是否允许 system App 是产品决策，不得把 Settings 被拒绝描述成现有 bug。
 - Uperf Native Auto 不作为生产决策 owner；scene/screen mode 由 system_server event-driven 决定。
+- exact-rule authority是framework当前真正的top-resumed Activity；Refresh仍使用focused Window，两套authority不得混用。Game离开top-resumed后必须回global；QS未改变top-resumed时不得产生fast→global→fast；freeform/split由framework唯一top-resumed仲裁，visible/PiP不等于authority。
 - 当前 Uperf 配置仍保留 `switcher.perapp` 路径，二进制也保留相关能力；只能说生产控制面未选择 auto、真机日志显示 `ContextScheduler disabled` 且 preset 由 inode 驱动，不能说相关代码/能力已经删除。改动后必须回归没有第二 scene owner。
 - Uperf 自带 `sched.enable=false`；per-task affinity/context scheduling 只能由 asoulOpt 拥有。
 - 当前不宣称接管 Adreno KGSL，不移除 thermal 安全裁决。
@@ -318,13 +319,18 @@ FAULT_INJECTION_DEVICE_PATH=NOT_EXECUTED
 SECONDARY_USER_EXTERNAL_DISPLAY=NOT_VALIDATED
 ```
 
-### 10.2 其它 carry-forward backlog
+### 10.2 Uperf Architecture & Upstream Rebase（进行中，未刷）
+
+本包冻结upstream `v1.0.6`，ZIP SHA-256 `00b19294e4efc202fd794decb5526b5ad903dca3a15c9af3cfc335edab2b5fcc`。upstream与production Uperf binary均为SHA-256 `f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8`，byte-for-byte相同，不替换binary。只按字段采用SM8650的balance/powersave idle sample/slack和Uperf内部`sfanalysis`；sched仍disabled、Native Auto仍无production入口、asoulOpt/GPU/thermal边界不变。
+
+实现使用framework top-resumed change event作为Uperf exact scene authority，并以FIFO/init事件生命周期替代5秒polling。host测试、build、final-super reverse、ART/dex2oat、final CIL和official host init全部完成后才可交人工Pre-Flash Gate；刷后scene/idle/crash/knob/performance A/B不得由host结果冒充。当前工作包入口为`V20_4_UPERF_ARCHITECTURE_REBASE/`。
+
+### 10.3 其它 carry-forward backlog
 
 - command durable transaction latency：目标普通本地命令 P95 约 300–500ms，同时保持 at-most-once/crash safety；
-- Uperf rapid crash storm fail-safe；
 - T8 request-ID 并发可观测性；
 - 120 hard-lock A/B 决策；
-- Uperf core_ctl/input boost/cpuset owner 审计；
+- Uperf core_ctl/input boost/cpuset真机owner证明与performance A/B；
 - asoulOpt 真实游戏 affinity/WALT/frame-time 效果；
 - 24h/72h soak、极端回归、功耗与日志增长 baseline。
 

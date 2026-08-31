@@ -78,9 +78,11 @@ try {
     $services = Join-Path $WorkDir 'services_decode'
     $app = Join-Path $WorkDir 'app_decode'
     $serviceSmali = Require-SingleFile $services 'ZuiControlService.smali'
+    $uperfScenePolicySmali = Require-SingleFile $services 'ZuiControlService$UperfScenePolicy.smali'
     $focusSnapshotSmali = Require-SingleFile $services 'ZuiControlService$FocusSnapshot.smali'
     $hooksSmali = Require-SingleFile $services 'ZuiControlHooks.smali'
     $displayContentSmali = Require-SingleFile $services 'DisplayContent.smali'
+    $activityTaskSupervisorSmali = Require-SingleFile $services 'ActivityTaskSupervisor.smali'
     $wmInternalSmali = Require-SingleFile $services 'WindowManagerInternal.smali'
     $clientSmali = Require-SingleFile $app 'ZuiControlClient.smali'
     $tileSmali = Require-SingleFile $app 'ZuiControlTileService.smali'
@@ -134,10 +136,16 @@ try {
         @{ Path = $serviceSmali; Needle = 'externalPreserved' },
         @{ Path = $serviceSmali; Needle = 'failedBeforeMutation' },
         @{ Path = $serviceSmali; Needle = 'failedAfterMutation' },
+        @{ Path = $uperfScenePolicySmali; Needle = '\nuperfSceneAuthority=topResumedActivity' },
+        @{ Path = $uperfScenePolicySmali; Needle = '\nuperfScenePackage=' },
+        @{ Path = $uperfScenePolicySmali; Needle = '\nuperfTopResumedSeen=' },
+        @{ Path = $serviceSmali; Needle = '\nuperfFailSafe=' },
         @{ Path = $hooksSmali; Needle = 'onFocusedWindowChanged' },
         @{ Path = $hooksSmali; Needle = 'onImeVisibilityChanged' },
+        @{ Path = $hooksSmali; Needle = 'onTopResumedActivityChanged' },
         @{ Path = $displayContentSmali; Needle = 'Lcom/zui/server/control/ZuiControlHooks;->onFocusedWindowChanged(Ljava/lang/String;I)V' },
         @{ Path = $displayContentSmali; Needle = 'Lcom/zui/server/control/ZuiControlHooks;->onImeVisibilityChanged(Ljava/lang/String;ZI)V' },
+        @{ Path = $activityTaskSupervisorSmali; Needle = 'Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged(Lcom/android/server/wm/ActivityRecord;)V' },
         @{ Path = $wmInternalSmali; Needle = '.method public abstract requestTraversalFromDisplayManager()V' },
         @{ Path = $clientSmali; Needle = 'editableDisplayHz' },
         @{ Path = $tileSmali; Needle = '->editableDisplayHz()Ljava/lang/Integer;' },
@@ -147,6 +155,25 @@ try {
         Assert-Contains $marker.Path $marker.Needle
     }
     Assert-NotContains $serviceSmali 'controlPanel'
+
+    $topResumedNeedle = 'invoke-static {v1}, Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged(Lcom/android/server/wm/ActivityRecord;)V'
+    $topResumedText = Get-Content -LiteralPath $activityTaskSupervisorSmali -Raw
+    if ([regex]::Matches($topResumedText, [regex]::Escape($topResumedNeedle)).Count -ne 1) {
+        throw 'Final services.jar must contain exactly one top-resumed Uperf hook.'
+    }
+    $topResumedMethod = [regex]::Match(
+        $topResumedText,
+        '(?ms)^\.method public updateTopResumedActivityIfNeeded\(Ljava/lang/String;\)V\r?\n.*?^\.end method\r?$'
+    )
+    if (-not $topResumedMethod.Success) {
+        throw 'Missing ActivityTaskSupervisor.updateTopResumedActivityIfNeeded in final services.jar.'
+    }
+    $assignment = 'iput-object v1, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mTopResumedActivity:Lcom/android/server/wm/ActivityRecord;'
+    if ($topResumedMethod.Value.IndexOf($assignment, [StringComparison]::Ordinal) -lt 0 -or
+        $topResumedMethod.Value.IndexOf($topResumedNeedle, [StringComparison]::Ordinal) -lt
+            $topResumedMethod.Value.IndexOf($assignment, [StringComparison]::Ordinal)) {
+        throw 'Top-resumed Uperf hook is not placed after the authoritative field assignment.'
+    }
 
     $displayContent = Get-Content -LiteralPath $displayContentSmali -Raw
     $imeMethodMatch = [regex]::Match(

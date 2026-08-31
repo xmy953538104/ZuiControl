@@ -344,8 +344,14 @@ function Assert-UperfConfig([string]$Path) {
     if ($json.modules.switcher.perapp -ne '/data/vendor/zui_control/uperf/perapp_powermode.txt') {
         throw 'Uperf parser-compatible per-app path is not canonical'
     }
-    if ($json.modules.sfanalysis.enable -ne $false -or $json.modules.sched.enable -ne $false) {
-        throw 'Bundled Uperf must leave SurfaceFlinger injection off and delegate thread placement to A-SOUL'
+    if ($json.modules.sfanalysis.enable -ne $true -or $json.modules.sched.enable -ne $false) {
+        throw 'Bundled Uperf must enable internal SF analysis and delegate thread placement to A-SOUL'
+    }
+    if ($json.presets.balance.idle.'cpu.baseSampleTime' -ne 1.0 -or
+        $json.presets.balance.idle.'cpu.baseSlackTime' -ne 0.5 -or
+        $json.presets.powersave.idle.'cpu.baseSampleTime' -ne 1.5 -or
+        $json.presets.powersave.idle.'cpu.baseSlackTime' -ne 0.8) {
+        throw 'Uperf SM8650 v1.0.6 idle sampling rebase is incomplete'
     }
     $presets = @($json.presets.psobject.Properties.Name | Sort-Object)
     $expectedPresets = @('balance', 'fast', 'performance', 'powersave')
@@ -466,6 +472,7 @@ try {
     $DaemonRc = Join-Path $System 'etc\init\zui_controld.rc'
     $RefreshKillRc = Join-Path $System 'etc\init\zui_refresh_kill_switch.rc'
     $SchedulerPrepare = Join-Path $System 'etc\zui_control\zui_scheduler_prepare.sh'
+    $UperfCrashGate = Join-Path $System 'etc\zui_control\zui_uperf_crash_gate.sh'
     $UperfConfig = Join-Path $System 'etc\zui_control\uperf-sm8650.json'
     $UperfPerApp = Join-Path $System 'etc\zui_control\default_uperf_perapp.txt'
     $AsoulConfig = Join-Path $System 'etc\zui_control\default_asopt.conf'
@@ -474,7 +481,7 @@ try {
     $MemCleaner = Join-Path $System 'etc\ZuiMemCleanerConfig.xml'
     $PowerPolicy = Join-Path $System 'etc\ZuiPowerPolicyConfig.xml'
     $AutoRun = Join-Path $System 'etc\motorola\bgintents\com.zui.safecenter.autorun.xml'
-    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $DaemonRc, $RefreshKillRc, $SchedulerPrepare, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
+    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $DaemonRc, $RefreshKillRc, $SchedulerPrepare, $UperfCrashGate, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
         Require-File $file
     }
 
@@ -512,6 +519,10 @@ try {
     Assert-Contains $SchedulerRc 'on property:init.svc.vendor.perfservice=running && property:sys.zui_control.scheduler_active=1' 'init-native conditional OEM fence'
     Assert-Contains $SchedulerRc 'on property:zui_control.asoul=start && property:sys.zui_control.scheduler_active=1' 'active-only A-SOUL start action'
     Assert-Contains $SchedulerRc 'on property:zui_control.scheduler=fence && property:sys.zui_control.scheduler_active=1' 'active-only compatibility OEM fence'
+    Assert-Contains $SchedulerRc 'on property:sys.zui_control.uperf_fail_safe=1' 'Uperf bounded fail-safe trigger'
+    Assert-Contains $SchedulerRc '    setprop sys.zui_control.uperf_fail_safe 0' 'explicit Uperf fail-safe reset'
+    Assert-Contains $SchedulerRc '    restart_period 5' 'rate-limited Uperf whole-service recovery'
+    Assert-Contains $SchedulerRc '    onrestart exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_uperf_crash_gate.sh' 'event-driven Uperf service crash gate'
     Assert-NotContains $SchedulerRc "on property:zui_control.scheduler=fence`n    stop vendor.perfservice" 'unconditional legacy OEM fence'
     foreach ($bridge in @('performance', 'poweropt-service', 'perf2-hal-1-0')) {
         Assert-NotContains $SchedulerRc "    stop $bridge" 'OEM telemetry service stop action'
@@ -585,14 +596,21 @@ try {
     if (@($commandServiceBlock | Where-Object { $_ -match '(?:^|\s)graphics(?:\s|$)' }).Count) {
         throw 'Final super command service unexpectedly has the graphics group.'
     }
-    Assert-Contains $UperfService '/proc/self/cgroup' 'init-owned Uperf cgroup discovery'
-    Assert-Contains $UperfService 'cgroup.procs' 'Uperf cgroup health source'
-    Assert-Contains $UperfService 'uperf_process_count' 'Uperf process-count health check'
-    Assert-Contains $UperfService "grep -q ' I Uperf is running`$'" 'Uperf ready-log health check'
-    Assert-Contains $UperfService "grep -q ' I Failed to start uperf'" 'Uperf failed-start rejection'
+    Assert-Contains $UperfService 'mkfifo "$LOG_PIPE"' 'event-driven Uperf log lifecycle pipe'
+    Assert-Contains $UperfService 'IFS= read -r -t "$remaining" line <&8' 'bounded event-driven Uperf startup gate'
+    Assert-Contains $UperfService 'while IFS= read -r line <&8; do' 'timer-free steady-state Uperf event wait'
+    Assert-Contains $UperfService 'terminated unexpectedly, try to get tombstone' 'Uperf worker crash event gate'
+    Assert-Contains $UperfService 'setprop "$FAIL_SAFE_PROP" 1' 'Uperf rapid-worker fail-safe'
+    Assert-NotContains $UperfService 'uperf_process_count' 'retired periodic process-count health check'
+    Assert-NotContains $UperfService 'grep ' 'retired periodic log scanner'
+    Assert-NotContains $UperfService 'sleep ' 'retired periodic wrapper timer'
     Assert-NotContains $UperfService 'pidof uperf' 'cross-domain proc scanner in Uperf supervisor'
     Assert-NotContains $UperfService 'killall' 'cross-domain process scanner in Uperf supervisor'
     Assert-Contains $UperfService 'echo $$ > /dev/cpuset/background/tasks' 'background placement for Uperf itself'
+    Assert-Contains $UperfCrashGate '[ "$runtime" -ge 0 ] && [ "$runtime" -le 2 ]' 'rapid whole-service lifetime classification'
+    Assert-Contains $UperfCrashGate '[ "$count" -lt 3 ] || setprop "$FAIL_SAFE_PROP" 1' 'bounded whole-service crash fail-safe'
+    Assert-NotContains $UperfCrashGate 'while ' 'no crash-gate loop'
+    Assert-NotContains $UperfCrashGate 'sleep ' 'no crash-gate timer'
     Assert-Contains $SchedulerPrepare "printf 'balance\n'" 'balanced global default'
     Assert-Contains $SchedulerPrepare 'effective_powermode.txt' 'effective Uperf mode preparation'
     Assert-Contains $SchedulerPrepare 'property_mode="${1:-}"' 'init-supplied Uperf property recovery input'
@@ -906,6 +924,7 @@ try {
 
     $PropertyContexts = Join-Path $PlatSelinux 'plat_property_contexts'
     Assert-Contains $PropertyContexts 'sys.zui_control.uperf_mode u:object_r:zui_control_uperf_mode_prop:s0 exact enum powersave balance performance fast' 'dedicated exact-enum Uperf property context'
+    Assert-Contains $PropertyContexts 'sys.zui_control.uperf_fail_safe u:object_r:zui_control_uperf_fail_safe_prop:s0 exact bool' 'dedicated exact Uperf fail-safe property context'
     Assert-NotContains $PropertyContexts 'sys.zui_control.uperf_mode u:object_r:shell_prop:s0' 'shell-owned Uperf transport property'
     Assert-Contains $PropertyContexts 'sys.zui_control.command_seq u:object_r:zui_control_command_seq_prop:s0 exact string' 'dedicated exact command doorbell property context'
     Assert-NotContains $PropertyContexts 'sys.zui_control.command_seq u:object_r:shell_prop:s0' 'shell-owned command doorbell property'
@@ -927,6 +946,15 @@ try {
         '(typeattributeset system_internal_property_type (zui_control_uperf_mode_prop))',
         '(allow system_server zui_control_uperf_mode_prop (property_service (set)))',
         '(allow system_server zui_control_uperf_mode_prop (file (getattr map open read)))',
+        '(type zui_control_uperf_fail_safe_prop)',
+        '(roletype object_r zui_control_uperf_fail_safe_prop)',
+        '(typeattributeset property_type (zui_control_uperf_fail_safe_prop))',
+        '(typeattributeset system_property_type (zui_control_uperf_fail_safe_prop))',
+        '(typeattributeset system_internal_property_type (zui_control_uperf_fail_safe_prop))',
+        '(allow init zui_control_uperf_fail_safe_prop (property_service (set)))',
+        '(allow shell zui_control_uperf_fail_safe_prop (property_service (set)))',
+        '(allow performanced zui_control_uperf_fail_safe_prop (property_service (set)))',
+        '(allow system_server zui_control_uperf_fail_safe_prop (file (getattr map open read)))',
         '(type zui_control_command_seq_prop)',
         '(roletype object_r zui_control_command_seq_prop)',
         '(typeattributeset property_type (zui_control_command_seq_prop))',
@@ -977,6 +1005,7 @@ try {
         '(allow performanced input_device (chr_file (ioctl read getattr lock map open)))',
         '(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))',
         '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))',
+        '(allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))',
         '(allow performanced zui_control_data_file (lnk_file (getattr read)))'
     )) { Assert-Contains $PlatPolicy $rule 'scheduler SELinux rule' }
     Assert-NotContains $PlatPolicy '(allow system_server shell_prop (property_service (set)))' 'broad system_server shell property write grant'

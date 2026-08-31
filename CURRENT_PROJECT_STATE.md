@@ -1,12 +1,12 @@
 # ZuiControl Current Project State
 
-更新时间：2026-08-31
+更新时间：2026-09-01
 
 ## 1. 当前结论
 
 V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**。历史 decision 的 `PARTIAL / HOLD` 是当时的阶段转换 gate，现已解除。rapid Uperf crash storm、T8 request-ID 等未闭环发现保持原结论并 carry forward，不得改写成 PASS，也不得再阻止或要求重做 V20.3B。
 
-当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成针对性真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。不要继续返回旧三个blocker重做，也不要自动开始其它V20.4工作包或V21。
+当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成针对性真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。当前第二工作包是 **Uperf Architecture & Upstream Rebase**；源码/设计已进入静态与候选构建门禁，尚未刷机或device validation，不得提前写成Production PASS。不要继续返回旧Refresh blocker重做，也不要自动开始V21。
 
 当前设备运行 RunId `20260831170720`，source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`，CI `33375509612`。host `39/39`、V20.3B regression `5/5`、final-super reverse/56-marker、final-artifact ART、split CIL、official host init exact-file、fixed-seven Preflight、实际fixed-seven read-back flash、Boot Hard Gate与Targeted Device Gate均PASS。最终 `services.jar` SHA-256 为 `0b7bb46c644c5559173f72b06579131e82597366fdcc114d3fb30aabb544e8a3`。
 
@@ -21,7 +21,7 @@ V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**
 | 能力 | 决策 owner | 执行/生命周期 | App 角色 |
 | --- | --- | --- | --- |
 | 刷新率 | system_server / `ZuiControlService` | DisplayManagerInternal / ROM display policy | Binder UI/QS/profile 编辑 |
-| Uperf mode | system_server `UperfScenePolicy`，scene/screen event-driven | init property trigger → effective file → Uperf | 四档与 exact user-app 配置 |
+| Uperf mode | system_server `UperfScenePolicy`，top-resumed Activity/screen event-driven | init property trigger → effective file → Uperf | 四档与 exact user-app 配置 |
 | per-task 线程放置 | asoulOpt | init `zui_asoulopt` | 启停/状态入口；conf 编辑未交付 |
 | OEM fence | init，`scheduler_active` gated | stop/start `vendor.perfservice` | 无 owner 职责 |
 | command | Binder 认证 + durable transaction | disabled+oneshot `zui_control_request` → `zui_controld --oneshot-request` | 发请求、等 ACK、恢复 DP pending |
@@ -29,9 +29,9 @@ V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**
 
 persistent `zui_controld` 已退休；当前 init 中不存在其 service/start。`zui_controld` 文件只保留为 oneshot command executor。核心调度不依赖 MainActivity、QuickService 或 App 进程长期存活。
 
-Uperf 自带 context/thread scheduler 为 `sched.enable=false`，asoulOpt 是唯一 per-task affinity owner；Uperf sysfs 模块仍写全局 cpuset mask，广义 topology/knob ownership 留后续独立 scheduler 工作包。生产控制面没有 `auto` 档，Uperf mode 由 system_server 决策；配置仍保留 `switcher.perapp` 路径和二进制相关能力，所以不能宣称 Native Auto 代码已删除，只能说没有证据表明它在当前候选中成为第二决策 owner。
+Uperf 自带 context/thread scheduler 为 `sched.enable=false`，asoulOpt 是唯一 per-task affinity owner；Uperf sysfs 模块仍写全局 cpuset mask，广义 topology/knob ownership必须由刷后time-series/writer-trace证明。生产控制面没有 `auto` 档，Uperf mode 由system_server依据真正top-resumed Activity决策；配置仍保留 `switcher.perapp` 路径和二进制相关能力，所以不能宣称 Native Auto 代码已删除，只能说没有production入口。Refresh的focused Window authority保持不变。
 
-`zui_uperf_service` 内有每 5 秒一次的本 cgroup/日志自检，失败就退出交给 init 恢复。它不是 Settings/Binder health heartbeat；“无周期 health publisher”成立，“整个运行时绝无周期自检”不成立。
+当前候选的 `zui_uperf_service` 已用一次bounded startup FIFO event wait + steady blocking read替代5秒cgroup/log轮询。正常worker crash留给Uperf内建manager，完整writer-tree EOF交init限速恢复，rapid worker/whole-service storm进入显式fail-safe；这仍是待final gate与刷后验证的候选语义。
 
 ## 3. 源码 sanity check
 
@@ -45,7 +45,7 @@ Uperf 自带 context/thread scheduler 为 `sched.enable=false`，asoulOpt 是唯
 | Uperf Native Auto | 无 `auto` 入口、ContextScheduler disabled；保留 perapp 能力，PASS with residual risk |
 | per-task thread placement | Uperf sched off，asoulOpt 唯一 owner，符合 |
 | OEM fence | init-native + `scheduler_active=1` gate，符合 |
-| health/status | 无 zui_controld heartbeat，按需 Binder；Uperf wrapper 自检单列 |
+| health/status | 无 zui_controld heartbeat，按需 Binder；Uperf候选暴露event-driven fail-safe状态 |
 | App 存活依赖 | 核心无依赖；QuickService 只保留快捷通知 |
 
 只读 host policy test：`TestV20_3BPolicy.py` 5/5 PASS。
@@ -93,10 +93,10 @@ Host/build：V20.4 `39/39`、V20.3B `5/5`、CI `33375509612`、final-super 56-ma
 ## 6. 其它 carry-forward backlog
 
 - command latency：P95 约 1.02 秒，主要成本在 durable claim/fsync/Settings ACK；优化必须保持 at-most-once/crash safety；
-- Uperf rapid crash fail-safe：normal 10/10 不覆盖 rapid storm；禁止新增 watchdog daemon；
+- Uperf候选的rapid crash fail-safe、normal recovery、explicit stop与idle零polling必须刷后验证；host设计不覆盖rapid storm；
 - T8 request ID：冻结候选真机仍输出空 `id=`，需并发可关联；
 - 120 hard-lock 的流畅度、功耗、温度、触控和 144/165 bridge A/B；
-- Uperf core_ctl/input boost/cpuset owner 审计；
+- Uperf core_ctl/input boost/cpuset真机owner证明与performance A/B；
 - asoulOpt 真实游戏 affinity/WALT/frame-time 效果；
 - 24h/72h reboot/screen/scene/command/component crash、功耗和日志增长 soak；
 - Binder SYSTEM_UID/version/capabilities/dump 是否收紧的安全决策。
@@ -131,6 +131,10 @@ V20_4_RUNTIME_CORRECTION_BOOT_HARD_GATE=PASS
 V20_4_RUNTIME_CORRECTION_DEVICE_VALIDATION=PASS
 V20_4_RUNTIME_CORRECTION_APP_UI_TX10=NOT_EXECUTED
 V20_4_RUNTIME_CORRECTION_SIGNED_APP_TX10_DEVICE_PATH=NOT_AVAILABLE
+V20_4_UPERF_SOURCE_HOST=PASS
+V20_4_UPERF_FINAL_ARTIFACT=PENDING
+V20_4_UPERF_FLASHED=NO
+V20_4_UPERF_DEVICE_VALIDATION=NOT_STARTED
 UDFPS_LOCAL_VOTE_RUNTIME=NOT_OBSERVED
 FAULT_INJECTION_DEVICE_PATH=NOT_EXECUTED
 SECONDARY_USER_EXTERNAL_DISPLAY=NOT_VALIDATED
