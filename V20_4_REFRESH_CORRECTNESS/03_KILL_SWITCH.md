@@ -1,6 +1,17 @@
 # V20.4 Refresh Kill Switch
 
-## Contract
+## Device status — FAIL_NOT_CONVERGED
+
+RunId `20260831134511` 的真机结果没有达到下述source contract：
+
+- `persist.zui_control.refresh.disable=1` 外部读回稳定，但 30/30 样本直到 `1360.697ms` 仍为 `refreshDisabled=false`、mask 0、render/peak/AppRequest owned；继续等待总计超过6秒仍无变化。
+- `persist.zui_control.disable=1` 的 40/40 样本直到 `5148.825ms` 同样保持 mask 0/false/owned。
+- rapid toggle最终稳定disabled后在 `5094.098ms` 仍为 mask0、disabled false、render owned。
+- 两项property均已恢复0；Uperf/asoulOpt全程running，没有被refresh开关误停。
+
+`refresh_disable_latency_summary.txt` 的 `first_observed_disabled_ms=0` 是parser把null错误转换为0，**不得引用**。由于service从未进入disabled，AppRequest/vote/peak release、enable rebuild、external-CAS-on-disable与disabled idle都是downstream `NOT_EXECUTED`，不是PASS，也不能按未到达路径写成独立FAIL。原始证据见 [`refresh_disable_latency.csv`](../../work/v20_4_device_validation_20260831114341/04_refresh_matrix_20260831_143846/m8_kill_switch/refresh_disable_latency.csv)、[`global_disable_no_convergence.csv`](../../work/v20_4_device_validation_20260831114341/04_refresh_matrix_20260831_143846/m8_kill_switch/global_disable_no_convergence.csv) 和 [`rapid_toggle_ending_disabled.csv`](../../work/v20_4_device_validation_20260831114341/04_refresh_matrix_20260831_143846/m8_kill_switch/rapid_toggle_ending_disabled.csv)。
+
+## Source contract
 
 `persist.zui_control.disable` 与 `persist.zui_control.refresh.disable` 合并成 bit mask：bit 0 是 global disable，bit 1 是 refresh disable。任意非零值只关闭 refresh owner；本工作包不停止 Uperf、asoulOpt 或 command/control plane。
 

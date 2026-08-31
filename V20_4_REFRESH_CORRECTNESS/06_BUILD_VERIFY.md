@@ -21,29 +21,34 @@ Builder 必须绑定：14 位 RunId、40 位 source commit、GitHub Actions run 
 
 Windows 无 `secilc`，因此 static/final-super policy检查仍不能替代刷后 Enforcing/AVC验证。
 
+任何修改 `framework.jar`、`services.jar` 或其它boot/system_server classpath DEX的候选，还必须对**final super反解出的最终JAR/DEX**运行ART/dex2oat verifier。apktool rebuild或smali assemble只证明语法/编码可重建，不证明ART控制流类型验证可通过；marker verifier继续负责内容与provenance，不能替代ART gate。host无法提供匹配OEM bootclasspath时，允许在已恢复目标设备上只读使用最终JAR并仅写`/data/local/tmp`临时输出。
+
 ## Current result
 
-结果：**CI / isolated ROM build / final-super reverse verifier = PASS；device validation = PENDING。**
+结果：**CI / isolated ROM build / final-super reverse verifier / final-artifact ART / Boot Hard Gate = PASS；device validation = PARTIAL。**
 
-- Source commit：`c4f5ad8d57d21508469e72ff5e4b18adcc2e8c65`
-- Source patch SHA-256：`1a6cda5cc067fdc68bebdb775940b4a9a42adb28f3dcb0f7e386abcf5afc2928`
-- GitHub Actions：run [`33351448572`](https://github.com/xmy953538104/ZuiControl/actions/runs/33351448572)，workflow `Build ZuiControl`，exact head SHA，conclusion `success`
-- Artifact：`ZuiControl-release-apk` ID `9743771329`、`zui-control-v19-payload` ID `9743771548`；下载 ZIP 的 length/SHA-256 均与 GitHub API receipt 一致
-- Candidate RunId：`20260831104317`
-- Candidate：`D:\3.VScode\Mi\work\v20_4_candidate_20260831104317`
-- CI/payload APK SHA-256：`3bd2dab7292bab3f0fdcac2c72ea444d14bda3971319a5d5af2bdf40fbec9018`
-- `super.img` SHA-256：`059e910359c39f585ed280b623bde0d8d97d6d8dd12b1efdfd2df5281b629757`
+- Source commit：`3c5cd809d5465828fe14356cbd079d45d00347b7`
+- Source patch SHA-256：`0203e00693a177c09c11a7550ea2cd3610b77f641eabbe4348181da6db9aecbf`
+- GitHub Actions：run [`33361319072`](https://github.com/xmy953538104/ZuiControl/actions/runs/33361319072)，workflow `Build ZuiControl`，exact head SHA，conclusion `success`
+- Artifact：`ZuiControl-release-apk` ID `9746803984`、`zui-control-v19-payload` ID `9746804236`；下载 ZIP 的 length/SHA-256 均与 GitHub API receipt 一致
+- Candidate RunId：`20260831134511`
+- Candidate：`D:\3.VScode\Mi\work\v20_4_candidate_20260831134511`
+- CI/payload APK SHA-256：`86348f7767cf9d0651e226af947c3de60f52a0268adc519fc3a90521f7037e82`
+- `super.img` SHA-256：`4f01c64d8a3a5860c34967d944510f3768f4e6748bb843eef0345a5c6685800d`
 - `boot.img` SHA-256：`e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371`（命中固定 official 072 boot）
 - `vbmeta.img` SHA-256：`c1f4ea68ea52bae62e464ddc245dadd740569ba3ac3376ee5d23a40204a744f7`
-- `vbmeta_system.img` SHA-256：`a92596dd1ab7546a8a937b9663524c6b188ac7ddd60e3a840e9d839232b0a9aa`
+- `vbmeta_system.img` SHA-256：`fe007d5d1d298d773bc3a41879f9995984491abfd51f4608b3044a5cde549259`
+- final-super `services.jar` SHA-256：`389ac1cff8e79705a8dd9e5220f3c70ccef5c84f0681ac3c6c993f81ddcd24ff`
 
-Isolated build在 fresh clone 中重跑 V20.3B policy 5/5 与 V20.4 state model 27/27；framework Java 8/D8、B072 smali injection、EROFS rebuild、实际 `SignNoFec`、签名后的 `PackSuper` 均成功。最终 candidate `super.img` 被重新拆出七个逻辑分区；既有 flash-package verifier返回 `ok=true`，V20.4 verifier返回 `ok=true`、`marker_count=48`，并明确命中 immutable `ZuiControlService$FocusSnapshot`、Activity/window/non-IME snapshot 与 event-order negative marker。
+Isolated build在 fresh clone 中重跑 V20.3B policy 5/5 与 V20.4 state model 27/27；framework Java 8/D8、B072 smali injection、EROFS rebuild、实际 `SignNoFec`、签名后的 `PackSuper` 均成功。最终 candidate `super.img` 被重新拆出七个逻辑分区；既有 flash-package verifier返回 `ok=true`，V20.4 verifier返回 `ok=true`、`marker_count=48`。final-super JAR在已恢复目标设备的匹配boot/systemserver classpath下执行ART/dex2oat verify，`DEX_RC=0 / GATE_RC=0`；授权刷入后Boot Gate 19样本/188.563秒PASS。
 
-最小证据：[`build_result.json`](raw/build_20260831104317/build_result.json)、[`ci_run_provenance.json`](raw/build_20260831104317/ci_run_provenance.json)、[`candidate_sha256.txt`](raw/build_20260831104317/candidate_sha256.txt)、[`final_super_verifier.log`](raw/build_20260831104317/final_super_verifier.log)。构建器记录 `production_b072_unchanged=true`、`flashed=false`；未生成或写入 9008 包。
+最小证据：[`build_result.json`](raw/build_20260831134511/build_result.json)、[`ci_run_provenance.json`](raw/build_20260831134511/ci_run_provenance.json)、[`candidate_sha256.txt`](raw/build_20260831134511/candidate_sha256.txt)、[`final_super_verifier.log`](raw/build_20260831134511/final_super_verifier.log)、[`PREFLASH_GATE_FIXED_20260831134511.md`](../../work/v20_4_device_validation_20260831114341/PREFLASH_GATE_FIXED_20260831134511.md)、[`phase2_180s_observation_summary.txt`](../../work/v20_4_device_validation_20260831114341/03_fixed_candidate_flash_20260831_142025/phase2_180s_observation_summary.txt)。构建器记录 `production_b072_unchanged=true`、`flashed=false`；`flashed=false`是构建完成时的receipt，fixed-seven包后来已按单独人工授权刷入。
 
-旧候选 RunId `20260831094239` 因未覆盖 Activity/window event-order 漏洞被人工 Gate 拒绝并已删除其 `work` candidate；旧 raw 只留审计，不得刷写。当前 pre-flash correction 的 production diff 只涉及 `ZuiControlService.java`，其余 correction commit 内容为 host test 与 final-super verifier。
+旧候选 RunId `20260831094239` 因未覆盖Activity/window event-order漏洞被人工Gate拒绝。其后 RunId `20260831104317` 的static/final-super marker gate曾PASS，但实际刷入后`DisplayContent` smali register type merge触发ART `VerifyError`并导致Boot Gate FAIL；设备已恢复V20.3B。诊断见 [`BOOT_GATE_FAILURE_DIAGNOSIS.md`](../../work/v20_4_device_validation_20260831114341/BOOT_GATE_FAILURE_DIAGNOSIS.md)。两者只留审计，不得刷写。
 
-Windows 无 `secilc` 且本轮未刷机，因此 Enforcing/AVC、physical mode、IME动画边界和异步 AppRequest handoff仍必须由 device matrix验收。候选可用于该矩阵，但不能据此把 V20.4 device validation写成 PASS。
+Fixed candidate的Enforcing、physical mode、IME/Resolver、多窗口与enabled idle已取得真机证据；但kill switch、null-window event order和vendor overlay分类失败，UDFPS/fault injection/secondary user/external display等仍有明确边界。权威真机结果见 [`08_DEVICE_RESULTS.md`](08_DEVICE_RESULTS.md)。
 
-FLASH_CANDIDATE_READY=YES
-DEVICE_VALIDATION=PENDING
+FIXED_CANDIDATE_FLASHED=YES
+FINAL_ARTIFACT_ART_GATE=PASS
+BOOT_HARD_GATE=PASS
+DEVICE_VALIDATION=PARTIAL

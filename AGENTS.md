@@ -6,9 +6,11 @@
 
 当前设备/系统：TB321FU / ZUI 16.1.11.072。
 
-当前工程阶段：**V20.4 — Final Stability & Efficiency**。第一工作包 **V20.4 Refresh Correctness / State Machine** 已完成 source/host/CI/ROM build/final-super 静态闭环；未刷机，device matrix 仍待执行，不得写成真机 PASS。
+当前工程阶段：**V20.4 — Final Stability & Efficiency**。第一工作包 **V20.4 Refresh Correctness / State Machine** 的 fixed candidate 已完成 source/host/CI/ROM build/final-super、final-artifact ART 和 Boot Hard Gate；device validation 结论为 **PARTIAL**，不得写成真机 PASS。
 
-最近一次完整真机基线：V20.3B，RunId `20260830181816`。V20.3B persistent daemon retirement architecture = **PASS**，V20.3B 阶段已经关闭。历史 decision 中的 `PARTIAL / HOLD FOR HUMAN REVIEW` 是当时的阶段转换 gate，现已解除，不得再用它阻止 V20.4，也不得要求重做 V20.3B。rapid Uperf crash storm、T8 request-ID 等未闭环发现没有变成 PASS，而是按归属正式 carry forward；历史 ZuiControl transient 已在 V20.4 源码中按 foreground-only 语义修复，但仍需 candidate 真机矩阵确认。
+最近一次关闭的完整基线是 V20.3B RunId `20260830181816`。V20.3B persistent daemon retirement architecture = **PASS**，阶段已经关闭。历史 decision 中的 `PARTIAL / HOLD FOR HUMAN REVIEW` 是当时的阶段转换 gate，现已解除，不得再用它阻止 V20.4，也不得要求重做 V20.3B。rapid Uperf crash storm、T8 request-ID 等未闭环发现没有变成 PASS，而是按归属正式 carry forward。
+
+当前设备运行 V20.4 fixed RunId `20260831134511`，source `3c5cd809d5465828fe14356cbd079d45d00347b7`，CI `33361319072`。旧 RunId `20260831104317` 曾刷入并因 ART `VerifyError` Boot Gate FAIL，随后已恢复 V20.3B；fixed candidate 在刷前新增 final-artifact ART/dex2oat gate并通过，刷后 Boot Gate PASS。foreground-only 主路径已取得大量 PASS 证据，但 kill switch、App-to-App intermediate default 与 vendor overlay 分类仍失败，权威结论见 `V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md`。
 
 当前生产 App 源码仍是 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`，Binder version 仍返回 19。这些是已验证候选的制品标识，不是当前工程阶段号，不得据此把规则退回 V19。
 
@@ -211,6 +213,8 @@ QS/当前场景快捷入口只发 Binder命令，由 system_server使用 `lastNo
 
 全局 disable/refresh disable 只停止刷新率策略，不能误停 Uperf/asoulOpt。V20.4 源码已使用 `SystemProperties.addChangeCallback` 把属性 edge投递到 ZuiControl HandlerThread，并在 enable edge按最新 atomic focus snapshot立即重算；disabled路径只清 ZuiControl priority-8 vote、compare/restore peak，并请求 WindowManager traversal接管 shared `setDisplayProperties()` AppRequest。该 AppRequest API没有 owner token或同步 clear，因此源码只报告 `sharedNoToken` / `releaseRequested` / `appRequestHandoffPending`，不得宣称同步完整释放；真实即时性和 handoff完成仍是 device gate。
 
+RunId `20260831134511` 的真机结果与上述 source contract 冲突：稳定 refresh/global disable property=1 后分别观察超过 6 秒和 5.1 秒，service仍为 mask 0 / `refreshDisabled=false`，render/peak/AppRequest ownership未释放；rapid toggle 最终disabled也未收敛。原因尚未定位。因为没有真正进入disabled，release、reenable、external-CAS-on-disable 与 disabled idle 是 downstream `NOT_EXECUTED`，不得臆测为 PASS 或 FAIL。
+
 Uperf rapid crash storm 当前是 carry-forward 未闭环项。后续稳定性工作包要定义 fail-safe、UI/health 可见性、安全 balance 或 OEM fallback；不得用 persistent watchdog 对抗 Android init，也不得为测试扩大 SELinux。它不属于当前 refresh state-machine 修改。
 
 ## 7. Binder 授权与存储
@@ -264,6 +268,8 @@ Uperf rapid crash storm 当前是 carry-forward 未闭环项。后续稳定性�
 - `SignNoFec` 改写 footer 后必须重新 PackSuper，再复查最终 super 内容和 SHA-256；
 - Windows 无法做 secilc 编译级验证时必须明确边界，刷后以 dmesg/logcat AVC 继续验收。
 
+任何修改 `framework.jar`、`services.jar` 或其它 boot/system_server classpath DEX 的候选，在刷机授权前必须同时通过：host tests、apktool/smali rebuild、final-super reverse extraction、**final artifact ART/dex2oat verifier**、marker/provenance/hash verifier。`apktool build PASS` 或 smali assemble PASS 永远不是 bootability proof。host 无法完成 ART gate 时，必须在当前已恢复目标设备上只读使用最终 super 反解的 DEX/JAR，并只写临时 `/data/local/tmp` 输出进行验证；验证对象 hash 必须与最终 super provenance绑定。
+
 ## 9. 已关闭的 V20.3B 证据基线
 
 V20.3B 阶段已关闭；persistent daemon retirement architecture = PASS。下列 PARTIAL 或未覆盖边界保留原证据语义，并已迁移到 V20.4 或后续 backlog，不再构成 HOLD gate。
@@ -284,17 +290,28 @@ V20.3B 阶段已关闭；persistent daemon retirement architecture = PASS。下�
 
 ### 10.1 Refresh Correctness / State Machine（当前第一工作包）
 
-Source commit `c4f5ad8d57d21508469e72ff5e4b18adcc2e8c65` 已完成 foreground-only 状态机及 Activity/window event-order 修正；host V20.4 27/27、V20.3B 5/5，CI run `33351448572`、isolated ROM build 与 final-super 48-marker verifier 均 PASS。当前未刷机候选 RunId `20260831104317`。旧候选 `20260831094239` 因未覆盖 Activity-first/window-first 漏洞被人工 Gate 拒绝并已由当前候选替代，**不得刷写**。以下现在是 device acceptance gate，而不是继续扩展源码的许可：
+Fixed source commit `3c5cd809d5465828fe14356cbd079d45d00347b7` 的 host V20.4 27/27、V20.3B 5/5，CI run `33361319072`、isolated ROM build、final-super 48-marker verifier、final-artifact ART gate和Boot Hard Gate均 PASS。RunId `20260831134511` 的 device acceptance为 **PARTIAL**：
 
-1. 验证非 120 App → ZuiControl/SystemUI/IME neutral 120 → 返回 App 恢复；同时覆盖 Activity-first/window-first，Activity metadata 不得在真实 window edge 前制造 intermediate default 120；不得恢复旧 inheritance 语义。
-2. 验证 raw/current/last 与 desired/attempted/applied/physical 的状态不变量；`applied` 不得在 apply/fail/disabled 后伪装成 physical success。
-3. 验证 QS Tile、通知 QuickService 和 App 修改的始终是上一个真实业务场景，但 transient 前台只保存、不把后台业务 Hz 应用到当前屏幕。
-4. 验证两个 refresh kill switch 的稳定 disable/enable 无需切 App即可触发；rapid toggle 只要求最终收敛到真实最新 mask。确认 priority-8 vote、UDFPS local override、shared AppRequest handoff 与 peak compatibility bridge 的实际释放/重建时序。
-5. 验证 partial apply、unsupported mode、skipSame、disabled、失败回退和防抖的真实平台结果。
-6. 回归 profile校验、AtomicFile损坏恢复、当前场景 apply、userId和 IME/PermissionController/Resolver/SystemUI/ZuiControl transient矩阵。
-7. 在 60/90/120/144/165 下记录 current/last/desired/attempted/applied/physical、vote/AppRequest、peak 和 profile hash，并做 5min settle + 60s `/proc` + 约 90s Perfetto idle regression；transient 仍是第一优先级。
+1. PASS：foreground-only `60/90/120/144/165 → ZuiControl/SystemUI/IME/Resolver 120 → 返回恢复`；QS/ZuiControl只保存上一业务 App；profile negative、dedup、freeform、split、PiP、peak observer、enabled idle和Binder边界取得有效证据。
+2. FAIL：两个 kill switch在property已稳定为1后仍不改变service mask/disabled或ownership；禁止把source callback存在写成真机即时性PASS。
+3. FAIL：App-to-App 10次切换每次apply `+2`，8次明确采到临时空window→default120→目的profile；host event-order模型没有覆盖真实 null-window handoff。
+4. FAIL：`com.lenovo.screensplit` 与 `com.zui.freeform.sidebar` 被当成业务 App，覆盖 current/last/editable；default120只是未配置的偶然结果。
+5. `UDFPS_LOCAL_VOTE_RUNTIME=NOT_OBSERVED`；fault injection、kill-switch下游release/reenable、disabled idle未执行；secondary user不存在，external display未验证。PermissionController/PackageInstaller实际路径也未完整覆盖。
+6. 当前设备已恢复 Launcher/default120、两项disable=0、仅default profile、Uperf/asoulOpt running。下一步只能针对已证实失败另立修正与新候选 gate；不得重刷旧候选、不得把本轮扩展成Uperf/asoulOpt改造。
 
 本工作包不得修改 command transaction、Uperf/asoulOpt 生产策略、120 hard-lock 决策或 Binder 安全契约，不得引入 App/daemon 第二 owner、polling 或 watchdog。
+
+```text
+V20_4_REFRESH_SOURCE_HOST_BUILD=PASS
+V20_4_REFRESH_FIXED_CANDIDATE_BOOT=PASS
+V20_4_REFRESH_DEVICE_VALIDATION=PARTIAL
+V20_4_REFRESH_KILL_SWITCH_DEVICE=FAIL_NOT_CONVERGED
+V20_4_REFRESH_ACTIVITY_WINDOW_ORDER=FAIL_INTERMEDIATE_DEFAULT
+V20_4_REFRESH_VENDOR_OVERLAY=FAIL_CLASSIFICATION
+UDFPS_LOCAL_VOTE_RUNTIME=NOT_OBSERVED
+FAULT_INJECTION_DEVICE_PATH=NOT_EXECUTED
+SECONDARY_USER_EXTERNAL_DISPLAY=NOT_VALIDATED
+```
 
 ### 10.2 其它 carry-forward backlog
 

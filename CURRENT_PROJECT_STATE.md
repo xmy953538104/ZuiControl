@@ -4,13 +4,15 @@
 
 ## 1. 当前结论
 
-V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**。历史 decision 的 `PARTIAL / HOLD` 是当时的阶段转换 gate，现已解除。rapid Uperf crash storm、T8 request-ID 等未闭环发现保持原结论并 carry forward，不得改写成 PASS，也不得再阻止或要求重做 V20.3B。历史 ZuiControl transient 已在 V20.4 源码中修复，但尚未完成真机矩阵。
+V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**。历史 decision 的 `PARTIAL / HOLD` 是当时的阶段转换 gate，现已解除。rapid Uperf crash storm、T8 request-ID 等未闭环发现保持原结论并 carry forward，不得改写成 PASS，也不得再阻止或要求重做 V20.3B。
 
-当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 已完成 source/host/CI/ROM build/final-super 静态闭环，生成了未刷机 candidate；设备仍运行 V20.3B/V49 候选，V20.4 device matrix尚未执行。
+当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 的 fixed candidate 已通过 source/host/CI/ROM build/final-super、final-artifact ART 与 Boot Hard Gate；device validation 已执行，结论为 **PARTIAL**。
 
 设备/系统：TB321FU / ZUI 16.1.11.072。
 
-最近完整真机基线：V20.3B RunId `20260830181816`。当前 V20.4 未刷机候选为 RunId `20260831104317`，refresh source commit `c4f5ad8d57d21508469e72ff5e4b18adcc2e8c65`，CI run `33351448572`；App 制品仍为 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`。工程阶段号与 App/Binder 版本号是不同概念。旧候选 `20260831094239` 因 Activity/window event-order 漏洞被人工 Gate 拒绝并已被替代，不得刷写。
+最近关闭的完整基线：V20.3B RunId `20260830181816`。当前设备运行 V20.4 fixed RunId `20260831134511`，refresh source commit `3c5cd809d5465828fe14356cbd079d45d00347b7`，CI run `33361319072`；App 制品仍为 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`。工程阶段号与 App/Binder 版本号是不同概念。
+
+候选 lineage：`20260831094239` 在刷前因 event-order漏洞被拒绝；`20260831104317` 静态 gate通过但刷后触发 ART `VerifyError`、Boot Gate FAIL，随后按验证流程恢复 V20.3B；`20260831134511` 对最终 super 中 `services.jar` 增加目标设备 ART/dex2oat gate并通过，经授权 fixed-seven刷入后Boot Gate PASS。旧两个候选均不得再次刷写。
 
 ## 2. 当前真实架构
 
@@ -61,7 +63,7 @@ V20.3B 阶段已经关闭。关闭不等于所有补充矩阵 PASS；未闭环�
 
 ## 5. V20.4 Refresh Correctness / State Machine
 
-这是当前第一工作包，统一处理四个原本分散的问题：ZuiControl transient、kill switch 非即时、disabled 后 AppRequest/vote/peak 是否完整释放，以及 `appliedScenePackage` 不代表 physical success。源码实现与 host/build gate已完成；以下语义已经写入 candidate，但仍需真机验证：
+这是当前第一工作包，统一处理四个原本分散的问题：ZuiControl transient、kill switch 非即时、disabled 后 AppRequest/vote/peak 是否完整释放，以及 `appliedScenePackage` 不代表 physical success。源码实现与 host/build gate已完成，下列设计语义已经进入fixed candidate；真机结果必须与设计分开记录：
 
 1. **第一优先级：foreground-only transient。** `controlPanel` 独立 profile-owner 特判已删除。业务 App 有自定义 profile 时按自身 Hz；SystemUI、ZuiControl、IME、权限/Resolver/overlay 等真正前台时使用 neutral/default 120；返回业务 App 后恢复其 profile。不得继承 last business Hz。
 2. **状态不变量与 event order。** 明确定义 raw/current/last、desired/attempted/applied/physical；apply、skipSame、fail、disabled 后的 `appliedScenePackage` 不得伪装成成功物理场景。focused window 是 physical authority；真实 window 出现后 Activity 只补 metadata，不能追溯重分类当前 window。Activity-first/window-first 都不得制造错误 intermediate default 120。
@@ -72,9 +74,21 @@ V20.3B 阶段已经关闭。关闭不等于所有补充矩阵 PASS；未闭环�
 
 本包不修改 command transaction、Uperf/asoulOpt 策略、120 hard-lock 决策或 Binder 安全契约，不引入第二 owner、polling 或 watchdog。
 
-Host regression：V20.4 27/27、V20.3B 5/5、Java 8/D8、Gradle test/lint/debug assemble、B072 smali probe 均 PASS。Exact source commit 经 CI 成功构建签名 APK/payload；isolated official 072 流程完成 `SignNoFec`、签名后 `PackSuper`，最终 `super.img` 的基础 verifier 与 V20.4 48-marker verifier 均为 `ok=true`。Candidate 路径：`D:\3.VScode\Mi\work\v20_4_candidate_20260831104317`，`super.img` SHA-256 `059e910359c39f585ed280b623bde0d8d97d6d8dd12b1efdfd2df5281b629757`；`production_b072_unchanged=true`、`flashed=false`。
+Host/build：V20.4 27/27、V20.3B 5/5、Java 8/D8、Gradle、B072 smali、CI `33361319072`、isolated official 072、final-super 48-marker均PASS。Fixed candidate路径：`D:\3.VScode\Mi\work\v20_4_candidate_20260831134511`；`super.img` SHA-256 `4f01c64d8a3a5860c34967d944510f3768f4e6748bb843eef0345a5c6685800d`。最终 `services.jar` SHA-256 `389ac1cff8e79705a8dd9e5220f3c70ccef5c84f0681ac3c6c993f81ddcd24ff`，目标设备 ART gate `DEX_RC=0 / GATE_RC=0`。构建时的 `flashed=false` 只是 packaging receipt；该fixed package后来已经授权刷入。
 
-因此当前结论是 **FLASH CANDIDATE READY / DEVICE VALIDATION PENDING**，不是 V20.4 refresh 真机 PASS。待验证边界包括物理 mode、IME 动画/硬键盘、稳定 disable/enable 时延、rapid toggle 最终收敛、UDFPS local/global vote、shared AppRequest traversal 完成、外部 peak writer 竞态、未知 vendor window、多用户、idle overhead、Enforcing/AVC 以及 100 次 dedup 矩阵。
+真机已证明：
+
+- foreground-only 主路径：60/90/120/144/165业务App → ZuiControl/SystemUI/IME/Resolver default120 → 返回恢复；QS/ZuiControl只保存上一业务App；
+- profile 负例、dedup、freeform、split、PiP、peak observer、enabled idle、Binder授权和单用户边界；
+- Boot Gate：19样本/188.563秒，system_server PID2635稳定，Binder/Enforcing/bootanim状态正确，当前boot无VerifyError、system-process FATAL、restart或RescueParty。
+
+真机明确失败：
+
+- **kill switch不收敛**：refresh/global property=1稳定超过6秒/5.1秒，service仍mask0/disabled false且ownership未释放；rapid-final-disabled同样失败；
+- **App-to-App intermediate default**：10次60↔90启动每次apply `+2`，8次明确采到临时空window→120→目的profile；
+- **vendor overlay误分类**：`com.lenovo.screensplit`、`com.zui.freeform.sidebar`覆盖current/last/editable。
+
+边界：UDFPS因无fingerprint sensor/service为`NOT_OBSERVED`；fault injection、kill-switch下游AppRequest/vote/peak release与reenable、disabled idle未执行；secondary user不存在，external display未验证；PermissionController/PackageInstaller实际路径未完整覆盖。完整权威结果见 [`08_DEVICE_RESULTS.md`](V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md)。
 
 ## 6. 其它 carry-forward backlog
 
@@ -105,6 +119,12 @@ V20.4 Refresh Correctness 不混入 GPU/KGSL 正式接管、thermal 大改、App
 
 V20_3B_STAGE=CLOSED
 V20_4_REFRESH_SOURCE_HOST_BUILD=PASS
-V20_4_REFRESH_FLASH_CANDIDATE_READY=YES
-V20_4_REFRESH_DEVICE_VALIDATION=PENDING
+V20_4_REFRESH_FIXED_CANDIDATE_BOOT=PASS
+V20_4_REFRESH_DEVICE_VALIDATION=PARTIAL
+V20_4_REFRESH_KILL_SWITCH_DEVICE=FAIL_NOT_CONVERGED
+V20_4_REFRESH_ACTIVITY_WINDOW_ORDER=FAIL_INTERMEDIATE_DEFAULT
+V20_4_REFRESH_VENDOR_OVERLAY=FAIL_CLASSIFICATION
+UDFPS_LOCAL_VOTE_RUNTIME=NOT_OBSERVED
+FAULT_INJECTION_DEVICE_PATH=NOT_EXECUTED
+SECONDARY_USER_EXTERNAL_DISPLAY=NOT_VALIDATED
 TAKEOVER_READY=YES

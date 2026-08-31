@@ -12,7 +12,7 @@ ZuiControl 是 TB321FU / ZUI 16.1.11.072 的 ROM 内置系统控制工具，核�
 4. 当前生产源码
 5. [`CURRENT_EVIDENCE_INDEX.md`](CURRENT_EVIDENCE_INDEX.md)
 
-V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。最近真机基线仍是 RunId `20260830181816`；V20.4 Refresh Correctness / State Machine 已生成未刷机 candidate RunId `20260831104317`，source/host/CI/ROM build/final-super PASS，device validation PENDING。旧候选 `20260831094239` 已被人工 Gate 拒绝并替代，不得刷写。App 仍是 versionCode 49 / versionName 0.21.12。
+V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。当前设备运行 V20.4 fixed RunId `20260831134511`：source/host/CI/ROM build/final-super、final-artifact ART 与 Boot Hard Gate PASS，device validation **PARTIAL**。旧 RunId `20260831094239` 已在刷前拒绝；`20260831104317` 刷后因 ART `VerifyError` Boot Gate FAIL并完成V20.3B恢复，两者均不得再次刷写。App 仍是 versionCode 49 / versionName 0.21.12。
 
 旧 handoff、AI 报告、阶段报告和 raw/trace/log 位于仓库外 `D:\3.VScode\Mi\ZuiControl_Archive\`。默认不要扫描 archive；只按 evidence index 定向读取。
 
@@ -38,7 +38,7 @@ OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno
 
 第一优先级已经按 foreground-only state machine 实现：业务 App 真正 foreground 时使用自身 profile；SystemUI、ZuiControl、IME、权限/Resolver/overlay 等 transient 真正 foreground 时使用 neutral/default 120，返回业务 App 后恢复。`lastNonTransientScenePackage` 只用于 QS/ZuiControl 编辑对象，不再用于继承当前物理 Hz。
 
-focused window 是 physical authority：真实 window signal 出现后，背后的 Activity metadata 变化只补充元数据，不得追溯重分类当前 window 或触发 physical apply。Activity-first 与 window-first 的 host 路径都已覆盖；设备上的 window/IME/overlay 时序仍须执行完整 matrix。
+focused window 是 physical authority：真实 window signal 出现后，背后的 Activity metadata 变化只补充元数据，不得追溯重分类当前 window 或触发 physical apply。host 的 Activity-first/window-first 模型已覆盖，但真机发现 App-to-App 临时 null-window 被当成 authoritative empty owner，制造 intermediate default120；这项运行时契约尚未通过。
 
 同一工作包统一处理：
 
@@ -48,6 +48,8 @@ focused window 是 physical authority：真实 window signal 出现后，背后�
 - disabled 后定向清 priority-8 vote、compare/restore peak，并请求 shared AppRequest 的 WindowManager traversal handoff；该无 token AppRequest 的实际完成时序留真机验证；
 - apply/skip/fail/disabled 后 `appliedScenePackage` 的真实语义；
 - 60/90/120/144/165 的 transient 与 physical Hz 矩阵。
+
+真机已证明 foreground-only 主路径、五档、IME/Resolver、QS编辑对象、dedup、freeform/split/PiP、profile拒绝、peak observer、enabled idle与Binder边界。三项 blocker 必须保留：kill switch property edge不收敛到service mask；App-to-App每次出现额外default120 apply；`com.lenovo.screensplit`与`com.zui.freeform.sidebar`被误分类为业务App。UDFPS为`NOT_OBSERVED`，fault injection及kill-switch下游release/reenable未执行，多用户/外接屏未验证。权威结果见 [`08_DEVICE_RESULTS.md`](V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md)。
 
 当前 `displayVote=adaptiveRender`，target=120 时静止 physical actual 可以降到 60；尚未交付 120 hard-lock。`fpsCap` 仍是未交付兼容字段。
 
@@ -59,7 +61,7 @@ focused window 是 physical authority：真实 window signal 出现后，背后�
 - `payload/`：注入 system image 的 APK、init、binary、config 和 SELinux payload。
 - `scripts/`：build、payload 应用、framework 注入和 final-package 验证。
 - `V20_3B_DAEMON_RETIREMENT/tests/`：当前 host/device policy 与回归工具；测试代码保留原位。
-- `V20_4_REFRESH_CORRECTNESS/`：refresh 状态模型、host/build 证据、final-super verifier 结果与 device plan。
+- `V20_4_REFRESH_CORRECTNESS/`：refresh 状态模型、host/build/ART/Boot证据、device plan与真机结果。
 - `CURRENT_EVIDENCE_INDEX.md`：当前基线的最小证据入口。
 
 ## Build 与验证
@@ -84,7 +86,7 @@ Steady-state 预期包含：refresh owner=`system`、persistent `zui_controld` P
 
 任何 ROM 交付仍必须按 `AGENTS.md` 做 final-super 反向内容、context、SHA-256 和刷后 AVC 验证。
 
-当前未刷机候选：`D:\3.VScode\Mi\work\v20_4_candidate_20260831104317`。它绑定 source commit `c4f5ad8d57d21508469e72ff5e4b18adcc2e8c65` 与 CI run [`33351448572`](https://github.com/xmy953538104/ZuiControl/actions/runs/33351448572)；最终 `super.img` SHA-256 为 `059e910359c39f585ed280b623bde0d8d97d6d8dd12b1efdfd2df5281b629757`，基础与 V20.4 final-super verifier 均 PASS（`marker_count=48`）。该结论只允许进入 device matrix，不等于真机验证完成。
+当前已刷 fixed candidate：`D:\3.VScode\Mi\work\v20_4_candidate_20260831134511`。它绑定 source commit `3c5cd809d5465828fe14356cbd079d45d00347b7` 与 CI run [`33361319072`](https://github.com/xmy953538104/ZuiControl/actions/runs/33361319072)；最终 `super.img` SHA-256 为 `4f01c64d8a3a5860c34967d944510f3768f4e6748bb843eef0345a5c6685800d`，final-super verifier `marker_count=48`，最终 `services.jar` ART gate和刷后Boot Gate均PASS。`build_result.json`中的`flashed=false`是构建完成时的receipt，不表示当前设备未刷。device acceptance仍因上述三项blocker为PARTIAL。
 
 ## 当前禁止
 

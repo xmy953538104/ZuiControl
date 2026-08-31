@@ -1,5 +1,7 @@
 # ZuiControl V20.4 Refresh Pre-Flash Correction Decision
 
+> **SUPERSEDED HISTORICAL PREFLASH RECORD** — 本文件记录 RunId `20260831104317` 的刷前静态结论。该候选后来实际刷入并因 ART `VerifyError` Boot Gate FAIL，设备随后恢复V20.3B。successor fixed RunId `20260831134511` 已通过final-artifact ART与Boot Gate，但device validation为PARTIAL。当前权威入口是 [`CURRENT_PROJECT_STATE.md`](CURRENT_PROJECT_STATE.md) 与 [`08_DEVICE_RESULTS.md`](V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md)；下方旧provenance保持原样，仅供审计。
+
 日期：2026-08-31
 
 ## Decision

@@ -1,6 +1,6 @@
 # V20.4 Refresh Correctness Device Test Plan
 
-状态：candidate RunId `20260831104317` 已生成并通过 final-super verifier；旧 RunId `20260831094239` 已被人工 Gate 拒绝且不得刷写。待授权刷机后执行，本工作包不自动刷机。
+状态：本文件保留为已执行的acceptance spec。RunId `20260831094239`在刷前被拒绝；`20260831104317`刷入后因ART `VerifyError` Boot Gate FAIL并完成V20.3B恢复；fixed RunId `20260831134511`通过final-artifact ART与Boot Gate，device matrix结论为PARTIAL。权威结果见 [`08_DEVICE_RESULTS.md`](08_DEVICE_RESULTS.md)。
 语义基线：foreground-only。所有断言同时记录 raw/current/last/desired/applied/target/physical，不能只看 App UI。
 
 ## 1. 稳定 transition 与最终状态采集
@@ -76,4 +76,20 @@
 
 ## 7. 通过条件
 
-全部矩阵、event-order、profile-file negative check、UDFPS真实路径、AppRequest traversal、idle overhead、ownership与60/90/144/165 physical check通过后，才能把device validation标为PASS。无法稳定触发的UDFPS路径必须明确保留`NOT OBSERVED`边界。在此之前host/build/final-super PASS只表示候选可刷测试，不表示真机refresh correctness已验收。
+全部矩阵、event-order、profile-file negative check、UDFPS真实路径、AppRequest traversal、idle overhead、ownership与60/90/144/165 physical check通过后，才能把device validation标为PASS。fixed RunId实际没有满足该条件：
+
+| Area | Result |
+| --- | --- |
+| ART + Boot Hard Gate | PASS |
+| foreground-only、五档、IME/Resolver、QS编辑目标、dedup、freeform/split/PiP、profile negative、peak observer、enabled idle、Binder security | PASS with recorded boundaries |
+| stable/rapid kill switch | `FAIL_NOT_CONVERGED` |
+| App-to-App Activity/window order | `FAIL_INTERMEDIATE_DEFAULT` |
+| Lenovo/ZUI vendor overlay classification | `FAIL_CLASSIFICATION` |
+| UDFPS local vote | `NOT_OBSERVED`：fingerprint service不存在，biometric Sensors为空 |
+| fault injection；kill-switch下游release/reenable；disabled idle | `NOT_EXECUTED` |
+| secondary user / external display | `NOT_VALIDATED` |
+| PermissionController / PackageInstaller实际路径 | 未完整覆盖 |
+
+```text
+V20_4_REFRESH_DEVICE_VALIDATION=PARTIAL
+```
