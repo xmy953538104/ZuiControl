@@ -45,6 +45,18 @@ function Find-EdlPorts {
     } | Sort-Object -Unique)
 }
 
+function Wait-EdlPort([int]$TimeoutSeconds) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        Start-Sleep -Milliseconds 500
+        $found = @(Find-EdlPorts)
+    } until ($found.Count -gt 0 -or [DateTime]::UtcNow -ge $deadline)
+    if ($found.Count -ne 1) {
+        throw "Expected exactly one Qualcomm 9008 COM port; found: $($found -join ', ')"
+    }
+    return $found[0]
+}
+
 if (-not (Test-Path -LiteralPath $AdbPath -PathType Leaf)) {
     throw "adb not found: $AdbPath"
 }
@@ -76,15 +88,7 @@ if ($rootProbe -notmatch 'uid=0') {
 Write-Host "Verified adb device: $ConfirmAdbSerial / $model / $build"
 [void](Invoke-Adb @('shell', 'su', '-c', 'sync; reboot edl') -AllowDisconnect)
 
-$deadline = [DateTime]::UtcNow.AddSeconds($EdlTimeoutSeconds)
-do {
-    Start-Sleep -Milliseconds 500
-    $ports = @(Find-EdlPorts)
-} until ($ports.Count -gt 0 -or [DateTime]::UtcNow -ge $deadline)
-if ($ports.Count -ne 1) {
-    throw "Expected exactly one Qualcomm 9008 COM port; found: $($ports -join ', ')"
-}
-$port = $ports[0]
+$port = Wait-EdlPort $EdlTimeoutSeconds
 Write-Host "Qualcomm 9008 detected on $port"
 if ($Mode -eq 'EnterEdl') {
     Write-Host 'Device is in 9008 mode. No flash command was sent.'
@@ -95,13 +99,14 @@ $loader = Join-Path $SafePackageDir 'prog_firehose_ddr-TB321FC.elf'
 $xml = Join-Path $SafePackageDir 'rawprogram_zuicontrol.xml'
 $logDir = 'D:\3.VScode\Mi\flash\Log'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-$log = Join-Path $logDir ("ZuiControl_qdlrs_{0}.log" -f [DateTime]::Now.ToString('yyyy-MM-dd_HH-mm-ss'))
+$timestamp = [DateTime]::Now.ToString('yyyy-MM-dd_HH-mm-ss')
+$log = Join-Path $logDir ("ZuiControl_qdlrs_{0}.log" -f $timestamp)
 $arguments = @(
     '--backend', 'serial',
     '--dev-path', $port,
     '--loader-path', $loader,
     '--storage-type', 'ufs',
-    '--reset-mode', 'system',
+    '--reset-mode', 'edl',
     '--read-back-verify',
     '--print-firehose-log',
     'flasher', '-p', $xml
@@ -113,6 +118,98 @@ if ($LASTEXITCODE -ne 0) {
 }
 if ((Get-Content -LiteralPath $log -Raw) -notmatch 'All went well!') {
     throw "qdl-rs did not report its success marker. Log: $log"
+}
+
+# qdl-rs 0.1.0 only forwards --read-back-verify as a Firehose <program>
+# attribute.  It does not return bytes to the host for comparison.  Treat that
+# flag as supplementary and prove every fixed-seven write by an explicit
+# physical partition dump, byte length check, and host SHA-256 comparison.
+[xml]$rawprogram = Get-Content -Raw -LiteralPath $xml
+$programs = @($rawprogram.data.program)
+$expectedLabels = @('super', 'vbmeta_system_a', 'vbmeta_system_b', 'boot_a', 'boot_b', 'vbmeta_a', 'vbmeta_b')
+$actualLabels = @($programs | ForEach-Object { [string]$_.label })
+if ($programs.Count -ne 7 -or ($actualLabels -join "`n") -ne ($expectedLabels -join "`n")) {
+    throw "Physical read-back requires the exact fixed-seven labels: $($actualLabels -join ', ')"
+}
+$readbackDir = Join-Path $logDir ("ZuiControl_readback_{0}" -f $timestamp)
+if (Test-Path -LiteralPath $readbackDir) { throw "Fresh read-back directory required: $readbackDir" }
+New-Item -ItemType Directory -Path $readbackDir | Out-Null
+$largestImage = @($programs | ForEach-Object {
+    (Get-Item -LiteralPath (Join-Path $SafePackageDir ([string]$_.filename))).Length
+} | Measure-Object -Maximum).Maximum
+$readbackDrive = Get-PSDrive -Name ([IO.Path]::GetPathRoot($readbackDir).Substring(0, 1))
+if ($readbackDrive.Free -lt ($largestImage + 2GB)) {
+    throw "Insufficient temporary space for physical read-back: need at least $($largestImage + 2GB) bytes."
+}
+
+$readbackResults = @()
+foreach ($program in $programs) {
+    $label = [string]$program.label
+    $imagePath = Join-Path $SafePackageDir ([string]$program.filename)
+    $expectedLength = [int64]$program.num_partition_sectors * [int64]$program.SECTOR_SIZE_IN_BYTES
+    if ((Get-Item -LiteralPath $imagePath).Length -ne $expectedLength) {
+        throw "Image does not exactly fill programmed extent for ${label}: $imagePath"
+    }
+    $port = Wait-EdlPort $EdlTimeoutSeconds
+    $readLog = Join-Path $readbackDir ("${label}.qdl.log")
+    $dumpArguments = @(
+        '--backend', 'serial',
+        '--dev-path', $port,
+        '--loader-path', $loader,
+        '--storage-type', 'ufs',
+        '--phys-part-idx', [string]$program.physical_partition_number,
+        '--reset-mode', 'edl',
+        '--print-firehose-log',
+        'dump-part', '-o', $readbackDir, $label
+    )
+    Write-Host "Reading back physical partition $label from UFS LUN $($program.physical_partition_number)..."
+    & $QdlPath @dumpArguments 2>&1 | Tee-Object -FilePath $readLog
+    if ($LASTEXITCODE -ne 0 -or (Get-Content -Raw -LiteralPath $readLog) -notmatch 'All went well!') {
+        throw "Physical read-back failed for $label. Device remains in EDL. Log: $readLog"
+    }
+    $dumpPath = Join-Path $readbackDir $label
+    if (-not (Test-Path -LiteralPath $dumpPath -PathType Leaf)) {
+        throw "qdl-rs did not create the expected physical dump: $dumpPath"
+    }
+    $actualLength = (Get-Item -LiteralPath $dumpPath).Length
+    $expectedHash = (Get-FileHash -LiteralPath $imagePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualHash = (Get-FileHash -LiteralPath $dumpPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualLength -ne $expectedLength -or $actualHash -ne $expectedHash) {
+        throw "Physical read-back mismatch for $label. Device remains in EDL. expected_length=$expectedLength actual_length=$actualLength expected_sha256=$expectedHash actual_sha256=$actualHash"
+    }
+    $readbackResults += [pscustomobject][ordered]@{
+        label = $label
+        physical_partition_number = [int]$program.physical_partition_number
+        bytes = $actualLength
+        source_image = [string]$program.filename
+        source_sha256 = $expectedHash
+        physical_readback_sha256 = $actualHash
+        result = 'PASS'
+    }
+    Remove-Item -LiteralPath $dumpPath -Force
+}
+$readbackManifest = Join-Path $readbackDir 'physical_readback_manifest.json'
+[pscustomobject][ordered]@{
+    qdl_version = ($qdlVersion -join ' ').Trim()
+    qdl_flag_only_accepted_as_proof = $false
+    method = 'qdl-rs dump-part to host; exact byte length and SHA-256 comparison; temporary dumps deleted after verification'
+    fixed_seven = $readbackResults
+    result = 'PHYSICAL_PARTITION_READBACK=PASS'
+} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $readbackManifest -Encoding UTF8
+Write-Host "PHYSICAL_PARTITION_READBACK=PASS Manifest: $readbackManifest"
+
+$port = Wait-EdlPort $EdlTimeoutSeconds
+$resetArguments = @(
+    '--backend', 'serial',
+    '--dev-path', $port,
+    '--loader-path', $loader,
+    '--storage-type', 'ufs',
+    '--reset-mode', 'system',
+    'nop'
+)
+& $QdlPath @resetArguments 2>&1 | Tee-Object -FilePath (Join-Path $readbackDir 'reset_system.qdl.log')
+if ($LASTEXITCODE -ne 0) {
+    throw "Physical read-back passed, but qdl-rs could not reset the device to system. Device may remain in EDL."
 }
 
 $deadline = [DateTime]::UtcNow.AddSeconds($BootTimeoutSeconds)

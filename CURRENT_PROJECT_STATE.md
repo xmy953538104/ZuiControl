@@ -6,15 +6,15 @@
 
 V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**。历史 decision 的 `PARTIAL / HOLD` 是当时的阶段转换 gate，现已解除。rapid Uperf crash storm、T8 request-ID 等未闭环发现保持原结论并 carry forward，不得改写成 PASS，也不得再阻止或要求重做 V20.3B。
 
-当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成针对性真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。第二工作包 **Uperf Architecture & Upstream Rebase** 的source/host/build/final-artifact Gate仍为PASS记录，但RunId `20260901120647` 经人工批准刷入后在Phase 1触发 **DEVICE BOOT HARD GATE FAIL**：Android与system_server正常启动，Uperf却因两项SELinux访问缺失进入5秒init restart storm，并置`sys.init.updatable_crashing=1`。device matrix已经中止，工作包保持OPEN并等待人工Review；不得写成Production PASS，不得自动修代码/build下一候选，也不要开始V21。
+当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成针对性真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。第二工作包 **Uperf Architecture & Upstream Rebase** 的定向 **SELinux / Startup Gate Correction** RunId `20260901174600` 已刷入；Android/framework boot PASS，但Uperf Startup Runtime Gate因新`performanced → surfaceflinger_exec:file read` blocking AVC、rapid crash counter 3和fail-safe 1而 **FAIL**。10分钟steady-state及完整device matrix均未执行，不要开始V21。
 
-当前设备保留在失败候选 RunId `20260901120647` 的已开机现场，未重复reboot、未runtime repair、未恢复刷写。`sys.boot_completed=1`，system_server PID/starttime `2660/983`、Binder、Launcher与SELinux正常，asoulOpt running；但`init.svc.zui_uperf=restarting`、`sys.init.updatable_crashing=1`、process name=`zui_uperf`、ZuiControl fail-safe仍为`0`。live `services.jar` SHA-256为批准候选的`f7575f5ca50fdba040e814229063beecf99203b9d25fc117401268c62b2c82fd`。健康的最近生产基线仍是RunId `20260831170720`，但当前设备并未恢复到该基线。
+当前设备保留在失败候选 RunId `20260901174600` 的新boot现场，boot ID `2d7d16ae-4ca7-4a44-b09e-7de41e1e8422`；未重复reboot、未runtime repair、未手工start/stop Uperf。当前`sys.boot_completed=1`、system_server PID/starttime `2682/983`在106.39/183.31/296.46/715.56秒四次样本稳定、Binder与SELinux正常、asoulOpt PID3968 running；`init.svc.zui_uperf=stopped`、`.service_rapid_crashes=3`、`sys.zui_control.uperf_fail_safe=1`，715.56秒只是失败现场保持，不是Uperf-running PASS。本次boot的`sys.init.updatable_crashing*`为空。不得清property、手工启动Uperf、reboot美化现场或补刷其它候选。健康的最近生产基线仍是RunId `20260831170720`，但当前设备并未恢复到该基线。
 
 设备/系统：TB321FU / ZUI 16.1.11.072。
 
 最近关闭的完整基线：V20.3B RunId `20260830181816`。当前生产 App 制品仍为 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`；工程阶段号、RunId与 App/Binder 版本号是不同概念。
 
-候选 lineage：`20260831094239` 在刷前因 event-order漏洞被拒绝；`20260831104317` 静态 gate通过但刷后触发 ART `VerifyError`、Boot Gate FAIL，随后按验证流程恢复 V20.3B；`20260831134511` 加入目标ART gate并刷入，Boot PASS但device结果因三个runtime blocker为PARTIAL；`20260831170720` 定向修正三项并已刷入、验证PASS；Uperf候选`20260901120647`固定七项刷入成功且framework boot正常，但Uperf startup/fail-safe SELinux Gate FAIL。不得再次刷写任何被拒绝或已失败候选。
+候选 lineage：`20260831094239` 在刷前因 event-order漏洞被拒绝；`20260831104317` 静态 gate通过但刷后触发 ART `VerifyError`、Boot Gate FAIL，随后按验证流程恢复 V20.3B；`20260831134511` 加入目标ART gate并刷入，Boot PASS但device结果因三个runtime blocker为PARTIAL；`20260831170720` 定向修正三项并已刷入、验证PASS；Uperf候选`20260901120647`与定向修正`20260901174600`均在Uperf startup Gate失败，后者Android boot正常但出现新的surfaceflinger_exec blocking AVC。不得再次刷写任何被拒绝或已失败候选。
 
 ## 2. 当前真实架构
 
@@ -31,7 +31,7 @@ persistent `zui_controld` 已退休；当前 init 中不存在其 service/start�
 
 Uperf 自带 context/thread scheduler 为 `sched.enable=false`，asoulOpt 是唯一 per-task affinity owner；Uperf sysfs 模块仍写全局 cpuset mask，广义 topology/knob ownership必须由刷后time-series/writer-trace证明。生产控制面没有 `auto` 档，Uperf mode 由system_server依据真正top-resumed Activity决策；配置仍保留 `switcher.perapp` 路径和二进制相关能力，所以不能宣称 Native Auto 代码已删除，只能说没有production入口。Refresh的focused Window authority保持不变。
 
-`zui_uperf_service` 源码已用一次bounded startup FIFO event wait + steady blocking read替代旧5秒cgroup/log轮询；但RunId `20260901120647` 的真机启动证明该实现不可运行：`performanced`域读取`proc_uptime`被拒绝并status 1退出，`shell`域crash-gate又无权读取`scheduler_active`属性，导致显式fail-safe未生效而init每5秒重启。正常worker recovery、FIFO EOF、rapid storm、explicit stop与idle目标均未进入验证，不能再用静态PASS描述为运行时成立。
+`zui_uperf_service` 源码使用一次bounded startup FIFO event wait + steady blocking read替代旧5秒cgroup/log轮询。RunId `20260901120647` 的真机启动证明其SELinux启动图不完整：`performanced`读取`proc_uptime`被拒绝并status 1退出，`shell` crash gate又错误读取无权访问的`scheduler_active`属性。定向修正只增加`performanced -> proc_uptime:file { getattr open read }`并删除该guard，不新增shell权限、不回退polling。新最终artifact已通过semantic/ART/CIL静态Gate；真正startup、normal worker recovery、FIFO EOF、rapid storm与idle仍待新候选刷后验证。explicit stop在旧失败现场已独立证明86.36秒保持stopped。
 
 ## 3. 源码 sanity check
 
@@ -90,7 +90,7 @@ Host/build：V20.4 `39/39`、V20.3B `5/5`、CI `33375509612`、final-super 56-ma
 
 当前App UI未接TX10，且没有安全现成signed-App Manager/API路径，记为 `APP_UI_TX10=NOT_EXECUTED / SIGNED_APP_TX10_DEVICE_PATH_NOT_AVAILABLE`。UDFPS=`NOT_OBSERVED`、fault injection=`NOT_EXECUTED`、secondary user/external display=`NOT_VALIDATED` 保持显式非阻断边界，不得改写成PASS。完整当前结果见 [`V20_4_REFRESH_RUNTIME_DECISION.md`](V20_4_REFRESH_RUNTIME_DECISION.md) 与 [`08_BOOT_GATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/08_BOOT_GATE.md) 至 [`13_FINAL_RUNTIME_STATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/13_FINAL_RUNTIME_STATE.md)；旧 [`08_DEVICE_RESULTS.md`](V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md) 只记录被替代RunId的历史PARTIAL。
 
-## 6. V20.4 Uperf Architecture & Upstream Rebase
+## 6. V20.4 Uperf Architecture & Upstream Rebase / Startup Correction
 
 source `72fd3ef5ab3d5d6a2b477a9ba2781ee9503d2d30`、CI `33468476491`、RunId `20260901120647` 的静态/host/build/final-artifact门禁通过；人工批准后使用唯一package `D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_UPERF_20260901120647`完成一次fixed-seven写入/read-back，rawprogram SHA-256为`10840bb75283ab3527aae2286c2b63444b165a7217ca7118113ae6ccfe49784a`。
 
@@ -99,14 +99,24 @@ source `72fd3ef5ab3d5d6a2b477a9ba2781ee9503d2d30`、CI `33468476491`、RunId `20
 - Boot观察开始即连续发现`zui_uperf=restarting`和新`sys.init.updatable_crashing=1`，故31秒时按Hard Gate中止180秒窗口及全部Phase 2–16；
 - 真机根因为`performanced → proc_uptime:file read` denied，wrapper status 1；同时`shell → zui_control_scheduler_active_prop:file read` denied，使crash-gate不能置fail-safe；早期dmesg已记录至少56次start/exit1，fail-safe保持0；
 - 没有执行scene/QS/multi-window/screen/idle/fault-injection/tuning/ownership/performance/thermal/refresh-asoul smoke；所有这些项保持NOT EXECUTED/UNPROVEN；
-- failure后没有reboot、runtime repair、production修改、恢复刷写或下一候选build，设备现场按指令保留等待人工Review。
+- failure后在获得定向修正授权前没有reboot、runtime repair、production修改或恢复刷写；之后只在host修正并生成新候选。
 
-当前device决策见 [`V20_4_UPERF_DECISION.md`](V20_4_UPERF_DECISION.md)，Phase 1报告见 [`01_BOOT_GATE.md`](V20_4_UPERF_DEVICE_RESULTS/01_BOOT_GATE.md)，完整刷前证据见 [`09_BUILD_VERIFY.md`](V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md)。
+定向修正已经完成：
+
+- runtime correction commit `7aeaadb5e007b1faa9f381255d4485f6d95fdbbc`；候选绑定source `511f31483243107cff76bb7ed75c0417e574d98a`；
+- CI `33490157865` exact head SHA success；host V20.3B `5/5`、Refresh `39/39`、Uperf `31/31`、correction `16/16`；
+- RunId `20260901174600`，final-super reverse/62-marker、`FINAL_SERVICE_ACCESS_GRAPH_VERIFY=PASS`、目标设备final ART/dex2oat与8份final CIL `secilc`均PASS；
+- 新`super.img` SHA-256 `e10593227adc27a0f56622ee6e9e1aafe46dd2a44b88e58b69501f08bb8075dc`；exact候选已按fixed-seven刷入；
+- 新旧`services.jar`整包hash因ZIP容器元数据不同，但四个`classes*.dex`逐项SHA/长度byte-identical，framework代码未变；
+- `super.img`仍固定13,958,643,712 bytes，旧/新`system_a` EROFS都为4,642,951,168 bytes，没有system膨胀或空间不足；没有新增删除WPS/微博等预装包；
+- 构建前的80GiB是保守preflight，成功构建实际峰值临时占用约26.9GiB；旧C/D/E editable/verifier缓存和本轮最终验证展开树已按精确路径删除。
+
+刷后权威决策见 [`V20_4_UPERF_STARTUP_RUNTIME_DECISION.md`](V20_4_UPERF_STARTUP_RUNTIME_DECISION.md)，证据见 [`V20_4_UPERF_STARTUP_RUNTIME_GATE/`](V20_4_UPERF_STARTUP_RUNTIME_GATE/)，修正文档见 [`V20_4_UPERF_SELINUX_STARTUP_CORRECTION/`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/)。新boot旧`proc_uptime`与`scheduler_active` AVC均为0，但新增`performanced → surfaceflinger_exec:file read` blocking AVC；Uperf worker PIDs4170/7314命中denial，最终wrapper PID7302 status1退出，fail-safe在3次快速崩溃后置1。qdl虽然带`--read-back-verify`且RC0/`All went well!`，完整日志却只有7个program handler、0个read handler，因此read-back为`NOT_PROVEN`。不得继续完整scene/idle/crash/ownership/performance矩阵。
 
 ## 7. 其它 carry-forward backlog
 
 - command latency：P95 约 1.02 秒，主要成本在 durable claim/fsync/Settings ACK；优化必须保持 at-most-once/crash safety；
-- Uperf RunId `20260901120647` 的startup/fail-safe SELinux缺口为当前硬blocker；任何修正必须重新走host、final-super、ART/CIL和人工Pre-Flash Gate。rapid crash fail-safe、normal recovery、explicit stop与idle零polling仍未验证；
+- Uperf RunId `20260901120647` 的startup/fail-safe SELinux缺口已在新候选完成静态/刷前修正，但device runtime仍待人工批准后验证；rapid crash fail-safe、normal recovery与idle零polling仍未验证；explicit stop契约已在旧失败现场证明；
 - T8 request ID：冻结候选真机仍输出空 `id=`，需并发可关联；
 - 120 hard-lock 的流畅度、功耗、温度、触控和 144/165 bridge A/B；
 - Uperf core_ctl/input boost/cpuset真机owner证明与performance A/B；
@@ -151,7 +161,16 @@ V20_4_UPERF_FLASHED=YES
 V20_4_UPERF_ANDROID_BOOT=PASS
 V20_4_UPERF_BOOT_HARD_GATE=FAIL
 V20_4_UPERF_DEVICE_VALIDATION=ABORTED_AT_PHASE_1
-V20_4_UPERF_WORK_PACKAGE=OPEN_HUMAN_REVIEW_REQUIRED
+V20_4_UPERF_SELINUX_STARTUP_CORRECTION_RUN=20260901174600
+V20_4_UPERF_SELINUX_STARTUP_CORRECTION_SOURCE_HOST=PASS
+V20_4_UPERF_SELINUX_STARTUP_CORRECTION_FINAL_ARTIFACT=PASS
+V20_4_UPERF_SELINUX_STARTUP_CORRECTION_PRE_FLASH_READY=YES
+V20_4_UPERF_SELINUX_STARTUP_CORRECTION_FLASHED=YES
+V20_4_UPERF_SELINUX_STARTUP_ANDROID_BOOT=PASS
+V20_4_UPERF_SELINUX_STARTUP_READ_BACK_VERIFY=NOT_PROVEN
+V20_4_UPERF_SELINUX_STARTUP_RUNTIME_GATE=FAIL
+READY_FOR_FULL_UPERF_DEVICE_VALIDATION=NO
+V20_4_UPERF_WORK_PACKAGE=OPEN_PRE_FLASH_REVIEW_REQUIRED
 UDFPS_LOCAL_VOTE_RUNTIME=NOT_OBSERVED
 FAULT_INJECTION_DEVICE_PATH=NOT_EXECUTED
 SECONDARY_USER_EXTERNAL_DISPLAY=NOT_VALIDATED

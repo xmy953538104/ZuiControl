@@ -1,0 +1,9 @@
+SOURCE=V20_4_UPERF_STARTUP_RUNTIME_GATE/raw/selinux/04_logcat_uperf_relevant.txt
+09-01 22:47:59.074  4170  4170 I auditd  : type=1400 audit(0.0:2546): avc: denied { read } for comm="uperf" name="surfaceflinger" dev="dm-7" ino=9715584 scontext=u:r:performanced:s0 tcontext=u:object_r:surfaceflinger_exec:s0 tclass=file permissive=0
+09-01 22:48:09.086  7314  7314 I auditd  : type=1400 audit(0.0:5503): avc: denied { read } for comm="uperf" name="surfaceflinger" dev="dm-7" ino=9715584 scontext=u:r:performanced:s0 tcontext=u:object_r:surfaceflinger_exec:s0 tclass=file permissive=0
+LOGCAT_PROC_UPTIME_AVC=0
+LOGCAT_SCHEDULER_ACTIVE_AVC=0
+SERVICE_RAPID_CRASH_COUNTER=3
+sys.zui_control.uperf_fail_safe=1
+init.svc.zui_uperf=stopped
+UPERF_STARTUP_STABILITY_GATE=FAIL

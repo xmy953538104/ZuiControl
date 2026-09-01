@@ -122,7 +122,7 @@ class UperfSelinuxStartupTests(unittest.TestCase):
 
     def test_15_tuning_and_binary_are_unchanged(self) -> None:
         self.assertEqual(canonical_text_sha256(REPO / "payload/system/etc/zui_control/uperf-sm8650.json"),
-                         "e9f067ad1abc0cc22e01d5fcc6a32220b02efa57b26627217e43cf3d9a895de3")
+                         "fc719b55087f3a1309c2a19bc6442ce2a98276aa0aedc55e7c501654bb268dd8")
         self.assertEqual(sha256(REPO / "payload/system/bin/uperf"),
                          "f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8")
 

@@ -251,6 +251,8 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
     wrapper = read(system / "bin/zui_uperf_service")
     crash_gate = read(system / "etc/zui_control/zui_uperf_crash_gate.sh")
     init_rc = read(system / "etc/init/zui_scheduler.rc")
+    config = json.loads(read(system / "etc/zui_control/uperf-sm8650.json"))
+    uperf_binary = (system / "bin/uperf").read_bytes()
     file_contexts = read(Path(args.file_contexts))
     property_contexts = read(Path(args.property_contexts))
     plat_policy = read(Path(args.plat_policy))
@@ -271,6 +273,71 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
             "fail-safe stop reachability")
     require(init_rc, "onrestart exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_uperf_crash_gate.sh",
             "whole-service crash gate")
+
+    modules = config["modules"]
+    if modules["sfanalysis"]["enable"] is not False:
+        raise ValueError("sfanalysis must remain disabled after the confirmed SurfaceFlinger access failure")
+    if modules["input"]["enable"] is not True:
+        raise ValueError("input module activation changed unexpectedly")
+    if modules["sysfs"]["enable"] is not True:
+        raise ValueError("sysfs module activation changed unexpectedly")
+    if modules["sched"]["enable"] is not False:
+        raise ValueError("sched module must remain disabled; A-SOUL owns thread placement")
+    if modules["switcher"]["switchInode"] != "/data/vendor/zui_control/uperf/effective_powermode.txt":
+        raise ValueError("switcher effective-mode path changed unexpectedly")
+    for marker in (b"SfAnalysisListener", b"/system/bin/surfaceflinger", b"sfanalysis"):
+        if marker not in uperf_binary:
+            raise ValueError(f"pinned Uperf binary lacks SFAnalysis audit marker: {marker!r}")
+
+    module_access_review = [
+        {
+            "module": "sfanalysis",
+            "activated": False,
+            "decision": "DISABLE_UNNEEDED_MODULE",
+            "known_resources": [
+                "/system/bin/surfaceflinger",
+                "/system/lib64/libandroidfw.so",
+                "/system/lib64/libandroid.so",
+            ],
+            "runtime_evidence": "enabled=true caused blocking surfaceflinger_exec:file read AVCs in both startup workers",
+            "coverage": "PARTIAL_STATIC_CLOSED_SOURCE",
+        },
+        {
+            "module": "input",
+            "activated": True,
+            "decision": "KEEP_WITH_NARROW_EXISTING_POLICY",
+            "known_resources": ["/dev/input/**"],
+            "runtime_evidence": "current corrected candidate device proof pending",
+            "coverage": "PARTIAL_STATIC_CLOSED_SOURCE",
+        },
+        {
+            "module": "switcher",
+            "activated": True,
+            "decision": "KEEP_CANONICAL_EVENT_DRIVEN_MODE_PATHS",
+            "known_resources": [
+                modules["switcher"]["switchInode"],
+                modules["switcher"]["perapp"],
+            ],
+            "runtime_evidence": "current corrected candidate device proof pending",
+            "coverage": "PARTIAL_STATIC_CLOSED_SOURCE",
+        },
+        {
+            "module": "sysfs",
+            "activated": True,
+            "decision": "KEEP_WITH_TYPED_CPU_WALT_MSM_POLICY",
+            "known_resources": sorted(set(modules["sysfs"]["knob"].values())),
+            "runtime_evidence": "current corrected candidate device proof pending",
+            "coverage": "PARTIAL_STATIC_CLOSED_SOURCE",
+        },
+        {
+            "module": "sched",
+            "activated": False,
+            "decision": "KEEP_DISABLED_ASOUL_OWNS_THREAD_PLACEMENT",
+            "known_resources": ["/proc/<pid>/task/<tid>/**"],
+            "runtime_evidence": "disabled by production architecture",
+            "coverage": "PARTIAL_STATIC_CLOSED_SOURCE",
+        },
+    ]
 
     for path, expected_type in CONTEXTS:
         pattern = re.compile(rf"(?m)^{re.escape(path)}\s+(?:--\s+)?u:object_r:{expected_type}:s0$")
@@ -303,6 +370,7 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
 
     broad_patterns = {
         "performanced broad proc file": r"\(allow\s+performanced\s+(?:proc|proc_type|fs_type)\s+\(file\s+",
+        "performanced SurfaceFlinger access": r"\(allow\s+performanced(?:_34_0)?\s+[^\s()]*surfaceflinger[^\s()]*\s+\(",
         "shell scheduler property read": r"\(allow\s+shell\s+zui_control_scheduler_active_prop\s+\(file\s+",
         "shell broad property write": r"\(allow\s+shell\s+(?:property_type|system_property_type|system_internal_property_type)\s+\(property_service\s+\(set\)\)\)",
         "performanced permissive": r"\(permissive\s+performanced\)",
@@ -319,6 +387,12 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
         "mode": args.mode,
         "graph_edges": len(graph),
         "graph": graph,
+        "access_graph_completeness": {
+            "wrapper_init_explicit_code": "COMPLETE_STATIC_REVIEW",
+            "closed_source_config_modules": "PARTIAL_STATIC_REVIEW",
+            "device_runtime_for_corrected_candidate": "NOT_YET_PROVEN",
+        },
+        "config_activated_module_access_review": module_access_review,
         "removed_access": {
             "component": "crash-gate",
             "domain": "shell",

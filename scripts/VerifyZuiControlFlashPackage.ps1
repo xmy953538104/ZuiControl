@@ -344,8 +344,8 @@ function Assert-UperfConfig([string]$Path) {
     if ($json.modules.switcher.perapp -ne '/data/vendor/zui_control/uperf/perapp_powermode.txt') {
         throw 'Uperf parser-compatible per-app path is not canonical'
     }
-    if ($json.modules.sfanalysis.enable -ne $true -or $json.modules.sched.enable -ne $false) {
-        throw 'Bundled Uperf must enable internal SF analysis and delegate thread placement to A-SOUL'
+    if ($json.modules.sfanalysis.enable -ne $false -or $json.modules.sched.enable -ne $false) {
+        throw 'Bundled Uperf must disable unneeded SF analysis and delegate thread placement to A-SOUL'
     }
     if ($json.presets.balance.idle.'cpu.baseSampleTime' -ne 1.0 -or
         $json.presets.balance.idle.'cpu.baseSlackTime' -ne 0.5 -or

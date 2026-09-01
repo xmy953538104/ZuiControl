@@ -2,13 +2,14 @@
 
 更新时间：2026-09-01
 最近关闭的完整基线：V20.3B / RunId `20260830181816` / source `30fe138a7ef531aeffbcf951e9113f4ae0d17cfe`
-当前设备：V20.4 Runtime Correction RunId `20260831170720` / source `146e096c6a6bc8b3fee60349b856990fd9fb68d2` / CI `33375509612`
+健康的最近生产基线：V20.4 Refresh Runtime Correction RunId `20260831170720` / source `146e096c6a6bc8b3fee60349b856990fd9fb68d2` / CI `33375509612`
+当前设备实际现场：失败Uperf候选 RunId `20260901120647`；Android boot正常，`zui_uperf=stopped`，`sys.init.updatable_crashing=1`保留
 
 本文件是未来会话的默认证据入口。先读结论与最小报告；只有数字受到质疑时才打开对应 raw 或结果RAR。不要递归扫描 `D:\3.VScode\Mi\ZuiControl_Archive\`。
 
 V20.3B 阶段已关闭；daemon-retirement architecture = PASS。rapid Uperf storm与T8 request-ID仍是carry-forward，未被改写成PASS。V20.4 Refresh Correctness / State Machine已由当前Runtime Correction真机Gate关闭，状态为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。
 
-V20.4 Uperf Architecture & Upstream Rebase已完成source/host/build/final-artifact Gate，RunId `20260901120647` 为 **PRE-FLASH READY**，但不是device/Production PASS。upstream审计、scene/lifecycle/ownership设计、host与final结果分别见[`01_UPSTREAM_AUDIT.md`](V20_4_UPERF_ARCHITECTURE_REBASE/01_UPSTREAM_AUDIT.md)、[`07_SCENE_STATE_MODEL.md`](V20_4_UPERF_ARCHITECTURE_REBASE/07_SCENE_STATE_MODEL.md)、[`04_UPERF_LIFECYCLE.md`](V20_4_UPERF_ARCHITECTURE_REBASE/04_UPERF_LIFECYCLE.md)、[`08_HOST_TESTS.md`](V20_4_UPERF_ARCHITECTURE_REBASE/08_HOST_TESTS.md)和[`09_BUILD_VERIFY.md`](V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md)。候选未刷，不得把它覆盖到下方当前设备基线。
+V20.4 Uperf Architecture & Upstream Rebase的RunId `20260901120647` 已在旧startup/fail-safe Gate **FAIL**。定向修正RunId `20260901174600` 的刷前source/CI/host/final-super/semantic/ART/CIL Gate为PASS，Android/framework boot也PASS，但真机Startup Runtime Gate再次 **FAIL**：新`performanced → surfaceflinger_exec:file read` blocking AVC、rapid crash counter 3、fail-safe 1、Uperf stopped。10分钟观察和完整矩阵未执行；qdl read-back日志证据为`NOT_PROVEN`。
 
 Archive根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md)
 
@@ -47,24 +48,30 @@ Archive根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md
 
 约170ms kill-switch统计是host-observed ADB端到端收敛，不是native callback/physical latency。100-roundtrip harness证明state/apply event order和采样内120为0，不宣称每条edge physical settle；五档physical另有独立证据。AppRequest为`sharedNoToken`，只能证明本地ownership释放和traversal handoff，不虚构同步clear callback。
 
-## V20.4 Uperf Pre-Flash 最小证据
+## V20.4 Uperf Startup Correction 最小证据
 
-最终静态决策：[`V20_4_UPERF_DECISION.md`](V20_4_UPERF_DECISION.md)
+最终修正决策：[`V20_4_UPERF_SELINUX_STARTUP_DECISION.md`](V20_4_UPERF_SELINUX_STARTUP_DECISION.md)
+
+旧失败决策：[`V20_4_UPERF_DECISION.md`](V20_4_UPERF_DECISION.md)
 
 | Gate | 当前结论 | 关键数字 | 最小报告 | 最小 raw |
 | --- | --- | --- | --- | --- |
 | Upstream/binary | PASS | v1.0.6；ZIP `00b192…fcc`；upstream=production Uperf `f12657…49d8` | [`01_UPSTREAM_AUDIT.md`](V20_4_UPERF_ARCHITECTURE_REBASE/01_UPSTREAM_AUDIT.md) | [`UPSTREAM_AUDIT.json`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/upstream_audit/UPSTREAM_AUDIT.json) |
-| Host/CI/init | PASS | Uperf31/31；Refresh39/39；V20.3B5/5；CI `33468476491` success；official init exit0 | [`08_HOST_TESTS.md`](V20_4_UPERF_ARCHITECTURE_REBASE/08_HOST_TESTS.md) | [`uperf_host_tests.txt`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/host_tests/uperf_host_tests.txt), [`ci_run_provenance.json`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/build_20260901120647/ci_run_provenance.json) |
-| Build/reverse | PASS | RunId `20260901120647`；marker62；vendor APK17；`super` `4eab12…8a06` | [`09_BUILD_VERIFY.md`](V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md) | [`build_result.json`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/build_20260901120647/build_result.json), [`final_super_verifier.log`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/build_20260901120647/final_super_verifier.log) |
-| Final ART | PASS | final services `f7575f…c82fd`；DEX/GATE RC0；stdout/stderr empty；PID2714 stable | [`09_BUILD_VERIFY.md`](V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md) | [`art_gate_transcript.txt`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/final_artifact_gate_20260901120647/art_gate_transcript.txt) |
-| Final CIL | PASS | 8/8 host/device SHA match；SECILC/GATE RC0；stderr empty；compiled policy1,256,792B | [`09_BUILD_VERIFY.md`](V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md) | [`policy_gate_transcript.txt`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/final_policy_gate_20260901120647/policy_gate_transcript.txt), [`final_cil_input_manifest.txt`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/final_policy_gate_20260901120647/final_cil_input_manifest.txt) |
-| Flash/device validation | NOT STARTED | `flashed=false`; no install/reboot/partition write | [`10_DEVICE_TEST_PLAN.md`](V20_4_UPERF_ARCHITECTURE_REBASE/10_DEVICE_TEST_PLAN.md) | none |
+| Failed device gate | FAIL / preserved | RunId `20260901120647`；Android boot PASS；`performanced→proc_uptime`与`shell→scheduler_active_prop` denied；至少56次exit1 | [`01_BOOT_GATE.md`](V20_4_UPERF_DEVICE_RESULTS/01_BOOT_GATE.md) | [`gate_failure_summary.txt`](V20_4_UPERF_DEVICE_RESULTS/raw/device_run_20260901120647/phase1_flash_boot/gate_failure_summary.txt) |
+| Root cause / graph | PASS static | exact uptime allow；scheduler guard removed；source graph39 edges | [`02_RUNTIME_ACCESS_GRAPH.md`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/02_RUNTIME_ACCESS_GRAPH.md) | [`source_access_graph.json`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/host_prebuild/source_access_graph.json) |
+| Host/CI/init | PASS | V20.3B5/5；Refresh39/39；Uperf31/31；correction16/16；CI `33490157865` exact SHA success | [`07_HOST_TESTS.md`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/07_HOST_TESTS.md) | [`ci_run_provenance.json`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/build_20260901174600/ci_run_provenance.json) |
+| Build/reverse/semantic | PASS | RunId `20260901174600`；marker62；final access graph PASS；`super` `e10593…75dc` | [`08_BUILD_VERIFY.md`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/08_BUILD_VERIFY.md) | [`build_result.json`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/build_20260901174600/build_result.json), [`final_super_verifier.log`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/build_20260901174600/final_super_verifier.log) |
+| Final ART | PASS | final services `69a11b…ba51`；DEX/GATE RC0；PID2660 stable；4 DEX与旧候选byte-identical | [`08_BUILD_VERIFY.md`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/08_BUILD_VERIFY.md) | [`art_gate_transcript.txt`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/final_artifact_gate_20260901174600/art_gate_transcript.txt), [`services_jar_relation.txt`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/final_artifact_gate_20260901174600/services_jar_relation.txt) |
+| Final CIL | PASS | 8/8 SHA match；SECILC/GATE RC0；compiled policy1,256,804B | [`08_BUILD_VERIFY.md`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/08_BUILD_VERIFY.md) | [`policy_gate_transcript.txt`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/final_policy_gate_20260901174600/policy_gate_transcript.txt) |
+| Image/disk | PASS / corrected | `super`13,958,643,712B；old/new system EROFS4,642,951,168B；actual transient peak≈26.9GiB | [`08_BUILD_VERIFY.md`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/08_BUILD_VERIFY.md) | [`disk_timeline.tsv`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/build_20260901174600/disk_timeline.tsv), [`generated_cache_cleanup_20260901.txt`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/generated_cache_cleanup_20260901.txt) |
+| Correction flash/device runtime | FAIL | exact RunId `20260901174600` flashed；Android boot PASS；old two AVC paths 0；new surfaceflinger_exec read AVC 2；rapid crashes3；fail-safe1/stopped；10min NOT EXECUTED；read-back NOT PROVEN | [`V20_4_UPERF_STARTUP_RUNTIME_DECISION.md`](V20_4_UPERF_STARTUP_RUNTIME_DECISION.md) | [`04_readback_evidence.txt`](V20_4_UPERF_STARTUP_RUNTIME_GATE/raw/flash/04_readback_evidence.txt), [`05_event_counts.txt`](V20_4_UPERF_STARTUP_RUNTIME_GATE/raw/final/05_event_counts.txt) |
 
 ## 被替代 lineage
 
 - RunId `20260831134511`：Boot PASS，但kill switch不收敛、App-to-App intermediate120与两个OEM package误分类，device=`PARTIAL`。历史报告：[`08_DEVICE_RESULTS.md`](V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md)。
 - RunId `20260831104317`：刷后ART `VerifyError`，Boot Gate FAIL并完成V20.3B恢复。
 - RunId `20260831094239`：刷前因event-order漏洞被拒绝。
+- RunId `20260901120647`：Android/framework boot PASS，但Uperf startup/fail-safe SELinux Gate FAIL；不得再次刷写。
 
 以上历史FAIL不得覆盖当前RunId的PASS，也不得再次刷写旧package。
 

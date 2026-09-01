@@ -208,7 +208,7 @@ class OwnershipTests(unittest.TestCase):
         self.assertEqual(digest, "7a2ee5d67ba7c057066176334eca9256e376427916429d66b7593cbb5538ec86")
 
     def test_v106_adopted_fields(self):
-        self.assertIs(self.config["modules"]["sfanalysis"]["enable"], True)
+        self.assertIs(self.config["modules"]["sfanalysis"]["enable"], False)
         self.assertEqual(self.config["presets"]["balance"]["idle"]["cpu.baseSampleTime"], 1.0)
         self.assertEqual(self.config["presets"]["balance"]["idle"]["cpu.baseSlackTime"], 0.5)
         self.assertEqual(self.config["presets"]["powersave"]["idle"]["cpu.baseSampleTime"], 1.5)

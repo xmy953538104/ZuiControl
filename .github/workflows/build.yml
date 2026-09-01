@@ -12,6 +12,7 @@ on:
       - "V20_4_REFRESH_CORRECTNESS/tests/**"
       - "V20_4_UPERF_ARCHITECTURE_REBASE/tests/**"
       - "V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/**"
+      - "V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/**"
       - "upstream/uperf/**"
       - ".github/workflows/build.yml"
       - "*.gradle.kts"
@@ -47,6 +48,7 @@ jobs:
           python3 -m py_compile scripts/PatchZuiControlFramework.py
           python3 -m py_compile scripts/ImportUperfUpstream.py
           python3 -m py_compile scripts/VerifyUperfRuntimeAccess.py
+          python3 -m py_compile scripts/VerifyZuiControl9008Readback.py
           python3 -m py_compile tools/PatchAsoulOptConfigPath.py
           python3 tools/PatchAsoulOptConfigPath.py payload/system/bin/AsoulOpt
           bash -n payload/system/bin/zui_controld
@@ -57,6 +59,7 @@ jobs:
           python3 V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
           python3 V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py
           python3 V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/TestUperfSelinuxStartup.py
+          python3 V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/TestUperfSfanalysisCorrection.py
           python3 scripts/VerifyUperfRuntimeAccess.py \
             --mode source \
             --system-root payload/system \

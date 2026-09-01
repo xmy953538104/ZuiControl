@@ -1,0 +1,35 @@
+AUDITED_BINARY=D:/3.VScode/Mi/flash/Binaries/Qcom/qdl-rs.exe
+BINARY_VERSION=qdl-rs 0.1.0
+BINARY_BUILD_SOURCE_COMMIT=412f90bc08cc3a687d552ff599da29043c4f54f4
+UPSTREAM=https://github.com/qualcomm/qdlrs
+
+cli/src/main.rs:
+- lines 205-208 copy CLI read_back_verify into FirehoseConfiguration.
+- lines 329-339 run the flasher.
+- lines 305-315 implement dump-part as a separate host-visible read to a named output file.
+- lines 408-415 reset only after the selected command completes.
+
+qdl/src/lib.rs:
+- lines 493-563 implement firehose_program_storage.
+- lines 504-520 serialize read_back_verify as one <program> XML attribute.
+- the program function sends bytes and waits for ACK; it does not call firehose_read_storage,
+  return physical bytes, or compare a host hash.
+- lines 593-651 implement firehose_read_storage as a separate <read> transfer to a host writer.
+
+WHY THE OLD LOG HAD ZERO READ HANDLERS
+The flasher path has no host read call. The flag requests loader-side behavior through an XML
+attribute, whose implementation/coverage is opaque for this programmer. Therefore zero host
+read handlers is expected from qdl-rs itself. RC0 and All went well prove ACKed programming,
+not a host-observed byte/hash comparison.
+
+NEW FAIL-CLOSED METHOD
+1. flasher resets to EDL, not system;
+2. qdl-rs dump-part reads each of super, vbmeta_system_a, vbmeta_system_b, boot_a, boot_b,
+   vbmeta_a and vbmeta_b from the XML-declared UFS LUN;
+3. host checks exact programmed byte length and SHA-256 against the approved image;
+4. each 14GB/100MB/64KB temporary dump is deleted immediately after its hash is recorded;
+5. only seven PASS results produce PHYSICAL_PARTITION_READBACK=PASS and allow reset system.
+
+COVERAGE
+Full fixed-seven physical partition coverage. The tool still cannot prove unrelated partitions,
+and no unrelated partition is in the write allowlist.

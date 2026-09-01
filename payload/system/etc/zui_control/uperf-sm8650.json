@@ -31,7 +31,7 @@
       "holdEnterTime": 1.0
     },
     "sfanalysis": {
-      "enable": true,
+      "enable": false,
       "renderIdleSlackTime": 0.2
     },
     "cpu": {
