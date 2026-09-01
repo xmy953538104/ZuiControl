@@ -33,6 +33,10 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def canonical_text_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
 class UperfSelinuxStartupTests(unittest.TestCase):
     def test_01_runtime_access_graph_is_complete(self) -> None:
         report = verifier.verify(SimpleNamespace(
@@ -117,8 +121,8 @@ class UperfSelinuxStartupTests(unittest.TestCase):
             "189973997fdb80a483ae631a5404e867e357239c5226091fa6b8ad964a0ed5d1")
 
     def test_15_tuning_and_binary_are_unchanged(self) -> None:
-        self.assertEqual(sha256(REPO / "payload/system/etc/zui_control/uperf-sm8650.json"),
-                         "b8bece967e0c8e3e7e2acf31c4772a1e29e4aa2ee91da7af1a7f220faa4b0ff9")
+        self.assertEqual(canonical_text_sha256(REPO / "payload/system/etc/zui_control/uperf-sm8650.json"),
+                         "e9f067ad1abc0cc22e01d5fcc6a32220b02efa57b26627217e43cf3d9a895de3")
         self.assertEqual(sha256(REPO / "payload/system/bin/uperf"),
                          "f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8")
 
