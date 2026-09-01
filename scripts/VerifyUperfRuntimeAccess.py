@@ -14,6 +14,17 @@ import re
 import sys
 
 
+BROAD_POLICY_PATTERNS = {
+    "performanced broad proc file": r"\(allow\s+performanced\s+(?:proc|proc_type|fs_type)\s+\(file\s+",
+    "performanced SurfaceFlinger executable file access": r"\(allow\s+performanced(?:_34_0)?\s+[^\s()]*surfaceflinger_exec[^\s()]*\s+\(file\s+",
+    "shell scheduler property read": r"\(allow\s+shell\s+zui_control_scheduler_active_prop\s+\(file\s+",
+    "shell broad property write": r"\(allow\s+shell\s+(?:property_type|system_property_type|system_internal_property_type)\s+\(property_service\s+\(set\)\)\)",
+    "performanced permissive": r"\(permissive\s+performanced\)",
+    "shell permissive": r"\(permissive\s+shell\)",
+    "neverallow bypass marker": r"disable[_-]?neverallow|neverallow[_-]?bypass",
+}
+
+
 def read(path: Path) -> str:
     if not path.is_file():
         raise ValueError(f"missing input: {path}")
@@ -368,17 +379,8 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
                           "ioctl read write getattr setattr lock append map open", vendor_rule,
                           "approved v1.0.6 vendor performance tuning"))
 
-    broad_patterns = {
-        "performanced broad proc file": r"\(allow\s+performanced\s+(?:proc|proc_type|fs_type)\s+\(file\s+",
-        "performanced SurfaceFlinger access": r"\(allow\s+performanced(?:_34_0)?\s+[^\s()]*surfaceflinger[^\s()]*\s+\(",
-        "shell scheduler property read": r"\(allow\s+shell\s+zui_control_scheduler_active_prop\s+\(file\s+",
-        "shell broad property write": r"\(allow\s+shell\s+(?:property_type|system_property_type|system_internal_property_type)\s+\(property_service\s+\(set\)\)\)",
-        "performanced permissive": r"\(permissive\s+performanced\)",
-        "shell permissive": r"\(permissive\s+shell\)",
-        "neverallow bypass marker": r"disable[_-]?neverallow|neverallow[_-]?bypass",
-    }
     combined = plat_policy + "\n" + vendor_policy
-    for label, pattern in broad_patterns.items():
+    for label, pattern in BROAD_POLICY_PATTERNS.items():
         if re.search(pattern, combined, re.IGNORECASE):
             raise ValueError(f"forbidden broad policy: {label}")
 
@@ -400,7 +402,7 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
             "decision": "REMOVE_ACCESS",
             "reason": "Android 14 explicit stop does not execute onrestart; target stop observation confirmed it",
         },
-        "broad_policy_rejected": list(broad_patterns),
+        "broad_policy_rejected": list(BROAD_POLICY_PATTERNS),
     }
 
 

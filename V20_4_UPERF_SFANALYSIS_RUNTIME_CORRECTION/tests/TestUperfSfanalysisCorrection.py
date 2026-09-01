@@ -36,6 +36,15 @@ def load_readback_module():
     return module
 
 
+def load_access_verifier_module():
+    path = REPO / "scripts/VerifyUperfRuntimeAccess.py"
+    spec = importlib.util.spec_from_file_location("uperf_access_gate", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 class SfanalysisCorrectionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -80,10 +89,10 @@ class SfanalysisCorrectionTests(unittest.TestCase):
         self.assertIn('[ "$rapid_count" -ge 3 ]', self.wrapper)
         self.assertIn('[ "$count" -lt 3 ] || setprop "$FAIL_SAFE_PROP" 1', self.crash_gate)
 
-    def test_07_no_surfaceflinger_allow_was_added(self) -> None:
+    def test_07_no_surfaceflinger_exec_file_allow_was_added(self) -> None:
         self.assertNotRegex(
             self.policy,
-            r"\(allow\s+performanced(?:_34_0)?\s+[^\s()]*surfaceflinger",
+            r"\(allow\s+performanced(?:_34_0)?\s+[^\s()]*surfaceflinger_exec[^\s()]*\s+\(file\s+",
         )
 
     def test_08_no_broad_proc_allow_was_added(self) -> None:
@@ -221,6 +230,24 @@ class SfanalysisCorrectionTests(unittest.TestCase):
     def test_21_upstream_true_current_false_is_explicit(self) -> None:
         self.assertIs(self.upstream["modules"]["sfanalysis"]["enable"], True)
         self.assertIs(self.config["modules"]["sfanalysis"]["enable"], False)
+
+    def test_22_surfaceflinger_gate_targets_denied_exec_file_type(self) -> None:
+        verifier = load_access_verifier_module()
+        pattern = verifier.BROAD_POLICY_PATTERNS[
+            "performanced SurfaceFlinger executable file access"
+        ]
+        self.assertNotRegex(
+            "(allow performanced surfaceflinger (file (read getattr open)))",
+            pattern,
+        )
+        self.assertRegex(
+            "(allow performanced surfaceflinger_exec (file (read getattr open)))",
+            pattern,
+        )
+        self.assertRegex(
+            "(allow performanced_34_0 vendor_surfaceflinger_exec (file (read)))",
+            pattern,
+        )
 
 
 if __name__ == "__main__":
