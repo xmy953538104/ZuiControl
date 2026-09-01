@@ -2,84 +2,98 @@
 
 Date: 2026-09-01
 
-Decision: **STATIC/HOST/BUILD/FINAL-ARTIFACT PASS; READY FOR HUMAN PRE-FLASH GATE.**
+RunId: `20260901120647`
+Decision: **DEVICE BOOT HARD GATE FAIL; WORK PACKAGE OPEN / HUMAN REVIEW REQUIRED.**
 
-This is not a Production PASS. Candidate RunId `20260901120647` has not been flashed and device
-scene, lifecycle, idle, knob-ownership, thermal and performance validation has not started.
+The human-approved fixed-seven package was flashed once. qdl-rs completed successfully and Android
+booted, but the Uperf service immediately entered an SELinux-driven restart storm. The mandatory
+hard-fail rule stopped the device matrix in Phase 1. No production change, rebuild, runtime repair,
+recovery flash, or extra reboot followed.
 
-## Required answers
+## Gate facts
 
-1. **Upstream module version:** `v1.0.6（Stable version）`, versionCode `260826`. The frozen ZIP
-   SHA-256 is `00b19294e4efc202fd794decb5526b5ad903dca3a15c9af3cfc335edab2b5fcc`.
-2. **Did the upstream binary change?** No. Upstream and production are both 1,461,512 bytes with
-   SHA-256 `f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8` and embedded version
-   `v3(22.09.04)`.
-3. **Should production replace the binary?** No. The byte-identical binary remains unchanged.
-4. **Adopted SM8650 tuning:** `modules.sfanalysis.enable=true`; balance idle sample/slack
-   `1.0/0.5`; powersave idle sample/slack `1.5/0.8`. No whole-config overwrite was performed.
-5. **Explicitly rejected Magisk content:** Magisk/data-adb mounting and installer ownership,
-   per-app wildcard/game whitelist and Native Auto scene ownership, sched/thread rules, OEM perf
-   service killing, thermal disable/HAL changes, blanket hotplug/input-boost/devfreq/bus/cpuset
-   takeover, GPU/KGSL takeover, YC manager, and bundled asoulOpt.
-6. **Final exact-scene authority:** the framework's actual `mTopResumedActivity` change event,
-   delivered event-driven to `UperfScenePolicy`; screen-off powersave remains the higher override.
-   Refresh continues to use focused Window and does not drive Uperf.
-7. **Game to Video/Home:** yes, once the game is no longer top-resumed its exact rule loses
-   authority and an unconfigured Video/Home workload returns to the configured global mode.
-8. **QS overlay mode flap:** the policy keeps the game's exact mode when QS does not replace the
-   game as top-resumed, avoiding modeled `fast→global→fast` churn. Runtime proof is still required.
-9. **Multi-window arbitration:** framework's single current top-resumed Activity wins. Other
-   resumed/visible freeform, split or PiP activities do not gain exact authority merely by being
-   visible.
-10. **Uperf Native Auto:** still disabled as a production owner. The retained binary/perapp
-    capability is not claimed deleted; production never selects `auto`.
-11. **Uperf sched:** still `modules.sched.enable=false`; asoulOpt remains the only per-task
-    affinity/context-scheduler owner.
-12. **Five-second wrapper polling:** removed in the candidate. One bounded startup FIFO read is
-    followed by blocking event reads; there is no periodic process count, grep, timer, watchdog or
-    long-lived helper child.
-13. **Normal crash recovery:** Uperf's internal SIGCHLD/wait manager recovers a worker. Whole
-    writer-tree EOF exits the wrapper and delegates recovery to Android init lifecycle semantics.
-14. **Rapid crash fail-safe:** three worker crash events within 20 seconds, or three consecutive
-    whole-service deaths before two seconds, set `sys.zui_control.uperf_fail_safe=1` and stop the
-    service in an explicit degraded state. Device storm behavior remains a mandatory test.
-15. **`core_ctl` / input boost / cpuset ownership:** not proven. `core_ctl` and input boost have
-    historical values contradicting config declarations; cpuset is SHARED/UNPROVEN against OEM
-    policy. Declarations are retained without claiming ownership pending transition time-series and
-    writer-trace A/B.
-16. **GPU/thermal boundary:** unchanged. No KGSL/Adreno/devfreq owner was added, thermal safety
-    remains enabled and OEM-owned, and asoulOpt production logic is untouched.
-17. **Expected idle overhead:** normal steady state should have zero five-second shell/grep wakeups,
-    forks and wrapper child churn because it blocks on FIFO events. This is an expectation, not a
-    device measurement; the planned 60-second `/proc` and 90-second Perfetto gates remain required.
-18. **Host tests:** Uperf `31/31`, frozen Refresh `39/39`, V20.3B retirement regression `5/5`, and
-    shell/JSON/Python/PowerShell/diff gates PASS. GitHub Actions run `33468476491` succeeded at the
-    exact candidate source; official Android 14 `host_init_verifier` returned exit `0`.
-19. **Final artifact verifier:** reverse extraction and provenance PASS with `62` markers; final
-    extracted `services.jar` SHA-256 is
-    `f7575f5ca50fdba040e814229063beecf99203b9d25fc117401268c62b2c82fd`; target ART returned
-    `DEX_RC=0/GATE_RC=0` with empty output; eight final CIL host/device hashes matched and target
-    `secilc` returned `SECILC_RC=0/GATE_RC=0` with empty stderr.
-20. **New RunId and hashes:** RunId `20260901120647`, source
-    `72fd3ef5ab3d5d6a2b477a9ba2781ee9503d2d30`, CI `33468476491`; `super.img`
-    `4eab12c796eba74f98db7a851cdeb24687077c97c70f6eab7045ea2c70608a06`; `boot.img`
-    `e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371`; `vbmeta_system.img`
-    `95a0154d62e8170b89212b665a620f80ab6bc51b65ca025216740a650cb757c3`; `vbmeta.img`
-    `c1f4ea68ea52bae62e464ddc245dadd740569ba3ac3376ee5d23a40204a744f7`.
-21. **Human Pre-Flash Gate:** yes. The static/build/final-artifact evidence is complete enough for
-    human review. Flashing and device validation require separate explicit approval.
+- Source: `72fd3ef5ab3d5d6a2b477a9ba2781ee9503d2d30`; CI: `33468476491`.
+- `super.img`: `4eab12c796eba74f98db7a851cdeb24687077c97c70f6eab7045ea2c70608a06`.
+- `boot.img`: `e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371`.
+- `vbmeta_system.img`: `95a0154d62e8170b89212b665a620f80ab6bc51b65ca025216740a650cb757c3`.
+- `vbmeta.img`: `c1f4ea68ea52bae62e464ddc245dadd740569ba3ac3376ee5d23a40204a744f7`.
+- Rawprogram SHA-256: `10840bb75283ab3527aae2286c2b63444b165a7217ca7118113ae6ccfe49784a`;
+  exact allowlist was `super`, `vbmeta_system_a/b`, `boot_a/b`, `vbmeta_a/b`.
+- Pre-flash safety gate: PASS. Fixed-seven qdl/read-back flow: PASS, `All went well!`, driver RC `0`.
+- Android boot: `sys.boot_completed=1`; system_server `2660/983` stable in the three samples taken
+  before abort; Binder found; Launcher resumed; SELinux Enforcing; asoulOpt running.
+- Live `services.jar` SHA-256:
+  `f7575f5ca50fdba040e814229063beecf99203b9d25fc117401268c62b2c82fd`, matching the approved
+  final artifact. No current-boot framework VerifyError was found.
+- Boot Hard Gate: FAIL because `init.svc.zui_uperf=restarting`,
+  `sys.init.updatable_crashing=1`, process name `zui_uperf`, while ZuiControl fail-safe stayed `0`.
 
-## Candidate and evidence
+## Device root cause
 
-- Candidate: `D:\3.VScode\Mi\work\v20_4_uperf_candidate_20260901120647`
-- Work package: `V20_4_UPERF_ARCHITECTURE_REBASE/`
-- Build/final verification: `V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md`
-- Device test plan: `V20_4_UPERF_ARCHITECTURE_REBASE/10_DEVICE_TEST_PLAN.md`
+This failure is independent of ART verification and framework bootability.
+
+1. `/system/bin/zui_uperf_service` runs in `u:r:performanced:s0` and reads `/proc/uptime` before its
+   FIFO startup wait. Live SELinux rejects `performanced → proc_uptime:file read`; the wrapper exits
+   status `1`.
+2. Init restarts the service at `restart_period 5`. The early dmesg capture already contains 56
+   starts, 56 status-1 exits, and 49 generic “updatable components” threshold messages.
+3. `onrestart` launches `zui_uperf_crash_gate.sh` in `u:r:shell:s0`. Its guard reads
+   `sys.zui_control.scheduler_active`, but live SELinux rejects
+   `shell → zui_control_scheduler_active_prop:file read`. The script therefore exits before
+   recording rapid deaths or setting fail-safe.
+4. The result is generic init escalation without the intended explicit degraded state:
+   `sys.init.updatable_crashing=1`, `sys.zui_control.uperf_fail_safe=0`.
+
+The static and final-artifact gates remain valid as records of what they tested, but they did not
+cover these two required runtime policy accesses. They are not production proof.
+
+## Required 20 device answers
+
+1. **Boot PASS/FAIL:** FAIL. Android booted, but the combined Boot Hard Gate failed on persistent
+   Uperf restart and `sys.init.updatable_crashing=1`.
+2. **Is top-resumed a reliable scene authority?** NOT VALIDATED on this candidate. Static design
+   only.
+3. **Does Game→Home/Video return to global 100%?** NOT EXECUTED.
+4. **Does QS avoid mode flap?** NOT EXECUTED.
+5. **Freeform/split/PiP:** NOT EXECUTED.
+6. **Screen off/on:** NOT EXECUTED.
+7. **Has old five-second wrapper polling disappeared?** The old steady-state polling loop is absent
+   statically, but production runtime still showed an approximately five-second init restart
+   cadence because the wrapper could not start. Therefore the device-level idle objective is FAIL/
+   NOT PROVEN.
+8. **Idle CPU/wakeup/process churn improvement:** NOT MEASURED; the restart storm is a regression
+   and invalidates an idle comparison.
+9. **Normal worker crash 10/10 and latency:** NOT EXECUTED; no stable service tree existed.
+10. **Rapid worker storm fail-safe:** PLANNED INJECTION NOT EXECUTED. The natural startup storm
+    failed to set fail-safe and reached generic init updatable-crashing instead.
+11. **Whole-service storm safety:** FAIL in the naturally occurring whole-service startup-death
+    path; bounded explicit fail-safe was not reached.
+12. **Explicit stop remains stopped:** NOT EXECUTED.
+13. **v1.0.6 idle tuning first-interaction response:** NOT EXECUTED.
+14. **sfanalysis stability:** NOT EXECUTED.
+15. **core_ctl/input_boost/cpuset ownership:** UNPROVEN; no transition/writer trace was run.
+16. **balance/performance/fast real frame-time benefit:** NOT EXECUTED.
+17. **Power/temperature cost:** NOT EXECUTED.
+18. **Thermal always retained:** Static boundary unchanged; workload runtime proof NOT EXECUTED.
+19. **Refresh/asoulOpt regression:** asoulOpt was observed running and framework/Binder/Launcher
+    booted, but the requested smoke matrix was NOT EXECUTED; no full no-regression claim.
+20. **Can Uperf Architecture & Upstream Rebase close?** **NO.** It remains open at a device Boot
+    Hard Gate failure pending human review and a separately approved correction candidate.
+
+## Evidence
+
+- Device report: [`V20_4_UPERF_DEVICE_RESULTS/01_BOOT_GATE.md`](V20_4_UPERF_DEVICE_RESULTS/01_BOOT_GATE.md).
+- Preserved raw root: `V20_4_UPERF_DEVICE_RESULTS/raw/device_run_20260901120647/` (distributed in
+  the RAR; ignored by Git).
+- Static/build evidence: [`09_BUILD_VERIFY.md`](V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md).
+- Test plan: [`10_DEVICE_TEST_PLAN.md`](V20_4_UPERF_ARCHITECTURE_REBASE/10_DEVICE_TEST_PLAN.md).
 
 ```text
 V20_4_UPERF_SOURCE_HOST=PASS
 V20_4_UPERF_FINAL_ARTIFACT=PASS
-V20_4_UPERF_PRE_FLASH_READY=YES
-V20_4_UPERF_FLASHED=NO
-V20_4_UPERF_DEVICE_VALIDATION=NOT_STARTED
+V20_4_UPERF_FLASHED=YES
+V20_4_UPERF_ANDROID_BOOT=PASS
+V20_4_UPERF_BOOT_HARD_GATE=FAIL
+V20_4_UPERF_DEVICE_VALIDATION=ABORTED_AT_PHASE_1
+V20_4_UPERF_WORK_PACKAGE=OPEN_HUMAN_REVIEW_REQUIRED
 ```

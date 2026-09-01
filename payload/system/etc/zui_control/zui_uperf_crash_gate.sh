@@ -6,7 +6,6 @@ READY_UPTIME=$UPERF_DIR/.service_ready_uptime
 CRASH_STATE=$UPERF_DIR/.service_rapid_crashes
 FAIL_SAFE_PROP=sys.zui_control.uperf_fail_safe
 
-[ "$(getprop sys.zui_control.scheduler_active)" = 1 ] || exit 0
 IFS=' ' read -r uptime _rest < /proc/uptime
 now="${uptime%%.*}"
 ready=

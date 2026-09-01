@@ -607,8 +607,11 @@ try {
     Assert-NotContains $UperfService 'pidof uperf' 'cross-domain proc scanner in Uperf supervisor'
     Assert-NotContains $UperfService 'killall' 'cross-domain process scanner in Uperf supervisor'
     Assert-Contains $UperfService 'echo $$ > /dev/cpuset/background/tasks' 'background placement for Uperf itself'
+    Assert-Contains $UperfService '< /proc/uptime' 'monotonic Uperf startup and crash-window time source'
     Assert-Contains $UperfCrashGate '[ "$runtime" -ge 0 ] && [ "$runtime" -le 2 ]' 'rapid whole-service lifetime classification'
     Assert-Contains $UperfCrashGate '[ "$count" -lt 3 ] || setprop "$FAIL_SAFE_PROP" 1' 'bounded whole-service crash fail-safe'
+    Assert-Contains $UperfCrashGate '< /proc/uptime' 'monotonic whole-service lifetime source'
+    Assert-NotContains $UperfCrashGate 'sys.zui_control.scheduler_active' 'unnecessary broad-shell scheduler-active guard'
     Assert-NotContains $UperfCrashGate 'while ' 'no crash-gate loop'
     Assert-NotContains $UperfCrashGate 'sleep ' 'no crash-gate timer'
     Assert-Contains $SchedulerPrepare "printf 'balance\n'" 'balanced global default'
@@ -996,6 +999,7 @@ try {
         '(allow performanced appdomain (dir (getattr open read search)))',
         '(allow performanced appdomain (file (getattr open read)))',
         '(allow performanced appdomain (process (getsched setsched signull)))',
+        '(allow performanced proc_uptime (file (getattr open read)))',
         '(allow performanced sysfs_devices_system_cpu (file (getattr open read write append setattr)))',
         '(allow performanced cgroup (file (ioctl read write create getattr setattr lock append map open unlink)))',
         '(allow performanced cgroup_v2 (dir (getattr open read search)))',
@@ -1055,6 +1059,17 @@ try {
     Assert-NotContains $VendorPolicy '(allow shell_34_0 vendor_sysfs_kgsl (' 'legacy shell KGSL permission'
     Assert-NotContains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_kgsl (' 'unsupported Uperf KGSL permission'
 
+    $UperfAccessReport = Join-Path $WorkDir 'uperf_runtime_access_graph.json'
+    Invoke-Checked $Python (Join-Path $RepoRoot 'scripts\VerifyUperfRuntimeAccess.py') `
+        --mode final `
+        --system-root $System `
+        --file-contexts $FileContexts `
+        --property-contexts $PropertyContexts `
+        --plat-policy $PlatPolicy `
+        --vendor-policy $VendorPolicy `
+        --report $UperfAccessReport
+    Require-File $UperfAccessReport
+
     $hashes = [ordered]@{
         boot = File-Sha256 $Boot
         super = File-Sha256 $Super
@@ -1086,6 +1101,7 @@ try {
         vendor_image_sha256 = $VendorImageSha256
         vendor_apk_count = $VendorApkCount
         vendor_apk_inventory_sha256 = $VendorApkInventorySha256
+        uperf_runtime_access_graph = 'PASS'
         boot_rollback_index = $BootRollbackIndex
         vbmeta_system_rollback_index = $VbmetaSystemRollbackIndex
         scheduler_rc_mode_lines = $schedulerRcModeLines

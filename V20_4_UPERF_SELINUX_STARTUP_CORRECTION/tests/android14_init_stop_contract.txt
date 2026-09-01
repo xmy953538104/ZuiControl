@@ -1,0 +1,5 @@
+source=https://android.googlesource.com/platform/system/core/+/refs/tags/android-14.0.0_r75/init/service.cpp
+source_sha256=a6e9e326718b98ba8d8f592ffbb6ca4692b8c9179026ae0ba2db44480b7f0869
+Service::Stop=StopOrReset(SVC_DISABLED)
+Service::Reap=returns_for_SVC_DISABLED_or_SVC_RESET_before_onrestart
+target_observation=explicit_stop_once_then_86.36_seconds_stopped_without_onrestart
