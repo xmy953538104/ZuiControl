@@ -6,7 +6,7 @@
 
 V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**。历史 decision 的 `PARTIAL / HOLD` 是当时的阶段转换 gate，现已解除。rapid Uperf crash storm、T8 request-ID 等未闭环发现保持原结论并 carry forward，不得改写成 PASS，也不得再阻止或要求重做 V20.3B。
 
-当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成针对性真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。当前第二工作包是 **Uperf Architecture & Upstream Rebase**；源码/设计已进入静态与候选构建门禁，尚未刷机或device validation，不得提前写成Production PASS。不要继续返回旧Refresh blocker重做，也不要自动开始V21。
+当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成针对性真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。第二工作包 **Uperf Architecture & Upstream Rebase** 已完成source/host/build/final-artifact Gate，RunId `20260901120647` 现在等待人工Pre-Flash Review；尚未刷机或device validation，不得提前写成Production PASS。不要继续返回旧Refresh blocker重做，也不要自动开始V21。
 
 当前设备运行 RunId `20260831170720`，source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`，CI `33375509612`。host `39/39`、V20.3B regression `5/5`、final-super reverse/56-marker、final-artifact ART、split CIL、official host init exact-file、fixed-seven Preflight、实际fixed-seven read-back flash、Boot Hard Gate与Targeted Device Gate均PASS。最终 `services.jar` SHA-256 为 `0b7bb46c644c5559173f72b06579131e82597366fdcc114d3fb30aabb544e8a3`。
 
@@ -31,7 +31,7 @@ persistent `zui_controld` 已退休；当前 init 中不存在其 service/start�
 
 Uperf 自带 context/thread scheduler 为 `sched.enable=false`，asoulOpt 是唯一 per-task affinity owner；Uperf sysfs 模块仍写全局 cpuset mask，广义 topology/knob ownership必须由刷后time-series/writer-trace证明。生产控制面没有 `auto` 档，Uperf mode 由system_server依据真正top-resumed Activity决策；配置仍保留 `switcher.perapp` 路径和二进制相关能力，所以不能宣称 Native Auto 代码已删除，只能说没有production入口。Refresh的focused Window authority保持不变。
 
-当前候选的 `zui_uperf_service` 已用一次bounded startup FIFO event wait + steady blocking read替代5秒cgroup/log轮询。正常worker crash留给Uperf内建manager，完整writer-tree EOF交init限速恢复，rapid worker/whole-service storm进入显式fail-safe；这仍是待final gate与刷后验证的候选语义。
+当前候选的 `zui_uperf_service` 已用一次bounded startup FIFO event wait + steady blocking read替代5秒cgroup/log轮询。正常worker crash留给Uperf内建manager，完整writer-tree EOF交init限速恢复，rapid worker/whole-service storm进入显式fail-safe；静态和final-artifact Gate已通过，但这些运行时语义仍必须刷后验证。
 
 ## 3. 源码 sanity check
 
@@ -90,7 +90,20 @@ Host/build：V20.4 `39/39`、V20.3B `5/5`、CI `33375509612`、final-super 56-ma
 
 当前App UI未接TX10，且没有安全现成signed-App Manager/API路径，记为 `APP_UI_TX10=NOT_EXECUTED / SIGNED_APP_TX10_DEVICE_PATH_NOT_AVAILABLE`。UDFPS=`NOT_OBSERVED`、fault injection=`NOT_EXECUTED`、secondary user/external display=`NOT_VALIDATED` 保持显式非阻断边界，不得改写成PASS。完整当前结果见 [`V20_4_REFRESH_RUNTIME_DECISION.md`](V20_4_REFRESH_RUNTIME_DECISION.md) 与 [`08_BOOT_GATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/08_BOOT_GATE.md) 至 [`13_FINAL_RUNTIME_STATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/13_FINAL_RUNTIME_STATE.md)；旧 [`08_DEVICE_RESULTS.md`](V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md) 只记录被替代RunId的历史PARTIAL。
 
-## 6. 其它 carry-forward backlog
+## 6. V20.4 Uperf Architecture & Upstream Rebase
+
+source `72fd3ef5ab3d5d6a2b477a9ba2781ee9503d2d30`、CI `33468476491`、RunId `20260901120647` 已完成刷前门禁。候选目录为 `D:\3.VScode\Mi\work\v20_4_uperf_candidate_20260901120647`；`super.img` SHA-256 `4eab12c796eba74f98db7a851cdeb24687077c97c70f6eab7045ea2c70608a06`。
+
+- upstream `v1.0.6` 与production binary byte-for-byte相同，不替换binary；仅采用五个SM8650/Uperf内部字段；
+- top-resumed Activity成为Uperf exact-rule authority，Refresh focused-Window authority未改变；
+- Uperf host `31/31`、Refresh regression `39/39`、V20.3B regression `5/5`、CI和official Android 14 host init Gate均PASS；
+- final-super base与V20.4 verifier均`ok=true`，marker `62`；最终`services.jar` SHA-256为`f7575f5ca50fdba040e814229063beecf99203b9d25fc117401268c62b2c82fd`；
+- 当前设备只用于临时`/data/local/tmp` verifier：ART `DEX_RC=0/GATE_RC=0`，八份final CIL host/device SHA一致且`SECILC_RC=0/GATE_RC=0`；临时目录已删除；
+- 构建receipt仍为`flashed=false`，没有安装、分区写入、重启或scene/idle/crash/knob/performance验证。
+
+最终静态决策见 [`V20_4_UPERF_DECISION.md`](V20_4_UPERF_DECISION.md)，完整刷前证据见 [`09_BUILD_VERIFY.md`](V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md)，后续设备矩阵见 [`10_DEVICE_TEST_PLAN.md`](V20_4_UPERF_ARCHITECTURE_REBASE/10_DEVICE_TEST_PLAN.md)。
+
+## 7. 其它 carry-forward backlog
 
 - command latency：P95 约 1.02 秒，主要成本在 durable claim/fsync/Settings ACK；优化必须保持 at-most-once/crash safety；
 - Uperf候选的rapid crash fail-safe、normal recovery、explicit stop与idle零polling必须刷后验证；host设计不覆盖rapid storm；
@@ -103,7 +116,7 @@ Host/build：V20.4 `39/39`、V20.3B `5/5`、CI `33375509612`、final-super 56-ma
 
 产品决策：system App 是否允许 Uperf exact rule。当前 `userAppsOnly` + `/data/app/*` 拒绝 Settings 符合契约，不是已确认 bug。
 
-## 7. 工作树状态
+## 8. 工作树状态
 
 `D:\3.VScode\Mi` 本身不是 Git 仓库；生产仓库是 `D:\3.VScode\Mi\ZuiControl`。
 
@@ -111,7 +124,7 @@ Active Repository Context Cleanup 已把旧 AI/handoff、阶段报告、raw、Pe
 
 仓库 `README.md` 与 `payload/README.txt` 已改为当前 V20.3B/V20.4 架构入口。历史证据以 `CURRENT_EVIDENCE_INDEX.md` 定向索引；完整盘点见 `docs/maintenance/context-cleanup-2026-08-31/ACTIVE_CONTEXT_CENSUS.md`。
 
-## 8. 边界与下一会话入口
+## 9. 边界与下一会话入口
 
 V20.4 Refresh Correctness 不混入 GPU/KGSL 正式接管、thermal 大改、AppOpt/XML/ZuiPP/FPS cap 生产代码清理、无证据 Uperf/asoulOpt 升级、新 persistent daemon/watchdog。生产代码级历史清理仍留 V21，GPU ownership 留 V22。
 
@@ -132,7 +145,8 @@ V20_4_RUNTIME_CORRECTION_DEVICE_VALIDATION=PASS
 V20_4_RUNTIME_CORRECTION_APP_UI_TX10=NOT_EXECUTED
 V20_4_RUNTIME_CORRECTION_SIGNED_APP_TX10_DEVICE_PATH=NOT_AVAILABLE
 V20_4_UPERF_SOURCE_HOST=PASS
-V20_4_UPERF_FINAL_ARTIFACT=PENDING
+V20_4_UPERF_FINAL_ARTIFACT=PASS
+V20_4_UPERF_PRE_FLASH_READY=YES
 V20_4_UPERF_FLASHED=NO
 V20_4_UPERF_DEVICE_VALIDATION=NOT_STARTED
 UDFPS_LOCAL_VOTE_RUNTIME=NOT_OBSERVED

@@ -14,7 +14,7 @@ ZuiControl 是 TB321FU / ZUI 16.1.11.072 的 ROM 内置系统控制工具，核�
 
 V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。当前设备运行 V20.4 Runtime Correction RunId `20260831170720`，source `146e096c6a6bc8b3fee60349b856990fd9fb68d2`、CI `33375509612`；host/build/final-artifact/Boot Hard Gate和Targeted Device Gate均PASS。Refresh Correctness / State Machine 工作包现为 **CLOSED WITH EXPLICIT BOUNDARIES**。App 仍是 versionCode 49 / versionName 0.21.12。
 
-当前源码正在进行第二工作包 **V20.4 Uperf Architecture & Upstream Rebase**。它使用framework top-resumed Activity作为Uperf exact-rule authority，并以event-driven FIFO/init生命周期替代旧5秒wrapper polling；此候选尚未刷机，device scene/idle/crash/knob/performance结果均仍待人工Pre-Flash批准后验证。
+第二工作包 **V20.4 Uperf Architecture & Upstream Rebase** 已完成source/host/build/final-artifact Gate。它使用framework top-resumed Activity作为Uperf exact-rule authority，并以event-driven FIFO/init生命周期替代旧5秒wrapper polling；RunId `20260901120647` 现为 **PRE-FLASH READY**。候选尚未刷机，device scene/idle/crash/knob/performance结果均仍待人工批准后验证；当前结论见 [`V20_4_UPERF_DECISION.md`](V20_4_UPERF_DECISION.md)。
 
 旧 RunId `20260831094239` 刷前拒绝；`20260831104317` 因ART `VerifyError` Boot FAIL并完成恢复；`20260831134511` Boot PASS但device因kill switch、null-gap和OEM分类三项为PARTIAL。它们只保留为lineage，均不得再次刷写。当前权威结论见 [`V20_4_REFRESH_RUNTIME_DECISION.md`](V20_4_REFRESH_RUNTIME_DECISION.md) 与 [`08_BOOT_GATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/08_BOOT_GATE.md) 至 [`13_FINAL_RUNTIME_STATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/13_FINAL_RUNTIME_STATE.md)。
 

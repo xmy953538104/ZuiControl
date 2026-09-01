@@ -8,7 +8,7 @@
 
 V20.3B 阶段已关闭；daemon-retirement architecture = PASS。rapid Uperf storm与T8 request-ID仍是carry-forward，未被改写成PASS。V20.4 Refresh Correctness / State Machine已由当前Runtime Correction真机Gate关闭，状态为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。
 
-V20.4 Uperf Architecture & Upstream Rebase当前只有source/host与构建前framework gate，不是device证据。upstream审计、scene/lifecycle/ownership设计与host结果分别见[`01_UPSTREAM_AUDIT.md`](V20_4_UPERF_ARCHITECTURE_REBASE/01_UPSTREAM_AUDIT.md)、[`07_SCENE_STATE_MODEL.md`](V20_4_UPERF_ARCHITECTURE_REBASE/07_SCENE_STATE_MODEL.md)、[`04_UPERF_LIFECYCLE.md`](V20_4_UPERF_ARCHITECTURE_REBASE/04_UPERF_LIFECYCLE.md)和[`08_HOST_TESTS.md`](V20_4_UPERF_ARCHITECTURE_REBASE/08_HOST_TESTS.md)。在final artifact与人工Pre-Flash Gate前不得把它覆盖到下方当前设备基线。
+V20.4 Uperf Architecture & Upstream Rebase已完成source/host/build/final-artifact Gate，RunId `20260901120647` 为 **PRE-FLASH READY**，但不是device/Production PASS。upstream审计、scene/lifecycle/ownership设计、host与final结果分别见[`01_UPSTREAM_AUDIT.md`](V20_4_UPERF_ARCHITECTURE_REBASE/01_UPSTREAM_AUDIT.md)、[`07_SCENE_STATE_MODEL.md`](V20_4_UPERF_ARCHITECTURE_REBASE/07_SCENE_STATE_MODEL.md)、[`04_UPERF_LIFECYCLE.md`](V20_4_UPERF_ARCHITECTURE_REBASE/04_UPERF_LIFECYCLE.md)、[`08_HOST_TESTS.md`](V20_4_UPERF_ARCHITECTURE_REBASE/08_HOST_TESTS.md)和[`09_BUILD_VERIFY.md`](V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md)。候选未刷，不得把它覆盖到下方当前设备基线。
 
 Archive根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md)
 
@@ -46,6 +46,19 @@ Archive根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md
 | Final restore | PASS | Launcher/default120；props0；profile64B SHA`7410c5…7221`；PID2714/Binder/Enforcing/boot1 | [`13_FINAL_RUNTIME_STATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/13_FINAL_RUNTIME_STATE.md) | [`41_final_profile_and_empty_props.txt`](V20_4_REFRESH_RUNTIME_CORRECTION/raw/device_run_20260831170720/41_final_profile_and_empty_props.txt) |
 
 约170ms kill-switch统计是host-observed ADB端到端收敛，不是native callback/physical latency。100-roundtrip harness证明state/apply event order和采样内120为0，不宣称每条edge physical settle；五档physical另有独立证据。AppRequest为`sharedNoToken`，只能证明本地ownership释放和traversal handoff，不虚构同步clear callback。
+
+## V20.4 Uperf Pre-Flash 最小证据
+
+最终静态决策：[`V20_4_UPERF_DECISION.md`](V20_4_UPERF_DECISION.md)
+
+| Gate | 当前结论 | 关键数字 | 最小报告 | 最小 raw |
+| --- | --- | --- | --- | --- |
+| Upstream/binary | PASS | v1.0.6；ZIP `00b192…fcc`；upstream=production Uperf `f12657…49d8` | [`01_UPSTREAM_AUDIT.md`](V20_4_UPERF_ARCHITECTURE_REBASE/01_UPSTREAM_AUDIT.md) | [`UPSTREAM_AUDIT.json`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/upstream_audit/UPSTREAM_AUDIT.json) |
+| Host/CI/init | PASS | Uperf31/31；Refresh39/39；V20.3B5/5；CI `33468476491` success；official init exit0 | [`08_HOST_TESTS.md`](V20_4_UPERF_ARCHITECTURE_REBASE/08_HOST_TESTS.md) | [`uperf_host_tests.txt`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/host_tests/uperf_host_tests.txt), [`ci_run_provenance.json`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/build_20260901120647/ci_run_provenance.json) |
+| Build/reverse | PASS | RunId `20260901120647`；marker62；vendor APK17；`super` `4eab12…8a06` | [`09_BUILD_VERIFY.md`](V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md) | [`build_result.json`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/build_20260901120647/build_result.json), [`final_super_verifier.log`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/build_20260901120647/final_super_verifier.log) |
+| Final ART | PASS | final services `f7575f…c82fd`；DEX/GATE RC0；stdout/stderr empty；PID2714 stable | [`09_BUILD_VERIFY.md`](V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md) | [`art_gate_transcript.txt`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/final_artifact_gate_20260901120647/art_gate_transcript.txt) |
+| Final CIL | PASS | 8/8 host/device SHA match；SECILC/GATE RC0；stderr empty；compiled policy1,256,792B | [`09_BUILD_VERIFY.md`](V20_4_UPERF_ARCHITECTURE_REBASE/09_BUILD_VERIFY.md) | [`policy_gate_transcript.txt`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/final_policy_gate_20260901120647/policy_gate_transcript.txt), [`final_cil_input_manifest.txt`](V20_4_UPERF_ARCHITECTURE_REBASE/raw/final_policy_gate_20260901120647/final_cil_input_manifest.txt) |
+| Flash/device validation | NOT STARTED | `flashed=false`; no install/reboot/partition write | [`10_DEVICE_TEST_PLAN.md`](V20_4_UPERF_ARCHITECTURE_REBASE/10_DEVICE_TEST_PLAN.md) | none |
 
 ## 被替代 lineage
 

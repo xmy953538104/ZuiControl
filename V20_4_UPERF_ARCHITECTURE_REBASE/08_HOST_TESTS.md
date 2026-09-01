@@ -6,7 +6,7 @@ All pre-build host gates pass on the source candidate:
 
 | Suite | Result | Evidence |
 |---|---:|---|
-| V20.4 Uperf scene/lifecycle/ownership/import | 30/30 PASS | `raw/host_tests/uperf_host_tests.txt` |
+| V20.4 Uperf scene/lifecycle/ownership/import/final-marker ownership | 31/31 PASS | `raw/host_tests/uperf_host_tests.txt` |
 | V20.4 Refresh frozen regression | 39/39 PASS | `raw/host_tests/refresh_regression.txt` |
 | V20.3B daemon-retirement regression | 5/5 PASS | `raw/host_tests/v20_3b_regression.txt` |
 | shell syntax, JSON, Python compile, PowerShell parse, diff check | PASS | `raw/host_tests/local_static_gates.txt` |
@@ -14,7 +14,9 @@ All pre-build host gates pass on the source candidate:
 The Uperf suite maps the requested cases 1–25 one-for-one. Case 20 is a separate assertion that
 the wrapper contains no background helper, `inotifyd`, `tail`, periodic timer or long-lived child
 churn. Two additional source-authority tests prove the top-resumed hook is unique/event-driven and
-that Refresh focus/window/IME feeds no longer drive Uperf. Three contract tests cover the frozen
+that Refresh focus/window/IME feeds no longer drive Uperf. A final-artifact regression also fixes
+the D8 ownership boundary: scene-state strings are verified in `ZuiControlService$UperfScenePolicy`,
+while the fail-safe marker remains in the outer service. Three contract tests cover the frozen
 v1.0.6 fields, narrow property/FIFO policy and audit-only importer.
 
 ## CI-only init gate
