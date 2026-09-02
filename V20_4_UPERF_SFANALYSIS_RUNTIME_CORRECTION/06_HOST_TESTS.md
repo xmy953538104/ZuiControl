@@ -2,7 +2,7 @@
 
 Focused suite: `tests/TestUperfSfanalysisCorrection.py`
 
-Initial local result: **21/21 PASS**.
+Final local and GitHub CI result: **22/22 PASS**.
 
 Coverage includes all 18 required invariants and three additional checks:
 
@@ -26,8 +26,20 @@ Coverage includes all 18 required invariants and three additional checks:
 18. previous failed runtime fixture remains detectable;
 19. all five config module reviews are mandatory;
 20. large read-back dumps are removed after hashing;
-21. frozen upstream true/current production false state is explicit.
+21. frozen upstream true/current production false state is explicit;
+22. the SurfaceFlinger policy rejection is exact to `surfaceflinger_exec` and does not falsely
+    reject an unrelated frozen OEM `surfaceflinger` type rule.
 
-The established 31-test Uperf architecture suite and 16-test SELinux/startup suite remain in the
-CI/build gate. Final results and CI binding are recorded in `07_BUILD_VERIFY.md` after the isolated
-candidate build.
+The isolated build reran every retained suite:
+
+- V20.3B: **5/5 PASS**;
+- Refresh Correctness: **39/39 PASS**;
+- Uperf Architecture: **31/31 PASS**;
+- Uperf SELinux/Startup Correction: **16/16 PASS**;
+- SFAnalysis Runtime Correction: **22/22 PASS**;
+- total: **113/113 PASS**.
+
+GitHub Actions run `33573565557` completed `success` at exact head
+`6894c9fb4b96493058829be7d91cbec8ed4234b0`. Its three downloaded ZIPs were also matched to the
+API-reported length and SHA-256 before use. Exact binding is in
+[`raw/build_20260902080413/ci_run_provenance.json`](raw/build_20260902080413/ci_run_provenance.json).

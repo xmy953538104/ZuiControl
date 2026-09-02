@@ -1,0 +1,843 @@
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index 8326eb8..f93c76e 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -12,6 +12,7 @@ on:
+       - "V20_4_REFRESH_CORRECTNESS/tests/**"
+       - "V20_4_UPERF_ARCHITECTURE_REBASE/tests/**"
+       - "V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/**"
++      - "V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/**"
+       - "upstream/uperf/**"
+       - ".github/workflows/build.yml"
+       - "*.gradle.kts"
+@@ -47,6 +48,7 @@ jobs:
+           python3 -m py_compile scripts/PatchZuiControlFramework.py
+           python3 -m py_compile scripts/ImportUperfUpstream.py
+           python3 -m py_compile scripts/VerifyUperfRuntimeAccess.py
++          python3 -m py_compile scripts/VerifyZuiControl9008Readback.py
+           python3 -m py_compile tools/PatchAsoulOptConfigPath.py
+           python3 tools/PatchAsoulOptConfigPath.py payload/system/bin/AsoulOpt
+           bash -n payload/system/bin/zui_controld
+@@ -57,6 +59,7 @@ jobs:
+           python3 V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
+           python3 V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py
+           python3 V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/TestUperfSelinuxStartup.py
++          python3 V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/TestUperfSfanalysisCorrection.py
+           python3 scripts/VerifyUperfRuntimeAccess.py \
+             --mode source \
+             --system-root payload/system \
+diff --git a/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1 b/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
+index 3cebcbf..7e69634 100644
+--- a/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
++++ b/V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1
+@@ -1,7 +1,7 @@
+ [CmdletBinding()]
+ param(
+     [string]$WorkspaceRoot = 'D:\3.VScode\Mi',
+-    [ValidateSet('V20_3B', 'V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION')]
++    [ValidateSet('V20_3B', 'V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS')]
+     [string]$Phase = 'V20_3B',
+     [Parameter(Mandatory)]
+     [ValidatePattern('^\d{14}$')]
+@@ -25,12 +25,14 @@ $phaseDisplay = switch ($Phase) {
+     'V20_4' { 'V20.4' }
+     'V20_4_UPERF' { 'V20.4 Uperf' }
+     'V20_4_UPERF_CORRECTION' { 'V20.4 Uperf SELinux/startup correction' }
++    'V20_4_UPERF_SFANALYSIS' { 'V20.4 Uperf SFAnalysis runtime correction' }
+     default { 'V20.3B' }
+ }
+ $phaseDirectory = switch ($Phase) {
+     'V20_4' { 'V20_4_REFRESH_CORRECTNESS' }
+     'V20_4_UPERF' { 'V20_4_UPERF_ARCHITECTURE_REBASE' }
+     'V20_4_UPERF_CORRECTION' { 'V20_4_UPERF_SELINUX_STARTUP_CORRECTION' }
++    'V20_4_UPERF_SFANALYSIS' { 'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION' }
+     default { 'V20_3B_DAEMON_RETIREMENT' }
+ }
+ $scratchPrefix = "${phaseSlug}_scratch_"
+@@ -139,7 +141,7 @@ $trackedBuildPaths = @(
+     'V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py',
+     'V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1'
+ )
+-if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION')) {
++if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS')) {
+     $trackedBuildPaths += @(
+         'app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt',
+         'app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt',
+@@ -151,7 +153,7 @@ if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION')) {
+         'V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1'
+     )
+ }
+-if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION')) {
++if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS')) {
+     $trackedBuildPaths += @(
+         'payload/README.txt',
+         'payload/system/bin/zui_uperf_service',
+@@ -166,6 +168,16 @@ if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION')) {
+         'V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/android14_init_stop_contract.txt'
+     )
+ }
++if ($Phase -eq 'V20_4_UPERF_SFANALYSIS') {
++    $trackedBuildPaths += @(
++        'scripts/FlashZuiControl9008.ps1',
++        'scripts/VerifyZuiControl9008Readback.py',
++        'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/TestUperfSfanalysisCorrection.py',
++        'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/BuildV20_4UperfSfanalysisCandidate.ps1',
++        'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/runtime_failure_excerpt.txt',
++        'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/qdl_flag_only_fixture.txt'
++    )
++}
+ 
+ function Snapshot-Files([string]$Root, [string]$ExcludePattern = '') {
+     $rootFull = Full $Root
+@@ -379,7 +391,7 @@ try {
+     $artifactJson = Invoke-Captured $gh.Source api "repos/xmy953538104/ZuiControl/actions/runs/$CiRunId/artifacts"
+     $runArtifacts = @((($artifactJson | ConvertFrom-Json).artifacts))
+     $requiredArtifactNames = @('ZuiControl-release-apk', 'zui-control-v19-payload')
+-    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION')) { $requiredArtifactNames += 'zui-control-init-gate' }
++    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS')) { $requiredArtifactNames += 'zui-control-init-gate' }
+     $requiredArtifacts = foreach ($name in $requiredArtifactNames) {
+         $match = @($runArtifacts | Where-Object { [string]$_.name -eq $name })
+         if ($match.Count -ne 1 -or [bool]$match[0].expired) {
+@@ -437,7 +449,7 @@ try {
+         artifacts = @($requiredArtifacts)
+     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evidence 'ci_run_provenance.json') -Encoding UTF8
+ 
+-    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION')) {
++    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS')) {
+         $initGate = Join-Path $ciArtifact 'zui-control-init-gate'
+         Require-Directory $initGate
+         foreach ($name in @('result.txt', 'exit_code.txt', 'host_init_verifier_sha256.txt', 'input_sha256.txt')) {
+@@ -464,12 +476,15 @@ try {
+         throw 'Scratch source commit mismatch.'
+     }
+     Invoke-Checked $python (Join-Path $scratchRepo 'V20_3B_DAEMON_RETIREMENT\tests\TestV20_3BPolicy.py')
+-    if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION')) {
++    if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS')) {
+         Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_REFRESH_CORRECTNESS\tests\TestV20_4RefreshPolicy.py')
+     }
+-    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION')) {
++    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS')) {
+         Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_UPERF_ARCHITECTURE_REBASE\tests\TestV20_4UperfHost.py')
+         Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_UPERF_SELINUX_STARTUP_CORRECTION\tests\TestUperfSelinuxStartup.py')
++        if ($Phase -eq 'V20_4_UPERF_SFANALYSIS') {
++            Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION\tests\TestUperfSfanalysisCorrection.py')
++        }
+         Invoke-Checked $python (Join-Path $scratchRepo 'scripts\VerifyUperfRuntimeAccess.py') `
+             --mode source `
+             --system-root (Join-Path $scratchRepo 'payload\system') `
+@@ -657,7 +672,7 @@ try {
+     [IO.File]::WriteAllLines((Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt'), $sumLines, [Text.UTF8Encoding]::new($false))
+     Copy-Item -LiteralPath (Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt') -Destination (Join-Path $evidence 'candidate_sha256.txt')
+ 
+-    $verifierName = if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION')) {
++    $verifierName = if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS')) {
+         'VerifyZuiControlFinalSuper.ps1'
+     } else {
+         'VerifyZuiControlFlashPackage.ps1'
+diff --git a/V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py b/V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py
+index 424326b..6e8df8a 100644
+--- a/V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py
++++ b/V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py
+@@ -208,7 +208,7 @@ class OwnershipTests(unittest.TestCase):
+         self.assertEqual(digest, "7a2ee5d67ba7c057066176334eca9256e376427916429d66b7593cbb5538ec86")
+ 
+     def test_v106_adopted_fields(self):
+-        self.assertIs(self.config["modules"]["sfanalysis"]["enable"], True)
++        self.assertIs(self.config["modules"]["sfanalysis"]["enable"], False)
+         self.assertEqual(self.config["presets"]["balance"]["idle"]["cpu.baseSampleTime"], 1.0)
+         self.assertEqual(self.config["presets"]["balance"]["idle"]["cpu.baseSlackTime"], 0.5)
+         self.assertEqual(self.config["presets"]["powersave"]["idle"]["cpu.baseSampleTime"], 1.5)
+diff --git a/V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/TestUperfSelinuxStartup.py b/V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/TestUperfSelinuxStartup.py
+index 77bc2e8..3d6b4da 100644
+--- a/V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/TestUperfSelinuxStartup.py
++++ b/V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/TestUperfSelinuxStartup.py
+@@ -122,7 +122,7 @@ class UperfSelinuxStartupTests(unittest.TestCase):
+ 
+     def test_15_tuning_and_binary_are_unchanged(self) -> None:
+         self.assertEqual(canonical_text_sha256(REPO / "payload/system/etc/zui_control/uperf-sm8650.json"),
+-                         "e9f067ad1abc0cc22e01d5fcc6a32220b02efa57b26627217e43cf3d9a895de3")
++                         "fc719b55087f3a1309c2a19bc6442ce2a98276aa0aedc55e7c501654bb268dd8")
+         self.assertEqual(sha256(REPO / "payload/system/bin/uperf"),
+                          "f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8")
+ 
+diff --git a/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/qdl_flag_only_fixture.txt b/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/qdl_flag_only_fixture.txt
+new file mode 100644
+index 0000000..40434be
+--- /dev/null
++++ b/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/qdl_flag_only_fixture.txt
+@@ -0,0 +1,9 @@
++SOURCE=V20_4_UPERF_STARTUP_RUNTIME_GATE/raw/flash/04_readback_evidence.txt
++QDL_VERSION=0.1.0
++QDL_COMMAND_CONTAINS=--read-back-verify
++PROGRAM_HANDLER_COUNT=7
++READ_HANDLER_COUNT=0
++READING_PARTITION_COUNT=0
++READING_BACK_COUNT=0
++ALL_WENT_WELL_COUNT=1
++READ_BACK_CONCLUSION=NOT_PROVEN_BY_QDL_LOG
+diff --git a/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/runtime_failure_excerpt.txt b/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/runtime_failure_excerpt.txt
+new file mode 100644
+index 0000000..59c5361
+--- /dev/null
++++ b/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/runtime_failure_excerpt.txt
+@@ -0,0 +1,9 @@
++SOURCE=V20_4_UPERF_STARTUP_RUNTIME_GATE/raw/selinux/04_logcat_uperf_relevant.txt
++09-01 22:47:59.074  4170  4170 I auditd  : type=1400 audit(0.0:2546): avc: denied { read } for comm="uperf" name="surfaceflinger" dev="dm-7" ino=9715584 scontext=u:r:performanced:s0 tcontext=u:object_r:surfaceflinger_exec:s0 tclass=file permissive=0
++09-01 22:48:09.086  7314  7314 I auditd  : type=1400 audit(0.0:5503): avc: denied { read } for comm="uperf" name="surfaceflinger" dev="dm-7" ino=9715584 scontext=u:r:performanced:s0 tcontext=u:object_r:surfaceflinger_exec:s0 tclass=file permissive=0
++LOGCAT_PROC_UPTIME_AVC=0
++LOGCAT_SCHEDULER_ACTIVE_AVC=0
++SERVICE_RAPID_CRASH_COUNTER=3
++sys.zui_control.uperf_fail_safe=1
++init.svc.zui_uperf=stopped
++UPERF_STARTUP_STABILITY_GATE=FAIL
+diff --git a/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/BuildV20_4UperfSfanalysisCandidate.ps1 b/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/BuildV20_4UperfSfanalysisCandidate.ps1
+new file mode 100644
+index 0000000..98a74ec
+--- /dev/null
++++ b/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/BuildV20_4UperfSfanalysisCandidate.ps1
+@@ -0,0 +1,26 @@
++[CmdletBinding()]
++param(
++    [string]$WorkspaceRoot = 'D:\3.VScode\Mi',
++    [Parameter(Mandatory)]
++    [ValidatePattern('^\d{14}$')]
++    [string]$RunId,
++    [Parameter(Mandatory)]
++    [ValidatePattern('^[0-9a-fA-F]{40}$')]
++    [string]$SourceCommit,
++    [Parameter(Mandatory)]
++    [ValidatePattern('^\d{6,20}$')]
++    [string]$CiRunId,
++    [Parameter(Mandatory)]
++    [string]$CiArtifactPath,
++    [switch]$KeepScratch,
++    [switch]$Execute
++)
++
++$ErrorActionPreference = 'Stop'
++Set-StrictMode -Version Latest
++$builder = Join-Path $PSScriptRoot '..\..\V20_3B_DAEMON_RETIREMENT\tests\BuildV20_3BCandidate.ps1'
++if (-not (Test-Path -LiteralPath $builder -PathType Leaf)) {
++    throw "Missing shared candidate builder: $builder"
++}
++
++& $builder @PSBoundParameters -Phase V20_4_UPERF_SFANALYSIS
+diff --git a/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/TestUperfSfanalysisCorrection.py b/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/TestUperfSfanalysisCorrection.py
+new file mode 100644
+index 0000000..f1e2c66
+--- /dev/null
++++ b/V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/TestUperfSfanalysisCorrection.py
+@@ -0,0 +1,227 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import hashlib
++import importlib.util
++import json
++from pathlib import Path
++import re
++import tempfile
++import unittest
++
++
++REPO = Path(__file__).resolve().parents[2]
++CONFIG = REPO / "payload/system/etc/zui_control/uperf-sm8650.json"
++UPSTREAM_CONFIG = REPO / "upstream/uperf/1.0.6/config/sdm8g3.json"
++POLICY = REPO / "payload/patches/plat_sepolicy_zui_control.cil"
++WRAPPER = REPO / "payload/system/bin/zui_uperf_service"
++CRASH_GATE = REPO / "payload/system/etc/zui_control/zui_uperf_crash_gate.sh"
++FIXTURE = REPO / "V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/runtime_failure_excerpt.txt"
++
++
++def text(path: Path) -> str:
++    return path.read_text(encoding="utf-8").replace("\r\n", "\n")
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_readback_module():
++    path = REPO / "scripts/VerifyZuiControl9008Readback.py"
++    spec = importlib.util.spec_from_file_location("readback_gate", path)
++    module = importlib.util.module_from_spec(spec)
++    assert spec.loader is not None
++    spec.loader.exec_module(module)
++    return module
++
++
++class SfanalysisCorrectionTests(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls) -> None:
++        cls.config = json.loads(text(CONFIG))
++        cls.upstream = json.loads(text(UPSTREAM_CONFIG))
++        cls.policy = text(POLICY)
++        cls.wrapper = text(WRAPPER)
++        cls.crash_gate = text(CRASH_GATE)
++
++    def test_01_sfanalysis_root_cause_chain_is_preserved(self) -> None:
++        binary = (REPO / "payload/system/bin/uperf").read_bytes()
++        runtime = text(FIXTURE)
++        self.assertIs(self.upstream["modules"]["sfanalysis"]["enable"], True)
++        for marker in (b"SfAnalysisListener", b"/system/bin/surfaceflinger", b"sfanalysis"):
++            self.assertIn(marker, binary)
++        self.assertEqual(runtime.count('comm="uperf" name="surfaceflinger"'), 2)
++        self.assertIn("surfaceflinger_exec:s0 tclass=file permissive=0", runtime)
++
++    def test_02_final_sfanalysis_is_false(self) -> None:
++        self.assertIs(self.config["modules"]["sfanalysis"]["enable"], False)
++
++    def test_03_four_idle_tuning_fields_are_unchanged(self) -> None:
++        presets = self.config["presets"]
++        self.assertEqual(presets["balance"]["idle"]["cpu.baseSampleTime"], 1.0)
++        self.assertEqual(presets["balance"]["idle"]["cpu.baseSlackTime"], 0.5)
++        self.assertEqual(presets["powersave"]["idle"]["cpu.baseSampleTime"], 1.5)
++        self.assertEqual(presets["powersave"]["idle"]["cpu.baseSlackTime"], 0.8)
++
++    def test_04_proc_uptime_correction_is_unchanged(self) -> None:
++        self.assertIn("< /proc/uptime", self.wrapper)
++        self.assertIn("(allow performanced proc_uptime (file (getattr open read)))", self.policy)
++
++    def test_05_scheduler_active_guard_remains_removed(self) -> None:
++        self.assertNotIn("sys.zui_control.scheduler_active", self.crash_gate)
++        self.assertNotRegex(
++            self.policy,
++            r"\(allow\s+shell\s+zui_control_scheduler_active_prop\s+\(file\s+",
++        )
++
++    def test_06_fail_safe_design_is_unchanged(self) -> None:
++        self.assertIn('deadline=$(( $(uptime_seconds) + 20 ))', self.wrapper)
++        self.assertIn('[ "$rapid_count" -ge 3 ]', self.wrapper)
++        self.assertIn('[ "$count" -lt 3 ] || setprop "$FAIL_SAFE_PROP" 1', self.crash_gate)
++
++    def test_07_no_surfaceflinger_allow_was_added(self) -> None:
++        self.assertNotRegex(
++            self.policy,
++            r"\(allow\s+performanced(?:_34_0)?\s+[^\s()]*surfaceflinger",
++        )
++
++    def test_08_no_broad_proc_allow_was_added(self) -> None:
++        self.assertNotRegex(
++            self.policy,
++            r"\(allow\s+performanced\s+(?:proc|proc_type|fs_type)\s+\(file\s+",
++        )
++
++    def test_09_fifo_polling_is_not_restored(self) -> None:
++        self.assertIn('mkfifo "$LOG_PIPE"', self.wrapper)
++        self.assertIn('while IFS= read -r line <&8; do', self.wrapper)
++        for token in ("sleep ", "pidof uperf", "killall", "uperf_process_count", "grep "):
++            self.assertNotIn(token, self.wrapper)
++
++    def test_10_top_resumed_sources_are_unchanged(self) -> None:
++        self.assertEqual(
++            sha256(REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlService.java"),
++            "b4903fffb41dfd21701c8e7fb694f32f6565c1cdc1e5f518a1f56a934149adea",
++        )
++        self.assertEqual(
++            sha256(REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java"),
++            "189973997fdb80a483ae631a5404e867e357239c5226091fa6b8ad964a0ed5d1",
++        )
++
++    def test_11_uperf_binary_is_unchanged(self) -> None:
++        self.assertEqual(
++            sha256(REPO / "payload/system/bin/uperf"),
++            "f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8",
++        )
++
++    def test_12_sched_stays_false(self) -> None:
++        self.assertIs(self.config["modules"]["sched"]["enable"], False)
++
++    def test_13_native_auto_is_not_a_production_owner(self) -> None:
++        self.assertIs(self.config["modules"]["sched"]["enable"], False)
++        self.assertEqual(
++            self.config["modules"]["switcher"]["switchInode"],
++            "/data/vendor/zui_control/uperf/effective_powermode.txt",
++        )
++        self.assertNotIn("auto", self.config["presets"])
++
++    def test_14_refresh_artifact_is_unchanged(self) -> None:
++        self.assertEqual(
++            sha256(REPO / "payload/system/etc/init/zui_refresh_kill_switch.rc"),
++            "0161a9980777b4313d0a5935b0e861e1afea86c5b4eb07ef5b88e44f20143c62",
++        )
++
++    def test_15_asoulopt_is_unchanged(self) -> None:
++        self.assertEqual(
++            sha256(REPO / "payload/system/bin/AsoulOpt"),
++            "7a2ee5d67ba7c057066176334eca9256e376427916429d66b7593cbb5538ec86",
++        )
++
++    def test_16_qdl_flag_alone_cannot_pass(self) -> None:
++        gate = text(REPO / "scripts/FlashZuiControl9008.ps1")
++        self.assertIn("--read-back-verify", gate)
++        self.assertIn("qdl_flag_only_accepted_as_proof = $false", gate)
++        self.assertIn("'dump-part'", gate)
++
++    def test_17_qdl_evidence_requires_real_bytes_and_hash(self) -> None:
++        module = load_readback_module()
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            programs = []
++            evidence = []
++            for index, label in enumerate(module.LABELS):
++                filename = f"image{index}.img"
++                data = bytes([index]) * 4096
++                (root / filename).write_bytes(data)
++                digest = hashlib.sha256(data).hexdigest()
++                programs.append(
++                    f'<program label="{label}" filename="{filename}" '
++                    f'num_partition_sectors="1" SECTOR_SIZE_IN_BYTES="4096" '
++                    f'physical_partition_number="{index % 2}" />'
++                )
++                evidence.append(
++                    {
++                        "label": label,
++                        "physical_partition_number": index % 2,
++                        "bytes": 4096,
++                        "source_sha256": digest,
++                        "physical_readback_sha256": digest,
++                        "result": "PASS",
++                    }
++                )
++            (root / "rawprogram_zuicontrol.xml").write_text(
++                "<data>" + "".join(programs) + "</data>", encoding="utf-8"
++            )
++            manifest = root / "manifest.json"
++            manifest.write_text(
++                json.dumps(
++                    {
++                        "qdl_flag_only_accepted_as_proof": False,
++                        "method": "qdl-rs dump-part host bytes",
++                        "fixed_seven": evidence,
++                        "result": "PHYSICAL_PARTITION_READBACK=PASS",
++                    }
++                ),
++                encoding="utf-8",
++            )
++            self.assertTrue(module.verify(root, manifest)["ok"])
++            evidence[0]["physical_readback_sha256"] = "0" * 64
++            manifest.write_text(
++                json.dumps(
++                    {
++                        "qdl_flag_only_accepted_as_proof": False,
++                        "method": "qdl-rs dump-part host bytes",
++                        "fixed_seven": evidence,
++                        "result": "PHYSICAL_PARTITION_READBACK=PASS",
++                    }
++                ),
++                encoding="utf-8",
++            )
++            with self.assertRaisesRegex(ValueError, "physical partition hash mismatch"):
++                module.verify(root, manifest)
++
++    def test_18_previous_failed_runtime_fixture_is_detectable(self) -> None:
++        runtime = text(FIXTURE)
++        self.assertEqual(runtime.count("surfaceflinger_exec:s0"), 2)
++        self.assertIn("SERVICE_RAPID_CRASH_COUNTER=3", runtime)
++        self.assertIn("UPERF_STARTUP_STABILITY_GATE=FAIL", runtime)
++
++    def test_19_config_activated_module_review_is_mandatory(self) -> None:
++        verifier = text(REPO / "scripts/VerifyUperfRuntimeAccess.py")
++        for module in ("sfanalysis", "input", "switcher", "sysfs", "sched"):
++            self.assertIn(f'"module": "{module}"', verifier)
++        self.assertIn('"closed_source_config_modules": "PARTIAL_STATIC_REVIEW"', verifier)
++
++    def test_20_flash_gate_deletes_large_temporary_dumps(self) -> None:
++        gate = text(REPO / "scripts/FlashZuiControl9008.ps1")
++        self.assertIn("Get-FileHash -LiteralPath $dumpPath", gate)
++        self.assertIn("Remove-Item -LiteralPath $dumpPath -Force", gate)
++        self.assertIn("PHYSICAL_PARTITION_READBACK=PASS", gate)
++
++    def test_21_upstream_true_current_false_is_explicit(self) -> None:
++        self.assertIs(self.upstream["modules"]["sfanalysis"]["enable"], True)
++        self.assertIs(self.config["modules"]["sfanalysis"]["enable"], False)
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)
+diff --git a/payload/system/etc/zui_control/uperf-sm8650.json b/payload/system/etc/zui_control/uperf-sm8650.json
+index 612b8f4..3505d08 100644
+--- a/payload/system/etc/zui_control/uperf-sm8650.json
++++ b/payload/system/etc/zui_control/uperf-sm8650.json
+@@ -31,7 +31,7 @@
+       "holdEnterTime": 1.0
+     },
+     "sfanalysis": {
+-      "enable": true,
++      "enable": false,
+       "renderIdleSlackTime": 0.2
+     },
+     "cpu": {
+diff --git a/scripts/FlashZuiControl9008.ps1 b/scripts/FlashZuiControl9008.ps1
+index fc49ef5..9170ec8 100644
+--- a/scripts/FlashZuiControl9008.ps1
++++ b/scripts/FlashZuiControl9008.ps1
+@@ -45,6 +45,18 @@ function Find-EdlPorts {
+     } | Sort-Object -Unique)
+ }
+ 
++function Wait-EdlPort([int]$TimeoutSeconds) {
++    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
++    do {
++        Start-Sleep -Milliseconds 500
++        $found = @(Find-EdlPorts)
++    } until ($found.Count -gt 0 -or [DateTime]::UtcNow -ge $deadline)
++    if ($found.Count -ne 1) {
++        throw "Expected exactly one Qualcomm 9008 COM port; found: $($found -join ', ')"
++    }
++    return $found[0]
++}
++
+ if (-not (Test-Path -LiteralPath $AdbPath -PathType Leaf)) {
+     throw "adb not found: $AdbPath"
+ }
+@@ -76,15 +88,7 @@ if ($rootProbe -notmatch 'uid=0') {
+ Write-Host "Verified adb device: $ConfirmAdbSerial / $model / $build"
+ [void](Invoke-Adb @('shell', 'su', '-c', 'sync; reboot edl') -AllowDisconnect)
+ 
+-$deadline = [DateTime]::UtcNow.AddSeconds($EdlTimeoutSeconds)
+-do {
+-    Start-Sleep -Milliseconds 500
+-    $ports = @(Find-EdlPorts)
+-} until ($ports.Count -gt 0 -or [DateTime]::UtcNow -ge $deadline)
+-if ($ports.Count -ne 1) {
+-    throw "Expected exactly one Qualcomm 9008 COM port; found: $($ports -join ', ')"
+-}
+-$port = $ports[0]
++$port = Wait-EdlPort $EdlTimeoutSeconds
+ Write-Host "Qualcomm 9008 detected on $port"
+ if ($Mode -eq 'EnterEdl') {
+     Write-Host 'Device is in 9008 mode. No flash command was sent.'
+@@ -95,13 +99,14 @@ $loader = Join-Path $SafePackageDir 'prog_firehose_ddr-TB321FC.elf'
+ $xml = Join-Path $SafePackageDir 'rawprogram_zuicontrol.xml'
+ $logDir = 'D:\3.VScode\Mi\flash\Log'
+ New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+-$log = Join-Path $logDir ("ZuiControl_qdlrs_{0}.log" -f [DateTime]::Now.ToString('yyyy-MM-dd_HH-mm-ss'))
++$timestamp = [DateTime]::Now.ToString('yyyy-MM-dd_HH-mm-ss')
++$log = Join-Path $logDir ("ZuiControl_qdlrs_{0}.log" -f $timestamp)
+ $arguments = @(
+     '--backend', 'serial',
+     '--dev-path', $port,
+     '--loader-path', $loader,
+     '--storage-type', 'ufs',
+-    '--reset-mode', 'system',
++    '--reset-mode', 'edl',
+     '--read-back-verify',
+     '--print-firehose-log',
+     'flasher', '-p', $xml
+@@ -115,6 +120,98 @@ if ((Get-Content -LiteralPath $log -Raw) -notmatch 'All went well!') {
+     throw "qdl-rs did not report its success marker. Log: $log"
+ }
+ 
++# qdl-rs 0.1.0 only forwards --read-back-verify as a Firehose <program>
++# attribute.  It does not return bytes to the host for comparison.  Treat that
++# flag as supplementary and prove every fixed-seven write by an explicit
++# physical partition dump, byte length check, and host SHA-256 comparison.
++[xml]$rawprogram = Get-Content -Raw -LiteralPath $xml
++$programs = @($rawprogram.data.program)
++$expectedLabels = @('super', 'vbmeta_system_a', 'vbmeta_system_b', 'boot_a', 'boot_b', 'vbmeta_a', 'vbmeta_b')
++$actualLabels = @($programs | ForEach-Object { [string]$_.label })
++if ($programs.Count -ne 7 -or ($actualLabels -join "`n") -ne ($expectedLabels -join "`n")) {
++    throw "Physical read-back requires the exact fixed-seven labels: $($actualLabels -join ', ')"
++}
++$readbackDir = Join-Path $logDir ("ZuiControl_readback_{0}" -f $timestamp)
++if (Test-Path -LiteralPath $readbackDir) { throw "Fresh read-back directory required: $readbackDir" }
++New-Item -ItemType Directory -Path $readbackDir | Out-Null
++$largestImage = @($programs | ForEach-Object {
++    (Get-Item -LiteralPath (Join-Path $SafePackageDir ([string]$_.filename))).Length
++} | Measure-Object -Maximum).Maximum
++$readbackDrive = Get-PSDrive -Name ([IO.Path]::GetPathRoot($readbackDir).Substring(0, 1))
++if ($readbackDrive.Free -lt ($largestImage + 2GB)) {
++    throw "Insufficient temporary space for physical read-back: need at least $($largestImage + 2GB) bytes."
++}
++
++$readbackResults = @()
++foreach ($program in $programs) {
++    $label = [string]$program.label
++    $imagePath = Join-Path $SafePackageDir ([string]$program.filename)
++    $expectedLength = [int64]$program.num_partition_sectors * [int64]$program.SECTOR_SIZE_IN_BYTES
++    if ((Get-Item -LiteralPath $imagePath).Length -ne $expectedLength) {
++        throw "Image does not exactly fill programmed extent for ${label}: $imagePath"
++    }
++    $port = Wait-EdlPort $EdlTimeoutSeconds
++    $readLog = Join-Path $readbackDir ("${label}.qdl.log")
++    $dumpArguments = @(
++        '--backend', 'serial',
++        '--dev-path', $port,
++        '--loader-path', $loader,
++        '--storage-type', 'ufs',
++        '--phys-part-idx', [string]$program.physical_partition_number,
++        '--reset-mode', 'edl',
++        '--print-firehose-log',
++        'dump-part', '-o', $readbackDir, $label
++    )
++    Write-Host "Reading back physical partition $label from UFS LUN $($program.physical_partition_number)..."
++    & $QdlPath @dumpArguments 2>&1 | Tee-Object -FilePath $readLog
++    if ($LASTEXITCODE -ne 0 -or (Get-Content -Raw -LiteralPath $readLog) -notmatch 'All went well!') {
++        throw "Physical read-back failed for $label. Device remains in EDL. Log: $readLog"
++    }
++    $dumpPath = Join-Path $readbackDir $label
++    if (-not (Test-Path -LiteralPath $dumpPath -PathType Leaf)) {
++        throw "qdl-rs did not create the expected physical dump: $dumpPath"
++    }
++    $actualLength = (Get-Item -LiteralPath $dumpPath).Length
++    $expectedHash = (Get-FileHash -LiteralPath $imagePath -Algorithm SHA256).Hash.ToLowerInvariant()
++    $actualHash = (Get-FileHash -LiteralPath $dumpPath -Algorithm SHA256).Hash.ToLowerInvariant()
++    if ($actualLength -ne $expectedLength -or $actualHash -ne $expectedHash) {
++        throw "Physical read-back mismatch for $label. Device remains in EDL. expected_length=$expectedLength actual_length=$actualLength expected_sha256=$expectedHash actual_sha256=$actualHash"
++    }
++    $readbackResults += [pscustomobject][ordered]@{
++        label = $label
++        physical_partition_number = [int]$program.physical_partition_number
++        bytes = $actualLength
++        source_image = [string]$program.filename
++        source_sha256 = $expectedHash
++        physical_readback_sha256 = $actualHash
++        result = 'PASS'
++    }
++    Remove-Item -LiteralPath $dumpPath -Force
++}
++$readbackManifest = Join-Path $readbackDir 'physical_readback_manifest.json'
++[pscustomobject][ordered]@{
++    qdl_version = ($qdlVersion -join ' ').Trim()
++    qdl_flag_only_accepted_as_proof = $false
++    method = 'qdl-rs dump-part to host; exact byte length and SHA-256 comparison; temporary dumps deleted after verification'
++    fixed_seven = $readbackResults
++    result = 'PHYSICAL_PARTITION_READBACK=PASS'
++} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $readbackManifest -Encoding UTF8
++Write-Host "PHYSICAL_PARTITION_READBACK=PASS Manifest: $readbackManifest"
++
++$port = Wait-EdlPort $EdlTimeoutSeconds
++$resetArguments = @(
++    '--backend', 'serial',
++    '--dev-path', $port,
++    '--loader-path', $loader,
++    '--storage-type', 'ufs',
++    '--reset-mode', 'system',
++    'nop'
++)
++& $QdlPath @resetArguments 2>&1 | Tee-Object -FilePath (Join-Path $readbackDir 'reset_system.qdl.log')
++if ($LASTEXITCODE -ne 0) {
++    throw "Physical read-back passed, but qdl-rs could not reset the device to system. Device may remain in EDL."
++}
++
+ $deadline = [DateTime]::UtcNow.AddSeconds($BootTimeoutSeconds)
+ do {
+     Start-Sleep -Seconds 2
+diff --git a/scripts/VerifyUperfRuntimeAccess.py b/scripts/VerifyUperfRuntimeAccess.py
+index 0dce425..5caf8c0 100644
+--- a/scripts/VerifyUperfRuntimeAccess.py
++++ b/scripts/VerifyUperfRuntimeAccess.py
+@@ -251,6 +251,8 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
+     wrapper = read(system / "bin/zui_uperf_service")
+     crash_gate = read(system / "etc/zui_control/zui_uperf_crash_gate.sh")
+     init_rc = read(system / "etc/init/zui_scheduler.rc")
++    config = json.loads(read(system / "etc/zui_control/uperf-sm8650.json"))
++    uperf_binary = (system / "bin/uperf").read_bytes()
+     file_contexts = read(Path(args.file_contexts))
+     property_contexts = read(Path(args.property_contexts))
+     plat_policy = read(Path(args.plat_policy))
+@@ -272,6 +274,71 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
+     require(init_rc, "onrestart exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_uperf_crash_gate.sh",
+             "whole-service crash gate")
+ 
++    modules = config["modules"]
++    if modules["sfanalysis"]["enable"] is not False:
++        raise ValueError("sfanalysis must remain disabled after the confirmed SurfaceFlinger access failure")
++    if modules["input"]["enable"] is not True:
++        raise ValueError("input module activation changed unexpectedly")
++    if modules["sysfs"]["enable"] is not True:
++        raise ValueError("sysfs module activation changed unexpectedly")
++    if modules["sched"]["enable"] is not False:
++        raise ValueError("sched module must remain disabled; A-SOUL owns thread placement")
++    if modules["switcher"]["switchInode"] != "/data/vendor/zui_control/uperf/effective_powermode.txt":
++        raise ValueError("switcher effective-mode path changed unexpectedly")
++    for marker in (b"SfAnalysisListener", b"/system/bin/surfaceflinger", b"sfanalysis"):
++        if marker not in uperf_binary:
++            raise ValueError(f"pinned Uperf binary lacks SFAnalysis audit marker: {marker!r}")
++
++    module_access_review = [
++        {
++            "module": "sfanalysis",
++            "activated": False,
++            "decision": "DISABLE_UNNEEDED_MODULE",
++            "known_resources": [
++                "/system/bin/surfaceflinger",
++                "/system/lib64/libandroidfw.so",
++                "/system/lib64/libandroid.so",
++            ],
++            "runtime_evidence": "enabled=true caused blocking surfaceflinger_exec:file read AVCs in both startup workers",
++            "coverage": "PARTIAL_STATIC_CLOSED_SOURCE",
++        },
++        {
++            "module": "input",
++            "activated": True,
++            "decision": "KEEP_WITH_NARROW_EXISTING_POLICY",
++            "known_resources": ["/dev/input/**"],
++            "runtime_evidence": "current corrected candidate device proof pending",
++            "coverage": "PARTIAL_STATIC_CLOSED_SOURCE",
++        },
++        {
++            "module": "switcher",
++            "activated": True,
++            "decision": "KEEP_CANONICAL_EVENT_DRIVEN_MODE_PATHS",
++            "known_resources": [
++                modules["switcher"]["switchInode"],
++                modules["switcher"]["perapp"],
++            ],
++            "runtime_evidence": "current corrected candidate device proof pending",
++            "coverage": "PARTIAL_STATIC_CLOSED_SOURCE",
++        },
++        {
++            "module": "sysfs",
++            "activated": True,
++            "decision": "KEEP_WITH_TYPED_CPU_WALT_MSM_POLICY",
++            "known_resources": sorted(set(modules["sysfs"]["knob"].values())),
++            "runtime_evidence": "current corrected candidate device proof pending",
++            "coverage": "PARTIAL_STATIC_CLOSED_SOURCE",
++        },
++        {
++            "module": "sched",
++            "activated": False,
++            "decision": "KEEP_DISABLED_ASOUL_OWNS_THREAD_PLACEMENT",
++            "known_resources": ["/proc/<pid>/task/<tid>/**"],
++            "runtime_evidence": "disabled by production architecture",
++            "coverage": "PARTIAL_STATIC_CLOSED_SOURCE",
++        },
++    ]
++
+     for path, expected_type in CONTEXTS:
+         pattern = re.compile(rf"(?m)^{re.escape(path)}\s+(?:--\s+)?u:object_r:{expected_type}:s0$")
+         if not pattern.search(file_contexts):
+@@ -303,6 +370,7 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
+ 
+     broad_patterns = {
+         "performanced broad proc file": r"\(allow\s+performanced\s+(?:proc|proc_type|fs_type)\s+\(file\s+",
++        "performanced SurfaceFlinger access": r"\(allow\s+performanced(?:_34_0)?\s+[^\s()]*surfaceflinger[^\s()]*\s+\(",
+         "shell scheduler property read": r"\(allow\s+shell\s+zui_control_scheduler_active_prop\s+\(file\s+",
+         "shell broad property write": r"\(allow\s+shell\s+(?:property_type|system_property_type|system_internal_property_type)\s+\(property_service\s+\(set\)\)\)",
+         "performanced permissive": r"\(permissive\s+performanced\)",
+@@ -319,6 +387,12 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
+         "mode": args.mode,
+         "graph_edges": len(graph),
+         "graph": graph,
++        "access_graph_completeness": {
++            "wrapper_init_explicit_code": "COMPLETE_STATIC_REVIEW",
++            "closed_source_config_modules": "PARTIAL_STATIC_REVIEW",
++            "device_runtime_for_corrected_candidate": "NOT_YET_PROVEN",
++        },
++        "config_activated_module_access_review": module_access_review,
+         "removed_access": {
+             "component": "crash-gate",
+             "domain": "shell",
+diff --git a/scripts/VerifyZuiControl9008Readback.py b/scripts/VerifyZuiControl9008Readback.py
+new file mode 100644
+index 0000000..1351858
+--- /dev/null
++++ b/scripts/VerifyZuiControl9008Readback.py
+@@ -0,0 +1,90 @@
++#!/usr/bin/env python3
++"""Validate fixed-seven physical read-back evidence; a qdl flag alone is never proof."""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import sys
++import xml.etree.ElementTree as ET
++
++
++LABELS = (
++    "super",
++    "vbmeta_system_a",
++    "vbmeta_system_b",
++    "boot_a",
++    "boot_b",
++    "vbmeta_a",
++    "vbmeta_b",
++)
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def verify(package: Path, manifest_path: Path) -> dict[str, object]:
++    manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
++    if manifest.get("qdl_flag_only_accepted_as_proof") is not False:
++        raise ValueError("qdl --read-back-verify flag alone cannot satisfy this gate")
++    if manifest.get("result") != "PHYSICAL_PARTITION_READBACK=PASS":
++        raise ValueError("physical read-back PASS marker is absent")
++    if "dump-part" not in manifest.get("method", ""):
++        raise ValueError("manifest does not identify host-visible dump-part evidence")
++
++    programs = ET.parse(package / "rawprogram_zuicontrol.xml").getroot().findall("program")
++    if tuple(item.attrib.get("label") for item in programs) != LABELS:
++        raise ValueError("rawprogram is not the ordered fixed-seven allowlist")
++    evidence = manifest.get("fixed_seven")
++    if not isinstance(evidence, list) or tuple(item.get("label") for item in evidence) != LABELS:
++        raise ValueError("manifest does not cover every ordered fixed-seven partition")
++
++    results = []
++    for program, item in zip(programs, evidence):
++        image = package / program.attrib["filename"]
++        expected_bytes = int(program.attrib["num_partition_sectors"]) * int(
++            program.attrib["SECTOR_SIZE_IN_BYTES"]
++        )
++        image_hash = sha256(image)
++        if image.stat().st_size != expected_bytes:
++            raise ValueError(f"{item['label']}: image does not fill the programmed extent")
++        if item.get("result") != "PASS":
++            raise ValueError(f"{item['label']}: physical read-back result is not PASS")
++        if int(item.get("physical_partition_number", -1)) != int(
++            program.attrib["physical_partition_number"]
++        ):
++            raise ValueError(f"{item['label']}: UFS LUN mismatch")
++        if int(item.get("bytes", -1)) != expected_bytes:
++            raise ValueError(f"{item['label']}: physical byte count mismatch")
++        if item.get("source_sha256") != image_hash:
++            raise ValueError(f"{item['label']}: source image hash mismatch")
++        if item.get("physical_readback_sha256") != image_hash:
++            raise ValueError(f"{item['label']}: physical partition hash mismatch")
++        results.append({"label": item["label"], "bytes": expected_bytes, "sha256": image_hash})
++    return {"ok": True, "proof": "HOST_VISIBLE_PHYSICAL_BYTES_AND_SHA256", "fixed_seven": results}
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--package", required=True)
++    parser.add_argument("--manifest", required=True)
++    args = parser.parse_args()
++    try:
++        result = verify(Path(args.package), Path(args.manifest))
++    except (OSError, ValueError, KeyError, ET.ParseError, json.JSONDecodeError) as exc:
++        print(f"PHYSICAL_PARTITION_READBACK_VERIFY=FAIL: {exc}", file=sys.stderr)
++        return 1
++    print(json.dumps(result, indent=2))
++    print("PHYSICAL_PARTITION_READBACK_VERIFY=PASS")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/scripts/VerifyZuiControlFlashPackage.ps1 b/scripts/VerifyZuiControlFlashPackage.ps1
+index c9e38cb..dacb232 100644
+--- a/scripts/VerifyZuiControlFlashPackage.ps1
++++ b/scripts/VerifyZuiControlFlashPackage.ps1
+@@ -344,8 +344,8 @@ function Assert-UperfConfig([string]$Path) {
+     if ($json.modules.switcher.perapp -ne '/data/vendor/zui_control/uperf/perapp_powermode.txt') {
+         throw 'Uperf parser-compatible per-app path is not canonical'
+     }
+-    if ($json.modules.sfanalysis.enable -ne $true -or $json.modules.sched.enable -ne $false) {
+-        throw 'Bundled Uperf must enable internal SF analysis and delegate thread placement to A-SOUL'
++    if ($json.modules.sfanalysis.enable -ne $false -or $json.modules.sched.enable -ne $false) {
++        throw 'Bundled Uperf must disable unneeded SF analysis and delegate thread placement to A-SOUL'
+     }
+     if ($json.presets.balance.idle.'cpu.baseSampleTime' -ne 1.0 -or
+         $json.presets.balance.idle.'cpu.baseSlackTime' -ne 0.5 -or

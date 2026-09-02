@@ -1,0 +1,19 @@
+RUN_ID=20260902080413
+REFERENCE_RUN_ID=20260901174600
+REFERENCE_CIL_EVIDENCE=V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/final_policy_gate_20260901174600/policy_gate_transcript.txt
+REFERENCE_RESULT=SECILC_RC=0;GATE_RC=0;COMPILED_POLICY_SHA256=5684def61793146cb3e0175a6d4c0b641e48a4888b4227769ec32ef7631b9b5c;COMPILED_POLICY_BYTES=1256804
+
+COMPARISON_SCOPE=eight final-super reverse-extracted split-CIL inputs
+90f41ee4c93264f09b00ccd97f3bf8149b794c3e75e160b2bfe5c3adefe77494  2141808  system/system/etc/selinux/plat_sepolicy.cil
+e1b5f78be73ce59913bafd72e9f4c02a311f1f246852fc00ed1cc8b2162ae9e0  209451  system/system/etc/selinux/mapping/34.0.cil
+f22007b7fcee8565c76f3975fe0b73971e301f8ea425962073700da8c2243334  234212  system_ext/etc/selinux/system_ext_sepolicy.cil
+2a2b72debf326a3f0239e4ce5128797be686458281e310717192138c57ffad6f  10388  system_ext/etc/selinux/mapping/34.0.cil
+6b63b06cb4e54e7fc24fe92b5c7a1155928cb3266e83711c51f984896a59e8aa  56962  product/etc/selinux/product_sepolicy.cil
+b7bcf4e458ce6a9bbe6b96733df7927c132f92f48b8859d1050a895da5d3234f  918  product/etc/selinux/mapping/34.0.cil
+559790af23f68a0601ebfa143ed1dd48f8b02a3c75cedeea096b5395c73d4eca  999453  vendor/etc/selinux/plat_pub_versioned.cil
+11376cbe840bc13de941d454032e61727e09372591dcd832f17774f666e20320  1100402  vendor/etc/selinux/vendor_sepolicy.cil
+
+ALL_EIGHT_INPUTS_IDENTICAL_TO_REFERENCE=YES
+INHERITED_FINAL_CIL_GATE=PASS
+INHERITANCE_BASIS=All eight exact final split-CIL inputs are byte-identical to the reference final inputs that passed target-device secilc and policy loadability gate.
+DEVICE_TOUCHED=NO

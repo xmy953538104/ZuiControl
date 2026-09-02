@@ -1,0 +1,1 @@
+/home/runner/work/_temp/init-gate/otatools/bin/host_init_verifier -p /dev/null --property-contexts=/home/runner/work/ZuiControl/ZuiControl/V20_4_UPERF_ARCHITECTURE_REBASE/tests/host_init_property_contexts /home/runner/work/ZuiControl/ZuiControl/payload/system/etc/init/zui_scheduler.rc 

@@ -1,0 +1,1004 @@
+
+Tool check:
+OK   python.exe               D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe
+OK   lpunpack.py              D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\lpunpack.py
+OK   lpmake.exe               D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\AMD64\lpmake.exe
+OK   extract.erofs.exe        D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\AMD64\extract.erofs.exe
+OK   mkfs.erofs.exe           D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\AMD64\mkfs.erofs.exe
+OK   avbtool 1.2.0            D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py
+OK   testkey_rsa2048.pem      D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\pem\testkey_rsa2048.pem
+OK   testkey_rsa2048_pub.bin  D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\pem\testkey_rsa2048_pub.bin
+OK   testkey_rsa4096.pem      D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\pem\testkey_rsa4096.pem
+OK   testkey_rsa4096_pub.bin  D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\pem\testkey_rsa4096_pub.bin
+Initializing official templates from: D:\3.VScode\Mi\【A官方】072
+Saving official super template: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\config\super_official_187.json
+Copied official super to: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\super.img
+Extracting official super partitions to: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\official\img
+unpacked odm_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\official\img\odm_a.img (786432 bytes)
+unpacked product_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\official\img\product_a.img (631758848 bytes)
+unpacked system_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\official\img\system_a.img (4906721280 bytes)
+unpacked system_dlkm_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\official\img\system_dlkm_a.img (12189696 bytes)
+unpacked system_ext_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\official\img\system_ext_a.img (195932160 bytes)
+unpacked vendor_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\official\img\vendor_a.img (1502416896 bytes)
+unpacked vendor_dlkm_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\official\img\vendor_dlkm_a.img (41353216 bytes)
+Official package manifest: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\config\official_package_187.json
+Init official done.
+Saving super metadata: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\config\super_20260902_080519.json
+Extracting logical partitions to D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img
+unpacked odm_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\odm_a.img (786432 bytes)
+unpacked product_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\product_a.img (631758848 bytes)
+unpacked system_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_a.img (4906721280 bytes)
+unpacked system_dlkm_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_dlkm_a.img (12189696 bytes)
+unpacked system_ext_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_ext_a.img (195932160 bytes)
+unpacked vendor_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_a.img (1502416896 bytes)
+unpacked vendor_dlkm_a -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_dlkm_a.img (41353216 bytes)
+Done.
+����: [options] δ�� -source 8 һ������������·��
+1 ������
+����: [options] δ�� -source 8 һ������������·��
+1 ������
+����: [options] δ�� -source 8 һ������������·��
+1 ������
+����: [options] δ�� -source 8 һ������������·��
+1 ������
++ javac -source 8 -target 8 -encoding UTF-8 -cp D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar -d D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_stubs D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\hardware\display\DisplayManagerInternal.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\os\ServiceManager.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\os\SystemProperties.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\util\AtomicFile.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\LocalServices.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\wm\ActivityRecord.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\wm\WindowManagerInternal.java
++ javac -source 8 -target 8 -encoding UTF-8 -cp D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar;D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_stubs -d D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_classes D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\src\framework\android\zui\ZuiControlManager.java
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\build-tools\36.0.0\d8.bat --release --min-api 35 --lib D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar --classpath D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_stubs --output D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_dex D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_classes\android\zui\ZuiControlManager$1.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_classes\android\zui\ZuiControlManager$2.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_classes\android\zui\ZuiControlManager$3.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_classes\android\zui\ZuiControlManager$4.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_classes\android\zui\ZuiControlManager$5.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_classes\android\zui\ZuiControlManager$6.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_classes\android\zui\ZuiControlManager$Writer.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes6.dex_classes\android\zui\ZuiControlManager.class
++ javac -source 8 -target 8 -encoding UTF-8 -cp D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar -d D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_stubs D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\hardware\display\DisplayManagerInternal.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\os\ServiceManager.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\os\SystemProperties.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\util\AtomicFile.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\LocalServices.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\wm\ActivityRecord.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\wm\WindowManagerInternal.java
++ javac -source 8 -target 8 -encoding UTF-8 -cp D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar;D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_stubs -d D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\src\services\com\zui\server\control\ZuiControlHooks.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\src\services\com\zui\server\control\ZuiControlService.java
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\build-tools\36.0.0\d8.bat --release --min-api 35 --lib D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar --classpath D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_stubs --output D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_dex D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlHooks.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$1.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$10.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$11.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$2.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$3.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$4.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$5.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$6.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$7.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$8.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$9.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$FocusSnapshot.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$ModeMatch.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$Profile.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$UperfScenePolicy$1.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$UperfScenePolicy$2.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$UperfScenePolicy$3.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService$UperfScenePolicy.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\classes4.dex_classes\com\zui\server\control\ZuiControlService.classI: Using Apktool 3.0.2 on services.jar with 8 threads
+I: Baksmaling classes.dex...
+I: Baksmaling classes3.dex...
+I: Baksmaling classes2.dex...
+I: Copying original files...
+I: Copying unknown files...
+I: Using Apktool 3.0.2 on services.jar with 8 threads
+I: Smaling smali_classes2 folder into classes2.dex...
+I: Smaling smali_classes3 folder into classes3.dex...
+I: Smaling smali folder into classes.dex...
+I: Building apk file...
+I: Importing unknown files...
+I: Built apk into: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\services_rebuilt.jar
+
++ java -jar D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\apktool.jar d -f -o D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\services_dec D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\unpack\system_a\system\framework\services.jar
++ java -jar D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\apktool.jar b D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\services_dec -o D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_z51mch13\services_rebuilt.jar
+patched framework.jar -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\unpack\system_a\system\framework\framework.jar
+patched services.jar -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\unpack\system_a\system\framework\services.jar
+{
+  "started_at": "2026-09-02T08:06:59",
+  "root": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\repo",
+  "image_root": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413",
+  "unpack": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack",
+  "payload": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload",
+  "dry_run": true,
+  "warnings": [],
+  "legacy_removed": [
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\system_a\\system\\preinstall\\QQMusic"
+  ],
+  "legacy_metadata_removed": {
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config": [
+      "system_a/system/preinstall/QQMusic 0 0 0755",
+      "system_a/system/preinstall/QQMusic/QQMusic.apk 0 0 0644"
+    ],
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts": [
+      "/system_a/system/preinstall/QQMusic u:object_r:system_file:s0",
+      "/system_a/system/preinstall/QQMusic/QQMusic\\.apk u:object_r:system_file:s0"
+    ]
+  },
+  "copied": [
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\bin",
+      "target": "system_a/system/bin",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\bin\\AsoulOpt",
+      "target": "system_a/system/bin/AsoulOpt",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\bin\\uperf",
+      "target": "system_a/system/bin/uperf",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\bin\\zui_controld",
+      "target": "system_a/system/bin/zui_controld",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\bin\\zui_uperf_service",
+      "target": "system_a/system/bin/zui_uperf_service",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc",
+      "target": "system_a/system/etc",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\default-permissions",
+      "target": "system_a/system/etc/default-permissions",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\default-permissions\\default-permissions-zui-control.xml",
+      "target": "system_a/system/etc/default-permissions/default-permissions-zui-control.xml",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\hosts",
+      "target": "system_a/system/etc/hosts",
+      "changed": false
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\init",
+      "target": "system_a/system/etc/init",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\init\\zui_controld.rc",
+      "target": "system_a/system/etc/init/zui_controld.rc",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\init\\zui_refresh_kill_switch.rc",
+      "target": "system_a/system/etc/init/zui_refresh_kill_switch.rc",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\init\\zui_scheduler.rc",
+      "target": "system_a/system/etc/init/zui_scheduler.rc",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\permissions",
+      "target": "system_a/system/etc/permissions",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\permissions\\privapp-permissions-zui-control.xml",
+      "target": "system_a/system/etc/permissions/privapp-permissions-zui-control.xml",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control",
+      "target": "system_a/system/etc/zui_control",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\default_asopt.conf",
+      "target": "system_a/system/etc/zui_control/default_asopt.conf",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\default_refresh_rules.prop",
+      "target": "system_a/system/etc/zui_control/default_refresh_rules.prop",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\default_uperf_perapp.txt",
+      "target": "system_a/system/etc/zui_control/default_uperf_perapp.txt",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\uperf-sm8650.json",
+      "target": "system_a/system/etc/zui_control/uperf-sm8650.json",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\zui_scheduler_prepare.sh",
+      "target": "system_a/system/etc/zui_control/zui_scheduler_prepare.sh",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\zui_uperf_crash_gate.sh",
+      "target": "system_a/system/etc/zui_control/zui_uperf_crash_gate.sh",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\priv-app",
+      "target": "system_a/system/priv-app",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\priv-app\\ZuiControlV49",
+      "target": "system_a/system/priv-app/ZuiControlV49",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\priv-app\\ZuiControlV49\\ZuiControl.apk",
+      "target": "system_a/system/priv-app/ZuiControlV49/ZuiControl.apk",
+      "changed": true
+    }
+  ],
+  "metadata_entries": 50,
+  "retired_whitelists_removed": [],
+  "property_contexts_added": [
+    "sys.zui_control.uperf_mode u:object_r:zui_control_uperf_mode_prop:s0 exact enum powersave balance performance fast",
+    "sys.zui_control.uperf_fail_safe u:object_r:zui_control_uperf_fail_safe_prop:s0 exact bool",
+    "sys.zui_control.command_seq u:object_r:zui_control_command_seq_prop:s0 exact string",
+    "sys.zui_control.command_id u:object_r:zui_control_command_auth_prop:s0 exact string",
+    "sys.zui_control.command_sha256 u:object_r:zui_control_command_auth_prop:s0 exact string",
+    "sys.zui_control.scheduler_active u:object_r:zui_control_scheduler_active_prop:s0 exact enum 0 1",
+    "persist.zui_control.disable u:object_r:zui_control_refresh_disable_prop:s0 exact bool",
+    "persist.zui_control.refresh.disable u:object_r:zui_control_refresh_disable_prop:s0 exact bool",
+    "persist.zui_control. u:object_r:shell_prop:s0",
+    "zui_control. u:object_r:shell_prop:s0"
+  ],
+  "service_contexts_added": [
+    "zui_control                               u:object_r:zui_control_service:s0"
+  ],
+  "file_contexts_removed": [],
+  "file_contexts_added": [
+    "/system/bin/uperf u:object_r:performanced_exec:s0",
+    "/system/bin/zui_uperf_service u:object_r:performanced_exec:s0",
+    "/system/bin/AsoulOpt u:object_r:performanced_exec:s0",
+    "/system/bin/dumpsys u:object_r:toolbox_exec:s0",
+    "/data/system/zui_control(/.*)? u:object_r:system_data_file:s0",
+    "/data/vendor/asopt\\.conf u:object_r:zui_control_data_file:s0",
+    "/data/vendor/zui_control(/.*)? u:object_r:zui_control_data_file:s0"
+  ],
+  "file_contexts_reordered_or_replaced": true,
+  "plat_sepolicy_removed": [],
+  "plat_sepolicy_added": [
+    ";; ZuiControl services and the integrated Uperf/A-SOUL scheduler.",
+    ";; system_server remains the refresh and authoritative foreground-scene publisher.",
+    "(type zui_control_service)",
+    "(typeattributeset service_manager_type (zui_control_service))",
+    "(type zui_control_uperf_mode_prop)",
+    "(roletype object_r zui_control_uperf_mode_prop)",
+    "(typeattributeset property_type (zui_control_uperf_mode_prop))",
+    "(typeattributeset system_property_type (zui_control_uperf_mode_prop))",
+    "(typeattributeset system_internal_property_type (zui_control_uperf_mode_prop))",
+    "(type zui_control_uperf_fail_safe_prop)",
+    "(roletype object_r zui_control_uperf_fail_safe_prop)",
+    "(typeattributeset property_type (zui_control_uperf_fail_safe_prop))",
+    "(typeattributeset system_property_type (zui_control_uperf_fail_safe_prop))",
+    "(typeattributeset system_internal_property_type (zui_control_uperf_fail_safe_prop))",
+    "(type zui_control_command_seq_prop)",
+    "(roletype object_r zui_control_command_seq_prop)",
+    "(typeattributeset property_type (zui_control_command_seq_prop))",
+    "(typeattributeset system_property_type (zui_control_command_seq_prop))",
+    "(typeattributeset system_internal_property_type (zui_control_command_seq_prop))",
+    "(type zui_control_command_auth_prop)",
+    "(roletype object_r zui_control_command_auth_prop)",
+    "(typeattributeset property_type (zui_control_command_auth_prop))",
+    "(typeattributeset system_property_type (zui_control_command_auth_prop))",
+    "(typeattributeset system_internal_property_type (zui_control_command_auth_prop))",
+    "(type zui_control_scheduler_active_prop)",
+    "(roletype object_r zui_control_scheduler_active_prop)",
+    "(typeattributeset property_type (zui_control_scheduler_active_prop))",
+    "(typeattributeset system_property_type (zui_control_scheduler_active_prop))",
+    "(typeattributeset system_internal_property_type (zui_control_scheduler_active_prop))",
+    "(type zui_control_refresh_disable_prop)",
+    "(roletype object_r zui_control_refresh_disable_prop)",
+    "(typeattributeset property_type (zui_control_refresh_disable_prop))",
+    "(typeattributeset system_property_type (zui_control_refresh_disable_prop))",
+    "(typeattributeset system_restricted_property_type (zui_control_refresh_disable_prop))",
+    "(type zui_control_data_file)",
+    "(roletype object_r zui_control_data_file)",
+    "(typeattributeset file_type (zui_control_data_file))",
+    "(typeattributeset data_file_type (zui_control_data_file))",
+    "(typeattributeset core_data_file_type (zui_control_data_file))",
+    "(type zui_scheduler_proc)",
+    "(roletype object_r zui_scheduler_proc)",
+    "(typeattributeset fs_type (zui_scheduler_proc))",
+    "(typeattributeset proc_type (zui_scheduler_proc))",
+    "(genfscon proc \"/sys/walt/input_boost\" (u object_r zui_scheduler_proc ((s0) (s0))))",
+    "(genfscon proc \"/sys/walt/sched_per_task_boost\" (u object_r zui_scheduler_proc ((s0) (s0))))",
+    "(genfscon proc \"/sys/walt/task_reduce_affinity\" (u object_r zui_scheduler_proc ((s0) (s0))))",
+    "(allow system_server zui_control_service (service_manager (add find)))",
+    "(allow priv_app zui_control_service (service_manager (find)))",
+    "(allow system_server zui_control_uperf_mode_prop (property_service (set)))",
+    "(allow system_server zui_control_uperf_mode_prop (file (getattr map open read)))",
+    "(allow init zui_control_uperf_fail_safe_prop (property_service (set)))",
+    "(allow shell zui_control_uperf_fail_safe_prop (property_service (set)))",
+    "(allow shell zui_control_uperf_fail_safe_prop (file (getattr map open read)))",
+    "(allow performanced zui_control_uperf_fail_safe_prop (property_service (set)))",
+    "(allow performanced zui_control_uperf_fail_safe_prop (file (getattr map open read)))",
+    "(allow system_server zui_control_uperf_fail_safe_prop (file (getattr map open read)))",
+    "(allow system_server zui_control_command_seq_prop (property_service (set)))",
+    "(allow system_server zui_control_command_seq_prop (file (getattr map open read)))",
+    "(allow system_server zui_control_command_auth_prop (property_service (set)))",
+    "(allow system_server zui_control_command_auth_prop (file (getattr map open read)))",
+    "(allow init zui_control_scheduler_active_prop (property_service (set)))",
+    "(allow system_server zui_control_scheduler_active_prop (file (getattr map open read)))",
+    "(allow system_server zui_control_refresh_disable_prop (property_service (set)))",
+    "(allow system_server zui_control_refresh_disable_prop (file (getattr map open read)))",
+    "(allow shell zui_control_refresh_disable_prop (property_service (set)))",
+    "(allow shell zui_control_refresh_disable_prop (file (getattr map open read)))",
+    "(allow performanced activity_service (service_manager (find)))",
+    "(allow system_server performanced (fd (use)))",
+    "(allow system_server performanced (fifo_file (write)))",
+    "(allow system_server performanced (binder (call)))",
+    "(allow shell zui_control_data_file (dir (ioctl read write create getattr setattr lock rename open watch watch_reads add_name remove_name reparent search rmdir)))",
+    "(allow shell zui_control_data_file (file (ioctl read write create getattr setattr lock append map unlink rename open watch watch_reads)))",
+    "(allow shell zui_control_data_file (lnk_file (ioctl read write create getattr setattr lock append map unlink rename open watch watch_reads)))",
+    "(allow performanced self (capability (chown dac_override fowner kill)))",
+    "(allow performanced self (process (signal sigkill signull)))",
+    "(allow performanced self (file (getattr open read)))",
+    "(allow performanced performanced_exec (file (read getattr map execute open execute_no_trans entrypoint)))",
+    "(allow performanced shell_exec (file (read getattr map execute open execute_no_trans)))",
+    "(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))",
+    "(allow performanced zui_control_data_file (dir (getattr open read search write add_name remove_name create setattr)))",
+    "(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))",
+    "(allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))",
+    "(allow performanced zui_control_data_file (lnk_file (getattr read)))",
+    "(allow performanced appdomain (dir (getattr open read search)))",
+    "(allow performanced appdomain (file (getattr open read)))",
+    "(allow performanced appdomain (process (getsched setsched signull)))",
+    "(allow performanced sysfs (dir (getattr open read search)))",
+    "(allow performanced sysfs_devices_system_cpu (dir (getattr open read search)))",
+    "(allow performanced sysfs_devices_system_cpu (file (getattr open read write append setattr)))",
+    "(allow performanced proc (dir (getattr open read search)))",
+    "(allow performanced proc_stat (file (getattr open read)))",
+    "(allow performanced proc_uptime (file (getattr open read)))",
+    "(allow performanced input_device (dir (ioctl read getattr lock open watch watch_reads search)))",
+    "(allow performanced input_device (chr_file (ioctl read getattr lock map open)))",
+    "(allow performanced cgroup (dir (ioctl read write create getattr setattr lock open add_name remove_name search rmdir)))",
+    "(allow performanced cgroup (file (ioctl read write create getattr setattr lock append map open unlink)))",
+    "(allow performanced cgroup_v2 (dir (getattr open read search)))",
+    "(allow performanced cgroup_v2 (file (getattr open read)))",
+    "(allow performanced zui_scheduler_proc (dir (getattr open read search)))",
+    "(allow performanced zui_scheduler_proc (file (getattr open read write append setattr)))",
+    "(dontaudit performanced domain (dir (getattr search)))",
+    "(allow init shell_data_file (dir (getattr open read search setattr relabelfrom)))",
+    "(allow init shell_data_file (file (getattr open read relabelfrom)))",
+    "(allow init zui_control_data_file (dir (getattr open read search write add_name remove_name create setattr relabelto)))",
+    "(allow init zui_control_data_file (file (getattr open read write create unlink setattr relabelfrom relabelto)))"
+  ],
+  "vendor_sepolicy_removed": [],
+  "vendor_sepolicy_added": [
+    ";; Uperf owns the Snapdragon msm_performance CPU controls. KGSL remains under",
+    ";; the OEM DVFS/thermal stack in this phase.",
+    ";; The service runs in the platform performanced domain, seen here through the",
+    ";; public 34.0 mapping type used by vendor policy.",
+    "(allow performanced_34_0 vendor_sysfs_msm_perf (dir (ioctl read getattr lock open search)))",
+    "(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr setattr lock append map open)))"
+  ],
+  "framework_patch": "applied",
+  "metadata_files": [
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts"
+  ]
+}
+����: [options] δ�� -source 8 һ������������·��
+1 ������
+����: [options] δ�� -source 8 һ������������·��
+1 ������
+����: [options] δ�� -source 8 һ������������·��
+1 ������
+����: [options] δ�� -source 8 һ������������·��
+1 ������
++ javac -source 8 -target 8 -encoding UTF-8 -cp D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar -d D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_stubs D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\hardware\display\DisplayManagerInternal.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\os\ServiceManager.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\os\SystemProperties.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\util\AtomicFile.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\LocalServices.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\wm\ActivityRecord.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\wm\WindowManagerInternal.java
++ javac -source 8 -target 8 -encoding UTF-8 -cp D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar;D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_stubs -d D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_classes D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\src\framework\android\zui\ZuiControlManager.java
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\build-tools\36.0.0\d8.bat --release --min-api 35 --lib D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar --classpath D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_stubs --output D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_dex D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_classes\android\zui\ZuiControlManager$1.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_classes\android\zui\ZuiControlManager$2.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_classes\android\zui\ZuiControlManager$3.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_classes\android\zui\ZuiControlManager$4.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_classes\android\zui\ZuiControlManager$5.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_classes\android\zui\ZuiControlManager$6.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_classes\android\zui\ZuiControlManager$Writer.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes6.dex_classes\android\zui\ZuiControlManager.class
++ javac -source 8 -target 8 -encoding UTF-8 -cp D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar -d D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_stubs D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\hardware\display\DisplayManagerInternal.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\os\ServiceManager.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\os\SystemProperties.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\android\util\AtomicFile.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\LocalServices.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\wm\ActivityRecord.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\stubs\com\android\server\wm\WindowManagerInternal.java
++ javac -source 8 -target 8 -encoding UTF-8 -cp D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar;D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_stubs -d D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\src\services\com\zui\server\control\ZuiControlHooks.java D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\repo\framework_patch\src\services\com\zui\server\control\ZuiControlService.java
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\build-tools\36.0.0\d8.bat --release --min-api 35 --lib D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\android-sdk\platforms\android-35\android.jar --classpath D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_stubs --output D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_dex D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlHooks.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$1.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$10.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$11.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$2.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$3.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$4.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$5.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$6.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$7.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$8.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$9.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$FocusSnapshot.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$ModeMatch.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$Profile.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$UperfScenePolicy$1.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$UperfScenePolicy$2.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$UperfScenePolicy$3.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService$UperfScenePolicy.class D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\classes4.dex_classes\com\zui\server\control\ZuiControlService.classI: Using Apktool 3.0.2 on services.jar with 8 threads
+I: Baksmaling classes.dex...
+I: Baksmaling classes2.dex...
+I: Baksmaling classes3.dex...
+I: Copying original files...
+I: Copying unknown files...
+I: Using Apktool 3.0.2 on services.jar with 8 threads
+I: Smaling smali folder into classes.dex...
+I: Smaling smali_classes3 folder into classes3.dex...
+I: Smaling smali_classes2 folder into classes2.dex...
+I: Building apk file...
+I: Importing unknown files...
+I: Built apk into: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\services_rebuilt.jar
+
++ java -jar D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\apktool.jar d -f -o D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\services_dec D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\unpack\system_a\system\framework\services.jar
++ java -jar D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\apktool.jar b D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\services_dec -o D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\zui_control_framework_patch\run_pxvckvmj\services_rebuilt.jar
+patched framework.jar -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\unpack\system_a\system\framework\framework.jar
+patched services.jar -> D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\unpack\system_a\system\framework\services.jar
+{
+  "started_at": "2026-09-02T08:07:25",
+  "root": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\repo",
+  "image_root": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413",
+  "unpack": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack",
+  "payload": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload",
+  "dry_run": false,
+  "warnings": [],
+  "legacy_removed": [
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\system_a\\system\\preinstall\\QQMusic"
+  ],
+  "legacy_metadata_removed": {
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config": [
+      "system_a/system/preinstall/QQMusic 0 0 0755",
+      "system_a/system/preinstall/QQMusic/QQMusic.apk 0 0 0644"
+    ],
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts": [
+      "/system_a/system/preinstall/QQMusic u:object_r:system_file:s0",
+      "/system_a/system/preinstall/QQMusic/QQMusic\\.apk u:object_r:system_file:s0"
+    ]
+  },
+  "copied": [
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\bin",
+      "target": "system_a/system/bin",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\bin\\AsoulOpt",
+      "target": "system_a/system/bin/AsoulOpt",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\bin\\uperf",
+      "target": "system_a/system/bin/uperf",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\bin\\zui_controld",
+      "target": "system_a/system/bin/zui_controld",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\bin\\zui_uperf_service",
+      "target": "system_a/system/bin/zui_uperf_service",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc",
+      "target": "system_a/system/etc",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\default-permissions",
+      "target": "system_a/system/etc/default-permissions",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\default-permissions\\default-permissions-zui-control.xml",
+      "target": "system_a/system/etc/default-permissions/default-permissions-zui-control.xml",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\hosts",
+      "target": "system_a/system/etc/hosts",
+      "changed": false
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\init",
+      "target": "system_a/system/etc/init",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\init\\zui_controld.rc",
+      "target": "system_a/system/etc/init/zui_controld.rc",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\init\\zui_refresh_kill_switch.rc",
+      "target": "system_a/system/etc/init/zui_refresh_kill_switch.rc",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\init\\zui_scheduler.rc",
+      "target": "system_a/system/etc/init/zui_scheduler.rc",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\permissions",
+      "target": "system_a/system/etc/permissions",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\permissions\\privapp-permissions-zui-control.xml",
+      "target": "system_a/system/etc/permissions/privapp-permissions-zui-control.xml",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control",
+      "target": "system_a/system/etc/zui_control",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\default_asopt.conf",
+      "target": "system_a/system/etc/zui_control/default_asopt.conf",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\default_refresh_rules.prop",
+      "target": "system_a/system/etc/zui_control/default_refresh_rules.prop",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\default_uperf_perapp.txt",
+      "target": "system_a/system/etc/zui_control/default_uperf_perapp.txt",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\uperf-sm8650.json",
+      "target": "system_a/system/etc/zui_control/uperf-sm8650.json",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\zui_scheduler_prepare.sh",
+      "target": "system_a/system/etc/zui_control/zui_scheduler_prepare.sh",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\etc\\zui_control\\zui_uperf_crash_gate.sh",
+      "target": "system_a/system/etc/zui_control/zui_uperf_crash_gate.sh",
+      "changed": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\priv-app",
+      "target": "system_a/system/priv-app",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\priv-app\\ZuiControlV49",
+      "target": "system_a/system/priv-app/ZuiControlV49",
+      "directory": true
+    },
+    {
+      "source": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557\\zui-control-v19-payload\\system\\priv-app\\ZuiControlV49\\ZuiControl.apk",
+      "target": "system_a/system/priv-app/ZuiControlV49/ZuiControl.apk",
+      "changed": true
+    }
+  ],
+  "metadata_entries": 50,
+  "retired_whitelists_removed": [],
+  "property_contexts_added": [
+    "sys.zui_control.uperf_mode u:object_r:zui_control_uperf_mode_prop:s0 exact enum powersave balance performance fast",
+    "sys.zui_control.uperf_fail_safe u:object_r:zui_control_uperf_fail_safe_prop:s0 exact bool",
+    "sys.zui_control.command_seq u:object_r:zui_control_command_seq_prop:s0 exact string",
+    "sys.zui_control.command_id u:object_r:zui_control_command_auth_prop:s0 exact string",
+    "sys.zui_control.command_sha256 u:object_r:zui_control_command_auth_prop:s0 exact string",
+    "sys.zui_control.scheduler_active u:object_r:zui_control_scheduler_active_prop:s0 exact enum 0 1",
+    "persist.zui_control.disable u:object_r:zui_control_refresh_disable_prop:s0 exact bool",
+    "persist.zui_control.refresh.disable u:object_r:zui_control_refresh_disable_prop:s0 exact bool",
+    "persist.zui_control. u:object_r:shell_prop:s0",
+    "zui_control. u:object_r:shell_prop:s0"
+  ],
+  "service_contexts_added": [
+    "zui_control                               u:object_r:zui_control_service:s0"
+  ],
+  "file_contexts_removed": [],
+  "file_contexts_added": [
+    "/system/bin/uperf u:object_r:performanced_exec:s0",
+    "/system/bin/zui_uperf_service u:object_r:performanced_exec:s0",
+    "/system/bin/AsoulOpt u:object_r:performanced_exec:s0",
+    "/system/bin/dumpsys u:object_r:toolbox_exec:s0",
+    "/data/system/zui_control(/.*)? u:object_r:system_data_file:s0",
+    "/data/vendor/asopt\\.conf u:object_r:zui_control_data_file:s0",
+    "/data/vendor/zui_control(/.*)? u:object_r:zui_control_data_file:s0"
+  ],
+  "file_contexts_reordered_or_replaced": true,
+  "plat_sepolicy_removed": [],
+  "plat_sepolicy_added": [
+    ";; ZuiControl services and the integrated Uperf/A-SOUL scheduler.",
+    ";; system_server remains the refresh and authoritative foreground-scene publisher.",
+    "(type zui_control_service)",
+    "(typeattributeset service_manager_type (zui_control_service))",
+    "(type zui_control_uperf_mode_prop)",
+    "(roletype object_r zui_control_uperf_mode_prop)",
+    "(typeattributeset property_type (zui_control_uperf_mode_prop))",
+    "(typeattributeset system_property_type (zui_control_uperf_mode_prop))",
+    "(typeattributeset system_internal_property_type (zui_control_uperf_mode_prop))",
+    "(type zui_control_uperf_fail_safe_prop)",
+    "(roletype object_r zui_control_uperf_fail_safe_prop)",
+    "(typeattributeset property_type (zui_control_uperf_fail_safe_prop))",
+    "(typeattributeset system_property_type (zui_control_uperf_fail_safe_prop))",
+    "(typeattributeset system_internal_property_type (zui_control_uperf_fail_safe_prop))",
+    "(type zui_control_command_seq_prop)",
+    "(roletype object_r zui_control_command_seq_prop)",
+    "(typeattributeset property_type (zui_control_command_seq_prop))",
+    "(typeattributeset system_property_type (zui_control_command_seq_prop))",
+    "(typeattributeset system_internal_property_type (zui_control_command_seq_prop))",
+    "(type zui_control_command_auth_prop)",
+    "(roletype object_r zui_control_command_auth_prop)",
+    "(typeattributeset property_type (zui_control_command_auth_prop))",
+    "(typeattributeset system_property_type (zui_control_command_auth_prop))",
+    "(typeattributeset system_internal_property_type (zui_control_command_auth_prop))",
+    "(type zui_control_scheduler_active_prop)",
+    "(roletype object_r zui_control_scheduler_active_prop)",
+    "(typeattributeset property_type (zui_control_scheduler_active_prop))",
+    "(typeattributeset system_property_type (zui_control_scheduler_active_prop))",
+    "(typeattributeset system_internal_property_type (zui_control_scheduler_active_prop))",
+    "(type zui_control_refresh_disable_prop)",
+    "(roletype object_r zui_control_refresh_disable_prop)",
+    "(typeattributeset property_type (zui_control_refresh_disable_prop))",
+    "(typeattributeset system_property_type (zui_control_refresh_disable_prop))",
+    "(typeattributeset system_restricted_property_type (zui_control_refresh_disable_prop))",
+    "(type zui_control_data_file)",
+    "(roletype object_r zui_control_data_file)",
+    "(typeattributeset file_type (zui_control_data_file))",
+    "(typeattributeset data_file_type (zui_control_data_file))",
+    "(typeattributeset core_data_file_type (zui_control_data_file))",
+    "(type zui_scheduler_proc)",
+    "(roletype object_r zui_scheduler_proc)",
+    "(typeattributeset fs_type (zui_scheduler_proc))",
+    "(typeattributeset proc_type (zui_scheduler_proc))",
+    "(genfscon proc \"/sys/walt/input_boost\" (u object_r zui_scheduler_proc ((s0) (s0))))",
+    "(genfscon proc \"/sys/walt/sched_per_task_boost\" (u object_r zui_scheduler_proc ((s0) (s0))))",
+    "(genfscon proc \"/sys/walt/task_reduce_affinity\" (u object_r zui_scheduler_proc ((s0) (s0))))",
+    "(allow system_server zui_control_service (service_manager (add find)))",
+    "(allow priv_app zui_control_service (service_manager (find)))",
+    "(allow system_server zui_control_uperf_mode_prop (property_service (set)))",
+    "(allow system_server zui_control_uperf_mode_prop (file (getattr map open read)))",
+    "(allow init zui_control_uperf_fail_safe_prop (property_service (set)))",
+    "(allow shell zui_control_uperf_fail_safe_prop (property_service (set)))",
+    "(allow shell zui_control_uperf_fail_safe_prop (file (getattr map open read)))",
+    "(allow performanced zui_control_uperf_fail_safe_prop (property_service (set)))",
+    "(allow performanced zui_control_uperf_fail_safe_prop (file (getattr map open read)))",
+    "(allow system_server zui_control_uperf_fail_safe_prop (file (getattr map open read)))",
+    "(allow system_server zui_control_command_seq_prop (property_service (set)))",
+    "(allow system_server zui_control_command_seq_prop (file (getattr map open read)))",
+    "(allow system_server zui_control_command_auth_prop (property_service (set)))",
+    "(allow system_server zui_control_command_auth_prop (file (getattr map open read)))",
+    "(allow init zui_control_scheduler_active_prop (property_service (set)))",
+    "(allow system_server zui_control_scheduler_active_prop (file (getattr map open read)))",
+    "(allow system_server zui_control_refresh_disable_prop (property_service (set)))",
+    "(allow system_server zui_control_refresh_disable_prop (file (getattr map open read)))",
+    "(allow shell zui_control_refresh_disable_prop (property_service (set)))",
+    "(allow shell zui_control_refresh_disable_prop (file (getattr map open read)))",
+    "(allow performanced activity_service (service_manager (find)))",
+    "(allow system_server performanced (fd (use)))",
+    "(allow system_server performanced (fifo_file (write)))",
+    "(allow system_server performanced (binder (call)))",
+    "(allow shell zui_control_data_file (dir (ioctl read write create getattr setattr lock rename open watch watch_reads add_name remove_name reparent search rmdir)))",
+    "(allow shell zui_control_data_file (file (ioctl read write create getattr setattr lock append map unlink rename open watch watch_reads)))",
+    "(allow shell zui_control_data_file (lnk_file (ioctl read write create getattr setattr lock append map unlink rename open watch watch_reads)))",
+    "(allow performanced self (capability (chown dac_override fowner kill)))",
+    "(allow performanced self (process (signal sigkill signull)))",
+    "(allow performanced self (file (getattr open read)))",
+    "(allow performanced performanced_exec (file (read getattr map execute open execute_no_trans entrypoint)))",
+    "(allow performanced shell_exec (file (read getattr map execute open execute_no_trans)))",
+    "(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))",
+    "(allow performanced zui_control_data_file (dir (getattr open read search write add_name remove_name create setattr)))",
+    "(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))",
+    "(allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))",
+    "(allow performanced zui_control_data_file (lnk_file (getattr read)))",
+    "(allow performanced appdomain (dir (getattr open read search)))",
+    "(allow performanced appdomain (file (getattr open read)))",
+    "(allow performanced appdomain (process (getsched setsched signull)))",
+    "(allow performanced sysfs (dir (getattr open read search)))",
+    "(allow performanced sysfs_devices_system_cpu (dir (getattr open read search)))",
+    "(allow performanced sysfs_devices_system_cpu (file (getattr open read write append setattr)))",
+    "(allow performanced proc (dir (getattr open read search)))",
+    "(allow performanced proc_stat (file (getattr open read)))",
+    "(allow performanced proc_uptime (file (getattr open read)))",
+    "(allow performanced input_device (dir (ioctl read getattr lock open watch watch_reads search)))",
+    "(allow performanced input_device (chr_file (ioctl read getattr lock map open)))",
+    "(allow performanced cgroup (dir (ioctl read write create getattr setattr lock open add_name remove_name search rmdir)))",
+    "(allow performanced cgroup (file (ioctl read write create getattr setattr lock append map open unlink)))",
+    "(allow performanced cgroup_v2 (dir (getattr open read search)))",
+    "(allow performanced cgroup_v2 (file (getattr open read)))",
+    "(allow performanced zui_scheduler_proc (dir (getattr open read search)))",
+    "(allow performanced zui_scheduler_proc (file (getattr open read write append setattr)))",
+    "(dontaudit performanced domain (dir (getattr search)))",
+    "(allow init shell_data_file (dir (getattr open read search setattr relabelfrom)))",
+    "(allow init shell_data_file (file (getattr open read relabelfrom)))",
+    "(allow init zui_control_data_file (dir (getattr open read search write add_name remove_name create setattr relabelto)))",
+    "(allow init zui_control_data_file (file (getattr open read write create unlink setattr relabelfrom relabelto)))"
+  ],
+  "plat_sepolicy_and_mapping_sha256": {
+    "old": "889ba377dae5cc5865bdd97af977e19eb5c88eb89c7b9ad038e85822d2d383b5",
+    "new": "03066bdd3fdce3253885d8c3bc33ff4d03624380fdcbb5bf8c09535c1a24d99f",
+    "odm_precompiled_hash_left_unchanged": true,
+    "reason": "Force Android init to compile split sepolicy with /system/bin/secilc on boot."
+  },
+  "vendor_sepolicy_removed": [],
+  "vendor_sepolicy_added": [
+    ";; Uperf owns the Snapdragon msm_performance CPU controls. KGSL remains under",
+    ";; the OEM DVFS/thermal stack in this phase.",
+    ";; The service runs in the platform performanced domain, seen here through the",
+    ";; public 34.0 mapping type used by vendor policy.",
+    "(allow performanced_34_0 vendor_sysfs_msm_perf (dir (ioctl read getattr lock open search)))",
+    "(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr setattr lock append map open)))"
+  ],
+  "framework_patch": "applied",
+  "metadata_files": [
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_fs_config",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\unpack\\config\\system_a_file_contexts",
+    "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\work\\config\\erofs_overrides\\system_a_file_contexts"
+  ]
+}
+Building staging tree with symlink preservation: system_a
+Symlink placeholders converted: 268
+Packing EROFS image: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_a.img
+loaded 4241 fs_config entries
+Packed LINK count: 268
+Building staging tree with symlink preservation: vendor_a
+Symlink placeholders converted: 269
+Packing EROFS image: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_a.img
+loaded 3901 fs_config entries
+Packed LINK count: 269
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\odm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\odm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\odm_a.img --partition_size 786432 --partition_name odm --hash_algorithm sha256 --salt 7b1a67a15d161a042ddad9009d9bd9c396773e6a7cf93c2dae45c5a4fbe6a52b --block_size 4096 --do_not_generate_fec --prop com.android.build.init_boot.os_version:14 --prop com.android.build.init_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.init_boot.security_patch:2024-11-05 --prop com.android.build.vendor_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.os_version:14 --prop com.android.build.vendor.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.odm.os_version:14 --prop com.android.build.odm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor_dlkm.os_version:14 --prop com.android.build.vendor_dlkm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.dtbo.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta_system.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\product_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\product_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\product_a.img --partition_size 631758848 --partition_name product --hash_algorithm sha256 --salt 48cc5ce12772b1e3a4be5a7c4d99adda6a71b19ea7bbf1d3d62eeb6927c888c4 --block_size 4096 --do_not_generate_fec --prop com.android.build.system.os_version:14 --prop com.android.build.system.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.product.os_version:14 --prop com.android.build.product.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.system_ext.os_version:14 --prop com.android.build.system_ext.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system_ext.security_patch:2024-11-05 --prop com.android.build.pvmfw.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta_system.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_a.img
+Padding system_a.img: 4642951168 -> 4814770176
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_a.img --partition_size 4906721280 --partition_name system --hash_algorithm sha256 --salt 48cc5ce12772b1e3a4be5a7c4d99adda6a71b19ea7bbf1d3d62eeb6927c888c4 --block_size 4096 --do_not_generate_fec --prop com.android.build.system.os_version:14 --prop com.android.build.system.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.product.os_version:14 --prop com.android.build.product.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.system_ext.os_version:14 --prop com.android.build.system_ext.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system_ext.security_patch:2024-11-05 --prop com.android.build.pvmfw.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_dlkm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_dlkm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_dlkm_a.img --partition_size 12189696 --partition_name system_dlkm --hash_algorithm sha256 --salt e932b8e51b5686d8c94ec80c76ea55978355b0a2209cf0856e250a9d0988bcba --block_size 4096 --do_not_generate_fec --prop com.android.build.init_boot.os_version:14 --prop com.android.build.init_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.init_boot.security_patch:2024-11-05 --prop com.android.build.vendor_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.os_version:14 --prop com.android.build.vendor.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.odm.os_version:14 --prop com.android.build.odm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor_dlkm.os_version:14 --prop com.android.build.vendor_dlkm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.dtbo.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta_system.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_ext_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_ext_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_ext_a.img --partition_size 195932160 --partition_name system_ext --hash_algorithm sha256 --salt 48cc5ce12772b1e3a4be5a7c4d99adda6a71b19ea7bbf1d3d62eeb6927c888c4 --block_size 4096 --do_not_generate_fec --prop com.android.build.system.os_version:14 --prop com.android.build.system.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.product.os_version:14 --prop com.android.build.product.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.system_ext.os_version:14 --prop com.android.build.system_ext.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system_ext.security_patch:2024-11-05 --prop com.android.build.pvmfw.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_a.img
+Padding vendor_a.img: 1473019904 -> 1474203648
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_a.img --partition_size 1502416896 --partition_name vendor --hash_algorithm sha256 --salt 7b1a67a15d161a042ddad9009d9bd9c396773e6a7cf93c2dae45c5a4fbe6a52b --block_size 4096 --do_not_generate_fec --prop com.android.build.init_boot.os_version:14 --prop com.android.build.init_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.init_boot.security_patch:2024-11-05 --prop com.android.build.vendor_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.os_version:14 --prop com.android.build.vendor.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.odm.os_version:14 --prop com.android.build.odm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor_dlkm.os_version:14 --prop com.android.build.vendor_dlkm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.dtbo.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_dlkm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_dlkm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_dlkm_a.img --partition_size 41353216 --partition_name vendor_dlkm --hash_algorithm sha256 --salt 7b1a67a15d161a042ddad9009d9bd9c396773e6a7cf93c2dae45c5a4fbe6a52b --block_size 4096 --do_not_generate_fec --prop com.android.build.init_boot.os_version:14 --prop com.android.build.init_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.init_boot.security_patch:2024-11-05 --prop com.android.build.vendor_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.os_version:14 --prop com.android.build.vendor.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.odm.os_version:14 --prop com.android.build.odm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor_dlkm.os_version:14 --prop com.android.build.vendor_dlkm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.dtbo.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta_system.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py make_vbmeta_image --output D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\flash_img\vbmeta_system.img --padding_size 65536 --algorithm SHA256_RSA2048 --key D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\Linux\pem\testkey_rsa2048.pem --rollback_index 1736035200 --rollback_index_location 0 --flags 0 --include_descriptors_from_image D:\3.VScode\Mi\��A�ٷ���072\pvmfw.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\product_a.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_a.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_ext_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py make_vbmeta_image --output D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\flash_img\vbmeta.img --padding_size 65536 --algorithm SHA256_RSA4096 --key D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\Linux\pem\testkey_rsa4096.pem --rollback_index 0 --rollback_index_location 0 --flags 0 --chain_partition boot:3:Linux/pem/testkey_rsa4096_pub.bin --chain_partition recovery:1:Linux/pem/testkey_rsa4096_pub.bin --chain_partition vbmeta_system:2:Linux/pem/testkey_rsa2048_pub.bin --include_descriptors_from_image D:\3.VScode\Mi\��A�ٷ���072\dtbo.img --include_descriptors_from_image D:\3.VScode\Mi\��A�ٷ���072\init_boot.img --include_descriptors_from_image D:\3.VScode\Mi\��A�ٷ���072\vendor_boot.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\odm_a.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_dlkm_a.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_a.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_dlkm_a.img
+AVB no-FEC preview: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\config\avb_nofec_20260902_080915.json
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\odm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\odm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\odm_a.img --partition_size 786432 --partition_name odm --hash_algorithm sha256 --salt 7b1a67a15d161a042ddad9009d9bd9c396773e6a7cf93c2dae45c5a4fbe6a52b --block_size 4096 --do_not_generate_fec --prop com.android.build.init_boot.os_version:14 --prop com.android.build.init_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.init_boot.security_patch:2024-11-05 --prop com.android.build.vendor_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.os_version:14 --prop com.android.build.vendor.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.odm.os_version:14 --prop com.android.build.odm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor_dlkm.os_version:14 --prop com.android.build.vendor_dlkm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.dtbo.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta_system.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\product_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\product_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\product_a.img --partition_size 631758848 --partition_name product --hash_algorithm sha256 --salt 48cc5ce12772b1e3a4be5a7c4d99adda6a71b19ea7bbf1d3d62eeb6927c888c4 --block_size 4096 --do_not_generate_fec --prop com.android.build.system.os_version:14 --prop com.android.build.system.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.product.os_version:14 --prop com.android.build.product.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.system_ext.os_version:14 --prop com.android.build.system_ext.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system_ext.security_patch:2024-11-05 --prop com.android.build.pvmfw.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta_system.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_a.img
+Padding system_a.img: 4642951168 -> 4814770176
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_a.img --partition_size 4906721280 --partition_name system --hash_algorithm sha256 --salt 48cc5ce12772b1e3a4be5a7c4d99adda6a71b19ea7bbf1d3d62eeb6927c888c4 --block_size 4096 --do_not_generate_fec --prop com.android.build.system.os_version:14 --prop com.android.build.system.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.product.os_version:14 --prop com.android.build.product.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.system_ext.os_version:14 --prop com.android.build.system_ext.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system_ext.security_patch:2024-11-05 --prop com.android.build.pvmfw.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_dlkm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_dlkm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_dlkm_a.img --partition_size 12189696 --partition_name system_dlkm --hash_algorithm sha256 --salt e932b8e51b5686d8c94ec80c76ea55978355b0a2209cf0856e250a9d0988bcba --block_size 4096 --do_not_generate_fec --prop com.android.build.init_boot.os_version:14 --prop com.android.build.init_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.init_boot.security_patch:2024-11-05 --prop com.android.build.vendor_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.os_version:14 --prop com.android.build.vendor.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.odm.os_version:14 --prop com.android.build.odm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor_dlkm.os_version:14 --prop com.android.build.vendor_dlkm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.dtbo.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta_system.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_ext_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_ext_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_ext_a.img --partition_size 195932160 --partition_name system_ext --hash_algorithm sha256 --salt 48cc5ce12772b1e3a4be5a7c4d99adda6a71b19ea7bbf1d3d62eeb6927c888c4 --block_size 4096 --do_not_generate_fec --prop com.android.build.system.os_version:14 --prop com.android.build.system.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.system.security_patch:2024-11-05 --prop com.android.build.product.os_version:14 --prop com.android.build.product.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.product.security_patch:2024-11-05 --prop com.android.build.system_ext.os_version:14 --prop com.android.build.system_ext.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.system_ext.security_patch:2024-11-05 --prop com.android.build.pvmfw.fingerprint:qti/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_a.img
+Padding vendor_a.img: 1473019904 -> 1474203648
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_a.img --partition_size 1502416896 --partition_name vendor --hash_algorithm sha256 --salt 7b1a67a15d161a042ddad9009d9bd9c396773e6a7cf93c2dae45c5a4fbe6a52b --block_size 4096 --do_not_generate_fec --prop com.android.build.init_boot.os_version:14 --prop com.android.build.init_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.init_boot.security_patch:2024-11-05 --prop com.android.build.vendor_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.os_version:14 --prop com.android.build.vendor.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.odm.os_version:14 --prop com.android.build.odm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor_dlkm.os_version:14 --prop com.android.build.vendor_dlkm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.dtbo.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_dlkm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py erase_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_dlkm_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py add_hashtree_footer --image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_dlkm_a.img --partition_size 41353216 --partition_name vendor_dlkm --hash_algorithm sha256 --salt 7b1a67a15d161a042ddad9009d9bd9c396773e6a7cf93c2dae45c5a4fbe6a52b --block_size 4096 --do_not_generate_fec --prop com.android.build.init_boot.os_version:14 --prop com.android.build.init_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.init_boot.security_patch:2024-11-05 --prop com.android.build.vendor_boot.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.os_version:14 --prop com.android.build.vendor.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.vendor.security_patch:2024-11-05 --prop com.android.build.odm.os_version:14 --prop com.android.build.odm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.vendor_dlkm.os_version:14 --prop com.android.build.vendor_dlkm.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys --prop com.android.build.dtbo.fingerprint:Lenovo/TB321FU/TB321FU:14/UKQ1.240510.002/ZUI_16.1.11.072_241118_PRC:user/release-keys
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta_system.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py make_vbmeta_image --output D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\flash_img\vbmeta_system.img --padding_size 65536 --algorithm SHA256_RSA2048 --key D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\Linux\pem\testkey_rsa2048.pem --rollback_index 1736035200 --rollback_index_location 0 --flags 0 --include_descriptors_from_image D:\3.VScode\Mi\��A�ٷ���072\pvmfw.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\product_a.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_a.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_ext_a.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py info_image --image D:\3.VScode\Mi\072��ˢ����\vbmeta.img
++ D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\python-3.8.0\python.exe D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\tools\downloaded\avbtool_aosp_c0af371_1.2.0.py make_vbmeta_image --output D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\flash_img\vbmeta.img --padding_size 65536 --algorithm SHA256_RSA4096 --key D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\Linux\pem\testkey_rsa4096.pem --rollback_index 0 --rollback_index_location 0 --flags 0 --chain_partition boot:3:Linux/pem/testkey_rsa4096_pub.bin --chain_partition recovery:1:Linux/pem/testkey_rsa4096_pub.bin --chain_partition vbmeta_system:2:Linux/pem/testkey_rsa2048_pub.bin --include_descriptors_from_image D:\3.VScode\Mi\��A�ٷ���072\dtbo.img --include_descriptors_from_image D:\3.VScode\Mi\��A�ٷ���072\init_boot.img --include_descriptors_from_image D:\3.VScode\Mi\��A�ٷ���072\vendor_boot.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\odm_a.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\system_dlkm_a.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_a.img --include_descriptors_from_image D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\img\vendor_dlkm_a.img
+AVB no-FEC done: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\config\avb_nofec_20260902_080952.json
+Boot copied from selected source: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_scratch_20260902080413\work\flash_img\boot.img
+Boot SHA256:          E7E85B5CD2806B8C27ADF4925E05EE169072A79A43502EFFC34C97FB27EE8371
+Packing super: D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_candidate_20260902080413\super.img
+lpmake I 09-02 08:09:55  1708 34359720704 builder.cpp:1093] [liblp] Partition odm_a will resize from 0 bytes to 786432 bytes
+lpmake I 09-02 08:09:55  1708 34359720704 builder.cpp:1093] [liblp] Partition product_a will resize from 0 bytes to 631758848 bytes
+lpmake I 09-02 08:09:55  1708 34359720704 builder.cpp:1093] [liblp] Partition system_a will resize from 0 bytes to 4906721280 bytes
+lpmake I 09-02 08:09:55  1708 34359720704 builder.cpp:1093] [liblp] Partition system_dlkm_a will resize from 0 bytes to 12189696 bytes
+lpmake I 09-02 08:09:55  1708 34359720704 builder.cpp:1093] [liblp] Partition system_ext_a will resize from 0 bytes to 195932160 bytes
+lpmake I 09-02 08:09:55  1708 34359720704 builder.cpp:1093] [liblp] Partition vendor_a will resize from 0 bytes to 1502416896 bytes
+lpmake I 09-02 08:09:55  1708 34359720704 builder.cpp:1093] [liblp] Partition vendor_dlkm_a will resize from 0 bytes to 41353216 bytes
+Invalid sparse file format at header magic
+Invalid sparse file format at header magic
+Invalid sparse file format at header magic
+Invalid sparse file format at header magic
+Invalid sparse file format at header magic
+Invalid sparse file format at header magic
+Invalid sparse file format at header magic
+Done. Output:
+
+FullName      : D:\3.VScode\Mi\work\v20_4_uperf_sfanalysis_candidate_20260902080413\super.img
+Length        : 13958643712
+LastWriteTime : 2026/9/2 8:10:25
+

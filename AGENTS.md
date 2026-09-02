@@ -6,7 +6,7 @@
 
 当前设备/系统：TB321FU / ZUI 16.1.11.072。
 
-当前工程阶段：**V20.4 — Final Stability & Efficiency**。第一工作包 **V20.4 Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。第二工作包 **V20.4 Uperf Architecture & Upstream Rebase** 的首个device候选 RunId `20260901120647` 因Uperf startup/fail-safe SELinux缺口失败；定向修正 RunId `20260901174600` 虽通过source/CI/host/final-super/semantic/ART/CIL门禁并成功启动Android，但Startup Runtime Gate再次 **FAIL**：新`performanced → surfaceflinger_exec:file read` blocking AVC使Uperf快速崩溃3次、fail-safe=1并stopped。不得进入完整Uperf矩阵，不得自动修代码或开始V21。
+当前工程阶段：**V20.4 — Final Stability & Efficiency**。第一工作包 **V20.4 Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。第二工作包 **V20.4 Uperf Architecture & Upstream Rebase** 的RunId `20260901120647`与定向修正`20260901174600`均在startup Gate失败；后者已确认是启用可选SFAnalysis导致`performanced → surfaceflinger_exec:file read` blocking AVC。新RunId `20260902080413`仅把`sfanalysis=true`恢复为`false`，source/CI/113项host/final-super/semantic/DEX/CIL刷前门禁均PASS，状态为 **READY FOR HUMAN PRE-FLASH GATE / NOT FLASHED**。不得自行刷写、进入完整Uperf矩阵或开始V21。
 
 最近一次关闭的完整基线是 V20.3B RunId `20260830181816`。V20.3B persistent daemon retirement architecture = **PASS**，阶段已经关闭。历史 decision 中的 `PARTIAL / HOLD FOR HUMAN REVIEW` 是当时的阶段转换 gate，现已解除，不得再用它阻止 V20.4，也不得要求重做 V20.3B。rapid Uperf crash storm、T8 request-ID 等未闭环发现没有变成 PASS，而是按归属正式 carry forward。
 
@@ -131,7 +131,7 @@ Android init 负责：
 
 Uperf 是 CPU/power-model 执行 owner；asoulOpt 是唯一 per-task affinity/context-scheduler owner；OEM/thermal 继续保留 GPU/热安全裁决边界。Uperf sysfs 模块仍会写全局 cpuset mask，因此更广义的 topology/knob ownership 必须在后续独立 scheduler-ownership 工作包审计，不能混入当前 refresh state-machine 修改。
 
-V20.4 Uperf架构已删除 `/system/bin/zui_uperf_service` 的5秒process/grep自检：启动只做一次bounded FIFO event wait，steady state阻塞读Uperf自身log/exit event。正常worker crash由Uperf内建SIGCHLD/wait manager恢复；完整writer tree EOF才退出交给init。三次20秒内worker crash或三次连续sub-2s whole-service death进入`sys.zui_control.uperf_fail_safe=1`并停止服务；没有新增daemon/watchdog/timer。首个device候选暴露`performanced`读取`proc_uptime`缺权且`shell` crash gate错误读取`scheduler_active`的问题；修正只增加精确`proc_uptime:file { getattr open read }`并删除该guard，不扩大shell。新候选已通过刷前硬门；刷后startup、normal/rapid、explicit-stop与idle仍必须验证。
+V20.4 Uperf架构已删除 `/system/bin/zui_uperf_service` 的5秒process/grep自检：启动只做一次bounded FIFO event wait，steady state阻塞读Uperf自身log/exit event。正常worker crash由Uperf内建SIGCHLD/wait manager恢复；完整writer tree EOF才退出交给init。三次20秒内worker crash或三次连续sub-2s whole-service death进入`sys.zui_control.uperf_fail_safe=1`并停止服务；没有新增daemon/watchdog/timer。首个device候选暴露`performanced`读取`proc_uptime`缺权且`shell` crash gate错误读取`scheduler_active`的问题；修正只增加精确`proc_uptime:file { getattr open read }`并删除该guard，不扩大shell。随后`sfanalysis=true`触发的SurfaceFlinger access已通过恢复`false`消除，不新增SELinux权限；新候选通过刷前硬门，刷后startup、normal/rapid、explicit-stop与idle仍必须验证。
 
 ### 3.4 command 与 health
 
@@ -319,11 +319,11 @@ FAULT_INJECTION_DEVICE_PATH=NOT_EXECUTED
 SECONDARY_USER_EXTERNAL_DISPLAY=NOT_VALIDATED
 ```
 
-### 10.2 Uperf Architecture & Upstream Rebase（Startup Runtime Gate FAIL）
+### 10.2 Uperf Architecture & Upstream Rebase（SFAnalysis correction ready for Pre-Flash review）
 
-本包冻结upstream `v1.0.6`，ZIP SHA-256 `00b19294e4efc202fd794decb5526b5ad903dca3a15c9af3cfc335edab2b5fcc`。upstream与production Uperf binary均为SHA-256 `f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8`，byte-for-byte相同，不替换binary。只按字段采用SM8650的balance/powersave idle sample/slack和Uperf内部`sfanalysis`；sched仍disabled、Native Auto仍无production入口、asoulOpt/GPU/thermal边界不变。
+本包冻结upstream `v1.0.6`，ZIP SHA-256 `00b19294e4efc202fd794decb5526b5ad903dca3a15c9af3cfc335edab2b5fcc`。upstream与production Uperf binary均为SHA-256 `f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8`，byte-for-byte相同，不替换binary。保留SM8650的balance/powersave idle sample/slack四项值；可选`sfanalysis`因确认造成startup阻断而保持disabled。sched仍disabled、Native Auto仍无production入口、asoulOpt/GPU/thermal边界不变。
 
-实现使用framework top-resumed change event作为Uperf exact scene authority，并以FIFO/init事件生命周期替代5秒polling。原RunId `20260901120647` 的`proc_uptime`与`scheduler_active` denial已在新boot消失；定向修正source `511f31483243107cff76bb7ed75c0417e574d98a`、CI `33490157865`、RunId `20260901174600` 的刷前静态门仍为PASS。该exact候选已按fixed-seven刷入并启动Android，但新boot出现两次`performanced → surfaceflinger_exec:file read` blocking AVC，`.service_rapid_crashes=3`，Uperf在首个完整样本前进入fail-safe=1/stopped；10分钟steady-state和完整矩阵均未执行。qdl命令虽含`--read-back-verify`且RC0/`All went well!`，完整日志却只有7个program handler、0个read handler，因此read-back只能记为`NOT_PROVEN`。当前权威decision为`V20_4_UPERF_STARTUP_RUNTIME_DECISION.md`，runtime证据入口为`V20_4_UPERF_STARTUP_RUNTIME_GATE/`。
+实现使用framework top-resumed change event作为Uperf exact scene authority，并以FIFO/init事件生命周期替代5秒polling。RunId `20260901174600`证明旧`proc_uptime`与`scheduler_active` denial消失、whole-service startup storm fail-safe生效，但新增两次`performanced → surfaceflinger_exec:file read` blocking AVC，Uperf在首个完整样本前进入fail-safe=1/stopped。静态/运行证据已将它确认关联到`sfanalysis=true`；新source `6894c9fb4b96493058829be7d91cbec8ed4234b0`、CI `33573565557`、RunId `20260902080413`仅恢复`sfanalysis=false`，不增加SurfaceFlinger权限，113/113 host及final-super/semantic/ART/CIL门禁PASS。fixed-seven包位于`D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_UPERF_SFANALYSIS_20260902080413`，尚未刷写。实际刷写后必须以七分区`dump-part`全长SHA证明read-back；qdl flag/ACK不得单独算PASS。当前权威decision为`V20_4_UPERF_SFANALYSIS_RUNTIME_DECISION.md`。
 
 ```text
 V20_4_UPERF_SOURCE_HOST=PASS
@@ -338,6 +338,11 @@ V20_4_UPERF_SELINUX_STARTUP_READ_BACK_VERIFY=NOT_PROVEN
 V20_4_UPERF_SELINUX_STARTUP_RUNTIME_GATE=FAIL
 V20_4_UPERF_SELINUX_STARTUP_FAIL_SAFE=1
 V20_4_UPERF_DEVICE_VALIDATION=ABORTED_AT_STARTUP_GATE
+V20_4_UPERF_SFANALYSIS_CORRECTION_RUN=20260902080413
+V20_4_UPERF_SFANALYSIS_CORRECTION_SOURCE_HOST=PASS
+V20_4_UPERF_SFANALYSIS_CORRECTION_FINAL_ARTIFACT=PASS
+V20_4_UPERF_SFANALYSIS_CORRECTION_PRE_FLASH_READY=YES
+V20_4_UPERF_SFANALYSIS_CORRECTION_FLASHED=NO
 READY_FOR_FULL_UPERF_DEVICE_VALIDATION=NO
 ```
 

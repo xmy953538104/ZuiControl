@@ -29,4 +29,4 @@ It does not prove the separately requested worker-crash 3/20s path. FIFO steady 
 `NOT YET PROVEN`, because the wrapper cleaned the FIFO after the startup failure.
 
 Tooling/test changes do not alter Android runtime logic: semantic module review, physical 9008
-read-back enforcement, a manifest verifier, and 21 focused host tests.
+read-back enforcement, a manifest verifier, and 22 focused host tests.

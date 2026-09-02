@@ -1,12 +1,12 @@
 # ZuiControl Current Project State
 
-更新时间：2026-09-01
+更新时间：2026-09-02
 
 ## 1. 当前结论
 
 V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**。历史 decision 的 `PARTIAL / HOLD` 是当时的阶段转换 gate，现已解除。rapid Uperf crash storm、T8 request-ID 等未闭环发现保持原结论并 carry forward，不得改写成 PASS，也不得再阻止或要求重做 V20.3B。
 
-当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成针对性真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。第二工作包 **Uperf Architecture & Upstream Rebase** 的定向 **SELinux / Startup Gate Correction** RunId `20260901174600` 已刷入；Android/framework boot PASS，但Uperf Startup Runtime Gate因新`performanced → surfaceflinger_exec:file read` blocking AVC、rapid crash counter 3和fail-safe 1而 **FAIL**。10分钟steady-state及完整device matrix均未执行，不要开始V21。
+当前工程阶段是 **V20.4 — Final Stability & Efficiency**。第一工作包 **Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成针对性真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。第二工作包 **Uperf Architecture & Upstream Rebase** 的RunId `20260901174600`已确认因可选SFAnalysis读取`surfaceflinger_exec`而在Startup Runtime Gate失败。定向 **SFAnalysis Runtime Correction** RunId `20260902080413`已完成source/CI/host/final-super/semantic/DEX/CIL刷前门禁，状态为 **READY FOR HUMAN PRE-FLASH GATE / NOT FLASHED**。10分钟steady-state及完整device matrix仍未执行，不要开始V21。
 
 当前设备保留在失败候选 RunId `20260901174600` 的新boot现场，boot ID `2d7d16ae-4ca7-4a44-b09e-7de41e1e8422`；未重复reboot、未runtime repair、未手工start/stop Uperf。当前`sys.boot_completed=1`、system_server PID/starttime `2682/983`在106.39/183.31/296.46/715.56秒四次样本稳定、Binder与SELinux正常、asoulOpt PID3968 running；`init.svc.zui_uperf=stopped`、`.service_rapid_crashes=3`、`sys.zui_control.uperf_fail_safe=1`，715.56秒只是失败现场保持，不是Uperf-running PASS。本次boot的`sys.init.updatable_crashing*`为空。不得清property、手工启动Uperf、reboot美化现场或补刷其它候选。健康的最近生产基线仍是RunId `20260831170720`，但当前设备并未恢复到该基线。
 
@@ -14,7 +14,7 @@ V20.3B 阶段已经关闭；persistent daemon retirement architecture = **PASS**
 
 最近关闭的完整基线：V20.3B RunId `20260830181816`。当前生产 App 制品仍为 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`；工程阶段号、RunId与 App/Binder 版本号是不同概念。
 
-候选 lineage：`20260831094239` 在刷前因 event-order漏洞被拒绝；`20260831104317` 静态 gate通过但刷后触发 ART `VerifyError`、Boot Gate FAIL，随后按验证流程恢复 V20.3B；`20260831134511` 加入目标ART gate并刷入，Boot PASS但device结果因三个runtime blocker为PARTIAL；`20260831170720` 定向修正三项并已刷入、验证PASS；Uperf候选`20260901120647`与定向修正`20260901174600`均在Uperf startup Gate失败，后者Android boot正常但出现新的surfaceflinger_exec blocking AVC。不得再次刷写任何被拒绝或已失败候选。
+候选 lineage：`20260831094239` 在刷前因 event-order漏洞被拒绝；`20260831104317` 静态 gate通过但刷后触发 ART `VerifyError`、Boot Gate FAIL，随后按验证流程恢复 V20.3B；`20260831134511` 加入目标ART gate并刷入，Boot PASS但device结果因三个runtime blocker为PARTIAL；`20260831170720` 定向修正三项并已刷入、验证PASS；Uperf候选`20260901120647`与定向修正`20260901174600`均在Uperf startup Gate失败，后者Android boot正常但出现新的surfaceflinger_exec blocking AVC。RunId `20260902080413`是尚未刷写的当前刷前候选，不得与失败lineage混用；任何被拒绝或已失败候选不得再次刷写。
 
 ## 2. 当前真实架构
 
@@ -90,7 +90,7 @@ Host/build：V20.4 `39/39`、V20.3B `5/5`、CI `33375509612`、final-super 56-ma
 
 当前App UI未接TX10，且没有安全现成signed-App Manager/API路径，记为 `APP_UI_TX10=NOT_EXECUTED / SIGNED_APP_TX10_DEVICE_PATH_NOT_AVAILABLE`。UDFPS=`NOT_OBSERVED`、fault injection=`NOT_EXECUTED`、secondary user/external display=`NOT_VALIDATED` 保持显式非阻断边界，不得改写成PASS。完整当前结果见 [`V20_4_REFRESH_RUNTIME_DECISION.md`](V20_4_REFRESH_RUNTIME_DECISION.md) 与 [`08_BOOT_GATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/08_BOOT_GATE.md) 至 [`13_FINAL_RUNTIME_STATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/13_FINAL_RUNTIME_STATE.md)；旧 [`08_DEVICE_RESULTS.md`](V20_4_REFRESH_CORRECTNESS/08_DEVICE_RESULTS.md) 只记录被替代RunId的历史PARTIAL。
 
-## 6. V20.4 Uperf Architecture & Upstream Rebase / Startup Correction
+## 6. V20.4 Uperf Architecture & Upstream Rebase / SFAnalysis Correction
 
 source `72fd3ef5ab3d5d6a2b477a9ba2781ee9503d2d30`、CI `33468476491`、RunId `20260901120647` 的静态/host/build/final-artifact门禁通过；人工批准后使用唯一package `D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_UPERF_20260901120647`完成一次fixed-seven写入/read-back，rawprogram SHA-256为`10840bb75283ab3527aae2286c2b63444b165a7217ca7118113ae6ccfe49784a`。
 
@@ -113,10 +113,12 @@ source `72fd3ef5ab3d5d6a2b477a9ba2781ee9503d2d30`、CI `33468476491`、RunId `20
 
 刷后权威决策见 [`V20_4_UPERF_STARTUP_RUNTIME_DECISION.md`](V20_4_UPERF_STARTUP_RUNTIME_DECISION.md)，证据见 [`V20_4_UPERF_STARTUP_RUNTIME_GATE/`](V20_4_UPERF_STARTUP_RUNTIME_GATE/)，修正文档见 [`V20_4_UPERF_SELINUX_STARTUP_CORRECTION/`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/)。新boot旧`proc_uptime`与`scheduler_active` AVC均为0，但新增`performanced → surfaceflinger_exec:file read` blocking AVC；Uperf worker PIDs4170/7314命中denial，最终wrapper PID7302 status1退出，fail-safe在3次快速崩溃后置1。qdl虽然带`--read-back-verify`且RC0/`All went well!`，完整日志却只有7个program handler、0个read handler，因此read-back为`NOT_PROVEN`。不得继续完整scene/idle/crash/ownership/performance矩阵。
 
+当前SFAnalysis定向修正结论见 [`V20_4_UPERF_SFANALYSIS_RUNTIME_DECISION.md`](V20_4_UPERF_SFANALYSIS_RUNTIME_DECISION.md)。根因链为`sfanalysis=true → SfAnalysisListener/inotify → /system/bin/surfaceflinger → exact blocking AVC`，置信度`CONFIRMED`。生产运行diff只有`sfanalysis=true → false`，不增加SurfaceFlinger SELinux权限；balance/powersave四项idle字段、Uperf/asoulOpt二进制、FIFO/init、top-resumed scene、Refresh/framework DEX均保持。source `6894c9fb4b96493058829be7d91cbec8ed4234b0`、CI `33573565557`、RunId `20260902080413`已通过113/113 host、final reverse/62-marker、semantic graph；最终framework/services全部DEX和8份CIL与上一目标设备ART/CIL PASS制品逐字节相同。唯一fixed-seven包为`D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_UPERF_SFANALYSIS_20260902080413`，super SHA-256 `69870ac20222b3433efba7b46eefbd31b775e82cf29bd85528704dc0063e43f7`；尚未刷写。刷后read-back必须七目标physical `dump-part`全长hash，旧flag-only证据仍为`NOT_PROVEN`。
+
 ## 7. 其它 carry-forward backlog
 
 - command latency：P95 约 1.02 秒，主要成本在 durable claim/fsync/Settings ACK；优化必须保持 at-most-once/crash safety；
-- Uperf RunId `20260901120647` 的startup/fail-safe SELinux缺口已在新候选完成静态/刷前修正，但device runtime仍待人工批准后验证；rapid crash fail-safe、normal recovery与idle零polling仍未验证；explicit stop契约已在旧失败现场证明；
+- Uperf SFAnalysis修正已完成刷前Gate但未刷；whole-service startup storm fail-safe已真机PASS，worker-crash 3/20s仍UNTESTED，normal recovery、FIFO steady-state与idle零polling仍待验证；explicit stop契约已在旧失败现场证明；
 - T8 request ID：冻结候选真机仍输出空 `id=`，需并发可关联；
 - 120 hard-lock 的流畅度、功耗、温度、触控和 144/165 bridge A/B；
 - Uperf core_ctl/input boost/cpuset真机owner证明与performance A/B；
@@ -169,6 +171,11 @@ V20_4_UPERF_SELINUX_STARTUP_CORRECTION_FLASHED=YES
 V20_4_UPERF_SELINUX_STARTUP_ANDROID_BOOT=PASS
 V20_4_UPERF_SELINUX_STARTUP_READ_BACK_VERIFY=NOT_PROVEN
 V20_4_UPERF_SELINUX_STARTUP_RUNTIME_GATE=FAIL
+V20_4_UPERF_SFANALYSIS_CORRECTION_RUN=20260902080413
+V20_4_UPERF_SFANALYSIS_CORRECTION_SOURCE_HOST=PASS
+V20_4_UPERF_SFANALYSIS_CORRECTION_FINAL_ARTIFACT=PASS
+V20_4_UPERF_SFANALYSIS_CORRECTION_PRE_FLASH_READY=YES
+V20_4_UPERF_SFANALYSIS_CORRECTION_FLASHED=NO
 READY_FOR_FULL_UPERF_DEVICE_VALIDATION=NO
 V20_4_UPERF_WORK_PACKAGE=OPEN_PRE_FLASH_REVIEW_REQUIRED
 UDFPS_LOCAL_VOTE_RUNTIME=NOT_OBSERVED

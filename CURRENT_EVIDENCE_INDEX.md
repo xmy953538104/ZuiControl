@@ -1,15 +1,15 @@
 # ZuiControl Current Evidence Index
 
-更新时间：2026-09-01
+更新时间：2026-09-02
 最近关闭的完整基线：V20.3B / RunId `20260830181816` / source `30fe138a7ef531aeffbcf951e9113f4ae0d17cfe`
 健康的最近生产基线：V20.4 Refresh Runtime Correction RunId `20260831170720` / source `146e096c6a6bc8b3fee60349b856990fd9fb68d2` / CI `33375509612`
-当前设备实际现场：失败Uperf候选 RunId `20260901120647`；Android boot正常，`zui_uperf=stopped`，`sys.init.updatable_crashing=1`保留
+当前设备实际现场：失败Uperf候选 RunId `20260901174600`；Android/system_server正常，`zui_uperf=stopped`、rapid crashes=3、fail-safe=1；本boot `sys.init.updatable_crashing*`为空
 
 本文件是未来会话的默认证据入口。先读结论与最小报告；只有数字受到质疑时才打开对应 raw 或结果RAR。不要递归扫描 `D:\3.VScode\Mi\ZuiControl_Archive\`。
 
 V20.3B 阶段已关闭；daemon-retirement architecture = PASS。rapid Uperf storm与T8 request-ID仍是carry-forward，未被改写成PASS。V20.4 Refresh Correctness / State Machine已由当前Runtime Correction真机Gate关闭，状态为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。
 
-V20.4 Uperf Architecture & Upstream Rebase的RunId `20260901120647` 已在旧startup/fail-safe Gate **FAIL**。定向修正RunId `20260901174600` 的刷前source/CI/host/final-super/semantic/ART/CIL Gate为PASS，Android/framework boot也PASS，但真机Startup Runtime Gate再次 **FAIL**：新`performanced → surfaceflinger_exec:file read` blocking AVC、rapid crash counter 3、fail-safe 1、Uperf stopped。10分钟观察和完整矩阵未执行；qdl read-back日志证据为`NOT_PROVEN`。
+V20.4 Uperf Architecture & Upstream Rebase的RunId `20260901120647`和`20260901174600`均在startup Gate **FAIL**。后者的`performanced → surfaceflinger_exec:file read`已与`sfanalysis=true`建立`CONFIRMED`因果链。新RunId `20260902080413`仅恢复`sfanalysis=false`，无新SurfaceFlinger权限，source/CI/113项host/final-super/semantic/DEX/CIL刷前Gate为PASS，状态为`READY FOR HUMAN PRE-FLASH / NOT FLASHED`。10分钟观察和完整矩阵未执行；旧qdl read-back仍为`NOT_PROVEN`，新flasher须在实际写入后完成七分区physical dump/hash。
 
 Archive根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md)
 
@@ -48,7 +48,9 @@ Archive根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md
 
 约170ms kill-switch统计是host-observed ADB端到端收敛，不是native callback/physical latency。100-roundtrip harness证明state/apply event order和采样内120为0，不宣称每条edge physical settle；五档physical另有独立证据。AppRequest为`sharedNoToken`，只能证明本地ownership释放和traversal handoff，不虚构同步clear callback。
 
-## V20.4 Uperf Startup Correction 最小证据
+## V20.4 Uperf Startup / SFAnalysis Correction 最小证据
+
+当前刷前决策：[`V20_4_UPERF_SFANALYSIS_RUNTIME_DECISION.md`](V20_4_UPERF_SFANALYSIS_RUNTIME_DECISION.md)
 
 最终修正决策：[`V20_4_UPERF_SELINUX_STARTUP_DECISION.md`](V20_4_UPERF_SELINUX_STARTUP_DECISION.md)
 
@@ -65,6 +67,10 @@ Archive根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md
 | Final CIL | PASS | 8/8 SHA match；SECILC/GATE RC0；compiled policy1,256,804B | [`08_BUILD_VERIFY.md`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/08_BUILD_VERIFY.md) | [`policy_gate_transcript.txt`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/final_policy_gate_20260901174600/policy_gate_transcript.txt) |
 | Image/disk | PASS / corrected | `super`13,958,643,712B；old/new system EROFS4,642,951,168B；actual transient peak≈26.9GiB | [`08_BUILD_VERIFY.md`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/08_BUILD_VERIFY.md) | [`disk_timeline.tsv`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/build_20260901174600/disk_timeline.tsv), [`generated_cache_cleanup_20260901.txt`](V20_4_UPERF_SELINUX_STARTUP_CORRECTION/raw/generated_cache_cleanup_20260901.txt) |
 | Correction flash/device runtime | FAIL | exact RunId `20260901174600` flashed；Android boot PASS；old two AVC paths 0；new surfaceflinger_exec read AVC 2；rapid crashes3；fail-safe1/stopped；10min NOT EXECUTED；read-back NOT PROVEN | [`V20_4_UPERF_STARTUP_RUNTIME_DECISION.md`](V20_4_UPERF_STARTUP_RUNTIME_DECISION.md) | [`04_readback_evidence.txt`](V20_4_UPERF_STARTUP_RUNTIME_GATE/raw/flash/04_readback_evidence.txt), [`05_event_counts.txt`](V20_4_UPERF_STARTUP_RUNTIME_GATE/raw/final/05_event_counts.txt) |
+| SFAnalysis root cause | CONFIRMED | config true；listener/inotify call graph；2 exact AVC；worker PIDs4170/7314 | [`01_SFANALYSIS_ROOT_CAUSE.md`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/01_SFANALYSIS_ROOT_CAUSE.md) | [`sfanalysis_static_audit.txt`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/sfanalysis_static_audit.txt), [`runtime_failure_excerpt.txt`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/runtime_failure_excerpt.txt) |
+| SFAnalysis host/CI/build | PASS / unflashed | RunId`20260902080413`；source`6894c9f`；CI`33573565557`；113/113；marker62；super`69870a…43f7` | [`07_BUILD_VERIFY.md`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/07_BUILD_VERIFY.md) | [`build_result.json`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/build_20260902080413/build_result.json), [`final_super_verifier.log`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/build_20260902080413/final_super_verifier.log) |
+| SFAnalysis final ART/CIL | PASS by exact-byte inheritance | 10/10 DEX entries identical；8/8 CIL identical to target-device DEX_RC/GATE_RC0 and SECILC_RC/GATE_RC0 reference | [`07_BUILD_VERIFY.md`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/07_BUILD_VERIFY.md) | [`art_dex_equivalence.txt`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/final_equivalence_20260902080413/art_dex_equivalence.txt), [`cil_equivalence.txt`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/final_equivalence_20260902080413/cil_equivalence.txt) |
+| Fixed-seven package | PRE-FLASH PASS | exact7；physical read-back PENDING FLASH；flashed=NO | [`08_NEXT_STARTUP_GATE.md`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/08_NEXT_STARTUP_GATE.md) | [`fixed_seven_package_receipt.txt`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/final_equivalence_20260902080413/fixed_seven_package_receipt.txt) |
 
 ## 被替代 lineage
 
@@ -73,7 +79,7 @@ Archive根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md
 - RunId `20260831094239`：刷前因event-order漏洞被拒绝。
 - RunId `20260901120647`：Android/framework boot PASS，但Uperf startup/fail-safe SELinux Gate FAIL；不得再次刷写。
 
-以上历史FAIL不得覆盖当前RunId的PASS，也不得再次刷写旧package。
+以上历史FAIL不得覆盖当前RunId的刷前PASS，也不得再次刷写旧package；刷前PASS不等于device PASS。
 
 ## 显式非阻断边界
 

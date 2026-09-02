@@ -12,9 +12,9 @@ ZuiControl 是 TB321FU / ZUI 16.1.11.072 的 ROM 内置系统控制工具，核�
 4. 当前生产源码
 5. [`CURRENT_EVIDENCE_INDEX.md`](CURRENT_EVIDENCE_INDEX.md)
 
-V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。健康的最近完整生产基线是 V20.4 Runtime Correction RunId `20260831170720`，其Refresh host/build/final-artifact/Boot Hard Gate和Targeted Device Gate均PASS，工作包为 **CLOSED WITH EXPLICIT BOUNDARIES**。当前设备实际运行Uperf失败候选RunId `20260901174600`：Android与system_server正常，但Uperf快速崩溃3次后`fail-safe=1/stopped`；它不是健康基线。App 仍是 versionCode 49 / versionName 0.21.12。
+V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。健康的最近完整生产基线是 V20.4 Runtime Correction RunId `20260831170720`，其Refresh host/build/final-artifact/Boot Hard Gate和Targeted Device Gate均PASS，工作包为 **CLOSED WITH EXPLICIT BOUNDARIES**。当前设备实际运行Uperf失败候选RunId `20260901174600`：Android与system_server正常，但Uperf快速崩溃3次后`fail-safe=1/stopped`；它不是健康基线。新RunId `20260902080413`是尚未刷写的SFAnalysis定向修正，只达到人工Pre-Flash Gate。App 仍是 versionCode 49 / versionName 0.21.12。
 
-第二工作包 **V20.4 Uperf Architecture & Upstream Rebase** 使用framework top-resumed Activity作为Uperf exact-rule authority，并以event-driven FIFO/init生命周期替代旧5秒wrapper polling。定向修正RunId `20260901174600`的旧`proc_uptime`和`scheduler_active` denial已消失，但新`performanced → surfaceflinger_exec:file read` blocking AVC使Startup Runtime Gate **FAIL**；10分钟稳定观察和完整矩阵未执行。当前结论见 [`V20_4_UPERF_STARTUP_RUNTIME_DECISION.md`](V20_4_UPERF_STARTUP_RUNTIME_DECISION.md)。
+第二工作包 **V20.4 Uperf Architecture & Upstream Rebase** 使用framework top-resumed Activity作为Uperf exact-rule authority，并以event-driven FIFO/init生命周期替代旧5秒wrapper polling。RunId `20260901174600`的旧`proc_uptime`和`scheduler_active` denial已消失，但启用可选SFAnalysis引发`performanced → surfaceflinger_exec:file read` blocking AVC。根因已`CONFIRMED`，新候选恢复`sfanalysis=false`且不新增SurfaceFlinger权限；当前结论见 [`V20_4_UPERF_SFANALYSIS_RUNTIME_DECISION.md`](V20_4_UPERF_SFANALYSIS_RUNTIME_DECISION.md)。10分钟稳定观察和完整矩阵仍未执行。
 
 旧 RunId `20260831094239` 刷前拒绝；`20260831104317` 因ART `VerifyError` Boot FAIL并完成恢复；`20260831134511` Boot PASS但device因kill switch、null-gap和OEM分类三项为PARTIAL；`20260901120647` framework boot正常但Uperf startup Gate FAIL。它们只保留为lineage，均不得再次刷写。Refresh权威结论见 [`V20_4_REFRESH_RUNTIME_DECISION.md`](V20_4_REFRESH_RUNTIME_DECISION.md) 与 [`08_BOOT_GATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/08_BOOT_GATE.md) 至 [`13_FINAL_RUNTIME_STATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/13_FINAL_RUNTIME_STATE.md)。
 
@@ -34,7 +34,7 @@ V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。�
 
 `persistent zui_controld` 已退休：生产 init 中没有 `zui_controld` service/start。`/system/bin/zui_controld` 只保留为 `--oneshot-request` command executor，没有 refresh、scene detector 或后台 health publisher 职责。
 
-当前Uperf架构的 `/system/bin/zui_uperf_service` 不再做5秒process/grep轮询：startup只有一次bounded FIFO event wait，steady state阻塞等待Uperf自身事件/EOF。RunId `20260901174600`已证明旧`proc_uptime`和`scheduler_active` denial消失，但暴露新`surfaceflinger_exec:file read` access-graph缺口，尚未到达可证明的steady state；不得宣称零polling真机PASS。
+当前Uperf架构的 `/system/bin/zui_uperf_service` 不再做5秒process/grep轮询：startup只有一次bounded FIFO event wait，steady state阻塞等待Uperf自身事件/EOF。RunId `20260901174600`已证明旧`proc_uptime`和`scheduler_active` denial消失，但启用SFAnalysis时暴露`surfaceflinger_exec:file read` startup阻断；新候选已在配置中禁用该可选模块。仍未到达可证明的steady state，不得宣称零polling真机PASS。
 
 OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno KGSL。Uperf 的全局 cpuset 写入与更广义 knob ownership 留后续独立审计。
 
@@ -95,6 +95,8 @@ Steady-state 预期包含：refresh owner=`system`、persistent `zui_controld` P
 任何 ROM 交付仍必须按 `AGENTS.md` 做 final-super 反向内容、context、SHA-256 和刷后 AVC 验证。
 
 已失败的exact候选：`D:\3.VScode\Mi\work\v20_4_uperf_correction_candidate_20260901174600`。它绑定source `511f31483243107cff76bb7ed75c0417e574d98a`与CI `33490157865`；`super.img` SHA-256为`e10593227adc27a0f56622ee6e9e1aafe46dd2a44b88e58b69501f08bb8075dc`。刷前final-super 62-marker、semantic access graph、目标ART与split CIL均PASS，但真机Startup Runtime Gate FAIL，不得再次刷写或继续完整矩阵。`super`仍固定13,958,643,712 bytes，旧/新`system_a` EROFS尺寸相同，没有因system增长而需要额外删除预装App。
+
+当前唯一未刷fixed-seven候选：`D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_UPERF_SFANALYSIS_20260902080413`。它绑定source `6894c9fb4b96493058829be7d91cbec8ed4234b0`、CI `33573565557`，`super.img` SHA-256为`69870ac20222b3433efba7b46eefbd31b775e82cf29bd85528704dc0063e43f7`；113/113 host、final reverse/62-marker、semantic graph及DEX/CIL exact-byte gate均PASS。状态仅为`READY FOR HUMAN PRE-FLASH / NOT FLASHED`，没有刷写授权。实际刷写后必须physical dump/hash七个目标；`--read-back-verify` flag或ACK不得代替。
 
 ## 当前禁止
 

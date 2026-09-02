@@ -1,0 +1,46 @@
+{
+  "run_id": "33573565557",
+  "head_sha": "6894c9fb4b96493058829be7d91cbec8ed4234b0",
+  "status": "completed",
+  "conclusion": "success",
+  "workflow_name": "Build ZuiControl",
+  "repository": "xmy953538104/ZuiControl",
+  "url": "https://github.com/xmy953538104/ZuiControl/actions/runs/33573565557",
+  "declared_artifact_path": "D:\\3.VScode\\Mi\\work\\ci_artifacts\\zuicontrol_33573565557",
+  "authoritative_artifact_path": "D:\\3.VScode\\Mi\\work\\v20_4_uperf_sfanalysis_scratch_20260902080413\\ci_artifacts\\zuicontrol_33573565557",
+  "artifacts": [
+    {
+      "name": "ZuiControl-release-apk",
+      "id": "9825839766",
+      "digest": "sha256:b8b95544b0aece52bcca171a47443e4a2e2d3819c7a886aa720bdd2796c5eb07",
+      "digest_sha256": "b8b95544b0aece52bcca171a47443e4a2e2d3819c7a886aa720bdd2796c5eb07",
+      "size_in_bytes": 719289,
+      "expired": false,
+      "archive_download_url": "https://api.github.com/repos/xmy953538104/ZuiControl/actions/artifacts/9825839766/zip",
+      "actual_zip_length": 719289,
+      "actual_zip_sha256": "b8b95544b0aece52bcca171a47443e4a2e2d3819c7a886aa720bdd2796c5eb07"
+    },
+    {
+      "name": "zui-control-v19-payload",
+      "id": "9825840371",
+      "digest": "sha256:d50c4f9f726c685fb4283e9f2799115508079903d0a98615383cfcdf7237e4ca",
+      "digest_sha256": "d50c4f9f726c685fb4283e9f2799115508079903d0a98615383cfcdf7237e4ca",
+      "size_in_bytes": 1315614,
+      "expired": false,
+      "archive_download_url": "https://api.github.com/repos/xmy953538104/ZuiControl/actions/artifacts/9825840371/zip",
+      "actual_zip_length": 1315614,
+      "actual_zip_sha256": "d50c4f9f726c685fb4283e9f2799115508079903d0a98615383cfcdf7237e4ca"
+    },
+    {
+      "name": "zui-control-init-gate",
+      "id": "9825818298",
+      "digest": "sha256:aea06a8718f4645e68e73462c854f66a4c48bd2119a2f648224ead65bd43debc",
+      "digest_sha256": "aea06a8718f4645e68e73462c854f66a4c48bd2119a2f648224ead65bd43debc",
+      "size_in_bytes": 1626,
+      "expired": false,
+      "archive_download_url": "https://api.github.com/repos/xmy953538104/ZuiControl/actions/artifacts/9825818298/zip",
+      "actual_zip_length": 1626,
+      "actual_zip_sha256": "aea06a8718f4645e68e73462c854f66a4c48bd2119a2f648224ead65bd43debc"
+    }
+  ]
+}
