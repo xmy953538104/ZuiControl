@@ -103,7 +103,8 @@ class SfanalysisCorrectionTests(unittest.TestCase):
 
     def test_09_fifo_polling_is_not_restored(self) -> None:
         self.assertIn('mkfifo "$LOG_PIPE"', self.wrapper)
-        self.assertIn('while IFS= read -r line <&8; do', self.wrapper)
+        self.assertIn('wait "$supervisor_pid"', self.wrapper)
+        self.assertIn('while IFS= read -r line; do', self.wrapper)
         for token in ("sleep ", "pidof uperf", "killall", "uperf_process_count", "grep "):
             self.assertNotIn(token, self.wrapper)
 

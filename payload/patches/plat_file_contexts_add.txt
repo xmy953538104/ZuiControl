@@ -1,5 +1,6 @@
 /system/bin/uperf u:object_r:performanced_exec:s0
 /system/bin/zui_uperf_service u:object_r:performanced_exec:s0
+/system/bin/zui_uperf_supervisor u:object_r:performanced_exec:s0
 /system/bin/AsoulOpt u:object_r:performanced_exec:s0
 /system/bin/dumpsys u:object_r:toolbox_exec:s0
 /data/system/zui_control(/.*)? u:object_r:system_data_file:s0

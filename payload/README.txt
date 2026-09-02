@@ -5,6 +5,7 @@ Build/package target:
 - /system/bin/zui_controld
 - /system/bin/uperf
 - /system/bin/zui_uperf_service
+- /system/bin/zui_uperf_supervisor
 - /system/bin/AsoulOpt
 - /system/etc/init/zui_controld.rc
 - /system/etc/init/zui_scheduler.rc
@@ -33,7 +34,7 @@ Command plane:
 Health:
 - App/status health is read on demand through the zui_control Binder service.
 - No persistent zui_controld Settings/Binder heartbeat exists.
-- The V20.4 Uperf candidate removes the 5-second process/grep loop. Startup uses one bounded FIFO event wait; steady state blocks on Uperf log/EOF events. Uperf's manager handles normal worker exits, init rate-limits whole-service recovery, and bounded rapid storms set the explicit fail-safe property. This remains subject to final-artifact and device validation.
+- The V20.4 Uperf wrapper removes the 5-second process/grep loop. Startup uses one bounded FIFO readiness wait; steady state blocks on a native PR_SET_CHILD_SUBREAPER + waitpid helper. FIFO EOF ends only best-effort log observation and never represents whole-tree death. Uperf's manager handles normal worker exits, init remains the sole restart owner, and existing whole-service fail-safe semantics remain unchanged. Device validation is still required.
 
 Runtime data:
 - /data/system/zui_control/profiles.prop

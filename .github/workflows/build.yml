@@ -6,6 +6,7 @@ on:
     paths:
       - "app/**"
       - "payload/**"
+      - "native/**"
       - "framework_patch/**"
       - "scripts/**"
       - "V20_3B_DAEMON_RETIREMENT/tests/**"
@@ -13,6 +14,7 @@ on:
       - "V20_4_UPERF_ARCHITECTURE_REBASE/tests/**"
       - "V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/**"
       - "V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/**"
+      - "V20_4_UPERF_PROCESS_LIFETIME_SUPERVISOR_CORRECTION/tests/**"
       - "upstream/uperf/**"
       - ".github/workflows/build.yml"
       - "*.gradle.kts"
@@ -40,7 +42,41 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android platform
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+
+      - name: Test Uperf process-lifetime supervisor
+        run: |
+          mkdir -p "$RUNNER_TEMP/uperf-supervisor-gate"
+          python3 V20_4_UPERF_PROCESS_LIFETIME_SUPERVISOR_CORRECTION/tests/TestUperfSupervisor.py \
+            --receipt-dir "$RUNNER_TEMP/uperf-supervisor-gate" 2>&1 | \
+            tee "$RUNNER_TEMP/uperf-supervisor-gate/host_fixture_transcript.txt"
+
+      - name: Rebuild and verify Android Uperf supervisor
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          output="$RUNNER_TEMP/zui_uperf_supervisor"
+          "$toolchain/aarch64-linux-android34-clang" \
+            -std=c11 -Os -fPIE -pie -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
+            -Wall -Wextra -Werror -Wl,-z,relro,-z,now,--build-id=none \
+            native/zui_uperf_supervisor.c -o "$output"
+          "$toolchain/llvm-strip" --strip-all "$output"
+          cmp "$output" payload/system/bin/zui_uperf_supervisor
+          sha256sum "$output" payload/system/bin/zui_uperf_supervisor | \
+            tee "$RUNNER_TEMP/uperf-supervisor-gate/android_binary_sha256.txt"
+          "$toolchain/llvm-readelf" -h -l "$output" > \
+            "$RUNNER_TEMP/uperf-supervisor-gate/android_elf.txt"
+          printf 'ANDROID_SUPERVISOR_REBUILD=PASS\n' > \
+            "$RUNNER_TEMP/uperf-supervisor-gate/android_rebuild_result.txt"
+
+      - name: Upload Uperf supervisor gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zui-control-supervisor-gate
+          path: ${{ runner.temp }}/uperf-supervisor-gate
+          if-no-files-found: error
 
       - name: Check scripts
         run: |

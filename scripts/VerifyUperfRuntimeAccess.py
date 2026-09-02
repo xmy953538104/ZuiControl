@@ -59,10 +59,14 @@ def edge(component: str, domain: str, operation: str, resource: str,
 
 
 CUSTOM_RULES = [
-    edge("wrapper", "performanced", "execute without transition", "/system/bin/uperf",
+    edge("wrapper", "performanced", "execute without transition", "/system/bin/zui_uperf_supervisor",
          "performanced_exec", "file", "read getattr map execute open execute_no_trans",
          "(allow performanced performanced_exec (file (read getattr map execute open execute_no_trans entrypoint)))",
-         "launch the pinned Uperf worker in the supervised service domain"),
+         "launch the pinned native subreaper in the existing service domain"),
+    edge("supervisor", "performanced", "fork/exec without transition", "/system/bin/uperf",
+         "performanced_exec", "file", "read getattr map execute open execute_no_trans",
+         "(allow performanced performanced_exec (file (read getattr map execute open execute_no_trans entrypoint)))",
+         "launch pinned Uperf under the subreaper without creating a second SELinux domain"),
     edge("wrapper", "performanced", "execute shell utilities", "/system/bin/toybox applets",
          "toolbox_exec", "file", "read getattr map execute open execute_no_trans",
          "(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))",
@@ -98,7 +102,7 @@ CUSTOM_RULES = [
          "/data/vendor/zui_control/uperf/.service_log_pipe", "zui_control_data_file",
          "fifo_file", "getattr open read write create setattr unlink",
          "(allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))",
-         "event-driven worker log and EOF supervision"),
+         "bounded readiness and best-effort worker log observation; EOF is not process lifetime"),
     edge("wrapper/worker", "performanced", "place process in background cpuset",
          "/dev/cpuset/background/tasks", "cgroup", "file",
          "ioctl read write create getattr setattr lock append map open unlink",
@@ -257,6 +261,7 @@ FINAL_ONLY_RULES = [
 CONTEXTS = [
     ("/system/bin/uperf", "performanced_exec"),
     ("/system/bin/zui_uperf_service", "performanced_exec"),
+    ("/system/bin/zui_uperf_supervisor", "performanced_exec"),
     ("/system/bin/AsoulOpt", "performanced_exec"),
     ("/data/vendor/zui_control(/.*)?", "zui_control_data_file"),
 ]
@@ -269,6 +274,7 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
     init_rc = read(system / "etc/init/zui_scheduler.rc")
     config = json.loads(read(system / "etc/zui_control/uperf-sm8650.json"))
     uperf_binary = (system / "bin/uperf").read_bytes()
+    supervisor_binary = (system / "bin/zui_uperf_supervisor").read_bytes()
     file_contexts = read(Path(args.file_contexts))
     property_contexts = read(Path(args.property_contexts))
     plat_policy = read(Path(args.plat_policy))
@@ -276,7 +282,11 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
 
     require(wrapper, "< /proc/uptime", "wrapper monotonic time source")
     require(wrapper, 'mkfifo "$LOG_PIPE"', "FIFO architecture")
-    require(wrapper, 'while IFS= read -r line <&8; do', "event-driven steady state")
+    require(wrapper, 'drain_uperf_log <&8 &', "best-effort FIFO log drain")
+    require(wrapper, 'wait "$supervisor_pid"', "blocking process-tree lifetime wait")
+    require(wrapper, '$SUPERVISOR "$CONFIG" "$LOG_PIPE" 9>&- &',
+            "supervisor launch without dummy FIFO FD")
+    forbid(wrapper, "FIFO EOF means", "retired FIFO lifetime assumption")
     require(wrapper,
             'printf \'%s\\n\' "$now" > "$READY_UPTIME.tmp" || exit 1\n'
             'chmod 0600 "$READY_UPTIME.tmp" || exit 1\n'
@@ -309,6 +319,9 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
     for marker in (b"SfAnalysisListener", b"/system/bin/surfaceflinger", b"sfanalysis"):
         if marker not in uperf_binary:
             raise ValueError(f"pinned Uperf binary lacks SFAnalysis audit marker: {marker!r}")
+    for marker in (b"ZUI_UPERF_SUPERVISOR_EXEC_FAILED", b"supervised Uperf descendant tree is gone"):
+        if marker not in supervisor_binary:
+            raise ValueError(f"native supervisor lacks lifecycle marker: {marker!r}")
 
     module_access_review = [
         {
@@ -401,7 +414,7 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
         "graph_edges": len(graph),
         "graph": graph,
         "access_graph_completeness": {
-            "wrapper_init_explicit_code": "COMPLETE_STATIC_REVIEW",
+            "wrapper_supervisor_init_explicit_code": "COMPLETE_STATIC_REVIEW",
             "closed_source_config_modules": "PARTIAL_STATIC_REVIEW",
             "device_runtime_for_corrected_candidate": "NOT_YET_PROVEN",
         },

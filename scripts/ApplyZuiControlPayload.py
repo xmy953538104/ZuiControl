@@ -83,6 +83,7 @@ def mode_for(rel, is_dir):
     if rel in [
         "system_a/system/bin/zui_controld",
         "system_a/system/bin/zui_uperf_service",
+        "system_a/system/bin/zui_uperf_supervisor",
         "system_a/system/bin/uperf",
         "system_a/system/bin/AsoulOpt",
     ]:
@@ -93,6 +94,7 @@ def mode_for(rel, is_dir):
 def owner_group_for(rel):
     if rel in [
         "system_a/system/bin/zui_uperf_service",
+        "system_a/system/bin/zui_uperf_supervisor",
         "system_a/system/bin/uperf",
         "system_a/system/bin/AsoulOpt",
     ]:
@@ -103,6 +105,7 @@ def owner_group_for(rel):
 def context_for(rel):
     if rel in [
         "system_a/system/bin/zui_uperf_service",
+        "system_a/system/bin/zui_uperf_supervisor",
         "system_a/system/bin/uperf",
         "system_a/system/bin/AsoulOpt",
     ]:

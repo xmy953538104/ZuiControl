@@ -31,7 +31,7 @@ persistent `zui_controld` 已退休；当前 init 中不存在其 service/start�
 
 Uperf 自带 context/thread scheduler 为 `sched.enable=false`，asoulOpt 是唯一 per-task affinity owner；Uperf sysfs 模块仍写全局 cpuset mask，广义 topology/knob ownership必须由刷后time-series/writer-trace证明。生产控制面没有 `auto` 档，Uperf mode 由system_server依据真正top-resumed Activity决策；配置仍保留 `switcher.perapp` 路径和二进制相关能力，所以不能宣称 Native Auto 代码已删除，只能说没有production入口。Refresh的focused Window authority保持不变。
 
-`zui_uperf_service` 源码使用一次bounded startup FIFO event wait + steady blocking read替代旧5秒cgroup/log轮询。RunId `20260901120647` 的真机启动证明其SELinux启动图不完整：`performanced`读取`proc_uptime`被拒绝并status 1退出，`shell` crash gate又错误读取无权访问的`scheduler_active`属性。定向修正只增加`performanced -> proc_uptime:file { getattr open read }`并删除该guard，不新增shell权限、不回退polling。新最终artifact已通过semantic/ART/CIL静态Gate；真正startup、normal worker recovery、FIFO EOF、rapid storm与idle仍待新候选刷后验证。explicit stop在旧失败现场已独立证明86.36秒保持stopped。
+一次受控真机诊断已证明旧`zui_uperf_service`把logger FIFO EOF误当作whole-tree death：wrapper先退出，仍存活的Uperf descendant随后才被init cgroup cleanup杀死。当前source增加同`performanced`域`zui_uperf_supervisor`，使用`PR_SET_CHILD_SUBREAPER`和blocking `waitpid(-1)`监督真实descendant tree；wrapper仍负责bounded readiness/ready marker，FIFO EOF只结束best-effort log drain。没有polling、timer、新domain或第二restart owner；真正startup、FIFO EOF regression、normal worker recovery、worker storm与idle仍待新候选刷后验证。explicit stop既有契约不变。
 
 ## 3. 源码 sanity check
 
@@ -118,7 +118,7 @@ source `72fd3ef5ab3d5d6a2b477a9ba2781ee9503d2d30`、CI `33468476491`、RunId `20
 ## 7. 其它 carry-forward backlog
 
 - command latency：P95 约 1.02 秒，主要成本在 durable claim/fsync/Settings ACK；优化必须保持 at-most-once/crash safety；
-- Uperf SFAnalysis修正已完成刷前Gate但未刷；whole-service startup storm fail-safe已真机PASS，worker-crash 3/20s仍UNTESTED，normal recovery、FIFO steady-state与idle零polling仍待验证；explicit stop契约已在旧失败现场证明；
+- Uperf process-lifetime supervisor correction正在刷前Gate；whole-service startup storm fail-safe已真机PASS，worker-crash 3/20s保持DEVICE_PENDING，normal recovery、FIFO EOF regression与idle零polling仍待验证；explicit stop契约已在旧失败现场证明；
 - T8 request ID：冻结候选真机仍输出空 `id=`，需并发可关联；
 - 120 hard-lock 的流畅度、功耗、温度、触控和 144/165 bridge A/B；
 - Uperf core_ctl/input boost/cpuset真机owner证明与performance A/B；

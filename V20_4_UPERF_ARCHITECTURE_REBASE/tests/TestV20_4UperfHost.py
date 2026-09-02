@@ -131,11 +131,13 @@ class SourceAuthorityTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
-    def test_15_unexpected_tree_exit_uses_fifo_eof_and_init(self):
+    def test_15_unexpected_tree_exit_uses_subreaper_and_init(self):
         wrapper = text(WRAPPER)
         rc = text(RC)
         self.assertIn('mkfifo "$LOG_PIPE"', wrapper)
+        self.assertIn('wait "$supervisor_pid"', wrapper)
         self.assertIn("FIFO EOF", wrapper)
+        self.assertNotIn("FIFO EOF means", wrapper)
         self.assertIn("restart_period 5", rc)
 
     def test_16_explicit_stop_is_not_restart_action(self):
@@ -162,15 +164,16 @@ class LifecycleTests(unittest.TestCase):
         self.assertNotIn("sleep ", gate)
         self.assertNotIn("while ", gate)
         self.assertEqual(wrapper.count('read -r -t "$remaining"'), 1)
-        self.assertEqual(wrapper.count("while IFS= read -r line <&8; do"), 1)
+        self.assertEqual(wrapper.count("while IFS= read -r line; do"), 1)
 
     def test_19_single_init_instance(self):
         rc = text(RC)
         self.assertEqual(len(re.findall(r"(?m)^service zui_uperf\s", rc)), 1)
 
-    def test_20_no_persistent_wrapper_child_churn(self):
+    def test_20_only_event_driven_wrapper_children(self):
         wrapper = text(WRAPPER)
-        self.assertNotIn("&\n", wrapper)
+        self.assertEqual(wrapper.count(" 9>&- &\n"), 1)
+        self.assertEqual(wrapper.count("drain_uperf_log <&8 &\n"), 1)
         self.assertNotIn("inotifyd", wrapper)
         self.assertNotIn("tail -", wrapper)
 

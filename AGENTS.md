@@ -131,7 +131,7 @@ Android init 负责：
 
 Uperf 是 CPU/power-model 执行 owner；asoulOpt 是唯一 per-task affinity/context-scheduler owner；OEM/thermal 继续保留 GPU/热安全裁决边界。Uperf sysfs 模块仍会写全局 cpuset mask，因此更广义的 topology/knob ownership 必须在后续独立 scheduler-ownership 工作包审计，不能混入当前 refresh state-machine 修改。
 
-V20.4 Uperf架构已删除 `/system/bin/zui_uperf_service` 的5秒process/grep自检：启动只做一次bounded FIFO event wait，steady state阻塞读Uperf自身log/exit event。正常worker crash由Uperf内建SIGCHLD/wait manager恢复；完整writer tree EOF才退出交给init。三次20秒内worker crash或三次连续sub-2s whole-service death进入`sys.zui_control.uperf_fail_safe=1`并停止服务；没有新增daemon/watchdog/timer。首个device候选暴露`performanced`读取`proc_uptime`缺权且`shell` crash gate错误读取`scheduler_active`的问题；修正只增加精确`proc_uptime:file { getattr open read }`并删除该guard，不扩大shell。随后`sfanalysis=true`触发的SurfaceFlinger access已通过恢复`false`消除，不新增SELinux权限；新候选通过刷前硬门，刷后startup、normal/rapid、explicit-stop与idle仍必须验证。
+V20.4 Uperf架构已删除 `/system/bin/zui_uperf_service` 的5秒process/grep自检：启动只做一次bounded FIFO readiness wait；steady state阻塞等待同`performanced`域的`zui_uperf_supervisor`。该native helper使用`PR_SET_CHILD_SUBREAPER`和blocking `waitpid(-1)`监督真实Uperf descendant tree；FIFO只负责startup log/readiness和best-effort worker-crash观察，EOF不再是process lifetime。正常worker crash仍由Uperf内建SIGCHLD/wait manager恢复；真实whole-tree death才经supervisor→wrapper→init触发恢复。三次20秒内worker crash observer仍为device pending；三次连续sub-2s whole-service death的既有fail-safe不变。没有新增watchdog、timer、process scan或SELinux domain。`sfanalysis=false`及既有精确`proc_uptime`权限保持不变；新supervisor候选刷后仍必须验证startup、FIFO EOF regression、normal/rapid、explicit-stop与idle。
 
 ### 3.4 command 与 health
 

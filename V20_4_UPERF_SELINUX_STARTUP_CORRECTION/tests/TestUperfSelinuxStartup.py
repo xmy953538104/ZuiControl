@@ -81,6 +81,7 @@ class UperfSelinuxStartupTests(unittest.TestCase):
     def test_07_every_wrapper_runtime_file_is_typed(self) -> None:
         contexts = text(FILE_CONTEXTS)
         self.assertIn("/system/bin/zui_uperf_service u:object_r:performanced_exec:s0", contexts)
+        self.assertIn("/system/bin/zui_uperf_supervisor u:object_r:performanced_exec:s0", contexts)
         self.assertIn("/system/bin/uperf u:object_r:performanced_exec:s0", contexts)
         self.assertIn("/data/vendor/zui_control(/.*)? u:object_r:zui_control_data_file:s0", contexts)
 
@@ -111,7 +112,8 @@ class UperfSelinuxStartupTests(unittest.TestCase):
     def test_13_fifo_design_is_unchanged(self) -> None:
         wrapper = text(WRAPPER)
         self.assertIn('mkfifo "$LOG_PIPE"', wrapper)
-        self.assertIn('while IFS= read -r line <&8; do', wrapper)
+        self.assertIn('wait "$supervisor_pid"', wrapper)
+        self.assertIn('while IFS= read -r line; do', wrapper)
 
     def test_14_top_resumed_design_is_unchanged(self) -> None:
         self.assertEqual(

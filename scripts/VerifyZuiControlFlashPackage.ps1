@@ -467,6 +467,7 @@ try {
     $Daemon = Join-Path $System 'bin\zui_controld'
     $Uperf = Join-Path $System 'bin\uperf'
     $UperfService = Join-Path $System 'bin\zui_uperf_service'
+    $UperfSupervisor = Join-Path $System 'bin\zui_uperf_supervisor'
     $Asoul = Join-Path $System 'bin\AsoulOpt'
     $SchedulerRc = Join-Path $System 'etc\init\zui_scheduler.rc'
     $DaemonRc = Join-Path $System 'etc\init\zui_controld.rc'
@@ -481,11 +482,13 @@ try {
     $MemCleaner = Join-Path $System 'etc\ZuiMemCleanerConfig.xml'
     $PowerPolicy = Join-Path $System 'etc\ZuiPowerPolicyConfig.xml'
     $AutoRun = Join-Path $System 'etc\motorola\bgintents\com.zui.safecenter.autorun.xml'
-    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $Asoul, $SchedulerRc, $DaemonRc, $RefreshKillRc, $SchedulerPrepare, $UperfCrashGate, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
+    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $UperfSupervisor, $Asoul, $SchedulerRc, $DaemonRc, $RefreshKillRc, $SchedulerPrepare, $UperfCrashGate, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
         Require-File $file
     }
 
     if ((File-Sha256 $Uperf) -ne $ExpectedUperfSha256) { throw 'Embedded Uperf core hash is not approved' }
+    Assert-BinaryContains $UperfSupervisor 'ZUI_UPERF_SUPERVISOR_EXEC_FAILED' $true 'native Uperf supervisor exec-failure marker'
+    Assert-BinaryContains $UperfSupervisor 'supervised Uperf descendant tree is gone' $true 'native Uperf supervisor tree-lifetime marker'
     if ((File-Sha256 $Asoul) -ne $ExpectedAsoulSha256) { throw 'Embedded Shiroko A-SOUL hash is not approved' }
     Assert-BinaryContains $Asoul '/data/vendor/asopt.conf' $true 'ROM A-SOUL config path'
     Assert-BinaryContains $Asoul '/data/adb/naki/asopt.conf' $false 'retired Magisk config path'
@@ -914,6 +917,8 @@ try {
     $FileContexts = Join-Path $PlatSelinux 'plat_file_contexts'
     Assert-Contains $FileContexts '/system/bin/uperf u:object_r:performanced_exec:s0' 'Uperf file context'
     Assert-Contains $FileContexts '/system/bin/zui_uperf_service u:object_r:performanced_exec:s0' 'Uperf supervisor file context'
+    Assert-Contains $FileContexts '/system/bin/zui_uperf_supervisor u:object_r:performanced_exec:s0' 'native Uperf subreaper file context'
+    Assert-Contains $SystemImageContexts '/system_a/system/bin/zui_uperf_supervisor u:object_r:performanced_exec:s0' 'final EROFS native Uperf subreaper inode context'
     Assert-Contains $FileContexts '/system/bin/AsoulOpt u:object_r:performanced_exec:s0' 'A-SOUL file context'
     Assert-Contains $FileContexts '/system/bin/dumpsys u:object_r:toolbox_exec:s0' 'bounded A-SOUL dumpsys execution context'
     Assert-Contains $SystemImageContexts '/system_a/system/bin/dumpsys u:object_r:toolbox_exec:s0' 'final EROFS dumpsys inode context'
@@ -1079,6 +1084,7 @@ try {
         sidecar_apk = File-Sha256 $SidecarApk
         release_sidecar_apk = File-Sha256 $ReleaseSidecarApk
         uperf = File-Sha256 $Uperf
+        uperf_supervisor = File-Sha256 $UperfSupervisor
         asoul = File-Sha256 $Asoul
     }
     if ($hashes.apk -ne $hashes.sidecar_apk -or $hashes.apk -ne $hashes.release_sidecar_apk) {
