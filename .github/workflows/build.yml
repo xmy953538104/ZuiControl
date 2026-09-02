@@ -45,7 +45,9 @@ jobs:
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
 
       - name: Test Uperf process-lifetime supervisor
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p "$RUNNER_TEMP/uperf-supervisor-gate"
           python3 V20_4_UPERF_PROCESS_LIFETIME_SUPERVISOR_CORRECTION/tests/TestUperfSupervisor.py \
             --receipt-dir "$RUNNER_TEMP/uperf-supervisor-gate" 2>&1 | \

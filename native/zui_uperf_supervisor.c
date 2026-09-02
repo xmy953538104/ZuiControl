@@ -27,6 +27,24 @@ static void log_error(const char *format, ...) {
     va_end(args);
 }
 
+static void write_best_effort(int fd, const void *buffer, size_t length) {
+    const unsigned char *cursor = buffer;
+
+    while (length > 0) {
+        ssize_t written = write(fd, cursor, length);
+
+        if (written > 0) {
+            cursor += written;
+            length -= (size_t)written;
+            continue;
+        }
+        if (written < 0 && errno == EINTR) {
+            continue;
+        }
+        return;
+    }
+}
+
 static void notify_startup_fifo(const char *path, const char *event, int detail) {
     char line[160];
     int length = snprintf(line, sizeof(line), "%s detail=%d\n", event, detail);
@@ -39,7 +57,7 @@ static void notify_startup_fifo(const char *path, const char *event, int detail)
     if (fd < 0) {
         return;
     }
-    (void)write(fd, line, (size_t)length);
+    write_best_effort(fd, line, (size_t)length);
     (void)close(fd);
 }
 
@@ -118,7 +136,7 @@ int main(int argc, char **argv) {
         (void)close(exec_status[0]);
         execl(binary, binary, config, "-o", log_pipe, (char *)NULL);
         saved_errno = errno;
-        (void)write(exec_status[1], &saved_errno, sizeof(saved_errno));
+        write_best_effort(exec_status[1], &saved_errno, sizeof(saved_errno));
         _exit(127);
     }
 
