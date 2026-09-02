@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
+import tempfile
 import unittest
 
 
@@ -131,6 +132,41 @@ class UperfSelinuxStartupTests(unittest.TestCase):
                          "7a2ee5d67ba7c057066176334eca9256e376427916429d66b7593cbb5538ec86")
         self.assertEqual(sha256(REPO / "payload/system/etc/init/zui_refresh_kill_switch.rc"),
                          "0161a9980777b4313d0a5935b0e861e1afea86c5b4eb07ef5b88e44f20143c62")
+
+    def test_17_atomic_ready_marker_requires_file_rename(self) -> None:
+        wrapper = text(WRAPPER)
+        policy = text(POLICY)
+        self.assertIn('mv -f "$READY_UPTIME.tmp" "$READY_UPTIME" || exit 1', wrapper)
+        self.assertIn(
+            "(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink rename)))",
+            policy,
+        )
+        directory_rule = (
+            "(allow performanced zui_control_data_file (dir "
+            "(getattr open read search write add_name remove_name create setattr)))"
+        )
+        self.assertIn(directory_rule, policy)
+
+    def test_18_missing_ready_marker_rename_is_rejected(self) -> None:
+        corrected = (
+            "(allow performanced zui_control_data_file (file "
+            "(getattr open read write create append map watch watch_reads setattr unlink rename)))"
+        )
+        missing = corrected.replace(" unlink rename)))", " unlink)))")
+        policy = text(POLICY)
+        self.assertEqual(policy.count(corrected), 1)
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory) / "plat_sepolicy_missing_ready_marker_rename.cil"
+            fixture.write_text(policy.replace(corrected, missing), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "atomically publish ready marker: missing"):
+                verifier.verify(SimpleNamespace(
+                    mode="source",
+                    system_root=str(REPO / "payload/system"),
+                    file_contexts=str(FILE_CONTEXTS),
+                    property_contexts=str(PROPERTY_CONTEXTS),
+                    plat_policy=str(fixture),
+                    vendor_policy=str(VENDOR_POLICY),
+                ))
 
 
 if __name__ == "__main__":

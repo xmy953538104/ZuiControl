@@ -78,7 +78,7 @@
 (allow performanced shell_exec (file (read getattr map execute open execute_no_trans)))
 (allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))
 (allow performanced zui_control_data_file (dir (getattr open read search write add_name remove_name create setattr)))
-(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))
+(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink rename)))
 (allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))
 (allow performanced zui_control_data_file (lnk_file (getattr read)))
 (allow performanced appdomain (dir (getattr open read search)))

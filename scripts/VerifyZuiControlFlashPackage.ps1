@@ -1008,7 +1008,7 @@ try {
         '(allow performanced input_device (dir (ioctl read getattr lock open watch watch_reads search)))',
         '(allow performanced input_device (chr_file (ioctl read getattr lock map open)))',
         '(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))',
-        '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))',
+        '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink rename)))',
         '(allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))',
         '(allow performanced zui_control_data_file (lnk_file (getattr read)))'
     )) { Assert-Contains $PlatPolicy $rule 'scheduler SELinux rule' }

@@ -80,10 +80,15 @@ CUSTOM_RULES = [
          "getattr open read search write add_name remove_name create setattr",
          "(allow performanced zui_control_data_file (dir (getattr open read search write add_name remove_name create setattr)))",
          "private FIFO, log, readiness marker and crash-state parent directories"),
+    edge("wrapper", "performanced", "atomically publish ready marker",
+         ".service_ready_uptime.tmp -> .service_ready_uptime", "zui_control_data_file", "file",
+         "rename",
+         "(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink rename)))",
+         "publish readiness only after the complete timestamp is durable in the temporary file"),
     edge("wrapper/worker", "performanced", "read/write/create runtime files",
          "/data/vendor/zui_control/**", "zui_control_data_file", "file",
-         "getattr open read write create append map watch watch_reads setattr unlink",
-         "(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink)))",
+         "getattr open read write create append map watch watch_reads setattr unlink rename",
+         "(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink rename)))",
          "config, effective mode, log, marker, temporary and counter files"),
     edge("wrapper/worker", "performanced", "read runtime symlinks",
          "/data/vendor/zui_control/**", "zui_control_data_file", "lnk_file", "getattr read",
@@ -272,6 +277,11 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
     require(wrapper, "< /proc/uptime", "wrapper monotonic time source")
     require(wrapper, 'mkfifo "$LOG_PIPE"', "FIFO architecture")
     require(wrapper, 'while IFS= read -r line <&8; do', "event-driven steady state")
+    require(wrapper,
+            'printf \'%s\\n\' "$now" > "$READY_UPTIME.tmp" || exit 1\n'
+            'chmod 0600 "$READY_UPTIME.tmp" || exit 1\n'
+            'mv -f "$READY_UPTIME.tmp" "$READY_UPTIME" || exit 1',
+            "atomic ready-marker publish")
     for token in ("sleep ", "pidof uperf", "killall", "uperf_process_count", "grep "):
         forbid(wrapper, token, "periodic wrapper regression")
     require(crash_gate, "< /proc/uptime", "crash-gate monotonic time source")
@@ -369,7 +379,8 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
         if item["policy_rule"].startswith("(allow performanced_34_0"):
             require(vendor_policy, item["policy_rule"], item["component"])
         else:
-            require(plat_policy, item["policy_rule"], item["component"])
+            require(plat_policy, item["policy_rule"],
+                    f'{item["component"]} {item["operation"]}')
 
     if vendor_policy:
         vendor_rule = "(allow performanced_34_0 vendor_sysfs_msm_perf (file (ioctl read write getattr setattr lock append map open)))"
