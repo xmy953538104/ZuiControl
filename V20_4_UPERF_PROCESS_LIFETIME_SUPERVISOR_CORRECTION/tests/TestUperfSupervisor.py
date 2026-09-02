@@ -289,11 +289,17 @@ class UperfSupervisorTests(unittest.TestCase):
         source = SOURCE.read_text(encoding="utf-8")
         wrapper = WRAPPER.read_text(encoding="utf-8")
         contexts = CONTEXTS.read_text(encoding="utf-8")
+        final_verifier = (ROOT / "scripts" / "VerifyZuiControlFlashPackage.ps1").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("PR_SET_CHILD_SUBREAPER", source)
         self.assertIn("waitpid(-1, &status, 0)", source)
         self.assertIn('9>&- &', wrapper)
         self.assertIn('wait "$supervisor_pid"', wrapper)
         self.assertIn("FIFO EOF", wrapper)
+        self.assertIn("'drain_uperf_log <&8 &'", final_verifier)
+        self.assertIn("'wait \"$supervisor_pid\"'", final_verifier)
+        self.assertNotIn("'while IFS= read -r line <&8; do'", final_verifier)
         self.assertIn(
             "/system/bin/zui_uperf_supervisor u:object_r:performanced_exec:s0", contexts
         )

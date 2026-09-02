@@ -601,7 +601,8 @@ try {
     }
     Assert-Contains $UperfService 'mkfifo "$LOG_PIPE"' 'event-driven Uperf log lifecycle pipe'
     Assert-Contains $UperfService 'IFS= read -r -t "$remaining" line <&8' 'bounded event-driven Uperf startup gate'
-    Assert-Contains $UperfService 'while IFS= read -r line <&8; do' 'timer-free steady-state Uperf event wait'
+    Assert-Contains $UperfService 'drain_uperf_log <&8 &' 'best-effort background Uperf log drain'
+    Assert-Contains $UperfService 'wait "$supervisor_pid"' 'blocking process-tree lifetime wait'
     Assert-Contains $UperfService 'terminated unexpectedly, try to get tombstone' 'Uperf worker crash event gate'
     Assert-Contains $UperfService 'setprop "$FAIL_SAFE_PROP" 1' 'Uperf rapid-worker fail-safe'
     Assert-NotContains $UperfService 'uperf_process_count' 'retired periodic process-count health check'
