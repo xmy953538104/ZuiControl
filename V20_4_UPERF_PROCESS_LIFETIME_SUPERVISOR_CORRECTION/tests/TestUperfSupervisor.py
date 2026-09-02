@@ -289,7 +289,7 @@ class UperfSupervisorTests(unittest.TestCase):
         source = SOURCE.read_text(encoding="utf-8")
         wrapper = WRAPPER.read_text(encoding="utf-8")
         contexts = CONTEXTS.read_text(encoding="utf-8")
-        final_verifier = (ROOT / "scripts" / "VerifyZuiControlFlashPackage.ps1").read_text(
+        final_verifier = (REPO / "scripts" / "VerifyZuiControlFlashPackage.ps1").read_text(
             encoding="utf-8"
         )
         self.assertIn("PR_SET_CHILD_SUBREAPER", source)
