@@ -1,6 +1,7 @@
 package com.zui.server.control;
 
 import com.android.server.wm.ActivityRecord;
+import com.android.server.wm.ActivityTaskSupervisor;
 
 public final class ZuiControlHooks {
     private ZuiControlHooks() {
@@ -13,10 +14,11 @@ public final class ZuiControlHooks {
         }
     }
 
-    public static void onTopResumedActivityChanged(ActivityRecord record) {
+    public static void onTopResumedActivityChanged(
+            ActivityTaskSupervisor authority, ActivityRecord record) {
         ZuiControlService service = ZuiControlService.getInstance();
         if (service != null) {
-            service.onTopResumedActivityChanged(record);
+            service.onTopResumedActivityChanged(authority, record);
         }
     }
 

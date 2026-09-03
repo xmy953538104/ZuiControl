@@ -15,6 +15,7 @@ on:
       - "V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/**"
       - "V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/**"
       - "V20_4_UPERF_PROCESS_LIFETIME_SUPERVISOR_CORRECTION/tests/**"
+      - "V20_4_UPERF_TOP_RESUMED_TRANSITIONAL_NULL_CORRECTION/tests/**"
       - "upstream/uperf/**"
       - ".github/workflows/build.yml"
       - "*.gradle.kts"
@@ -96,6 +97,7 @@ jobs:
           python3 V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py
           python3 V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
           python3 V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py
+          python3 V20_4_UPERF_TOP_RESUMED_TRANSITIONAL_NULL_CORRECTION/tests/TestTopResumedTransitionalNull.py
           python3 V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/TestUperfSelinuxStartup.py
           python3 V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/TestUperfSfanalysisCorrection.py
           python3 scripts/VerifyUperfRuntimeAccess.py \

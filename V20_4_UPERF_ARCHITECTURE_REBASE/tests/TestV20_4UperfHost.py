@@ -91,12 +91,15 @@ class SourceAuthorityTests(unittest.TestCase):
         hooks = text(HOOKS)
         patcher = text(PATCHER)
         service = text(SERVICE)
-        self.assertEqual(hooks.count("void onTopResumedActivityChanged(ActivityRecord record)"), 1)
+        self.assertEqual(hooks.count(
+            "ActivityTaskSupervisor authority, ActivityRecord record"), 1)
         self.assertEqual(patcher.count(
-            "ZuiControlHooks;->onTopResumedActivityChanged(Lcom/android/server/wm/ActivityRecord;)V"), 1)
+            "ZuiControlHooks;->onTopResumedActivityChanged("
+            "Lcom/android/server/wm/ActivityTaskSupervisor;"
+            "Lcom/android/server/wm/ActivityRecord;)V"), 1)
         self.assertIn("iput-object v1, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mTopResumedActivity", patcher)
         self.assertIn("uperfSceneAuthority=topResumedActivity", service)
-        for forbidden in ("dumpsys activity", "top -n", "AccessibilityService", "postDelayed"):
+        for forbidden in ("dumpsys activity", "top -n", "AccessibilityService"):
             self.assertNotIn(forbidden, service)
 
     def test_refresh_feeds_do_not_drive_uperf(self):
@@ -104,7 +107,7 @@ class SourceAuthorityTests(unittest.TestCase):
         self.assertNotIn("onSystemStateChanged", service)
         top_calls = service.count("onTopResumedChanged(")
         screen_calls = service.count("onInteractiveChanged(")
-        self.assertEqual(top_calls, 2)  # call site plus method declaration
+        self.assertEqual(top_calls, 3)  # valid/revalidated call sites plus declaration
         self.assertEqual(screen_calls, 2)
         self.assertIn("applyProfile(refreshProfile, reason, false);", service)
 

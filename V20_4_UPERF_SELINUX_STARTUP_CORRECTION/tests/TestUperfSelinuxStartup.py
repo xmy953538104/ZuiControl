@@ -117,13 +117,16 @@ class UperfSelinuxStartupTests(unittest.TestCase):
         self.assertNotIn("LOG_PIPE", wrapper)
         self.assertNotIn("mkfifo", wrapper)
 
-    def test_14_top_resumed_design_is_unchanged(self) -> None:
-        self.assertEqual(
-            sha256(REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlService.java"),
-            "b4903fffb41dfd21701c8e7fb694f32f6565c1cdc1e5f518a1f56a934149adea")
-        self.assertEqual(
-            sha256(REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java"),
-            "189973997fdb80a483ae631a5404e867e357239c5226091fa6b8ad964a0ed5d1")
+    def test_14_top_resumed_remains_the_sole_scene_authority(self) -> None:
+        service = text(
+            REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlService.java")
+        hooks = text(
+            REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java")
+        self.assertIn("uperfSceneAuthority=topResumedActivity", service)
+        self.assertIn("getZuiControlTopResumedActivity()", service)
+        self.assertIn("ActivityTaskSupervisor authority, ActivityRecord record", hooks)
+        self.assertNotIn("mFocusedApp", service)
+        self.assertNotIn("dumpsys activity", service)
 
     def test_15_tuning_and_binary_are_unchanged(self) -> None:
         self.assertEqual(canonical_text_sha256(REPO / "payload/system/etc/zui_control/uperf-sm8650.json"),

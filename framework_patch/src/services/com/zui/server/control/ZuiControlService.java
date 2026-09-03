@@ -25,6 +25,7 @@ import android.view.Display;
 
 import com.android.server.LocalServices;
 import com.android.server.wm.ActivityRecord;
+import com.android.server.wm.ActivityTaskSupervisor;
 import com.android.server.wm.WindowManagerInternal;
 
 import java.io.File;
@@ -39,6 +40,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class ZuiControlService extends Binder {
     private static final String TAG = "ZuiControl";
@@ -83,6 +85,7 @@ public final class ZuiControlService extends Binder {
     private static final int TX_SET_MODULE_ENABLED = 10;
     private static final int TX_EXPORT_LOG = 11;
     private static final int TX_NOTIFY_CONTROL_REQUEST = 12;
+    private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;
     private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;
     private static final int[] DISPLAY_HZ = new int[] {60, 90, 120, 144, 165};
     private static volatile ZuiControlService sInstance;
@@ -93,6 +96,15 @@ public final class ZuiControlService extends Binder {
     private final AtomicFile mProfileFile;
     private final Handler mWorker;
     private final UperfScenePolicy mUperfScenePolicy;
+    private final AtomicLong mTopResumedCallbackGeneration = new AtomicLong();
+    private final TopResumedNullState mTopResumedState = new TopResumedNullState();
+    private ActivityTaskSupervisor mTopResumedAuthority;
+    private final Runnable mTopResumedNullRevalidation = new Runnable() {
+        @Override
+        public void run() {
+            revalidateTopResumed("deferred");
+        }
+    };
     private final Map<String, Profile> mProfiles = new HashMap<>();
 
     private volatile FocusSnapshot mLatestFocus = new FocusSnapshot(
@@ -248,18 +260,92 @@ public final class ZuiControlService extends Binder {
         });
     }
 
-    public void onTopResumedActivityChanged(ActivityRecord record) {
+    public void onTopResumedActivityChanged(
+            ActivityTaskSupervisor authority, ActivityRecord record) {
+        final long generation = mTopResumedCallbackGeneration.incrementAndGet();
         final long eventNanos = SystemClock.elapsedRealtimeNanos();
         final String pkg = record == null ? "" : safe(record.packageName);
         final int userId = record == null ? 0 : record.mUserId;
         mWorker.post(new Runnable() {
             @Override
             public void run() {
-                mUperfScenePolicy.onTopResumedChanged(
-                        pkg, userId, "topResumed", eventNanos);
-                publishState();
+                handleTopResumedActivityChanged(
+                        authority, generation, pkg, userId, eventNanos);
             }
         });
+    }
+
+    private synchronized void handleTopResumedActivityChanged(
+            ActivityTaskSupervisor authority, long generation, String pkg,
+            int userId, long eventNanos) {
+        mTopResumedAuthority = authority;
+        if (!pkg.isEmpty()) {
+            mWorker.removeCallbacks(mTopResumedNullRevalidation);
+            if (!mTopResumedState.acceptValid(generation, pkg, userId)) {
+                return;
+            }
+            Log.i(TAG, "uperf_top_resumed event=topResumedValid generation="
+                    + generation + " package=" + pkg + " userId=" + userId);
+            mUperfScenePolicy.onTopResumedChanged(
+                    pkg, userId, "topResumedValid", eventNanos);
+            publishState();
+            return;
+        }
+        if (!mTopResumedState.deferNull(generation)) {
+            return;
+        }
+        mWorker.removeCallbacks(mTopResumedNullRevalidation);
+        mWorker.postDelayed(mTopResumedNullRevalidation,
+                TOP_RESUMED_NULL_REVALIDATE_DELAY_MS);
+        Log.i(TAG, "uperf_top_resumed event=topResumedNullDeferred generation="
+                + generation + " delayMs=" + TOP_RESUMED_NULL_REVALIDATE_DELAY_MS
+                + " stablePackage=" + mTopResumedState.stablePackage());
+    }
+
+    private synchronized void revalidateTopResumed(String trigger) {
+        final long generation = mTopResumedState.pendingGeneration();
+        if (!mTopResumedState.isPending(generation)
+                || generation != mTopResumedCallbackGeneration.get()) {
+            Log.i(TAG, "uperf_top_resumed event=topResumedRevalidateStale generation="
+                    + generation + " trigger=" + trigger);
+            return;
+        }
+        final ActivityRecord current;
+        try {
+            if (mTopResumedAuthority == null) {
+                throw new IllegalStateException("missing authority");
+            }
+            current = mTopResumedAuthority.getZuiControlTopResumedActivity();
+        } catch (Throwable t) {
+            mTopResumedState.authorityError(generation);
+            Log.w(TAG, "uperf_top_resumed event=topResumedRevalidateAuthorityError"
+                    + " generation=" + generation + " trigger=" + trigger, t);
+            return;
+        }
+        if (generation != mTopResumedCallbackGeneration.get()
+                || !mTopResumedState.isPending(generation)) {
+            Log.i(TAG, "uperf_top_resumed event=topResumedRevalidateStale generation="
+                    + generation + " trigger=" + trigger);
+            return;
+        }
+        final String pkg = current == null ? "" : safe(current.packageName);
+        final int userId = current == null ? 0 : current.mUserId;
+        final int result = mTopResumedState.revalidate(generation, pkg, userId);
+        if (result == TopResumedNullState.REVALIDATE_STALE) {
+            return;
+        }
+        final boolean nullConfirmed =
+                result == TopResumedNullState.REVALIDATE_NULL_CONFIRMED;
+        final String event = nullConfirmed
+                ? "topResumedNullConfirmed" : "topResumedRevalidated";
+        Log.i(TAG, "uperf_top_resumed event=" + event + " generation=" + generation
+                + " package=" + pkg + " userId=" + userId + " trigger=" + trigger);
+        if (result == TopResumedNullState.REVALIDATE_SAME) {
+            return;
+        }
+        mUperfScenePolicy.onTopResumedChanged(pkg, userId, event,
+                SystemClock.elapsedRealtimeNanos());
+        publishState();
     }
 
     public void onFocusedWindowChanged(String packageName, int displayId) {
@@ -1920,6 +2006,14 @@ public final class ZuiControlService extends Binder {
         synchronized String stateLines() {
             return "\nuperfGlobalMode=" + mGlobalMode
                     + "\nuperfSceneAuthority=topResumedActivity"
+                    + "\nuperfTopResumedRawPackage=" + mTopResumedState.rawPackage()
+                    + "\nuperfTopResumedStablePackage=" + mTopResumedState.stablePackage()
+                    + "\nuperfTopResumedPendingNull=" + mTopResumedState.pendingNull()
+                    + "\nuperfTopResumedGeneration=" + mTopResumedState.generation()
+                    + "\nuperfTopResumedRevalidateCount="
+                    + mTopResumedState.revalidateCount()
+                    + "\nuperfTopResumedLastRevalidateResult="
+                    + mTopResumedState.lastRevalidateResult()
                     + "\nuperfScenePackage=" + mScenePackage
                     + "\nuperfSceneUserId=" + mSceneUserId
                     + "\nuperfTopResumedSeen=" + mTopResumedSeen

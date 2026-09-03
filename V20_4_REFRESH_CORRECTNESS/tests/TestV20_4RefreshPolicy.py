@@ -694,7 +694,7 @@ class ProductionBindingTest(unittest.TestCase):
             self.assertNotIn(forbidden, self.hooks)
         focus_section = self.service[
             self.service.index("public void onFocusedAppChanged"):
-            self.service.index("private synchronized void handleFocusedActivity")
+            self.service.index("public void onTopResumedActivityChanged")
         ]
         for forbidden in ("Settings.", "getPackagesForUid", "setDisplayProperties",
                           "postDelayed", "sleep("):

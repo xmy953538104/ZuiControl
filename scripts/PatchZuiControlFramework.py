@@ -216,7 +216,12 @@ def patch_services_smali(dec_dir):
         ])
 
     supervisor_text = activity_task_supervisor.read_text(encoding="utf-8")
-    if "Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged" not in supervisor_text:
+    top_resumed_hook = (
+        "Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged("
+        "Lcom/android/server/wm/ActivityTaskSupervisor;"
+        "Lcom/android/server/wm/ActivityRecord;)V"
+    )
+    if top_resumed_hook not in supervisor_text:
         patch_text_file(activity_task_supervisor, [
             ("""    iput-object v1, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mTopResumedActivity:Lcom/android/server/wm/ActivityRecord;
 
@@ -224,11 +229,72 @@ def patch_services_smali(dec_dir):
 """,
              """    iput-object v1, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mTopResumedActivity:Lcom/android/server/wm/ActivityRecord;
 
-    invoke-static {v1}, Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged(Lcom/android/server/wm/ActivityRecord;)V
+    invoke-static {p0, v1}, Lcom/zui/server/control/ZuiControlHooks;->onTopResumedActivityChanged(Lcom/android/server/wm/ActivityTaskSupervisor;Lcom/android/server/wm/ActivityRecord;)V
 
     if-eqz v1, :cond_4
 """),
         ])
+
+    supervisor_text = activity_task_supervisor.read_text(encoding="utf-8")
+    authority_method = (
+        ".method public getZuiControlTopResumedActivity()"
+        "Lcom/android/server/wm/ActivityRecord;"
+    )
+    if authority_method not in supervisor_text:
+        supervisor_text = supervisor_text.rstrip() + """
+
+.method public getZuiControlTopResumedActivity()Lcom/android/server/wm/ActivityRecord;
+    .locals 3
+
+    iget-object v0, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mService:Lcom/android/server/wm/ActivityTaskManagerService;
+
+    iget-object v0, v0, Lcom/android/server/wm/ActivityTaskManagerService;->mGlobalLock:Lcom/android/server/wm/WindowManagerGlobalLock;
+
+    invoke-static {}, Lcom/android/server/wm/WindowManagerService;->boostPriorityForLockedSection()V
+
+    monitor-enter v0
+
+    :try_start_zui_control
+    iget-object v1, p0, Lcom/android/server/wm/ActivityTaskSupervisor;->mRootWindowContainer:Lcom/android/server/wm/RootWindowContainer;
+
+    invoke-virtual {v1}, Lcom/android/server/wm/RootWindowContainer;->getTopDisplayFocusedRootTask()Lcom/android/server/wm/Task;
+
+    move-result-object v1
+
+    if-eqz v1, :zui_control_no_top_root
+
+    invoke-virtual {v1}, Lcom/android/server/wm/Task;->getTopResumedActivity()Lcom/android/server/wm/ActivityRecord;
+
+    move-result-object v2
+
+    goto :zui_control_authority_done
+
+    :zui_control_no_top_root
+    const/4 v2, 0x0
+
+    :zui_control_authority_done
+    monitor-exit v0
+    :try_end_zui_control
+    .catchall {:try_start_zui_control .. :try_end_zui_control} :catchall_zui_control
+
+    invoke-static {}, Lcom/android/server/wm/WindowManagerService;->resetPriorityAfterLockedSection()V
+
+    return-object v2
+
+    :catchall_zui_control
+    move-exception p0
+
+    :try_start_zui_control_exit
+    monitor-exit v0
+    :try_end_zui_control_exit
+    .catchall {:try_start_zui_control_exit .. :try_end_zui_control_exit} :catchall_zui_control
+
+    invoke-static {}, Lcom/android/server/wm/WindowManagerService;->resetPriorityAfterLockedSection()V
+
+    throw p0
+.end method
+"""
+        activity_task_supervisor.write_text(supervisor_text, encoding="utf-8")
 
 
 def patch_framework(args):
