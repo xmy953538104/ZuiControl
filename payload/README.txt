@@ -34,7 +34,7 @@ Command plane:
 Health:
 - App/status health is read on demand through the zui_control Binder service.
 - No persistent zui_controld Settings/Binder heartbeat exists.
-- The V20.4 Uperf wrapper removes the 5-second process/grep loop. Startup uses one bounded FIFO readiness wait; steady state blocks on a native PR_SET_CHILD_SUBREAPER + waitpid helper. FIFO EOF ends only best-effort log observation and never represents whole-tree death. Uperf's manager handles normal worker exits, init remains the sole restart owner, and existing whole-service fail-safe semantics remain unchanged. Device validation is still required.
+- The V20.4 Uperf wrapper removes the 5-second process/grep loop and all logger FIFO handling, then execs the native supervisor. The supervisor checks the regular Uperf log every 100ms for at most 20 seconds, atomically publishes readiness, closes the log, and enters PR_SET_CHILD_SUBREAPER + blocking waitpid tree supervision. No shell or log polling remains in steady state. Init remains the sole restart owner and existing whole-service fail-safe semantics remain unchanged. Worker recovery/storm and steady-state behavior still require device validation.
 
 Runtime data:
 - /data/system/zui_control/profiles.prop

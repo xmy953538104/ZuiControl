@@ -53,7 +53,8 @@ class UperfSelinuxStartupTests(unittest.TestCase):
         self.assertEqual(report["removed_access"]["decision"], "REMOVE_ACCESS")
 
     def test_02_proc_uptime_has_narrow_decision(self) -> None:
-        self.assertIn("< /proc/uptime", text(WRAPPER))
+        self.assertNotIn("< /proc/uptime", text(WRAPPER))
+        self.assertIn("clock_gettime(CLOCK_MONOTONIC", text(REPO / "native/zui_uperf_supervisor.c"))
         self.assertIn("(allow performanced proc_uptime (file (getattr open read)))", text(POLICY))
 
     def test_03_no_broad_proc_file_allow(self) -> None:
@@ -109,11 +110,12 @@ class UperfSelinuxStartupTests(unittest.TestCase):
         for token in ("sleep ", "pidof uperf", "killall", "uperf_process_count", "grep "):
             self.assertNotIn(token, wrapper)
 
-    def test_13_fifo_design_is_unchanged(self) -> None:
+    def test_13_regular_log_supervisor_design_is_current(self) -> None:
         wrapper = text(WRAPPER)
-        self.assertIn('mkfifo "$LOG_PIPE"', wrapper)
-        self.assertIn('wait "$supervisor_pid"', wrapper)
-        self.assertIn('while IFS= read -r line; do', wrapper)
+        self.assertIn("LOG=/data/vendor/zui_control/log/uperf.log", wrapper)
+        self.assertIn('exec "$SUPERVISOR" "$CONFIG" "$LOG" "$READY_UPTIME"', wrapper)
+        self.assertNotIn("LOG_PIPE", wrapper)
+        self.assertNotIn("mkfifo", wrapper)
 
     def test_14_top_resumed_design_is_unchanged(self) -> None:
         self.assertEqual(
@@ -136,9 +138,11 @@ class UperfSelinuxStartupTests(unittest.TestCase):
                          "0161a9980777b4313d0a5935b0e861e1afea86c5b4eb07ef5b88e44f20143c62")
 
     def test_17_atomic_ready_marker_requires_file_rename(self) -> None:
-        wrapper = text(WRAPPER)
+        supervisor = text(REPO / "native/zui_uperf_supervisor.c")
         policy = text(POLICY)
-        self.assertIn('mv -f "$READY_UPTIME.tmp" "$READY_UPTIME" || exit 1', wrapper)
+        self.assertIn('memcpy(temporary + path_length, ".tmp", sizeof(".tmp"));', supervisor)
+        self.assertIn("fsync(fd)", supervisor)
+        self.assertIn("rename(temporary, path)", supervisor)
         self.assertIn(
             "(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink rename)))",
             policy,

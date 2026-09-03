@@ -134,10 +134,9 @@ class LifecycleTests(unittest.TestCase):
     def test_15_unexpected_tree_exit_uses_subreaper_and_init(self):
         wrapper = text(WRAPPER)
         rc = text(RC)
-        self.assertIn('mkfifo "$LOG_PIPE"', wrapper)
-        self.assertIn('wait "$supervisor_pid"', wrapper)
-        self.assertIn("FIFO EOF", wrapper)
-        self.assertNotIn("FIFO EOF means", wrapper)
+        self.assertIn('exec "$SUPERVISOR" "$CONFIG" "$LOG" "$READY_UPTIME"', wrapper)
+        self.assertNotIn("LOG_PIPE", wrapper)
+        self.assertNotIn("mkfifo", wrapper)
         self.assertIn("restart_period 5", rc)
 
     def test_16_explicit_stop_is_not_restart_action(self):
@@ -148,11 +147,11 @@ class LifecycleTests(unittest.TestCase):
         self.assertNotIn("start zui_uperf", stop_block.group())
         self.assertNotIn("trigger zui-scheduler-start", stop_block.group())
 
-    def test_17_bounded_rapid_crash(self):
+    def test_17_worker_text_observer_is_removed_but_whole_service_gate_remains(self):
         wrapper = text(WRAPPER)
         gate = text(CRASH_GATE)
-        self.assertIn('[ "$rapid_count" -ge 3 ]', wrapper)
-        self.assertIn('$((now - rapid_first)) -gt 20', wrapper)
+        self.assertNotIn("rapid_count", wrapper)
+        self.assertNotIn("terminated unexpectedly, try to get tombstone", wrapper)
         self.assertIn('[ "$runtime" -ge 0 ] && [ "$runtime" -le 2 ]', gate)
         self.assertIn('[ "$count" -lt 3 ] || setprop "$FAIL_SAFE_PROP" 1', gate)
 
@@ -163,17 +162,19 @@ class LifecycleTests(unittest.TestCase):
             self.assertNotIn(forbidden, wrapper)
         self.assertNotIn("sleep ", gate)
         self.assertNotIn("while ", gate)
-        self.assertEqual(wrapper.count('read -r -t "$remaining"'), 1)
-        self.assertEqual(wrapper.count("while IFS= read -r line; do"), 1)
+        self.assertNotIn('read -r -t "$remaining"', wrapper)
+        self.assertNotIn("while IFS= read -r line; do", wrapper)
 
     def test_19_single_init_instance(self):
         rc = text(RC)
         self.assertEqual(len(re.findall(r"(?m)^service zui_uperf\s", rc)), 1)
 
-    def test_20_only_event_driven_wrapper_children(self):
+    def test_20_wrapper_execs_native_supervisor_without_children(self):
         wrapper = text(WRAPPER)
-        self.assertEqual(wrapper.count(" 9>&- &\n"), 1)
-        self.assertEqual(wrapper.count("drain_uperf_log <&8 &\n"), 1)
+        self.assertEqual(
+            wrapper.count('exec "$SUPERVISOR" "$CONFIG" "$LOG" "$READY_UPTIME"\n'), 1
+        )
+        self.assertNotRegex(wrapper, r"(?m)^.*&\s*$")
         self.assertNotIn("inotifyd", wrapper)
         self.assertNotIn("tail -", wrapper)
 

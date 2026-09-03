@@ -14,7 +14,7 @@ ZuiControl 是 TB321FU / ZUI 16.1.11.072 的 ROM 内置系统控制工具，核�
 
 V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。健康的最近完整生产基线是 V20.4 Runtime Correction RunId `20260831170720`，其Refresh host/build/final-artifact/Boot Hard Gate和Targeted Device Gate均PASS，工作包为 **CLOSED WITH EXPLICIT BOUNDARIES**。当前设备实际运行Uperf失败候选RunId `20260901174600`：Android与system_server正常，但Uperf快速崩溃3次后`fail-safe=1/stopped`；它不是健康基线。新RunId `20260902080413`是尚未刷写的SFAnalysis定向修正，只达到人工Pre-Flash Gate。App 仍是 versionCode 49 / versionName 0.21.12。
 
-第二工作包 **V20.4 Uperf Architecture & Upstream Rebase** 使用framework top-resumed Activity作为Uperf exact-rule authority。已确认`-o FIFO`的logger EOF不是daemon-tree lifetime；当前source以同`performanced`域native subreaper + blocking waitpid监督真实descendant tree，FIFO只保留readiness/best-effort log职责。`sfanalysis=false`及既有权限边界不变；supervisor correction仍须通过独立pre-flash与真机Gate。
+第二工作包 **V20.4 Uperf Architecture & Upstream Rebase** 使用framework top-resumed Activity作为Uperf exact-rule authority。真机已确认Uperf会替换`-o` pathname并创建regular file，FIFO output不受支持；当前source以同`performanced`域native subreaper + blocking waitpid监督真实descendant tree，并在startup-only窗口读取regular log、发布ready marker。`sfanalysis=false`及既有权限边界不变；regular-log correction仍须通过独立pre-flash与真机Gate。
 
 旧 RunId `20260831094239` 刷前拒绝；`20260831104317` 因ART `VerifyError` Boot FAIL并完成恢复；`20260831134511` Boot PASS但device因kill switch、null-gap和OEM分类三项为PARTIAL；`20260901120647` framework boot正常但Uperf startup Gate FAIL。它们只保留为lineage，均不得再次刷写。Refresh权威结论见 [`V20_4_REFRESH_RUNTIME_DECISION.md`](V20_4_REFRESH_RUNTIME_DECISION.md) 与 [`08_BOOT_GATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/08_BOOT_GATE.md) 至 [`13_FINAL_RUNTIME_STATE.md`](V20_4_REFRESH_RUNTIME_CORRECTION/13_FINAL_RUNTIME_STATE.md)。
 
@@ -34,7 +34,7 @@ V20.3B 阶段已经关闭，persistent daemon retirement architecture = PASS。�
 
 `persistent zui_controld` 已退休：生产 init 中没有 `zui_controld` service/start。`/system/bin/zui_controld` 只保留为 `--oneshot-request` command executor，没有 refresh、scene detector 或后台 health publisher 职责。
 
-当前Uperf架构的 `/system/bin/zui_uperf_service` 不再做5秒process/grep轮询：startup只有一次bounded FIFO readiness wait，steady state只等待`zui_uperf_supervisor`的真实tree-lifetime事件。FIFO EOF只结束best-effort log drain，不能结束service。host静态/fixture PASS不等于真机steady-state PASS。
+当前Uperf架构的 `/system/bin/zui_uperf_service` 不再做5秒process/grep轮询，也不再创建FIFO；它完成既有cpuset放置后直接`exec zui_uperf_supervisor`。supervisor以100ms cadence、最多20秒读取`/data/vendor/zui_control/log/uperf.log`，处理创建、换inode、truncate和partial line，READY后原子发布marker并关闭日志观察，steady state只做blocking `waitpid(-1)`。host静态/fixture PASS不等于真机steady-state PASS。
 
 OEM GPU/thermal 继续保留安全和频率裁决；当前不宣称接管 Adreno KGSL。Uperf 的全局 cpuset 写入与更广义 knob ownership 留后续独立审计。
 

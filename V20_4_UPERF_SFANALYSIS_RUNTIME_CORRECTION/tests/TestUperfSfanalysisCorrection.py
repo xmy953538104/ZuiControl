@@ -74,7 +74,9 @@ class SfanalysisCorrectionTests(unittest.TestCase):
         self.assertEqual(presets["powersave"]["idle"]["cpu.baseSlackTime"], 0.8)
 
     def test_04_proc_uptime_correction_is_unchanged(self) -> None:
-        self.assertIn("< /proc/uptime", self.wrapper)
+        supervisor = text(REPO / "native/zui_uperf_supervisor.c")
+        self.assertNotIn("< /proc/uptime", self.wrapper)
+        self.assertIn("clock_gettime(CLOCK_MONOTONIC", supervisor)
         self.assertIn("(allow performanced proc_uptime (file (getattr open read)))", self.policy)
 
     def test_05_scheduler_active_guard_remains_removed(self) -> None:
@@ -85,8 +87,9 @@ class SfanalysisCorrectionTests(unittest.TestCase):
         )
 
     def test_06_fail_safe_design_is_unchanged(self) -> None:
-        self.assertIn('deadline=$(( $(uptime_seconds) + 20 ))', self.wrapper)
-        self.assertIn('[ "$rapid_count" -ge 3 ]', self.wrapper)
+        supervisor = text(REPO / "native/zui_uperf_supervisor.c")
+        self.assertIn("STARTUP_TIMEOUT_MS 20000L", supervisor)
+        self.assertNotIn("rapid_count", self.wrapper)
         self.assertIn('[ "$count" -lt 3 ] || setprop "$FAIL_SAFE_PROP" 1', self.crash_gate)
 
     def test_07_no_surfaceflinger_exec_file_allow_was_added(self) -> None:
@@ -101,10 +104,11 @@ class SfanalysisCorrectionTests(unittest.TestCase):
             r"\(allow\s+performanced\s+(?:proc|proc_type|fs_type)\s+\(file\s+",
         )
 
-    def test_09_fifo_polling_is_not_restored(self) -> None:
-        self.assertIn('mkfifo "$LOG_PIPE"', self.wrapper)
-        self.assertIn('wait "$supervisor_pid"', self.wrapper)
-        self.assertIn('while IFS= read -r line; do', self.wrapper)
+    def test_09_fifo_and_shell_polling_are_removed(self) -> None:
+        self.assertIn('exec "$SUPERVISOR" "$CONFIG" "$LOG" "$READY_UPTIME"', self.wrapper)
+        self.assertNotIn("mkfifo", self.wrapper)
+        self.assertNotIn("LOG_PIPE", self.wrapper)
+        self.assertNotIn("drain_uperf_log", self.wrapper)
         for token in ("sleep ", "pidof uperf", "killall", "uperf_process_count", "grep "):
             self.assertNotIn(token, self.wrapper)
 

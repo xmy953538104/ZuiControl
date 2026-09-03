@@ -2,90 +2,10 @@
 
 CONFIG=/data/vendor/zui_control/uperf/uperf.json
 LOG=/data/vendor/zui_control/log/uperf.log
-LOG_PIPE=/data/vendor/zui_control/uperf/.service_log_pipe
 READY_UPTIME=/data/vendor/zui_control/uperf/.service_ready_uptime
-FAIL_SAFE_PROP=sys.zui_control.uperf_fail_safe
 SUPERVISOR=/system/bin/zui_uperf_supervisor
 
-uptime_seconds() {
-    IFS=' ' read -r value _rest < /proc/uptime || return 1
-    printf '%s\n' "${value%%.*}"
-}
-
-write_log_line() {
-    printf '%s\n' "$1" >&7
-}
-
-# Uperf daemonizes but remains in this init service cgroup. The FIFO is only a
-# log/readiness source; native subreaper lifecycle is authoritative.
+# The exec keeps init's service PID/cgroup while removing the shell from the
+# steady process chain. The native supervisor owns readiness and tree lifetime.
 echo $$ > /dev/cpuset/background/tasks 2>/dev/null || true
-rm -f "$LOG_PIPE" "$READY_UPTIME"
-mkfifo "$LOG_PIPE" || exit 1
-chmod 0600 "$LOG_PIPE" || exit 1
-exec 7> "$LOG" || exit 1
-
-# Keep both FIFO ends open only until the first real logger record. FD 9 is
-# explicitly closed in the supervisor process and Uperf exec tree.
-exec 9<> "$LOG_PIPE" || exit 1
-$SUPERVISOR "$CONFIG" "$LOG_PIPE" 9>&- &
-supervisor_pid=$!
-exec 8< "$LOG_PIPE" || exit 1
-
-# Startup has one bounded event wait; the steady state below has no timer.
-ready=0
-dummy_open=1
-deadline=$(( $(uptime_seconds) + 20 ))
-while [ "$ready" -eq 0 ]; do
-    now="$(uptime_seconds)" || exit 1
-    remaining=$((deadline - now))
-    [ "$remaining" -gt 0 ] || exit 1
-    IFS= read -r -t "$remaining" line <&8 || exit 1
-    if [ "$dummy_open" -eq 1 ]; then
-        exec 9>&-
-        dummy_open=0
-    fi
-    write_log_line "$line"
-    case "$line" in
-        *" I Failed to start "*|*"Failed to start uperf"*) exit 1 ;;
-        ZUI_UPERF_SUPERVISOR_*) exit 1 ;;
-        *" I Uperf is running") ready=1 ;;
-    esac
-done
-
-now="$(uptime_seconds)" || exit 1
-printf '%s\n' "$now" > "$READY_UPTIME.tmp" || exit 1
-chmod 0600 "$READY_UPTIME.tmp" || exit 1
-mv -f "$READY_UPTIME.tmp" "$READY_UPTIME" || exit 1
-rm -f "$LOG_PIPE"
-
-drain_uperf_log() {
-    rapid_first=0
-    rapid_count=0
-    while IFS= read -r line; do
-        write_log_line "$line"
-        case "$line" in
-            *" terminated unexpectedly, try to get tombstone"*)
-                now="$(uptime_seconds)" || return 0
-                if [ "$rapid_count" -eq 0 ] || [ $((now - rapid_first)) -gt 20 ]; then
-                    rapid_first="$now"
-                    rapid_count=1
-                else
-                    rapid_count=$((rapid_count + 1))
-                fi
-                if [ "$rapid_count" -ge 3 ]; then
-                    setprop "$FAIL_SAFE_PROP" 1 || return 0
-                fi
-                ;;
-        esac
-    done
-}
-
-# The best-effort worker-crash observer may end at FIFO EOF. Service lifetime
-# remains blocked on the native supervisor and therefore the real process tree.
-drain_uperf_log <&8 &
-exec 8<&-
-wait "$supervisor_pid"
-
-# A true supervised-tree exit delegates recovery to init. Explicit init stop
-# still kills the whole service cgroup and does not add a second restart owner.
-exit 1
+exec "$SUPERVISOR" "$CONFIG" "$LOG" "$READY_UPTIME"

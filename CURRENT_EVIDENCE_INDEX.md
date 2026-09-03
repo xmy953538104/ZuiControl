@@ -1,15 +1,15 @@
 # ZuiControl Current Evidence Index
 
-更新时间：2026-09-02
+更新时间：2026-09-03
 最近关闭的完整基线：V20.3B / RunId `20260830181816` / source `30fe138a7ef531aeffbcf951e9113f4ae0d17cfe`
 健康的最近生产基线：V20.4 Refresh Runtime Correction RunId `20260831170720` / source `146e096c6a6bc8b3fee60349b856990fd9fb68d2` / CI `33375509612`
-当前设备实际现场：失败Uperf候选 RunId `20260901174600`；Android/system_server正常，`zui_uperf=stopped`、rapid crashes=3、fail-safe=1；本boot `sys.init.updatable_crashing*`为空
+当前设备实际现场：RunId `20260903085341`真实输出诊断已结束；Uperf按诊断流程停止，`fail-safe=0`、rapid counter=1；该停止态不是steady-running PASS
 
 本文件是未来会话的默认证据入口。先读结论与最小报告；只有数字受到质疑时才打开对应 raw 或结果RAR。不要递归扫描 `D:\3.VScode\Mi\ZuiControl_Archive\`。
 
 V20.3B 阶段已关闭；daemon-retirement architecture = PASS。rapid Uperf storm与T8 request-ID仍是carry-forward，未被改写成PASS。V20.4 Refresh Correctness / State Machine已由当前Runtime Correction真机Gate关闭，状态为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。
 
-V20.4 Uperf Architecture & Upstream Rebase的RunId `20260901120647`和`20260901174600`均在startup Gate **FAIL**。后者的`performanced → surfaceflinger_exec:file read`已与`sfanalysis=true`建立`CONFIRMED`因果链。新RunId `20260902080413`仅恢复`sfanalysis=false`，无新SurfaceFlinger权限，source/CI/113项host/final-super/semantic/DEX/CIL刷前Gate为PASS，状态为`READY FOR HUMAN PRE-FLASH / NOT FLASHED`。10分钟观察和完整矩阵未执行；旧qdl read-back仍为`NOT_PROVEN`，新flasher须在实际写入后完成七分区physical dump/hash。
+V20.4 Uperf Architecture & Upstream Rebase的RunId `20260901120647`和`20260901174600`均在startup Gate **FAIL**；后者的`sfanalysis=true`阻断原因已关闭。RunId `20260903085341`进一步在真机确认Uperf不支持logger FIFO output：旧FIFO inode 64216被删除，真实Uperf在同pathname创建regular inode 64218并写出2101-byte log/line48 READY，而wrapper等待旧FD约20.280s超时。当前source改用native startup-only regular-log checker；新候选仍须CI/final-super/pre-flash和真机Gate，10分钟观察与worker recovery/storm仍未执行。
 
 Archive根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md)
 
@@ -71,6 +71,7 @@ Archive根：[`../ZuiControl_Archive/README.md`](../ZuiControl_Archive/README.md
 | SFAnalysis host/CI/build | PASS / unflashed | RunId`20260902080413`；source`6894c9f`；CI`33573565557`；113/113；marker62；super`69870a…43f7` | [`07_BUILD_VERIFY.md`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/07_BUILD_VERIFY.md) | [`build_result.json`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/build_20260902080413/build_result.json), [`final_super_verifier.log`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/build_20260902080413/final_super_verifier.log) |
 | SFAnalysis final ART/CIL | PASS by exact-byte inheritance | 10/10 DEX entries identical；8/8 CIL identical to target-device DEX_RC/GATE_RC0 and SECILC_RC/GATE_RC0 reference | [`07_BUILD_VERIFY.md`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/07_BUILD_VERIFY.md) | [`art_dex_equivalence.txt`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/final_equivalence_20260902080413/art_dex_equivalence.txt), [`cil_equivalence.txt`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/final_equivalence_20260902080413/cil_equivalence.txt) |
 | Fixed-seven package | PRE-FLASH PASS | exact7；physical read-back PENDING FLASH；flashed=NO | [`08_NEXT_STARTUP_GATE.md`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/08_NEXT_STARTUP_GATE.md) | [`fixed_seven_package_receipt.txt`](V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/final_equivalence_20260902080413/fixed_seven_package_receipt.txt) |
+| Real output contract | DEVICE CONFIRMED | old FIFO inode64216 deleted；new regular inode64218；2101B；READY line48；wrapper timeout20.280s；probe AVC0 | [`V20_4_UPERF_REAL_OUTPUT_CONTRACT_DIAGNOSTIC.zip`](../V20_4_UPERF_REAL_OUTPUT_CONTRACT_DIAGNOSTIC.zip) | 同一ZIP内`PACKAGE/DIAGNOSTIC_DECISION.md`与`RAW/` |
 
 ## 被替代 lineage
 

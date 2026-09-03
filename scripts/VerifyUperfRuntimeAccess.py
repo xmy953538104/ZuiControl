@@ -67,42 +67,29 @@ CUSTOM_RULES = [
          "performanced_exec", "file", "read getattr map execute open execute_no_trans",
          "(allow performanced performanced_exec (file (read getattr map execute open execute_no_trans entrypoint)))",
          "launch pinned Uperf under the subreaper without creating a second SELinux domain"),
-    edge("wrapper", "performanced", "execute shell utilities", "/system/bin/toybox applets",
-         "toolbox_exec", "file", "read getattr map execute open execute_no_trans",
-         "(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))",
-         "rm, mkfifo, chmod and mv used by the fixed wrapper"),
     edge("wrapper", "performanced", "execute script interpreter", "/system/bin/sh",
          "shell_exec", "file", "read getattr map execute open execute_no_trans",
          "(allow performanced shell_exec (file (read getattr map execute open execute_no_trans)))",
          "run the fixed wrapper and its shell operations without a domain transition"),
-    edge("wrapper", "performanced", "read monotonic elapsed time", "/proc/uptime",
-         "proc_uptime", "file", "getattr open read",
-         "(allow performanced proc_uptime (file (getattr open read)))",
-         "startup deadline and 20-second worker-crash window require monotonic elapsed time"),
-    edge("wrapper/worker", "performanced", "traverse/create runtime paths",
+    edge("supervisor/Uperf", "performanced", "traverse/create runtime paths",
          "/data/vendor/zui_control/**", "zui_control_data_file", "dir",
          "getattr open read search write add_name remove_name create setattr",
          "(allow performanced zui_control_data_file (dir (getattr open read search write add_name remove_name create setattr)))",
-         "private FIFO, log, readiness marker and crash-state parent directories"),
-    edge("wrapper", "performanced", "atomically publish ready marker",
+         "regular startup log, readiness marker and crash-state parent directories"),
+    edge("supervisor", "performanced", "atomically publish ready marker",
          ".service_ready_uptime.tmp -> .service_ready_uptime", "zui_control_data_file", "file",
          "rename",
          "(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink rename)))",
          "publish readiness only after the complete timestamp is durable in the temporary file"),
-    edge("wrapper/worker", "performanced", "read/write/create runtime files",
+    edge("supervisor/Uperf/worker", "performanced", "read/write/create runtime files",
          "/data/vendor/zui_control/**", "zui_control_data_file", "file",
          "getattr open read write create append map watch watch_reads setattr unlink rename",
          "(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink rename)))",
-         "config, effective mode, log, marker, temporary and counter files"),
+         "config, effective mode, regular log, marker, temporary and counter files"),
     edge("wrapper/worker", "performanced", "read runtime symlinks",
          "/data/vendor/zui_control/**", "zui_control_data_file", "lnk_file", "getattr read",
          "(allow performanced zui_control_data_file (lnk_file (getattr read)))",
          "canonical A-SOUL and scheduler runtime symlinks"),
-    edge("wrapper", "performanced", "create/open/read/write/unlink FIFO",
-         "/data/vendor/zui_control/uperf/.service_log_pipe", "zui_control_data_file",
-         "fifo_file", "getattr open read write create setattr unlink",
-         "(allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))",
-         "bounded readiness and best-effort worker log observation; EOF is not process lifetime"),
     edge("wrapper/worker", "performanced", "place process in background cpuset",
          "/dev/cpuset/background/tasks", "cgroup", "file",
          "ioctl read write create getattr setattr lock append map open unlink",
@@ -113,16 +100,6 @@ CUSTOM_RULES = [
          "ioctl read write create getattr setattr lock open add_name remove_name search rmdir",
          "(allow performanced cgroup (dir (ioctl read write create getattr setattr lock open add_name remove_name search rmdir)))",
          "reach the cgroup tasks file"),
-    edge("wrapper", "performanced", "read fail-safe property",
-         "sys.zui_control.uperf_fail_safe", "zui_control_uperf_fail_safe_prop", "file",
-         "getattr map open read",
-         "(allow performanced zui_control_uperf_fail_safe_prop (file (getattr map open read)))",
-         "property client lookup before a set"),
-    edge("wrapper", "performanced", "set fail-safe property",
-         "sys.zui_control.uperf_fail_safe", "zui_control_uperf_fail_safe_prop",
-         "property_service", "set",
-         "(allow performanced zui_control_uperf_fail_safe_prop (property_service (set)))",
-         "three worker deaths in 20 seconds must stop the service"),
     edge("crash-gate", "shell", "traverse/update crash state",
          "/data/vendor/zui_control/uperf", "zui_control_data_file", "dir",
          "ioctl read write create getattr setattr lock rename open watch watch_reads add_name remove_name reparent search rmdir",
@@ -280,18 +257,15 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
     plat_policy = read(Path(args.plat_policy))
     vendor_policy = read(Path(args.vendor_policy)) if args.vendor_policy else ""
 
-    require(wrapper, "< /proc/uptime", "wrapper monotonic time source")
-    require(wrapper, 'mkfifo "$LOG_PIPE"', "FIFO architecture")
-    require(wrapper, 'drain_uperf_log <&8 &', "best-effort FIFO log drain")
-    require(wrapper, 'wait "$supervisor_pid"', "blocking process-tree lifetime wait")
-    require(wrapper, '$SUPERVISOR "$CONFIG" "$LOG_PIPE" 9>&- &',
-            "supervisor launch without dummy FIFO FD")
-    forbid(wrapper, "FIFO EOF means", "retired FIFO lifetime assumption")
-    require(wrapper,
-            'printf \'%s\\n\' "$now" > "$READY_UPTIME.tmp" || exit 1\n'
-            'chmod 0600 "$READY_UPTIME.tmp" || exit 1\n'
-            'mv -f "$READY_UPTIME.tmp" "$READY_UPTIME" || exit 1',
-            "atomic ready-marker publish")
+    require(wrapper, "LOG=/data/vendor/zui_control/log/uperf.log",
+            "regular Uperf startup log path")
+    require(wrapper, 'exec "$SUPERVISOR" "$CONFIG" "$LOG" "$READY_UPTIME"',
+            "shell-to-native supervisor exec")
+    forbid(wrapper, "LOG_PIPE", "retired FIFO path")
+    forbid(wrapper, "mkfifo", "retired FIFO creation")
+    forbid(wrapper, "drain_uperf_log", "retired worker crash text observer")
+    forbid(wrapper, 'wait "$supervisor_pid"', "retired background supervisor launch")
+    forbid(wrapper, "< /proc/uptime", "native startup clock ownership")
     for token in ("sleep ", "pidof uperf", "killall", "uperf_process_count", "grep "):
         forbid(wrapper, token, "periodic wrapper regression")
     require(crash_gate, "< /proc/uptime", "crash-gate monotonic time source")
@@ -319,7 +293,12 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
     for marker in (b"SfAnalysisListener", b"/system/bin/surfaceflinger", b"sfanalysis"):
         if marker not in uperf_binary:
             raise ValueError(f"pinned Uperf binary lacks SFAnalysis audit marker: {marker!r}")
-    for marker in (b"ZUI_UPERF_SUPERVISOR_EXEC_FAILED", b"supervised Uperf descendant tree is gone"):
+    for marker in (
+        b"ZUI_UPERF_SUPERVISOR_EXEC_FAILED",
+        b"supervised Uperf descendant tree is gone",
+        b"I Uperf is running",
+        b"Uperf readiness timed out after",
+    ):
         if marker not in supervisor_binary:
             raise ValueError(f"native supervisor lacks lifecycle marker: {marker!r}")
 
@@ -414,7 +393,7 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
         "graph_edges": len(graph),
         "graph": graph,
         "access_graph_completeness": {
-            "wrapper_supervisor_init_explicit_code": "COMPLETE_STATIC_REVIEW",
+            "wrapper_supervisor_regular_log_init_explicit_code": "COMPLETE_STATIC_REVIEW",
             "closed_source_config_modules": "PARTIAL_STATIC_REVIEW",
             "device_runtime_for_corrected_candidate": "NOT_YET_PROVEN",
         },
@@ -426,6 +405,12 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
             "decision": "REMOVE_ACCESS",
             "reason": "Android 14 explicit stop does not execute onrestart; target stop observation confirmed it",
         },
+        "retained_policy_not_required_by_new_readiness_path": [
+            "performanced toolbox_exec",
+            "performanced proc_uptime",
+            "performanced zui_control_data_file:fifo_file",
+            "performanced zui_control_uperf_fail_safe_prop",
+        ],
         "broad_policy_rejected": list(BROAD_POLICY_PATTERNS),
     }
 

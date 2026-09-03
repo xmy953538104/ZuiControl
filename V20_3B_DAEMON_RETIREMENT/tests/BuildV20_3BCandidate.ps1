@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$WorkspaceRoot = 'D:\3.VScode\Mi',
-    [ValidateSet('V20_3B', 'V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR')]
+    [ValidateSet('V20_3B', 'V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')]
     [string]$Phase = 'V20_3B',
     [Parameter(Mandatory)]
     [ValidatePattern('^\d{14}$')]
@@ -28,6 +28,7 @@ $phaseDisplay = switch ($Phase) {
     'V20_4_UPERF_SFANALYSIS' { 'V20.4 Uperf SFAnalysis runtime correction' }
     'V20_4_UPERF_READY_MARKER' { 'V20.4 Uperf ready-marker SELinux correction' }
     'V20_4_UPERF_SUPERVISOR' { 'V20.4 Uperf process-lifetime supervisor correction' }
+    'V20_4_UPERF_REGULAR_LOG' { 'V20.4 Uperf regular-log startup readiness correction' }
     default { 'V20.3B' }
 }
 $phaseDirectory = switch ($Phase) {
@@ -37,6 +38,7 @@ $phaseDirectory = switch ($Phase) {
     'V20_4_UPERF_SFANALYSIS' { 'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION' }
     'V20_4_UPERF_READY_MARKER' { 'V20_4_UPERF_READY_MARKER_SELINUX_CORRECTION' }
     'V20_4_UPERF_SUPERVISOR' { 'V20_4_UPERF_PROCESS_LIFETIME_SUPERVISOR_CORRECTION' }
+    'V20_4_UPERF_REGULAR_LOG' { 'V20_4_UPERF_REGULAR_LOG_READINESS_CORRECTION' }
     default { 'V20_3B_DAEMON_RETIREMENT' }
 }
 $scratchPrefix = "${phaseSlug}_scratch_"
@@ -146,7 +148,7 @@ $trackedBuildPaths = @(
     'V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py',
     'V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1'
 )
-if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR')) {
+if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) {
     $trackedBuildPaths += @(
         'app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt',
         'app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt',
@@ -158,7 +160,7 @@ if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_
         'V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1'
     )
 }
-if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR')) {
+if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) {
     $trackedBuildPaths += @(
         'payload/README.txt',
         'payload/system/bin/zui_uperf_service',
@@ -173,7 +175,7 @@ if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSI
         'V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/android14_init_stop_contract.txt'
     )
 }
-if ($Phase -in @('V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR')) {
+if ($Phase -in @('V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) {
     $trackedBuildPaths += @(
         'scripts/FlashZuiControl9008.ps1',
         'scripts/VerifyZuiControl9008Readback.py',
@@ -183,13 +185,20 @@ if ($Phase -in @('V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UP
         'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/qdl_flag_only_fixture.txt'
     )
 }
-if ($Phase -eq 'V20_4_UPERF_SUPERVISOR') {
+if ($Phase -in @('V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) {
     $trackedBuildPaths += @(
         'native/zui_uperf_supervisor.c',
         'payload/system/bin/zui_uperf_supervisor',
         'V20_4_UPERF_PROCESS_LIFETIME_SUPERVISOR_CORRECTION/tests/TestUperfSupervisor.py',
         'V20_4_UPERF_PROCESS_LIFETIME_SUPERVISOR_CORRECTION/tests/dummy_uperf.py',
         'V20_4_UPERF_PROCESS_LIFETIME_SUPERVISOR_CORRECTION/tests/BuildV20_4UperfSupervisorCandidate.ps1'
+    )
+}
+if ($Phase -eq 'V20_4_UPERF_REGULAR_LOG') {
+    $trackedBuildPaths += @(
+        'V20_4_UPERF_REGULAR_LOG_READINESS_CORRECTION/tests/TestUperfRegularLogReadiness.py',
+        'V20_4_UPERF_REGULAR_LOG_READINESS_CORRECTION/tests/dummy_uperf.py',
+        'V20_4_UPERF_REGULAR_LOG_READINESS_CORRECTION/tests/BuildV20_4UperfRegularLogCandidate.ps1'
     )
 }
 if ($Phase -eq 'V20_4_UPERF_READY_MARKER') {
@@ -411,8 +420,8 @@ try {
     $artifactJson = Invoke-Captured $gh.Source api "repos/xmy953538104/ZuiControl/actions/runs/$CiRunId/artifacts"
     $runArtifacts = @((($artifactJson | ConvertFrom-Json).artifacts))
     $requiredArtifactNames = @('ZuiControl-release-apk', 'zui-control-v19-payload')
-    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR')) { $requiredArtifactNames += 'zui-control-init-gate' }
-    if ($Phase -eq 'V20_4_UPERF_SUPERVISOR') { $requiredArtifactNames += 'zui-control-supervisor-gate' }
+    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) { $requiredArtifactNames += 'zui-control-init-gate' }
+    if ($Phase -in @('V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) { $requiredArtifactNames += 'zui-control-supervisor-gate' }
     $requiredArtifacts = foreach ($name in $requiredArtifactNames) {
         $match = @($runArtifacts | Where-Object { [string]$_.name -eq $name })
         if ($match.Count -ne 1 -or [bool]$match[0].expired) {
@@ -470,7 +479,7 @@ try {
         artifacts = @($requiredArtifacts)
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evidence 'ci_run_provenance.json') -Encoding UTF8
 
-    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR')) {
+    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) {
         $initGate = Join-Path $ciArtifact 'zui-control-init-gate'
         Require-Directory $initGate
         foreach ($name in @('result.txt', 'exit_code.txt', 'host_init_verifier_sha256.txt', 'input_sha256.txt')) {
@@ -483,15 +492,21 @@ try {
         }
         Copy-Item -LiteralPath $initGate -Destination (Join-Path $evidence 'host_init_gate') -Recurse
     }
-    if ($Phase -eq 'V20_4_UPERF_SUPERVISOR') {
+    if ($Phase -in @('V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) {
         $supervisorGate = Join-Path $ciArtifact 'zui-control-supervisor-gate'
         Require-Directory $supervisorGate
         foreach ($name in @('host_fixture_results.json', 'host_fixture_transcript.txt', 'android_binary_sha256.txt', 'android_elf.txt', 'android_rebuild_result.txt')) {
             Require-File (Join-Path $supervisorGate $name)
         }
         $fixtureResult = Get-Content -Raw -LiteralPath (Join-Path $supervisorGate 'host_fixture_results.json') | ConvertFrom-Json
-        if ([string]$fixtureResult.result -ne 'PASS' -or
-            [string]$fixtureResult.old_fifo_lifetime_assumption_fixture -ne 'FAIL_EXPECTED' -or
+        $fixtureContractPass = if ($Phase -eq 'V20_4_UPERF_REGULAR_LOG') {
+            [string]$fixtureResult.regular_log_readiness_fixture -eq 'PASS' -and
+            [string]$fixtureResult.subreaper_fixture -eq 'PASS' -and
+            [string]$fixtureResult.steady_shell_process -eq 'ABSENT'
+        } else {
+            [string]$fixtureResult.old_fifo_lifetime_assumption_fixture -eq 'FAIL_EXPECTED'
+        }
+        if ([string]$fixtureResult.result -ne 'PASS' -or -not $fixtureContractPass -or
             (Get-Content -Raw -LiteralPath (Join-Path $supervisorGate 'android_rebuild_result.txt')).Trim() -ne 'ANDROID_SUPERVISOR_REBUILD=PASS') {
             throw 'CI Uperf supervisor fixture/rebuild receipt is not a PASS.'
         }
@@ -511,17 +526,20 @@ try {
         throw 'Scratch source commit mismatch.'
     }
     Invoke-Checked $python (Join-Path $scratchRepo 'V20_3B_DAEMON_RETIREMENT\tests\TestV20_3BPolicy.py')
-    if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR')) {
+    if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) {
         Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_REFRESH_CORRECTNESS\tests\TestV20_4RefreshPolicy.py')
     }
-    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR')) {
+    if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) {
         Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_UPERF_ARCHITECTURE_REBASE\tests\TestV20_4UperfHost.py')
         Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_UPERF_SELINUX_STARTUP_CORRECTION\tests\TestUperfSelinuxStartup.py')
-        if ($Phase -in @('V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR')) {
+        if ($Phase -in @('V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) {
             Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION\tests\TestUperfSfanalysisCorrection.py')
         }
         if ($Phase -eq 'V20_4_UPERF_READY_MARKER') {
             Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_UPERF_READY_MARKER_SELINUX_CORRECTION\tests\TestUperfReadyMarkerSelinux.py')
+        }
+        if ($Phase -eq 'V20_4_UPERF_REGULAR_LOG') {
+            Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_UPERF_REGULAR_LOG_READINESS_CORRECTION\tests\TestUperfRegularLogReadiness.py')
         }
         Invoke-Checked $python (Join-Path $scratchRepo 'scripts\VerifyUperfRuntimeAccess.py') `
             --mode source `
@@ -710,7 +728,7 @@ try {
     [IO.File]::WriteAllLines((Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt'), $sumLines, [Text.UTF8Encoding]::new($false))
     Copy-Item -LiteralPath (Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt') -Destination (Join-Path $evidence 'candidate_sha256.txt')
 
-    $verifierName = if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR')) {
+    $verifierName = if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG')) {
         'VerifyZuiControlFinalSuper.ps1'
     } else {
         'VerifyZuiControlFlashPackage.ps1'
