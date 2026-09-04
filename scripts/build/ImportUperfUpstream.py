@@ -155,9 +155,7 @@ def main() -> int:
     production_binary = repo / "payload/system/bin/uperf"
     production_config = repo / "payload/system/etc/zui_control/uperf-sm8650.json"
     if output == repo or repo in output.parents:
-        allowed_report_root = repo / "V20_4_UPERF_ARCHITECTURE_REBASE" / "raw"
-        if output != allowed_report_root and allowed_report_root not in output.parents:
-            raise SystemExit("output inside repo is restricted to the Uperf raw report tree")
+        raise SystemExit("output must be outside the source repository")
     if not zip_path.is_file() or not production_binary.is_file() or not production_config.is_file():
         raise SystemExit("missing ZIP or production baseline")
 

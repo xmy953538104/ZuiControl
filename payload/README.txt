@@ -1,4 +1,4 @@
-ZuiControl production payload — V20.4 Golden / App V49 target
+ZuiControl production payload — App V49 target
 
 Build/package target:
 - /system/priv-app/ZuiControlV49/ZuiControl.apk
@@ -34,7 +34,7 @@ Command plane:
 Health:
 - App/status health is read on demand through the zui_control Binder service.
 - No persistent zui_controld Settings/Binder heartbeat exists.
-- The V20.4 Golden Uperf wrapper removes the 5-second process/grep loop and all logger FIFO handling, then execs the native supervisor. The supervisor checks the regular Uperf log every 100ms for at most 20 seconds, atomically publishes readiness, closes the log, and enters PR_SET_CHILD_SUBREAPER + blocking waitpid tree supervision. No shell or log polling remains in steady state. Init remains the sole restart owner and existing whole-service fail-safe semantics remain unchanged. Golden device validation passed startup readiness, a 610-second steady soak, and one real descendant-tree death/recovery; worker fault/storm injection remains backlog.
+- The Uperf wrapper has no 5-second process/grep loop or logger FIFO handling; it execs the native supervisor. The supervisor checks the regular Uperf log every 100ms for at most 20 seconds, atomically publishes readiness, closes the log, and enters PR_SET_CHILD_SUBREAPER + blocking waitpid tree supervision. No shell or log polling remains in steady state. Init remains the sole restart owner and existing whole-service fail-safe semantics remain unchanged.
 
 Runtime data:
 - /data/system/zui_control/profiles.prop
@@ -46,7 +46,7 @@ Runtime data:
 - /data/vendor/asopt.conf -> /data/vendor/zui_control/asoul/asopt.conf
 - /data/vendor/zui_control/log/
 
-V20.4 Golden refresh contract and boundaries:
+Current refresh contract and boundaries:
 - Physical refresh is foreground-only. SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input methods, and overlays use default120 when they own a real non-empty focused Window; Launcher remains configurable.
 - lastNonTransientScenePackage is a configuration target only. Transient UI never inherits the previous business App's physical Hz.
 - Empty focused-Window transitions retain the last proven non-empty policy until the next non-empty edge; they do not become a default120 owner.

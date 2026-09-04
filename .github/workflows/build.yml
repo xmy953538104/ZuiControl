@@ -9,13 +9,7 @@ on:
       - "native/**"
       - "framework_patch/**"
       - "scripts/**"
-      - "V20_3B_DAEMON_RETIREMENT/tests/**"
-      - "V20_4_REFRESH_CORRECTNESS/tests/**"
-      - "V20_4_UPERF_ARCHITECTURE_REBASE/tests/**"
-      - "V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/**"
-      - "V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/**"
-      - "V20_4_UPERF_PROCESS_LIFETIME_SUPERVISOR_CORRECTION/tests/**"
-      - "V20_4_UPERF_TOP_RESUMED_TRANSITIONAL_NULL_CORRECTION/tests/**"
+      - "tests/**"
       - "upstream/uperf/**"
       - ".github/workflows/build.yml"
       - "*.gradle.kts"
@@ -50,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/uperf-supervisor-gate"
-          python3 V20_4_UPERF_PROCESS_LIFETIME_SUPERVISOR_CORRECTION/tests/TestUperfSupervisor.py \
+          python3 tests/uperf/supervisor/TestUperfSupervisor.py \
             --receipt-dir "$RUNNER_TEMP/uperf-supervisor-gate" 2>&1 | \
             tee "$RUNNER_TEMP/uperf-supervisor-gate/host_fixture_transcript.txt"
 
@@ -86,21 +80,21 @@ jobs:
           python3 -m py_compile scripts/build/ApplyZuiControlPayload.py
           python3 -m py_compile scripts/build/PatchZuiControlFramework.py
           python3 -m py_compile scripts/build/ImportUperfUpstream.py
-          python3 -m py_compile scripts/verify/VerifyUperfRuntimeAccess.py
-          python3 -m py_compile scripts/verify/VerifyZuiControl9008Readback.py
-          python3 -m py_compile tools/PatchAsoulOptConfigPath.py
-          python3 tools/PatchAsoulOptConfigPath.py payload/system/bin/AsoulOpt
+          python3 -m py_compile tests/selinux/TestUperfRuntimeAccess.py
+          python3 -m py_compile tests/flash/VerifyFixedSevenReadback.py
+          python3 -m py_compile scripts/build/PatchAsoulOptConfigPath.py
+          python3 scripts/build/PatchAsoulOptConfigPath.py payload/system/bin/AsoulOpt
           bash -n payload/system/bin/zui_controld
           bash -n payload/system/bin/zui_uperf_service
           bash -n payload/system/etc/zui_control/zui_uperf_crash_gate.sh
-          bash scripts/verify/TestZuiControldTransactions.sh
-          python3 V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py
-          python3 V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
-          python3 V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py
-          python3 V20_4_UPERF_TOP_RESUMED_TRANSITIONAL_NULL_CORRECTION/tests/TestTopResumedTransitionalNull.py
-          python3 V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/TestUperfSelinuxStartup.py
-          python3 V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/TestUperfSfanalysisCorrection.py
-          python3 scripts/verify/VerifyUperfRuntimeAccess.py \
+          bash tests/command_plane/TestZuiControldTransactions.sh
+          python3 tests/command_plane/TestCommandPlaneArchitecture.py
+          python3 tests/refresh/TestRefreshStateMachine.py
+          python3 tests/uperf/architecture/TestUperfArchitecture.py
+          python3 tests/uperf/top_resumed/TestUperfTopResumedStateMachine.py
+          python3 tests/uperf/startup/TestUperfStartupPolicy.py
+          python3 tests/uperf/startup/TestUperfStartupBoundaries.py
+          python3 tests/selinux/TestUperfRuntimeAccess.py \
             --mode source \
             --system-root payload/system \
             --file-contexts payload/patches/plat_file_contexts_add.txt \
@@ -160,12 +154,12 @@ jobs:
           set -uo pipefail
           receipt="$RUNNER_TEMP/init-gate/receipt"
           sha256sum payload/system/etc/init/zui_scheduler.rc \
-            V20_4_UPERF_ARCHITECTURE_REBASE/tests/host_init_property_contexts \
+            tests/fixtures/host_init_property_contexts \
             > "$receipt/input_sha256.txt"
           cmd=(
             "$RUNNER_TEMP/init-gate/otatools/bin/host_init_verifier"
             -p /dev/null
-            "--property-contexts=$PWD/V20_4_UPERF_ARCHITECTURE_REBASE/tests/host_init_property_contexts"
+            "--property-contexts=$PWD/tests/fixtures/host_init_property_contexts"
             "$PWD/payload/system/etc/init/zui_scheduler.rc"
           )
           printf '%q ' "${cmd[@]}" > "$receipt/argv.txt"
@@ -228,5 +222,5 @@ jobs:
       - name: Upload payload
         uses: actions/upload-artifact@v4
         with:
-          name: zui-control-v19-payload
+          name: zui-control-payload
           path: payload

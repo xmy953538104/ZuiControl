@@ -1,0 +1,9 @@
+SOURCE=historical device startup failure; minimized regression fixture
+avc: denied { read } for comm="uperf" name="surfaceflinger" scontext=u:r:performanced:s0 tcontext=u:object_r:surfaceflinger_exec:s0 tclass=file permissive=0
+avc: denied { read } for comm="uperf" name="surfaceflinger" scontext=u:r:performanced:s0 tcontext=u:object_r:surfaceflinger_exec:s0 tclass=file permissive=0
+LOGCAT_PROC_UPTIME_AVC=0
+LOGCAT_SCHEDULER_ACTIVE_AVC=0
+SERVICE_RAPID_CRASH_COUNTER=3
+sys.zui_control.uperf_fail_safe=1
+init.svc.zui_uperf=stopped
+UPERF_STARTUP_STABILITY_GATE=FAIL

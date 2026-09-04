@@ -22,6 +22,3 @@ payload/system/bin/zui_uperf_service text eol=lf
 payload/system/bin/AsoulOpt binary
 payload/system/etc/hosts text eol=lf
 *.apk binary
-
-# Immutable build evidence must retain its captured bytes and remain out of text diffs.
-V20_4_REFRESH_CORRECTNESS/raw/build_*/** binary
