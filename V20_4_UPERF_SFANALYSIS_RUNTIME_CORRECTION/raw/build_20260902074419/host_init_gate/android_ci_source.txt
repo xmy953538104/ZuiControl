@@ -1,5 +1,0 @@
-artifact_page=https://ci.android.com/builds/submitted/16200779/aosp_arm64-userdebug/latest/otatools.zip
-branch=aosp-android14-gsi
-buildId=16200779
-target=aosp_arm64-userdebug
-artifact=otatools.zip
