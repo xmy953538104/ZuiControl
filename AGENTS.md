@@ -6,13 +6,31 @@
 
 当前设备/系统：TB321FU / ZUI 16.1.11.072。
 
-当前工程阶段：**V20.4 — Final Stability & Efficiency**。第一工作包 **V20.4 Refresh Correctness / State Machine** 已由 Runtime Correction RunId `20260831170720` 完成真机Gate，结论为 **PASS / CLOSED WITH EXPLICIT BOUNDARIES**。第二工作包 **V20.4 Uperf Architecture & Upstream Rebase** 的RunId `20260901120647`与定向修正`20260901174600`均在startup Gate失败；后者已确认是启用可选SFAnalysis导致`performanced → surfaceflinger_exec:file read` blocking AVC。新RunId `20260902080413`仅把`sfanalysis=true`恢复为`false`，source/CI/113项host/final-super/semantic/DEX/CIL刷前门禁均PASS，状态为 **READY FOR HUMAN PRE-FLASH GATE / NOT FLASHED**。不得自行刷写、进入完整Uperf矩阵或开始V21。
+当前工程状态：**V21 Phase 1 engineering baseline 已完成；Phase 2 未开始**。
+V20.4 Final Closure 已 PASS，状态为 **CLOSED WITH EXPLICIT BOUNDARIES**。
+唯一 Golden source 是 commit `29f23f8d590b88f0d472c12373366a9ef14e8330`，
+Build RunId `20260903144915`，CI `33724674012`，Device Gate RunId
+`20260903153438`。权威镜像/runtime hash、closure boundaries 与 backlog 见
+[`V20_4_GOLDEN_BASELINE.md`](V20_4_GOLDEN_BASELINE.md) 和机器可读
+[`V20_4_GOLDEN_BASELINE.json`](V20_4_GOLDEN_BASELINE.json)。
 
-最近一次关闭的完整基线是 V20.3B RunId `20260830181816`。V20.3B persistent daemon retirement architecture = **PASS**，阶段已经关闭。历史 decision 中的 `PARTIAL / HOLD FOR HUMAN REVIEW` 是当时的阶段转换 gate，现已解除，不得再用它阻止 V20.4，也不得要求重做 V20.3B。rapid Uperf crash storm、T8 request-ID 等未闭环发现没有变成 PASS，而是按归属正式 carry forward。
+本工程基线继续冻结全部 V20.4 production runtime。Phase 1 只包含 docs、host
+tooling、host tests、archive metadata 与显式 allowlist workspace cleanup，未修改
+App/framework/payload/native production runtime，未构建 ROM，未刷机。任何后续 production 工作
+必须先从 Golden commit 建立独立 worktree，并显式声明 `BASELINE_SOURCE` 和
+`BASELINE_IMAGE_HASHES`。禁止从旧失败候选、目录时间或旧 canonical B072 推断
+baseline。
 
-当前设备运行失败的 RunId `20260901174600`，boot ID `2d7d16ae-4ca7-4a44-b09e-7de41e1e8422`。Android/system_server PID/starttime `2682/983`、Binder、SELinux和asoulOpt正常，715.56秒终态仍稳定；但`zui_uperf=stopped`、`.service_rapid_crashes=3`、`sys.zui_control.uperf_fail_safe=1`，该时长只是失败现场保持，不是Uperf-running PASS。本次boot的`sys.init.updatable_crashing*`为空。不得清property、手工启动Uperf、reboot来美化现场或补刷其它候选。健康的最近完整生产基线仍是已验证的 Refresh Runtime Correction RunId `20260831170720`，但当前设备并未恢复到该基线。
+V20.3B persistent daemon retirement architecture = **PASS**，阶段已经关闭。
+历史 `PARTIAL / HOLD` 只表示当时的过渡 Gate；rapid Uperf crash storm、T8
+request-ID 等残余项保持 backlog，不得改写成 PASS，也不得要求重做 V20.3B。
 
-旧 lineage 必须保留但不得覆盖当前状态：`20260831104317` 因ART `VerifyError` Boot FAIL并已恢复；`20260831134511` Boot PASS但因kill switch不收敛、null-gap intermediate120与OEM误分类而device PARTIAL；`20260901120647` framework boot正常但Uperf startup Gate FAIL；三者均不得再次刷写。当前release UI未接TX10，记为 `APP_UI_TX10=NOT_EXECUTED / SIGNED_APP_TX10_DEVICE_PATH_NOT_AVAILABLE`。
+旧 lineage 必须保留但不得覆盖 Golden：`20260831104317` 因 ART VerifyError
+Boot FAIL；`20260831134511` 为 device PARTIAL；`20260901120647`、
+`20260901174600`、`20260902150110` 与 `20260903081352` 均在 Uperf startup/
+lifetime Gate FAIL；`20260903110608` 是 regular-log development PASS，但被最终
+transitional-null Golden 取代。状态分类见
+[`docs/maintenance/v21-phase1/ARCHIVE_CLASSIFICATION.md`](docs/maintenance/v21-phase1/ARCHIVE_CLASSIFICATION.md)。
 
 当前生产 App 源码仍是 versionCode 49 / versionName 0.21.12 / `ZuiControlV49`，Binder version 仍返回 19。这些是已验证候选的制品标识，不是当前工程阶段号，不得据此把规则退回 V19。
 
@@ -23,10 +41,27 @@
 3. `README.md`
 4. 当前生产源码
 5. `CURRENT_EVIDENCE_INDEX.md`
+6. `V20_4_GOLDEN_BASELINE.md` / `.json`
 
-`CODEX_NEW_SESSION_HANDOFF_V20_3B.md` 与 `TAKEOVER_REPORT.md` 已完成使命，位于仓库外 `D:\3.VScode\Mi\ZuiControl_Archive\handoffs\`，只作历史追溯。旧阶段报告、raw、device package、Perfetto 和 logcat 也已移到 `D:\3.VScode\Mi\ZuiControl_Archive\`。默认不得扫描 archive；只有 `CURRENT_EVIDENCE_INDEX.md` 指向的具体结论受到质疑时，才定向读取对应最小文件。
+历史 handoff、失败镜像和大型 raw/trace/log 不是当前上下文。它们的
+可重用因果已压缩到 `scripts/docs/`；默认不得扫描历史目录或使用
+已失败 candidate。只有 `CURRENT_EVIDENCE_INDEX.md` 指向的具体 Golden 数字
+受到质疑时，才定向读取 closure evidence。
 
 不要为了“了解项目”通读 V19、V20.1 Native Auto、旧 daemon、AppOpt/XML/ZuiPP 或全部失败 device run。
+
+### 0.1 改相关代码前必读
+
+| 触发主题 | 必读 canonical 文档 |
+| --- | --- |
+| Refresh / focused Window / freeform / split / PiP / empty focus / OEM transient | `scripts/docs/01_Refresh_最终架构与踩坑.md` |
+| Uperf / FIFO / sfanalysis / supervisor / waitpid / top-resumed / worker | `scripts/docs/02_Uperf_最终架构与踩坑.md` |
+| asoulOpt / affinity / cpuset / scheduler | `scripts/docs/03_asoulOpt_最终架构与踩坑.md` |
+| framework.jar / services.jar / system_server / DEX / ART / smali | `scripts/docs/04_Framework_ART_踩坑与永久Gate.md` |
+| SELinux / sepolicy / CIL / AVC / domain | `scripts/docs/05_SELinux_踩坑与永久Gate.md` |
+| 9008 / EDL / qdl / firehose / rawprogram / flash / read-back | `scripts/docs/06_9008刷机_踩坑与永久Gate.md` |
+
+不得依赖模型“记得”历史；上表是开工前 Gate。
 
 ## 1. 命名规则
 
@@ -131,7 +166,7 @@ Android init 负责：
 
 Uperf 是 CPU/power-model 执行 owner；asoulOpt 是唯一 per-task affinity/context-scheduler owner；OEM/thermal 继续保留 GPU/热安全裁决边界。Uperf sysfs 模块仍会写全局 cpuset mask，因此更广义的 topology/knob ownership 必须在后续独立 scheduler-ownership 工作包审计，不能混入当前 refresh state-machine 修改。
 
-V20.4 Uperf架构已删除 `/system/bin/zui_uperf_service` 的5秒process/grep自检和logger FIFO。真机RunId `20260903085341`证明Uperf会替换`-o`路径并写普通文件；当前wrapper只做既有cpuset放置后`exec`同`performanced`域的`zui_uperf_supervisor`，steady state没有shell。native supervisor使用`PR_SET_CHILD_SUBREAPER`和blocking `waitpid(-1)`监督真实Uperf descendant tree，并只在startup以100ms cadence、最长20秒读取`/data/vendor/zui_control/log/uperf.log`；完整`I Uperf is running`后原子发布`.service_ready_uptime`、关闭日志FD/释放parser，之后零日志轮询。worker-crash文字observer已移除，normal worker recovery和3/20s storm仍为device pending；三次连续sub-2s whole-service death的既有init fail-safe不变。没有inotify、新domain、第二restart owner或新增SELinux allow；新regular-log候选仍须独立pre-flash和真机Gate。
+V20.4 Uperf架构已删除 `/system/bin/zui_uperf_service` 的5秒process/grep自检和logger FIFO。真机RunId `20260903085341`证明Uperf会替换`-o`路径并写普通文件；Golden wrapper只做既有cpuset放置后`exec`同`performanced`域的`zui_uperf_supervisor`，steady state没有shell。native supervisor使用`PR_SET_CHILD_SUBREAPER`和blocking `waitpid(-1)`监督真实Uperf descendant tree，并只在startup以100ms cadence、最长20秒读取`/data/vendor/zui_control/log/uperf.log`；完整`I Uperf is running`后原子发布`.service_ready_uptime`、关闭日志FD/释放parser，之后零日志轮询。Final Gate已证明startup readiness、610秒steady health和一次真实descendant-tree death恢复；worker-crash文字observer已移除，worker-level fault/storm为`OPTIONAL_HARDENING`，不是V21 blocker。三次连续sub-2s whole-service death的既有init fail-safe不变。没有inotify、新domain、第二restart owner或新增SELinux allow。
 
 ### 3.4 command 与 health
 
@@ -265,9 +300,9 @@ Uperf rapid crash storm 当前是 carry-forward 未闭环项。后续稳定性�
 
 刷机包硬规则：
 
-- 不能只检查源码、payload 或 `work/unpack`，必须反向抽查最终 `【B刷机】072/super.img`；
+- 不能只检查源码、payload 或临时 unpack，必须反向抽查当前显式候选目录中的最终 `super.img`；
 - 每个新增/修改 context 和 sepolicy 规则都要在最终 super 抽出的真实文件中命中；
-- 修改动态分区内容后确认对应 `work/img/*.img` 重新生成并被 PackSuper 使用；
+- 修改动态分区内容后确认 `zui072（flash）/work/current/<candidate>/` 中对应逻辑分区镜像重新生成并被 PackSuper 使用；
 - `SignNoFec` 改写 footer 后必须重新 PackSuper，再复查最终 super 内容和 SHA-256；
 - Windows 无法做 secilc 编译级验证时必须明确边界，刷后以 dmesg/logcat AVC 继续验收。
 
@@ -319,31 +354,22 @@ FAULT_INJECTION_DEVICE_PATH=NOT_EXECUTED
 SECONDARY_USER_EXTERNAL_DISPLAY=NOT_VALIDATED
 ```
 
-### 10.2 Uperf Architecture & Upstream Rebase（SFAnalysis correction ready for Pre-Flash review）
+### 10.2 Uperf Architecture & Upstream Rebase（已由 Golden Final Gate 关闭）
 
 本包冻结upstream `v1.0.6`，ZIP SHA-256 `00b19294e4efc202fd794decb5526b5ad903dca3a15c9af3cfc335edab2b5fcc`。upstream与production Uperf binary均为SHA-256 `f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8`，byte-for-byte相同，不替换binary。保留SM8650的balance/powersave idle sample/slack四项值；可选`sfanalysis`因确认造成startup阻断而保持disabled。sched仍disabled、Native Auto仍无production入口、asoulOpt/GPU/thermal边界不变。
 
-实现使用framework top-resumed change event作为Uperf exact scene authority，并以FIFO/init事件生命周期替代5秒polling。RunId `20260901174600`证明旧`proc_uptime`与`scheduler_active` denial消失、whole-service startup storm fail-safe生效，但新增两次`performanced → surfaceflinger_exec:file read` blocking AVC，Uperf在首个完整样本前进入fail-safe=1/stopped。静态/运行证据已将它确认关联到`sfanalysis=true`；新source `6894c9fb4b96493058829be7d91cbec8ed4234b0`、CI `33573565557`、RunId `20260902080413`仅恢复`sfanalysis=false`，不增加SurfaceFlinger权限，113/113 host及final-super/semantic/ART/CIL门禁PASS。fixed-seven包位于`D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_UPERF_SFANALYSIS_20260902080413`，尚未刷写。实际刷写后必须以七分区`dump-part`全长SHA证明read-back；qdl flag/ACK不得单独算PASS。当前权威decision为`V20_4_UPERF_SFANALYSIS_RUNTIME_DECISION.md`。
+实现使用framework display-global top-resumed change event作为Uperf exact scene authority。RunId `20260903085341`确认FIFO output假设错误；Golden改为regular startup log readiness、native subreaper与blocking waitpid。RunId `20260903110608`通过regular-log development Gate，随后诊断确认合法package后的transitional null会在约4.5–5.2ms覆盖scene；source `29f23f8d590b88f0d472c12373366a9ef14e8330`加入bounded null revalidation。最终Build RunId `20260903144915` / CI `33724674012` / Device Gate `20260903153438`通过三次冷启动、15行scene matrix、610秒soak、相关AVC0、fixed-seven physical read-back 7/7和post-readback boot。Golden exact hashes只认`V20_4_GOLDEN_BASELINE.json`。
 
 ```text
-V20_4_UPERF_SOURCE_HOST=PASS
-V20_4_UPERF_FINAL_ARTIFACT=PASS
-V20_4_UPERF_PRE_FLASH_READY=YES
-V20_4_UPERF_FAILED_RUN_20260901120647_BOOT_HARD_GATE=FAIL
-V20_4_UPERF_SELINUX_STARTUP_CORRECTION_RUN=20260901174600
-V20_4_UPERF_SELINUX_STARTUP_CORRECTION_PRE_FLASH_READY=YES
-V20_4_UPERF_SELINUX_STARTUP_CORRECTION_FLASHED=YES
-V20_4_UPERF_SELINUX_STARTUP_ANDROID_BOOT=PASS
-V20_4_UPERF_SELINUX_STARTUP_READ_BACK_VERIFY=NOT_PROVEN
-V20_4_UPERF_SELINUX_STARTUP_RUNTIME_GATE=FAIL
-V20_4_UPERF_SELINUX_STARTUP_FAIL_SAFE=1
-V20_4_UPERF_DEVICE_VALIDATION=ABORTED_AT_STARTUP_GATE
-V20_4_UPERF_SFANALYSIS_CORRECTION_RUN=20260902080413
-V20_4_UPERF_SFANALYSIS_CORRECTION_SOURCE_HOST=PASS
-V20_4_UPERF_SFANALYSIS_CORRECTION_FINAL_ARTIFACT=PASS
-V20_4_UPERF_SFANALYSIS_CORRECTION_PRE_FLASH_READY=YES
-V20_4_UPERF_SFANALYSIS_CORRECTION_FLASHED=NO
-READY_FOR_FULL_UPERF_DEVICE_VALIDATION=NO
+V20_4_GOLDEN_SOURCE=29f23f8d590b88f0d472c12373366a9ef14e8330
+V20_4_GOLDEN_BUILD_RUN_ID=20260903144915
+V20_4_GOLDEN_DEVICE_GATE_RUN_ID=20260903153438
+V20_4_UPERF_REGULAR_LOG_READINESS=PASS
+V20_4_UPERF_TRANSITIONAL_NULL=PASS
+V20_4_UPERF_SCENE_MATRIX=PASS_15_OF_15
+V20_4_UPERF_TEN_MINUTE_SOAK=PASS
+V20_4_UPERF_PHYSICAL_READBACK=PASS_7_OF_7
+V20_4_UPERF_WORK_PACKAGE=CLOSED_WITH_EXPLICIT_BOUNDARIES
 ```
 
 ### 10.3 其它 carry-forward backlog
@@ -359,7 +385,7 @@ READY_FOR_FULL_UPERF_DEVICE_VALIDATION=NO
 
 ## 11. V21 / V22 边界与禁止回退
 
-本轮 Active Repository Context Cleanup 只外移文档/证据，不是 V21。V21 Production Cleanup 只在 V20.4 架构稳定后进行，集中处理 AppOpt、XML/ZuiPP bridge、未交付 FPS cap、旧 KGSL 实验、retired daemon compatibility、旧命名和生产历史逻辑；必要 migration history 要保留。
+V21 Phase 1 engineering cleanup / Golden freeze 已完成，不是 production cleanup。AppOpt、XML/ZuiPP bridge、未交付 FPS cap、旧 KGSL 实验、retired daemon compatibility、旧命名和生产历史逻辑的代码级清理仍须独立工作包与review；Phase 2 未开始，不得自动进入。
 
 V22 GPU 单独研究 KGSL/devfreq、GameHelper/ZuiPP/PowerHAL/thermal ownership，再决定 Uperf CPU + OEM GPU 或 CPU+GPU。thermal 始终保留安全裁决；必须做帧时间、功耗、温度 A/B。
 

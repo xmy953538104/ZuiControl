@@ -15,8 +15,8 @@ import zipfile
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SERVICE = REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlService.java"
 HOOKS = REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java"
-PATCHER = REPO / "scripts/PatchZuiControlFramework.py"
-FINAL_SUPER_VERIFIER = REPO / "scripts/VerifyZuiControlFinalSuper.ps1"
+PATCHER = REPO / "scripts/build/PatchZuiControlFramework.py"
+FINAL_SUPER_VERIFIER = REPO / "scripts/verify/VerifyZuiControlFinalSuper.ps1"
 RC = REPO / "payload/system/etc/init/zui_scheduler.rc"
 WRAPPER = REPO / "payload/system/bin/zui_uperf_service"
 CRASH_GATE = REPO / "payload/system/etc/zui_control/zui_uperf_crash_gate.sh"
@@ -221,11 +221,10 @@ class OwnershipTests(unittest.TestCase):
         self.assertEqual(self.config["presets"]["powersave"]["idle"]["cpu.baseSampleTime"], 1.5)
         self.assertEqual(self.config["presets"]["powersave"]["idle"]["cpu.baseSlackTime"], 0.8)
 
-    def test_property_and_fifo_policy_are_narrow(self):
+    def test_fail_safe_property_policy_is_narrow(self):
         contexts = text(PROPERTY_CONTEXTS)
         policy = text(POLICY)
         self.assertIn("sys.zui_control.uperf_fail_safe u:object_r:zui_control_uperf_fail_safe_prop:s0 exact bool", contexts)
-        self.assertIn("(allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))", policy)
         self.assertNotRegex(policy, r"allow (?:priv_app|untrusted_app) zui_control_uperf_fail_safe_prop")
 
 
@@ -244,7 +243,7 @@ class ImportWorkflowTests(unittest.TestCase):
                         archive.write(path, path.relative_to(SNAPSHOT).as_posix())
             output = root / "audit"
             subprocess.run([
-                sys.executable, str(REPO / "scripts/ImportUperfUpstream.py"),
+                sys.executable, str(REPO / "scripts/build/ImportUperfUpstream.py"),
                 "--zip", str(archive_path), "--output", str(output),
                 "--repo", str(REPO),
             ], check=True, capture_output=True, text=True)

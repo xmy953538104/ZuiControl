@@ -9,10 +9,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $WorkspaceRoot = Split-Path -Parent $RepoRoot
-if (-not $FlashDir) { $FlashDir = Join-Path $WorkspaceRoot '【B刷机】072' }
-if (-not $WorkDir) { $WorkDir = Join-Path $WorkspaceRoot 'work\verify_final_super_v20_4' }
+if ((Split-Path -Leaf $WorkspaceRoot) -ieq 'worktrees') { $WorkspaceRoot = Split-Path -Parent $WorkspaceRoot }
+if (-not $FlashDir) { $FlashDir = Join-Path $WorkspaceRoot 'zui072（flash）\out\V20.4_Golden_20260903144915' }
+if (-not $WorkDir) { $WorkDir = Join-Path $WorkspaceRoot 'zui072（flash）\work\temp\verify_final_super_v20_4' }
 $BaseVerifier = Join-Path $PSScriptRoot 'VerifyZuiControlFlashPackage.ps1'
 
 function Full([string]$Path) { [IO.Path]::GetFullPath($Path).TrimEnd('\') }
@@ -35,7 +36,7 @@ function Assert-NotContains([string]$Path, [string]$Needle) {
 }
 function Remove-VerificationWork {
     if (-not (Test-Path -LiteralPath $WorkDir)) { return }
-    $workRoot = Full (Join-Path $WorkspaceRoot 'work')
+    $workRoot = Full (Join-Path $WorkspaceRoot 'zui072（flash）\work\temp')
     $expected = Full $WorkDir
     if ($expected -eq $workRoot -or
         -not $expected.StartsWith($workRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or

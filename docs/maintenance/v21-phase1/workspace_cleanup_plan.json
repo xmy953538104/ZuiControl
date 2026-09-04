@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "description": "V21 Phase 1 exact dry-run plan; no deletion is authorized by this file alone.",
+  "targets": [
+    {
+      "path": "D:\\3.VScode\\Mi\\work\\uperf_import_py38_probe",
+      "category": "scratch",
+      "approved": true,
+      "expected_bytes": 0,
+      "expected_file_count": 0,
+      "expected_tree_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "reason": "Empty import probe scratch tree; fully reproducible."
+    },
+    {
+      "path": "D:\\3.VScode\\Mi\\work\\v20_4_runtime_host_compile",
+      "category": "cache",
+      "approved": true,
+      "expected_bytes": 197428,
+      "expected_file_count": 45,
+      "expected_tree_sha256": "1819124329a0268d053f1d855e771c701ef6e4e9d130fdf0d6d18edcf626fbfa",
+      "reason": "Rebuildable host compile output, not evidence or a release artifact."
+    },
+    {
+      "path": "D:\\3.VScode\\Mi\\work\\v20_4_runtime_host_compile_146e096",
+      "category": "cache",
+      "approved": true,
+      "expected_bytes": 194098,
+      "expected_file_count": 31,
+      "expected_tree_sha256": "e87600d3d458ef5f11a87b7309b1a593fe3630b671b3778fbb2f72dde2f999d9",
+      "reason": "Rebuildable host compile output, not evidence or a release artifact."
+    },
+    {
+      "path": "D:\\3.VScode\\Mi\\work\\v20_4_runtime_host_compile2",
+      "category": "cache",
+      "approved": true,
+      "expected_bytes": 197428,
+      "expected_file_count": 45,
+      "expected_tree_sha256": "6114258f74cc966e56d494c774dbd11d50b489a48dba9fe50e7bedb74a8271eb",
+      "reason": "Rebuildable duplicate host compile output."
+    },
+    {
+      "path": "D:\\3.VScode\\Mi\\work\\verify_uperf_marker_probe_20260901",
+      "category": "rebuildable",
+      "approved": true,
+      "expected_bytes": 466126,
+      "expected_file_count": 48,
+      "expected_tree_sha256": "54f39cd3b8803ebbe3c90af63d046b8c838d89271d243bfb4de6ab89f5010981",
+      "reason": "Extracted verifier probe regenerated from retained source/artifacts."
+    },
+    {
+      "path": "D:\\3.VScode\\Mi\\work\\verify_v20_4_uperf_ready_marker_gate_zip_20260902150110",
+      "category": "rebuildable",
+      "approved": true,
+      "expected_bytes": 9266295,
+      "expected_file_count": 59,
+      "expected_tree_sha256": "7d9d16b315384f4528ae6ddc46b29fa365eff24180d937d8cdcdd6cd16522177",
+      "reason": "Extracted verifier copy; unique source evidence remains protected."
+    }
+  ]
+}

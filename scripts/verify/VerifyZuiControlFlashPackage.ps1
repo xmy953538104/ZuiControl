@@ -7,18 +7,19 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $WorkspaceRoot = Split-Path -Parent $RepoRoot
-if (-not $FlashDir) { $FlashDir = Join-Path $WorkspaceRoot '【B刷机】072' }
-if (-not $WorkDir) { $WorkDir = Join-Path $WorkspaceRoot 'work\verify_flash_zui_control' }
+if ((Split-Path -Leaf $WorkspaceRoot) -ieq 'worktrees') { $WorkspaceRoot = Split-Path -Parent $WorkspaceRoot }
+if (-not $FlashDir) { $FlashDir = Join-Path $WorkspaceRoot 'zui072（flash）\out\V20.4_Golden_20260903144915' }
+if (-not $WorkDir) { $WorkDir = Join-Path $WorkspaceRoot 'zui072（flash）\work\temp\verify_flash_zui_control' }
 
-$ToolsDir = Join-Path $WorkspaceRoot 'tools'
-$AndroidSdkDir = Join-Path $WorkspaceRoot 'work\android-sdk'
-$Python = Join-Path $ToolsDir 'python-3.8.0\python.exe'
-$LpUnpack = Join-Path $ToolsDir 'lpunpack.py'
-$ExtractErofs = Join-Path $ToolsDir 'AMD64\extract.erofs.exe'
-$Apktool = Join-Path $ToolsDir 'apktool.jar'
-$Avbtool = Join-Path $ToolsDir 'downloaded\avbtool_aosp_c0af371_1.2.0.py'
+$ToolsDir = Join-Path $WorkspaceRoot 'Edit tools'
+$AndroidSdkDir = Join-Path $ToolsDir 'android-build\android-sdk'
+$Python = Join-Path $ToolsDir 'android-build\python-3.8.0\python.exe'
+$LpUnpack = Join-Path $ToolsDir 'super-tools\lpunpack.py'
+$ExtractErofs = Join-Path $ToolsDir 'super-tools\AMD64\extract.erofs.exe'
+$Apktool = Join-Path $ToolsDir 'smali-apk\apktool.jar'
+$Avbtool = Join-Path $ToolsDir 'avb\downloaded\avbtool_aosp_c0af371_1.2.0.py'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
 $ExpectedVersionCode = '49'
 $ExpectedVersionName = '0.21.12'
@@ -28,12 +29,12 @@ $ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb2
 $ExpectedBuildFingerprintMarker = 'ZUI_16.1.11.072_241118_PRC'
 $ForbiddenBuildFingerprintMarker = 'ZUI_16.1.11.187_250227_PRC'
 $MinimumAvbRollbackIndex = [int64]1736035200
-$OfficialB072Dir = Join-Path $WorkspaceRoot '【A官方】072'
+$OfficialB072Dir = Join-Path $WorkspaceRoot 'zui072（9008）'
 
 function Full([string]$Path) { [IO.Path]::GetFullPath($Path).TrimEnd('\') }
 
 function Assert-VerificationWorkBoundary {
-    $workRoot = Full (Join-Path $WorkspaceRoot 'work')
+    $workRoot = Full (Join-Path $WorkspaceRoot 'zui072（flash）\work\temp')
     $workFull = Full $WorkDir
     $flashFull = Full $FlashDir
     if ($workFull -eq $workRoot -or
@@ -1003,7 +1004,6 @@ try {
         '(genfscon proc "/sys/walt/sched_per_task_boost" (u object_r zui_scheduler_proc ((s0) (s0))))',
         '(allow performanced activity_service (service_manager (find)))',
         '(allow system_server performanced (fd (use)))',
-        '(allow system_server performanced (fifo_file (write)))',
         '(allow system_server performanced (binder (call)))',
         '(allow performanced self (capability (chown dac_override fowner kill)))',
         '(allow performanced self (file (getattr open read)))',
@@ -1020,7 +1020,6 @@ try {
         '(allow performanced input_device (chr_file (ioctl read getattr lock map open)))',
         '(allow performanced toolbox_exec (file (read getattr map execute open execute_no_trans)))',
         '(allow performanced zui_control_data_file (file (getattr open read write create append map watch watch_reads setattr unlink rename)))',
-        '(allow performanced zui_control_data_file (fifo_file (getattr open read write create setattr unlink)))',
         '(allow performanced zui_control_data_file (lnk_file (getattr read)))'
     )) { Assert-Contains $PlatPolicy $rule 'scheduler SELinux rule' }
     Assert-NotContains $PlatPolicy '(allow system_server shell_prop (property_service (set)))' 'broad system_server shell property write grant'
@@ -1071,7 +1070,7 @@ try {
     Assert-NotContains $VendorPolicy '(allow performanced_34_0 vendor_sysfs_kgsl (' 'unsupported Uperf KGSL permission'
 
     $UperfAccessReport = Join-Path $WorkDir 'uperf_runtime_access_graph.json'
-    Invoke-Checked $Python (Join-Path $RepoRoot 'scripts\VerifyUperfRuntimeAccess.py') `
+    Invoke-Checked $Python (Join-Path $RepoRoot 'scripts\verify\VerifyUperfRuntimeAccess.py') `
         --mode final `
         --system-root $System `
         --file-contexts $FileContexts `

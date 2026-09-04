@@ -1,4 +1,9 @@
-# Crash Lifecycle
+# Crash Lifecycle — HISTORICAL ONLY
+
+> This failed-device result refers to a superseded startup/FIFO candidate.
+> FIFO EOF is not a current production lifecycle signal. Current Golden
+> semantics are regular startup log plus native subreaper/blocking `waitpid`;
+> worker fault and 3/20s storm injection remain backlog.
 
 Result: **PLANNED FAULT INJECTION NOT EXECUTED.**
 

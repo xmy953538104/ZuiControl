@@ -23,7 +23,7 @@ def stamp():
 
 
 def resolve_root():
-    return pathlib.Path(__file__).resolve().parents[1]
+    return pathlib.Path(__file__).resolve().parents[2]
 
 
 def resolve_unpack(root, unpack_arg):
@@ -454,7 +454,7 @@ def update_plat_mapping_hash(unpack, report):
 
 
 def patch_framework_jars(root, unpack, dry_run, report):
-    script = root / "scripts" / "PatchZuiControlFramework.py"
+    script = root / "scripts" / "build" / "PatchZuiControlFramework.py"
     if not script.exists():
         report["warnings"].append(f"missing framework patch script: {script}")
         return
@@ -491,7 +491,7 @@ def main():
     }
     apk = payload.joinpath(*APP_APK_PATH.split("/"))
     if not apk.exists():
-        raise SystemExit(f"Missing {APP_APK_PATH}. Run scripts/BuildZuiControl.ps1 before applying the payload.")
+        raise SystemExit(f"Missing {APP_APK_PATH}. Run scripts/build/BuildZuiControl.ps1 before applying the payload.")
 
     cleanup_legacy_payload(unpack, args.dry_run, report)
     cleanup_legacy_metadata(image_root, unpack, args.dry_run, report)

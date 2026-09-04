@@ -11,8 +11,8 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 STATE = REPO / "framework_patch/src/services/com/zui/server/control/TopResumedNullState.java"
 SERVICE = REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlService.java"
 HOOKS = REPO / "framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java"
-PATCHER = REPO / "scripts/PatchZuiControlFramework.py"
-VERIFIER = REPO / "scripts/VerifyZuiControlFinalSuper.ps1"
+PATCHER = REPO / "scripts/build/PatchZuiControlFramework.py"
+VERIFIER = REPO / "scripts/verify/VerifyZuiControlFinalSuper.ps1"
 FIXTURE = pathlib.Path(__file__).with_name("TopResumedNullStateTest.java")
 
 

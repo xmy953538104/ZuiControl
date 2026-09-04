@@ -37,8 +37,8 @@ def rm_tree(path):
 
 
 def compile_sources(repo, mi_root, build_dir, source_dir, dex_name):
-    android_jar = mi_root / "work" / "android-sdk" / "platforms" / "android-35" / "android.jar"
-    d8 = mi_root / "work" / "android-sdk" / "build-tools" / "36.0.0" / "d8.bat"
+    android_jar = mi_root / "Edit tools" / "android-build" / "android-sdk" / "platforms" / "android-35" / "android.jar"
+    d8 = mi_root / "Edit tools" / "android-build" / "android-sdk" / "build-tools" / "36.0.0" / "d8.bat"
     stubs_src = repo / "framework_patch" / "stubs"
     stubs_classes = build_dir / f"{dex_name}_stubs"
     classes = build_dir / f"{dex_name}_classes"
@@ -298,8 +298,8 @@ def patch_services_smali(dec_dir):
 
 
 def patch_framework(args):
-    repo = pathlib.Path(__file__).resolve().parents[1]
-    mi_root = repo.parent
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    mi_root = repo.parent.parent if repo.parent.name.lower() == "worktrees" else repo.parent
     unpack = pathlib.Path(args.unpack).resolve()
     fw_dir = unpack / "system_a" / "system" / "framework"
     framework_jar = fw_dir / "framework.jar"
@@ -307,7 +307,7 @@ def patch_framework(args):
     if not framework_jar.exists() or not services_jar.exists():
         raise SystemExit(f"Missing framework jars under {fw_dir}")
 
-    build_root = mi_root / "work" / "zui_control_framework_patch"
+    build_root = mi_root / "zui072（flash）" / "work" / "temp" / "zui_control_framework_patch"
     build_root.mkdir(parents=True, exist_ok=True)
     build_dir = pathlib.Path(tempfile.mkdtemp(prefix="run_", dir=str(build_root)))
 
@@ -326,7 +326,7 @@ def patch_framework(args):
     shutil.copy2(framework_jar, framework_out)
     rewrite_zip(framework_out, framework_out, {"classes6.dex": framework_dex})
 
-    apktool = mi_root / "tools" / "apktool.jar"
+    apktool = mi_root / "Edit tools" / "smali-apk" / "apktool.jar"
     dec_dir = build_dir / "services_dec"
     rm_tree(dec_dir)
     run(["java", "-jar", apktool, "d", "-f", "-o", dec_dir, services_jar])

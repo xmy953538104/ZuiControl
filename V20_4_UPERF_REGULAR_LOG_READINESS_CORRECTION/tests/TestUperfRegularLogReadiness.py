@@ -18,8 +18,8 @@ REPO = Path(__file__).resolve().parents[2]
 SOURCE = REPO / "native/zui_uperf_supervisor.c"
 WRAPPER = REPO / "payload/system/bin/zui_uperf_service"
 DUMMY = Path(__file__).with_name("dummy_uperf.py")
-FINAL_VERIFIER = REPO / "scripts/VerifyZuiControlFlashPackage.ps1"
-RUNTIME_VERIFIER = REPO / "scripts/VerifyUperfRuntimeAccess.py"
+FINAL_VERIFIER = REPO / "scripts/verify/VerifyZuiControlFlashPackage.ps1"
+RUNTIME_VERIFIER = REPO / "scripts/verify/VerifyUperfRuntimeAccess.py"
 
 
 def wait_for(predicate, timeout: float = 5.0, label: str = "condition"):

@@ -83,24 +83,24 @@ jobs:
 
       - name: Check scripts
         run: |
-          python3 -m py_compile scripts/ApplyZuiControlPayload.py
-          python3 -m py_compile scripts/PatchZuiControlFramework.py
-          python3 -m py_compile scripts/ImportUperfUpstream.py
-          python3 -m py_compile scripts/VerifyUperfRuntimeAccess.py
-          python3 -m py_compile scripts/VerifyZuiControl9008Readback.py
+          python3 -m py_compile scripts/build/ApplyZuiControlPayload.py
+          python3 -m py_compile scripts/build/PatchZuiControlFramework.py
+          python3 -m py_compile scripts/build/ImportUperfUpstream.py
+          python3 -m py_compile scripts/verify/VerifyUperfRuntimeAccess.py
+          python3 -m py_compile scripts/verify/VerifyZuiControl9008Readback.py
           python3 -m py_compile tools/PatchAsoulOptConfigPath.py
           python3 tools/PatchAsoulOptConfigPath.py payload/system/bin/AsoulOpt
           bash -n payload/system/bin/zui_controld
           bash -n payload/system/bin/zui_uperf_service
           bash -n payload/system/etc/zui_control/zui_uperf_crash_gate.sh
-          bash scripts/TestZuiControldTransactions.sh
+          bash scripts/verify/TestZuiControldTransactions.sh
           python3 V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py
           python3 V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py
           python3 V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py
           python3 V20_4_UPERF_TOP_RESUMED_TRANSITIONAL_NULL_CORRECTION/tests/TestTopResumedTransitionalNull.py
           python3 V20_4_UPERF_SELINUX_STARTUP_CORRECTION/tests/TestUperfSelinuxStartup.py
           python3 V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/TestUperfSfanalysisCorrection.py
-          python3 scripts/VerifyUperfRuntimeAccess.py \
+          python3 scripts/verify/VerifyUperfRuntimeAccess.py \
             --mode source \
             --system-root payload/system \
             --file-contexts payload/patches/plat_file_contexts_add.txt \

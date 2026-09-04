@@ -1,0 +1,27 @@
+__ZUI_META_BEGIN__
+device_epoch=1788412345.100000000
+__ZUI_META_END__
+__ZUI_ACTIVITY_BEGIN__
+    topResumedActivity=ActivityRecord{1111111 u0 com.youku.phone/com.youku.v2.HomePageEntry t14}
+    topResumedActivity=ActivityRecord{2222222 u0 com.kurogame.mingchao/com.epicgames.ue4.GameActivity t13}
+  ResumedActivity: ActivityRecord{2222222 u0 com.kurogame.mingchao/com.epicgames.ue4.GameActivity t13}
+  topDisplayFocusedRootTask=Task{abcdef0 #13 type=standard A=10234:com.kurogame.mingchao}
+__ZUI_ACTIVITY_END__
+__ZUI_CONTROL_BEGIN__
+uperfTopResumedRawPackage=com.kurogame.mingchao
+uperfTopResumedStablePackage=com.kurogame.mingchao
+uperfTopResumedPendingNull=false
+uperfScenePackage=com.kurogame.mingchao
+uperfDesiredMode=performance
+uperfLastAppliedMode=performance
+uperfApplyCount=8
+uperfLastReason=topResumed:exact:com.kurogame.mingchao
+__ZUI_CONTROL_END__
+__ZUI_PROPERTIES_BEGIN__
+sys.zui_control.uperf_mode=performance
+effective_powermode=performance
+cur_powermode=balance
+uperf_service=running
+uperf_fail_safe=0
+system_server_process_id=2706
+__ZUI_PROPERTIES_END__

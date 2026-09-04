@@ -1,4 +1,4 @@
-ZuiControl production payload — V20.3B verified baseline / App V49 target
+ZuiControl production payload — V20.4 Golden / App V49 target
 
 Build/package target:
 - /system/priv-app/ZuiControlV49/ZuiControl.apk
@@ -14,7 +14,7 @@ Build/package target:
 - /system/etc/zui_control/default_asopt.conf
 
 Framework integration:
-- scripts/ApplyZuiControlPayload.py calls scripts/PatchZuiControlFramework.py.
+- scripts/build/ApplyZuiControlPayload.py calls scripts/build/PatchZuiControlFramework.py.
 - framework.jar receives android.zui.ZuiControlManager.
 - services.jar receives the zui_control Binder service and DisplayContent focus hook.
 
@@ -34,7 +34,7 @@ Command plane:
 Health:
 - App/status health is read on demand through the zui_control Binder service.
 - No persistent zui_controld Settings/Binder heartbeat exists.
-- The V20.4 Uperf wrapper removes the 5-second process/grep loop and all logger FIFO handling, then execs the native supervisor. The supervisor checks the regular Uperf log every 100ms for at most 20 seconds, atomically publishes readiness, closes the log, and enters PR_SET_CHILD_SUBREAPER + blocking waitpid tree supervision. No shell or log polling remains in steady state. Init remains the sole restart owner and existing whole-service fail-safe semantics remain unchanged. Worker recovery/storm and steady-state behavior still require device validation.
+- The V20.4 Golden Uperf wrapper removes the 5-second process/grep loop and all logger FIFO handling, then execs the native supervisor. The supervisor checks the regular Uperf log every 100ms for at most 20 seconds, atomically publishes readiness, closes the log, and enters PR_SET_CHILD_SUBREAPER + blocking waitpid tree supervision. No shell or log polling remains in steady state. Init remains the sole restart owner and existing whole-service fail-safe semantics remain unchanged. Golden device validation passed startup readiness, a 610-second steady soak, and one real descendant-tree death/recovery; worker fault/storm injection remains backlog.
 
 Runtime data:
 - /data/system/zui_control/profiles.prop
@@ -46,10 +46,11 @@ Runtime data:
 - /data/vendor/asopt.conf -> /data/vendor/zui_control/asoul/asopt.conf
 - /data/vendor/zui_control/log/
 
-Known V20.4 refresh boundary:
-- SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input methods, and overlays are intended transient scenes; Launcher remains configurable.
-- Current source still has a ZuiControl controlPanel special case that can apply its own/default profile. V20.4 Refresh Correctness / State Machine must fix and verify this with non-120 profiles.
-- Kill-switch release of render vote, AppRequest, and peak bridge is not yet proven complete or immediate.
+V20.4 Golden refresh contract and boundaries:
+- Physical refresh is foreground-only. SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input methods, and overlays use default120 when they own a real non-empty focused Window; Launcher remains configurable.
+- lastNonTransientScenePackage is a configuration target only. Transient UI never inherits the previous business App's physical Hz.
+- Empty focused-Window transitions retain the last proven non-empty policy until the next non-empty edge; they do not become a default120 owner.
+- Kill-switch raw-property transport and state convergence passed device validation. Shared AppRequest has no owner token or synchronous clear, so release is reported as requested/pending rather than synchronous physical success.
 - target 120 remains adaptive-render behavior; physical actual may fall to 60 while static.
 - 144/165 are displayHz targets only; generic UID fpsCap is not delivered.
 

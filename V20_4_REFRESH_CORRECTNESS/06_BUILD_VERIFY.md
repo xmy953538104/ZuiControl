@@ -10,7 +10,7 @@ Builder 必须绑定：14 位 RunId、40 位 source commit、GitHub Actions run 
 
 ## Final reverse verifier
 
-[`scripts/VerifyZuiControlFinalSuper.ps1`](../scripts/VerifyZuiControlFinalSuper.ps1) 先完整调用既有 B072 flash-package verifier，保留七项包结构、hash、AVB/footer、APK、SELinux/context与 vendor preservation gate；随后从最终 super反解的真实 services/app smali检查：
+[`scripts/verify/VerifyZuiControlFinalSuper.ps1`](../scripts/verify/VerifyZuiControlFinalSuper.ps1) 先完整调用既有 B072 flash-package verifier，保留七项包结构、hash、AVB/footer、APK、SELinux/context与 vendor preservation gate；随后从最终 super反解的真实 services/app smali检查：
 
 - foreground-only desired/attempted/applied/physical 与 editable字段；
 - raw transient、non-IME window authority和 default-display-only markers；

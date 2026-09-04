@@ -1,0 +1,17 @@
+source	destination	bytes	verification	result
+D:\3.VScode\Mi\【A官方】072	D:\3.VScode\Mi\zui072（9008）	16413558242	pre-move SHA manifest 103/103 exact	PASS
+D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_UPERF_TOP_RESUMED_NULL_20260903144915	D:\3.VScode\Mi\zui072（flash）\out\V20.4_Golden_20260903144915	14061006485	four Golden hashes exact	PASS
+D:\3.VScode\Mi\V20_4_FINAL_CLOSURE_GATE.zip	D:\3.VScode\Mi\zui072（flash）\work\evidence\V20_4_FINAL_CLOSURE_GATE.zip	2903040	SHA256 582c1fcfaf5d4eac629c95f723b57d0a5492825d2e1408e6c29250608694a490	PASS
+D:\3.VScode\Mi\work\official\img\system_ext_a.img	D:\3.VScode\Mi\zui072（flash）\work\cache\original_072\system_ext_a.img	195932160	fresh lpunpack output hash match 21b29e4a7b390bd39eba0fcde76ff3146108fc0f7d16abb28cb71cfad3bcb867	PASS
+D:\3.VScode\Mi\072必刷镜像	D:\3.VScode\Mi\zui072（flash）\work\cache\high_rollback_072_template	101695879	four file hashes recorded; explicitly NOT Golden	PASS
+D:\3.VScode\Mi\work\android-sdk	D:\3.VScode\Mi\Edit tools\android-build\android-sdk	3076451046	same-volume move; expected tools present	PASS
+D:\3.VScode\Mi\tools\python-3.8.0	D:\3.VScode\Mi\Edit tools\android-build\python-3.8.0	72073427	Python 3.8.0 executable hash recorded	PASS
+D:\3.VScode\Mi\tools\adb	D:\3.VScode\Mi\Edit tools\adb-fastboot	44496183	adb 36.0.0 / fastboot hashes recorded	PASS
+D:\3.VScode\Mi\flash\Binaries + GUI	D:\3.VScode\Mi\Edit tools\qdl	81498987	qdl-rs 0.1.0 hash recorded	PASS
+D:\3.VScode\Mi\tools\AMD64 + Linux\x86_64 + lpunpack	D:\3.VScode\Mi\Edit tools\super-tools	73525859	lpunpack/extract tool hashes recorded	PASS
+D:\3.VScode\Mi\tools\baksmali + apktool.jar	D:\3.VScode\Mi\Edit tools\smali-apk	21733812	apktool hash recorded	PASS
+D:\3.VScode\Mi\tools\downloaded + avb scripts	D:\3.VScode\Mi\Edit tools\avb	652717	versioned avbtool hash recorded	PASS
+D:\3.VScode\Mi\Linux\FEC	D:\3.VScode\Mi\Edit tools\erofs-tools	1572482	same-volume move	PASS
+D:\3.VScode\Mi\tools\openssl	D:\3.VScode\Mi\Edit tools\misc\openssl	4948824	same-volume move; no PEM moved	PASS
+D:\3.VScode\Mi\work\v21_phase1_major_cleanup_20260903\stage_a	D:\3.VScode\Mi\zui072（flash）\work\evidence\v21_phase1_major_cleanup\stage_a	0	inventory files retained	PASS
+D:\3.VScode\Mi\script	Git worktree scripts directory junction	0	junction target exact; no duplicate script copy	PASS

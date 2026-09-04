@@ -3,7 +3,7 @@
 Run the standard-library-only importer against the new Magisk ZIP:
 
 ```powershell
-python scripts/ImportUperfUpstream.py `
+python scripts/build/ImportUperfUpstream.py `
   --zip 'D:\path\to\new-uperf.zip' `
   --output 'V20_4_UPERF_ARCHITECTURE_REBASE\raw\next-upstream-audit'
 ```

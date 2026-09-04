@@ -1,0 +1,10 @@
+Run date: 2026-09-04
+Harness: scripts\device\Capture-ZuiSceneMatrixRow.ps1 + capture_zui_scene_snapshot.sh + ZuiSceneHarness.psm1
+Fixture: scripts\device\tests\fixtures\multi_window_snapshot.txt
+
+DISPLAY_GLOBAL_RESUMED_ACTIVITY_FIXTURE=PASS
+TASK_LOCAL_topResumedActivity_IGNORED=PASS
+PROTECTED_PROPERTY_ROOT_HELPER=PASS
+EMPTY_OR_INVALID_RESULT_FAIL_FAST=PASS
+MANUAL_TSV_BACKFILL_ALLOWED=NO
+SCENE_HARNESS_CANONICAL=PASS_HOST

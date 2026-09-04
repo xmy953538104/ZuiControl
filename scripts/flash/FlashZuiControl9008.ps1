@@ -1,11 +1,11 @@
 param(
     [ValidateSet('Preflight', 'EnterEdl', 'Flash')]
     [string]$Mode = 'Preflight',
-    [string]$SourceDir = '',
-    [string]$PlatformDir = '',
-    [string]$SafePackageDir = "D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE_072",
-    [string]$QdlPath = "D:\3.VScode\Mi\flash\Binaries\Qcom\qdl-rs.exe",
-    [string]$AdbPath = "D:\3.VScode\Mi\work\android-sdk\platform-tools\adb.exe",
+    [string]$SourceDir = 'D:\3.VScode\Mi\zui072（flash）\out\V20.4_Golden_20260903144915',
+    [string]$PlatformDir = 'D:\3.VScode\Mi\zui072（9008）',
+    [string]$SafePackageDir = "D:\3.VScode\Mi\zui072（flash）\work\current\fixed-seven",
+    [string]$QdlPath = "D:\3.VScode\Mi\Edit tools\qdl\Binaries\Qcom\qdl-rs.exe",
+    [string]$AdbPath = "D:\3.VScode\Mi\Edit tools\adb-fastboot\adb.exe",
     [string]$ConfirmAdbSerial = 'HA25HSZM',
     [string]$ExpectedBuildRegex = 'TB321FU.*16\.1\.11\.072',
     [int]$EdlTimeoutSeconds = 60,
@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = "Stop"
 $prepare = Join-Path $PSScriptRoot 'PrepareZuiControl9008Package.ps1'
 & $prepare -SourceDir $SourceDir -PlatformDir $PlatformDir -OutputDir $SafePackageDir
-$verify = Join-Path $PSScriptRoot 'VerifyZuiControlFlashPackage.ps1'
+$verify = Join-Path (Split-Path -Parent $PSScriptRoot) 'verify\VerifyZuiControlFlashPackage.ps1'
 if ([string]::IsNullOrWhiteSpace($SourceDir)) {
     & $verify
 } else {
@@ -97,7 +97,7 @@ if ($Mode -eq 'EnterEdl') {
 
 $loader = Join-Path $SafePackageDir 'prog_firehose_ddr-TB321FC.elf'
 $xml = Join-Path $SafePackageDir 'rawprogram_zuicontrol.xml'
-$logDir = 'D:\3.VScode\Mi\flash\Log'
+$logDir = 'D:\3.VScode\Mi\zui072（flash）\work\temp\qdl-logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $timestamp = [DateTime]::Now.ToString('yyyy-MM-dd_HH-mm-ss')
 $log = Join-Path $logDir ("ZuiControl_qdlrs_{0}.log" -f $timestamp)

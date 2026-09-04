@@ -1,0 +1,50 @@
+D:\3.VScode\Mi
+|-- zui072（9008）\                         immutable original 072 (103 original + 2 metadata)
+|   |-- ORIGINAL_SHA256.txt
+|   `-- README_原始包禁止修改.txt
+|-- zui072（flash）\
+|   |-- out\
+|   |   `-- V20.4_Golden_20260903144915\   accepted fixed-seven output only
+|   `-- work\
+|       |-- current\                         current-task-only
+|       |-- cache\
+|       |   |-- CACHE_MANIFEST.json
+|       |   |-- original_072\system_ext_a.img
+|       |   `-- high_rollback_072_template\
+|       |-- evidence\                        Golden closure + V21 receipts
+|       `-- temp\                            automatic-cleanup boundary
+|-- Edit tools\
+|   |-- adb-fastboot\
+|   |-- qdl\
+|   |-- android-build\
+|   |-- super-tools\
+|   |-- erofs-tools\
+|   |-- smali-apk\
+|   |-- avb\
+|   |-- sepolicy\
+|   |-- java\
+|   |-- misc\
+|   `-- README_TOOLS.txt
+|-- script\ -> worktrees\ZuiControl_v21_phase1_golden_freeze_20260903\scripts
+|   |-- build\
+|   |-- flash\
+|   |-- verify\
+|   |-- device\
+|   |-- cleanup\
+|   |-- tools\
+|   |-- docs\
+|   `-- README_SCRIPTS.txt
+|-- ZuiControl\                              dirty user Git repo; retained in place
+|-- worktrees\
+|   `-- ZuiControl_v21_phase1_golden_freeze_20260903\  active V21 Git worktree
+|-- work\
+|   |-- scene_vtools\                        contains protected omoarea-test.jks
+|   `-- zuiperfctl-temp-release.jks          protected key material
+|-- tools\pem\                               protected key material
+|-- avb\tools\pem\                          protected key material
+|-- Linux\pem\                              protected key material
+|-- AGENTS.md                                short workspace pointer
+`-- .vscode\                                 editor metadata
+
+All noncanonical first-level exceptions are Git/worktree/editor metadata or unmoved suspected
+private material. Failed image/diagnostic directories are absent.

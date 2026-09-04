@@ -143,10 +143,10 @@ $trackedBuildPaths = @(
     'payload/system/etc/init/zui_controld.rc',
     'payload/system/etc/init/zui_scheduler.rc',
     'payload/system/etc/zui_control/zui_scheduler_prepare.sh',
-    'scripts/ApplyZuiControlPayload.py',
-    'scripts/PatchZuiControlFramework.py',
-    'scripts/TestZuiControldTransactions.sh',
-    'scripts/VerifyZuiControlFlashPackage.ps1',
+    'scripts/build/ApplyZuiControlPayload.py',
+    'scripts/build/PatchZuiControlFramework.py',
+    'scripts/verify/TestZuiControldTransactions.sh',
+    'scripts/verify/VerifyZuiControlFlashPackage.ps1',
     'V20_3B_DAEMON_RETIREMENT/tests/TestV20_3BPolicy.py',
     'V20_3B_DAEMON_RETIREMENT/tests/BuildV20_3BCandidate.ps1'
 )
@@ -157,7 +157,7 @@ if ($Phase -in @('V20_4', 'V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_
         'framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java',
         'framework_patch/stubs/com/android/server/wm/WindowManagerInternal.java',
         'payload/system/etc/init/zui_refresh_kill_switch.rc',
-        'scripts/VerifyZuiControlFinalSuper.ps1',
+        'scripts/verify/VerifyZuiControlFinalSuper.ps1',
         'V20_4_REFRESH_CORRECTNESS/tests/TestV20_4RefreshPolicy.py',
         'V20_4_REFRESH_CORRECTNESS/tests/BuildV20_4Candidate.ps1'
     )
@@ -168,8 +168,8 @@ if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSI
         'payload/system/bin/zui_uperf_service',
         'payload/system/etc/zui_control/zui_uperf_crash_gate.sh',
         'payload/system/etc/zui_control/uperf-sm8650.json',
-        'scripts/ImportUperfUpstream.py',
-        'scripts/VerifyUperfRuntimeAccess.py',
+        'scripts/build/ImportUperfUpstream.py',
+        'scripts/verify/VerifyUperfRuntimeAccess.py',
         'V20_4_UPERF_ARCHITECTURE_REBASE/tests/TestV20_4UperfHost.py',
         'V20_4_UPERF_ARCHITECTURE_REBASE/tests/BuildV20_4UperfCandidate.ps1',
         'V20_4_UPERF_ARCHITECTURE_REBASE/tests/host_init_property_contexts',
@@ -179,8 +179,8 @@ if ($Phase -in @('V20_4_UPERF', 'V20_4_UPERF_CORRECTION', 'V20_4_UPERF_SFANALYSI
 }
 if ($Phase -in @('V20_4_UPERF_SFANALYSIS', 'V20_4_UPERF_READY_MARKER', 'V20_4_UPERF_SUPERVISOR', 'V20_4_UPERF_REGULAR_LOG', 'V20_4_UPERF_TOP_RESUMED_NULL')) {
     $trackedBuildPaths += @(
-        'scripts/FlashZuiControl9008.ps1',
-        'scripts/VerifyZuiControl9008Readback.py',
+        'scripts/flash/FlashZuiControl9008.ps1',
+        'scripts/verify/VerifyZuiControl9008Readback.py',
         'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/TestUperfSfanalysisCorrection.py',
         'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/tests/BuildV20_4UperfSfanalysisCandidate.ps1',
         'V20_4_UPERF_SFANALYSIS_RUNTIME_CORRECTION/raw/runtime_failure_excerpt.txt',
@@ -556,7 +556,7 @@ try {
         if ($Phase -eq 'V20_4_UPERF_TOP_RESUMED_NULL') {
             Invoke-Checked $python (Join-Path $scratchRepo 'V20_4_UPERF_TOP_RESUMED_TRANSITIONAL_NULL_CORRECTION\tests\TestTopResumedTransitionalNull.py')
         }
-        Invoke-Checked $python (Join-Path $scratchRepo 'scripts\VerifyUperfRuntimeAccess.py') `
+        Invoke-Checked $python (Join-Path $scratchRepo 'scripts\verify\VerifyUperfRuntimeAccess.py') `
             --mode source `
             --system-root (Join-Path $scratchRepo 'payload\system') `
             --file-contexts (Join-Path $scratchRepo 'payload\patches\plat_file_contexts_add.txt') `
@@ -641,7 +641,7 @@ try {
     if ($vendorApkBefore.Count -ne 17) { throw "Expected exactly 17 vendor APKs before apply; found $($vendorApkBefore.Count)." }
     Record-Space after_extract
 
-    $apply = Join-Path $scratchRepo 'scripts\ApplyZuiControlPayload.py'
+    $apply = Join-Path $scratchRepo 'scripts\build\ApplyZuiControlPayload.py'
     Invoke-CheckedLogged $python $apply --root $scratchRepo --unpack $unpack --payload $ciPayload --dry-run
     Invoke-CheckedLogged $python $apply --root $scratchRepo --unpack $unpack --payload $ciPayload
     Copy-Item -LiteralPath (Join-Path $scratch 'work\config\zui_control_payload_latest.json') -Destination (Join-Path $evidence 'zui_control_payload_actual.json')
@@ -748,7 +748,7 @@ try {
     } else {
         'VerifyZuiControlFlashPackage.ps1'
     }
-    $verifier = Join-Path $scratchRepo "scripts\$verifierName"
+    $verifier = Join-Path $scratchRepo "scripts\verify\$verifierName"
     & $verifier -FlashDir $candidate -WorkDir (Join-Path $scratch "work\verify_${phaseSlug}_final") `
         -ExpectedVendorImageSha256 $signedVendorHash `
         -ExpectedVendorApkInventoryPath (Join-Path $evidence 'vendor_apk_preservation.json') *>&1 |

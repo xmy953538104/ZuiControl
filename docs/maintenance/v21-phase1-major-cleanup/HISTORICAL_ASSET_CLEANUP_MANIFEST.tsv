@@ -1,0 +1,39 @@
+path	bytes	classification	destination_or_action	reason
+D:\3.VScode\Mi\【A官方】072	16413558242	KEEP_PERMANENT	D:\3.VScode\Mi\zui072（9008）	Immutable original 072 package; verify full pre/post manifest
+D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_UPERF_TOP_RESUMED_NULL_20260903144915	14061006485	KEEP_GOLDEN	D:\3.VScode\Mi\zui072（flash）\out\V20.4_Golden_20260903144915	Only accepted V20.4 flash output
+D:\3.VScode\Mi\V20_4_FINAL_CLOSURE_GATE.zip	2903040	KEEP_GOLDEN	D:\3.VScode\Mi\zui072（flash）\work\evidence	Unique Golden closure evidence
+D:\3.VScode\Mi\work\official\img\system_ext_a.img	195932160	KEEP_CACHE	D:\3.VScode\Mi\zui072（flash）\work\cache\original_072	Fresh extraction proved exact output hash
+D:\3.VScode\Mi\072必刷镜像	101695879	KEEP_CACHE	D:\3.VScode\Mi\zui072（flash）\work\cache\high_rollback_072_template	High-rollback template; not Golden identity
+D:\3.VScode\Mi\work\android-sdk	3076451046	KEEP_PERMANENT	D:\3.VScode\Mi\Edit tools\android-build\android-sdk	Canonical Android build dependency
+D:\3.VScode\Mi\flash\Binaries	50576413	KEEP_PERMANENT	D:\3.VScode\Mi\Edit tools\qdl\Binaries	Canonical qdl/loaders; firehose digest remains not approved
+D:\3.VScode\Mi\flash\GeekFlashTool.exe	30922240	KEEP_PERMANENT	D:\3.VScode\Mi\Edit tools\qdl	Existing GUI recovery utility
+D:\3.VScode\Mi\tools\adb	0	KEEP_PERMANENT	D:\3.VScode\Mi\Edit tools\adb-fastboot	Canonical adb/fastboot
+D:\3.VScode\Mi\tools\AMD64	0	KEEP_PERMANENT	D:\3.VScode\Mi\Edit tools\super-tools\AMD64	Canonical Windows image tools
+D:\3.VScode\Mi\tools\baksmali	0	KEEP_PERMANENT	D:\3.VScode\Mi\Edit tools\smali-apk\baksmali	Canonical smali tool
+D:\3.VScode\Mi\tools\pem	0	KEEP_PERMANENT	NO_MOVE_SAFETY_EXCEPTION	Suspected private material
+D:\3.VScode\Mi\avb\tools\pem	0	KEEP_PERMANENT	NO_MOVE_SAFETY_EXCEPTION	Suspected private material
+D:\3.VScode\Mi\Linux\pem	0	KEEP_PERMANENT	NO_MOVE_SAFETY_EXCEPTION	Suspected private material
+D:\3.VScode\Mi\work\zuiperfctl-temp-release.jks	2634	KEEP_PERMANENT	NO_MOVE_SAFETY_EXCEPTION	Keystore; exact file protected
+D:\3.VScode\Mi\work\scene_vtools	16177471	KEEP_PERMANENT	NO_MOVE_SAFETY_EXCEPTION	Contains omoarea-test.jks
+D:\3.VScode\Mi\ZuiControl	435920996	KEEP_PERMANENT	NO_MOVE_GIT_EXCEPTION	Dirty user Git repo
+D:\3.VScode\Mi\worktrees\ZuiControl_v21_phase1_golden_freeze_20260903	0	KEEP_CURRENT	NO_MOVE_GIT_EXCEPTION	Active V21 engineering worktree
+D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_UPERF_REGULAR_LOG_20260903103038	14061006480	DELETE_AFTER_KNOWLEDGE_EXTRACTION	DELETE	Superseded pre-Golden candidate
+D:\3.VScode\Mi\flash\ZuiControl_9008_RECOVERY_V20_3B_20260830181816	14061006445	DELETE_AFTER_KNOWLEDGE_EXTRACTION	DELETE	Superseded recovery candidate
+D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE_072	14061006444	DELETE_DUPLICATE	DELETE	Superseded generated package
+D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE_072_V48_ccd9c9a	14061006425	DELETE_DUPLICATE	DELETE	Superseded generated package
+D:\3.VScode\Mi\【B刷机】072	14063878816	DELETE_DUPLICATE	DELETE	Old canonical package superseded by exact Golden
+D:\3.VScode\Mi\flash\Log	819832886	DELETE_AFTER_KNOWLEDGE_EXTRACTION	DELETE	Historical raw qdl/readback logs
+D:\3.VScode\Mi\flash\ZuiControl_9008_V20_4_UPERF_SUPERVISOR_20260903065226	102362767	DELETE_REGENERABLE	DELETE	Incomplete/superseded supervisor candidate
+D:\3.VScode\Mi\flash\ZuiControl_9008_RECOVERY_BOOT_072	102229009	DELETE_DUPLICATE	DELETE	Obsolete recovery boot bundle
+D:\3.VScode\Mi\重要文件	1268968087	DELETE_AFTER_KNOWLEDGE_EXTRACTION	DELETE	Legacy 187/duplicated Browser/payload assets; no unique key found
+D:\3.VScode\Mi\ZuiControl_Archive	363355053	DELETE_AFTER_KNOWLEDGE_EXTRACTION	DELETE	Historical AI/handoff/raw knowledge consolidated into script/docs
+D:\3.VScode\Mi\boot.img	100663296	DELETE_DUPLICATE	DELETE	Loose duplicate; Golden and original remain
+D:\3.VScode\Mi\evidence	5782060	DELETE_AFTER_KNOWLEDGE_EXTRACTION	DELETE	Superseded root evidence
+D:\3.VScode\Mi\docs	610588	DELETE_AFTER_KNOWLEDGE_EXTRACTION	DELETE	Superseded workspace docs; permanent lessons consolidated
+D:\3.VScode\Mi\ZuiControl_Workspace	378528	DELETE_REGENERABLE	DELETE	Superseded previous lifecycle layout
+D:\3.VScode\Mi\ZuiControl\V20_4_UPERF_READY_MARKER_DEVICE_STARTUP_RUNTIME_GATE	294953243	DELETE_AFTER_KNOWLEDGE_EXTRACTION	DELETE_UNTRACKED_ONLY	Historical raw flash log in dirty repo; production/test code excluded
+D:\3.VScode\Mi\work\*	1924258727	DELETE_REGENERABLE	DELETE_EXCEPT_EXPLICIT_RETAINS	Old extraction/smali/readback/CI/diagnostic scratch after retained items migrate
+D:\3.VScode\Mi\V20_4_UPERF_*.zip*	5003574	DELETE_AFTER_KNOWLEDGE_EXTRACTION	DELETE	Superseded diagnostic bundles and sidecars
+D:\3.VScode\Mi\V21_PHASE1_GOLDEN_FREEZE_ENGINEERING_CLEANUP.zip*	71337	DELETE_DUPLICATE	DELETE	Superseded Phase 1 package
+D:\3.VScode\Mi\worktrees\ZuiControl_v20_4_uperf_regular_log_20260903	0	DELETE_REGENERABLE	git worktree remove	Clean obsolete worktree
+D:\3.VScode\Mi\worktrees\ZuiControl_v20_4_uperf_supervisor_20260902	0	DELETE_REGENERABLE	git worktree remove	Clean obsolete worktree

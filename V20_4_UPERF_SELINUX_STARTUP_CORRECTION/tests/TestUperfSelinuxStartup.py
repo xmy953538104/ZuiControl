@@ -20,7 +20,7 @@ VENDOR_POLICY = REPO / "payload/patches/vendor_sepolicy_zui_scheduler.cil"
 PROOF = Path(__file__).with_name("android14_init_stop_contract.txt")
 
 spec = importlib.util.spec_from_file_location(
-    "verify_uperf_runtime_access", REPO / "scripts/VerifyUperfRuntimeAccess.py")
+    "verify_uperf_runtime_access", REPO / "scripts/verify/VerifyUperfRuntimeAccess.py")
 assert spec and spec.loader
 verifier = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verifier)

@@ -1,4 +1,9 @@
-# 04 Uperf lifecycle
+# 04 Uperf lifecycle — HISTORICAL ONLY
+
+> This document records the superseded FIFO design evaluated before the
+> regular-file output contract was proven on device. It is not current
+> production guidance. Current Golden semantics are regular startup log,
+> startup-only readiness, native subreaper, and blocking `waitpid`.
 
 ## Existing problem
 

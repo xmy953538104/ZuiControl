@@ -144,7 +144,7 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument(
         "--repo",
-        default=str(pathlib.Path(__file__).resolve().parents[1]),
+        default=str(pathlib.Path(__file__).resolve().parents[2]),
         help="ZuiControl repository root",
     )
     args = parser.parse_args()

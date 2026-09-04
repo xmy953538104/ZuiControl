@@ -1,7 +1,7 @@
 param(
-    [string]$SourceDir = '',
-    [string]$PlatformDir = '',
-    [string]$OutputDir = "D:\3.VScode\Mi\flash\ZuiControl_9008_SAFE_072"
+    [string]$SourceDir = 'D:\3.VScode\Mi\zui072（flash）\out\V20.4_Golden_20260903144915',
+    [string]$PlatformDir = 'D:\3.VScode\Mi\zui072（9008）',
+    [string]$OutputDir = "D:\3.VScode\Mi\zui072（flash）\work\current\fixed-seven"
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,15 +12,8 @@ function Require-File([string]$Path) {
     }
 }
 
-$workspace = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-if ([string]::IsNullOrWhiteSpace($SourceDir)) {
-    $SourceDir = @(Get-ChildItem -LiteralPath $workspace -Directory | Where-Object { $_.Name -match 'B.*072$' }).FullName
-}
-if ([string]::IsNullOrWhiteSpace($PlatformDir)) {
-    $PlatformDir = @(Get-ChildItem -LiteralPath $workspace -Directory | Where-Object { $_.Name -match 'A.*072$' }).FullName
-}
-if (@($SourceDir).Count -ne 1 -or @($PlatformDir).Count -ne 1) {
-    throw 'Could not resolve exactly one B072 source directory and one A072 platform directory.'
+if ([string]::IsNullOrWhiteSpace($SourceDir) -or [string]::IsNullOrWhiteSpace($PlatformDir)) {
+    throw 'SourceDir and PlatformDir must be explicit; candidate discovery by directory name is forbidden.'
 }
 $source = [IO.Path]::GetFullPath($SourceDir)
 $platform = [IO.Path]::GetFullPath($PlatformDir)
@@ -169,7 +162,7 @@ It writes exactly these seven targets:
 
 It does not write GPT, persist, FRP, modemst, userdata or any other partition.
 The four image files are NTFS hard links to the verified source package.
-Run scripts/FlashZuiControl9008.ps1; do not add full rawprogram or patch XML here.
+Run scripts/flash/FlashZuiControl9008.ps1; do not add full rawprogram or patch XML here.
 "@
 [IO.File]::WriteAllText((Join-Path $output 'README_SAFE_9008.txt'), $readme, (New-Object Text.UTF8Encoding($false)))
 

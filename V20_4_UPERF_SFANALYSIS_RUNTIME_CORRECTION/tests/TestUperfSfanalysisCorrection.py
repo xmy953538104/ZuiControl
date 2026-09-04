@@ -28,7 +28,7 @@ def sha256(path: Path) -> str:
 
 
 def load_readback_module():
-    path = REPO / "scripts/VerifyZuiControl9008Readback.py"
+    path = REPO / "scripts/verify/VerifyZuiControl9008Readback.py"
     spec = importlib.util.spec_from_file_location("readback_gate", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -37,7 +37,7 @@ def load_readback_module():
 
 
 def load_access_verifier_module():
-    path = REPO / "scripts/VerifyUperfRuntimeAccess.py"
+    path = REPO / "scripts/verify/VerifyUperfRuntimeAccess.py"
     spec = importlib.util.spec_from_file_location("uperf_access_gate", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -153,7 +153,7 @@ class SfanalysisCorrectionTests(unittest.TestCase):
         )
 
     def test_16_qdl_flag_alone_cannot_pass(self) -> None:
-        gate = text(REPO / "scripts/FlashZuiControl9008.ps1")
+        gate = text(REPO / "scripts/flash/FlashZuiControl9008.ps1")
         self.assertIn("--read-back-verify", gate)
         self.assertIn("qdl_flag_only_accepted_as_proof = $false", gate)
         self.assertIn("'dump-part'", gate)
@@ -222,13 +222,13 @@ class SfanalysisCorrectionTests(unittest.TestCase):
         self.assertIn("UPERF_STARTUP_STABILITY_GATE=FAIL", runtime)
 
     def test_19_config_activated_module_review_is_mandatory(self) -> None:
-        verifier = text(REPO / "scripts/VerifyUperfRuntimeAccess.py")
+        verifier = text(REPO / "scripts/verify/VerifyUperfRuntimeAccess.py")
         for module in ("sfanalysis", "input", "switcher", "sysfs", "sched"):
             self.assertIn(f'"module": "{module}"', verifier)
         self.assertIn('"closed_source_config_modules": "PARTIAL_STATIC_REVIEW"', verifier)
 
     def test_20_flash_gate_deletes_large_temporary_dumps(self) -> None:
-        gate = text(REPO / "scripts/FlashZuiControl9008.ps1")
+        gate = text(REPO / "scripts/flash/FlashZuiControl9008.ps1")
         self.assertIn("Get-FileHash -LiteralPath $dumpPath", gate)
         self.assertIn("Remove-Item -LiteralPath $dumpPath -Force", gate)
         self.assertIn("PHYSICAL_PARTITION_READBACK=PASS", gate)

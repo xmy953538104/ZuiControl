@@ -115,10 +115,10 @@ $trackedBuildPaths = @(
     'payload/system/etc/init/zui_controld.rc',
     'payload/system/etc/init/zui_scheduler.rc',
     'payload/system/etc/zui_control/zui_scheduler_prepare.sh',
-    'scripts/ApplyZuiControlPayload.py',
-    'scripts/PatchZuiControlFramework.py',
-    'scripts/TestZuiControldTransactions.sh',
-    'scripts/VerifyZuiControlFlashPackage.ps1',
+    'scripts/build/ApplyZuiControlPayload.py',
+    'scripts/build/PatchZuiControlFramework.py',
+    'scripts/verify/TestZuiControldTransactions.sh',
+    'scripts/verify/VerifyZuiControlFlashPackage.ps1',
     'V20_3A_COMMAND_WAKEUP/tests/TestV20_3APolicy.py',
     'V20_3A_COMMAND_WAKEUP/tests/BuildV20_3ACandidate.ps1'
 )
@@ -479,7 +479,7 @@ try {
     if ($vendorApkBefore.Count -ne 17) { throw "Expected exactly 17 vendor APKs before apply; found $($vendorApkBefore.Count)." }
     Record-Space after_extract
 
-    $apply = Join-Path $scratchRepo 'scripts\ApplyZuiControlPayload.py'
+    $apply = Join-Path $scratchRepo 'scripts\build\ApplyZuiControlPayload.py'
     Invoke-CheckedLogged $python $apply --root $scratchRepo --unpack $unpack --payload $ciPayload --dry-run
     Invoke-CheckedLogged $python $apply --root $scratchRepo --unpack $unpack --payload $ciPayload
     Copy-Item -LiteralPath (Join-Path $scratch 'work\config\zui_control_payload_latest.json') -Destination (Join-Path $evidence 'zui_control_payload_actual.json')
@@ -581,7 +581,7 @@ try {
     [IO.File]::WriteAllLines((Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt'), $sumLines, [Text.UTF8Encoding]::new($false))
     Copy-Item -LiteralPath (Join-Path $candidate 'SHA256SUMS_ZuiControl_v19.txt') -Destination (Join-Path $evidence 'candidate_sha256.txt')
 
-    $verifier = Join-Path $scratchRepo 'scripts\VerifyZuiControlFlashPackage.ps1'
+    $verifier = Join-Path $scratchRepo 'scripts\verify\VerifyZuiControlFlashPackage.ps1'
     & $verifier -FlashDir $candidate -WorkDir (Join-Path $scratch 'work\verify_v20_3a_final') `
         -ExpectedVendorImageSha256 $signedVendorHash `
         -ExpectedVendorApkInventoryPath (Join-Path $evidence 'vendor_apk_preservation.json') *>&1 |

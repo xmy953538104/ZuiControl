@@ -10,7 +10,7 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[2]
 POLICY = REPO / "payload/patches/plat_sepolicy_zui_control.cil"
-WRAPPER = REPO / "payload/system/bin/zui_uperf_service"
+SUPERVISOR = REPO / "native/zui_uperf_supervisor.c"
 FILE_CONTEXTS = REPO / "payload/patches/plat_file_contexts_add.txt"
 PROPERTY_CONTEXTS = REPO / "payload/patches/plat_property_contexts_add.txt"
 VENDOR_POLICY = REPO / "payload/patches/vendor_sepolicy_zui_scheduler.cil"
@@ -27,11 +27,6 @@ DIR_ALLOW = (
     "(allow performanced zui_control_data_file (dir "
     "(getattr open read search write add_name remove_name create setattr)))"
 )
-ATOMIC_PUBLISH = (
-    "printf '%s\\n' \"$now\" > \"$READY_UPTIME.tmp\" || exit 1\n"
-    "chmod 0600 \"$READY_UPTIME.tmp\" || exit 1\n"
-    "mv -f \"$READY_UPTIME.tmp\" \"$READY_UPTIME\" || exit 1"
-)
 
 
 def text(path: Path) -> str:
@@ -39,7 +34,7 @@ def text(path: Path) -> str:
 
 
 def load_verifier():
-    path = REPO / "scripts/VerifyUperfRuntimeAccess.py"
+    path = REPO / "scripts/verify/VerifyUperfRuntimeAccess.py"
     spec = importlib.util.spec_from_file_location("uperf_ready_marker_gate", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -63,8 +58,14 @@ class UperfReadyMarkerSelinuxTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.verifier = load_verifier()
 
-    def test_01_frozen_wrapper_uses_atomic_ready_marker_publish(self) -> None:
-        self.assertIn(ATOMIC_PUBLISH, text(WRAPPER))
+    def test_01_frozen_supervisor_uses_atomic_ready_marker_publish(self) -> None:
+        source = text(SUPERVISOR)
+        self.assertIn("static int publish_ready_marker(const char *path)", source)
+        self.assertIn("O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW", source)
+        self.assertIn("fchmod(fd, 0600)", source)
+        self.assertIn("write_all(fd, value, (size_t)value_length)", source)
+        self.assertIn("fsync(fd)", source)
+        self.assertIn("rename(temporary, path)", source)
 
     def test_02_access_graph_models_file_rename_and_parent_directory(self) -> None:
         report = self.verifier.verify(args(POLICY))

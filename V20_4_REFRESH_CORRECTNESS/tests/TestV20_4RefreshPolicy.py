@@ -622,9 +622,9 @@ class ProductionBindingTest(unittest.TestCase):
         cls.hooks = read(
             "framework_patch/src/services/com/zui/server/control/ZuiControlHooks.java"
         )
-        cls.framework_patcher = read("scripts/PatchZuiControlFramework.py")
-        cls.final_super_verifier = read("scripts/VerifyZuiControlFinalSuper.ps1")
-        cls.flash_verifier = read("scripts/VerifyZuiControlFlashPackage.ps1")
+        cls.framework_patcher = read("scripts/build/PatchZuiControlFramework.py")
+        cls.final_super_verifier = read("scripts/verify/VerifyZuiControlFinalSuper.ps1")
+        cls.flash_verifier = read("scripts/verify/VerifyZuiControlFlashPackage.ps1")
         cls.client = read("app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt")
         cls.main = read("app/src/main/java/com/zui/zuicontrol/MainActivity.kt")
         cls.tile = read("app/src/main/java/com/zui/zuicontrol/ZuiControlTileService.kt")

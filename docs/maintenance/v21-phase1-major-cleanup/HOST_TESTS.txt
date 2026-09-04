@@ -1,0 +1,18 @@
+Run date: 2026-09-04
+
+Python syntax compile: PASS (5 canonical build/verify scripts)
+Refresh state/policy: PASS 39/39
+Uperf architecture/ownership/scene: PASS 31/31
+SFAnalysis correction: PASS 22/22
+SELinux startup correction: PASS 18/18
+Ready-marker SELinux/native atomic publish: PASS 3/3
+Transitional-null correction: PASS 2/2
+Regular-log native fixture: SKIPPED_ON_WINDOWS (requires Linux); previously frozen Linux gate is not rerun here
+Known-good command layer: PASS 4 checks
+Exact-plan cleanup: PASS dry-run default + receipt + execute fixture
+qdl progress compactor: PASS 3 checks
+Final aggregate rerun: HOST_GATE_COMPLETE=PASS
+
+The ready-marker test was corrected to inspect the current native supervisor atomic
+open/write/fsync/rename implementation instead of the retired shell wrapper implementation.
+No production file was changed to make a test pass.
