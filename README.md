@@ -42,6 +42,16 @@ python tests/uperf/startup/TestUperfStartupPolicy.py
 python tests/uperf/startup/TestUperfStartupBoundaries.py
 python tests/uperf/supervisor/TestUperfSupervisor.py
 python tests/uperf/top_resumed/TestUperfTopResumedStateMachine.py
+python tests/cache/TestVerifiedContentCache.py
+```
+
+Stable host artifacts may be reused only through the verified content cache. Its
+key binds the operation version, source SHA-256, tool SHA-256/version, and
+relevant options; every hit re-verifies output byte hashes:
+
+```text
+python scripts/build/VerifiedContentCache.py lpunpack --source-super <super.img> --lpunpack-tool <lpunpack.py> --python <python> --cache-root <cache> --partition system_a
+python scripts/build/VerifiedContentCache.py ci-artifact --run-id <run> --artifact-id <artifact> --digest sha256:<digest> --source-archive <artifact.zip> --cache-root <cache>
 ```
 
 The same canonical paths are enforced by `.github/workflows/build.yml`.

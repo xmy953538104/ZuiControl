@@ -1,6 +1,8 @@
 .gradle/
 .kotlin/
 build/
+!scripts/build/
+!scripts/build/VerifiedContentCache.py
 app/build/
 local.properties
 *.apk
