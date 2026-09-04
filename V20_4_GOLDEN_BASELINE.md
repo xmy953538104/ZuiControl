@@ -14,7 +14,7 @@ superseded candidate must never be selected by recency or directory name.
 | GitHub CI | `33724674012` |
 | Device Gate RunId | `20260903153438` |
 | Golden package | `D:\3.VScode\Mi\zui072（flash）\out\V20.4_Golden_20260903144915` |
-| Final closure ZIP | `D:\3.VScode\Mi\zui072（flash）\work\evidence\V20_4_FINAL_CLOSURE_GATE.zip` |
+| Final closure ZIP | `D:\3.VScode\Mi\Review packages\V20.4\V20_4_FINAL_CLOSURE_GATE.zip` |
 | Closure ZIP SHA-256 | `582c1fcfaf5d4eac629c95f723b57d0a5492825d2e1408e6c29250608694a490` |
 
 ## Image and runtime hashes

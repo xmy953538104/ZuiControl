@@ -51,7 +51,7 @@ Golden fixed-seven package：
 `D:\3.VScode\Mi\zui072（flash）\out\V20.4_Golden_20260903144915`。
 四个唯一镜像哈希和 runtime hashes 见
 [`V20_4_GOLDEN_BASELINE.json`](V20_4_GOLDEN_BASELINE.json)。最终闭环 ZIP 是
-`D:\3.VScode\Mi\zui072（flash）\work\evidence\V20_4_FINAL_CLOSURE_GATE.zip`，SHA-256
+`D:\3.VScode\Mi\Review packages\V20.4\V20_4_FINAL_CLOSURE_GATE.zip`，SHA-256
 `582c1fcfaf5d4eac629c95f723b57d0a5492825d2e1408e6c29250608694a490`。
 
 以后任何 production 工作必须先声明：

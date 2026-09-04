@@ -15,7 +15,7 @@ if (-not $WorkDir) { $WorkDir = Join-Path $WorkspaceRoot 'zui072（flash）\work
 
 $ToolsDir = Join-Path $WorkspaceRoot 'Edit tools'
 $AndroidSdkDir = Join-Path $ToolsDir 'android-build\android-sdk'
-$Python = Join-Path $ToolsDir 'android-build\python-3.8.0\python.exe'
+$Python = Join-Path $ToolsDir 'Python\python-3.8.0\python.exe'
 $LpUnpack = Join-Path $ToolsDir 'super-tools\lpunpack.py'
 $ExtractErofs = Join-Path $ToolsDir 'super-tools\AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'smali-apk\apktool.jar'

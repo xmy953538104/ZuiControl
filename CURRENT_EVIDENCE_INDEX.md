@@ -8,7 +8,7 @@ RunId `20260903153438`。
 
 权威 baseline：[`V20_4_GOLDEN_BASELINE.md`](V20_4_GOLDEN_BASELINE.md) 与
 [`V20_4_GOLDEN_BASELINE.json`](V20_4_GOLDEN_BASELINE.json)。最终闭环包位于
-`D:\3.VScode\Mi\zui072（flash）\work\evidence\V20_4_FINAL_CLOSURE_GATE.zip`，SHA-256
+`D:\3.VScode\Mi\Review packages\V20.4\V20_4_FINAL_CLOSURE_GATE.zip`，SHA-256
 `582c1fcfaf5d4eac629c95f723b57d0a5492825d2e1408e6c29250608694a490`。
 
 本文件是未来会话的默认证据入口。先读下表的最小结论；只有某个数字受到质疑

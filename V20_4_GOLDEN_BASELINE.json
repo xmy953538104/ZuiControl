@@ -17,7 +17,7 @@
   },
   "artifacts": {
     "golden_package": "D:\\3.VScode\\Mi\\zui072（flash）\\out\\V20.4_Golden_20260903144915",
-    "closure_zip": "D:\\3.VScode\\Mi\\zui072（flash）\\work\\evidence\\V20_4_FINAL_CLOSURE_GATE.zip",
+    "closure_zip": "D:\\3.VScode\\Mi\\Review packages\\V20.4\\V20_4_FINAL_CLOSURE_GATE.zip",
     "closure_zip_sha256": "582c1fcfaf5d4eac629c95f723b57d0a5492825d2e1408e6c29250608694a490",
     "super_sha256": "6124e7ddcdc8e656bda893158575ed22c4f240943a8b56c82b98546a666ba6c4",
     "boot_sha256": "e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371",

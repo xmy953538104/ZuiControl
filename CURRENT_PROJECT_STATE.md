@@ -18,7 +18,7 @@ V20_4_GATE=PASS
 V20_4_STATUS=CLOSED_WITH_EXPLICIT_BOUNDARIES
 ```
 
-当前状态是 **V21 Phase 1 engineering baseline 已完成；Phase 2 未开始**。
+当前状态是 **V21 Phase 1 portable engineering baseline 已关闭；Phase 2 未开始**。
 Phase 1 仅变更文档、host tooling、host tests、archive metadata 和明确
 allowlist 的 workspace cleanup；V20.4 production runtime 保持零差异，未构建
 新 ROM，未刷机。任何后续 production 工作必须显式声明
@@ -69,7 +69,7 @@ Foreground-only 语义不变：真实非空 SystemUI/ZuiControl/IME 等 transien
 - fixed-seven physical read-back 7/7 exact length/hash PASS；
 - 唯一一次 read-back 后 reset 返回 Launcher，boot/scheduler smoke PASS。
 
-最终闭环包：`D:\3.VScode\Mi\zui072（flash）\work\evidence\V20_4_FINAL_CLOSURE_GATE.zip`，SHA-256
+最终闭环包：`D:\3.VScode\Mi\Review packages\V20.4\V20_4_FINAL_CLOSURE_GATE.zip`，SHA-256
 `582c1fcfaf5d4eac629c95f723b57d0a5492825d2e1408e6c29250608694a490`。
 默认先读 [`CURRENT_EVIDENCE_INDEX.md`](CURRENT_EVIDENCE_INDEX.md)，只有结论受
 质疑时才打开闭环包中的 raw。
@@ -105,10 +105,15 @@ THERMAL_AB=BACKLOG
 ADAPTIVE_REFRESH_RESPONSE_TUNING=BACKLOG
 ```
 
-## 6. V21 Phase 1 工程状态
+## 6. V21 Phase 1 工程状态（CLOSED）
 
-- Mi 工作区已收敛为 original / flash work+out / Edit tools / script，Git/worktree
-  与疑似密钥材料是记录在案的例外；
+- Mi 工作区已收敛为 `ZuiControl` / original / flash work+out / `Edit tools` /
+  physical `script` / `Review packages`；不再依赖临时 worktree 或 junction；
+- Python 3.8、Temurin JDK 17、Git、Android SDK、ADB/fastboot、qdl-rs、镜像工具、
+  AVB 与 smali/apktool 已置于 `Edit tools`；Qualcomm 9008 driver 仍需 Windows 安装；
+- 签名/private material 的唯一位置是 `Edit tools\Signing`，manifest 仅记录哈希和用途，
+  不记录内容或密码，也不得进入 Git/Review package；
+- Gate archive 的唯一位置是 `Review packages\V20.4|V21`；
 - Golden baseline manifest 是唯一 baseline selector；
 - V20.4 候选按 `GOLDEN / CLOSED_REFERENCE / FAILED / SUPERSEDED /
   DIAGNOSTIC_ONLY` 分类；
@@ -136,6 +141,6 @@ V20_4_GOLDEN_FROZEN=YES
 PRODUCTION_RUNTIME_CHANGED=NO
 ROM_BUILT=NO
 DEVICE_FLASHED=NO
-V21_PHASE=PHASE1_COMPLETE_PHASE2_NOT_STARTED
-V21_PHASE1_STATUS=PASS_WITH_RECORDED_LAYOUT_EXCEPTIONS
+V21_PHASE=PHASE1_CLOSED_PHASE2_NOT_STARTED
+V21_PHASE1_STATUS=CLOSED
 ```

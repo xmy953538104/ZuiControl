@@ -17,4 +17,6 @@ tools\Convert-ZuiQdlProgressLog.ps1 | Compact qdl progress while retaining error
 
 Image build shell | No canonical copy exists after Phase 1 cleanup | supply and review an explicit path in a future production work package | intentionally not inferred; deleted legacy paths are forbidden
 
-The workspace-level D:\3.VScode\Mi\script path is a junction to this Git-tracked scripts directory. Do not create a second script copy.
+The repository `scripts` tree remains the source-level build/test/verifier layer. The workspace-level
+`D:\3.VScode\Mi\script` path is a physical portable operations directory, not a junction, symlink,
+or temporary-worktree dependency. Common environment/Git/flash/readback/cleanup/Gate entry points live there.

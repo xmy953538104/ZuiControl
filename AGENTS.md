@@ -6,7 +6,7 @@
 
 当前设备/系统：TB321FU / ZUI 16.1.11.072。
 
-当前工程状态：**V21 Phase 1 engineering baseline 已完成；Phase 2 未开始**。
+当前工程状态：**V21 Phase 1 portable engineering baseline 已关闭；Phase 2 未开始**。
 V20.4 Final Closure 已 PASS，状态为 **CLOSED WITH EXPLICIT BOUNDARIES**。
 唯一 Golden source 是 commit `29f23f8d590b88f0d472c12373366a9ef14e8330`，
 Build RunId `20260903144915`，CI `33724674012`，Device Gate RunId
@@ -15,7 +15,7 @@ Build RunId `20260903144915`，CI `33724674012`，Device Gate RunId
 [`V20_4_GOLDEN_BASELINE.json`](V20_4_GOLDEN_BASELINE.json)。
 
 本工程基线继续冻结全部 V20.4 production runtime。Phase 1 只包含 docs、host
-tooling、host tests、archive metadata 与显式 allowlist workspace cleanup，未修改
+tooling、host tests、archive metadata、portable environment 与显式 allowlist workspace cleanup，未修改
 App/framework/payload/native production runtime，未构建 ROM，未刷机。任何后续 production 工作
 必须先从 Golden commit 建立独立 worktree，并显式声明 `BASELINE_SOURCE` 和
 `BASELINE_IMAGE_HASHES`。禁止从旧失败候选、目录时间或旧 canonical B072 推断
@@ -42,6 +42,11 @@ transitional-null Golden 取代。状态分类见
 4. 当前生产源码
 5. `CURRENT_EVIDENCE_INDEX.md`
 6. `V20_4_GOLDEN_BASELINE.md` / `.json`
+
+Mi workspace 的长期入口是根目录 `README_MI.txt` 与 physical `script`；工具只认
+`Edit tools`，review archive 只认 `Review packages\V20.4|V21`，签名材料只认
+`Edit tools\Signing`。禁止把 Gate 包放入 Git repo/Mi 根，禁止重新建立指向临时
+worktree 的 `Mi\script` junction。
 
 历史 handoff、失败镜像和大型 raw/trace/log 不是当前上下文。它们的
 可重用因果已压缩到 `scripts/docs/`；默认不得扫描历史目录或使用
@@ -385,7 +390,7 @@ V20_4_UPERF_WORK_PACKAGE=CLOSED_WITH_EXPLICIT_BOUNDARIES
 
 ## 11. V21 / V22 边界与禁止回退
 
-V21 Phase 1 engineering cleanup / Golden freeze 已完成，不是 production cleanup。AppOpt、XML/ZuiPP bridge、未交付 FPS cap、旧 KGSL 实验、retired daemon compatibility、旧命名和生产历史逻辑的代码级清理仍须独立工作包与review；Phase 2 未开始，不得自动进入。
+V21 Phase 1 engineering cleanup / Golden freeze / portable workspace finalization 已 **CLOSED**，不得创建 Phase 1E。它不是 production cleanup。AppOpt、XML/ZuiPP bridge、未交付 FPS cap、旧 KGSL 实验、retired daemon compatibility、旧命名和生产历史逻辑的代码级清理仍须独立工作包与review；Phase 2 未开始，不得自动进入。
 
 V22 GPU 单独研究 KGSL/devfreq、GameHelper/ZuiPP/PowerHAL/thermal ownership，再决定 Uperf CPU + OEM GPU 或 CPU+GPU。thermal 始终保留安全裁决；必须做帧时间、功耗、温度 A/B。
 

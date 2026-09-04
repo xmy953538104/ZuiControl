@@ -28,7 +28,7 @@ the executed exact cleanup plan after path, byte count, file count and tree SHA-
 The following current assets are protected regardless of size:
 
 - `D:\3.VScode\Mi\zui072（flash）\out\V20.4_Golden_20260903144915`
-- `D:\3.VScode\Mi\zui072（flash）\work\evidence\V20_4_FINAL_CLOSURE_GATE.zip`
+- `D:\3.VScode\Mi\Review packages\V20.4\V20_4_FINAL_CLOSURE_GATE.zip`
 - Golden source commit `29f23f8d590b88f0d472c12373366a9ef14e8330`
 
 No pre-Golden failed candidate package remains in the active workspace.

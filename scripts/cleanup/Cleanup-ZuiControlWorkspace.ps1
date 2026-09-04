@@ -70,17 +70,14 @@ if ($AllowCachePrune) { $allowedRoots += $cacheRoot }
 $allowedRoots = @($allowedRoots | Select-Object -Unique)
 $protected = @(
     (Join-Path $workspace 'ZuiControl'),
-    (Join-Path $workspace 'worktrees'),
+    (Join-Path $managed 'git-worktrees'),
     (Join-Path $workspace 'zui072（9008）'),
     (Join-Path $workspace 'zui072（flash）\out'),
     (Join-Path $workspace 'Edit tools'),
     (Join-Path $workspace 'script'),
     (Join-Path $managed 'evidence'),
-    (Join-Path $workspace 'tools\pem'),
-    (Join-Path $workspace 'avb\tools\pem'),
-    (Join-Path $workspace 'Linux\pem'),
-    (Join-Path $workspace 'work\zuiperfctl-temp-release.jks'),
-    (Join-Path $workspace 'work\scene_vtools'),
+    (Join-Path $workspace 'Review packages'),
+    (Join-Path $workspace 'Edit tools\Signing'),
     [string]$baseline.artifacts.golden_package,
     [string]$baseline.artifacts.closure_zip
 ) | Where-Object { $_ } | ForEach-Object { Full $_ } | Select-Object -Unique
