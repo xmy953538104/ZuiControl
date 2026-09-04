@@ -1,8 +1,27 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-ZuiCanonicalAdbPath {
+    $moduleCandidates = @(
+        (Join-Path $PSScriptRoot '..\..\Mi.Common.psm1'),
+        (Join-Path $PSScriptRoot '..\..\..\script\Mi.Common.psm1')
+    )
+    if (-not [string]::IsNullOrWhiteSpace($env:ADB)) {
+        return [IO.Path]::GetFullPath($env:ADB)
+    }
+    foreach ($candidate in $moduleCandidates) {
+        $module = [IO.Path]::GetFullPath($candidate)
+        if (Test-Path -LiteralPath $module -PathType Leaf) {
+            Import-Module $module -Force
+            return [string](Get-MiPaths).Adb
+        }
+    }
+    throw 'Cannot locate Mi.Common.psm1; run Setup-MiEnvironment.ps1 or pass -AdbPath explicitly.'
+}
+
 function Resolve-ZuiAdbPath {
     param([string]$AdbPath)
+    if ([string]::IsNullOrWhiteSpace($AdbPath)) { $AdbPath = Get-ZuiCanonicalAdbPath }
     if (-not (Test-Path -LiteralPath $AdbPath -PathType Leaf)) {
         throw "adb not found: $AdbPath"
     }
@@ -67,4 +86,4 @@ function New-ZuiRootCommand {
     }) -join ' '
 }
 
-Export-ModuleMember -Function Resolve-ZuiAdbPath, Invoke-ZuiAdbCommand, Resolve-ZuiDeviceSerial, ConvertTo-ZuiShellToken, New-ZuiRootCommand
+Export-ModuleMember -Function Get-ZuiCanonicalAdbPath, Resolve-ZuiAdbPath, Invoke-ZuiAdbCommand, Resolve-ZuiDeviceSerial, ConvertTo-ZuiShellToken, New-ZuiRootCommand

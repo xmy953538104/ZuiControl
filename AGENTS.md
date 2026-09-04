@@ -6,7 +6,7 @@
 
 当前设备/系统：TB321FU / ZUI 16.1.11.072。
 
-当前工程状态：**V21 Phase 1 portable engineering baseline 已关闭；Phase 2 未开始**。
+当前工程状态：**V21 Phase 1 Closure Fix 已完成并关闭；Phase 2 未开始**。
 V20.4 Final Closure 已 PASS，状态为 **CLOSED WITH EXPLICIT BOUNDARIES**。
 唯一 Golden source 是 commit `29f23f8d590b88f0d472c12373366a9ef14e8330`，
 Build RunId `20260903144915`，CI `33724674012`，Device Gate RunId
@@ -47,6 +47,12 @@ Mi workspace 的长期入口是根目录 `README_MI.txt` 与 physical `script`�
 `Edit tools`，review archive 只认 `Review packages\V20.4|V21`，签名材料只认
 `Edit tools\Signing`。禁止把 Gate 包放入 Git repo/Mi 根，禁止重新建立指向临时
 worktree 的 `Mi\script` junction。
+
+Host 路径必须通过 physical `script\Mi.Common.psm1` / `Get-MiPaths` 动态解析；
+canonical script source 禁止写入特定盘符下的 Mi 路径或用户 profile。ADB/fastboot
+唯一 canonical copy 是 `Edit tools\android-build\android-sdk\platform-tools`。
+`New-MiWork.ps1` 默认 engineering base 是所选 repository 当前 HEAD；Golden
+runtime commit 只用于 production diff，不得再作为默认工程 worktree 起点。
 
 历史 handoff、失败镜像和大型 raw/trace/log 不是当前上下文。它们的
 可重用因果已压缩到 `scripts/docs/`；默认不得扫描历史目录或使用

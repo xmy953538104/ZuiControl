@@ -1,10 +1,14 @@
 param(
-    [string]$SourceDir = 'D:\3.VScode\Mi\zui072（flash）\out\V20.4_Golden_20260903144915',
-    [string]$PlatformDir = 'D:\3.VScode\Mi\zui072（9008）',
-    [string]$OutputDir = "D:\3.VScode\Mi\zui072（flash）\work\current\fixed-seven"
+    [string]$SourceDir = '',
+    [string]$PlatformDir = '',
+    [string]$OutputDir = ''
 )
 
 $ErrorActionPreference = "Stop"
+$miRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..')).TrimEnd('\')
+if (-not $SourceDir) { $SourceDir = Join-Path $miRoot 'zui072（flash）\out\V20.4_Golden_20260903144915' }
+if (-not $PlatformDir) { $PlatformDir = Join-Path $miRoot 'zui072（9008）' }
+if (-not $OutputDir) { $OutputDir = Join-Path $miRoot 'zui072（flash）\work\current\fixed-seven' }
 
 function Require-File([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {

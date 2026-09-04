@@ -1,12 +1,13 @@
 [CmdletBinding()]
 param(
-    [string]$Root = 'D:\3.VScode\Mi',
+    [string]$Root = '',
     [Parameter(Mandatory)][string]$OutputDirectory,
     [int]$Top = 100
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if (-not $Root) { $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..')).TrimEnd('\') }
 
 $rootPath = (Resolve-Path -LiteralPath $Root).Path.TrimEnd('\')
 $output = [IO.Path]::GetFullPath($OutputDirectory)

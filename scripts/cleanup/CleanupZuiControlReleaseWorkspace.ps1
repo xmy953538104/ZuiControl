@@ -1,11 +1,12 @@
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = "D:\3.VScode\Mi",
+    [string]$WorkspaceRoot = '',
     [string]$KeepCiRun = "32809284592",
     [switch]$Execute
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $WorkspaceRoot) { $WorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..')).TrimEnd('\') }
 
 $workspace = (Resolve-Path -LiteralPath $WorkspaceRoot).Path.TrimEnd("\")
 $workRoot = (Resolve-Path -LiteralPath (Join-Path $workspace "work")).Path.TrimEnd("\")

@@ -18,7 +18,7 @@ V20_4_GATE=PASS
 V20_4_STATUS=CLOSED_WITH_EXPLICIT_BOUNDARIES
 ```
 
-当前状态是 **V21 Phase 1 portable engineering baseline 已关闭；Phase 2 未开始**。
+当前状态是 **V21 Phase 1 Closure Fix 已完成并关闭；Phase 2 未开始**。
 Phase 1 仅变更文档、host tooling、host tests、archive metadata 和明确
 allowlist 的 workspace cleanup；V20.4 production runtime 保持零差异，未构建
 新 ROM，未刷机。任何后续 production 工作必须显式声明
@@ -129,6 +129,13 @@ ADAPTIVE_REFRESH_RESPONSE_TUNING=BACKLOG
   Firehose device digest 仍为 `NOT_APPROVED`，不能替代 full read-back。
 - Phase 1 没有建立新的 canonical image build shell；后续 production build 必须在
   独立工作包中显式提供并 review，不得回退到已删除的旧路径或自动猜测。
+- canonical host/device helper 不再包含 Mi 或用户 profile 绝对路径；ADB/fastboot
+  唯一来源是 `Edit tools\android-build\android-sdk\platform-tools`；
+- `New-MiWork.ps1` 默认以所选 repository 的当前 HEAD 作为 engineering base，
+  Golden commit `29f23f8...` 仅作为 production runtime diff base；显式
+  `-StartPoint` 仍可用于经 review 的特殊工作；
+- alternate-root、A+B+C worktree 与 explicit-start fixture 均已纳入 Phase 1
+  Closure Fix Gate；PowerShell 7 仍是文档化的 host external requirement。
 
 ## 7. 默认入口
 

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = 'D:\3.VScode\Mi',
+    [string]$WorkspaceRoot = '',
     [Parameter(Mandatory)][string]$PlanPath,
     [string]$BaselineManifest = '',
     [string]$ReceiptPath,
@@ -11,6 +11,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if (-not $WorkspaceRoot) { $WorkspaceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..')).TrimEnd('\') }
 
 function Full([string]$Path) { [IO.Path]::GetFullPath($Path).TrimEnd('\') }
 function Is-Within([string]$Child, [string]$Parent) {

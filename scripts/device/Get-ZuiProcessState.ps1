@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$Serial,
-    [string]$AdbPath = 'D:\3.VScode\Mi\Edit tools\adb-fastboot\adb.exe',
+    [string]$AdbPath = '',
     [switch]$AsJson
 )
 

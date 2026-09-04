@@ -11,6 +11,11 @@ function Assert-Equal([object]$Expected, [object]$Actual, [string]$Name) {
     if ([string]$Expected -cne [string]$Actual) { throw "$Name expected=<$Expected> actual=<$Actual>" }
 }
 
+$canonicalAdb = Get-ZuiCanonicalAdbPath
+if ($canonicalAdb -notmatch '(?i)[\\/]android-build[\\/]android-sdk[\\/]platform-tools[\\/]adb[.]exe$') {
+    throw "Device helper did not resolve SDK platform-tools adb: $canonicalAdb"
+}
+
 $dangerousLiteral = '$() ; * '' " space'
 $quoted = ConvertTo-ZuiShellToken $dangerousLiteral
 if (-not ($quoted.StartsWith("'") -and $quoted.EndsWith("'") -and $quoted.Contains("'`"'`"'"))) {
@@ -36,3 +41,4 @@ foreach ($file in $powershellFiles) {
 'RESERVED_PID_ASSIGNMENT=ABSENT'
 'PROTECTED_PROPERTY_ROOT_PATH=PASS'
 'DISPLAY_GLOBAL_RESUMED_ACTIVITY_FIXTURE=PASS'
+'DYNAMIC_ADB_RESOLUTION=PASS'

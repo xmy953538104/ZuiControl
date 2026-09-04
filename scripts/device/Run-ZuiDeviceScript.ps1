@@ -4,7 +4,7 @@ param(
     [string]$LocalScript,
     [string[]]$DeviceArgumentList = @(),
     [string]$Serial,
-    [string]$AdbPath = 'D:\3.VScode\Mi\Edit tools\adb-fastboot\adb.exe',
+    [string]$AdbPath = '',
     [switch]$KeepRemote,
     [switch]$AllowFailure
 )

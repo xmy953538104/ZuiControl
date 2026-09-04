@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory)]
     [string]$Name,
     [string]$Serial,
-    [string]$AdbPath = 'D:\3.VScode\Mi\Edit tools\adb-fastboot\adb.exe'
+    [string]$AdbPath = ''
 )
 
 Set-StrictMode -Version Latest

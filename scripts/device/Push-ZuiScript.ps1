@@ -5,7 +5,7 @@ param(
     [string]$RemoteName,
     [string]$RemoteDirectory = '/data/local/tmp',
     [string]$Serial,
-    [string]$AdbPath = 'D:\3.VScode\Mi\Edit tools\adb-fastboot\adb.exe'
+    [string]$AdbPath = ''
 )
 
 Set-StrictMode -Version Latest

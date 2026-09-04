@@ -1,11 +1,11 @@
 param(
     [ValidateSet('Preflight', 'EnterEdl', 'Flash')]
     [string]$Mode = 'Preflight',
-    [string]$SourceDir = 'D:\3.VScode\Mi\zui072（flash）\out\V20.4_Golden_20260903144915',
-    [string]$PlatformDir = 'D:\3.VScode\Mi\zui072（9008）',
-    [string]$SafePackageDir = "D:\3.VScode\Mi\zui072（flash）\work\current\fixed-seven",
-    [string]$QdlPath = "D:\3.VScode\Mi\Edit tools\qdl\Binaries\Qcom\qdl-rs.exe",
-    [string]$AdbPath = "D:\3.VScode\Mi\Edit tools\adb-fastboot\adb.exe",
+    [string]$SourceDir = '',
+    [string]$PlatformDir = '',
+    [string]$SafePackageDir = '',
+    [string]$QdlPath = '',
+    [string]$AdbPath = '',
     [string]$ConfirmAdbSerial = 'HA25HSZM',
     [string]$ExpectedBuildRegex = 'TB321FU.*16\.1\.11\.072',
     [int]$EdlTimeoutSeconds = 60,
@@ -13,6 +13,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$miRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..')).TrimEnd('\')
+if (-not $SourceDir) { $SourceDir = Join-Path $miRoot 'zui072（flash）\out\V20.4_Golden_20260903144915' }
+if (-not $PlatformDir) { $PlatformDir = Join-Path $miRoot 'zui072（9008）' }
+if (-not $SafePackageDir) { $SafePackageDir = Join-Path $miRoot 'zui072（flash）\work\current\fixed-seven' }
+if (-not $QdlPath) { $QdlPath = Join-Path $miRoot 'Edit tools\qdl\Binaries\Qcom\qdl-rs.exe' }
+if (-not $AdbPath) { $AdbPath = Join-Path $miRoot 'Edit tools\android-build\android-sdk\platform-tools\adb.exe' }
 $prepare = Join-Path $PSScriptRoot 'PrepareZuiControl9008Package.ps1'
 & $prepare -SourceDir $SourceDir -PlatformDir $PlatformDir -OutputDir $SafePackageDir
 $verify = Join-Path (Split-Path -Parent $PSScriptRoot) 'verify\VerifyZuiControlFlashPackage.ps1'
@@ -97,7 +103,7 @@ if ($Mode -eq 'EnterEdl') {
 
 $loader = Join-Path $SafePackageDir 'prog_firehose_ddr-TB321FC.elf'
 $xml = Join-Path $SafePackageDir 'rawprogram_zuicontrol.xml'
-$logDir = 'D:\3.VScode\Mi\zui072（flash）\work\temp\qdl-logs'
+$logDir = Join-Path $miRoot 'zui072（flash）\work\temp\qdl-logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $timestamp = [DateTime]::Now.ToString('yyyy-MM-dd_HH-mm-ss')
 $log = Join-Path $logDir ("ZuiControl_qdlrs_{0}.log" -f $timestamp)
