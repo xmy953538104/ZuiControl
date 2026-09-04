@@ -62,8 +62,15 @@ def write_json(path, value):
 
 def checked_cache_path(cache_root, operation, key):
     root = cache_root.resolve()
-    path = (root / operation / key).resolve()
-    if (path.parent != (root / operation).resolve() or len(key) != 64 or
+    operation_path = root / operation
+    if operation_path.is_symlink():
+        raise RuntimeError("Refusing symbolic-link cache operation root")
+    operation_root = operation_path.resolve()
+    raw_path = operation_root / key
+    if raw_path.is_symlink():
+        raise RuntimeError("Refusing symbolic-link cache entry")
+    path = raw_path.resolve()
+    if (operation_root.parent != root or path.parent != operation_root or len(key) != 64 or
             any(char not in "0123456789abcdef" for char in key)):
         raise RuntimeError("Refusing cache path outside the selected operation root")
     return path
@@ -79,7 +86,7 @@ def safe_relative_path(value, label):
     normalized = str(value).replace("\\", "/")
     path = PurePosixPath(normalized)
     if (not path.parts or path.is_absolute() or "." in path.parts or
-            ".." in path.parts or ":" in path.parts[0]):
+            ".." in path.parts or any(":" in part for part in path.parts)):
         raise RuntimeError("Unsafe {} path: {}".format(label, value))
     return Path(*path.parts)
 
@@ -132,6 +139,8 @@ def validate_hit(entry, expected, expected_outputs):
         return None
     try:
         manifest = read_json(manifest_path)
+        if not isinstance(manifest, dict):
+            return None
         for name, value in expected.items():
             if manifest.get(name) != value:
                 return None

@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -105,6 +106,28 @@ def main():
         reverified = invoke(*lpunpack_args(source, fake_tool, cache))
         assert reverified["CACHE_STATUS"] == "MISS"
         print("CACHE_OUTPUT_HASH_REVALIDATION=PASS")
+
+        Path(reverified["CACHE_MANIFEST"]).write_text("[]", encoding="utf-8")
+        malformed_manifest = invoke(*lpunpack_args(source, fake_tool, cache))
+        assert malformed_manifest["CACHE_STATUS"] == "MISS"
+        print("CACHE_MALFORMED_MANIFEST_RECOVERY=PASS")
+
+        entry = Path(malformed_manifest["CACHE_MANIFEST"]).parent
+        link_target = entry.with_name(entry.name + "-target")
+        entry.rename(link_target)
+        try:
+            os.symlink(str(link_target), str(entry), target_is_directory=True)
+        except OSError:
+            link_target.rename(entry)
+            print("CACHE_ENTRY_SYMLINK_SAFETY=SKIP_PLATFORM")
+        else:
+            linked = invoke_failure(*lpunpack_args(source, fake_tool, cache))
+            assert linked.returncode != 0
+            assert "symbolic-link cache entry" in linked.stdout
+            assert link_target.is_dir()
+            entry.unlink()
+            link_target.rename(entry)
+            print("CACHE_ENTRY_SYMLINK_SAFETY=PASS")
 
         source.write_bytes(b"source-v2")
         changed_input = invoke(*lpunpack_args(source, fake_tool, cache))
