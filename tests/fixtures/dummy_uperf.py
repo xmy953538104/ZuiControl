@@ -70,10 +70,10 @@ def write_startup_log(mode: str, output_path: Path, state: Path) -> None:
         first_inode = output_path.stat().st_ino
         time.sleep(0.14)
         with output_path.open("w", encoding="utf-8") as output:
+            write_state(state / "truncated", f"inode={first_inode}\n")
             output.write(STARTUP_PREFIX + READY)
             output.flush()
             os.fsync(output.fileno())
-        write_state(state / "truncated", f"inode={first_inode}\n")
         return
 
     if mode == "split_ready":
