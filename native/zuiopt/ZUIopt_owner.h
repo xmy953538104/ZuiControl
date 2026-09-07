@@ -3,6 +3,9 @@
 #include "ZUIopt_core.h"
 #include <sys/file.h>
 namespace ZUIopt {
+inline bool validCpusetScaffold(const struct stat& st){
+    return S_ISDIR(st.st_mode)&&st.st_uid==0&&st.st_gid==0&&(st.st_mode&07777)==0755;
+}
 struct OwnerRecord {
     int pid=0,user=0,tid=0;
     uint64_t processStart=0,threadStart=0;
@@ -126,6 +129,10 @@ class Placement {
     std::set<std::string> created;
     Journal& journal;
     Counters& count;
+    void requireScaffold(){
+        struct stat st{};
+        require(lstat(root.c_str(),&st)==0&&validCpusetScaffold(st),"init cpuset scaffold absent or unsafe");
+    }
     bool same(const ProcessState& p,int tid,const Task& t){return identity(p.pid).start==p.generation&&identity(p.pid,tid).start==t.generation&&uid(p.pid)==p.uid;}
     std::set<std::string> groups(){
         std::set<std::string> paths;
@@ -133,7 +140,8 @@ class Placement {
         while(auto* e=readdir(dir)){
             std::string n=e->d_name;if(n=="."||n=="..")continue;
             struct stat st{};auto p=root+"/"+n;
-            if(lstat(p.c_str(),&st)==0&&S_ISDIR(st.st_mode)){
+            if(lstat(p.c_str(),&st)!=0||S_ISLNK(st.st_mode)){closedir(dir);throw std::runtime_error("unsafe cpuset entry");}
+            if(S_ISDIR(st.st_mode)){
                 if(n.find_first_not_of("0123456789abcdef")!=n.npos||paths.size()>=256){closedir(dir);throw std::runtime_error("unknown cpuset directory");}
                 paths.insert(p);
             }
@@ -173,20 +181,19 @@ class Placement {
     }
 public:
     Placement(Counters& c,Journal& j):journal(j),count(c){
-        journal.load();bool exists=access(root.c_str(),F_OK)==0;
+        // Init owns the top-level scaffold. Never create, repair or remove it here.
+        requireScaffold();journal.load();
         size_t restored=0,discarded=0;
-        if(exists)coverRemaining(); // Preflight all before any restore; never guess unknown membership.
+        coverRemaining(); // Preflight all before any restore; never guess unknown membership.
         for(auto& [_,r]:journal.entries){if(journal.same(r)){restore(r);restored++;}else discarded++;}
-        if(exists){
+        {
             for(int pass=0;pass<8&&coverRemaining();pass++)for(auto& [_,r]:journal.entries)if(group(r.tid).rfind("/ZUIopt/",0)==0)restore(r);
             require(!coverRemaining(),"RECOVERY_BUSY_FAIL_CLOSED");created=groups();cleanup();
         }
         journal.entries.clear();journal.leases.clear();journal.commit();
         ZUIOPT_NOTE("RECOVERY_OK","restored="+std::to_string(restored)+" discarded="+std::to_string(discarded)+" remaining_tasks=0");
-        require(mkdir(root.c_str(),0755)==0,"cpuset root create");
-        if(!write(root+"/mems",trim(read("/dev/cpuset/mems")))||!write(root+"/cpus",trim(read("/dev/cpuset/cpus")))){
-            rmdir(root.c_str());throw std::runtime_error("cpuset initialization");
-        }
+        require(write(root+"/mems",trim(read("/dev/cpuset/mems")))&&
+                write(root+"/cpus",trim(read("/dev/cpuset/cpus"))),"cpuset initialization");
     }
     std::string target(Mask m){
         std::ostringstream n;n<<std::hex<<m;auto p=root+"/"+n.str();
@@ -262,9 +269,11 @@ public:
         journal.leases.erase(p.pid);journal.commit();p.tasks.clear();p.managed=false;p.next=0;
     }
     void cleanup(){
+        requireScaffold();
         require(members(root).empty(),"remaining root tasks");
         for(auto& p:created){require(members(p).empty(),"remaining owned tasks");require(rmdir(p.c_str())==0,"cpuset child removal");}
-        created.clear();require(rmdir(root.c_str())==0,"cpuset root removal");
+        created.clear();require(groups().empty(),"remaining cpuset children");
+        // KEEP_ROOT: init's scaffold survives graceful stop, recovery and restart.
     }
 };
 }

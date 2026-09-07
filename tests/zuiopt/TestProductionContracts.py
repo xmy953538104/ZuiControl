@@ -3,11 +3,29 @@ from pathlib import Path
 import hashlib
 import re
 import unittest
+from TestCanonicalDocs import verify_repository_docs
 
 ROOT=Path(__file__).resolve().parents[2]
 def read(path): return (ROOT/path).read_text(encoding='utf-8')
 
 class ProductionContracts(unittest.TestCase):
+    def test_canonical_docs(self):
+        verify_repository_docs(ROOT)
+
+    def test_init_scaffold_and_keep_root(self):
+        rc=read('payload/system/etc/init/zui_scheduler.rc')
+        scaffold='    mkdir /dev/cpuset/ZUIopt 0755 root root'
+        self.assertEqual(rc.count(scaffold),1)
+        action=rc[:rc.index(scaffold)].strip().splitlines()[0]
+        self.assertEqual(action,'on post-fs-data')
+        self.assertLess(rc.index(scaffold),rc.index('boot_owner.sh'))
+        self.assertLess(rc.index(scaffold),rc.index('start zui_zuiopt'))
+        owner=read('native/zuiopt/ZUIopt_owner.h')
+        self.assertNotIn('mkdir(root.c_str()',owner)
+        self.assertNotIn('rmdir(root.c_str()',owner)
+        self.assertIn('requireScaffold();journal.load();',owner)
+        self.assertIn('RECOVERY_UNKNOWN_TASK_FAIL_CLOSED',owner)
+
     def test_each_owner_start_is_xor_guarded(self):
         rc=read('payload/system/etc/init/zui_scheduler.rc')
         action='';starts=[]
@@ -65,5 +83,8 @@ class ProductionContracts(unittest.TestCase):
         self.assertIn('(typetransition shell zuiopt_exec process zuiopt)',zuiopt)
         self.assertNotIn('(allow shell zuiopt_data_file',zuiopt)
         self.assertNotIn('(allow shell zuiopt (process (signal)))',zuiopt)
+        self.assertNotIn('dac_override',zuiopt)
+        self.assertNotIn('dac_read_search',zuiopt)
+        self.assertIn('(allow zuiopt self (capability (sys_nice)))',zuiopt)
 
 if __name__=='__main__': unittest.main(verbosity=2)

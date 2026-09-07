@@ -33,6 +33,14 @@ int main(int argc,char** argv){
         require(sha256("")=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","empty digest vector");
         require(sha256("abc")=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","digest vector");
         require(checksum("123456789")==0xcbf43926u,"journal CRC vector");selftest();
+        struct stat scaffold{};scaffold.st_mode=S_IFDIR|0755;
+        require(validCpusetScaffold(scaffold),"root-owned 0755 scaffold");
+        for(mode_t mode:{S_IFREG|0755,S_IFLNK|0755,S_IFDIR|0777,S_IFDIR|0700,S_IFDIR|0555,S_IFDIR|04755}){
+            scaffold.st_mode=mode;require(!validCpusetScaffold(scaffold),"unsafe scaffold mode rejected");
+        }
+        scaffold.st_mode=S_IFDIR|0755;scaffold.st_uid=1000;require(!validCpusetScaffold(scaffold),"foreign scaffold UID rejected");
+        scaffold.st_uid=0;scaffold.st_gid=1000;require(!validCpusetScaffold(scaffold),"foreign scaffold GID rejected");
+        puts("ZUIOPT_CPUSET_SCAFFOLD_STAT_TESTS=PASS");
         auto factory=rules(read(argv[1]));require(factory.profiles.size()==27&&factory.packages.size()==316,"factory 27/316");
         auto config=rules(OPEN);auto* profile=config.find("org.example.game");
         require(profile&&classify(*profile,"Job.workerABCD")->rank==0&&classify(*profile,"Top")->rank==1&&classify(*profile,"AnyRunner")->rank==2,"ALL/rank semantics");

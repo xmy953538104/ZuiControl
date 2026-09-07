@@ -146,9 +146,8 @@
 (allow zuiopt system_file (file (getattr open read map)))
 (allow zuiopt null_device (chr_file (getattr open read write ioctl)))
 (allow zuiopt self (process (fork sigchld getsched setsched signal sigkill signull setrlimit)))
-;; Required by the accepted mkdir(/dev/cpuset/ZUIopt) path: the cpuset root is 0555.
-;; SELinux still limits writes to cgroup and this daemon's private state types.
-(allow zuiopt self (capability (sys_nice dac_override)))
+;; Init owns /dev/cpuset/ZUIopt; affinity needs sys_nice, not DAC bypass.
+(allow zuiopt self (capability (sys_nice)))
 (allow zuiopt self (fd (use)))
 (allow zuiopt self (dir (getattr open read search)))
 (allow zuiopt self (file (getattr open read)))

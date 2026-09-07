@@ -1,12 +1,14 @@
-ZuiControl production payload — App V49 target
+ZuiControl production payload — App V50 target
 
 Build/package target:
-- /system/priv-app/ZuiControlV49/ZuiControl.apk
+- /system/priv-app/ZuiControlV50/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/uperf
 - /system/bin/zui_uperf_service
 - /system/bin/zui_uperf_supervisor
 - /system/bin/AsoulOpt
+- /system/bin/ZUIopt
+- /system/etc/zuiopt/factory_rules.conf
 - /system/etc/init/zui_controld.rc
 - /system/etc/init/zui_scheduler.rc
 - /system/etc/zui_control/uperf-sm8650.json
@@ -14,15 +16,16 @@ Build/package target:
 - /system/etc/zui_control/default_asopt.conf
 
 Framework integration:
-- scripts/build/ApplyZuiControlPayload.py calls scripts/build/PatchZuiControlFramework.py.
-- framework.jar receives android.zui.ZuiControlManager.
-- services.jar receives the zui_control Binder service and DisplayContent focus hook.
+- V21 Route A uses scripts/build/ApplyZuiControlPayload.py with an explicit Golden JAR manifest.
+- Exact Golden framework.jar/services.jar containers and framework source are unchanged.
+- No framework patch/rebuild is performed for this candidate.
 
 Current runtime ownership:
 - system_server / ZuiControlService is the sole refresh owner.
 - Uperf scene and screen mode are decided event-by-event in system_server.
 - Android init transports Uperf mode, owns scheduler lifecycle, and applies the vendor.perfservice fence only while scheduler_active=1.
-- asoulOpt is the sole per-task affinity/context-scheduler owner; Uperf sched.enable=false.
+- AsoulOpt is the default/fallback per-task owner. ZUIopt is a selectable sole per-task owner, effective next boot only; never both in one boot. Uperf sched.enable=false.
+- Init creates /dev/cpuset/ZUIopt 0755 root root at post-fs-data, before owner selection/start. ZUIopt requires this scaffold, recovers journaled tasks, manages mask children and keeps the root on cleanup. ZUIopt has sys_nice, not dac_override.
 - OEM GPU and thermal services remain active safety/clock authorities. This payload does not claim direct KGSL ownership or replace thermal policy.
 
 Command plane:
@@ -45,6 +48,7 @@ Runtime data:
 - /data/vendor/zui_control/asoul/asopt.conf
 - /data/vendor/asopt.conf -> /data/vendor/zui_control/asoul/asopt.conf
 - /data/vendor/zui_control/log/
+- /data/vendor/zui_control/zuiopt/ (private rules, owner_state.v1 recovery journal, next_owner.v1 next-boot selector)
 
 Current refresh contract and boundaries:
 - Physical refresh is foreground-only. SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input methods, and overlays use default120 when they own a real non-empty focused Window; Launcher remains configurable.

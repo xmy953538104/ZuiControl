@@ -45,6 +45,7 @@ python tests/uperf/top_resumed/TestUperfTopResumedStateMachine.py
 python tests/cache/TestVerifiedContentCache.py
 python tests/zuiopt/test_rule_pack.py
 python tests/zuiopt/TestProductionContracts.py
+python tests/zuiopt/TestCanonicalDocs.py
 clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptTest.cpp -lz -o /tmp/zuiopt-fixture
 /tmp/zuiopt-fixture payload/system/etc/zuiopt/factory_rules.conf
 python tests/zuiopt/TestNativeRuleParity.py /tmp/zuiopt-fixture
@@ -86,3 +87,8 @@ instead of assuming rollback or automatically repeating the mutation.
 `next_owner.v1` is the CRC-protected next-boot selector. Three crashes in 60 seconds
 stop ZUIopt without starting AsoulOpt in that boot. Device runtime/AVC validation
 requires a separately authorized post-flash gate.
+
+Init creates the root-owned 0755 `/dev/cpuset/ZUIopt` scaffold at post-fs-data.
+ZUIopt fails closed if it is absent/unsafe, recovers the existing journal before
+initialization, and removes only its mask children during cleanup. The scaffold
+is never created or removed by the daemon; no `dac_override` is granted.

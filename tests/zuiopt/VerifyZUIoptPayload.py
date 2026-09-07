@@ -33,6 +33,11 @@ def verify(system,manifest_path,contexts,fs_config):
     assert len(re.findall(r'^profile ',factory,re.M))==27
     assert len(re.findall(r'^package ',factory,re.M))==316
     rc=(system/'etc/init/zui_scheduler.rc').read_text()
+    scaffold='    mkdir /dev/cpuset/ZUIopt 0755 root root'
+    assert rc.count(scaffold)==1 and rc.index(scaffold)<rc.index('boot_owner.sh')
+    policy=(system/'etc/selinux/plat_sepolicy.cil').read_text()
+    assert not re.search(r'\(allow zuiopt self \(capability \([^)]*\bdac_(override|read_search)\b',policy)
+    assert '(allow zuiopt self (capability (sys_nice)))' in policy
     action='';starts=0
     for line in rc.splitlines():
         if line.startswith('on '): action=line
