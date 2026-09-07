@@ -61,5 +61,9 @@ class ProductionContracts(unittest.TestCase):
             self.assertNotIn('(allow zuiopt '+target+' ',zuiopt)
         self.assertNotIn('(allow priv_app zuiopt_data_file',zuiopt)
         self.assertIn('(type zuiopt)',zuiopt)
+        self.assertIn('(allow shell zuiopt_config_file (file (getattr open read)))',zuiopt)
+        self.assertIn('(typetransition shell zuiopt_exec process zuiopt)',zuiopt)
+        self.assertNotIn('(allow shell zuiopt_data_file',zuiopt)
+        self.assertNotIn('(allow shell zuiopt (process (signal)))',zuiopt)
 
 if __name__=='__main__': unittest.main(verbosity=2)

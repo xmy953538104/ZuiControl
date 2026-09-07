@@ -193,6 +193,9 @@
 (allow init zuiopt_data_file (dir (getattr open read search write add_name remove_name create setattr relabelto)))
 (allow init zuiopt_data_file (file (getattr open read write create setattr relabelto)))
 (allow shell zuiopt_exec (file (getattr open read execute map)))
+;; init invokes these read-only boot/crash scripts through /system/bin/sh.
+(allow shell zuiopt_config_file (dir (getattr search)))
+(allow shell zuiopt_config_file (file (getattr open read)))
 (typetransition shell zuiopt_exec process zuiopt)
 (allow shell zuiopt (process (transition rlimitinh siginh)))
 (allow zuiopt shell (process (sigchld)))
