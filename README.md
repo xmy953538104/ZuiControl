@@ -10,7 +10,7 @@ assemble those pieces into an unpacked ROM image.
 - `app/`: privileged Android application and JVM unit tests.
 - `framework-stubs/`: compile-time Android framework API stubs.
 - `framework_patch/`: framework and services source injected during ROM build.
-- `native/`: native Uperf process supervisor source.
+- `native/`: native Uperf supervisor and ZUIopt task owner/rule manager.
 - `payload/`: files, policies, init services, binaries, and configuration copied
   into the system image.
 - `upstream/uperf/`: pinned upstream inputs required to audit Uperf updates.
@@ -43,6 +43,11 @@ python tests/uperf/startup/TestUperfStartupBoundaries.py
 python tests/uperf/supervisor/TestUperfSupervisor.py
 python tests/uperf/top_resumed/TestUperfTopResumedStateMachine.py
 python tests/cache/TestVerifiedContentCache.py
+python tests/zuiopt/test_rule_pack.py
+python tests/zuiopt/TestProductionContracts.py
+clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptTest.cpp -lz -o /tmp/zuiopt-fixture
+/tmp/zuiopt-fixture payload/system/etc/zuiopt/factory_rules.conf
+python tests/zuiopt/TestNativeRuleParity.py /tmp/zuiopt-fixture
 ```
 
 Stable host artifacts may be reused only through the verified content cache. Its
@@ -58,13 +63,26 @@ The same canonical paths are enforced by `.github/workflows/build.yml`.
 
 ## ROM integration
 
-Apply the payload and framework patch to an explicit unpacked image tree:
+V21 Route A preserves the exact Golden framework/services containers and unchanged
+framework source. Apply the exact CI payload to an explicit unpacked image tree:
 
 ```powershell
-python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --dry-run
-python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root>
+python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --payload <ci-payload> --preserve-framework-manifest <golden-jars.json> --dry-run
+python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --payload <ci-payload> --preserve-framework-manifest <golden-jars.json>
 ```
 
 Build outputs, ROM images, device evidence, review packages, and local project
 history do not belong in this repository. Runtime ownership and payload details
 are summarized in `payload/README.txt`.
+
+ZUIopt is integrated but AsoulOpt remains the default owner. Owner changes take
+effect next boot only. Rule imports use the existing authenticated command plane;
+new packs are disabled. `/data/vendor/zui_control/zuiopt/effective.conf` atomically
+selects a private generation containing packs, user rules and last-good state.
+The manager keeps two generations; validation/pre-commit failures preserve the
+current generation. After a commit/ACK I/O uncertainty, refresh the reported state
+instead of assuming rollback or automatically repeating the mutation.
+`owner_state.v1` remains exclusively the accepted crash-recovery journal;
+`next_owner.v1` is the CRC-protected next-boot selector. Three crashes in 60 seconds
+stop ZUIopt without starting AsoulOpt in that boot. Device runtime/AVC validation
+requires a separately authorized post-flash gate.

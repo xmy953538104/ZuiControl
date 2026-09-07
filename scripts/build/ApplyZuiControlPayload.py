@@ -11,7 +11,7 @@ from datetime import datetime
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
-APP_APK_PATH = "system/priv-app/ZuiControlV49/ZuiControl.apk"
+APP_APK_PATH = "system/priv-app/ZuiControlV50/ZuiControl.apk"
 LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -27,16 +27,12 @@ def resolve_root():
 
 
 def resolve_unpack(root, unpack_arg):
-    candidates = []
-    if unpack_arg:
-        candidates.append(pathlib.Path(unpack_arg))
-    candidates.append(root / "work" / "unpack")
-    candidates.append(root.parent / "work" / "unpack")
-    for candidate in candidates:
-        candidate = candidate.expanduser().resolve()
-        if any((candidate / name).exists() for name in ["system_a", "vendor_a", "product_a", "odm_a"]):
-            return candidate
-    raise SystemExit("Cannot find unpack root. Expected work/unpack with system_a.")
+    if not unpack_arg:
+        raise SystemExit("An explicit --unpack directory is required; no candidate discovery.")
+    candidate = pathlib.Path(unpack_arg).resolve()
+    if not (candidate / "system_a" / "system").is_dir():
+        raise SystemExit("Explicit unpack root has no system_a/system.")
+    return candidate
 
 
 def resolve_image_root(root, unpack):
@@ -86,6 +82,7 @@ def mode_for(rel, is_dir):
         "system_a/system/bin/zui_uperf_supervisor",
         "system_a/system/bin/uperf",
         "system_a/system/bin/AsoulOpt",
+        "system_a/system/bin/ZUIopt",
     ]:
         return "0755"
     return "0644"
@@ -103,6 +100,10 @@ def owner_group_for(rel):
 
 
 def context_for(rel):
+    if rel == "system_a/system/bin/ZUIopt":
+        return "u:object_r:zuiopt_exec:s0"
+    if rel == "system_a/system/etc/zuiopt" or rel.startswith("system_a/system/etc/zuiopt/"):
+        return "u:object_r:zuiopt_config_file:s0"
     if rel in [
         "system_a/system/bin/zui_uperf_service",
         "system_a/system/bin/zui_uperf_supervisor",
@@ -161,6 +162,7 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV46",
         "system_a/system/priv-app/ZuiControlV47",
         "system_a/system/priv-app/ZuiControlV48",
+        "system_a/system/priv-app/ZuiControlV49",
         "system_a/system/priv-app/ZuiperfCtl",
         "system_a/system/bin/zui_perfctld",
         "system_a/system/etc/init/zui_perfctld.rc",
@@ -226,6 +228,7 @@ def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV46",
         "system_a/system/priv-app/ZuiControlV47",
         "system_a/system/priv-app/ZuiControlV48",
+        "system_a/system/priv-app/ZuiControlV49",
         "system_a/system/etc/zui_control/clear_package_cache",
         "system_a/system/preinstall/QQMusic",
     ]
@@ -453,16 +456,39 @@ def update_plat_mapping_hash(unpack, report):
     }
 
 
-def patch_framework_jars(root, unpack, dry_run, report):
-    script = root / "scripts" / "build" / "PatchZuiControlFramework.py"
-    if not script.exists():
-        report["warnings"].append(f"missing framework patch script: {script}")
-        return
-    cmd = [sys.executable, str(script), "--unpack", str(unpack)]
-    if dry_run:
-        cmd.append("--dry-run")
-    subprocess.run(cmd, check=True)
-    report["framework_patch"] = "applied"
+def preserved_framework(root, manifest_path):
+    """Route A: exact Golden containers plus unchanged framework source, checked before writes."""
+    if not manifest_path:
+        raise SystemExit("ROUTE_A_PRODUCTION_HARD_FAIL: --preserve-framework-manifest is required.")
+    manifest_path = pathlib.Path(manifest_path).resolve()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    baseline = "29f23f8d590b88f0d472c12373366a9ef14e8330"
+    expected = {
+        "framework.jar": "b5f57d62546569b9bd9ba34d8757678da000c33f876358dd93a4dc747b8f1b32",
+        "services.jar": "245b4f2c55d5ed8b99ecba8bd473d1d76eb40c55d67116a477299cc9d8b62000",
+    }
+    if manifest.get("golden_source_commit") != baseline or set(manifest.get("jars", {})) != set(expected):
+        raise SystemExit("ROUTE_A_PRODUCTION_HARD_FAIL: Golden framework manifest identity.")
+    git = shutil.which("git")
+    if not git:
+        raise SystemExit("Git is required to bind the unchanged framework source.")
+    head = subprocess.check_output([git, "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+    if manifest.get("production_source_commit") != head:
+        raise SystemExit("ROUTE_A_PRODUCTION_HARD_FAIL: production source commit.")
+    subprocess.run([git, "-C", str(root), "diff", "--exit-code", baseline, "--", "framework_patch"], check=True)
+    if subprocess.check_output([git, "-C", str(root), "ls-files", "--others", "--exclude-standard", "--", "framework_patch"]).strip():
+        raise SystemExit("ROUTE_A_PRODUCTION_HARD_FAIL: untracked framework source.")
+    result = {}
+    for name, digest in expected.items():
+        entry = manifest["jars"][name]
+        path = pathlib.Path(entry["path"])
+        if not path.is_absolute() or path.is_symlink() or entry["sha256"] != digest:
+            raise SystemExit("ROUTE_A_PRODUCTION_HARD_FAIL: Golden JAR binding.")
+        data = path.read_bytes()
+        if hashlib.sha256(data).hexdigest() != digest or len(data) != entry["size"]:
+            raise SystemExit("ROUTE_A_PRODUCTION_HARD_FAIL: Golden JAR bytes.")
+        result[name] = data
+    return result, hashlib.sha256(manifest_path.read_bytes()).hexdigest()
 
 
 def main():
@@ -471,6 +497,8 @@ def main():
     parser.add_argument("--unpack", help="Unpacked image root, default: work/unpack")
     parser.add_argument("--payload", help="Payload root, default: payload")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--preserve-framework-manifest", required=True,
+                        help="Exact Golden JAR inputs, bound to this production source commit")
     args = parser.parse_args()
 
     root = pathlib.Path(args.root).resolve() if args.root else resolve_root()
@@ -479,6 +507,7 @@ def main():
     payload = pathlib.Path(args.payload).resolve() if args.payload else root / "payload"
     if not payload.exists():
         raise SystemExit(f"Missing payload: {payload}")
+    framework, framework_manifest_sha = preserved_framework(root, args.preserve_framework_manifest)
 
     report = {
         "started_at": datetime.now().isoformat(timespec="seconds"),
@@ -509,7 +538,15 @@ def main():
     patch_file_contexts(unpack, payload, args.dry_run, report)
     patch_plat_sepolicy(unpack, payload, args.dry_run, report)
     patch_vendor_sepolicy(unpack, payload, args.dry_run, report)
-    patch_framework_jars(root, unpack, args.dry_run, report)
+    for name, data in framework.items():
+        destination = unpack / "system_a/system/framework" / name
+        if not destination.is_file() or destination.is_symlink():
+            raise SystemExit("ROUTE_A_PRODUCTION_HARD_FAIL: missing/linked target JAR.")
+        if not args.dry_run:
+            destination.write_bytes(data)
+    report["framework_patch"] = "PRESERVED_EXACT_GOLDEN_NO_SOURCE_CHANGE"
+    report["framework_manifest_sha256"] = framework_manifest_sha
+    report["framework_jars"] = {name: hashlib.sha256(data).hexdigest() for name, data in framework.items()}
     update_metadata(image_root, unpack, entries, args.dry_run, report)
 
     out_dir = image_root / "work" / "config"

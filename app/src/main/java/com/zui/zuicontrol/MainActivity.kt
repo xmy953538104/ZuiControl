@@ -52,6 +52,7 @@ class MainActivity : Activity() {
     private var commandInFlight = false
     private var lastCommandAt = 0L
     private var pendingExportText = ""
+    private var zuioptState = ""
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -385,18 +386,124 @@ class MainActivity : Activity() {
     private fun buildThreadsPage(): View = ScrollView(this).apply {
         addView(vertical().apply {
             setPadding(0, 0, 0, dp(20))
-            addView(sectionTitle("Shiroko A-SOUL"), sectionMargins())
+            addView(sectionTitle("Task Scheduler"), sectionMargins())
             addView(compactNote(
-                "mode=0 使用硬亲和，rt=0 保留默认调度策略。配置由 ROM 持久目录提供，" +
-                    "服务不依赖 Magisk、su 或模块生命周期。",
+                if (zuioptState.isEmpty()) "尚未查询本次开机状态，请先刷新。" else
+                    "当前 owner：${ZuioptRules.field(zuioptState, "current_owner")}\n" +
+                    "下次开机：${ZuioptRules.field(zuioptState, "next_owner")}\n" +
+                    "ZUIopt：${ZuioptRules.field(zuioptState, "service")} · " +
+                    "故障保护：${ZuioptRules.field(zuioptState, "fail_safe")}",
             ))
             addView(settingsAction(
-                R.drawable.ic_action_refresh, "启用线程优化", "启动系统内置 A-SOUL",
-            ) { setAsoulEnabled(true) }, settingsActionMargins(spaced = true))
+                R.drawable.ic_action_refresh, "刷新规则与 owner 状态", "按需查询，不在后台轮询线程",
+            ) { zuioptAction("正在查询规则") {} }, settingsActionMargins(spaced = true))
             addView(settingsAction(
-                R.drawable.ic_action_stop, "停止线程优化", "停止后建议重新进入正在运行的游戏",
-            ) { setAsoulEnabled(false) }, settingsActionMargins(spaced = true))
+                R.drawable.ic_nav_threads, "选择下次开机 owner", "AsoulOpt / ZUIopt；只在下一次重启生效",
+            ) {
+                AlertDialog.Builder(this@MainActivity).setTitle("下次开机任务调度器")
+                    .setItems(arrayOf("AsoulOpt（默认）", "ZUIopt")) { _, which ->
+                        zuioptAction("正在保存下次开机选择") {
+                            ZuioptRules.command(this@MainActivity, "next", value = if (which == 0) "ASOULOPT" else "ZUIOPT")
+                        }
+                    }.setNegativeButton("取消", null).showStyled()
+            }, settingsActionMargins(spaced = true))
+            addView(compactNote("选择不会切换本次开机的 owner，也不会自动重启设备。ZUIopt 故障保护后本次开机不会改为启动 AsoulOpt。"), fieldMargins())
+            addView(sectionTitle("Rule Packs"), sectionMargins())
+            addView(settingsAction(R.drawable.ic_action_import, "导入 ZUIopt 规则包", "最多 128 KiB；新包默认禁用；同 ID 替换") {
+                openZuioptImport(REQUEST_IMPORT_ZUIOPT)
+            }, settingsActionMargins())
+            addView(settingsAction(R.drawable.ic_action_import, "导入 AppOpt 文本", "最多 64 KiB；必须有明确的应用默认 CPU") {
+                openZuioptImport(REQUEST_IMPORT_APPOPT)
+            }, settingsActionMargins(spaced = true))
+            zuioptState.lineSequence().filter { it.startsWith("pack=") }.forEach { line ->
+                val pack = line.substringAfter('=').split('|')
+                if (pack.size == 5) addView(settingsAction(
+                    R.drawable.ic_nav_threads, "${pack[0]} · ${if (pack[3] == "1") "已启用" else "已禁用"}",
+                    "v${pack[1]} · 优先级 ${pack[2]} · 点击${if (pack[3] == "1") "禁用" else "启用"}",
+                ) {
+                    zuioptAction("正在修改规则包状态") {
+                        ZuioptRules.command(this@MainActivity, if (pack[3] == "1") "disable" else "enable", pack[0])
+                    }
+                }, settingsActionMargins(spaced = true))
+            }
+            addView(sectionTitle("User Rules"), sectionMargins())
+            addView(compactNote("用户规则 > 已启用规则包 > 工厂规则。工厂库：27 个 profile / 316 条应用映射；这是静态兼容库，不代表全部应用已实机测试。"))
+            addView(settingsAction(R.drawable.ic_nav_threads, "编辑用户规则", "Schema 2；保存前校验，失败保留原配置") {
+                var text = ""
+                runCommand("正在读取用户规则", success = null, onSuccess = { editZuioptRules(text) }) {
+                    text = ZuioptRules.userRules(this@MainActivity); null
+                }
+            }, settingsActionMargins(spaced = true))
+            addView(settingsAction(R.drawable.ic_action_refresh, "回退上一份规则", "仅回退规则，不切换 owner") {
+                zuioptAction("正在回退规则") { ZuioptRules.command(this@MainActivity, "rollback") }
+            }, settingsActionMargins(spaced = true))
+            if (ZuioptRules.field(zuioptState, "current_owner") == "ASOULOPT") {
+                addView(sectionTitle("AsoulOpt"), sectionMargins())
+                addView(compactNote("mode=0、rt=0。下面的启停仅用于本次 owner 为 AsoulOpt 时。"))
+                addView(settingsAction(R.drawable.ic_action_refresh, "启用 AsoulOpt", "启动系统内置 AsoulOpt") {
+                    setAsoulEnabled(true)
+                }, settingsActionMargins(spaced = true))
+                addView(settingsAction(R.drawable.ic_action_stop, "停止 AsoulOpt", "停止后建议重新进入正在运行的游戏") {
+                    setAsoulEnabled(false)
+                }, settingsActionMargins(spaced = true))
+            }
         })
+    }
+
+    private fun zuioptAction(message: String, action: () -> Unit) {
+        var latest = ""
+        runCommand(message, onSuccess = { zuioptState = latest }) {
+            action(); latest = ZuioptRules.state(this); null
+        }
+    }
+
+    private fun editZuioptRules(text: String) {
+        val editor = EditText(this).apply {
+            setText(text)
+            typeface = Typeface.MONOSPACE
+            textSize = 12f
+            gravity = Gravity.TOP
+            minLines = 8
+            maxLines = 18
+            filters = arrayOf(android.text.InputFilter.LengthFilter(ZuioptRules.RULE_LIMIT))
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        AlertDialog.Builder(this).setTitle("用户规则 · Schema 2")
+            .setView(editor).setPositiveButton("保存") { _, _ ->
+                val bytes = editor.text.toString().toByteArray(Charsets.UTF_8)
+                zuioptAction("正在校验并保存用户规则") { ZuioptRules.upload(this, "user", bytes) }
+            }.setNegativeButton("取消", null).showStyled()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun openZuioptImport(requestCode: Int) {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }, requestCode)
+    }
+
+    private fun importZuioptDocument(uri: Uri, appopt: Boolean) {
+        fun doImport(packId: String = "-", priority: Int = 0) {
+            zuioptAction("正在分段传输并校验规则") {
+                val kind = if (appopt) "appopt" else "pack"
+                ZuioptRules.upload(this, kind, ZuioptRules.readDocument(this, uri, kind), packId, priority)
+            }
+        }
+        if (!appopt) { doImport(); return }
+        val id = EditText(this).apply { hint = "规则包 ID（小写字母开头）"; setText("appopt-import"); setSingleLine(true) }
+        val priority = EditText(this).apply {
+            hint = "优先级（-1000000 至 1000000）"; setText("0"); setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+        }
+        AlertDialog.Builder(this).setTitle("导入 AppOpt")
+            .setView(vertical().apply { addView(id); addView(priority) })
+            .setPositiveButton("导入") { _, _ ->
+                val value = priority.text.toString().toIntOrNull()
+                val name = id.text.toString()
+                if (value == null || value !in -1000000..1000000 || !name.matches(Regex("[a-z][a-z0-9_.-]{0,63}"))) toast("ID 或优先级无效")
+                else doImport(name, value)
+            }.setNegativeButton("取消", null).showStyled()
     }
 
     private fun setAsoulEnabled(enabled: Boolean) {
@@ -464,8 +571,13 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_EXPORT_LOG || resultCode != RESULT_OK) return
+        if (resultCode != RESULT_OK) return
         val uri: Uri = data?.data ?: return
+        if (requestCode == REQUEST_IMPORT_ZUIOPT || requestCode == REQUEST_IMPORT_APPOPT) {
+            importZuioptDocument(uri, requestCode == REQUEST_IMPORT_APPOPT)
+            return
+        }
+        if (requestCode != REQUEST_EXPORT_LOG) return
         runCatching {
             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(pendingExportText) }
         }.onSuccess { toast("日志已导出") }.onFailure { toast("日志导出失败") }
@@ -921,6 +1033,8 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_EXPORT_LOG = 901
+        private const val REQUEST_IMPORT_ZUIOPT = 902
+        private const val REQUEST_IMPORT_APPOPT = 903
         private const val STATE_PAGE = "page"
         private val COLOR_BG = Color.rgb(248, 247, 252)
         private val COLOR_SURFACE = Color.rgb(250, 249, 253)

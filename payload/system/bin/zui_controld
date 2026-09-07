@@ -225,13 +225,20 @@ uperf_is_healthy() {
 }
 
 restart_scheduler() {
+    if [ "$(getprop ro.zui_control.task_owner)" = ZUIOPT ] &&
+        [ "$(getprop sys.zui_control.zuiopt_failed)" = 1 ]; then
+        REQUEST_RESULT_DETAIL=zuiopt_fail_safe_next_boot_only
+        return 1
+    fi
     publish_request_progress restarting_scheduler
     trigger_init_action "$PROP_SCHEDULER" restart || return 1
     tries=20
     while [ "$tries" -gt 0 ]; do
         sleep 1
-        if uperf_is_healthy && [ -n "$(pidof AsoulOpt 2>/dev/null)" ]; then
-            REQUEST_RESULT_DETAIL="uperf=running;asoul=running"
+        task_process=AsoulOpt
+        [ "$(getprop ro.zui_control.task_owner)" != ZUIOPT ] || task_process=ZUIopt
+        if uperf_is_healthy && [ -n "$(pidof "$task_process" 2>/dev/null)" ]; then
+            REQUEST_RESULT_DETAIL="uperf=running;task=$task_process"
             return 0
         fi
         tries=$((tries - 1))
@@ -240,6 +247,10 @@ restart_scheduler() {
 }
 
 start_asoul() {
+    if [ "$(getprop ro.zui_control.task_owner)" = ZUIOPT ]; then
+        REQUEST_RESULT_DETAIL=owner_change_requires_reboot
+        return 1
+    fi
     trigger_init_action "$PROP_ASOUL" start || return 1
     sleep 1
     [ -n "$(pidof AsoulOpt 2>/dev/null)" ] || return 1
@@ -433,8 +444,41 @@ handle_command() {
         start_asoul) start_asoul ;;
         stop_asoul) stop_asoul ;;
         export_logs) export_logs ;;
+        zo_state|zo_owner|zo_next|zo_read|zo_begin|zo_chunk|zo_commit|zo_abort|zo_enable|zo_disable|zo_rollback)
+            zuiopt_command "$cmd" "$pkg" "$mode"
+            ;;
         *) REQUEST_RESULT_DETAIL=unknown_command; return 1 ;;
     esac
+}
+
+zuiopt_command() {
+    [ "${#2}" -le 128 ] && [ "${#3}" -le 10924 ] || {
+        REQUEST_RESULT_DETAIL=zuiopt_request_bound
+        return 1
+    }
+    zo_action="${1#zo_}"
+    zo_reply="$(/system/bin/ZUIopt --control "$zo_action" "$2" "$3" 2>>"$LOG_FILE")" || {
+        REQUEST_RESULT_DETAIL=zuiopt_not_completed_refresh_state
+        return 1
+    }
+    case "$zo_action" in
+        state|owner|next)
+            [ "${#zo_reply}" -le 4096 ] || return 1
+            zo_reply="$zo_reply
+current_owner=$(getprop ro.zui_control.task_owner)
+service=$(getprop init.svc.zui_zuiopt)
+fail_safe=$(getprop sys.zui_control.zuiopt_failed)"
+            settings_put_quiet zui_control_zuiopt_state "$zo_reply" || {
+                REQUEST_RESULT_DETAIL=zuiopt_committed_state_publication_failed
+                return 1
+            }
+            ;;
+        read)
+            [ "${#zo_reply}" -le 11000 ] || return 1
+            settings_put_quiet zui_control_zuiopt_chunk "$zo_reply" || return 1
+            ;;
+    esac
+    REQUEST_RESULT_DETAIL="zuiopt=$zo_action"
 }
 
 process_settings_request() {
@@ -468,7 +512,10 @@ process_settings_request() {
     CURRENT_REQUEST_ID="$id"
     CURRENT_REQUEST_CMD="$cmd"
     publish_request_progress validating
-    log_line "request id=$id cmd=$cmd pkg=$pkg mode=$mode"
+    case "$cmd" in
+        zo_*) log_line "request id=$id cmd=$cmd bounded_transport=1" ;;
+        *) log_line "request id=$id cmd=$cmd pkg=$pkg mode=$mode" ;;
+    esac
     if ! persist_request_claim "$request"; then
         log_line "request claim failed id=$id cmd=$cmd; action not started"
         return 1

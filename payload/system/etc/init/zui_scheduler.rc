@@ -2,10 +2,13 @@ on post-fs-data
     mkdir /data/vendor/zui_control 0755 root root
     mkdir /data/vendor/zui_control/uperf 0775 root shell
     mkdir /data/vendor/zui_control/asoul 0775 root shell
+    mkdir /data/vendor/zui_control/zuiopt 0700 root root
     rm /data/vendor/asopt.conf
     symlink /data/vendor/zui_control/asoul/asopt.conf /data/vendor/asopt.conf
     restorecon_recursive /data/vendor/zui_control
     restorecon /data/vendor/asopt.conf
+    setprop sys.zui_control.zuiopt_failed 0
+    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zuiopt/boot_owner.sh
     setprop sys.zui_control.scheduler_active 1
     setprop sys.zui_control.uperf_fail_safe 0
     rm /data/vendor/zui_control/uperf/.service_ready_uptime
@@ -34,8 +37,7 @@ on zui-scheduler-start
     rm /data/vendor/zui_control/uperf/.service_ready_uptime
     rm /data/vendor/zui_control/uperf/.service_rapid_crashes
     stop vendor.perfservice
-    start zui_asoulopt
-    setprop zui_control.asoul started
+    trigger zui-task-owner-start
     start zui_uperf
 
 on property:zui_control.scheduler=restart
@@ -43,6 +45,7 @@ on property:zui_control.scheduler=restart
     stop vendor.perfservice
     stop zui_uperf
     stop zui_asoulopt
+    stop zui_zuiopt
     exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh ${sys.zui_control.uperf_mode:-unset}
     trigger zui-scheduler-start
     setprop zui_control.scheduler restarted
@@ -61,10 +64,18 @@ on property:zui_control.scheduler=stop
     rm /data/vendor/zui_control/uperf/.service_rapid_crashes
     stop zui_uperf
     stop zui_asoulopt
+    stop zui_zuiopt
     start vendor.perfservice
     setprop zui_control.scheduler stopped
 
-on property:zui_control.asoul=start && property:sys.zui_control.scheduler_active=1
+on zui-task-owner-start && property:ro.zui_control.task_owner=ASOULOPT
+    start zui_asoulopt
+    setprop zui_control.asoul started
+
+on zui-task-owner-start && property:ro.zui_control.task_owner=ZUIOPT && property:sys.zui_control.zuiopt_failed=0
+    start zui_zuiopt
+
+on property:zui_control.asoul=start && property:sys.zui_control.scheduler_active=1 && property:ro.zui_control.task_owner=ASOULOPT
     start zui_asoulopt
     setprop zui_control.asoul started
 
@@ -88,3 +99,24 @@ service zui_asoulopt /system/bin/AsoulOpt
     disabled
     user root
     group root system readproc
+
+on property:sys.zui_control.zuiopt_failed=1
+    stop zui_zuiopt
+    start zui_zuiopt_recover
+
+service zui_zuiopt /system/bin/ZUIopt
+    class late_start
+    disabled
+    user root
+    group root system readproc
+    seclabel u:r:zuiopt:s0
+    restart_period 5
+    onrestart exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zuiopt/crash_gate.sh
+
+service zui_zuiopt_recover /system/bin/ZUIopt --recover
+    class late_start
+    disabled
+    oneshot
+    user root
+    group root system readproc
+    seclabel u:r:zuiopt:s0

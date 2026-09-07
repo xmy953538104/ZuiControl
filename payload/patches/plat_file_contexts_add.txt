@@ -6,3 +6,6 @@
 /data/system/zui_control(/.*)? u:object_r:system_data_file:s0
 /data/vendor/asopt\.conf u:object_r:zui_control_data_file:s0
 /data/vendor/zui_control(/.*)? u:object_r:zui_control_data_file:s0
+/system/bin/ZUIopt u:object_r:zuiopt_exec:s0
+/system/etc/zuiopt(/.*)? u:object_r:zuiopt_config_file:s0
+/data/vendor/zui_control/zuiopt(/.*)? u:object_r:zuiopt_data_file:s0

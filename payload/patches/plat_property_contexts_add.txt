@@ -8,3 +8,5 @@ persist.zui_control.disable u:object_r:zui_control_refresh_disable_prop:s0 exact
 persist.zui_control.refresh.disable u:object_r:zui_control_refresh_disable_prop:s0 exact bool
 persist.zui_control. u:object_r:shell_prop:s0
 zui_control. u:object_r:shell_prop:s0
+ro.zui_control.task_owner u:object_r:zuiopt_owner_prop:s0 exact enum ASOULOPT ZUIOPT
+sys.zui_control.zuiopt_failed u:object_r:zuiopt_failure_prop:s0 exact bool

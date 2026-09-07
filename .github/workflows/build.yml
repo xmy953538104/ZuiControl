@@ -106,6 +106,39 @@ jobs:
             --vendor-policy payload/patches/vendor_sepolicy_zui_scheduler.cil
           bash -n payload/system/etc/zui_control/zui_scheduler_prepare.sh
           python3 -m json.tool payload/system/etc/zui_control/uperf-sm8650.json >/dev/null
+          python3 tests/zuiopt/test_rule_pack.py
+          python3 tests/zuiopt/TestProductionContracts.py
+          bash -n payload/system/etc/zuiopt/boot_owner.sh
+          bash -n payload/system/etc/zuiopt/crash_gate.sh
+
+      - name: Test and build ZUIopt production integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/zuiopt-gate"
+          mkdir -p "$receipt"
+          clang++ --version > "$receipt/host_compiler.txt"
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
+            tests/zuiopt/ZUIoptTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-fixture"
+          "$RUNNER_TEMP/zuiopt-fixture" payload/system/etc/zuiopt/factory_rules.conf \
+            | tee "$receipt/native_tests.txt"
+          python3 tests/zuiopt/TestNativeRuleParity.py "$RUNNER_TEMP/zuiopt-fixture" \
+            | tee "$receipt/native_reference_parity.txt"
+          python3 scripts/build/BuildZUIopt.py \
+            --ndk "$ANDROID_SDK_ROOT/ndk/27.2.12479018" \
+            --output payload/system/bin/ZUIopt --receipt "$receipt/build.json"
+          toolchain="$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          "$toolchain/llvm-readelf" -h -l -S -d -s payload/system/bin/ZUIopt > "$receipt/elf.txt"
+          "$toolchain/llvm-strings" payload/system/bin/ZUIopt > "$receipt/strings.txt"
+          python3 tests/zuiopt/AuditProductionBinary.py "$receipt"
+
+      - name: Upload ZUIopt gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zui-control-zuiopt-gate
+          path: ${{ runner.temp }}/zuiopt-gate
+          if-no-files-found: error
 
       - name: Download pinned Android 14 init verifier
         shell: bash
@@ -212,9 +245,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV41 payload/system/priv-app/ZuiControlV42 payload/system/priv-app/ZuiControlV43
           rm -rf payload/system/priv-app/ZuiControlV44 payload/system/priv-app/ZuiControlV45 payload/system/priv-app/ZuiControlV46
           rm -rf payload/system/priv-app/ZuiControlV47 payload/system/priv-app/ZuiControlV48
-          mkdir -p payload/system/priv-app/ZuiControlV49
+          rm -rf payload/system/priv-app/ZuiControlV49
+          mkdir -p payload/system/priv-app/ZuiControlV50
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV49/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV50/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

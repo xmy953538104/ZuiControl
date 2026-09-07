@@ -9,6 +9,8 @@ object ZuiControlContract {
     const val CMD_START_ASOUL = "start_asoul"
     const val CMD_STOP_ASOUL = "stop_asoul"
     const val CMD_EXPORT_LOGS = "export_logs"
+    const val KEY_ZUIOPT_STATE = "zui_control_zuiopt_state"
+    const val KEY_ZUIOPT_CHUNK = "zui_control_zuiopt_chunk"
 
     const val KEY_REQUEST_TEXT = "zui_control_request_text"
     const val KEY_REQUEST_ACK = "zui_control_request_ack"

@@ -3,6 +3,8 @@ param(
     [string]$WorkDir = "",
     [string]$ExpectedVendorImageSha256 = "",
     [string]$ExpectedVendorApkInventoryPath = "",
+    [Parameter(Mandatory = $true)][string]$ExpectedZUIoptManifestPath,
+    [string]$MiRoot = "",
     [switch]$KeepWork
 )
 
@@ -10,6 +12,10 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $WorkspaceRoot = Split-Path -Parent $RepoRoot
 if ((Split-Path -Leaf $WorkspaceRoot) -ieq 'worktrees') { $WorkspaceRoot = Split-Path -Parent $WorkspaceRoot }
+if ($MiRoot) { $WorkspaceRoot = [IO.Path]::GetFullPath($MiRoot) }
+if (-not (Test-Path -LiteralPath (Join-Path $WorkspaceRoot 'script\Mi.Common.psm1') -PathType Leaf)) {
+    throw 'MiRoot must explicitly identify the physical Mi workspace for an isolated worktree.'
+}
 if (-not $FlashDir) { throw 'FlashDir is required; candidate selection must be explicit.' }
 if (-not $WorkDir) { $WorkDir = Join-Path $WorkspaceRoot 'zui072（flash）\work\temp\verify_flash_zui_control' }
 
@@ -21,8 +27,8 @@ $ExtractErofs = Join-Path $ToolsDir 'super-tools\AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'smali-apk\apktool.jar'
 $Avbtool = Join-Path $ToolsDir 'avb\downloaded\avbtool_aosp_c0af371_1.2.0.py'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '49'
-$ExpectedVersionName = '0.21.12'
+$ExpectedVersionCode = '50'
+$ExpectedVersionName = '0.21.13'
 $ExpectedUperfSha256 = 'f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8'
 $ExpectedAsoulSha256 = '7a2ee5d67ba7c057066176334eca9256e376427916429d66b7593cbb5538ec86'
 $ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371'
@@ -464,7 +470,7 @@ try {
     $System = Join-Path $SystemRoot 'system'
     $PlatSelinux = Join-Path $System 'etc\selinux'
     $VendorSelinux = Join-Path $VendorRoot 'etc\selinux'
-    $AppApk = Join-Path $System 'priv-app\ZuiControlV49\ZuiControl.apk'
+    $AppApk = Join-Path $System 'priv-app\ZuiControlV50\ZuiControl.apk'
     $Daemon = Join-Path $System 'bin\zui_controld'
     $Uperf = Join-Path $System 'bin\uperf'
     $UperfService = Join-Path $System 'bin\zui_uperf_service'
@@ -507,7 +513,7 @@ try {
     Assert-Missing (Join-Path $System 'etc\zui_control\zui_cloud_block.sh') 'cloud-control block script'
     Assert-Missing (Join-Path $System 'etc\zui_control\promote_zuipp_xml.sh') 'retired ZuiPP promotion script'
     Assert-Missing (Join-Path $System 'preinstall\QQMusic') 'removed third-party QQ Music preinstall'
-    foreach ($old in 30..48) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
+    foreach ($old in 30..49) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
     Assert-Missing (Join-Path $System 'priv-app\ZuiControl') 'legacy unversioned ZuiControl directory'
 
     Assert-UperfConfig $UperfConfig
@@ -517,14 +523,15 @@ try {
     if (Compare-Object $activeRules $expectedRules) { throw "Unexpected default Uperf rules: $($activeRules -join '; ')" }
 
     Assert-Contains $SchedulerRc 'service zui_uperf /system/bin/zui_uperf_service' 'supervised Uperf init service'
-    Assert-NotContains $SchedulerRc '    oneshot' 'untracked daemonized Uperf service'
+    $uperfServiceBlock = @(Get-InitServiceBlock $SchedulerRc 'zui_uperf')
+    if ($uperfServiceBlock -match '^\s+oneshot\s*$') { throw 'Uperf must remain an init-supervised non-oneshot service' }
     Assert-Contains $SchedulerRc 'service zui_asoulopt /system/bin/AsoulOpt' 'A-SOUL init service'
     Assert-Contains $SchedulerRc '    stop vendor.perfservice' 'QTI userspace perf bridge ownership fence'
     Assert-Contains $SchedulerRc '    start vendor.perfservice' 'QTI userspace perf bridge rollback'
     Assert-Contains $SchedulerRc '    setprop sys.zui_control.scheduler_active 1' 'init-owned active scheduler state'
     Assert-Contains $SchedulerRc '    setprop sys.zui_control.scheduler_active 0' 'init-owned inactive scheduler state'
     Assert-Contains $SchedulerRc 'on property:init.svc.vendor.perfservice=running && property:sys.zui_control.scheduler_active=1' 'init-native conditional OEM fence'
-    Assert-Contains $SchedulerRc 'on property:zui_control.asoul=start && property:sys.zui_control.scheduler_active=1' 'active-only A-SOUL start action'
+    Assert-Contains $SchedulerRc 'on property:zui_control.asoul=start && property:sys.zui_control.scheduler_active=1 && property:ro.zui_control.task_owner=ASOULOPT' 'active/current-owner-only A-SOUL start action'
     Assert-Contains $SchedulerRc 'on property:zui_control.scheduler=fence && property:sys.zui_control.scheduler_active=1' 'active-only compatibility OEM fence'
     Assert-Contains $SchedulerRc 'on property:sys.zui_control.uperf_fail_safe=1' 'Uperf bounded fail-safe trigger'
     Assert-Contains $SchedulerRc '    setprop sys.zui_control.uperf_fail_safe 0' 'explicit Uperf fail-safe reset'
@@ -1080,6 +1087,11 @@ try {
         --report $UperfAccessReport
     Require-File $UperfAccessReport
 
+    Invoke-Checked $Python (Join-Path $RepoRoot 'tests\zuiopt\VerifyZUIoptPayload.py') `
+        --system-root $System --expected $ExpectedZUIoptManifestPath `
+        --contexts $SystemImageContexts --fs-config (Join-Path $ExtractDir 'config\system_a_fs_config') `
+        --receipt (Join-Path $WorkDir 'zuiopt_reverse_artifacts.json')
+
     $hashes = [ordered]@{
         boot = File-Sha256 $Boot
         super = File-Sha256 $Super
@@ -1091,6 +1103,7 @@ try {
         uperf = File-Sha256 $Uperf
         uperf_supervisor = File-Sha256 $UperfSupervisor
         asoul = File-Sha256 $Asoul
+        zuiopt = File-Sha256 (Join-Path $System 'bin\ZUIopt')
     }
     if ($hashes.apk -ne $hashes.sidecar_apk -or $hashes.apk -ne $hashes.release_sidecar_apk) {
         throw 'Embedded and sidecar APK hashes differ'
