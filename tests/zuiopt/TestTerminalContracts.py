@@ -11,6 +11,25 @@ def read(name): return (ROOT/name).read_text(encoding='utf8')
 
 
 class TerminalContracts(unittest.TestCase):
+    def test_final_verifier_literals_match_current_payload_and_health(self):
+        # Exercise actual verifier assertions, not a second hand-maintained owner list.
+        verifier=read('scripts/build/VerifyZuiControlFlashPackage.ps1')
+        paths={'SchedulerRc':'etc/init/zui_scheduler.rc',
+               'SchedulerPrepare':'etc/zui_control/zui_scheduler_prepare.sh',
+               'Daemon':'bin/zui_controld','UperfService':'bin/zui_uperf_service',
+               'UperfCrashGate':'etc/zui_control/zui_uperf_crash_gate.sh',
+               'DaemonRc':'etc/init/zui_controld.rc','RefreshKillRc':'etc/init/zui_refresh_kill_switch.rc'}
+        count=0
+        for negative,name,needle in re.findall(r"Assert-(Not)?Contains \$(\w+) '([^']*)'",verifier):
+            if name not in paths:continue
+            text=read('payload/system/'+paths[name]);count+=1
+            self.assertEqual(needle in text,not bool(negative),(name,needle))
+        self.assertGreater(count,50)
+        health=verifier.split('foreach ($stateMarker in @(',1)[1].split(')) { Assert-Contains',1)[0]
+        java=read('framework_patch/src/services/com/zui/server/control/ZuiControlService.java')
+        for needle in re.findall(r"'([^']+)'",health):self.assertIn(needle,java)
+        self.assertNotIn('asoul_sha256 =',verifier)
+
     def test_proven_algorithms_are_byte_identical(self):
         expected={
             'ZUIopt_core.h':'12766b596a1dd5fd7fbc8e6b83708b815e334a2a6d70bf8a6b89a201ac7f34df',
