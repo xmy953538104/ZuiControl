@@ -5,16 +5,15 @@ import argparse,hashlib,json,re,sys
 # The pinned Windows embeddable interpreter omits the script directory from sys.path.
 # Resolve only our explicit source sibling, without changing the immutable interpreter.
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from RuntimeAsoulAudit import audit_system
+from RuntimePurityAudit import audit_system
 
 REQUIRED={
  '/system/bin/ZUIopt','/system/bin/zui_controld',
  '/system/etc/zuiopt/factory_rules.conf','/system/etc/zuiopt/zuiopt_boot_state.sh',
- '/system/etc/zuiopt/zuiopt_legacy_migration.sh',
  '/system/etc/zuiopt/crash_gate.sh','/system/etc/init/zui_scheduler.rc',
  '/system/etc/selinux/plat_sepolicy.cil','/system/etc/selinux/plat_file_contexts',
  '/system/etc/selinux/plat_property_contexts','/system/framework/framework.jar',
- '/system/framework/services.jar','/system/priv-app/ZuiControlV52/ZuiControl.apk',
+ '/system/framework/services.jar','/system/priv-app/ZuiControlV53/ZuiControl.apk',
 }
 GOLDEN={'framework.jar':'b5f57d62546569b9bd9ba34d8757678da000c33f876358dd93a4dc747b8f1b32',
         'services.jar':'245b4f2c55d5ed8b99ecba8bd473d1d76eb40c55d67116a477299cc9d8b62000'}
@@ -66,7 +65,6 @@ def verify(system,manifest_path,contexts,fs_config):
         ('bin/ZUIopt','zuiopt_exec','0755'),
         ('etc/zuiopt/factory_rules.conf','zuiopt_config_file','0644'),
         ('etc/zuiopt/zuiopt_boot_state.sh','zuiopt_config_file','0644'),
-        ('etc/zuiopt/zuiopt_legacy_migration.sh','zuiopt_config_file','0644'),
         ('etc/zuiopt/crash_gate.sh','zuiopt_config_file','0644'),
     ):
         name='system_a/system/'+relative

@@ -96,10 +96,10 @@ inline Pack validatePack(Manifest m,const std::string& text,const std::string& a
     auto s=[&](const char* key)->const std::string&{return m.at(key).text;};
     require(s("schema_version")=="1"&&packId(s("pack_id"))&&rx(s("pack_version"),"[0-9]{1,6}(\\.[0-9]{1,6}){0,3}(-[A-Za-z0-9.-]{1,32})?"),"pack identity/version");
     int priority=number(s("pack_priority"));require(priority>=-1000000&&priority<=1000000,"pack priority");
-    require(s("source_type")=="asoul_binary"||s("source_type")=="appopt"||s("source_type")=="zuiopt_native"||s("source_type")=="user_export","source type");
+    require(s("source_type")=="recovered_binary"||s("source_type")=="appopt"||s("source_type")=="zuiopt_native"||s("source_type")=="user_export","source type");
     require(s("source_binary_sha256").empty()||hex(s("source_binary_sha256"),64),"binary digest");
     require(s("evidence_level")=="STATIC_RECOVERED"||s("evidence_level")=="USER_DECLARED","evidence level");
-    require(s("source_type")!="asoul_binary"||(!s("source_binary_sha256").empty()&&s("evidence_level")=="STATIC_RECOVERED"),"asoul provenance");
+    require(s("source_type")!="recovered_binary"||(!s("source_binary_sha256").empty()&&s("evidence_level")=="STATIC_RECOVERED"),"recovered provenance");
     require(s("target_soc")=="SM8650"&&s("target_topology")=="0-7","pack topology");
     require(hex(s("rules_sha256"),64)&&s("rules_sha256")==sha256(text),"rules digest");auto config=rules(text);
     require(config.enabled&&number(s("package_count"))==static_cast<int>(config.packages.size())&&number(s("profile_count"))==static_cast<int>(config.profiles.size()),"pack counts/enabled");

@@ -162,11 +162,11 @@ def validate_manifest(manifest,rules):
         need(type(manifest[key]) is int,'manifest integer '+key)
     need(manifest['schema_version']==1 and PACK_ID.fullmatch(manifest['pack_id']) and VERSION.fullmatch(manifest['pack_version']),'pack identity/version')
     need(-1000000<=manifest['pack_priority']<=1000000,'pack priority')
-    need(manifest['source_type'] in ('asoul_binary','appopt','zuiopt_native','user_export'),'source type')
+    need(manifest['source_type'] in ('recovered_binary','appopt','zuiopt_native','user_export'),'source type')
     need(manifest['source_binary_sha256']=='' or re.fullmatch('[0-9a-f]{64}',manifest['source_binary_sha256']),'binary hash')
     need(manifest['evidence_level'] in ('STATIC_RECOVERED','USER_DECLARED'),'evidence level')
-    if manifest['source_type']=='asoul_binary':
-        need(manifest['source_binary_sha256']!='' and manifest['evidence_level']=='STATIC_RECOVERED','asoul provenance')
+    if manifest['source_type']=='recovered_binary':
+        need(manifest['source_binary_sha256']!='' and manifest['evidence_level']=='STATIC_RECOVERED','recovered provenance')
     need(manifest['target_soc']=='SM8650' and manifest['target_topology']=='0-7','target topology')
     need(manifest['rules_sha256']==digest(rules),'rules digest')
     c=parse_rules(rules);need(c['enabled'],'pack must be enabled internally')

@@ -5,19 +5,12 @@ on post-fs-data
     mkdir /data/vendor/zui_control/uperf 0775 root shell
     mkdir /data/vendor/zui_control/zuiopt 0700 root root
     restorecon_recursive /data/vendor/zui_control
-    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zuiopt/zuiopt_legacy_migration.sh prepare
-    trigger zuiopt-migration-unlink
     trigger zuiopt-boot-state
     setprop sys.zui_control.scheduler_active 1
     setprop sys.zui_control.uperf_fail_safe 0
     rm /data/vendor/zui_control/uperf/.service_ready_uptime
     rm /data/vendor/zui_control/uperf/.service_rapid_crashes
     stop vendor.perfservice
-
-# MIGRATION_ONLY: shell validated exact link/target and the complete known layout.
-# Only this post-fs-data event can unlink; changing the property later is inert.
-on zuiopt-migration-unlink && property:sys.zui_control.legacy_migration=UNLINK_VERIFIED
-    rm /data/vendor/asopt.conf
 
 on zuiopt-boot-state
     exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zuiopt/zuiopt_boot_state.sh

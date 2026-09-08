@@ -89,7 +89,7 @@ CUSTOM_RULES = [
     edge("wrapper/worker", "performanced", "read runtime symlinks",
          "/data/vendor/zui_control/**", "zui_control_data_file", "lnk_file", "getattr read",
          "(allow performanced zui_control_data_file (lnk_file (getattr read)))",
-         "canonical A-SOUL and scheduler runtime symlinks"),
+         "canonical scheduler runtime symlinks"),
     edge("wrapper/worker", "performanced", "place process in background cpuset",
          "/dev/cpuset/background/tasks", "cgroup", "file",
          "ioctl read write create getattr setattr lock append map open unlink",
@@ -282,7 +282,7 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
     if modules["sysfs"]["enable"] is not True:
         raise ValueError("sysfs module activation changed unexpectedly")
     if modules["sched"]["enable"] is not False:
-        raise ValueError("sched module must remain disabled; A-SOUL owns thread placement")
+        raise ValueError("sched module must remain disabled; ZUIopt owns thread placement")
     if modules["switcher"]["switchInode"] != "/data/vendor/zui_control/uperf/effective_powermode.txt":
         raise ValueError("switcher effective-mode path changed unexpectedly")
     for marker in (b"SfAnalysisListener", b"/system/bin/surfaceflinger", b"sfanalysis"):

@@ -72,8 +72,6 @@ class CommandPlaneArchitectureTest(unittest.TestCase):
             self.service,
         )
         self.assertIn('"zui_control_status_text", state(false)', self.service)
-        self.assertNotIn("PROP_ASOUL_DESIRED", self.service)
-        self.assertNotIn("asoulDesiredState", self.service)
         self.assertNotIn("PROP_VENDOR_PERFSERVICE", self.service)
         self.assertNotIn("vendorPerfserviceState", self.service)
         self.assertNotIn("main_loop()", self.daemon)

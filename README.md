@@ -46,6 +46,9 @@ python tests/cache/TestVerifiedContentCache.py
 python tests/zuiopt/test_rule_pack.py
 python tests/zuiopt/TestProductionContracts.py
 python tests/zuiopt/TestCanonicalDocs.py
+python tests/zuiopt/TestTerminalContracts.py
+python tests/zuiopt/TestPuritySource.py
+sudo python host_retirement/TestRetirement.py
 clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptTest.cpp -lz -o /tmp/zuiopt-fixture
 sudo /tmp/zuiopt-fixture payload/system/etc/zuiopt/factory_rules.conf
 python tests/zuiopt/TestNativeRuleParity.py /tmp/zuiopt-fixture
@@ -75,8 +78,8 @@ The reviewed Golden framework.jar and unmodified services DEX members remain
 byte-identical. A source-bound terminal manifest is required for payload application:
 
 ```powershell
-python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --payload <ci-payload> --terminal-framework-manifest <terminal-jars.json> --dry-run
-python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --payload <ci-payload> --terminal-framework-manifest <terminal-jars.json>
+python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --payload <ci-payload> --original-base-manifest <approved-original-manifest.json> --terminal-framework-manifest <terminal-jars.json> --dry-run
+python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --payload <ci-payload> --original-base-manifest <approved-original-manifest.json> --terminal-framework-manifest <terminal-jars.json>
 ```
 
 Build outputs, ROM images, device evidence, review packages, and local project
@@ -94,8 +97,8 @@ instead of assuming rollback or automatically repeating the mutation.
 Three crashes in 60 seconds stop ZUIopt and recover Android default scheduling.
 The failure persists across boots. The authenticated App reset clears only failure
 and crash history, enabling a retry at the next reboot, never the current boot.
-Legacy data migration is exact-path, identity/byte checked and non-recursive;
-unknown data is retained with a fail-closed diagnostic. Device runtime/AVC validation
+Device upgrade preparation and rollback are separate host-only utilities.
+The ROM performs no predecessor migration. Device runtime/AVC validation
 requires a separately authorized post-flash gate.
 
 Init creates the root-owned 0755 `/dev/cpuset/ZUIopt` scaffold at post-fs-data.

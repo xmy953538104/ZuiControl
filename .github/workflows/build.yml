@@ -10,6 +10,7 @@ on:
       - "framework_patch/**"
       - "scripts/**"
       - "tests/**"
+      - "host_retirement/**"
       - "upstream/uperf/**"
       - ".github/workflows/build.yml"
       - "*.gradle.kts"
@@ -83,7 +84,6 @@ jobs:
           python3 -m py_compile scripts/build/ImportUperfUpstream.py
           python3 -m py_compile tests/selinux/TestUperfRuntimeAccess.py
           python3 -m py_compile tests/flash/VerifyFixedSevenReadback.py
-          python3 -m py_compile scripts/build/PatchAsoulOptConfigPath.py
           python3 -m py_compile scripts/build/VerifiedContentCache.py
           python3 tests/cache/TestVerifiedContentCache.py
           bash -n payload/system/bin/zui_controld
@@ -108,9 +108,9 @@ jobs:
           python3 tests/zuiopt/test_rule_pack.py
           python3 tests/zuiopt/TestProductionContracts.py
           python3 tests/zuiopt/TestTerminalContracts.py
+          python3 tests/zuiopt/TestPuritySource.py
+          sudo python3 host_retirement/TestRetirement.py
           bash -n payload/system/etc/zuiopt/zuiopt_boot_state.sh
-          bash -n payload/system/etc/zuiopt/zuiopt_legacy_migration.sh
-          sudo python3 tests/zuiopt/TestSingleOwnerMigration.py
           bash -n payload/system/etc/zuiopt/crash_gate.sh
 
       - name: Test and build ZUIopt production integration
@@ -276,9 +276,13 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV47 payload/system/priv-app/ZuiControlV48
           rm -rf payload/system/priv-app/ZuiControlV49 payload/system/priv-app/ZuiControlV50
           rm -rf payload/system/priv-app/ZuiControlV51
-          mkdir -p payload/system/priv-app/ZuiControlV52
+          rm -rf payload/system/priv-app/ZuiControlV52
+          mkdir -p payload/system/priv-app/ZuiControlV53
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV52/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV53/ZuiControl.apk
+
+      - name: Verify compiled payload semantic purity
+        run: python3 tests/zuiopt/RuntimePurityAudit.py --system payload/system
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -135,7 +135,6 @@ class UperfSelinuxStartupTests(unittest.TestCase):
                          "f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8")
 
     def test_16_refresh_unchanged_retired_owner_absent(self) -> None:
-        self.assertFalse((REPO / "payload/system/bin/AsoulOpt").exists())
         self.assertEqual(sha256(REPO / "payload/system/etc/init/zui_refresh_kill_switch.rc"),
                          "0161a9980777b4313d0a5935b0e861e1afea86c5b4eb07ef5b88e44f20143c62")
 

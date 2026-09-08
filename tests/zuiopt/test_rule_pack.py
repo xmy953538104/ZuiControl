@@ -23,7 +23,7 @@ class Rules(unittest.TestCase):
             with self.assertRaises(AssertionError): convert(path,expected_counts=None,require_selectors=True)
     def test_roundtrip(self): self.assertEqual(parse_rules(OPEN),parse_rules(dump_rules(parse_rules(OPEN))))
     def test_source_parity(self):
-        for source in ('asoul_binary','appopt','zuiopt_native','user_export'):
+        for source in ('recovered_binary','appopt','zuiopt_native','user_export'):
             m=manifest_for(OPEN,'test',source,binary_sha='a'*64,evidence='STATIC_RECOVERED')
             self.assertEqual(unpack(pack_bytes(m,OPEN)),(m,OPEN))
         expected=parse_rules(OPEN)['profiles']['G']

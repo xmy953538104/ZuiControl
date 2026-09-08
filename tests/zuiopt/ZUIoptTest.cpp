@@ -174,26 +174,20 @@ int main(int argc,char** argv){
             rejects([&]{store.apply("commit",id,"");});require(store.current().effective==before&&!fs::exists(root/"upload.meta"),"digest failure rollback/cleanup");
             PrivateDir dir(root.string());
             require(store.bootState()=="READY_TO_START","normal single owner boot");
-            // Real old-layout fixture: current packs, user, two generations/LKG,
-            // selector and crash/failure files. Never regenerate the rules.
+            // Initialization, crash and reset preserve packs, user rules and LKG.
             auto snapshot=[&]{std::map<std::string,std::string> result;
                 for(const auto& entry:fs::recursive_directory_iterator(root/"generations"))if(entry.is_regular_file())result[entry.path().string()]=read(entry.path().string());
                 result["effective.conf"]=dir.get("effective.conf",RULE_LIMIT);return result;};
             const auto oldRules=snapshot();const auto oldState=store.state();
-            for(const auto& oldOwner:{std::string("ASOULOPT"),std::string("ZUIOPT")}){
-                auto body=oldOwner+"\n";dir.put("next_owner.v1","ZUIOPT_NEXT_OWNER_V1 "+std::to_string(crc(body))+"\n"+body);
-                store.retireSelector();store.initialize();require(!dir.exists("next_owner.v1")&&snapshot()==oldRules&&store.state()==oldState,"old dual-owner rules byte/semantic preserved");
-            }
+            store.initialize();require(snapshot()==oldRules&&store.state()==oldState,"initialization preserves rules byte/semantic state");
             require(!store.crash()&&store.bootState()=="READY_TO_START","isolated crash restarts");
             require(!store.crash()&&store.crash(),"three crashes in bounded window");
             require(store.bootState()=="FAILSAFE","persistent Android default failsafe");
-            store.initialize();store.retireSelector();require(store.failed(),"boot never clears persistent failure");
+            store.initialize();require(store.failed(),"boot never clears persistent failure");
             store.resetFailure();require(!dir.exists("failure.v1")&&!dir.exists("crashes.v1")&&store.bootState()=="READY_TO_START","explicit next boot reset");
             require(snapshot()==oldRules&&store.state()==oldState,"reset preserves rules and LKG bytes");
             rejects([&]{store.resetFailure();});
-            require(!store.migrationDone(),"migration initially pending");store.finishMigration();require(store.migrationDone(),"migration complete marker");
-            fs::create_symlink(root/"effective.conf",root/"next_owner.v1");rejects([&]{store.retireSelector();});require(snapshot()==oldRules,"unexpected selector keeps target");fs::remove(root/"next_owner.v1");
-            puts("ZUIOPT_SINGLE_OWNER_MIGRATION_FAILSAFE_RESET=PASS");
+            puts("ZUIOPT_SINGLE_OWNER_FAILSAFE_RESET=PASS");
             fs::create_symlink(root/"effective.conf",root/"upload.bin");rejects([&]{store.apply("begin",randomId(),"user:1:"+sha256("x")+":-:0");});
             require(store.current().effective==before,"symlink target unchanged");fs::remove(root/"upload.bin");
             fs::create_hard_link(root/"effective.conf",root/"upload.bin");rejects([&]{dir.get("upload.bin",RULE_LIMIT);});fs::remove(root/"upload.bin");

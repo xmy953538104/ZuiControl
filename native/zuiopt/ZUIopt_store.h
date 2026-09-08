@@ -186,9 +186,6 @@ public:
         }
         throw std::runtime_error("unknown rule manager action");
     }
-    // The retired selector is data, never an input to startup. PrivateDir checks
-    // ownership, regular-file type, link count and mode before removing it.
-    void retireSelector(){root.remove("next_owner.v1");}
     bool failed(){return root.exists("failure.v1");}
     std::string bootState(){return failed()?"FAILSAFE":"READY_TO_START";}
     std::string failureState(){return std::string("thread_manager=ZUIOPT\nfailure=")+(failed()?"1":"0")+"\n";}
@@ -199,8 +196,6 @@ public:
         root.get("failure.v1",128);root.get("crashes.v1",256,true);
         root.remove("crashes.v1");root.remove("failure.v1");
     }
-    bool migrationDone(){return root.get("zuiopt_only_migration.v1",64,true)=="ZUIOPT_ONLY_MIGRATION_V1\n";}
-    void finishMigration(){root.put("zuiopt_only_migration.v1","ZUIOPT_ONLY_MIGRATION_V1\n");}
     void failure(){root.put("failure.v1","ZUIOPT_FAILURE_V1\n"+trim(read("/proc/sys/kernel/random/boot_id"))+"\n");}
     bool crash(){
         auto boot=trim(read("/proc/sys/kernel/random/boot_id"));auto lines=fields(root.get("crashes.v1",256,true),'\n');std::vector<int64_t> times;

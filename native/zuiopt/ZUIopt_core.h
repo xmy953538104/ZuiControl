@@ -83,7 +83,7 @@ inline Identity statIdentity(const std::string& s){
 }
 inline Identity identity(int pid,int tid=0){auto text=read("/proc/"+std::to_string(pid)+(tid?"/task/"+std::to_string(tid):"")+"/stat",true);auto id=statIdentity(text);require(text.empty()||id.start||id.state=='Z'||id.state=='X',"proc identity parse failed");return id;}
 inline std::string group(int tid){std::istringstream in(read("/proc/"+std::to_string(tid)+"/cgroup"));std::string s;while(std::getline(in,s)){auto at=s.find(":cpuset:");if(at!=s.npos)return s.substr(at+8);}return {};}
-inline bool normalGroup(const std::string& s){return !s.empty()&&s[0]=='/'&&s.find("..") == s.npos&&s.find("/ZUIopt")==s.npos&&s.find("/asopt")==s.npos&&s.find_first_not_of("/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")==s.npos;}
+inline bool normalGroup(const std::string& s){return !s.empty()&&s[0]=='/'&&s.find("..") == s.npos&&s.find("/ZUIopt")==s.npos&&s.find_first_not_of("/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")==s.npos;}
 inline int uid(int pid){struct stat s{};if(::stat(("/proc/"+std::to_string(pid)).c_str(),&s)){int error=errno;if(error!=ENOENT&&error!=ESRCH)throw ProcError(error,"proc UID stat failed");return -1;}return s.st_uid;}
 inline std::string processName(int pid,bool strict=false){auto s=read("/proc/"+std::to_string(pid)+"/cmdline",strict);s.resize(s.find('\0')==s.npos?s.size():s.find('\0'));return s;}
 inline std::string packageName(std::string s){auto at=s.find(':');if(at!=s.npos)s.resize(at);return s;}
@@ -212,7 +212,7 @@ inline void selftest(){
     require(classify(*c.find("org.example.app"),"RenderThread")->mask==0x1c,"class fixture");
     require(!classify(*c.find("org.example.app"),"Audio"),"default fixture");
     for(auto bad:{"", "enabled true\nprofile G 64\n", "enabled true\nprofile G 2-6\nunknown true\n"}){bool rejected=false;try{parseConfig(bad,255);}catch(...){rejected=true;}require(rejected,"bad config fixture");}
-    require(match("prefix","org.","org.a")&&match("contains","Render","WorkerRender")&&!normalGroup("/asopt/7c")&&!normalGroup("/ZUIopt/7c"),"match/release fixture");
+    require(match("prefix","org.","org.a")&&match("contains","Render","WorkerRender")&&!normalGroup("/../unsafe")&&!normalGroup("/ZUIopt/7c"),"match/release fixture");
     puts("ZUIOPT_SELFTEST=PASS");
 }
 #endif

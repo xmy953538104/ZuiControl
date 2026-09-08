@@ -90,11 +90,9 @@ class ProductionContracts(unittest.TestCase):
                 starts.append((action,line))
         self.assertEqual(len(starts),1)
         self.assertIn('    trigger zuiopt-start',rc)
-        self.assertNotIn('zui_asoulopt',rc)
         self.assertIn('    restart_period 5',rc)
         self.assertNotRegex(rc,r'^\s+critical(?:\s|$)')
         crash=read('payload/system/etc/zuiopt/crash_gate.sh')
-        self.assertNotIn('start zui_asoulopt',crash)
         self.assertNotIn('while ',crash)
         boot=read('payload/system/etc/zuiopt/zuiopt_boot_state.sh')
         self.assertIn('|| state=FAILSAFE',boot)
@@ -121,7 +119,6 @@ class ProductionContracts(unittest.TestCase):
         self.assertEqual(hashlib.sha256(factory.read_bytes()).hexdigest(),'1ac23f379482649608b44860eac0be165ba6b71022eee140735edbc362970f65')
         self.assertEqual(len(re.findall(r'^profile ',factory.read_text(),re.M)),27)
         self.assertEqual(len(re.findall(r'^package ',factory.read_text(),re.M)),316)
-        self.assertFalse((ROOT/'payload/system/bin/AsoulOpt').exists())
 
     def test_new_policy_has_no_forbidden_owner_scope(self):
         policy=read('payload/patches/plat_sepolicy_zui_control.cil')

@@ -1,7 +1,7 @@
-ZuiControl production payload — App V52 target
+ZuiControl production payload — App V53 target
 
 Build/package target:
-- /system/priv-app/ZuiControlV52/ZuiControl.apk
+- /system/priv-app/ZuiControlV53/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/uperf
 - /system/bin/zui_uperf_service
@@ -45,9 +45,7 @@ Runtime data:
 - /data/vendor/zui_control/uperf/cur_powermode.txt
 - /data/vendor/zui_control/uperf/effective_powermode.txt
 - /data/vendor/zui_control/log/
-- /data/vendor/zui_control/zuiopt/ (private rules, owner_state.v1 recovery journal, failure.v1, crashes.v1, one-time migration marker)
-- Legacy owner data is removed only by exact-path one-time migration. Unexpected identities/bytes are retained and startup fails closed.
-- Rule-pack source_type=asoul_binary is NON_EXECUTABLE_PROVENANCE_ONLY, not a runtime owner or executable loader.
+- /data/vendor/zui_control/zuiopt/ (private rules, owner_state.v1 recovery journal, failure.v1, crashes.v1)
 - startup.v1 and fatal.v1 are atomic 0600 startup/fatal receipts, each below 1KB. They record boot/stage and allowlisted reason/status only, never task/package identities. No steady-state receipt writes; write failure never blocks owner release/fail-safe.
 
 Current refresh contract and boundaries:
@@ -59,3 +57,5 @@ Current refresh contract and boundaries:
 - 144/165 are displayHz targets only; generic UID fpsCap is not delivered.
 
 No production path may restore persistent zui_controld, daemon refresh_tick/learn_refresh, Accessibility/App refresh ownership, Uperf Native Auto scene ownership, or a second per-task scheduler.
+
+Device upgrade preparation is a separate host-only utility, never a ROM boot action.

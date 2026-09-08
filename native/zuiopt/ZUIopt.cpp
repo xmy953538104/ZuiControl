@@ -33,10 +33,7 @@ int main(int argc,char** argv){
         ZUIopt::RuleStore store(ROOT,ZUIopt::read(FACTORY));
         if(argc==2){
             auto command=std::string(argv[1]);
-            if(command=="--boot"){store.initialize();store.retireSelector();puts(store.bootState().c_str());return 0;}
-            if(command=="--migration-state"){puts(store.migrationDone()?"DONE":"PENDING");return 0;}
-            if(command=="--migration-done"){store.finishMigration();return 0;}
-            if(command=="--migration-failed"){store.failure();return 0;}
+            if(command=="--boot"){store.initialize();puts(store.bootState().c_str());return 0;}
             if(command=="--crash"){bool failed=true;try{failed=store.crash();}catch(...){store.failure();}puts(failed?"1":"0");return 0;}
             throw std::runtime_error("unknown production command");
         }

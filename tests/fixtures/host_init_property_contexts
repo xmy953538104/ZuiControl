@@ -6,4 +6,3 @@ sys.zui_control.scheduler_active u:object_r:zui_control_scheduler_active_prop:s0
 sys.zui_control.uperf_fail_safe u:object_r:zui_control_uperf_fail_safe_prop:s0 exact bool
 zui_control. u:object_r:shell_prop:s0 prefix string
 sys.zui_control.zuiopt_failed u:object_r:zuiopt_failure_prop:s0 exact bool
-sys.zui_control.legacy_migration u:object_r:zuiopt_failure_prop:s0 exact enum FAILED CLEAN UNLINK_VERIFIED

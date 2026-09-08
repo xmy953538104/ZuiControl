@@ -12,7 +12,7 @@ from datetime import datetime
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
-APP_APK_PATH = "system/priv-app/ZuiControlV52/ZuiControl.apk"
+APP_APK_PATH = "system/priv-app/ZuiControlV53/ZuiControl.apk"
 LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -137,119 +137,24 @@ def remove_lines_containing(path, needles, dry_run):
     return removed
 
 
-def cleanup_legacy_payload(unpack, dry_run, report):
+def remove_reviewed_oem_preinstall(unpack, dry_run, report):
+    # Existing product composition excludes this original preinstall.
     removed = []
-    legacy = [
-        "system_a/system/priv-app/ZuiControl",
-        "system_a/system/priv-app/ZuiControlV30",
-        "system_a/system/priv-app/ZuiControlV31",
-        "system_a/system/priv-app/ZuiControlV32",
-        "system_a/system/priv-app/ZuiControlV33",
-        "system_a/system/priv-app/ZuiControlV34",
-        "system_a/system/priv-app/ZuiControlV35",
-        "system_a/system/priv-app/ZuiControlV36",
-        "system_a/system/priv-app/ZuiControlV37",
-        "system_a/system/priv-app/ZuiControlV38",
-        "system_a/system/priv-app/ZuiControlV39",
-        "system_a/system/priv-app/ZuiControlV40",
-        "system_a/system/priv-app/ZuiControlV41",
-        "system_a/system/priv-app/ZuiControlV42",
-        "system_a/system/priv-app/ZuiControlV43",
-        "system_a/system/priv-app/ZuiControlV44",
-        "system_a/system/priv-app/ZuiControlV45",
-        "system_a/system/priv-app/ZuiControlV46",
-        "system_a/system/priv-app/ZuiControlV47",
-        "system_a/system/priv-app/ZuiControlV48",
-        "system_a/system/priv-app/ZuiControlV49",
-        "system_a/system/priv-app/ZuiControlV50",
-        "system_a/system/priv-app/ZuiControlV51",
-        "system_a/system/etc/zuiopt/boot_owner.sh",
-        "system_a/system/priv-app/ZuiperfCtl",
-        "system_a/system/bin/zui_perfctld",
-        "system_a/system/etc/init/zui_perfctld.rc",
-        "system_a/system/etc/zui_perfctl",
-        "system_a/system/etc/permissions/privapp-permissions-zui-perfctl.xml",
-        "system_a/system/etc/default-permissions/default-permissions-zui-zuiperfctl.xml",
-        "system_a/system/bin/AsoulOpt",
-        "system_a/system/etc/init/zui_asoulopt.rc",
-        "system_a/system/etc/zui_control/zui_asoulopt.sh",
-        "system_a/system/etc/zui_control/default_asopt.conf",
-        "system_a/system/etc/zui_control/asopt.conf",
-        "system_a/system/etc/asopt.conf",
-        "system_a/system/etc/zui_control/zui_cloud_block.sh",
-        "system_a/system/etc/zui_control/clear_package_cache.sh",
-        "system_a/system/bin/AppOpt",
-        "system_a/system/bin/AppOpt-ebpf",
-        "system_a/system/etc/init/zui_appopt.rc",
-        "system_a/system/etc/zui_control/AppOpt.json",
-        "system_a/system/etc/zui_control/default_applist.conf",
-        "system_a/system/etc/zui_control/zui_appopt_prepare.sh",
-        "system_a/system/etc/zui_control/promote_zuipp_xml.sh",
-        "system_a/AppOpt.json",
-        "system_a/system/preinstall/QQMusic",
-    ]
-    for rel in legacy:
-        remove_path(unpack / rel, dry_run, removed)
-    report["legacy_removed"] = removed
+    remove_path(unpack / "system_a/system/preinstall/QQMusic", dry_run, removed)
+    report["oem_preinstall_removed"] = removed
 
 
-def cleanup_legacy_metadata(image_root, unpack, dry_run, report):
-    needles = [
-        "zui_perfctl",
-        "zui_perfctld",
-        "ZuiperfCtl",
-        "zuiperfctl",
-        "zui-perfctl",
-        "AsoulOpt",
-        "zui_asoulopt",
-        "asopt.conf",
-        "/data/adb/naki",
-        "zui_cloud_block",
-        "AppOpt",
-        "zui_appopt",
-        "default_applist.conf",
-        "system_a/system/priv-app/ZuiControl ",
-        "system_a/system/priv-app/ZuiControl/ZuiControl",
-        "system_a/system/priv-app/ZuiControlV30",
-        "system_a/system/priv-app/ZuiControlV31",
-        "system_a/system/priv-app/ZuiControlV32",
-        "system_a/system/priv-app/ZuiControlV33",
-        "system_a/system/priv-app/ZuiControlV34",
-        "system_a/system/priv-app/ZuiControlV35",
-        "system_a/system/priv-app/ZuiControlV36",
-        "system_a/system/priv-app/ZuiControlV37",
-        "system_a/system/priv-app/ZuiControlV38",
-        "system_a/system/priv-app/ZuiControlV39",
-        "system_a/system/priv-app/ZuiControlV40",
-        "system_a/system/priv-app/ZuiControlV41",
-        "system_a/system/priv-app/ZuiControlV42",
-        "system_a/system/priv-app/ZuiControlV43",
-        "system_a/system/priv-app/ZuiControlV44",
-        "system_a/system/priv-app/ZuiControlV45",
-        "system_a/system/priv-app/ZuiControlV46",
-        "system_a/system/priv-app/ZuiControlV47",
-        "system_a/system/priv-app/ZuiControlV48",
-        "system_a/system/priv-app/ZuiControlV49",
-        "system_a/system/etc/zui_control/clear_package_cache",
-        "system_a/system/preinstall/QQMusic",
-    ]
+def remove_reviewed_oem_metadata(image_root, unpack, dry_run, report):
     targets = [
         unpack / "config" / "system_a_fs_config",
         unpack / "config" / "system_a_file_contexts",
-        image_root / "work" / "config" / "erofs_overrides" / "system_a_fs_config",
-        image_root / "work" / "config" / "erofs_overrides" / "system_a_file_contexts",
-        unpack / "system_a" / "system" / "etc" / "selinux" / "plat_property_contexts",
-        unpack / "system_a" / "system" / "etc" / "selinux" / "plat_service_contexts",
-        unpack / "system_a" / "system" / "etc" / "selinux" / "plat_file_contexts",
-        unpack / "system_a" / "system" / "etc" / "selinux" / "plat_sepolicy.cil",
-        unpack / "vendor_a" / "etc" / "selinux" / "vendor_sepolicy.cil",
+        image_root / "work/config/erofs_overrides/system_a_fs_config",
+        image_root / "work/config/erofs_overrides/system_a_file_contexts",
     ]
-    removed = {}
-    for target in targets:
-        lines = remove_lines_containing(target, needles, dry_run)
-        if lines:
-            removed[str(target)] = lines
-    report["legacy_metadata_removed"] = removed
+    report["oem_metadata_removed"] = {
+        str(path): remove_lines_containing(path, ["system_a/system/preinstall/QQMusic"], dry_run)
+        for path in targets
+    }
 
 
 def copy_payload(payload, unpack, dry_run, report):
@@ -535,12 +440,48 @@ def terminal_framework(root, manifest_path):
     return result, hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def require_original_base(unpack, manifest_path):
+    """Reject patched candidates: exact approved original decoded path/content set."""
+    data = pathlib.Path(manifest_path).read_bytes()
+    if hashlib.sha256(data).hexdigest() != "62044151e1173be82aef669138fbf02b564c2293b7c30b2f89eb44f3d52bbc65":
+        raise SystemExit("Unapproved ORIGINAL_072 manifest")
+    original = json.loads(data)
+    for part, entries in original.items():
+        base = unpack / part
+        actual = {"/"} | {"/" + p.relative_to(base).as_posix() for p in base.rglob("*")}
+        if actual != set(entries):
+            raise SystemExit("ORIGINAL_072 path set mismatch: " + part)
+        for name, row in entries.items():
+            path = base / name.lstrip("/")
+            if path.is_symlink():
+                raise SystemExit("Unexpected host symlink in original extraction")
+            if row["type"] == "DIR":
+                if not path.is_dir():
+                    raise SystemExit("Original directory mismatch: " + name)
+                continue
+            if not path.is_file():
+                raise SystemExit("Original file missing: " + name)
+            if row["type"] == "LINK":
+                content = path.read_bytes()
+                if not content.startswith(b"!<symlink>") or content[10:].decode("utf16").rstrip("\0") != row["symlink_target"]:
+                    raise SystemExit("Original link mismatch: " + name)
+            else:
+                digest = hashlib.sha256()
+                with path.open("rb") as stream:
+                    for block in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(block)
+                if path.stat().st_size != row["bytes"] or digest.hexdigest() != row["sha256"]:
+                    raise SystemExit("Original file bytes mismatch: " + name)
+    return "PASS_EXACT_ORIGINAL_072_PATHS_AND_CONTENT"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Apply ZuiControl payload into an unpacked image tree.")
     parser.add_argument("--root", help="Project root containing work/config, default: this repository root")
     parser.add_argument("--unpack", help="Unpacked image root, default: work/unpack")
     parser.add_argument("--payload", help="Payload root, default: payload")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--original-base-manifest", required=True, help="Approved exact ORIGINAL_072 decoded manifest; candidates are rejected")
     framework_args = parser.add_mutually_exclusive_group(required=True)
     framework_args.add_argument("--preserve-framework-manifest",
                         help="Exact Golden JAR inputs, bound to this production source commit")
@@ -550,6 +491,7 @@ def main():
     root = pathlib.Path(args.root).resolve() if args.root else resolve_root()
     unpack = resolve_unpack(root, args.unpack)
     image_root = resolve_image_root(root, unpack)
+    original_identity = require_original_base(unpack, args.original_base_manifest)
     payload = pathlib.Path(args.payload).resolve() if args.payload else root / "payload"
     if not payload.exists():
         raise SystemExit(f"Missing payload: {payload}")
@@ -564,13 +506,15 @@ def main():
         "payload": str(payload),
         "dry_run": args.dry_run,
         "warnings": [],
+        "build_base": "EXACT_ORIGINAL_072",
+        "original_identity": original_identity,
     }
     apk = payload.joinpath(*APP_APK_PATH.split("/"))
     if not apk.exists():
         raise SystemExit(f"Missing {APP_APK_PATH}. Run scripts/build/BuildZuiControl.ps1 before applying the payload.")
 
-    cleanup_legacy_payload(unpack, args.dry_run, report)
-    cleanup_legacy_metadata(image_root, unpack, args.dry_run, report)
+    remove_reviewed_oem_preinstall(unpack, args.dry_run, report)
+    remove_reviewed_oem_metadata(image_root, unpack, args.dry_run, report)
     entries = copy_payload(payload, unpack, args.dry_run, report)
     cleanup_retired_whitelists(unpack, args.dry_run, report)
     dumpsys_rel = "system_a/system/bin/dumpsys"

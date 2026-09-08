@@ -68,7 +68,7 @@ class RefreshModel:
         self.last_error = ""
         self.fail_stage = ""
         self.uperf = "running"
-        self.asoul = "running"
+        self.task_owner = "running"
         self.command = "available"
 
     def hz_for(self, package_name: str) -> int:
@@ -582,10 +582,10 @@ class RefreshStateModelTest(unittest.TestCase):
 
     def test_global_disable_does_not_touch_other_planes(self) -> None:
         model = RefreshModel()
-        before = (model.uperf, model.asoul, model.command)
+        before = (model.uperf, model.task_owner, model.command)
         model.focus("app.a")
         model.set_disable_mask(1)
-        self.assertEqual(before, (model.uperf, model.asoul, model.command))
+        self.assertEqual(before, (model.uperf, model.task_owner, model.command))
 
     def test_five_rates_and_unsupported_are_exact(self) -> None:
         for hz in ALLOWED_HZ:

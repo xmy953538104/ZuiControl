@@ -25,7 +25,6 @@ setup_state() {
     DATA_ROOT="$TEST_ROOT/data"
     CONTROL_DIR="$DATA_ROOT/control"
     UPERF_DIR="$DATA_ROOT/uperf"
-    ASOUL_DIR="$DATA_ROOT/asoul"
     LOG_DIR="$DATA_ROOT/log"
     LOG_FILE="$LOG_DIR/controld.log"
     UPERF_LOG="$LOG_DIR/uperf.log"
@@ -35,12 +34,10 @@ setup_state() {
     UPERF_MODE="$UPERF_DIR/cur_powermode.txt"
     UPERF_EFFECTIVE_MODE="$UPERF_DIR/effective_powermode.txt"
     UPERF_PERAPP="$UPERF_DIR/perapp_powermode.txt"
-    ASOUL_CONFIG="$ASOUL_DIR/asopt.conf"
-    mkdir -p "$CONTROL_DIR" "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR"
+    mkdir -p "$CONTROL_DIR" "$UPERF_DIR" "$LOG_DIR"
     cp "$DEFAULT_PERAPP" "$UPERF_PERAPP"
     printf 'balance\n' > "$UPERF_MODE"
     printf 'balance\n' > "$UPERF_EFFECTIVE_MODE"
-    printf 'mode=0\nrt=0\nopt=0xDEADBEEF\n' > "$ASOUL_CONFIG"
     : > "$UPERF_LOG"
     : > "$LOG_FILE"
     TEST_REQUEST=
@@ -789,4 +786,4 @@ test_terminal_ack_put_retry_without_action_replay
 test_oneshot_duplicate_kicks_and_stress
 test_oneshot_requires_authenticated_exact_payload
 test_oneshot_failure_windows
-printf 'PASS: zui_controld Uperf/A-SOUL tests\n'
+printf 'PASS: zui_controld Uperf/ZUIopt tests\n'

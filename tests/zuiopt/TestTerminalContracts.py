@@ -6,7 +6,7 @@ import re
 import subprocess
 import sys
 import unittest
-from RuntimeAsoulAudit import audit_system
+from RuntimePurityAudit import audit_system
 
 ROOT=Path(__file__).resolve().parents[2]
 def read(name): return (ROOT/name).read_text(encoding='utf8')
@@ -35,16 +35,16 @@ class TerminalContracts(unittest.TestCase):
         health=verifier.split('foreach ($stateMarker in @(',1)[1].split(')) { Assert-Contains',1)[0]
         java=read('framework_patch/src/services/com/zui/server/control/ZuiControlService.java')
         for needle in re.findall(r"'([^']+)'",health):self.assertIn(needle,java)
-        self.assertNotIn('asoul_sha256 =',verifier)
 
     def test_proven_algorithms_are_byte_identical(self):
         expected={
-            'ZUIopt_core.h':'12766b596a1dd5fd7fbc8e6b83708b815e334a2a6d70bf8a6b89a201ac7f34df',
+            # Scoped purity changes only: generic group safety and neutral provenance.
+            'ZUIopt_core.h':'7d5ecbdd2ccc882740fd53059d1b93862bf1c78ff7317d08f843af0e9dd7f647',
+            'ZUIopt_rules.h':'f50e258ccab3012d2173a05a99d5f22193311fe623a7156192946f06316b62a5',
             'ZUIopt_owner.h':'148488a52090740f225c7acf95adca079451e22e32daf2878e2ff08f5b53cf3b',
             'ZUIopt_events.h':'61387f2fa149b8b5678b0c81bca21ea51c4cca0dfd7799eb48691acd482fb836',
             'ZUIopt_binder.h':'e9a821a1c58b27c6cc84c7dabe94225508bd573e5b2cb9c63bf7c61971782496',
             'ZUIopt_model.h':'34463bc9f179586206d966dc15c9f5b2c99112400f214d3bf353c469c274aebb',
-            'ZUIopt_rules.h':'b3ce2f0737bfb948fa81cb80ec8bf7552a45ce7a751908b727e8b277bc790973',
         }
         for name,sha in expected.items():
             self.assertEqual(hashlib.sha256(read('native/zuiopt/'+name).encode()).hexdigest(),sha,name)
@@ -58,14 +58,6 @@ class TerminalContracts(unittest.TestCase):
 
     def test_runtime_absence(self):
         self.assertEqual(audit_system(ROOT/'payload/system')['status'],'PASS')
-        for name in ('payload/system/bin/zui_controld','payload/system/etc/zui_control/zui_scheduler_prepare.sh',
-                'app/src/main/java/com/zui/zuicontrol/MainActivity.kt','app/src/main/java/com/zui/zuicontrol/ZuiControlContract.kt',
-                'app/src/main/java/com/zui/zuicontrol/ZuioptRules.kt','framework_patch/src/services/com/zui/server/control/ZuiControlService.java'):
-            self.assertNotRegex(read(name),r'(?i)asoul|a-soul|asopt|next_owner|current_owner|task_owner|zo_next|zo_owner')
-        self.assertNotIn('/system/bin/AsoulOpt',read('payload/patches/plat_file_contexts_add.txt'))
-        self.assertNotIn('task_owner',read('payload/patches/plat_property_contexts_add.txt'))
-        self.assertNotIn('nextOwner',read('native/zuiopt/ZUIopt_store.h'))
-        self.assertNotIn('AsoulOpt',read('native/zuiopt/ZUIopt_daemon.h'))
 
     def test_reset_is_authenticated_and_next_boot_only(self):
         app=read('app/src/main/java/com/zui/zuicontrol/MainActivity.kt')
@@ -80,19 +72,17 @@ class TerminalContracts(unittest.TestCase):
         self.assertIn('store.resetFailure()',reset)
         self.assertNotRegex(reset,r'reload|selected|setprop|signal')
         store=read('native/zuiopt/ZUIopt_store.h')
-        body=store.split('void resetFailure()',1)[1].split('bool migrationDone()',1)[0]
+        body=store.split('void resetFailure()',1)[1].split('void failure()',1)[0]
         self.assertEqual(re.findall(r'root.remove\("([^"]+)"\)',body),['crashes.v1','failure.v1'])
         self.assertNotIn('root.remove("failure.v1")',store.split('void resetFailure()',1)[0])
 
-    def test_migration_is_event_gated_and_verified_before_start(self):
+    def test_boot_and_failure_have_one_owner(self):
         rc=read('payload/system/etc/init/zui_scheduler.rc')
-        postfs=rc.split('on post-fs-data',1)[1].split('\non ',1)[0]
-        self.assertLess(postfs.index('zuiopt_legacy_migration.sh prepare'),postfs.index('trigger zuiopt-migration-unlink'))
-        self.assertLess(postfs.index('trigger zuiopt-migration-unlink'),postfs.index('trigger zuiopt-boot-state'))
-        self.assertNotIn('on property:sys.zui_control.legacy_migration=',rc)
-        self.assertIn('on zuiopt-migration-unlink && property:sys.zui_control.legacy_migration=UNLINK_VERIFIED\n    rm /data/vendor/asopt.conf',rc)
+        postfs=rc.split('on post-fs-data',1)[1].split('\n\non ',1)[0]
+        self.assertEqual(postfs.count('trigger zuiopt-boot-state'),1)
         boot=read('payload/system/etc/zuiopt/zuiopt_boot_state.sh')
-        self.assertLess(boot.index('zuiopt_legacy_migration.sh finish'),boot.index('setprop sys.zui_control.zuiopt_failed 0'))
+        self.assertEqual(boot.count('/system/bin/ZUIopt --boot'),1)
+        self.assertNotIn('--migration',boot)
         failure=rc.split('on property:sys.zui_control.zuiopt_failed=1',1)[1].split('\nservice ',1)[0]
         self.assertIn('stop zui_zuiopt\n    start zui_zuiopt_recover',failure)
         self.assertEqual(re.findall(r'^    start (\S+)',failure,re.M),['zui_zuiopt_recover'])

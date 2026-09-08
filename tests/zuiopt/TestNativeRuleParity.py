@@ -25,7 +25,7 @@ def main(binary):
             assert parse_rules(call('rules',rules))==parse_rules(rules)
         for bad in (b'',BASE.replace(b'2-6',b'0-8'),BASE.replace(b'schema 2',b'schema 1'),BASE+b'profile G 1\n',BASE+b'unknown true\n',OPEN.replace(b'selector=all',b'selector=rank:0'),OPEN.replace(b'selector=all',b'selector=rank:1025'),OPEN.replace(b' 20 7',b' 30 7'),OPEN.replace(b' R2 ',b' R1 ')):
             call('rules',bad,ok=False)
-        for source in ('asoul_binary','appopt','zuiopt_native','user_export'):
+        for source in ('recovered_binary','appopt','zuiopt_native','user_export'):
             manifest=manifest_for(OPEN,'parity',source,binary_sha='a'*64,evidence='STATIC_RECOVERED')
             assert json.loads(call('pack',pack_bytes(manifest,OPEN)))==manifest
         for compression in (zipfile.ZIP_STORED,zipfile.ZIP_DEFLATED):

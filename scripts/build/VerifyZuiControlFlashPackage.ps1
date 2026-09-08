@@ -27,8 +27,8 @@ $ExtractErofs = Join-Path $ToolsDir 'super-tools\AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'smali-apk\apktool.jar'
 $Avbtool = Join-Path $ToolsDir 'avb\downloaded\avbtool_aosp_c0af371_1.2.0.py'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '52'
-$ExpectedVersionName = '0.21.15'
+$ExpectedVersionCode = '53'
+$ExpectedVersionName = '0.21.16'
 $ExpectedUperfSha256 = 'f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8'
 $ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371'
 $ExpectedBuildFingerprintMarker = 'ZUI_16.1.11.072_241118_PRC'
@@ -455,7 +455,7 @@ try {
     $System = Join-Path $SystemRoot 'system'
     $PlatSelinux = Join-Path $System 'etc\selinux'
     $VendorSelinux = Join-Path $VendorRoot 'etc\selinux'
-    $AppApk = Join-Path $System 'priv-app\ZuiControlV52\ZuiControl.apk'
+    $AppApk = Join-Path $System 'priv-app\ZuiControlV53\ZuiControl.apk'
     $Daemon = Join-Path $System 'bin\zui_controld'
     $Uperf = Join-Path $System 'bin\uperf'
     $UperfService = Join-Path $System 'bin\zui_uperf_service'
@@ -482,8 +482,6 @@ try {
     Assert-BinaryContains $UperfSupervisor 'I Uperf is running' $true 'native regular-log readiness marker'
     Assert-BinaryContains $UperfSupervisor 'Uperf readiness timed out after' $true 'bounded native startup timeout marker'
     Assert-BinaryContains $UperfSupervisor '.tmp' $true 'atomic ready marker temporary suffix'
-    Assert-Missing (Join-Path $System 'bin\AsoulOpt') 'retired task binary'
-    Assert-Missing (Join-Path $System 'etc\zui_control\default_asopt.conf') 'retired task configuration'
     foreach ($path in @(
         (Join-Path $System 'bin\AppOpt'),
         (Join-Path $System 'bin\AppOpt-ebpf'),
@@ -506,7 +504,6 @@ try {
     Assert-Contains $SchedulerRc 'service zui_uperf /system/bin/zui_uperf_service' 'supervised Uperf init service'
     $uperfServiceBlock = @(Get-InitServiceBlock $SchedulerRc 'zui_uperf')
     if ($uperfServiceBlock -match '^\s+oneshot\s*$') { throw 'Uperf must remain an init-supervised non-oneshot service' }
-    Assert-NotContains $SchedulerRc 'zui_asoulopt' 'retired init service'
     Assert-Contains $SchedulerRc 'service zui_zuiopt /system/bin/ZUIopt' 'single task owner'
     Assert-Contains $SchedulerRc '    stop vendor.perfservice' 'QTI userspace perf bridge ownership fence'
     Assert-Contains $SchedulerRc '    start vendor.perfservice' 'QTI userspace perf bridge rollback'
@@ -524,9 +521,6 @@ try {
         Assert-NotContains $SchedulerRc "    stop $bridge" 'OEM telemetry service stop action'
         Assert-NotContains $SchedulerRc "    start $bridge" 'OEM telemetry service ownership action'
     }
-    Assert-NotContains $SchedulerRc 'symlink /data/vendor/zui_control/asoul/asopt.conf /data/vendor/asopt.conf' 'retired task config creation'
-    Assert-NotContains $SchedulerRc 'write /data/vendor/zui_control/asoul/asopt.conf' 'retired task config write'
-    Assert-Contains $SchedulerRc 'on zuiopt-migration-unlink && property:sys.zui_control.legacy_migration=UNLINK_VERIFIED' 'verified event-only legacy unlink'
     Assert-NotContains $SchedulerRc '/data/adb' 'retired Magisk config path'
     Assert-Contains $SchedulerRc 'trigger zui-scheduler-start' 'scheduler boot trigger'
     $schedulerRcBytes = [IO.File]::ReadAllBytes($SchedulerRc)
@@ -621,7 +615,6 @@ try {
     Assert-Contains $SchedulerPrepare 'effective_mode="$property_mode"' 'Uperf property recovery preference'
     Assert-Contains $SchedulerPrepare 'effective_mode="$global_mode"' 'durable global recovery fallback'
     Assert-Contains $SchedulerPrepare '$1 != "*"' 'retired per-app global fallback removal'
-    Assert-NotContains $SchedulerPrepare 'ASOUL_' 'retired task config preparation'
     Assert-Contains $SchedulerPrepare 'safecenter_keepalive_backup.flag' 'retired SafeCenter data cleanup'
     Assert-Contains $SchedulerPrepare '.rom_frontend_v47' 'retired Uperf frontend marker cleanup'
     $schedulerPrepareText = Get-Content -Raw -LiteralPath $SchedulerPrepare
@@ -633,7 +626,7 @@ try {
             throw "Scheduler prepare must publish exactly once per boot/restart: $publication"
         }
     }
-    foreach ($healthKey in @('zui_control_uperf_health', 'zui_control_asoul_health',
+    foreach ($healthKey in @('zui_control_uperf_health',
             'zui_control_daemon_status_text')) {
         Assert-NotContains $SchedulerPrepare $healthKey 'retired periodic health publication'
     }
@@ -668,8 +661,7 @@ try {
         'zui_control_status_time',
         'zui_control_status_last',
         'zui_control_daemon_status_text',
-        'zui_control_uperf_health',
-        'zui_control_asoul_health'
+        'zui_control_uperf_health'
     )) { Assert-NotContains $Daemon $retiredHealth 'retired persistent health polling path' }
     foreach ($forbidden in @('/sys/class/kgsl/kgsl-3d0', '/sys/devices/system/cpu/cpufreq', 'provider_direct', 'GameModeProvider/contact', 'zui_control.cloud_block', 'cloud_block.log')) {
         Assert-NotContains $Daemon $forbidden 'retired direct/provider/cloud runtime'
@@ -921,10 +913,8 @@ try {
     Assert-Contains $FileContexts '/system/bin/zui_uperf_service u:object_r:performanced_exec:s0' 'Uperf supervisor file context'
     Assert-Contains $FileContexts '/system/bin/zui_uperf_supervisor u:object_r:performanced_exec:s0' 'native Uperf subreaper file context'
     Assert-Contains $SystemImageContexts '/system_a/system/bin/zui_uperf_supervisor u:object_r:performanced_exec:s0' 'final EROFS native Uperf subreaper inode context'
-    Assert-NotContains $FileContexts '/system/bin/AsoulOpt' 'retired task binary context'
     Assert-Contains $FileContexts '/system/bin/dumpsys u:object_r:toolbox_exec:s0' 'retained toolbox dumpsys execution context'
     Assert-Contains $SystemImageContexts '/system_a/system/bin/dumpsys u:object_r:toolbox_exec:s0' 'final EROFS dumpsys inode context'
-    Assert-Contains $FileContexts '/data/vendor/asopt\.conf u:object_r:zui_control_data_file:s0' 'one-time verified migration-only link context'
     Assert-Contains $FileContexts '/data/vendor/zui_control(/.*)? u:object_r:zui_control_data_file:s0' 'scheduler data context'
     Assert-NotContains $FileContexts '/data/adb/naki' 'retired Magisk data context'
     Assert-NotContains $FileContexts '/data/vendor/zui_control/zuipp/active/game_policy\.xml' 'retired ZuiPP game XML context'

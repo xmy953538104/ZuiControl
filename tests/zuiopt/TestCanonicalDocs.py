@@ -10,7 +10,6 @@ def verify_repository_docs(root):
         text=(root/relative).read_text(encoding='utf8')
         assert 'ZuiTaskOpt' not in text,relative
         assert not re.search(r'\b(?:App V|ZuiControlV)(\d+)\b',text) or all(v==version for v in re.findall(r'\b(?:App V|ZuiControlV)(\d+)\b',text)),relative
-        assert 'asoulOpt is the sole per-task' not in text,relative
         assert 'scripts/WorkShell.ps1' not in text,relative
     payload=(root/'payload/README.txt').read_text(encoding='utf8')
     assert f'App V{version} target' in payload and f'ZuiControlV{version}/ZuiControl.apk' in payload

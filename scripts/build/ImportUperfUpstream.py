@@ -36,7 +36,6 @@ CONFLICT_PATTERNS = {
     "oem_service_stop": re.compile(
         r"\b(?:stop|killall|pkill)\b.*(?:perf|power|thermal)", re.IGNORECASE),
     "magisk_or_data_adb": re.compile(r"/data/adb|magisk", re.IGNORECASE),
-    "bundled_asoul": re.compile(r"asoul|a-soul", re.IGNORECASE),
     "native_auto_or_perapp": re.compile(
         r"perapp_powermode|\bauto\b|game.*(?:list|package)", re.IGNORECASE),
     "sched_owner": re.compile(r"\bsched\b|affinity|walt", re.IGNORECASE),
