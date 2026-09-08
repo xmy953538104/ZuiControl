@@ -139,6 +139,13 @@ struct Config {
     bool enabled=true,debug=false;std::map<std::string,Profile> profiles;std::vector<Mapping> packages;
     const Profile* find(const std::string& package) const {if(!enabled)return nullptr;for(auto& r:packages)if(match(r.kind,r.package,package))return &profiles.at(r.profile);return nullptr;}
 };
+inline Identity managedIdentity(const Snapshot& s,const Config& config,
+                                Identity (*probe)(int,int)=identity){
+    // Binder-only rejection before any proc identity/cmdline/UID or package-manager read.
+    if(s.uid<10000||s.uid>=20000||s.packages.size()!=1||
+       !packageLabel(s.packages[0])||!config.find(s.packages[0]))return {};
+    return probe(s.pid,0);
+}
 inline Config parseConfig(const std::string& text,Mask available){
     require(!text.empty()&&text.size()<=65536&&text.find('\0')==text.npos,"config size/NUL");Config c;bool seenEnabled=false,seenSchema=false,seenDebug=false;std::istringstream all(text);std::string line;
     while(std::getline(all,line)){

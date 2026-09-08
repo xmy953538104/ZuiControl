@@ -47,8 +47,10 @@ python tests/zuiopt/test_rule_pack.py
 python tests/zuiopt/TestProductionContracts.py
 python tests/zuiopt/TestCanonicalDocs.py
 clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptTest.cpp -lz -o /tmp/zuiopt-fixture
-/tmp/zuiopt-fixture payload/system/etc/zuiopt/factory_rules.conf
+sudo /tmp/zuiopt-fixture payload/system/etc/zuiopt/factory_rules.conf
 python tests/zuiopt/TestNativeRuleParity.py /tmp/zuiopt-fixture
+clang++ -std=c++17 -O1 -Wall -Wextra -Werror -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptBinderTest.cpp -lz -o /tmp/zuiopt-binder-fixture
+/tmp/zuiopt-binder-fixture
 ```
 
 Stable host artifacts may be reused only through the verified content cache. Its
@@ -61,6 +63,10 @@ python scripts/build/VerifiedContentCache.py ci-artifact --run-id <run> --artifa
 ```
 
 The same canonical paths are enforced by `.github/workflows/build.yml`.
+The native journal fixture requires root and creates/removes only its own
+exclusive temporary directory; it never starts an owner or changes cpusets.
+The Binder fixture executes the production reply parser with typed mock Parcel
+calls; it is not proof of device wire bytes or SELinux permissions.
 
 ## ROM integration
 
@@ -92,3 +98,11 @@ Init creates the root-owned 0755 `/dev/cpuset/ZUIopt` scaffold at post-fs-data.
 ZUIopt fails closed if it is absent/unsafe, recovers the existing journal before
 initialization, and removes only its mask children during cleanup. The scaffold
 is never created or removed by the daemon; no `dac_override` is granted.
+
+Startup diagnostics use private atomic `startup.v1` / `fatal.v1` files under
+the existing ZUIopt store (0600, each below 1KB). Completed stages end at READY;
+a fatal records its active stage and an allowlisted reason or numeric Binder
+status before release. There are no steady-state receipt writes, and diagnostic
+I/O failure cannot interrupt the existing fail-safe. Old-boot fatal evidence is
+retained, not mistaken for a current-boot failure. Binder snapshots that cannot
+be managed USER0 apps are rejected before any proc identity/cmdline/UID read.

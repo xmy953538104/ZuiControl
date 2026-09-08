@@ -9,6 +9,38 @@ ROOT=Path(__file__).resolve().parents[2]
 def read(path): return (ROOT/path).read_text(encoding='utf-8')
 
 class ProductionContracts(unittest.TestCase):
+    def test_resolve_filters_before_all_proc_reads(self):
+        core=read('native/zuiopt/ZUIopt_core.h')
+        guard=core.split('inline Identity managedIdentity(',1)[1].split('inline Config parseConfig(',1)[0]
+        for token in ('s.uid<10000','s.uid>=20000','s.packages.size()!=1','!packageLabel(s.packages[0])','!config.find(s.packages[0])'):
+            self.assertLess(guard.index(token),guard.index('return probe(s.pid,0)'))
+        daemon=read('native/zuiopt/ZUIopt_daemon.h')
+        resolve=daemon.split('ProcessState* resolve(',1)[1].split('void reconcile(',1)[0]
+        self.assertLess(resolve.index('managedIdentity(s,config)'),resolve.index('processName(s.pid)'))
+        self.assertLess(resolve.index('if(!id.start)return nullptr'),resolve.index('uid(s.pid)'))
+        self.assertIn('authoritativeIdentity(s,observer->packagesForUid(s.uid))',resolve)
+        self.assertIn('identity(s.pid).start!=id.start||uid(s.pid)!=s.uid',resolve)
+
+    def test_durable_fatal_before_cleanup_and_no_steady_state_writes(self):
+        daemon=read('native/zuiopt/ZUIopt_daemon.h')
+        reactor=daemon.split('int run()',1)[1]
+        loop=reactor.split('while(!stop){',1)[1].split('phase=StartupStage::STOP;',1)[0]
+        self.assertNotIn('recordLifecycle(',loop)
+        fatal=reactor.split('}catch(const std::exception& e){recordLifecycle',1)[1]
+        self.assertLess(fatal.index('stateRoot,journal->currentBootId(),phase,&e)'),fatal.index('observer.reset()'))
+        self.assertLess(fatal.index('stateRoot,journal->currentBootId(),phase,&e)'),fatal.index('releaseAll()'))
+        self.assertIn('return 3;',fatal)
+        self.assertIn('return 2;',fatal)
+        lifecycle=read('native/zuiopt/ZUIopt_lifecycle.h')
+        for token in ('noexcept','catch(...){return false;}','data.size()<1024','reason.size()<=96','PrivateDir directory(root)','directory.put(fatal?"fatal.v1":"startup.v1",data)'):
+            self.assertIn(token,lifecycle)
+        for stage in ('CORE_CONSTRUCTED','OBSERVER_OK','SNAPSHOT_OK','PACKAGE_ABI_OK','PLACEMENT_OK','RECONCILE_OK','READY'):
+            self.assertEqual(reactor.count('recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::'+stage+')'),0 if stage=='CORE_CONSTRUCTED' else 1)
+        self.assertIn('recordLifecycle(stateRoot,journal->currentBootId(),phase);',reactor)
+        self.assertNotIn('recordLifecycle(stateRoot,journal->boot',reactor)
+        binder=read('native/zuiopt/ZUIopt_binder.h')
+        self.assertLess(binder.index('*phase=StartupStage::REGISTER_PROCESS_OBSERVER'),binder.index('registered=true;registration(120)'))
+
     def test_canonical_docs(self):
         verify_repository_docs(ROOT)
 

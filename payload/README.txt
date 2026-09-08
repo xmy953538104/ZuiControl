@@ -1,7 +1,7 @@
-ZuiControl production payload — App V50 target
+ZuiControl production payload — App V51 target
 
 Build/package target:
-- /system/priv-app/ZuiControlV50/ZuiControl.apk
+- /system/priv-app/ZuiControlV51/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/uperf
 - /system/bin/zui_uperf_service
@@ -49,6 +49,7 @@ Runtime data:
 - /data/vendor/asopt.conf -> /data/vendor/zui_control/asoul/asopt.conf
 - /data/vendor/zui_control/log/
 - /data/vendor/zui_control/zuiopt/ (private rules, owner_state.v1 recovery journal, next_owner.v1 next-boot selector)
+- startup.v1 and fatal.v1 are atomic 0600 startup/fatal receipts, each below 1KB. They record boot/stage and allowlisted reason/status only, never task/package identities. No steady-state receipt writes; write failure never blocks owner release/fail-safe.
 
 Current refresh contract and boundaries:
 - Physical refresh is foreground-only. SystemUI, ZuiControl, permission UI, resolver/chooser, installer, input methods, and overlays use default120 when they own a real non-empty focused Window; Launcher remains configurable.

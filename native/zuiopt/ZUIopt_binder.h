@@ -1,6 +1,7 @@
 // Scoped ZUIopt native Binder adapter. Parcel ABI is frozen to actual ZUI 072.
 #pragma once
 #include "ZUIopt_model.h"
+#include "ZUIopt_lifecycle.h"
 #include <android/binder_ibinder.h>
 #include <android/binder_parcel.h>
 #include <android/binder_status.h>
@@ -68,7 +69,7 @@ struct Observer {
         catch(...) {return STATUS_NO_MEMORY;}
         return STATUS_OK;
     }
-    explicit Observer(std::function<void(int,int,int,int)> fn):state(std::make_shared<CallbackState>(std::move(fn))){
+    explicit Observer(std::function<void(int,int,int,int)> fn,StartupStage* phase=nullptr):state(std::make_shared<CallbackState>(std::move(fn))){
         try {
             auto check=reinterpret_cast<AIBinder*(*)(const char*)>(dlsym(RTLD_DEFAULT,"AServiceManager_checkService"));
             auto max=reinterpret_cast<bool(*)(uint32_t)>(dlsym(RTLD_DEFAULT,"ABinderProcess_setThreadPoolMaxThreadCount"));
@@ -91,6 +92,7 @@ struct Observer {
             deathCookie=new Holder(state);
             checked(AIBinder_linkToDeath(manager,death,deathCookie));linked=true;
             // The remote may accept registration even if its reply is malformed.
+            if(phase)*phase=StartupStage::REGISTER_PROCESS_OBSERVER;
             registered=true;registration(120);
         }catch(...){shutdown();throw;}
     }

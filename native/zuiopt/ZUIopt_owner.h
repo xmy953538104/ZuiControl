@@ -54,6 +54,7 @@ public:
         }catch(...){if(lockFd>=0)close(lockFd);if(dirFd>=0)close(dirFd);throw;}
     }
     ~Journal(){if(lockFd>=0)close(lockFd);if(dirFd>=0)close(dirFd);}
+    const std::string& currentBootId() const noexcept {return currentBoot;}
     bool same(const OwnerRecord& r) const {
         return boot==currentBoot&&identity(r.pid).start==r.processStart&&uid(r.pid)==r.user&&identity(r.pid,r.tid).start==r.threadStart;
     }

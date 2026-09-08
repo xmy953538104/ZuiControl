@@ -2,6 +2,7 @@
 #define ZUIOPT_TEST 1
 #include "../../native/zuiopt/ZUIopt_store.h"
 #include "../../native/zuiopt/ZUIopt_owner.h"
+#include "../../native/zuiopt/ZUIopt_lifecycle.h"
 #include <csignal>
 #include <filesystem>
 #include <functional>
@@ -18,6 +19,73 @@ void uploadData(RuleStore& store,const std::string& kind,const std::string& data
     for(size_t offset=0;offset<data.size();offset+=8192)store.apply("chunk",id+":"+std::to_string(offset),base64(data.substr(offset,8192)));
     store.apply("commit",id,"");
 }
+int procProbeReads=0;
+Identity countedIdentity(int,int){procProbeReads++;return Identity{1,0,'S'};}
+void earlyFilterTests(){
+    auto config=rules(BASE);
+    Snapshot managed{"org.example.game",42,10001,0,0,2,false,{"org.example.game"}};
+    std::vector<Snapshot> rejected;
+    for(int user:{0,1000,2000,9999,20000,110001}){auto s=managed;s.uid=user;rejected.push_back(s);}
+    for(auto packages:std::vector<std::vector<std::string>>{{},{"org.example.game","org.other.app"},{"org.other.app"},{"invalid"},{"org..invalid"}}){auto s=managed;s.packages=packages;rejected.push_back(s);}
+    for(const auto& s:rejected){procProbeReads=0;require(!managedIdentity(s,config,countedIdentity).start&&procProbeReads==0,"impossible snapshot must not read proc");}
+    config.enabled=false;procProbeReads=0;require(!managedIdentity(managed,config,countedIdentity).start&&procProbeReads==0,"disabled config skips proc");config.enabled=true;
+    for(int user:{10000,10001,19999}){managed.uid=user;procProbeReads=0;require(managedIdentity(managed,config,countedIdentity).start==1&&procProbeReads==1,"eligible USER0 app reaches one identity probe");}
+    puts("ZUIOPT_RESOLVE_EARLY_FILTER=PASS;REJECTED_PROC_IDENTITY_READ_COUNT=0");
+}
+void lifecycleTests(const fs::path& parent){
+    auto root=parent/"lifecycle";require(mkdir(root.c_str(),0700)==0,"lifecycle fixture directory");
+    const std::string boot="11111111-2222-3333-4444-555555555555";
+    require(!fs::exists(root/"startup.v1")&&!fs::exists(root/"fatal.v1"),"no receipt before daemon starts");
+    std::string previous;
+    for(auto stage:{StartupStage::CORE_CONSTRUCTED,StartupStage::OBSERVER_OK,StartupStage::SNAPSHOT_OK,
+                    StartupStage::PACKAGE_ABI_OK,StartupStage::PLACEMENT_OK,StartupStage::RECONCILE_OK,StartupStage::READY}){
+        int old=previous.empty()?-1:open((root/"startup.v1").c_str(),O_RDONLY|O_CLOEXEC);
+        require(recordLifecycle(root.string(),boot,stage),"startup durable receipt");
+        struct stat st{};require(lstat((root/"startup.v1").c_str(),&st)==0&&S_ISREG(st.st_mode)&&(st.st_mode&07777)==0600&&st.st_uid==geteuid()&&st.st_nlink==1&&st.st_size<1024,"bounded private startup file");
+        if(old>=0){char bytes[1024]{};auto n=::read(old,bytes,sizeof(bytes));close(old);require(n>=0&&std::string(bytes,static_cast<size_t>(n))==previous,"atomic replacement preserves existing reader");}
+        previous=read((root/"startup.v1").string());require(previous.find("stage="+std::string(stageName(stage))+"\nstate=OK\nreason=none\n")!=previous.npos,"startup stage receipt");
+    }
+    require(!fs::exists(root/"fatal.v1"),"success does not invent fatal");
+    std::runtime_error fatal("proc identity open failed");
+    require(recordLifecycle(root.string(),boot,StartupStage::RECONCILE,&fatal),"fatal persisted");
+    auto data=read((root/"fatal.v1").string());
+    require(data.find("stage=RECONCILE\nstate=FAIL\nreason=proc_identity_open_failed\n")!=data.npos&&data.size()<1024,"exact fatal stage and reason");
+    require(fatalReason(std::runtime_error("parcel/status=-13"))=="binder_status_-13","bounded Binder status");
+    require(fatalReason(std::runtime_error("journal release failed TID=12345"))=="journal_release_failed","release TID redacted");
+    require(fatalReason(std::runtime_error("RECOVERY_UNKNOWN_TASK_FAIL_CLOSED tid=12345"))=="recovery_unknown_task_fail_closed","unknown task TID redacted");
+    for(auto text:{std::string("org.private.app RenderThread pid=12345\n"),std::string(10000,'x'),std::string("parcel/status=org.private.app"),std::string("parcel/status=123456789012345")}){
+        auto reason=fatalReason(std::runtime_error(text));require(reason=="unclassified_exception"&&reason.size()<=96,"private or unbounded exception redacted");
+    }
+    auto startupBefore=read((root/"startup.v1").string());
+    require(!recordLifecycle(root.string(),"private invalid boot",StartupStage::READY),"invalid boot diagnostic rejected nonfatally");
+    require(read((root/"startup.v1").string())==startupBefore,"failed diagnostic preserves prior receipt");
+    fs::remove(root/"fatal.v1");fs::create_symlink(root/"startup.v1",root/"fatal.v1");
+    static_assert(noexcept(recordLifecycle(std::declval<const std::string&>(),std::declval<const std::string&>(),StartupStage::STOP,nullptr)),"diagnostic cannot escape fatal handler");
+    require(!recordLifecycle(root.string(),boot,StartupStage::RECONCILE,&fatal),"receipt write failure is nonfatal");
+    require(read((root/"startup.v1").string())==startupBefore,"diagnostic symlink target unchanged");
+    require(!recordLifecycle((root/"absent").string(),boot,StartupStage::READY),"unavailable directory is nonfatal");
+    puts("ZUIOPT_STARTUP_FATAL_RECEIPTS=PASS;WRITE_FAILURE_IS_NONFATAL=PASS");
+}
+void journalTests(const fs::path& parent){
+    require(getuid()==0,"journal fixture runs as isolated root");
+    auto path=parent/"journal";Journal journal(path.string());PrivateDir directory(path.string());
+    const auto current=journal.currentBootId();
+    rejects([&]{Journal second(path.string());});
+    auto put=[&](const std::string& magic,const std::string& body){directory.put("owner_state.v1",magic+" "+std::to_string(checksum(body))+"\n"+body);};
+    for(auto bad:{"broken","ZUIOPT_OWNER_STATE_V9 0\n","ZUIOPT_OWNER_STATE_V2 0\ncorrupt\n"}){
+        directory.put("owner_state.v1",bad);rejects([&]{journal.load();});require(journal.entries.empty()&&journal.leases.empty(),"corrupt journal does not acquire ownership");
+    }
+    put("ZUIOPT_OWNER_STATE_V2",current+"\nX 1 1 10000 1 1 p n /background 1\n");rejects([&]{journal.load();});
+    put("ZUIOPT_OWNER_STATE_V2",current+"\nT 0 1 10000 1 1 p n /background 1\n");rejects([&]{journal.load();});
+    const std::string previous="00000000-0000-0000-0000-000000000000";
+    put("ZUIOPT_OWNER_STATE_V2",previous+"\n");journal.load();
+    require(journal.boot==previous&&journal.currentBootId()==current,"diagnostic boot is immutable across old-journal load");
+    require(!journal.same(OwnerRecord{999999,10000,999999,1,1,"org.example.game","org.example.game","/background",1}),"old boot cannot authorize live ownership");
+    journal.commit();require(!directory.exists("owner_state.v1")&&journal.boot==current,"empty journal durable cleanup");
+    put("ZUIOPT_OWNER_STATE_V1",current+"\n");journal.load();require(journal.entries.empty(),"empty legacy journal compatibility");
+    fs::remove(path/"owner_state.v1");fs::create_symlink(path/"owner.lock",path/"owner_state.v1");rejects([&]{journal.load();});fs::remove(path/"owner_state.v1");
+    puts("ZUIOPT_CRASH_JOURNAL_FORMAT_LOCK_BOOT_GUARDS=PASS");
+}
 int main(int argc,char** argv){
     signal(SIGPIPE,SIG_IGN);
     try{
@@ -33,6 +101,7 @@ int main(int argc,char** argv){
         require(sha256("")=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","empty digest vector");
         require(sha256("abc")=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","digest vector");
         require(checksum("123456789")==0xcbf43926u,"journal CRC vector");selftest();
+        earlyFilterTests();
         struct stat scaffold{};scaffold.st_mode=S_IFDIR|0755;
         require(validCpusetScaffold(scaffold),"root-owned 0755 scaffold");
         for(mode_t mode:{S_IFREG|0755,S_IFLNK|0755,S_IFDIR|0777,S_IFDIR|0700,S_IFDIR|0555,S_IFDIR|04755}){
@@ -65,6 +134,8 @@ int main(int argc,char** argv){
 
         const char* temp=getenv("TMPDIR");std::string prefix=std::string(temp?temp:"/tmp")+"/ZUIopt-fixture-XXXXXX";
         std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);require(mkdtemp(path.data()),"fixture directory");auto root=fs::path(path.data());
+        lifecycleTests(root);
+        journalTests(root);
         {
             RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;
             uploadData(store,"pack",pack.archive,randomId());require(store.current().enabled.empty(),"new pack disabled");

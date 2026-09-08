@@ -120,10 +120,14 @@ jobs:
           clang++ --version > "$receipt/host_compiler.txt"
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             tests/zuiopt/ZUIoptTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-fixture"
-          "$RUNNER_TEMP/zuiopt-fixture" payload/system/etc/zuiopt/factory_rules.conf \
+          sudo "$RUNNER_TEMP/zuiopt-fixture" payload/system/etc/zuiopt/factory_rules.conf \
             | tee "$receipt/native_tests.txt"
           python3 tests/zuiopt/TestNativeRuleParity.py "$RUNNER_TEMP/zuiopt-fixture" \
             | tee "$receipt/native_reference_parity.txt"
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
+            -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptBinderTest.cpp -lz \
+            -o "$RUNNER_TEMP/zuiopt-binder-fixture"
+          "$RUNNER_TEMP/zuiopt-binder-fixture" | tee "$receipt/binder_abi_fixtures.txt"
           python3 scripts/build/BuildZUIopt.py \
             --ndk "$ANDROID_SDK_ROOT/ndk/27.2.12479018" \
             --output payload/system/bin/ZUIopt --receipt "$receipt/build.json"
@@ -245,10 +249,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV41 payload/system/priv-app/ZuiControlV42 payload/system/priv-app/ZuiControlV43
           rm -rf payload/system/priv-app/ZuiControlV44 payload/system/priv-app/ZuiControlV45 payload/system/priv-app/ZuiControlV46
           rm -rf payload/system/priv-app/ZuiControlV47 payload/system/priv-app/ZuiControlV48
-          rm -rf payload/system/priv-app/ZuiControlV49
-          mkdir -p payload/system/priv-app/ZuiControlV50
+          rm -rf payload/system/priv-app/ZuiControlV49 payload/system/priv-app/ZuiControlV50
+          mkdir -p payload/system/priv-app/ZuiControlV51
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV50/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV51/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -17,13 +17,13 @@ class Core {
 #ifdef ZUIOPT_RESEARCH
     friend struct Research;
 #endif
-    Config config;std::string configPath;Mask available;
+    Config config;std::string configPath,stateRoot;Mask available;
     Counters counters;std::map<int,ProcessState> states;
     std::unique_ptr<Journal> journal;std::unique_ptr<Placement> placement;std::unique_ptr<Observer> observer;
     std::mutex mutex;std::deque<Event> queue;uint64_t sequence=0;
     int eventFd=-1,signalFd=-1;bool serviceDied=false;
 public:
-    Core(std::string path,const std::string& statePath):configPath(std::move(path)){
+    Core(std::string path,const std::string& statePath):configPath(std::move(path)),stateRoot(statePath){
         available=cpus(read("/sys/devices/system/cpu/online"));config=parseConfig(read(configPath),available);ZUIOPT_debug=config.debug;
         journal=std::make_unique<Journal>(statePath);
         for(int p:ids("/proc")){char exe[512]{};ssize_t n=readlink(("/proc/"+std::to_string(p)+"/exe").c_str(),exe,sizeof(exe)-1);
@@ -51,8 +51,9 @@ public:
         }
     }
     ProcessState* resolve(const Snapshot& s){
-        auto id=identity(s.pid);auto name=processName(s.pid);
-        if(!id.start||uid(s.pid)!=s.uid||name!=s.name||s.packages.size()!=1||!config.find(s.packages[0]))return nullptr;
+        auto id=managedIdentity(s,config);if(!id.start)return nullptr;
+        auto name=processName(s.pid);
+        if(uid(s.pid)!=s.uid||name!=s.name)return nullptr;
         if(!authoritativeIdentity(s,observer->packagesForUid(s.uid)))return nullptr;
         if(identity(s.pid).start!=id.start||uid(s.pid)!=s.uid)return nullptr;
         auto it=states.find(s.pid);if(it!=states.end()&&it->second.generation!=id.start){placement->release(it->second);states.erase(it);}
@@ -130,13 +131,24 @@ public:
     void stats(){size_t active=0,tasks=0;for(auto& [_,p]:states){active+=p.managed;tasks+=p.tasks.size();}
         ZUIOPT_NOTE("STATS","events="+std::to_string(counters.events)+" snapshots="+std::to_string(counters.snapshots)+" scans="+std::to_string(counters.scans)+" comm="+std::to_string(counters.comm)+" schedstat="+std::to_string(counters.schedstat)+" placements="+std::to_string(counters.placements)+" releases="+std::to_string(counters.releases)+" wakeups="+std::to_string(counters.wakeups)+" reloads="+std::to_string(counters.reloads)+" active="+std::to_string(active)+" tasks="+std::to_string(tasks)+" journal_commits="+std::to_string(journal->commits));}
     void releaseAll(){if(placement){for(auto& [_,p]:states)placement->release(p);placement->cleanup();placement.reset();}stats();}
-    int run(){try{
-        observer=std::make_unique<Observer>([this](int c,int p,int u,int v){enqueue(c,p,u,v);});
+    int run(){StartupStage phase=StartupStage::CORE_CONSTRUCTED;try{
+        recordLifecycle(stateRoot,journal->currentBootId(),phase);
+        phase=StartupStage::OBSERVER;
+        observer=std::make_unique<Observer>([this](int c,int p,int u,int v){enqueue(c,p,u,v);},&phase);
+        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::OBSERVER_OK);
         ZUIOPT_NOTE("REGISTER_OK","transaction=120");
-        auto initial=observer->snapshot();observer->packagesForUid(1000); // Validate both private reply ABIs before owner acquisition.
-        ZUIOPT_NOTE("ABI_GATE","PASS");placement=std::make_unique<Placement>(counters,*journal);
-        reconcile(initial);prctl(PR_SET_NAME,"ZUIopt",0,0,0);ZUIOPT_NOTE("READY","pid="+std::to_string(getpid()));bool stop=false;
+        phase=StartupStage::SNAPSHOT;auto initial=observer->snapshot();
+        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::SNAPSHOT_OK);
+        phase=StartupStage::PACKAGE_ABI;observer->packagesForUid(1000); // Validate both private reply ABIs before owner acquisition.
+        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::PACKAGE_ABI_OK);
+        ZUIOPT_NOTE("ABI_GATE","PASS");phase=StartupStage::PLACEMENT;placement=std::make_unique<Placement>(counters,*journal);
+        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::PLACEMENT_OK);
+        phase=StartupStage::RECONCILE;reconcile(initial);
+        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::RECONCILE_OK);
+        phase=StartupStage::READY;prctl(PR_SET_NAME,"ZUIopt",0,0,0);ZUIOPT_NOTE("READY","pid="+std::to_string(getpid()));
+        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::READY);bool stop=false;
         while(!stop){
+            phase=StartupStage::EVENT_LOOP; // In-memory only; there are no steady-state receipt writes.
             edges();require(!serviceDied,"activity service died: fail closed");for(auto& [_,p]:states)if(p.managed&&p.next<=now())scan(p);
             int timeout=-1;for(auto& [_,p]:states)if(p.managed){int delay=static_cast<int>(std::max<int64_t>(0,p.next-now()));timeout=timeout<0?delay:std::min(timeout,delay);}
             pollfd fds[]={{eventFd,POLLIN,0},{signalFd,POLLIN,0}};int n=poll(fds,2,timeout);if(n<0&&errno==EINTR)continue;require(n>=0,"poll failed");counters.wakeups++;
@@ -145,12 +157,12 @@ public:
                 if(s.ssi_signo==SIGTERM||s.ssi_signo==SIGINT){stop=true;break;}if(s.ssi_signo==SIGUSR1)stats();
                 if(s.ssi_signo==SIGHUP){
                     Config next;bool valid=false;try{next=parseConfig(read(configPath),available);valid=true;}catch(const std::exception& e){ZUIOPT_NOTE("RELOAD_REJECTED",e.what());}
-                    if(valid){for(auto& [_,p]:states)if(p.managed)placement->release(p);config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;reconcile(observer->snapshot());ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
+                    if(valid){phase=StartupStage::RELOAD;for(auto& [_,p]:states)if(p.managed)placement->release(p);config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;reconcile(observer->snapshot());ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
                 }
             }}
         }
-        observer.reset();releaseAll();ZUIOPT_NOTE("STOPPED","owner_release=PASS");return 0;
-    }catch(const std::exception& e){ZUIOPT_NOTE("FATAL",e.what());observer.reset();try{releaseAll();}catch(const std::exception& x){ZUIOPT_NOTE("RELEASE_BLOCKER",x.what());return 3;}return 2;}}
+        phase=StartupStage::STOP;observer.reset();releaseAll();ZUIOPT_NOTE("STOPPED","owner_release=PASS");return 0;
+    }catch(const std::exception& e){recordLifecycle(stateRoot,journal->currentBootId(),phase,&e);ZUIOPT_NOTE("FATAL",e.what());observer.reset();try{releaseAll();}catch(const std::exception& x){ZUIOPT_NOTE("RELEASE_BLOCKER",x.what());return 3;}return 2;}}
     ~Core(){observer.reset();if(signalFd>=0)close(signalFd);if(eventFd>=0)close(eventFd);}
 };
 }
