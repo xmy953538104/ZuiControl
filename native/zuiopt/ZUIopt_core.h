@@ -41,11 +41,16 @@ inline void note(const char* event,const std::string& detail){
 }
 #define ZUIOPT_NOTE(event, detail) note(event, detail)
 #endif
+struct ProcError:std::runtime_error {
+    int code;
+    ProcError(int value,const char* why):std::runtime_error(why),code(value){}
+    bool permission() const noexcept {return code==EACCES||code==EPERM;}
+};
 inline std::string read(const std::string& path,bool strict=false){
-    int fd=open(path.c_str(),O_RDONLY|O_CLOEXEC);if(fd<0){require(!strict||errno==ENOENT||errno==ESRCH,"proc identity open failed");return {};}
-    std::string out;char b[4096];ssize_t n;
-    while((n=::read(fd,b,sizeof(b)))!=0){if(n<0&&errno==EINTR)continue;if(n<0)break;out.append(b,n);if(out.size()>65536){out.clear();n=-1;break;}}
-    close(fd);require(!strict||n==0,"proc identity read failed");return out;
+    int fd=open(path.c_str(),O_RDONLY|O_CLOEXEC);if(fd<0){int error=errno;if(strict&&error!=ENOENT&&error!=ESRCH)throw ProcError(error,"proc identity open failed");return {};}
+    std::string out;char b[4096];ssize_t n;int error=0;
+    while((n=::read(fd,b,sizeof(b)))!=0){if(n<0&&errno==EINTR)continue;if(n<0){error=errno;break;}out.append(b,n);if(out.size()>65536){out.clear();n=-1;error=EOVERFLOW;break;}}
+    close(fd);if(strict&&n!=0){if(error==ENOENT||error==ESRCH)return {};throw ProcError(error,"proc identity read failed");}return out;
 }
 inline bool write(const std::string& path,const std::string& value){
     int fd=open(path.c_str(),O_WRONLY|O_CLOEXEC);if(fd<0)return false;
@@ -79,8 +84,8 @@ inline Identity statIdentity(const std::string& s){
 inline Identity identity(int pid,int tid=0){auto text=read("/proc/"+std::to_string(pid)+(tid?"/task/"+std::to_string(tid):"")+"/stat",true);auto id=statIdentity(text);require(text.empty()||id.start||id.state=='Z'||id.state=='X',"proc identity parse failed");return id;}
 inline std::string group(int tid){std::istringstream in(read("/proc/"+std::to_string(tid)+"/cgroup"));std::string s;while(std::getline(in,s)){auto at=s.find(":cpuset:");if(at!=s.npos)return s.substr(at+8);}return {};}
 inline bool normalGroup(const std::string& s){return !s.empty()&&s[0]=='/'&&s.find("..") == s.npos&&s.find("/ZUIopt")==s.npos&&s.find("/asopt")==s.npos&&s.find_first_not_of("/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")==s.npos;}
-inline int uid(int pid){struct stat s{};if(::stat(("/proc/"+std::to_string(pid)).c_str(),&s)){require(errno==ENOENT||errno==ESRCH,"proc UID stat failed");return -1;}return s.st_uid;}
-inline std::string processName(int pid){auto s=read("/proc/"+std::to_string(pid)+"/cmdline");s.resize(s.find('\0')==s.npos?s.size():s.find('\0'));return s;}
+inline int uid(int pid){struct stat s{};if(::stat(("/proc/"+std::to_string(pid)).c_str(),&s)){int error=errno;if(error!=ENOENT&&error!=ESRCH)throw ProcError(error,"proc UID stat failed");return -1;}return s.st_uid;}
+inline std::string processName(int pid,bool strict=false){auto s=read("/proc/"+std::to_string(pid)+"/cmdline",strict);s.resize(s.find('\0')==s.npos?s.size():s.find('\0'));return s;}
 inline std::string packageName(std::string s){auto at=s.find(':');if(at!=s.npos)s.resize(at);return s;}
 inline bool match(const std::string& kind,const std::string& pattern,const std::string& value){
     if(kind=="exact")return value==pattern;if(kind=="prefix")return value.rfind(pattern,0)==0;if(kind=="contains")return value.find(pattern)!=value.npos;return false;
@@ -139,11 +144,14 @@ struct Config {
     bool enabled=true,debug=false;std::map<std::string,Profile> profiles;std::vector<Mapping> packages;
     const Profile* find(const std::string& package) const {if(!enabled)return nullptr;for(auto& r:packages)if(match(r.kind,r.package,package))return &profiles.at(r.profile);return nullptr;}
 };
+inline bool eligibleSnapshot(const Snapshot& s,const Config& config){
+    // Binder-only rejection before any proc identity/cmdline/UID or package-manager read.
+    return s.uid>=10000&&s.uid<20000&&s.packages.size()==1&&
+        packageLabel(s.packages[0])&&config.find(s.packages[0]);
+}
 inline Identity managedIdentity(const Snapshot& s,const Config& config,
                                 Identity (*probe)(int,int)=identity){
-    // Binder-only rejection before any proc identity/cmdline/UID or package-manager read.
-    if(s.uid<10000||s.uid>=20000||s.packages.size()!=1||
-       !packageLabel(s.packages[0])||!config.find(s.packages[0]))return {};
+    if(!eligibleSnapshot(s,config))return {};
     return probe(s.pid,0);
 }
 inline Config parseConfig(const std::string& text,Mask available){

@@ -11,15 +11,36 @@ def read(path): return (ROOT/path).read_text(encoding='utf-8')
 class ProductionContracts(unittest.TestCase):
     def test_resolve_filters_before_all_proc_reads(self):
         core=read('native/zuiopt/ZUIopt_core.h')
-        guard=core.split('inline Identity managedIdentity(',1)[1].split('inline Config parseConfig(',1)[0]
-        for token in ('s.uid<10000','s.uid>=20000','s.packages.size()!=1','!packageLabel(s.packages[0])','!config.find(s.packages[0])'):
+        guard=core.split('inline bool eligibleSnapshot(',1)[1].split('inline Config parseConfig(',1)[0]
+        for token in ('s.uid>=10000','s.uid<20000','s.packages.size()==1','packageLabel(s.packages[0])','config.find(s.packages[0])'):
             self.assertLess(guard.index(token),guard.index('return probe(s.pid,0)'))
+        self.assertIn('if(!eligibleSnapshot(s,config))return {};',guard)
         daemon=read('native/zuiopt/ZUIopt_daemon.h')
         resolve=daemon.split('ProcessState* resolve(',1)[1].split('void reconcile(',1)[0]
-        self.assertLess(resolve.index('managedIdentity(s,config)'),resolve.index('processName(s.pid)'))
-        self.assertLess(resolve.index('if(!id.start)return nullptr'),resolve.index('uid(s.pid)'))
-        self.assertIn('authoritativeIdentity(s,observer->packagesForUid(s.uid))',resolve)
-        self.assertIn('identity(s.pid).start!=id.start||uid(s.pid)!=s.uid',resolve)
+        self.assertIn('validateManagedSnapshot(s,config,*this)',resolve)
+        events=read('native/zuiopt/ZUIopt_events.h')
+        validate=events.split('Identity validateManagedSnapshot(',1)[1].split('void processEvent(',1)[0]
+        self.assertLess(validate.index('eligibleSnapshot(s,config)'),validate.index('runtime.procIdentity(s.pid)'))
+        self.assertIn('authoritativeIdentity(s,runtime.packageAuthority(s.uid))',validate)
+        self.assertIn('runtime.procIdentity(s.pid).start!=first.start||runtime.procUid(s.pid)!=s.uid',validate)
+
+    def test_callback_has_only_raw_queue_and_notify(self):
+        daemon=read('native/zuiopt/ZUIopt_daemon.h')
+        enqueue=daemon.split('void enqueue(',1)[1].split('Identity procIdentity(',1)[0]
+        self.assertIn('events.push(eventFd,code,pid,user,value);',enqueue)
+        events=read('native/zuiopt/ZUIopt_events.h')
+        queue=events.split('class RawEvents {',1)[1].split('inline bool sameProcess(',1)[0]
+        for token in ('identity(', 'processName(', 'packagesForUid(', 'snapshot(', 'placement', '/proc', 'affinity('):
+            self.assertNotIn(token,enqueue+queue)
+        self.assertIn('processEvent(e,states,*this)',daemon)
+        self.assertIn('processName(pid,true)',daemon)
+        self.assertIn('catch(const ProcError& error){if(!error.permission())throw;procBlocked(error);',daemon)
+        self.assertIn('p->activity_foreground=s.state==2&&(s.flags&4)!=0;',events)
+        self.assertNotIn('activity_foreground=e.value',events)
+        self.assertIn('id.start==p.generation&&user==p.uid',events)
+        binder=read('native/zuiopt/ZUIopt_binder.h')
+        self.assertIn('catch(const std::bad_alloc&) {return STATUS_NO_MEMORY;}',binder)
+        self.assertIn('catch(...) {return STATUS_FAILED_TRANSACTION;}',binder)
 
     def test_durable_fatal_before_cleanup_and_no_steady_state_writes(self):
         daemon=read('native/zuiopt/ZUIopt_daemon.h')
@@ -111,6 +132,8 @@ class ProductionContracts(unittest.TestCase):
             self.assertNotIn('(allow zuiopt '+target+' ',zuiopt)
         self.assertNotIn('(allow priv_app zuiopt_data_file',zuiopt)
         self.assertIn('(type zuiopt)',zuiopt)
+        self.assertEqual(zuiopt.count('(typeattributeset mlstrustedsubject (zuiopt))'),1)
+        self.assertNotIn('(typeattributeset mlsvendorcompat (zuiopt))',zuiopt)
         self.assertIn('(allow shell zuiopt_config_file (file (getattr open read)))',zuiopt)
         self.assertIn('(typetransition shell zuiopt_exec process zuiopt)',zuiopt)
         self.assertNotIn('(allow shell zuiopt_data_file',zuiopt)

@@ -110,6 +110,8 @@
 (roletype r zuiopt)
 (typeattributeset domain (zuiopt))
 (typeattributeset coredomain (zuiopt))
+;; Cross-category app proc/setsched needs the MLS exception; TE remains independent.
+(typeattributeset mlstrustedsubject (zuiopt))
 (type zuiopt_exec)
 (roletype object_r zuiopt_exec)
 (typeattributeset file_type (zuiopt_exec))

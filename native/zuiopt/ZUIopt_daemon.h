@@ -2,6 +2,7 @@
 #pragma once
 #include "ZUIopt_binder.h"
 #include "ZUIopt_owner.h"
+#include "ZUIopt_events.h"
 #include <csignal>
 #include <deque>
 #include <memory>
@@ -12,7 +13,6 @@
 #include <sys/prctl.h>
 #include <sys/signalfd.h>
 namespace ZUIopt {
-struct Event {int code,pid,uid,value;uint64_t generation,sequence;};
 class Core {
 #ifdef ZUIOPT_RESEARCH
     friend struct Research;
@@ -20,7 +20,7 @@ class Core {
     Config config;std::string configPath,stateRoot;Mask available;
     Counters counters;std::map<int,ProcessState> states;
     std::unique_ptr<Journal> journal;std::unique_ptr<Placement> placement;std::unique_ptr<Observer> observer;
-    std::mutex mutex;std::deque<Event> queue;uint64_t sequence=0;
+    RawEvents events;RuntimeBlocker runtimeBlocker;
     int eventFd=-1,signalFd=-1;bool serviceDied=false;
 public:
     Core(std::string path,const std::string& statePath):configPath(std::move(path)),stateRoot(statePath){
@@ -34,10 +34,22 @@ public:
         if(signalFd<0||eventFd<0){if(signalFd>=0)close(signalFd);if(eventFd>=0)close(eventFd);throw std::runtime_error("event descriptors");}
     }
     void enqueue(int code,int pid,int user,int value){
-        uint64_t start=pid?identity(pid).start:0;
-        {std::lock_guard<std::mutex> g(mutex);queue.push_back({code,pid,user,value,start,++sequence});}
-        uint64_t one=1;ssize_t ignored=::write(eventFd,&one,sizeof(one));(void)ignored;
+        events.push(eventFd,code,pid,user,value);
     }
+    Identity procIdentity(int pid){return identity(pid);}
+    int procUid(int pid){return uid(pid);}
+    std::string procName(int pid){return processName(pid,true);}
+    void blocked(RuntimeBlockerReason reason){runtimeBlocker.record(stateRoot,journal->currentBootId(),reason);}
+    void procBlocked(const ProcError& error){
+        blocked(strcmp(error.what(),"proc UID stat failed")==0?RuntimeBlockerReason::PROC_UID_PERMISSION:RuntimeBlockerReason::PROC_READ_PERMISSION);
+    }
+    std::vector<std::string> packageAuthority(int user){
+        try{return observer->packagesForUid(user);}
+        catch(const BinderError& error){if(error.status==STATUS_PERMISSION_DENIED||error.status==-EACCES)blocked(RuntimeBlockerReason::PACKAGE_AUTHORITY_PERMISSION);return {};}
+        catch(const std::runtime_error&){return {};}
+    }
+    std::vector<Snapshot> activitySnapshot(){counters.snapshots++;return observer->snapshot();}
+    void release(ProcessState& p){placement->release(p);}
     void activate(ProcessState& p){
         bool wanted=p.alive&&p.activity_foreground&&config.find(p.package);
         if(!wanted){if(p.managed)placement->release(p);return;}
@@ -51,16 +63,14 @@ public:
         }
     }
     ProcessState* resolve(const Snapshot& s){
-        auto id=managedIdentity(s,config);if(!id.start)return nullptr;
-        auto name=processName(s.pid);
-        if(uid(s.pid)!=s.uid||name!=s.name)return nullptr;
-        if(!authoritativeIdentity(s,observer->packagesForUid(s.uid)))return nullptr;
-        if(identity(s.pid).start!=id.start||uid(s.pid)!=s.uid)return nullptr;
-        auto it=states.find(s.pid);if(it!=states.end()&&it->second.generation!=id.start){placement->release(it->second);states.erase(it);}
+        Identity id;
+        try{id=validateManagedSnapshot(s,config,*this);}
+        catch(const ProcError& error){if(!error.permission())throw;procBlocked(error);return nullptr;}
+        if(!id.start)return nullptr;
+        auto it=states.find(s.pid);if(it!=states.end()&&(it->second.generation!=id.start||it->second.uid!=s.uid)){placement->release(it->second);states.erase(it);}
         auto& p=states[s.pid];p.pid=s.pid;p.uid=s.uid;p.generation=id.start;p.name=s.name;p.package=s.packages[0];p.alive=true;return &p;
     }
     void reconcile(const std::vector<Snapshot>& snapshot){
-        uint64_t epoch;{std::lock_guard<std::mutex> g(mutex);epoch=sequence;}
         counters.snapshots++;std::set<int> present;
         for(auto& s:snapshot){
             auto* p=resolve(s);if(!p)continue;
@@ -68,32 +78,15 @@ public:
             ZUIOPT_NOTE("SNAPSHOT","pid="+std::to_string(s.pid)+" name="+s.name+" state="+std::to_string(s.state)+" focused="+std::to_string(s.focused)+" generation="+std::to_string(p->generation));
         }
         for(auto it=states.begin();it!=states.end();)if(!present.count(it->first)){placement->release(it->second);it=states.erase(it);}else ++it;
-        ZUIOPT_NOTE("RECONCILE","epoch="+std::to_string(epoch)+" records="+std::to_string(present.size()));
+        ZUIOPT_NOTE("RECONCILE","records="+std::to_string(present.size()));
         edges();for(auto& [_,p]:states)activate(p);
     }
     void edges(){
-        std::deque<Event> current;{std::lock_guard<std::mutex> g(mutex);current.swap(queue);}
-        for(auto& e:current){
-            counters.events++;ZUIOPT_NOTE("EVENT","seq="+std::to_string(e.sequence)+" code="+std::to_string(e.code)+" pid="+std::to_string(e.pid)+" uid="+std::to_string(e.uid)+" value="+std::to_string(e.value)+" generation="+std::to_string(e.generation));
-            if(e.code==0){serviceDied=true;continue;}auto it=states.find(e.pid);
-            if(e.code==3){
-                if(it!=states.end()&&identity(e.pid).start!=it->second.generation){
-                    it->second.alive=false;placement->release(it->second);states.erase(it);ZUIOPT_NOTE("PROCESS_DEAD","pid="+std::to_string(e.pid));
-                }continue;
-            }
-            if(!e.generation||identity(e.pid).start!=e.generation)continue;
-            ProcessState* p=nullptr;
-            it=states.find(e.pid);
-            if(it!=states.end()&&it->second.generation==e.generation&&it->second.uid==e.uid)p=&it->second;
-            else if(e.uid>=10000&&e.uid<20000){
-                // A name is only a cheap negative filter; ownership always needs both Binder authorities.
-                if(!config.find(packageName(processName(e.pid))))continue;
-                auto snapshot=observer->snapshot();counters.snapshots++;
-                for(auto& s:snapshot)if(s.pid==e.pid&&s.uid==e.uid){p=resolve(s);break;}
-            }
-            if(!p||p->generation!=e.generation)continue;
-            if(e.code==1)p->activity_foreground=e.value!=0;if(e.code==2)p->foreground_service_state=e.value;
-            activate(*p);
+        for(auto& e:events.take()){
+            counters.events++;ZUIOPT_NOTE("EVENT","seq="+std::to_string(e.sequence)+" code="+std::to_string(e.code));
+            if(e.code==0){serviceDied=true;continue;}
+            try{processEvent(e,states,*this);}
+            catch(const ProcError& error){if(!error.permission())throw;procBlocked(error);}
         }
     }
     void scan(ProcessState& p){

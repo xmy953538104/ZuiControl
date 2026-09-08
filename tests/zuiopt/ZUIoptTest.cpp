@@ -64,6 +64,21 @@ void lifecycleTests(const fs::path& parent){
     require(!recordLifecycle(root.string(),boot,StartupStage::RECONCILE,&fatal),"receipt write failure is nonfatal");
     require(read((root/"startup.v1").string())==startupBefore,"diagnostic symlink target unchanged");
     require(!recordLifecycle((root/"absent").string(),boot,StartupStage::READY),"unavailable directory is nonfatal");
+    RuntimeBlocker blocker;
+    require(blocker.record(root.string(),boot,RuntimeBlockerReason::PROC_READ_PERMISSION),"runtime blocker persisted");
+    auto blockerPath=root/"runtime_blocker.v1";struct stat st{};
+    require(lstat(blockerPath.c_str(),&st)==0&&(st.st_mode&07777)==0600&&st.st_uid==geteuid()&&st.st_size<1024,"runtime blocker privacy/mode/bound");
+    auto blockerData=read(blockerPath.string());auto inode=st.st_ino;
+    require(blockerData=="ZUIOPT_RUNTIME_BLOCKER_V1\nboot="+boot+"\nstage=APP_ACCESS\nstate=BLOCKED\nreason=proc_read_permission\n","runtime blocker fixed private format");
+    for(int i=0;i<1000;i++)require(!blocker.record(root.string(),boot,RuntimeBlockerReason::PROC_READ_PERMISSION),"repeat reason no steady writes");
+    require(lstat(blockerPath.c_str(),&st)==0&&st.st_ino==inode&&read(blockerPath.string())==blockerData,"repeat receipt inode/content unchanged");
+    require(blocker.record(root.string(),boot,RuntimeBlockerReason::PROC_UID_PERMISSION),"first distinct reason recorded");
+    fs::remove(blockerPath);fs::create_symlink(root/"startup.v1",blockerPath);
+    require(!blocker.record(root.string(),boot,RuntimeBlockerReason::PACKAGE_AUTHORITY_PERMISSION),"runtime write error nonfatal");
+    require(read((root/"startup.v1").string())==startupBefore,"runtime receipt cannot write through symlink");
+    fs::remove(blockerPath);
+    require(!blocker.record(root.string(),boot,RuntimeBlockerReason::PACKAGE_AUTHORITY_PERMISSION),"failed write is not retried every event");
+    puts("ZUIOPT_RUNTIME_BLOCKER_BOUNDED_PRIVATE_DEDUP_NONFATAL=PASS");
     puts("ZUIOPT_STARTUP_FATAL_RECEIPTS=PASS;WRITE_FAILURE_IS_NONFATAL=PASS");
 }
 void journalTests(const fs::path& parent){

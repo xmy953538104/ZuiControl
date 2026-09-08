@@ -106,3 +106,16 @@ status before release. There are no steady-state receipt writes, and diagnostic
 I/O failure cannot interrupt the existing fail-safe. Old-boot fatal evidence is
 retained, not mistaken for a current-boot failure. Binder snapshots that cannot
 be managed USER0 apps are rejected before any proc identity/cmdline/UID read.
+
+Binder callbacks only validate arguments, queue raw events and notify eventfd.
+The reactor validates current PID generation/UID and package authority before
+acquisition; current ActivityManager snapshots, not delayed callback values,
+decide foreground state. Death events cannot discard a live matching generation.
+Permission failures produce a private, bounded `runtime_blocker.v1` diagnostic:
+at most one write attempt per allowlisted reason per daemon lifetime, no process
+or package names. It is retained evidence, not a continuous health indicator.
+
+The independent `zuiopt` domain is an MLS trusted subject because one daemon
+must access apps with different categories and the target process `setsched`
+constraint requires equal levels or a trusted subject. This adds no direct TE
+allows and does not transfer OEM `performanced` permissions to ZUIopt.

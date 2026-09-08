@@ -16,7 +16,11 @@
 #include <mutex>
 
 namespace ZUIopt {
-inline void checked(binder_status_t s){if(s!=STATUS_OK)throw std::runtime_error("parcel/status="+std::to_string(s));}
+struct BinderError:std::runtime_error {
+    binder_status_t status;
+    explicit BinderError(binder_status_t value):std::runtime_error("parcel/status="+std::to_string(value)),status(value){}
+};
+inline void checked(binder_status_t s){if(s!=STATUS_OK)throw BinderError(s);}
 struct Parcel {
     AParcel* p=nullptr;
     ~Parcel(){if(p)AParcel_delete(p);}
@@ -65,8 +69,9 @@ struct Observer {
         if(AParcel_readInt32(in,&pid)||AParcel_readInt32(in,&user))return STATUS_BAD_VALUE;
         if(code!=3&&AParcel_readInt32(in,&value))return STATUS_BAD_VALUE;
         if(pid<=0||user<0||(code==1&&value!=0&&value!=1)||AParcel_getDataPosition(in)!=AParcel_getDataSize(in))return STATUS_BAD_VALUE;
-        try {auto state=*static_cast<Holder*>(AIBinder_getUserData(b));state->deliver(code,pid,user,value);}
-        catch(...) {return STATUS_NO_MEMORY;}
+        try {auto* holder=static_cast<Holder*>(AIBinder_getUserData(b));if(!holder||!*holder)return STATUS_BAD_VALUE;auto state=*holder;state->deliver(code,pid,user,value);}
+        catch(const std::bad_alloc&) {return STATUS_NO_MEMORY;}
+        catch(...) {return STATUS_FAILED_TRANSACTION;}
         return STATUS_OK;
     }
     explicit Observer(std::function<void(int,int,int,int)> fn,StartupStage* phase=nullptr):state(std::make_shared<CallbackState>(std::move(fn))){

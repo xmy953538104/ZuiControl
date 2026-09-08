@@ -1,4 +1,4 @@
-// Startup/fatal only. Reuses the authenticated store's atomic 0600 file primitive.
+// Bounded lifecycle/blocker receipts; reuse the authenticated atomic 0600 primitive.
 #pragma once
 #include "ZUIopt_store.h"
 #include <system_error>
@@ -91,4 +91,23 @@ inline bool recordLifecycle(const std::string& root,const std::string& boot,
         return true;
     }catch(...){return false;} // Diagnostics must never suppress owner release or the init fail-safe.
 }
+enum class RuntimeBlockerReason {PROC_READ_PERMISSION,PROC_UID_PERMISSION,PACKAGE_AUTHORITY_PERMISSION};
+class RuntimeBlocker {
+    unsigned seen=0;
+public:
+    bool record(const std::string& root,const std::string& boot,RuntimeBlockerReason reason) noexcept {
+        // At most one attempt per reason per process lifetime, even if storage fails.
+        // Retained evidence is historical, not a continuously refreshed health status.
+        const unsigned index=static_cast<unsigned>(reason);
+        if(index>=3||(seen&(1u<<index)))return false;
+        seen|=1u<<index;
+        try {
+            require(boot.size()==36&&boot.find_first_not_of("0123456789abcdef-")==boot.npos,"diagnostic boot bound");
+            static constexpr const char* names[]={"proc_read_permission","proc_uid_permission","package_authority_permission"};
+            std::string data="ZUIOPT_RUNTIME_BLOCKER_V1\nboot="+boot+"\nstage=APP_ACCESS\nstate=BLOCKED\nreason="+names[index]+"\n";
+            require(data.size()<1024,"runtime diagnostic bound");
+            PrivateDir directory(root);directory.put("runtime_blocker.v1",data);return true;
+        }catch(...){return false;}
+    }
+};
 }

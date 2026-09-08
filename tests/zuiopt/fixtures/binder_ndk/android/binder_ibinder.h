@@ -5,7 +5,7 @@
 using binder_status_t=int32_t;
 using transaction_code_t=uint32_t;
 constexpr binder_status_t STATUS_OK=0,STATUS_BAD_VALUE=-22,STATUS_NO_MEMORY=-12,
-    STATUS_PERMISSION_DENIED=-1,STATUS_UNKNOWN_TRANSACTION=-74;
+    STATUS_PERMISSION_DENIED=-1,STATUS_UNKNOWN_TRANSACTION=-74,STATUS_FAILED_TRANSACTION=(-2147483647-1)+2;
 struct AIBinder;struct AIBinder_Class;struct AIBinder_DeathRecipient;struct AParcel;struct AStatus;
 extern "C" {
 void AParcel_delete(AParcel*);
