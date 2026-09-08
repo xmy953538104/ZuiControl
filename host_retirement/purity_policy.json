@@ -3,7 +3,7 @@
   "semantic_patterns": [
     "asoulopt|a-soul|(?<![a-z0-9])asoul(?![a-z0-9])|(?<![a-z0-9])asopt(?![a-z0-9])",
     "asoulServiceState|asoulDesiredState|PatchAsoulOptConfigPath|start_asoul|stop_asoul",
-    "next_owner|current_owner|nextOwner|retireSelector|ro\\.zui_control\\.task_owner",
+    "next_owner\\.v1|current_owner\\.v1|retireSelector|ro\\.zui_control\\.task_owner",
     "zuiopt_legacy_migration|sys\\.zui_control\\.legacy_migration|zuiopt_only_migration|zuiopt-migration-unlink"
   ],
   "raw_substrings": ["asoul", "a-soul", "asopt"],

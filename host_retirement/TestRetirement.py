@@ -50,7 +50,7 @@ class PurePolicy(unittest.TestCase):
         p=patterns()
         for value in ('/system/bin/AsoulOpt','source_type=asoul_binary','start_asoul','asoulServiceState','/asopt','/asopt/7c','/data/vendor/asopt.conf','next_owner.v1','zuiopt_legacy_migration.sh'):
             self.assertTrue(inspect('fixture',value.encode(),p),value)
-        for value in ('setHasOptionsMenu','HasOptimized','ZUIopt','Android default'):
+        for value in ('setHasOptionsMenu','HasOptimized','ZUIopt','Android default','getAndIncrementNextOwnerId','group_next_owner',' nextOwner:'):
             self.assertFalse(inspect('fixture',value.encode(),p),value)
     def test_utf16_string_pool(self):
         self.assertTrue(inspect('pool','start_asoul'.encode('utf-16le'),patterns()))

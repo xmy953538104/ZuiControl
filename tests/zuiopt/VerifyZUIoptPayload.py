@@ -34,6 +34,7 @@ def verify(system,manifest_path,contexts,fs_config):
     assert sha(system/'framework/services.jar')!=GOLDEN['services.jar']
     assert manifest['services_changed'] is True
     absence=audit_system(system)
+    assert absence['status']=='PASS' and not absence['semantic_hits'],absence
     binary=(system/'bin/ZUIopt').read_bytes()
     for token in (b'--selftest',b'--check-config',b'/data/local/tmp',b'/data/adb',b'sched_setscheduler',b'/proc/sys/walt',b'/sys/class/kgsl'):
         assert token not in binary,token
