@@ -235,7 +235,6 @@ CONTEXTS = [
     ("/system/bin/uperf", "performanced_exec"),
     ("/system/bin/zui_uperf_service", "performanced_exec"),
     ("/system/bin/zui_uperf_supervisor", "performanced_exec"),
-    ("/system/bin/AsoulOpt", "performanced_exec"),
     ("/data/vendor/zui_control(/.*)?", "zui_control_data_file"),
 ]
 
@@ -341,7 +340,7 @@ def verify(args: argparse.Namespace) -> dict[str, object]:
         {
             "module": "sched",
             "activated": False,
-            "decision": "KEEP_DISABLED_ASOUL_OWNS_THREAD_PLACEMENT",
+            "decision": "KEEP_DISABLED_ZUIOPT_SOLE_THREAD_OWNER",
             "known_resources": ["/proc/<pid>/task/<tid>/**"],
             "runtime_evidence": "disabled by production architecture",
             "coverage": "PARTIAL_STATIC_CLOSED_SOURCE",

@@ -42,14 +42,17 @@ class CommandPlaneArchitectureTest(unittest.TestCase):
             "PROP_SCHEDULER_ACTIVE",
             "PROP_UPERF_SERVICE",
             "PROP_UPERF_MODE",
-            "PROP_ASOUL_SERVICE",
+            "PROP_ZUIOPT_SERVICE",
+            "PROP_ZUIOPT_FAILED",
         ):
             self.assertIn(f"SystemProperties.get({prop}", health)
         for field in (
             "schedulerActive",
             "uperfServiceState",
             "uperfMode",
-            "asoulServiceState",
+            "zuioptServiceState",
+            "zuioptFailSafe",
+            "threadManagerState",
             "schedulerHealth",
             "lastSchedulerError",
         ):
@@ -135,8 +138,8 @@ class CommandPlaneArchitectureTest(unittest.TestCase):
         self.assertEqual(
             1,
             self.scheduler_rc.count(
-                "on property:zui_control.asoul=start && "
-                "property:sys.zui_control.scheduler_active=1"
+                "on zuiopt-start && property:sys.zui_control.scheduler_active=1 && "
+                "property:sys.zui_control.zuiopt_failed=0"
             ),
         )
 
@@ -146,7 +149,7 @@ class CommandPlaneArchitectureTest(unittest.TestCase):
             "schedulerActive",
             "uperfServiceState",
             "uperfMode",
-            "asoulServiceState",
+            "threadManagerState",
             "schedulerHealth",
         ):
             self.assertIn(f'ZuiControlClient.stateValue(state, "{field}")', self.activity)

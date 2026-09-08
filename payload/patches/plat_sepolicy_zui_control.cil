@@ -1,4 +1,4 @@
-;; ZuiControl services and the integrated Uperf/A-SOUL scheduler.
+;; ZuiControl services and the integrated macro power scheduler.
 ;; system_server remains the refresh and authoritative foreground-scene publisher.
 (type zui_control_service)
 (typeattributeset service_manager_type (zui_control_service))
@@ -126,11 +126,6 @@
 (typeattributeset file_type (zuiopt_data_file))
 (typeattributeset data_file_type (zuiopt_data_file))
 (typeattributeset core_data_file_type (zuiopt_data_file))
-(type zuiopt_owner_prop)
-(roletype object_r zuiopt_owner_prop)
-(typeattributeset property_type (zuiopt_owner_prop))
-(typeattributeset system_property_type (zuiopt_owner_prop))
-(typeattributeset system_internal_property_type (zuiopt_owner_prop))
 (type zuiopt_failure_prop)
 (roletype object_r zuiopt_failure_prop)
 (typeattributeset property_type (zuiopt_failure_prop))
@@ -202,11 +197,9 @@
 (allow zuiopt shell (process (sigchld)))
 (allow zuiopt shell (fd (use)))
 (allow zuiopt shell (fifo_file (getattr read write)))
-(allow init zuiopt_owner_prop (property_service (set)))
-(allow shell zuiopt_owner_prop (property_service (set)))
-(allow shell zuiopt_owner_prop (file (getattr open read map)))
-(allow zuiopt zuiopt_owner_prop (file (getattr open read map)))
+(allow zuiopt zui_control_scheduler_active_prop (file (getattr open read map)))
 (allow init zuiopt_failure_prop (property_service (set)))
 (allow shell zuiopt_failure_prop (property_service (set)))
 (allow shell zuiopt_failure_prop (file (getattr open read map)))
 (allow zuiopt zuiopt_failure_prop (file (getattr open read map)))
+(allow system_server zuiopt_failure_prop (file (getattr open read map)))

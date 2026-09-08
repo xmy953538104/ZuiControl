@@ -26,8 +26,6 @@ public:
     Core(std::string path,const std::string& statePath):configPath(std::move(path)),stateRoot(statePath){
         available=cpus(read("/sys/devices/system/cpu/online"));config=parseConfig(read(configPath),available);ZUIOPT_debug=config.debug;
         journal=std::make_unique<Journal>(statePath);
-        for(int p:ids("/proc")){char exe[512]{};ssize_t n=readlink(("/proc/"+std::to_string(p)+"/exe").c_str(),exe,sizeof(exe)-1);
-            require(n<0||std::string(exe)!="/system/bin/AsoulOpt","old Asoul owner still running");}
         sigset_t signals;sigemptyset(&signals);for(int s:{SIGTERM,SIGINT,SIGHUP,SIGUSR1})sigaddset(&signals,s);
         require(pthread_sigmask(SIG_BLOCK,&signals,nullptr)==0,"signal mask");
         signalFd=signalfd(-1,&signals,SFD_CLOEXEC|SFD_NONBLOCK);eventFd=eventfd(0,EFD_CLOEXEC|EFD_NONBLOCK);

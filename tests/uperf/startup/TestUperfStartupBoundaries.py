@@ -146,11 +146,8 @@ class UperfStartupBoundaryTests(unittest.TestCase):
             "0161a9980777b4313d0a5935b0e861e1afea86c5b4eb07ef5b88e44f20143c62",
         )
 
-    def test_15_asoulopt_is_unchanged(self) -> None:
-        self.assertEqual(
-            sha256(REPO / "payload/system/bin/AsoulOpt"),
-            "7a2ee5d67ba7c057066176334eca9256e376427916429d66b7593cbb5538ec86",
-        )
+    def test_15_retired_owner_absent(self) -> None:
+        self.assertFalse((REPO / "payload/system/bin/AsoulOpt").exists())
 
     def test_16_qdl_flag_alone_cannot_pass(self) -> None:
         verifier = text(REPO / "tests/flash/VerifyFixedSevenReadback.py")

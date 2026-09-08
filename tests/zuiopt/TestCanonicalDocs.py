@@ -14,9 +14,9 @@ def verify_repository_docs(root):
         assert 'scripts/WorkShell.ps1' not in text,relative
     payload=(root/'payload/README.txt').read_text(encoding='utf8')
     assert f'App V{version} target' in payload and f'ZuiControlV{version}/ZuiControl.apk' in payload
-    assert 'default/fallback' in payload and 'selectable sole per-task owner' in payload
+    assert 'sole per-task owner' in payload and 'ANDROID_DEFAULT_FAILSAFE' in payload
     assert 'Init creates /dev/cpuset/ZUIopt 0755 root root' in payload
-    assert 'No framework patch/rebuild' in payload
+    assert 'classes4.dex is rebuilt' in payload
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--repo',type=Path,default=Path(__file__).resolve().parents[2]);args=parser.parse_args()

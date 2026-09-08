@@ -6,12 +6,13 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import zipfile
 from datetime import datetime
 
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
-APP_APK_PATH = "system/priv-app/ZuiControlV51/ZuiControl.apk"
+APP_APK_PATH = "system/priv-app/ZuiControlV52/ZuiControl.apk"
 LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -81,7 +82,6 @@ def mode_for(rel, is_dir):
         "system_a/system/bin/zui_uperf_service",
         "system_a/system/bin/zui_uperf_supervisor",
         "system_a/system/bin/uperf",
-        "system_a/system/bin/AsoulOpt",
         "system_a/system/bin/ZUIopt",
     ]:
         return "0755"
@@ -93,7 +93,6 @@ def owner_group_for(rel):
         "system_a/system/bin/zui_uperf_service",
         "system_a/system/bin/zui_uperf_supervisor",
         "system_a/system/bin/uperf",
-        "system_a/system/bin/AsoulOpt",
     ]:
         return "0 2000"
     return "0 0"
@@ -108,7 +107,6 @@ def context_for(rel):
         "system_a/system/bin/zui_uperf_service",
         "system_a/system/bin/zui_uperf_supervisor",
         "system_a/system/bin/uperf",
-        "system_a/system/bin/AsoulOpt",
     ]:
         return "u:object_r:performanced_exec:s0"
     return "u:object_r:system_file:s0"
@@ -163,6 +161,9 @@ def cleanup_legacy_payload(unpack, dry_run, report):
         "system_a/system/priv-app/ZuiControlV47",
         "system_a/system/priv-app/ZuiControlV48",
         "system_a/system/priv-app/ZuiControlV49",
+        "system_a/system/priv-app/ZuiControlV50",
+        "system_a/system/priv-app/ZuiControlV51",
+        "system_a/system/etc/zuiopt/boot_owner.sh",
         "system_a/system/priv-app/ZuiperfCtl",
         "system_a/system/bin/zui_perfctld",
         "system_a/system/etc/init/zui_perfctld.rc",
@@ -491,14 +492,59 @@ def preserved_framework(root, manifest_path):
     return result, hashlib.sha256(manifest_path.read_bytes()).hexdigest()
 
 
+def terminal_framework(root, manifest_path):
+    """Current CI extension only; every other Golden JAR member must be exact."""
+    path = pathlib.Path(manifest_path)
+    manifest = json.loads(path.read_text(encoding="utf8"))
+    git = shutil.which("git")
+    if not git:
+        raise SystemExit("Git required for terminal source binding")
+    head = subprocess.check_output([git, "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+    if manifest.get("source_commit") != head or manifest.get("schema") != "ZUIOPT_TERMINAL_FRAMEWORK_V1":
+        raise SystemExit("Terminal framework source/schema mismatch")
+    if subprocess.check_output([git, "-C", str(root), "status", "--porcelain"]):
+        raise SystemExit("Terminal framework requires clean exact source")
+    if not str(manifest.get("ci_run", "")).isdigit():
+        raise SystemExit("Terminal framework CI identity required")
+    def bound(entry):
+        file = pathlib.Path(entry["path"])
+        if not file.is_absolute() or not file.is_file() or file.is_symlink():
+            raise SystemExit("Unsafe terminal artifact input")
+        data = file.read_bytes()
+        if hashlib.sha256(data).hexdigest() != entry["sha256"] or len(data) != entry["size"]:
+            raise SystemExit("Terminal artifact hash/size mismatch")
+        return data
+    result = {name: bound(entry) for name, entry in manifest["jars"].items()}
+    if set(result) != {"framework.jar", "services.jar"} or hashlib.sha256(result["framework.jar"]).hexdigest() != "b5f57d62546569b9bd9ba34d8757678da000c33f876358dd93a4dc747b8f1b32":
+        raise SystemExit("Unexpected framework container change")
+    old = bound(manifest["golden_services"])
+    if hashlib.sha256(old).hexdigest() != "245b4f2c55d5ed8b99ecba8bd473d1d76eb40c55d67116a477299cc9d8b62000":
+        raise SystemExit("Unapproved services baseline")
+    extension = bound(manifest["ci_services_extension"])
+    import io
+    def members(data):
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            if len(archive.namelist()) != len(set(archive.namelist())) or archive.testzip() is not None:
+                raise SystemExit("Invalid services ZIP members")
+            return {name: archive.read(name) for name in archive.namelist()}
+    before, after = members(old), members(result["services.jar"])
+    if set(before) != set(after) or after.get("classes4.dex") != extension:
+        raise SystemExit("Terminal services extension identity mismatch")
+    if before["classes4.dex"] == extension or any(before[name] != after[name] for name in before if name != "classes4.dex"):
+        raise SystemExit("Unexplained services member delta")
+    return result, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Apply ZuiControl payload into an unpacked image tree.")
     parser.add_argument("--root", help="Project root containing work/config, default: this repository root")
     parser.add_argument("--unpack", help="Unpacked image root, default: work/unpack")
     parser.add_argument("--payload", help="Payload root, default: payload")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--preserve-framework-manifest", required=True,
+    framework_args = parser.add_mutually_exclusive_group(required=True)
+    framework_args.add_argument("--preserve-framework-manifest",
                         help="Exact Golden JAR inputs, bound to this production source commit")
+    framework_args.add_argument("--terminal-framework-manifest", help="Exact current CI services DEX and preserved-member proof")
     args = parser.parse_args()
 
     root = pathlib.Path(args.root).resolve() if args.root else resolve_root()
@@ -507,7 +553,8 @@ def main():
     payload = pathlib.Path(args.payload).resolve() if args.payload else root / "payload"
     if not payload.exists():
         raise SystemExit(f"Missing payload: {payload}")
-    framework, framework_manifest_sha = preserved_framework(root, args.preserve_framework_manifest)
+    framework, framework_manifest_sha = (terminal_framework(root, args.terminal_framework_manifest)
+        if args.terminal_framework_manifest else preserved_framework(root, args.preserve_framework_manifest))
 
     report = {
         "started_at": datetime.now().isoformat(timespec="seconds"),
@@ -544,7 +591,7 @@ def main():
             raise SystemExit("ROUTE_A_PRODUCTION_HARD_FAIL: missing/linked target JAR.")
         if not args.dry_run:
             destination.write_bytes(data)
-    report["framework_patch"] = "PRESERVED_EXACT_GOLDEN_NO_SOURCE_CHANGE"
+    report["framework_patch"] = "TERMINAL_EXACT_CI_SERVICES_EXTENSION" if args.terminal_framework_manifest else "PRESERVED_EXACT_GOLDEN_NO_SOURCE_CHANGE"
     report["framework_manifest_sha256"] = framework_manifest_sha
     report["framework_jars"] = {name: hashlib.sha256(data).hexdigest() for name, data in framework.items()}
     update_metadata(image_root, unpack, entries, args.dry_run, report)

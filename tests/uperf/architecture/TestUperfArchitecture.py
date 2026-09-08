@@ -209,10 +209,8 @@ class OwnershipTests(unittest.TestCase):
         for forbidden in ("mi_thermald", "thermal-engine", "msm_thermal", "thermal_enable"):
             self.assertNotIn(forbidden, lowered)
 
-    def test_25_asoul_binary_unchanged(self):
-        binary = REPO / "payload/system/bin/AsoulOpt"
-        digest = hashlib.sha256(binary.read_bytes()).hexdigest()
-        self.assertEqual(digest, "7a2ee5d67ba7c057066176334eca9256e376427916429d66b7593cbb5538ec86")
+    def test_25_retired_owner_absent(self):
+        self.assertFalse((REPO / "payload/system/bin/AsoulOpt").exists())
 
     def test_v106_adopted_fields(self):
         self.assertIs(self.config["modules"]["sfanalysis"]["enable"], False)

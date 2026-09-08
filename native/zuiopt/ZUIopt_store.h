@@ -186,19 +186,21 @@ public:
         }
         throw std::runtime_error("unknown rule manager action");
     }
-    void nextOwner(const std::string& value){
-        require(value=="ASOULOPT"||value=="ZUIOPT","next boot owner");auto body=value+"\n";
-        root.put("next_owner.v1","ZUIOPT_NEXT_OWNER_V1 "+std::to_string(crc(body))+"\n"+body);
-        // An explicit retry changes next boot only; the immutable current-boot property stays unchanged.
-        root.remove("failure.v1");
+    // The retired selector is data, never an input to startup. PrivateDir checks
+    // ownership, regular-file type, link count and mode before removing it.
+    void retireSelector(){root.remove("next_owner.v1");}
+    bool failed(){return root.exists("failure.v1");}
+    std::string bootState(){return failed()?"FAILSAFE":"READY_TO_START";}
+    std::string failureState(){return std::string("thread_manager=ZUIOPT\nfailure=")+(failed()?"1":"0")+"\n";}
+    void resetFailure(){
+        require(failed(),"no persistent failure");
+        // Validate both before deleting either. Clear failure last; partial I/O
+        // failure therefore remains safe. Never signal/restart the running boot.
+        root.get("failure.v1",128);root.get("crashes.v1",256,true);
+        root.remove("crashes.v1");root.remove("failure.v1");
     }
-    std::string nextOwner(){
-        try{if(root.exists("failure.v1"))return "ASOULOPT";auto data=root.get("next_owner.v1",128,true);auto lines=fields(data,'\n');
-            if(lines.size()!=3||!lines[2].empty()||(lines[1]!="ASOULOPT"&&lines[1]!="ZUIOPT"))return "ASOULOPT";
-            return lines[0]=="ZUIOPT_NEXT_OWNER_V1 "+std::to_string(crc(lines[1]+"\n"))?lines[1]:"ASOULOPT";
-        }catch(...){return "ASOULOPT";}
-    }
-    std::string ownerState(){return "next_owner="+nextOwner()+"\nfailure="+(root.exists("failure.v1")?"1":"0")+"\n";}
+    bool migrationDone(){return root.get("zuiopt_only_migration.v1",64,true)=="ZUIOPT_ONLY_MIGRATION_V1\n";}
+    void finishMigration(){root.put("zuiopt_only_migration.v1","ZUIOPT_ONLY_MIGRATION_V1\n");}
     void failure(){root.put("failure.v1","ZUIOPT_FAILURE_V1\n"+trim(read("/proc/sys/kernel/random/boot_id"))+"\n");}
     bool crash(){
         auto boot=trim(read("/proc/sys/kernel/random/boot_id"));auto lines=fields(root.get("crashes.v1",256,true),'\n');std::vector<int64_t> times;

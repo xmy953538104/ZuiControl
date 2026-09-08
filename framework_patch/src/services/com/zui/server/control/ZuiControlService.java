@@ -60,7 +60,8 @@ public final class ZuiControlService extends Binder {
     private static final String PROP_SCHEDULER_ACTIVE = "sys.zui_control.scheduler_active";
     private static final String PROP_UPERF_FAIL_SAFE = "sys.zui_control.uperf_fail_safe";
     private static final String PROP_UPERF_SERVICE = "init.svc.zui_uperf";
-    private static final String PROP_ASOUL_SERVICE = "init.svc.zui_asoulopt";
+    private static final String PROP_ZUIOPT_SERVICE = "init.svc.zui_zuiopt";
+    private static final String PROP_ZUIOPT_FAILED = "sys.zui_control.zuiopt_failed";
     private static final String PROP_GLOBAL_DISABLE = "persist.zui_control.disable";
     private static final String PROP_REFRESH_DISABLE = "persist.zui_control.refresh.disable";
     private static final String GAME_HELPER_PACKAGE = "com.zui.game.service";
@@ -1513,7 +1514,11 @@ public final class ZuiControlService extends Binder {
         String uperfState = SystemProperties.get(PROP_UPERF_SERVICE, "unknown");
         String uperfMode = SystemProperties.get(PROP_UPERF_MODE, "unknown");
         String uperfFailSafe = SystemProperties.get(PROP_UPERF_FAIL_SAFE, "0");
-        String asoulState = SystemProperties.get(PROP_ASOUL_SERVICE, "unknown");
+        String zuioptState = SystemProperties.get(PROP_ZUIOPT_SERVICE, "unknown");
+        String zuioptFailed = SystemProperties.get(PROP_ZUIOPT_FAILED, "unknown");
+        String threadManagerState = "1".equals(zuioptFailed) && "stopped".equals(zuioptState)
+                ? "android_default_failsafe"
+                : "0".equals(zuioptFailed) && "running".equals(zuioptState) ? "zuiopt_active" : "inactive_or_unhealthy";
         String currentError = "";
         if ("1".equals(SystemProperties.get("sys.boot_completed", "0"))) {
             if (!"0".equals(active) && !"1".equals(active)) {
@@ -1521,12 +1526,18 @@ public final class ZuiControlService extends Binder {
             } else if ("1".equals(active) && "1".equals(uperfFailSafe)) {
                 currentError = "uperf_fail_safe";
             } else if ("1".equals(active)) {
-                if ("stopped".equals(uperfState)) {
+                if (!"running".equals(uperfState)) {
                     currentError = "uperf_stopped_while_active";
                 } else if (!isUperfMode(uperfMode)) {
                     currentError = "invalid_uperf_mode";
+                } else if (!"0".equals(zuioptFailed) && !"1".equals(zuioptFailed)) {
+                    currentError = "invalid_zuiopt_failure";
+                } else if ("1".equals(zuioptFailed) && !"stopped".equals(zuioptState)) {
+                    currentError = "zuiopt_not_stopped_in_failsafe";
+                } else if ("0".equals(zuioptFailed) && !"running".equals(zuioptState)) {
+                    currentError = "zuiopt_not_running_while_active";
                 }
-            } else if ("running".equals(uperfState) || "running".equals(asoulState)) {
+            } else if ("running".equals(uperfState) || "running".equals(zuioptState)) {
                 currentError = "zui_scheduler_running_while_inactive";
             }
         }
@@ -1537,7 +1548,9 @@ public final class ZuiControlService extends Binder {
                 + "\nuperfServiceState=" + uperfState
                 + "\nuperfMode=" + uperfMode
                 + "\nuperfFailSafe=" + uperfFailSafe
-                + "\nasoulServiceState=" + asoulState
+                + "\nzuioptServiceState=" + zuioptState
+                + "\nzuioptFailSafe=" + zuioptFailed
+                + "\nthreadManagerState=" + threadManagerState
                 + "\nschedulerHealth=" + (currentError.isEmpty() ? "ok" : currentError)
                 + "\nlastSchedulerError="
                 + (mLastSchedulerError.isEmpty() ? "none" : mLastSchedulerError);

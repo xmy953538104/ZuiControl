@@ -16,8 +16,8 @@ class ZuioptRulesTest {
     }
 
     @Test fun stateFieldsAreExact() {
-        val state = "generation=g123\nnext_owner=ASOULOPT\ncurrent_owner=ZUIOPT\n"
-        assertEquals("ZUIOPT", ZuioptRules.field(state, "current_owner"))
+        val state = "generation=g123\nthread_manager=ZUIOPT\nthreadManagerState=ANDROID_DEFAULT_FAILSAFE\n"
+        assertEquals("ZUIOPT", ZuioptRules.field(state, "thread_manager"))
         assertEquals("", ZuioptRules.field(state, "owner"))
     }
 }

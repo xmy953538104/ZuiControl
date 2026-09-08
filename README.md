@@ -70,28 +70,32 @@ calls; it is not proof of device wire bytes or SELinux permissions.
 
 ## ROM integration
 
-V21 Route A preserves the exact Golden framework/services containers and unchanged
-framework source. Apply the exact CI payload to an explicit unpacked image tree:
+The terminal candidate rebuilds the services extension from exact current source.
+The reviewed Golden framework.jar and unmodified services DEX members remain
+byte-identical. A source-bound terminal manifest is required for payload application:
 
 ```powershell
-python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --payload <ci-payload> --preserve-framework-manifest <golden-jars.json> --dry-run
-python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --payload <ci-payload> --preserve-framework-manifest <golden-jars.json>
+python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --payload <ci-payload> --terminal-framework-manifest <terminal-jars.json> --dry-run
+python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --payload <ci-payload> --terminal-framework-manifest <terminal-jars.json>
 ```
 
 Build outputs, ROM images, device evidence, review packages, and local project
 history do not belong in this repository. Runtime ownership and payload details
 are summarized in `payload/README.txt`.
 
-ZUIopt is integrated but AsoulOpt remains the default owner. Owner changes take
-effect next boot only. Rule imports use the existing authenticated command plane;
+ZUIopt is the sole per-task/per-thread owner and starts automatically while the
+scheduler is active and no persistent failure exists. Rule imports use the existing authenticated command plane;
 new packs are disabled. `/data/vendor/zui_control/zuiopt/effective.conf` atomically
 selects a private generation containing packs, user rules and last-good state.
 The manager keeps two generations; validation/pre-commit failures preserve the
 current generation. After a commit/ACK I/O uncertainty, refresh the reported state
 instead of assuming rollback or automatically repeating the mutation.
-`owner_state.v1` remains exclusively the accepted crash-recovery journal;
-`next_owner.v1` is the CRC-protected next-boot selector. Three crashes in 60 seconds
-stop ZUIopt without starting AsoulOpt in that boot. Device runtime/AVC validation
+`owner_state.v1` remains exclusively the accepted crash-recovery journal.
+Three crashes in 60 seconds stop ZUIopt and recover Android default scheduling.
+The failure persists across boots. The authenticated App reset clears only failure
+and crash history, enabling a retry at the next reboot, never the current boot.
+Legacy data migration is exact-path, identity/byte checked and non-recursive;
+unknown data is retained with a fail-closed diagnostic. Device runtime/AVC validation
 requires a separately authorized post-flash gate.
 
 Init creates the root-owned 0755 `/dev/cpuset/ZUIopt` scaffold at post-fs-data.

@@ -27,10 +27,9 @@ $ExtractErofs = Join-Path $ToolsDir 'super-tools\AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'smali-apk\apktool.jar'
 $Avbtool = Join-Path $ToolsDir 'avb\downloaded\avbtool_aosp_c0af371_1.2.0.py'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '51'
-$ExpectedVersionName = '0.21.14'
+$ExpectedVersionCode = '52'
+$ExpectedVersionName = '0.21.15'
 $ExpectedUperfSha256 = 'f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8'
-$ExpectedAsoulSha256 = '7a2ee5d67ba7c057066176334eca9256e376427916429d66b7593cbb5538ec86'
 $ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371'
 $ExpectedBuildFingerprintMarker = 'ZUI_16.1.11.072_241118_PRC'
 $ForbiddenBuildFingerprintMarker = 'ZUI_16.1.11.187_250227_PRC'
@@ -320,20 +319,6 @@ function Assert-Apk([string]$ApkPath, [string]$Label) {
     }
 }
 
-function Assert-AsoulConfig([string]$Path) {
-    $values = @{}
-    foreach ($line in Get-Content -LiteralPath $Path) {
-        $text = $line.Trim()
-        if (-not $text -or $text.StartsWith('#')) { continue }
-        $parts = $text -split '=', 2
-        if ($parts.Count -ne 2) { throw "Invalid A-SOUL config line: $line" }
-        $values[$parts[0].Trim()] = $parts[1].Trim()
-    }
-    if ($values.Count -ne 3 -or $values.mode -ne '0' -or $values.rt -ne '0' -or $values.opt -ne '0xDEADBEEF') {
-        throw 'A-SOUL must use the verified mode=0, rt=0, opt=0xDEADBEEF configuration'
-    }
-}
-
 function Assert-BinaryContains([string]$Path, [string]$Needle, [bool]$Expected, [string]$Label) {
     Require-File $Path
     $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($Path))
@@ -470,12 +455,11 @@ try {
     $System = Join-Path $SystemRoot 'system'
     $PlatSelinux = Join-Path $System 'etc\selinux'
     $VendorSelinux = Join-Path $VendorRoot 'etc\selinux'
-    $AppApk = Join-Path $System 'priv-app\ZuiControlV51\ZuiControl.apk'
+    $AppApk = Join-Path $System 'priv-app\ZuiControlV52\ZuiControl.apk'
     $Daemon = Join-Path $System 'bin\zui_controld'
     $Uperf = Join-Path $System 'bin\uperf'
     $UperfService = Join-Path $System 'bin\zui_uperf_service'
     $UperfSupervisor = Join-Path $System 'bin\zui_uperf_supervisor'
-    $Asoul = Join-Path $System 'bin\AsoulOpt'
     $SchedulerRc = Join-Path $System 'etc\init\zui_scheduler.rc'
     $DaemonRc = Join-Path $System 'etc\init\zui_controld.rc'
     $RefreshKillRc = Join-Path $System 'etc\init\zui_refresh_kill_switch.rc'
@@ -483,13 +467,12 @@ try {
     $UperfCrashGate = Join-Path $System 'etc\zui_control\zui_uperf_crash_gate.sh'
     $UperfConfig = Join-Path $System 'etc\zui_control\uperf-sm8650.json'
     $UperfPerApp = Join-Path $System 'etc\zui_control\default_uperf_perapp.txt'
-    $AsoulConfig = Join-Path $System 'etc\zui_control\default_asopt.conf'
     $PrivPermissions = Join-Path $System 'etc\permissions\privapp-permissions-zui-control.xml'
     $ZuippPower = Join-Path $System 'etc\zuipp_powercfg.xml'
     $MemCleaner = Join-Path $System 'etc\ZuiMemCleanerConfig.xml'
     $PowerPolicy = Join-Path $System 'etc\ZuiPowerPolicyConfig.xml'
     $AutoRun = Join-Path $System 'etc\motorola\bgintents\com.zui.safecenter.autorun.xml'
-    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $UperfSupervisor, $Asoul, $SchedulerRc, $DaemonRc, $RefreshKillRc, $SchedulerPrepare, $UperfCrashGate, $UperfConfig, $UperfPerApp, $AsoulConfig, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
+    foreach ($file in @($AppApk, $Daemon, $Uperf, $UperfService, $UperfSupervisor, $SchedulerRc, $DaemonRc, $RefreshKillRc, $SchedulerPrepare, $UperfCrashGate, $UperfConfig, $UperfPerApp, $PrivPermissions, $ZuippPower, $MemCleaner, $PowerPolicy, $AutoRun)) {
         Require-File $file
     }
 
@@ -499,9 +482,8 @@ try {
     Assert-BinaryContains $UperfSupervisor 'I Uperf is running' $true 'native regular-log readiness marker'
     Assert-BinaryContains $UperfSupervisor 'Uperf readiness timed out after' $true 'bounded native startup timeout marker'
     Assert-BinaryContains $UperfSupervisor '.tmp' $true 'atomic ready marker temporary suffix'
-    if ((File-Sha256 $Asoul) -ne $ExpectedAsoulSha256) { throw 'Embedded Shiroko A-SOUL hash is not approved' }
-    Assert-BinaryContains $Asoul '/data/vendor/asopt.conf' $true 'ROM A-SOUL config path'
-    Assert-BinaryContains $Asoul '/data/adb/naki/asopt.conf' $false 'retired Magisk config path'
+    Assert-Missing (Join-Path $System 'bin\AsoulOpt') 'retired task binary'
+    Assert-Missing (Join-Path $System 'etc\zui_control\default_asopt.conf') 'retired task configuration'
     foreach ($path in @(
         (Join-Path $System 'bin\AppOpt'),
         (Join-Path $System 'bin\AppOpt-ebpf'),
@@ -513,11 +495,10 @@ try {
     Assert-Missing (Join-Path $System 'etc\zui_control\zui_cloud_block.sh') 'cloud-control block script'
     Assert-Missing (Join-Path $System 'etc\zui_control\promote_zuipp_xml.sh') 'retired ZuiPP promotion script'
     Assert-Missing (Join-Path $System 'preinstall\QQMusic') 'removed third-party QQ Music preinstall'
-    foreach ($old in 30..49) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
+    foreach ($old in 30..51) { Assert-Missing (Join-Path $System "priv-app\ZuiControlV$old") 'previous ZuiControl version directory' }
     Assert-Missing (Join-Path $System 'priv-app\ZuiControl') 'legacy unversioned ZuiControl directory'
 
     Assert-UperfConfig $UperfConfig
-    Assert-AsoulConfig $AsoulConfig
     $activeRules = @(Get-Content -LiteralPath $UperfPerApp | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
     $expectedRules = @('com.kurogame.mingchao performance', 'com.kurogame.wutheringwaves.global performance', '- powersave')
     if (Compare-Object $activeRules $expectedRules) { throw "Unexpected default Uperf rules: $($activeRules -join '; ')" }
@@ -525,13 +506,14 @@ try {
     Assert-Contains $SchedulerRc 'service zui_uperf /system/bin/zui_uperf_service' 'supervised Uperf init service'
     $uperfServiceBlock = @(Get-InitServiceBlock $SchedulerRc 'zui_uperf')
     if ($uperfServiceBlock -match '^\s+oneshot\s*$') { throw 'Uperf must remain an init-supervised non-oneshot service' }
-    Assert-Contains $SchedulerRc 'service zui_asoulopt /system/bin/AsoulOpt' 'A-SOUL init service'
+    Assert-NotContains $SchedulerRc 'zui_asoulopt' 'retired init service'
+    Assert-Contains $SchedulerRc 'service zui_zuiopt /system/bin/ZUIopt' 'single task owner'
     Assert-Contains $SchedulerRc '    stop vendor.perfservice' 'QTI userspace perf bridge ownership fence'
     Assert-Contains $SchedulerRc '    start vendor.perfservice' 'QTI userspace perf bridge rollback'
     Assert-Contains $SchedulerRc '    setprop sys.zui_control.scheduler_active 1' 'init-owned active scheduler state'
     Assert-Contains $SchedulerRc '    setprop sys.zui_control.scheduler_active 0' 'init-owned inactive scheduler state'
     Assert-Contains $SchedulerRc 'on property:init.svc.vendor.perfservice=running && property:sys.zui_control.scheduler_active=1' 'init-native conditional OEM fence'
-    Assert-Contains $SchedulerRc 'on property:zui_control.asoul=start && property:sys.zui_control.scheduler_active=1 && property:ro.zui_control.task_owner=ASOULOPT' 'active/current-owner-only A-SOUL start action'
+    Assert-Contains $SchedulerRc 'on zuiopt-start && property:sys.zui_control.scheduler_active=1 && property:sys.zui_control.zuiopt_failed=0' 'active/non-failed single owner start'
     Assert-Contains $SchedulerRc 'on property:zui_control.scheduler=fence && property:sys.zui_control.scheduler_active=1' 'active-only compatibility OEM fence'
     Assert-Contains $SchedulerRc 'on property:sys.zui_control.uperf_fail_safe=1' 'Uperf bounded fail-safe trigger'
     Assert-Contains $SchedulerRc '    setprop sys.zui_control.uperf_fail_safe 0' 'explicit Uperf fail-safe reset'
@@ -933,7 +915,7 @@ try {
     Assert-Contains $FileContexts '/system/bin/zui_uperf_service u:object_r:performanced_exec:s0' 'Uperf supervisor file context'
     Assert-Contains $FileContexts '/system/bin/zui_uperf_supervisor u:object_r:performanced_exec:s0' 'native Uperf subreaper file context'
     Assert-Contains $SystemImageContexts '/system_a/system/bin/zui_uperf_supervisor u:object_r:performanced_exec:s0' 'final EROFS native Uperf subreaper inode context'
-    Assert-Contains $FileContexts '/system/bin/AsoulOpt u:object_r:performanced_exec:s0' 'A-SOUL file context'
+    Assert-NotContains $FileContexts '/system/bin/AsoulOpt' 'retired task binary context'
     Assert-Contains $FileContexts '/system/bin/dumpsys u:object_r:toolbox_exec:s0' 'bounded A-SOUL dumpsys execution context'
     Assert-Contains $SystemImageContexts '/system_a/system/bin/dumpsys u:object_r:toolbox_exec:s0' 'final EROFS dumpsys inode context'
     Assert-Contains $FileContexts '/data/vendor/asopt\.conf u:object_r:zui_control_data_file:s0' 'A-SOUL compatibility data context'
@@ -1102,7 +1084,7 @@ try {
         release_sidecar_apk = File-Sha256 $ReleaseSidecarApk
         uperf = File-Sha256 $Uperf
         uperf_supervisor = File-Sha256 $UperfSupervisor
-        asoul = File-Sha256 $Asoul
+        retired_task_binary = 'ABSENT'
         zuiopt = File-Sha256 (Join-Path $System 'bin\ZUIopt')
     }
     if ($hashes.apk -ne $hashes.sidecar_apk -or $hashes.apk -ne $hashes.release_sidecar_apk) {

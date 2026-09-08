@@ -36,9 +36,10 @@ def rm_tree(path):
         raise RuntimeError(f"failed to remove stale build directory: {path}")
 
 
-def compile_sources(repo, mi_root, build_dir, source_dir, dex_name):
-    android_jar = mi_root / "Edit tools" / "android-build" / "android-sdk" / "platforms" / "android-35" / "android.jar"
-    d8 = mi_root / "Edit tools" / "android-build" / "android-sdk" / "build-tools" / "36.0.0" / "d8.bat"
+def compile_sources(repo, mi_root, build_dir, source_dir, dex_name, sdk=None):
+    sdk = sdk or mi_root / "Edit tools" / "android-build" / "android-sdk"
+    android_jar = sdk / "platforms" / "android-35" / "android.jar"
+    d8 = sdk / "build-tools" / "36.0.0" / ("d8.bat" if os.name == "nt" else "d8")
     stubs_src = repo / "framework_patch" / "stubs"
     stubs_classes = build_dir / f"{dex_name}_stubs"
     classes = build_dir / f"{dex_name}_classes"
@@ -54,7 +55,7 @@ def compile_sources(repo, mi_root, build_dir, source_dir, dex_name):
     ])
     run([
         "javac", "-source", "8", "-target", "8", "-encoding", "UTF-8",
-        "-cp", f"{android_jar};{stubs_classes}", "-d", classes,
+        "-cp", os.pathsep.join(map(str, (android_jar, stubs_classes))), "-d", classes,
         *collect_java(source_dir),
     ])
     program_classes = [str(p) for p in sorted(classes.rglob("*.class"))]

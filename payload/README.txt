@@ -1,30 +1,29 @@
-ZuiControl production payload — App V51 target
+ZuiControl production payload — App V52 target
 
 Build/package target:
-- /system/priv-app/ZuiControlV51/ZuiControl.apk
+- /system/priv-app/ZuiControlV52/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/uperf
 - /system/bin/zui_uperf_service
 - /system/bin/zui_uperf_supervisor
-- /system/bin/AsoulOpt
 - /system/bin/ZUIopt
 - /system/etc/zuiopt/factory_rules.conf
 - /system/etc/init/zui_controld.rc
 - /system/etc/init/zui_scheduler.rc
 - /system/etc/zui_control/uperf-sm8650.json
 - /system/etc/zui_control/default_uperf_perapp.txt
-- /system/etc/zui_control/default_asopt.conf
 
 Framework integration:
-- V21 Route A uses scripts/build/ApplyZuiControlPayload.py with an explicit Golden JAR manifest.
-- Exact Golden framework.jar/services.jar containers and framework source are unchanged.
-- No framework patch/rebuild is performed for this candidate.
+- Terminal integration uses a source-bound rebuilt services extension manifest.
+- Exact Golden framework.jar and unchanged services DEX members are preserved.
+- services.jar classes4.dex is rebuilt from current framework_patch services sources.
 
 Current runtime ownership:
 - system_server / ZuiControlService is the sole refresh owner.
 - Uperf scene and screen mode are decided event-by-event in system_server.
 - Android init transports Uperf mode, owns scheduler lifecycle, and applies the vendor.perfservice fence only while scheduler_active=1.
-- AsoulOpt is the default/fallback per-task owner. ZUIopt is a selectable sole per-task owner, effective next boot only; never both in one boot. Uperf sched.enable=false.
+- ZUIopt is the sole per-task owner, automatically started unless persistent failure exists. Uperf sched.enable=false.
+- Fail-safe returns to ANDROID_DEFAULT_FAILSAFE; there is no alternate optimizer. Authenticated App reset retries only after reboot.
 - Init creates /dev/cpuset/ZUIopt 0755 root root at post-fs-data, before owner selection/start. ZUIopt requires this scaffold, recovers journaled tasks, manages mask children and keeps the root on cleanup. ZUIopt has sys_nice, not dac_override.
 - OEM GPU and thermal services remain active safety/clock authorities. This payload does not claim direct KGSL ownership or replace thermal policy.
 
@@ -45,10 +44,10 @@ Runtime data:
 - /data/vendor/zui_control/uperf/perapp_powermode.txt
 - /data/vendor/zui_control/uperf/cur_powermode.txt
 - /data/vendor/zui_control/uperf/effective_powermode.txt
-- /data/vendor/zui_control/asoul/asopt.conf
-- /data/vendor/asopt.conf -> /data/vendor/zui_control/asoul/asopt.conf
 - /data/vendor/zui_control/log/
-- /data/vendor/zui_control/zuiopt/ (private rules, owner_state.v1 recovery journal, next_owner.v1 next-boot selector)
+- /data/vendor/zui_control/zuiopt/ (private rules, owner_state.v1 recovery journal, failure.v1, crashes.v1, one-time migration marker)
+- Legacy owner data is removed only by exact-path one-time migration. Unexpected identities/bytes are retained and startup fails closed.
+- Rule-pack source_type=asoul_binary is NON_EXECUTABLE_PROVENANCE_ONLY, not a runtime owner or executable loader.
 - startup.v1 and fatal.v1 are atomic 0600 startup/fatal receipts, each below 1KB. They record boot/stage and allowlisted reason/status only, never task/package identities. No steady-state receipt writes; write failure never blocks owner release/fail-safe.
 
 Current refresh contract and boundaries:

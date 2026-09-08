@@ -8,7 +8,7 @@ namespace {
 constexpr const char* ROOT="/data/vendor/zui_control/zuiopt";
 constexpr const char* FACTORY="/system/etc/zuiopt/factory_rules.conf";
 std::string property(const char* name){char value[PROP_VALUE_MAX]{};__system_property_get(name,value);return value;}
-bool selected(){return property("ro.zui_control.task_owner")=="ZUIOPT"&&property("sys.zui_control.zuiopt_failed")=="0";}
+bool selected(){return property("sys.zui_control.scheduler_active")=="1"&&property("sys.zui_control.zuiopt_failed")=="0";}
 void reload() noexcept {
     if(!selected())return;
     try{for(int pid:ZUIopt::ids("/proc")){
@@ -26,23 +26,25 @@ int main(int argc,char** argv){
         ZUIopt::require(getuid()==0&&geteuid()==0,"root identity required");
         if(argc==1){ZUIopt::require(selected(),"not this boot's task owner");ZUIopt::Core core(std::string(ROOT)+"/effective.conf",ROOT);return core.run();}
         if(argc==2&&std::string(argv[1])=="--recover"){
-            ZUIopt::require(property("ro.zui_control.task_owner")=="ZUIOPT"&&property("sys.zui_control.zuiopt_failed")=="1","recovery only after fail-safe stop");
+            ZUIopt::require(property("sys.zui_control.zuiopt_failed")=="1","recovery only after fail-safe stop");
             ZUIopt::Journal journal(ROOT);ZUIopt::Counters counters;ZUIopt::Placement placement(counters,journal);placement.cleanup();return 0;
         }
         ZUIopt::require(argc==2||(argc==5&&std::string(argv[1])=="--control"),"invalid production command");
         ZUIopt::RuleStore store(ROOT,ZUIopt::read(FACTORY));
         if(argc==2){
             auto command=std::string(argv[1]);
-            if(command=="--boot"){store.initialize();puts(store.nextOwner().c_str());return 0;}
+            if(command=="--boot"){store.initialize();store.retireSelector();puts(store.bootState().c_str());return 0;}
+            if(command=="--migration-state"){puts(store.migrationDone()?"DONE":"PENDING");return 0;}
+            if(command=="--migration-done"){store.finishMigration();return 0;}
+            if(command=="--migration-failed"){store.failure();return 0;}
             if(command=="--crash"){bool failed=true;try{failed=store.crash();}catch(...){store.failure();}puts(failed?"1":"0");return 0;}
             throw std::runtime_error("unknown production command");
         }
         std::string command=argv[2],key=argv[3],value=argv[4],result;
         ZUIopt::require(command.size()<=16&&key.size()<=128&&value.size()<=10924,"command bound");
-        if(command=="state")result=store.state()+store.ownerState();
-        else if(command=="owner")result=store.ownerState();
+        if(command=="state")result=store.state()+store.failureState();
         else if(command=="read")result=store.userChunk(key,value);
-        else if(command=="next"){store.nextOwner(value);result=store.ownerState();}
+        else if(command=="reset"){ZUIopt::require(key.empty()&&value.empty(),"reset arguments");store.resetFailure();result="NEXT_REBOOT_RETRIES_ZUIOPT";}
         else{result=store.apply(command,key,value);if(command=="commit"||command=="enable"||command=="disable"||command=="rollback")reload();}
         printf("%s\n",result.c_str());return 0;
     }catch(const std::exception& e){fprintf(stderr,"ZUIopt rejected: %.96s\n",e.what());return 1;}

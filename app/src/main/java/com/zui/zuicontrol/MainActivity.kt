@@ -386,28 +386,31 @@ class MainActivity : Activity() {
     private fun buildThreadsPage(): View = ScrollView(this).apply {
         addView(vertical().apply {
             setPadding(0, 0, 0, dp(20))
-            addView(sectionTitle("Task Scheduler"), sectionMargins())
+            addView(sectionTitle("ZUIopt"), sectionMargins())
             addView(compactNote(
                 if (zuioptState.isEmpty()) "尚未查询本次开机状态，请先刷新。" else
-                    "当前 owner：${ZuioptRules.field(zuioptState, "current_owner")}\n" +
-                    "下次开机：${ZuioptRules.field(zuioptState, "next_owner")}\n" +
+                    "线程管理：${ZuioptRules.field(zuioptState, "threadManagerState")}\n" +
                     "ZUIopt：${ZuioptRules.field(zuioptState, "service")} · " +
                     "故障保护：${ZuioptRules.field(zuioptState, "fail_safe")}",
             ))
             addView(settingsAction(
-                R.drawable.ic_action_refresh, "刷新规则与 owner 状态", "按需查询，不在后台轮询线程",
+                R.drawable.ic_action_refresh, "刷新规则与运行状态", "按需查询，不在后台轮询线程",
             ) { zuioptAction("正在查询规则") {} }, settingsActionMargins(spaced = true))
-            addView(settingsAction(
-                R.drawable.ic_nav_threads, "选择下次开机 owner", "AsoulOpt / ZUIopt；只在下一次重启生效",
-            ) {
-                AlertDialog.Builder(this@MainActivity).setTitle("下次开机任务调度器")
-                    .setItems(arrayOf("AsoulOpt（默认）", "ZUIopt")) { _, which ->
-                        zuioptAction("正在保存下次开机选择") {
-                            ZuioptRules.command(this@MainActivity, "next", value = if (which == 0) "ASOULOPT" else "ZUIOPT")
-                        }
-                    }.setNegativeButton("取消", null).showStyled()
-            }, settingsActionMargins(spaced = true))
-            addView(compactNote("选择不会切换本次开机的 owner，也不会自动重启设备。ZUIopt 故障保护后本次开机不会改为启动 AsoulOpt。"), fieldMargins())
+            if (ZuioptRules.field(zuioptState, "failure") == "1") {
+                addView(settingsAction(
+                    R.drawable.ic_action_refresh, "清除 ZUIopt 故障保护", "下次重启重新启用 ZUIopt；保留所有规则",
+                ) {
+                    AlertDialog.Builder(this@MainActivity).setTitle("清除 ZUIopt 故障保护")
+                        .setMessage("下次重启重新启用 ZUIopt。本次开机继续使用 Android 默认调度，不会自动重启设备。")
+                        .setPositiveButton("清除") { _, _ ->
+                            zuioptAction("正在清除故障保护") {
+                                ZuioptRules.command(this@MainActivity, "reset")
+                            }
+                        }.setNegativeButton("取消", null).showStyled()
+                }, settingsActionMargins(spaced = true))
+            } else if (ZuioptRules.field(zuioptState, "fail_safe") == "1") {
+                addView(compactNote("下次重启重新启用 ZUIopt。本次开机继续使用 Android 默认调度。"), fieldMargins())
+            }
             addView(sectionTitle("Rule Packs"), sectionMargins())
             addView(settingsAction(R.drawable.ic_action_import, "导入 ZUIopt 规则包", "最多 128 KiB；新包默认禁用；同 ID 替换") {
                 openZuioptImport(REQUEST_IMPORT_ZUIOPT)
@@ -434,19 +437,9 @@ class MainActivity : Activity() {
                     text = ZuioptRules.userRules(this@MainActivity); null
                 }
             }, settingsActionMargins(spaced = true))
-            addView(settingsAction(R.drawable.ic_action_refresh, "回退上一份规则", "仅回退规则，不切换 owner") {
+            addView(settingsAction(R.drawable.ic_action_refresh, "回退上一份规则", "仅回退规则，不改变故障保护") {
                 zuioptAction("正在回退规则") { ZuioptRules.command(this@MainActivity, "rollback") }
             }, settingsActionMargins(spaced = true))
-            if (ZuioptRules.field(zuioptState, "current_owner") == "ASOULOPT") {
-                addView(sectionTitle("AsoulOpt"), sectionMargins())
-                addView(compactNote("mode=0、rt=0。下面的启停仅用于本次 owner 为 AsoulOpt 时。"))
-                addView(settingsAction(R.drawable.ic_action_refresh, "启用 AsoulOpt", "启动系统内置 AsoulOpt") {
-                    setAsoulEnabled(true)
-                }, settingsActionMargins(spaced = true))
-                addView(settingsAction(R.drawable.ic_action_stop, "停止 AsoulOpt", "停止后建议重新进入正在运行的游戏") {
-                    setAsoulEnabled(false)
-                }, settingsActionMargins(spaced = true))
-            }
         })
     }
 
@@ -506,18 +499,6 @@ class MainActivity : Activity() {
             }.setNegativeButton("取消", null).showStyled()
     }
 
-    private fun setAsoulEnabled(enabled: Boolean) {
-        runCommand(
-            if (enabled) "正在启用线程优化" else "正在停止线程优化",
-            success = if (enabled) "A-SOUL 已启用" else "A-SOUL 已停止",
-        ) {
-            ZuiControlRequest.send(
-                this,
-                if (enabled) ZuiControlContract.CMD_START_ASOUL else ZuiControlContract.CMD_STOP_ASOUL,
-            )
-        }
-    }
-
     private fun buildSystemPage(): View = ScrollView(this).apply {
         addView(vertical().apply {
             setPadding(0, 0, 0, dp(20))
@@ -525,7 +506,7 @@ class MainActivity : Activity() {
             val active = ZuiControlClient.stateValue(state, "schedulerActive") ?: "unknown"
             val uperfState = ZuiControlClient.stateValue(state, "uperfServiceState") ?: "unknown"
             val uperfMode = ZuiControlClient.stateValue(state, "uperfMode") ?: "unknown"
-            val asoulState = ZuiControlClient.stateValue(state, "asoulServiceState") ?: "unknown"
+            val threadState = ZuiControlClient.stateValue(state, "threadManagerState") ?: "unknown"
             val schedulerError = ZuiControlClient.stateValue(state, "schedulerHealth") ?: "unknown"
             val ownership = when (active) {
                 "1" -> "active"
@@ -534,15 +515,15 @@ class MainActivity : Activity() {
             }
             addView(compactNote(
                 "调度：$ownership · " +
-                    "Uperf：$uperfState / $uperfMode · A-SOUL：$asoulState\n" +
+                    "Uperf：$uperfState / $uperfMode · ZUIopt：$threadState\n" +
                     "刷新率 owner：system · health：$schedulerError",
             ))
             addView(sectionTitle("工具"), sectionMargins())
             addView(settingsAction(
-                R.drawable.ic_action_logs, "导出运行日志", "排查刷新率、Uperf 与 A-SOUL",
+                R.drawable.ic_action_logs, "导出运行日志", "排查刷新率、Uperf 与 ZUIopt",
             ) { exportLogs() }, settingsActionMargins())
             addView(settingsAction(
-                R.drawable.ic_action_refresh, "重启调度核心", "重新加载 Uperf 配置并检查 A-SOUL",
+                R.drawable.ic_action_refresh, "重启调度核心", "重新加载 Uperf 配置并检查 ZUIopt；不清除故障保护",
             ) {
                 runCommand("正在重启调度核心", success = "调度核心已重启") {
                     ZuiControlRequest.send(this@MainActivity, ZuiControlContract.CMD_RESTART_SCHEDULER)

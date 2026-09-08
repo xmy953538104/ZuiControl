@@ -304,8 +304,8 @@ assert_oem_fence_ownership_policy() {
     fi
     grep -Fqx 'on property:zui_control.scheduler=fence && property:sys.zui_control.scheduler_active=1' "$SCHEDULER_RC" ||
         fail 'manual compatibility fence ignores scheduler ownership'
-    grep -Fqx 'on property:zui_control.asoul=start && property:sys.zui_control.scheduler_active=1 && property:ro.zui_control.task_owner=ASOULOPT' "$SCHEDULER_RC" ||
-        fail 'A-SOUL start bypasses scheduler-active or this-boot sole-owner guard'
+    grep -Fqx 'on zuiopt-start && property:sys.zui_control.scheduler_active=1 && property:sys.zui_control.zuiopt_failed=0' "$SCHEDULER_RC" ||
+        fail 'ZUIopt start bypasses active/failsafe guard'
 
     stop_body="$(sed -n '/^on property:zui_control.scheduler=stop$/,/^$/p' "$SCHEDULER_RC")"
     printf '%s\n' "$stop_body" | grep -Fq '    setprop sys.zui_control.scheduler_active 0' ||

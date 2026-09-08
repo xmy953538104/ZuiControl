@@ -2,15 +2,12 @@
 
 DATA_ROOT=/data/vendor/zui_control
 UPERF_DIR=$DATA_ROOT/uperf
-ASOUL_DIR=$DATA_ROOT/asoul
 LOG_DIR=$DATA_ROOT/log
 SYSTEM_UPERF=/system/etc/zui_control/uperf-sm8650.json
 SYSTEM_PERAPP=/system/etc/zui_control/default_uperf_perapp.txt
-SYSTEM_ASOUL=/system/etc/zui_control/default_asopt.conf
 GLOBAL_MODE=$UPERF_DIR/cur_powermode.txt
 EFFECTIVE_MODE=$UPERF_DIR/effective_powermode.txt
 PERAPP=$UPERF_DIR/perapp_powermode.txt
-ASOUL_CONFIG=$ASOUL_DIR/asopt.conf
 
 valid_preset() {
     case "$1" in
@@ -19,7 +16,7 @@ valid_preset() {
     esac
 }
 
-mkdir -p "$UPERF_DIR" "$ASOUL_DIR" || exit 1
+mkdir -p "$UPERF_DIR" || exit 1
 cp "$SYSTEM_UPERF" "$UPERF_DIR/uperf.json.tmp" || exit 1
 chmod 0644 "$UPERF_DIR/uperf.json.tmp"
 mv -f "$UPERF_DIR/uperf.json.tmp" "$UPERF_DIR/uperf.json" || exit 1
@@ -63,23 +60,9 @@ printf '%s\n' "$effective_mode" > "$EFFECTIVE_MODE.tmp" || exit 1
 chmod 0644 "$EFFECTIVE_MODE.tmp"
 mv -f "$EFFECTIVE_MODE.tmp" "$EFFECTIVE_MODE" || exit 1
 
-if ! awk '
-    /^[[:space:]]*($|#)/ {next}
-    /^mode=[0-9]+$/ {mode++; next}
-    /^rt=[01]$/ {rt++; next}
-    /^opt=0x[0-9A-Fa-f]+$/ {opt++; next}
-    {bad=1}
-    END {exit !(bad == 0 && mode == 1 && rt == 1 && opt == 1)}
-' "$ASOUL_CONFIG" 2>/dev/null; then
-    cp "$SYSTEM_ASOUL" "$ASOUL_CONFIG.tmp" || exit 1
-    chmod 0644 "$ASOUL_CONFIG.tmp"
-    mv -f "$ASOUL_CONFIG.tmp" "$ASOUL_CONFIG" || exit 1
-fi
-
 chmod 0644 "$UPERF_DIR/uperf.json" "$GLOBAL_MODE" "$EFFECTIVE_MODE" \
-    "$PERAPP" "$ASOUL_CONFIG"
+    "$PERAPP"
 restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
-restorecon /data/vendor/asopt.conf >/dev/null 2>&1 || true
 
 # system_server consumes these Settings values through its existing observers.
 # Publish once during boot/restart preparation; no resident health publisher exists.

@@ -38,7 +38,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android platform
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "build-tools;36.0.0" "ndk;27.2.12479018"
 
       - name: Test Uperf process-lifetime supervisor
         shell: bash
@@ -86,7 +86,6 @@ jobs:
           python3 -m py_compile scripts/build/PatchAsoulOptConfigPath.py
           python3 -m py_compile scripts/build/VerifiedContentCache.py
           python3 tests/cache/TestVerifiedContentCache.py
-          python3 scripts/build/PatchAsoulOptConfigPath.py payload/system/bin/AsoulOpt
           bash -n payload/system/bin/zui_controld
           bash -n payload/system/bin/zui_uperf_service
           bash -n payload/system/etc/zui_control/zui_uperf_crash_gate.sh
@@ -108,7 +107,10 @@ jobs:
           python3 -m json.tool payload/system/etc/zui_control/uperf-sm8650.json >/dev/null
           python3 tests/zuiopt/test_rule_pack.py
           python3 tests/zuiopt/TestProductionContracts.py
-          bash -n payload/system/etc/zuiopt/boot_owner.sh
+          python3 tests/zuiopt/TestTerminalContracts.py
+          bash -n payload/system/etc/zuiopt/zuiopt_boot_state.sh
+          bash -n payload/system/etc/zuiopt/zuiopt_legacy_migration.sh
+          sudo python3 tests/zuiopt/TestSingleOwnerMigration.py
           bash -n payload/system/etc/zuiopt/crash_gate.sh
 
       - name: Test and build ZUIopt production integration
@@ -232,6 +234,29 @@ jobs:
       - name: Test app
         run: gradle -p . :app:testDebugUnitTest :app:lintDebug
 
+      - name: Compile exact services extension and test scheduler health
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/zuiopt/TestSchedulerHealth.py
+          python3 - <<'PY'
+          import os, pathlib, sys
+          sys.path.insert(0, 'scripts/build')
+          from PatchZuiControlFramework import compile_sources
+          repo = pathlib.Path.cwd()
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'terminal-framework'
+          out.mkdir()
+          compile_sources(repo, repo, out, repo/'framework_patch/src/services', 'classes4.dex', pathlib.Path(os.environ['ANDROID_SDK_ROOT']))
+          PY
+          sha256sum "$RUNNER_TEMP/terminal-framework/classes4.dex"
+
+      - name: Upload exact services extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: zui-control-framework-gate
+          path: ${{ runner.temp }}/terminal-framework/classes4.dex
+          if-no-files-found: error
+
       - name: Build release APK
         run: |
           gradle -p . :app:assembleRelease \
@@ -250,9 +275,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV44 payload/system/priv-app/ZuiControlV45 payload/system/priv-app/ZuiControlV46
           rm -rf payload/system/priv-app/ZuiControlV47 payload/system/priv-app/ZuiControlV48
           rm -rf payload/system/priv-app/ZuiControlV49 payload/system/priv-app/ZuiControlV50
-          mkdir -p payload/system/priv-app/ZuiControlV51
+          rm -rf payload/system/priv-app/ZuiControlV51
+          mkdir -p payload/system/priv-app/ZuiControlV52
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV51/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV52/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

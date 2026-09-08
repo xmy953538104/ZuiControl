@@ -3,7 +3,6 @@
 DATA_ROOT=/data/vendor/zui_control
 CONTROL_DIR=$DATA_ROOT/zuicontrol
 UPERF_DIR=$DATA_ROOT/uperf
-ASOUL_DIR=$DATA_ROOT/asoul
 LOG_DIR=$DATA_ROOT/log
 
 LOG_FILE=$LOG_DIR/controld.log
@@ -14,10 +13,8 @@ ACTIVE_REQUEST_CLAIM=$CONTROL_DIR/active_request_claim
 UPERF_MODE=$UPERF_DIR/cur_powermode.txt
 UPERF_EFFECTIVE_MODE=$UPERF_DIR/effective_powermode.txt
 UPERF_PERAPP=$UPERF_DIR/perapp_powermode.txt
-ASOUL_CONFIG=$ASOUL_DIR/asopt.conf
 
 PROP_SCHEDULER=zui_control.scheduler
-PROP_ASOUL=zui_control.asoul
 
 REQ_TEXT_KEY=zui_control_request_text
 REQUEST_ACK_KEY=zui_control_request_ack
@@ -225,43 +222,24 @@ uperf_is_healthy() {
 }
 
 restart_scheduler() {
-    if [ "$(getprop ro.zui_control.task_owner)" = ZUIOPT ] &&
-        [ "$(getprop sys.zui_control.zuiopt_failed)" = 1 ]; then
-        REQUEST_RESULT_DETAIL=zuiopt_fail_safe_next_boot_only
-        return 1
-    fi
     publish_request_progress restarting_scheduler
     trigger_init_action "$PROP_SCHEDULER" restart || return 1
     tries=20
     while [ "$tries" -gt 0 ]; do
         sleep 1
-        task_process=AsoulOpt
-        [ "$(getprop ro.zui_control.task_owner)" != ZUIOPT ] || task_process=ZUIopt
-        if uperf_is_healthy && [ -n "$(pidof "$task_process" 2>/dev/null)" ]; then
-            REQUEST_RESULT_DETAIL="uperf=running;task=$task_process"
+        task_ready=0
+        if [ "$(getprop sys.zui_control.zuiopt_failed)" = 1 ]; then
+            [ "$(getprop init.svc.zui_zuiopt)" != stopped ] || task_ready=1
+        else
+            [ "$(getprop init.svc.zui_zuiopt)" != running ] || task_ready=1
+        fi
+        if uperf_is_healthy && [ "$task_ready" = 1 ]; then
+            REQUEST_RESULT_DETAIL="uperf=running;thread_manager=ZUIOPT;fail_safe=$(getprop sys.zui_control.zuiopt_failed)"
             return 0
         fi
         tries=$((tries - 1))
     done
     return 1
-}
-
-start_asoul() {
-    if [ "$(getprop ro.zui_control.task_owner)" = ZUIOPT ]; then
-        REQUEST_RESULT_DETAIL=owner_change_requires_reboot
-        return 1
-    fi
-    trigger_init_action "$PROP_ASOUL" start || return 1
-    sleep 1
-    [ -n "$(pidof AsoulOpt 2>/dev/null)" ] || return 1
-    REQUEST_RESULT_DETAIL="asoul=running;mode=0;rt=0"
-}
-
-stop_asoul() {
-    trigger_init_action "$PROP_ASOUL" stop || return 1
-    sleep 1
-    [ -z "$(pidof AsoulOpt 2>/dev/null)" ] || return 1
-    REQUEST_RESULT_DETAIL="asoul=stopped"
 }
 
 export_logs() {
@@ -282,8 +260,9 @@ $(cat "$UPERF_EFFECTIVE_MODE" 2>/dev/null)
 [Uperf 自定义应用]
 $(cat "$UPERF_PERAPP" 2>/dev/null)
 
-[A-SOUL 配置]
-$(cat "$ASOUL_CONFIG" 2>/dev/null)
+[ZUIopt]
+zuioptServiceState=$(getprop init.svc.zui_zuiopt)
+zuioptFailSafe=$(getprop sys.zui_control.zuiopt_failed)
 
 [按需命令日志末尾]
 $(tail -n 120 "$LOG_FILE" 2>/dev/null)
@@ -441,10 +420,8 @@ handle_command() {
             ;;
         remove_uperf_app) remove_uperf_app_mode "$pkg" ;;
         restart_scheduler) restart_scheduler ;;
-        start_asoul) start_asoul ;;
-        stop_asoul) stop_asoul ;;
         export_logs) export_logs ;;
-        zo_state|zo_owner|zo_next|zo_read|zo_begin|zo_chunk|zo_commit|zo_abort|zo_enable|zo_disable|zo_rollback)
+        zo_state|zo_reset|zo_read|zo_begin|zo_chunk|zo_commit|zo_abort|zo_enable|zo_disable|zo_rollback)
             zuiopt_command "$cmd" "$pkg" "$mode"
             ;;
         *) REQUEST_RESULT_DETAIL=unknown_command; return 1 ;;
@@ -462,12 +439,20 @@ zuiopt_command() {
         return 1
     }
     case "$zo_action" in
-        state|owner|next)
+        state)
             [ "${#zo_reply}" -le 4096 ] || return 1
+            zo_service="$(getprop init.svc.zui_zuiopt)"
+            zo_failed="$(getprop sys.zui_control.zuiopt_failed)"
+            zo_state=INACTIVE_OR_UNHEALTHY
+            if [ "$zo_failed:$zo_service" = 1:stopped ]; then
+                zo_state=ANDROID_DEFAULT_FAILSAFE
+            elif [ "$zo_failed:$zo_service" = 0:running ]; then
+                zo_state=ZUIOPT_ACTIVE
+            fi
             zo_reply="$zo_reply
-current_owner=$(getprop ro.zui_control.task_owner)
-service=$(getprop init.svc.zui_zuiopt)
-fail_safe=$(getprop sys.zui_control.zuiopt_failed)"
+threadManagerState=$zo_state
+service=$zo_service
+fail_safe=$zo_failed"
             settings_put_quiet zui_control_zuiopt_state "$zo_reply" || {
                 REQUEST_RESULT_DETAIL=zuiopt_committed_state_publication_failed
                 return 1
@@ -529,11 +514,11 @@ process_settings_request() {
 }
 
 init_dirs() {
-    mkdir -p "$CONTROL_DIR" "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR" || return 1
+    mkdir -p "$CONTROL_DIR" "$UPERF_DIR" "$LOG_DIR" || return 1
     chown 0:0 "$DATA_ROOT" "$CONTROL_DIR" 2>/dev/null || return 1
     chmod 0755 "$DATA_ROOT" 2>/dev/null || return 1
     chmod 0700 "$CONTROL_DIR" 2>/dev/null || return 1
-    chmod 0775 "$UPERF_DIR" "$ASOUL_DIR" "$LOG_DIR" 2>/dev/null || return 1
+    chmod 0775 "$UPERF_DIR" "$LOG_DIR" 2>/dev/null || return 1
     restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
 }
 

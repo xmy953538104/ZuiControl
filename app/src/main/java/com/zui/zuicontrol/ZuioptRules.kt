@@ -41,9 +41,10 @@ object ZuioptRules {
         }
 
     fun command(context: Context, action: String, key: String = "", value: String = "") {
-        require(action in setOf("state", "owner", "next", "read", "begin", "chunk", "commit", "abort", "enable", "disable", "rollback"))
+        require(action in setOf("state", "reset", "read", "begin", "chunk", "commit", "abort", "enable", "disable", "rollback"))
         require(key.length <= 128 && value.length <= 10924 && '|' !in key && '|' !in value)
-        val id = ZuiControlRequest.send(context, "zo_$action", pkg = key, mode = value)
+        val command = if (action == "reset") ZuiControlContract.CMD_RESET_ZUIOPT_FAILSAFE else "zo_$action"
+        val id = ZuiControlRequest.send(context, command, pkg = key, mode = value)
         val ack = ZuiControlRequest.awaitTerminalAck(context, id)
         check(ack.succeeded) { "规则操作未完成：${ack.detail}；请刷新确认状态" }
     }
