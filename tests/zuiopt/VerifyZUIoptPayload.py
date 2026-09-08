@@ -1,6 +1,11 @@
 """Verify reverse-extracted artifacts against explicit CI/source/CIL intended identities."""
 from pathlib import Path,PurePosixPath
-import argparse,hashlib,json,re
+import argparse,hashlib,json,re,sys
+
+# The pinned Windows embeddable interpreter omits the script directory from sys.path.
+# Resolve only our explicit source sibling, without changing the immutable interpreter.
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from RuntimeAsoulAudit import audit_system
 
 REQUIRED={
  '/system/bin/ZUIopt','/system/bin/zui_controld',
@@ -29,7 +34,6 @@ def verify(system,manifest_path,contexts,fs_config):
     assert sha(system/'framework/framework.jar')==GOLDEN['framework.jar']
     assert sha(system/'framework/services.jar')!=GOLDEN['services.jar']
     assert manifest['services_changed'] is True
-    from RuntimeAsoulAudit import audit_system
     absence=audit_system(system)
     binary=(system/'bin/ZUIopt').read_bytes()
     for token in (b'--selftest',b'--check-config',b'/data/local/tmp',b'/data/adb',b'sched_setscheduler',b'/proc/sys/walt',b'/sys/class/kgsl'):

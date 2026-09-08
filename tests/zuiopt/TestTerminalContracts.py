@@ -3,6 +3,8 @@ from pathlib import Path
 import hashlib
 import json
 import re
+import subprocess
+import sys
 import unittest
 from RuntimeAsoulAudit import audit_system
 
@@ -11,6 +13,11 @@ def read(name): return (ROOT/name).read_text(encoding='utf8')
 
 
 class TerminalContracts(unittest.TestCase):
+    def test_reverse_verifier_loads_sibling_in_isolated_python(self):
+        result=subprocess.run([sys.executable,'-I',str(ROOT/'tests/zuiopt/VerifyZUIoptPayload.py'),'--help'],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('--system-root',result.stdout)
+
     def test_final_verifier_literals_match_current_payload_and_health(self):
         # Exercise actual verifier assertions, not a second hand-maintained owner list.
         verifier=read('scripts/build/VerifyZuiControlFlashPackage.ps1')
