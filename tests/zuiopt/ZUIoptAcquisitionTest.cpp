@@ -88,7 +88,7 @@ ssize_t __wrap_write(int fd,const void* bytes,size_t size){
         if(path.substr(path.size()-6)=="/tasks"){
             int tid=std::stoi(std::string(static_cast<const char*>(bytes),size));
             if(!tasks.count(tid)){errno=ESRCH;return -1;}
-            moves++;if(!stuck)tasks.at(tid).group=path.substr(11,path.size()-17);
+            moves++;if(!stuck||tid<44)tasks.at(tid).group=path.substr(11,path.size()-17);
         }
         return static_cast<ssize_t>(size);
     }
@@ -166,7 +166,8 @@ struct AcquisitionFixture:RuntimeFixture {
     void empty(){require(journal->entries.empty()&&journal->leases.empty()&&!p().managed&&!p().acquiring,"release owner leak");}
 };
 template<class F> void expectFailure(F action,const std::string& message){
-    bool failed=false;try{action();}catch(const std::exception& e){failed=std::string(e.what()).find(message)!=std::string::npos;}require(failed,"strict guard missing");
+    std::string observed="NO_EXCEPTION";try{action();}catch(const std::exception& e){observed=e.what();}
+    if(observed.find(message)==observed.npos)throw std::runtime_error("strict guard expected="+message+" observed="+observed);
 }
 void matrix(){
     // A/B/C/L/M/N: both sources or either alone, baseline refreshed on local deadlines.
@@ -228,7 +229,8 @@ void recovery(){
         require(f.journal->inherited(44,record)&&record.savedMask==255,"postcommit late child coverage");
         auto saved=f.journal->entries;f.journal->entries.clear();f.journal->leases.clear();f.journal->load();require(f.journal->entries.size()==saved.size(),"V2 durable reload");
         f.background();f.empty();for(auto& [_,t]:Kernel::tasks)require(t.group=="/top-app"&&t.mask==255,"strict original restore changed");}
-    {AcquisitionFixture f;f.start(2);f.place();Kernel::stuck=true;expectFailure([&]{f.background();},"release busy process");Kernel::stuck=false;f.background();f.empty();}
+    {AcquisitionFixture f;f.start(2);f.place();Kernel::tasks[44]={f.p().ownershipFloor+1,"/ZUIopt/7c",124};Kernel::stuck=true;
+        expectFailure([&]{f.background();},"release busy process");Kernel::stuck=false;f.background();f.empty();}
     {AcquisitionFixture f;f.start(2);f.place();auto r=f.journal->entries.at(42);f.journal->entries.erase(42);expectFailure([&]{f.owner->prepare(f.p());},"durable owner identity");f.journal->entries[42]=r;
         auto lease=f.journal->leases.at(42);f.journal->leases.at(42).processStart++;expectFailure([&]{f.owner->prepare(f.p());},"lease identity mismatch");f.journal->leases[42]=lease;f.background();}
     {AcquisitionFixture f;Kernel::tasks.at(43).group="/ZUIopt/7c";expectFailure([&]{f.start(2);},"initial Android owner unavailable");require(!Kernel::moves&&!Kernel::affinities&&f.journal->leases.empty(),"unknown acquisition wrote ownership");}
