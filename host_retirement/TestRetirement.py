@@ -84,7 +84,8 @@ class FixtureDevice(R.Device):
         return b'fixture-backup',rows
     def service_running(self):return self.running
     def product_toggle(self,enable):self.events.append(('authenticated_ui',enable));self.running=enable
-    def released(self):R.need(not self.running,'mock tasks still managed')
+    def retired_tasks(self):return []
+    def released(self,pre_stop=()):R.need(not self.running,'mock tasks still managed')
 
 @unittest.skipUnless(os.name=='posix' and os.geteuid()==0,'Linux root UID/mode fixtures require CI')
 class Transaction(unittest.TestCase):
@@ -121,6 +122,13 @@ class Transaction(unittest.TestCase):
         with self.assertRaises(RuntimeError):R.retire(self.device,self.transaction,approved)
         self.assertEqual(self.device.inventory(),before);self.assertTrue(self.device.running)
         self.assertTrue(list(self.transaction.glob('rollback_*.json')))
+    def test_release_failure_rolls_back(self):
+        before=self.device.inventory();rules=self.device.rules()[1];approved=self.review()
+        def fail(pre_stop=()):raise RuntimeError('simulated direct cgroup failure')
+        self.device.released=fail
+        with self.assertRaises(RuntimeError):R.retire(self.device,self.transaction,approved)
+        self.assertEqual(self.device.inventory(),before);self.assertEqual(self.device.rules()[1],rules)
+        self.assertTrue(self.device.running);self.assertTrue(list(self.transaction.glob('rollback_*.json')))
     def test_failure_after_each_mutation_restores_exact_objects(self):
         p=self.device.path(R.DIRECTORY+'/asopt.conf.tmp');p.write_bytes(CONFIG);os.chown(p,0,2000);p.chmod(0o644)
         for boundary in range(5):
@@ -173,4 +181,5 @@ class Transaction(unittest.TestCase):
         p=self.device.path(R.DIRECTORY+'/asopt.conf.tmp');p.write_bytes(CONFIG);os.chown(p,0,2000);p.chmod(0o644)
         self.test_exact_delete_and_rollback()
 
+from TestRepair import ReleaseProof, CommandReceipts, UiNavigation
 if __name__=='__main__':unittest.main(verbosity=2)

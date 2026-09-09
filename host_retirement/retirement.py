@@ -22,6 +22,28 @@ DIRECTORY='/data/vendor/zui_control/asoul'
 SELECTOR='/data/vendor/zui_control/zuiopt/next_owner.v1'
 CONFIG_SHA='69a73f9bedb3a5f3e07d8f74d3ab9d18f8ab97ff48e02c74a378333fa3b1b75e'
 TARGETS=[LINK,DIRECTORY,DIRECTORY+'/asopt.conf',DIRECTORY+'/asopt.conf.tmp',SELECTOR]
+CPUSET='/dev/cpuset/asopt'
+RELEASE_TIMEOUT=15
+# One find of the retired hierarchy, shell-builtin reads; no process/task scan.
+CPUSET_READ='''
+test ! -L /dev/cpuset && test -d /dev/cpuset
+test ! -L /dev/cpuset/asopt
+if [ ! -e /dev/cpuset/asopt ]; then
+ printf 'HIERARCHY=ABSENT\\n'
+else
+ test -d /dev/cpuset/asopt
+ dirs=$(find /dev/cpuset/asopt -type d) || exit 21
+ test -n "$dirs"
+ for dir in $dirs; do
+  test ! -L "$dir" && test ! -L "$dir/tasks" && test -f "$dir/tasks" && test -r "$dir/tasks"
+  printf 'TASK_FILE=%s/tasks\\n' "$dir"
+  while IFS= read -r tid || [ -n "$tid" ]; do
+   case "$tid" in ''|*[!0-9]*) exit 22 ;; esac
+   printf 'TID=%s\\n' "$tid"
+  done < "$dir/tasks"
+ done
+fi
+'''
 ANCESTORS={'/data':'1000:1000:771','/data/vendor':'0:0:771','/data/vendor/zui_control':'0:0:755','/data/vendor/zui_control/zuiopt':'0:0:700'}
 PAYLOAD={
  '/system/bin/ZUIopt':'eef525863ff51a55575457f0e2913898156e8ce9dc6717842bc9875c58e24d8c',
@@ -37,6 +59,43 @@ def q(value):return shlex.quote(str(value))
 def persist(path,value):
     data=(json.dumps(value,ensure_ascii=False,sort_keys=True,indent=2)+'\n').encode()
     with path.open('xb') as f:f.write(data);f.flush();os.fsync(f.fileno())
+
+def parse_tasks(text):
+    files=[];tids=[];absent=False
+    for line in text.splitlines():
+        if line=='HIERARCHY=ABSENT':absent=True
+        elif line.startswith('TASK_FILE='):
+            path=line.split('=',1)[1]
+            need(re.fullmatch(r'/dev/cpuset/asopt(?:/[A-Za-z0-9_.-]+)*/tasks',path) is not None and '/..' not in path,'unexpected task file')
+            files.append(path)
+        elif line.startswith('TID='):
+            need(files and re.fullmatch(r'[1-9][0-9]*',line[4:]) is not None,'invalid task ID')
+            tids.append(int(line[4:]))
+        elif line.startswith(('SURVIVOR=','EXITED=')):continue
+        else:need(False,'unexpected cgroup output')
+    need((absent and not files and not tids) or (not absent and CPUSET+'/tasks' in files),'incomplete hierarchy proof')
+    need(len(files)==len(set(files)),'duplicate task file')
+    return sorted(set(tids))
+
+def ui_bounds(node):
+    m=re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',node.get('bounds',''))
+    need(m is not None,'button bounds')
+    x1,y1,x2,y2=map(int,m.groups());need(x2>x1 and y2>y1,'positive bounds')
+    return x1,y1,x2,y2
+
+def assert_ui_package(root):
+    need(any(n.get('package')=='com.zui.zuicontrol' for n in root.iter('node')),'UI_NAVIGATION_FAIL: wrong package')
+
+def ui_button(root,label,optional=False):
+    nodes=[n for n in root.iter('node') if n.get('text')==label]
+    if not nodes and optional:return None
+    need(len(nodes)==1,'exact unique UI label required')
+    node=nodes[0];parents={c:p for p in root.iter() for c in p}
+    need(node.get('package')=='com.zui.zuicontrol','UI target wrong package')
+    while node.get('clickable')!='true' and node in parents:node=parents[node]
+    need(node.get('package')=='com.zui.zuicontrol' and node.get('clickable')=='true' and node.get('enabled')=='true','button not enabled')
+    x1,y1,x2,y2=ui_bounds(node)
+    return (x1+x2)//2,(y1+y2)//2
 
 def validate(rows):
     need(set(rows)==set(TARGETS),'exact inventory target set')
@@ -64,17 +123,30 @@ def validate(rows):
 
 class Device:
     def __init__(self,adb,transaction):self.adb=str(adb);self.transaction=transaction;self.sequence=0
-    def call(self,args):
+    def call(self,args,timeout=60):
         self.sequence+=1
-        result=subprocess.run([self.adb,'-s',SERIAL,*args],capture_output=True,timeout=60)
-        persist(self.transaction/('%05d-command.json'%self.sequence),dict(argv=args,returncode=result.returncode,stdout_b64=base64.b64encode(result.stdout).decode(),stderr_b64=base64.b64encode(result.stderr).decode()))
+        argv=[self.adb,'-s',SERIAL,*args];started=time.monotonic()
+        stem=self.transaction/('%05d-command'%self.sequence)
+        info=dict(sequence=self.sequence,argv=argv,timeout=timeout,host_monotonic_start=started)
+        persist(Path(str(stem)+'-start.json'),info)
+        try:result=subprocess.run(argv,capture_output=True,timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            persist(Path(str(stem)+'-timeout.json'),dict(info,elapsed=time.monotonic()-started,
+                partial_stdout_b64=base64.b64encode(error.stdout or b'').decode(),
+                partial_stderr_b64=base64.b64encode(error.stderr or b'').decode()))
+            raise
+        except OSError as error:
+            persist(Path(str(stem)+'-error.json'),dict(info,elapsed=time.monotonic()-started,error=str(error)))
+            raise
+        persist(Path(str(stem)+'-result.json'),dict(info,returncode=result.returncode,elapsed=time.monotonic()-started,
+            stdout_b64=base64.b64encode(result.stdout).decode(),stderr_b64=base64.b64encode(result.stderr).decode()))
         need(result.returncode==0,'ADB command failed')
         return result.stdout
-    def root(self,command):
+    def root(self,command,timeout=60):
         # su may return0 for a failed child: require an unpredictable child-RC trailer.
         marker='ZRET_'+uuid.uuid4().hex
-        wrapped='( set -eu; '+command+' ); zret_rc=$?; printf "\\n'+marker+'=%s\\n" "$zret_rc"'
-        raw=self.call(['exec-out','su','-c',shlex.join(['/system/bin/sh','-c',wrapped])]).decode('utf8').replace('\r\n','\n')
+        wrapped='( set -eu; '+command+'\n); zret_rc=$?; printf "\\n'+marker+'=%s\\n" "$zret_rc"'
+        raw=self.call(['exec-out','su','-c',shlex.join(['/system/bin/sh','-c',wrapped])],timeout=timeout).decode('utf8').replace('\r\n','\n')
         tail='\n'+marker+'=0\n'
         need(raw.endswith(tail),'root child failed or incomplete output')
         return raw[:-len(tail)]
@@ -125,32 +197,70 @@ class Device:
         need('zuiopt/effective.conf' in state,'effective rule missing')
         return data,state
     def service_running(self):return bool(self.root('pidof AsoulOpt || true').strip())
-    def released(self):
-        need(not self.service_running(),'predecessor process still present')
-        output=self.root("for f in /proc/[0-9]*/task/[0-9]*/cpuset; do [ -f \"$f\" ] || continue; value=$(cat \"$f\" 2>/dev/null) || continue; case \"$value\" in /asopt|/asopt/*) printf '%s %s\\n' \"$f\" \"$value\" ;; esac; done")
-        need(not output.strip(),'owned tasks not released; rollback required')
-    def product_toggle(self,enable):
-        # User opens the real Threads page. Only a fresh observed signed-App button is tapped.
-        wanted='启用 AsoulOpt' if enable else '停止 AsoulOpt'
-        print('Open ZuiControl Threads page with '+wanted+' visible. No private command bypass is supported.',flush=True)
-        remote='/data/local/tmp/zuiopt-retirement-ui-'+uuid.uuid4().hex+'.xml'
+    def retired_tasks(self):
+        return parse_tasks(self.root(CPUSET_READ,timeout=RELEASE_TIMEOUT))
+    def released(self,pre_stop=()):
+        started=time.monotonic()
+        need(len(pre_stop)<=65536 and all(type(t) is int and t>0 for t in pre_stop),'invalid bounded TID set')
+        # A single command deadline covers process/init checks, hierarchy and survivors.
+        command='test -z "$(pidof AsoulOpt || true)"; test "$(getprop init.svc.zui_asoulopt)" = stopped\n'+CPUSET_READ
+        if pre_stop:
+            command+='for tid in '+ ' '.join(str(t) for t in sorted(set(pre_stop)))+'''; do
+ if [ ! -d "/proc/$tid" ]; then printf 'EXITED=%s\\n' "$tid"; continue; fi
+ group=''
+ if ! IFS= read -r group < "/proc/$tid/cpuset"; then
+  test ! -d "/proc/$tid" || exit 23
+  printf 'EXITED=%s\\n' "$tid"; continue
+ fi
+ case "$group" in /asopt*) exit 24 ;; /*) ;; *) exit 25 ;; esac
+ printf 'SURVIVOR=%s|%s\\n' "$tid" "$group"
+done
+'''
+        receipt=dict(architecture='DIRECT_RETIRED_CPUSET',pre_stop_tids=sorted(set(pre_stop)),status='FAIL')
         try:
-            self.root('uiautomator dump '+q(remote))
-            xml=self.root('cat '+q(remote))
-            root=ET.fromstring(xml);parents={child:parent for parent in root.iter() for child in parent}
-            nodes=[n for n in root.iter('node') if n.get('text')==wanted and n.get('package')=='com.zui.zuicontrol']
-            need(len(nodes)==1,'exact authenticated App button not visible')
-            node=nodes[0]
-            while node.get('clickable')!='true' and node in parents:node=parents[node]
-            need(node.get('clickable')=='true' and node.get('enabled')=='true','button not enabled')
-            m=re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',node.get('bounds',''));need(m is not None,'button bounds')
-            x1,y1,x2,y2=map(int,m.groups());need(x2>x1 and y2>y1,'positive bounds')
-            self.call(['shell','input','tap',str((x1+x2)//2),str((y1+y2)//2)])
-            for _ in range(30):
-                if self.service_running()==enable:return
-                time.sleep(1)
-            raise RuntimeError('product action did not reach requested state')
-        finally:self.root('test ! -L '+q(remote)+' && rm -f '+q(remote))
+            output=self.root(command,timeout=RELEASE_TIMEOUT)
+            need(not parse_tasks(output),'ASOPT_TASK_FOUND; rollback required')
+            receipt.update(status='PASS',retired_cpuset_tasks=0,output=output)
+        finally:
+            receipt['duration_ms']=(time.monotonic()-started)*1000
+            persist(self.transaction/('release-proof-'+uuid.uuid4().hex+'.json'),receipt)
+        print('RELEASE_PROOF_DURATION_MS='+str(round(receipt['duration_ms'],3)),flush=True)
+        return receipt
+    def ui_xml(self):
+        raw=self.call(['exec-out','uiautomator','dump','/dev/tty'],timeout=15).decode('utf8')
+        begin=raw.find('<?xml');end=raw.rfind('</hierarchy>')
+        need(begin>=0 and end>=begin,'UI XML incomplete')
+        return ET.fromstring(raw[begin:end+12])
+    def product_button(self,wanted,max_scrolls=8):
+        self.call(['shell','input','keyevent','KEYCODE_WAKEUP'])
+        self.call(['shell','am','start','-n','com.zui.zuicontrol/.MainActivity'])
+        on_threads_page=False;scrolls=0
+        while True:
+            root=self.ui_xml();assert_ui_package(root)
+            point=ui_button(root,wanted,optional=True)
+            if point is not None:
+                self.call(['shell','input','tap',*map(str,point)])
+                return
+            if any(n.get('text')=='Task Scheduler' for n in root.iter('node')):
+                on_threads_page=True
+            if not on_threads_page:
+                self.call(['shell','input','tap',*map(str,ui_button(root,'线程'))])
+                on_threads_page=True
+                continue
+            need(scrolls<max_scrolls,'UI_NAVIGATION_FAIL: bounded scroll exhausted')
+            containers=[n for n in root.iter('node') if n.get('package')=='com.zui.zuicontrol' and n.get('scrollable')=='true']
+            need(len(containers)==1,'UI_NAVIGATION_FAIL: unique scroll container required')
+            x1,y1,x2,y2=ui_bounds(containers[0])
+            x=(x1+x2)//2
+            self.call(['shell','input','swipe',str(x),str(y1+3*(y2-y1)//4),str(x),str(y1+(y2-y1)//4),'400'])
+            scrolls+=1
+    def product_toggle(self,enable):
+        wanted='启用 AsoulOpt' if enable else '停止 AsoulOpt'
+        self.product_button(wanted)
+        for _ in range(30):
+            if self.service_running()==enable:return
+            time.sleep(1)
+        raise RuntimeError('product action did not reach requested state')
     def delete(self,rows):
         # Existing shell-writable directory is frozen after durable host backup.
         self.ancestors()
@@ -201,12 +311,14 @@ def retire(device,transaction,authorization):
     old=json.loads((transaction/'inventory.json').read_text());need(old==backup,'inventory changed since review')
     persist(transaction/'mutation_started.json',dict(backup_sha256=digest((transaction/'backup.json').read_bytes()),stage='BEFORE_PRODUCT_STOP'))
     try:
+        pre_stop=device.retired_tasks()
+        persist(transaction/'pre_stop_tasks.json',dict(tids=pre_stop))
         if running:device.product_toggle(False)
-        device.released();need(device.rules()[1]==rules,'RuleStore changed before retirement')
+        device.released(pre_stop);need(device.rules()[1]==rules,'RuleStore changed before retirement')
         device.delete(rows)
         need(all(v is None for v in device.inventory().values()),'retired paths remain')
         need(device.rules()[1]==rules,'RuleStore changed during retirement')
-        device.released()
+        device.released(pre_stop)
         persist(transaction/'ready_for_flash.json',dict(status='READY_FOR_FLASH',identity=identity,rule_semantic_diff=0,backup_sha256=digest((transaction/'backup.json').read_bytes())))
     except BaseException:
         rollback(device,transaction)
@@ -229,7 +341,7 @@ def main():
     else:need(a.execute and a.transaction.is_dir(),'mutations require --execute and existing transaction')
     device=Device(a.adb,a.transaction)
     # Continue unique append-only command receipt numbering on a later invocation.
-    device.sequence=max([int(f.name.split('-')[0]) for f in a.transaction.glob('*-command.json')]+[0])
+    device.sequence=max([int(f.name.split('-')[0]) for f in a.transaction.glob('*-command*.json')]+[0])
     if a.stage=='inventory':
         identity=device.identity();rows=device.inventory();archive,rules=device.rules()
         persist(a.transaction/'inventory.json',dict(identity=identity,paths=rows,rules=rules,was_running=device.service_running()))
