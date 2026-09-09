@@ -250,11 +250,13 @@ void recovery(){
 }
 void stress(){
     std::mt19937 random(0x55ba5e);constexpr int windows[]={0,20,50,80,120,200,400,700};int deferrals=0;
-    AcquisitionFixture f;
+    AcquisitionFixture f;std::set<unsigned> subsets;std::set<int> observedWindows;
+    for(int tid=44;tid<=50;tid++)Kernel::tasks[tid]={10,"/top-app",255};
     for(int i=0;i<512;i++){
         int base=i*2000,visible=windows[random()%8];Kernel::time=base;f.app.state=2;f.app.flags=4;
+        unsigned subset=1+random()%255;observedWindows.insert(visible);
         for(auto& [_,t]:Kernel::tasks){t.group="/top-app";t.mask=255;}
-        if(visible){Kernel::tasks.at(43).group="/background";Kernel::tasks.at(43).mask=67;deferrals++;}
+        if(visible){for(int tid=43;tid<=50;tid++)if(subset&(1u<<(tid-43))){Kernel::tasks.at(tid).group="/background";Kernel::tasks.at(tid).mask=67;}subsets.insert(subset);deferrals++;}
         f.initialCommits=f.journal->commits;Kernel::moves=Kernel::affinities=0;
         if(i%3!=1)f.primary();if(i%3!=2)f.scene.accept(i+10,base);
         for(int dt:{0,100,250,500,750}){
@@ -267,7 +269,8 @@ void stress(){
     }
     auto proc=Kernel::reads,queries=f.snapshotQueries;auto commits=f.journal->commits;for(int t=2000000;t<2001000;t++)f.tick(t);
     require(Kernel::reads==proc&&f.snapshotQueries==queries&&f.journal->commits==commits&&!f.p().next&&f.scene.timeout(2001000)==-1,"idle baseline polling/timer");
-    require(deferrals>400&&f.blockerAttempts==0,"stress coverage/false blocker");
+    require(deferrals>400&&subsets.size()>150&&observedWindows.size()==8&&f.blockerAttempts==0,"stress coverage/false blocker");
+    std::cout<<"RANDOM_HETEROGENEOUS_SUBSETS="<<subsets.size()<<";STRESS_THREAD_COUNT=9;WINDOWS_COVERED="<<observedWindows.size()<<"\n";
     std::cout<<"TRANSIENT_STRESS_COUNT=512;DEFERRED="<<deferrals<<";TRANSIENT_STRESS_FATALS=0;UNSAFE_WRITES=0;OWNER_LEAK=0;STALE_PID=0;MANAGED_MISS=0;IDLE_ACQUISITION_TIMER=0\n";
 }
 int main(){try{require(getuid()==0,"isolated root fixture");matrix();recovery();stress();puts("ZUIOPT_BASELINE_NATIVE=PASS");return 0;}
