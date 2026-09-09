@@ -14,7 +14,7 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $project = Join-Path $root $ProjectDir
 $payload = Join-Path $root $PayloadDir
 $privAppDir = Join-Path $payload "system/priv-app"
-$apkOutDir = Join-Path $privAppDir "ZuiControlV54"
+$apkOutDir = Join-Path $privAppDir "ZuiControlV55"
 $legacyApkOutDir = Join-Path $privAppDir "ZuiControl"
 $previousApkOutDirs = @('ZuiControlV30', 'ZuiControlV31', 'ZuiControlV32', 'ZuiControlV33', 'ZuiControlV34', 'ZuiControlV35', 'ZuiControlV36', 'ZuiControlV37', 'ZuiControlV38', 'ZuiControlV39', 'ZuiControlV40', 'ZuiControlV41', 'ZuiControlV42', 'ZuiControlV43', 'ZuiControlV44', 'ZuiControlV45', 'ZuiControlV46', 'ZuiControlV47', 'ZuiControlV48') |
     ForEach-Object { Join-Path $privAppDir $_ }
@@ -22,6 +22,8 @@ $previousApkOutDirs += Join-Path $privAppDir 'ZuiControlV49'
 $previousApkOutDirs += Join-Path $privAppDir 'ZuiControlV50'
 $previousApkOutDirs += Join-Path $privAppDir 'ZuiControlV51'
 $previousApkOutDirs += Join-Path $privAppDir 'ZuiControlV52'
+$previousApkOutDirs += Join-Path $privAppDir 'ZuiControlV53'
+$previousApkOutDirs += Join-Path $privAppDir 'ZuiControlV54'
 
 if (-not (Test-Path $project)) {
     throw "Missing project directory: $project"

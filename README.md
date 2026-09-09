@@ -58,6 +58,8 @@ clang++ -std=c++17 -O1 -Wall -Wextra -Werror -I tests/zuiopt/fixtures/binder_ndk
 /tmp/zuiopt-binder-fixture
 clang++ -std=c++17 -O1 -Wall -Wextra -Werror -pthread -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptSceneTest.cpp -lz -ldl -Wl,--export-dynamic -o /tmp/zuiopt-scene-fixture
 sudo /tmp/zuiopt-scene-fixture
+clang++ -std=c++17 -O1 -Wall -Wextra -Werror -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptAcquisitionTest.cpp -lz -Wl,--wrap=open,--wrap=close,--wrap=write,--wrap=stat,--wrap=lstat,--wrap=access,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity -o /tmp/zuiopt-acquisition-fixture
+sudo /tmp/zuiopt-acquisition-fixture
 ```
 
 Stable host artifacts may be reused only through the verified content cache. Its
@@ -142,3 +144,17 @@ SEQ/ACK are system_server memory, not properties or files. Status shows
 `zuioptSceneSeq`, `zuioptSceneAck`, and `zuioptSceneSync=ok|pending`; pending alone
 does not change scheduler health. With no managed process or scene burst, the
 reactor blocks indefinitely. There is no watcher thread or idle polling timer.
+
+Acquisition is distinct from managed ownership: INACTIVE -> ACQUIRING_BASELINE
+-> MANAGED. Each pending request probes a fresh generation/UID-checked common
+Android cpuset/affinity baseline at 0/100/250/500/750ms. Pending probes perform
+no journal, placement or ownership writes. The successful pass commits the
+inheritance floor/lease and original task records durably before placement.
+Background, death and stale generation cancel pending work without release.
+Persistent heterogeneity stays Android-owned and records the bounded private
+`inheritance_baseline_unstable` blocker; duplicate foreground events cannot
+restart an exhausted window. A subsequent background/foreground transition can.
+The acquisition deadline is local to the reactor, independent of scene retries,
+and disappears when no acquisition is pending. Committed recovery/release stays
+strict. The acquisition fixture intercepts only synthetic proc/cpuset paths in
+its exclusive temporary tree; it never writes real host or device scheduling.

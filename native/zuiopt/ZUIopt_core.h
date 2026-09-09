@@ -200,9 +200,34 @@ struct Task {
 struct ProcessState {
     int pid=0,uid=0;std::string name,package;uint64_t generation=0;
     bool activity_foreground=false,alive=true,managed=false;int foreground_service_state=0;
+    // managed means a durable lease, never just a foreground acquisition request.
+    bool acquiring=false,acquireBlocked=false;int64_t acquireStarted=0;size_t acquireStep=0;
     int64_t activated=0,next=0;uint64_t ownershipFloor=0;size_t burst=0;std::string androidGroup;Mask androidMask=0;
     std::map<int,Task> tasks;
 };
+inline void beginAcquisition(ProcessState& p,int64_t time){
+    if(p.managed||p.acquiring||p.acquireBlocked)return;
+    p.acquiring=true;p.acquireStarted=time;p.acquireStep=0;p.next=time;
+}
+inline void discardAcquisition(ProcessState& p){
+    require(!p.managed,"discard committed ownership");
+    for(auto& [_,t]:p.tasks)require(!t.owned,"uncommitted owned task");
+    p.tasks.clear();p.acquiring=false;p.acquireStarted=0;p.acquireStep=0;p.next=0;
+    p.androidGroup.clear();p.androidMask=0;p.ownershipFloor=0;
+}
+enum class BaselineResult {STABLE,DEFER,STALE};
+template<class Runtime> void advanceAcquisition(ProcessState& p,int64_t time,Runtime& runtime){
+    static constexpr std::array<int,5> schedule={0,100,250,500,750};
+    if(!p.acquiring||p.next>time)return;
+    // No catch-up storm, and no attempt outside the original bounded window.
+    auto result=time>p.acquireStarted+schedule.back()?BaselineResult::DEFER:runtime.acquire(p);
+    if(result==BaselineResult::STABLE){require(p.managed&&!p.acquiring,"acquisition commit state");return;}
+    if(result==BaselineResult::STALE){runtime.release(p);p.alive=false;return;}
+    do{++p.acquireStep;}while(p.acquireStep<schedule.size()&&p.acquireStarted+schedule[p.acquireStep]<time);
+    if(p.acquireStep==schedule.size()){
+        runtime.release(p);p.acquireBlocked=true;runtime.baselineBlocked();
+    }else p.next=p.acquireStarted+schedule[p.acquireStep];
+}
 #ifndef ZUIOPT_PRODUCTION
 inline void selftest(){
     require(cpus("2-6")==0x7c&&cpus("7")==0x80,"CPU fixture");

@@ -50,17 +50,15 @@ public:
     }
     std::vector<Snapshot> activitySnapshot(){counters.snapshots++;return observer->snapshot();}
     void release(ProcessState& p){placement->release(p);}
+    BaselineResult acquire(ProcessState& p){
+        try{return placement->acquire(p);}
+        catch(const ProcError& error){if(!error.permission())throw;procBlocked(error);return BaselineResult::DEFER;}
+    }
+    void baselineBlocked(){blocked(RuntimeBlockerReason::INHERITANCE_BASELINE_UNSTABLE);}
     void activate(ProcessState& p){
         bool wanted=p.alive&&p.activity_foreground&&config.find(p.package);
-        if(!wanted){if(p.managed)placement->release(p);return;}
-        if(!p.managed){
-            p.androidGroup=group(p.pid);p.androidMask=affinity(p.pid);
-            require(normalGroup(p.androidGroup)&&p.androidMask,"initial Android owner unavailable");
-            p.managed=true;p.activated=now();p.next=now();p.burst=0;
-            double uptime=0;std::istringstream(read("/proc/uptime"))>>uptime;
-            p.ownershipFloor=static_cast<uint64_t>(uptime*sysconf(_SC_CLK_TCK));require(p.ownershipFloor>0,"ownership birth floor");
-            ZUIOPT_NOTE("ACTIVATE","pid="+std::to_string(p.pid)+" generation="+std::to_string(p.generation)+" package="+p.package);
-        }
+        if(!wanted){placement->release(p);return;}
+        beginAcquisition(p,now());
     }
     ProcessState* resolve(const Snapshot& s){
         Identity id;
@@ -90,11 +88,12 @@ public:
         for(int tid:tids){
             auto id=identity(p.pid,tid);if(!id.start)continue;live.insert(tid);auto& t=p.tasks[tid];bool fresh=t.generation!=id.start;
             if(fresh){t=Task{};t.generation=id.start;t.discovered=start;}
+            bool firstName=fresh||t.comm.empty();if(firstName)t.discovered=start;
             bool renameDue=(t.renameStage==0&&start-t.discovered>=1000)||(t.renameStage==1&&start-t.discovered>=3000)||(t.renameStage>=2&&start-t.renamed>=30000);
-            if(fresh||renameDue){
+            if(firstName||renameDue){
                 auto comm=trim(read("/proc/"+std::to_string(tid)+"/comm"));counters.comm++;if(comm.empty())continue;t.comm=comm;t.renamed=start;
-                if(!fresh)t.renameStage=std::min(2u,t.renameStage+1);
-                auto* r=classify(*profile,t.comm);ZUIOPT_NOTE(fresh?"DISCOVER":"RENAME_CHECK","pid="+std::to_string(p.pid)+" tid="+std::to_string(tid)+" birth_ticks="+std::to_string(t.generation)+" comm="+t.comm+" class="+(r?r->cls:"default"));
+                if(!firstName)t.renameStage=std::min(2u,t.renameStage+1);
+                auto* r=classify(*profile,t.comm);ZUIOPT_NOTE(firstName?"DISCOVER":"RENAME_CHECK","pid="+std::to_string(p.pid)+" tid="+std::to_string(tid)+" birth_ticks="+std::to_string(t.generation)+" comm="+t.comm+" class="+(r?r->cls:"default"));
             }
             if(auto* r=classify(*profile,t.comm)){
                 if(r->rank==0){selected[tid]=r;continue;}
@@ -135,7 +134,7 @@ public:
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::READY);bool stop=false;
         while(!stop){
             phase=StartupStage::EVENT_LOOP; // In-memory only; there are no steady-state receipt writes.
-            edges();require(!serviceDied,"activity service died: fail closed");for(auto& [_,p]:states)if(p.managed&&p.next<=now())scan(p);
+            edges();require(!serviceDied,"activity service died: fail closed");
             sceneBurst.accept(events.takeScene(),now());
             if(sceneBurst.timeout(now())==0){
                 auto seq=sceneBurst.sequence;auto snapshot=observer->snapshot();
@@ -144,14 +143,15 @@ public:
                     if(sceneBurst.complete(now())&&events.latestScene(seq))sceneObserver->ack(seq);
                 }
             }
-            int timeout=sceneBurst.timeout(now());for(auto& [_,p]:states)if(p.managed){int delay=static_cast<int>(std::max<int64_t>(0,p.next-now()));timeout=timeout<0?delay:std::min(timeout,delay);}
+            for(auto& [_,p]:states){advanceAcquisition(p,now(),*this);if(p.managed&&p.next<=now())scan(p);}
+            int timeout=sceneBurst.timeout(now());for(auto& [_,p]:states)if(p.managed||p.acquiring){int delay=static_cast<int>(std::max<int64_t>(0,p.next-now()));timeout=timeout<0?delay:std::min(timeout,delay);}
             pollfd fds[]={{eventFd,POLLIN,0},{signalFd,POLLIN,0}};int n=poll(fds,2,timeout);if(n<0&&errno==EINTR)continue;require(n>=0,"poll failed");counters.wakeups++;
             if(fds[0].revents&POLLIN){uint64_t v;ssize_t ignored=::read(eventFd,&v,sizeof(v));(void)ignored;}
             if(fds[1].revents&POLLIN){signalfd_siginfo s{};while(::read(signalFd,&s,sizeof(s))==sizeof(s)){
                 if(s.ssi_signo==SIGTERM||s.ssi_signo==SIGINT){stop=true;break;}if(s.ssi_signo==SIGUSR1)stats();
                 if(s.ssi_signo==SIGHUP){
                     Config next;bool valid=false;try{next=parseConfig(read(configPath),available);valid=true;}catch(const std::exception& e){ZUIOPT_NOTE("RELOAD_REJECTED",e.what());}
-                    if(valid){phase=StartupStage::RELOAD;for(auto& [_,p]:states)if(p.managed)placement->release(p);config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;reconcile(observer->snapshot());ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
+                    if(valid){phase=StartupStage::RELOAD;for(auto& [_,p]:states)placement->release(p);config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;reconcile(observer->snapshot());ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
                 }
             }}
         }

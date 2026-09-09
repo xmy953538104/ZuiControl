@@ -13,7 +13,7 @@ REQUIRED={
  '/system/etc/zuiopt/crash_gate.sh','/system/etc/init/zui_scheduler.rc',
  '/system/etc/selinux/plat_sepolicy.cil','/system/etc/selinux/plat_file_contexts',
  '/system/etc/selinux/plat_property_contexts','/system/framework/framework.jar',
- '/system/framework/services.jar','/system/priv-app/ZuiControlV54/ZuiControl.apk',
+ '/system/framework/services.jar','/system/priv-app/ZuiControlV55/ZuiControl.apk',
 }
 GOLDEN={'framework.jar':'b5f57d62546569b9bd9ba34d8757678da000c33f876358dd93a4dc747b8f1b32',
         'services.jar':'245b4f2c55d5ed8b99ecba8bd473d1d76eb40c55d67116a477299cc9d8b62000'}

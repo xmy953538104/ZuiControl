@@ -9,6 +9,31 @@ ROOT=Path(__file__).resolve().parents[2]
 def read(path): return (ROOT/path).read_text(encoding='utf-8')
 
 class ProductionContracts(unittest.TestCase):
+    def test_acquisition_zero_write_and_local_bounded_deadlines(self):
+        core=read('native/zuiopt/ZUIopt_core.h')
+        self.assertIn('schedule={0,100,250,500,750}',core)
+        self.assertIn('if(p.managed||p.acquiring||p.acquireBlocked)return;',core)
+        self.assertIn('if(!p.acquiring||p.next>time)return;',core)
+        owner=read('native/zuiopt/ZUIopt_owner.h')
+        probe=owner.split('BaselineResult probeBaseline(',1)[1].split('class Journal {',1)[0]
+        for token in ('journal.','setAffinity(', 'write(', 'p.managed=', 'p.ownershipFloor='):
+            self.assertNotIn(token,probe)
+        acquire=owner.split('BaselineResult acquire(ProcessState& p,Proc& proc)',1)[1].split('void prepare(',1)[0]
+        self.assertLess(acquire.index('probeBaseline('),acquire.index('proc.floor()'))
+        self.assertLess(acquire.index('proc.floor()'),acquire.index('journal.leases['))
+        self.assertLess(acquire.index('journal.commit()'),acquire.index('p.managed=true'))
+        release=owner.split('void release(ProcessState& p)',1)[1].split('void cleanup()',1)[0]
+        self.assertLess(release.index('if(!p.managed)'),release.index('prepare(p)'))
+        pending=release.split('if(!p.managed)',1)[1].split('return;}',1)[0]
+        for token in ('prepare(', 'journal.commit(', 'restore(', 'write(', 'identity('):self.assertNotIn(token,pending)
+        daemon=read('native/zuiopt/ZUIopt_daemon.h')
+        activate=daemon.split('void activate(',1)[1].split('ProcessState* resolve(',1)[0]
+        for token in ('group(', 'affinity(', 'ownershipFloor', 'managed=true'):self.assertNotIn(token,activate)
+        self.assertIn('advanceAcquisition(p,now(),*this)',daemon)
+        self.assertIn('if(p.managed||p.acquiring)',daemon)
+        lifecycle=read('native/zuiopt/ZUIopt_lifecycle.h')
+        self.assertIn('inheritance_baseline_unstable',lifecycle)
+
     def test_resolve_filters_before_all_proc_reads(self):
         core=read('native/zuiopt/ZUIopt_core.h')
         guard=core.split('inline bool eligibleSnapshot(',1)[1].split('inline Config parseConfig(',1)[0]

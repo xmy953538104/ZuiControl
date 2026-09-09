@@ -25,6 +25,51 @@ inline void writeAll(int fd,const std::string& s){
         require(n>0,"journal write failed");at+=static_cast<size_t>(n);
     }
 }
+struct BaselineProc {
+    Identity process(int pid){return identity(pid);}
+    Identity thread(int pid,int tid){return identity(pid,tid);}
+    int user(int pid){return uid(pid);}
+    std::vector<int> tasks(int pid){return ids("/proc/"+std::to_string(pid)+"/task");}
+    std::string cpuset(int tid){return group(tid);}
+    Mask mask(int tid){return affinity(tid);}
+    uint64_t floor(){
+        double uptime=0;std::istringstream(read("/proc/uptime"))>>uptime;
+        auto ticks=static_cast<uint64_t>(uptime*sysconf(_SC_CLK_TCK));
+        require(ticks>0,"ownership birth floor");return ticks;
+    }
+};
+struct AndroidBaseline {std::string group;Mask mask=0;std::map<int,uint64_t> tasks;};
+template<class Proc> BaselineResult probeBaseline(const ProcessState& p,Proc& proc,AndroidBaseline& out){
+    // Entire probe is read-only. Never cache a failed candidate across attempts.
+    auto same=[&]{return proc.process(p.pid).start==p.generation&&proc.user(p.pid)==p.uid;};
+    if(!same())return BaselineResult::STALE;
+    AndroidBaseline candidate;candidate.group=proc.cpuset(p.pid);candidate.mask=proc.mask(p.pid);
+    if(!same())return BaselineResult::STALE;
+    auto safe=[](const std::string& g,Mask m){
+        if(g.empty())return false; // Unavailable observation, not a guessed restore state.
+        require(normalGroup(g),"initial Android owner unavailable");return m!=0;
+    };
+    if(!safe(candidate.group,candidate.mask))return BaselineResult::DEFER;
+    bool uniform=true;
+    for(int tid:proc.tasks(p.pid)){
+        auto id=proc.thread(p.pid,tid);if(!id.start)continue;
+        auto g=proc.cpuset(tid);auto m=proc.mask(tid);
+        if(proc.thread(p.pid,tid).start!=id.start)continue; // Exit/reuse is a read race.
+        if(!safe(g,m)||g!=candidate.group||m!=candidate.mask)uniform=false;
+        candidate.tasks[tid]=id.start;
+    }
+    if(!same())return BaselineResult::STALE;
+    // A pending-born task is an original Android task, never an inferred child.
+    for(int tid:proc.tasks(p.pid)){
+        auto id=proc.thread(p.pid,tid);if(!id.start)continue;
+        auto it=candidate.tasks.find(tid);
+        if(it==candidate.tasks.end()||it->second!=id.start)uniform=false;
+    }
+    auto g=proc.cpuset(p.pid);auto m=proc.mask(p.pid);
+    if(!same())return BaselineResult::STALE;
+    if(!uniform||!candidate.tasks.count(p.pid)||g!=candidate.group||m!=candidate.mask)return BaselineResult::DEFER;
+    out=std::move(candidate);return BaselineResult::STABLE;
+}
 class Journal {
     int dirFd=-1,lockFd=-1;
     std::string currentBoot;
@@ -181,6 +226,16 @@ class Placement {
         if(added)journal.commit();return remaining;
     }
 public:
+    // Used before acquisition and by pending cancellation. Any owned residue is
+    // corruption, not permission to take the no-op release path.
+    void requireUncommitted(const ProcessState& p) const {
+        require(!p.managed&&!journal.leases.count(p.pid),"uncommitted lease state");
+        for(auto& [_,r]:journal.entries)require(r.pid!=p.pid,"uncommitted journal state");
+        for(auto& [_,t]:p.tasks)require(!t.owned,"uncommitted owned task");
+    }
+#ifdef ZUIOPT_TEST
+    Placement(Counters& c,Journal& j,std::nullptr_t):journal(j),count(c){} // Isolated fixture: no host cpuset startup.
+#endif
     Placement(Counters& c,Journal& j):journal(j),count(c){
         // Init owns the top-level scaffold. Never create, repair or remove it here.
         requireScaffold();journal.load();
@@ -203,16 +258,33 @@ public:
             require(write(p+"/mems",trim(read(root+"/mems")))&&write(p+"/cpus",cpuText(m)),"cpuset child initialize");
         }return p;
     }
+    template<class Proc> BaselineResult acquire(ProcessState& p,Proc& proc){
+        requireUncommitted(p);require(p.acquiring,"acquisition not pending");
+        AndroidBaseline baseline;auto result=probeBaseline(p,proc,baseline);
+        if(result!=BaselineResult::STABLE)return result;
+        // No ownership mutation until the complete fresh baseline has passed.
+        // Commit L and original T records in one durable batch before placement.
+        std::map<int,Task> tasks;
+        for(auto& [tid,start]:baseline.tasks){
+            Task t;t.generation=start;t.savedGroup=baseline.group;t.savedMask=baseline.mask;t.owned=true;
+            tasks.emplace(tid,std::move(t));
+            journal.validate(OwnerRecord{p.pid,p.uid,tid,p.generation,start,p.package,p.name,baseline.group,baseline.mask});
+        }
+        if(proc.process(p.pid).start!=p.generation||proc.user(p.pid)!=p.uid)return BaselineResult::STALE;
+        const auto floor=proc.floor(); // Actual commit boundary, NOT activate()/first retry.
+        journal.leases[p.pid]=OwnerRecord{p.pid,p.uid,p.pid,p.generation,floor,p.package,p.name,baseline.group,baseline.mask};
+        for(auto& [tid,t]:tasks)journal.entries[tid]=OwnerRecord{p.pid,p.uid,tid,p.generation,t.generation,p.package,p.name,t.savedGroup,t.savedMask};
+        journal.commit();
+        p.androidGroup=std::move(baseline.group);p.androidMask=baseline.mask;p.ownershipFloor=floor;p.tasks=std::move(tasks);
+        p.managed=true;p.acquiring=false;p.acquireStarted=0;p.acquireStep=0;p.activated=now();p.next=p.activated;p.burst=0;
+        return BaselineResult::STABLE;
+    }
+    BaselineResult acquire(ProcessState& p){BaselineProc proc;return acquire(p,proc);}
     void prepare(ProcessState& p){
         bool changed=false;
-        if(!journal.leases.count(p.pid)&&p.managed){
-            // Establish inheritance coverage only when all observed original parent states agree.
-            for(auto& [tid,t]:p.tasks)if(same(p,tid,t)){
-                auto g=group(tid);auto m=affinity(tid);if(!same(p,tid,t))continue;
-                require(!t.owned&&g==p.androidGroup&&m==p.androidMask,"ambiguous original thread inheritance baseline");
-            }
-            journal.leases[p.pid]=OwnerRecord{p.pid,p.uid,p.pid,p.generation,p.ownershipFloor,p.package,p.name,p.androidGroup,p.androidMask};changed=true;
-        }
+        auto lease=journal.leases.find(p.pid);
+        require(p.managed&&lease!=journal.leases.end()&&lease->second.processStart==p.generation&&
+                lease->second.user==p.uid&&lease->second.threadStart==p.ownershipFloor,"committed lease identity mismatch");
         for(auto it=journal.entries.begin();it!=journal.entries.end();){
             auto& r=it->second;auto t=p.tasks.find(it->first);
             if(r.pid==p.pid&&r.processStart==p.generation&&(t==p.tasks.end()||t->second.generation!=r.threadStart)){
@@ -220,7 +292,8 @@ public:
             }else ++it;
         }
         for(auto& [tid,t]:p.tasks){
-            if(t.owned||!same(p,tid,t))continue;
+            if(t.owned){auto r=journal.entries.find(tid);require(r!=journal.entries.end()&&r->second.pid==p.pid&&r->second.processStart==p.generation&&r->second.user==p.uid&&r->second.threadStart==t.generation,"write without durable owner identity");continue;}
+            if(!same(p,tid,t))continue;
             auto current=group(tid);auto mask=affinity(tid);
             if(!same(p,tid,t))continue;
             if(normalGroup(current)){t.savedGroup=current;t.savedMask=mask;}
@@ -248,7 +321,7 @@ public:
         count.placements++;ZUIOPT_NOTE("PLACE","pid="+std::to_string(p.pid)+" tid="+std::to_string(tid)+" class="+cls+" mask="+cpuText(m));
     }
     void release(ProcessState& p){
-        if(!p.managed&&p.tasks.empty())return;
+        if(!p.managed){requireUncommitted(p);discardAcquisition(p);p.acquireBlocked=false;return;}
         if(identity(p.pid).start==p.generation)for(int tid:ids("/proc/"+std::to_string(p.pid)+"/task")){
             auto id=identity(p.pid,tid);if(!id.start)continue;
             auto it=p.tasks.find(tid);
@@ -267,7 +340,7 @@ public:
         }
         for(int tid:ids("/proc/"+std::to_string(p.pid)+"/task"))require(group(tid).rfind("/ZUIopt/",0)!=0,"release busy process");
         for(auto it=journal.entries.begin();it!=journal.entries.end();)if(it->second.pid==p.pid&&it->second.processStart==p.generation)it=journal.entries.erase(it);else ++it;
-        journal.leases.erase(p.pid);journal.commit();p.tasks.clear();p.managed=false;p.next=0;
+        journal.leases.erase(p.pid);journal.commit();p.tasks.clear();p.managed=false;discardAcquisition(p);p.acquireBlocked=false;
     }
     void cleanup(){
         requireScaffold();
