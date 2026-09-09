@@ -44,7 +44,9 @@ struct CallbackState {
     std::mutex mutex;std::condition_variable drained;
     bool accepting=true;unsigned inflight=0;
     std::function<void(int,int,int,int)> handler;
+    std::function<void(int64_t)> sceneHandler;
     explicit CallbackState(std::function<void(int,int,int,int)> f):handler(std::move(f)){}
+    explicit CallbackState(std::function<void(int64_t)> f):sceneHandler(std::move(f)){}
     void deliver(int code,int pid,int user,int value){
         {std::lock_guard<std::mutex> lock(mutex);if(!accepting)return;inflight++;}
         try {handler(code,pid,user,value);}
@@ -52,8 +54,13 @@ struct CallbackState {
         finish();
     }
     void finish(){std::lock_guard<std::mutex> lock(mutex);if(--inflight==0)drained.notify_all();}
+    void deliverScene(int64_t seq){
+        {std::lock_guard<std::mutex> lock(mutex);if(!accepting)return;inflight++;}
+        try{sceneHandler(seq);}catch(...){finish();throw;}
+        finish();
+    }
     void stopAccepting(){std::lock_guard<std::mutex> lock(mutex);accepting=false;}
-    void drain(){std::unique_lock<std::mutex> lock(mutex);drained.wait(lock,[this]{return inflight==0;});handler={};}
+    void drain(){std::unique_lock<std::mutex> lock(mutex);drained.wait(lock,[this]{return inflight==0;});handler={};sceneHandler={};}
 };
 struct Observer {
     using Holder=std::shared_ptr<CallbackState>;

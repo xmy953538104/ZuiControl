@@ -14,6 +14,7 @@ binder_status_t AParcel_readInt64(const AParcel*,int64_t*);
 binder_status_t AParcel_readString(const AParcel*,void*,bool(*)(void*,int32_t,char**));
 binder_status_t AParcel_readStatusHeader(const AParcel*,AStatus**);
 binder_status_t AParcel_writeInt32(AParcel*,int32_t);
+binder_status_t AParcel_writeInt64(AParcel*,int64_t);
 binder_status_t AParcel_writeStrongBinder(AParcel*,AIBinder*);
 int32_t AParcel_getDataPosition(const AParcel*);
 int32_t AParcel_getDataSize(const AParcel*);

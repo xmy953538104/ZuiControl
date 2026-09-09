@@ -48,12 +48,16 @@ python tests/zuiopt/TestProductionContracts.py
 python tests/zuiopt/TestCanonicalDocs.py
 python tests/zuiopt/TestTerminalContracts.py
 python tests/zuiopt/TestPuritySource.py
+python tests/zuiopt/TestSceneAuthority.py
+python tests/zuiopt/TestSchedulerHealth.py
 sudo python host_retirement/TestRetirement.py
 clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptTest.cpp -lz -o /tmp/zuiopt-fixture
 sudo /tmp/zuiopt-fixture payload/system/etc/zuiopt/factory_rules.conf
 python tests/zuiopt/TestNativeRuleParity.py /tmp/zuiopt-fixture
 clang++ -std=c++17 -O1 -Wall -Wextra -Werror -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptBinderTest.cpp -lz -o /tmp/zuiopt-binder-fixture
 /tmp/zuiopt-binder-fixture
+clang++ -std=c++17 -O1 -Wall -Wextra -Werror -pthread -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptSceneTest.cpp -lz -ldl -Wl,--export-dynamic -o /tmp/zuiopt-scene-fixture
+sudo /tmp/zuiopt-scene-fixture
 ```
 
 Stable host artifacts may be reused only through the verified content cache. Its
@@ -126,3 +130,15 @@ The independent `zuiopt` domain is an MLS trusted subject because one daemon
 must access apps with different categories and the target process `setsched`
 constraint requires equal levels or a trusted subject. This adds no direct TE
 allows and does not transfer OEM `performanced` permissions to ZUIopt.
+
+ProcessObserver remains the primary process/lifecycle source. An independent
+one-way private scene callback from the existing accepted top-resumed authority
+coalesces the latest sequence into the same reactor. Registration always replays
+the current sequence; callback death clears the registration. The callback reads
+no proc/package/snapshot and performs no placement or ACK. The reactor uses the
+same authority validation and reconcile path at 0/100/250/500ms, at most four
+attempts; newer sequences cancel the previous burst. ACK follows burst completion.
+SEQ/ACK are system_server memory, not properties or files. Status shows
+`zuioptSceneSeq`, `zuioptSceneAck`, and `zuioptSceneSync=ok|pending`; pending alone
+does not change scheduler health. With no managed process or scene burst, the
+reactor blocks indefinitely. There is no watcher thread or idle polling timer.

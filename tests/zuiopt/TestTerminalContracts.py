@@ -42,17 +42,26 @@ class TerminalContracts(unittest.TestCase):
             'ZUIopt_core.h':'7d5ecbdd2ccc882740fd53059d1b93862bf1c78ff7317d08f843af0e9dd7f647',
             'ZUIopt_rules.h':'f50e258ccab3012d2173a05a99d5f22193311fe623a7156192946f06316b62a5',
             'ZUIopt_owner.h':'148488a52090740f225c7acf95adca079451e22e32daf2878e2ff08f5b53cf3b',
-            'ZUIopt_events.h':'61387f2fa149b8b5678b0c81bca21ea51c4cca0dfd7799eb48691acd482fb836',
-            'ZUIopt_binder.h':'e9a821a1c58b27c6cc84c7dabe94225508bd573e5b2cb9c63bf7c61971782496',
             'ZUIopt_model.h':'34463bc9f179586206d966dc15c9f5b2c99112400f214d3bf353c469c274aebb',
         }
         for name,sha in expected.items():
             self.assertEqual(hashlib.sha256(read('native/zuiopt/'+name).encode()).hexdigest(),sha,name)
+        # The new scene queue/lifecycle shares these files; freeze the unchanged
+        # authority and IProcessObserver implementations against the V53 bytes.
+        events=read('native/zuiopt/ZUIopt_events.h').split('inline bool sameProcess(',1)[1]
+        events=events.split('\n// Shared with event-loss fixtures;',1)[0]+'}\n'
+        self.assertEqual(hashlib.sha256(events.encode()).hexdigest(),'462eea41086a097f85d6fb9a6bf0b66094f8b0f90f8659cf612631cf239f3a1a')
+        observer=read('native/zuiopt/ZUIopt_binder.h').split('struct Observer {',1)[1]
+        self.assertEqual(hashlib.sha256(observer.encode()).hexdigest(),'cc8f4702213ded4f9c47db9fa1cd88edbadf8c3a90944d310490e94a4742ed76')
 
     def test_refresh_and_macro_power_service_unchanged(self):
         text=read('framework_patch/src/services/com/zui/server/control/ZuiControlService.java')
         text=re.sub(r'    private String schedulerHealthStateLines\(\).*?(?=    private static boolean isUperfMode)','',text,flags=re.S)
         text=re.sub(r'^.*private static final String PROP_ZUIOPT_(SERVICE|FAILED).*\n','',text,flags=re.M)
+        text=text.replace('import android.os.IBinder;\n','')
+        text=text.replace('    private final ZuioptSceneAuthority mZuioptScene = new ZuioptSceneAuthority();\n','')
+        text=re.sub(r'^\s*mZuioptScene.changed\(\);\n','',text,flags=re.M)
+        text=re.sub(r'            if \(code >= ZuioptSceneAuthority.REGISTER.*?(?=            if \(code >= 1)', '',text,flags=re.S)
         self.assertEqual(hashlib.sha256(text.encode()).hexdigest(),'40bf756fe681be07809b41924d8003d3f2074997474acb19e1588811c2dc4764')
         self.assertIs(json.loads(read('payload/system/etc/zui_control/uperf-sm8650.json'))['modules']['sched']['enable'],False)
 

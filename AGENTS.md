@@ -8,7 +8,7 @@ regression tests, and minimal developer documentation.
 ## Safety
 
 - Do not change `app`, `framework_patch`, `native`, `payload`, Uperf, Refresh,
-  asoulOpt, SELinux, or init runtime semantics without an explicit production
+  thread scheduler, SELinux, or init runtime semantics without an explicit production
   work package and its required gates.
 - Do not commit ROM images, generated artifacts, device evidence, Gate packages,
   candidate outputs, project history, AI handoffs, secrets, or local tooling.

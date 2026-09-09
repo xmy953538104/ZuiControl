@@ -12,6 +12,7 @@ import android.hardware.display.DisplayManagerInternal;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.IBinder;
 import android.os.Parcel;
 import android.os.PowerManager;
 import android.os.RemoteException;
@@ -99,6 +100,7 @@ public final class ZuiControlService extends Binder {
     private final UperfScenePolicy mUperfScenePolicy;
     private final AtomicLong mTopResumedCallbackGeneration = new AtomicLong();
     private final TopResumedNullState mTopResumedState = new TopResumedNullState();
+    private final ZuioptSceneAuthority mZuioptScene = new ZuioptSceneAuthority();
     private ActivityTaskSupervisor mTopResumedAuthority;
     private final Runnable mTopResumedNullRevalidation = new Runnable() {
         @Override
@@ -289,6 +291,7 @@ public final class ZuiControlService extends Binder {
                     + generation + " package=" + pkg + " userId=" + userId);
             mUperfScenePolicy.onTopResumedChanged(
                     pkg, userId, "topResumedValid", eventNanos);
+            mZuioptScene.changed();
             publishState();
             return;
         }
@@ -346,6 +349,7 @@ public final class ZuiControlService extends Binder {
         }
         mUperfScenePolicy.onTopResumedChanged(pkg, userId, event,
                 SystemClock.elapsedRealtimeNanos());
+        mZuioptScene.changed();
         publishState();
     }
 
@@ -544,6 +548,23 @@ public final class ZuiControlService extends Binder {
     @Override
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
         try {
+            if (code >= ZuioptSceneAuthority.REGISTER && code <= ZuioptSceneAuthority.ACK) {
+                if ((flags & IBinder.FLAG_ONEWAY) != 0) return false;
+                data.enforceInterface(DESCRIPTOR);
+                // App/shell cannot register or acknowledge the root task owner's channel.
+                if (Binder.getCallingUid() != 0) {
+                    throw new SecurityException("root scene owner required");
+                }
+                IBinder callback = data.readStrongBinder();
+                long seq = code == ZuioptSceneAuthority.ACK ? data.readLong() : -1;
+                if (data.dataAvail() != 0) throw new IllegalArgumentException("scene trailing data");
+                int pid = Binder.getCallingPid();
+                if (code == ZuioptSceneAuthority.REGISTER) mZuioptScene.register(callback, pid);
+                else if (code == ZuioptSceneAuthority.UNREGISTER) mZuioptScene.unregister(callback, pid);
+                else mZuioptScene.ack(callback, pid, seq);
+                reply.writeNoException();
+                return true;
+            }
             if (code >= 1 && code <= TX_NOTIFY_CONTROL_REQUEST) {
                 data.enforceInterface(DESCRIPTOR);
             }
@@ -1553,7 +1574,8 @@ public final class ZuiControlService extends Binder {
                 + "\nthreadManagerState=" + threadManagerState
                 + "\nschedulerHealth=" + (currentError.isEmpty() ? "ok" : currentError)
                 + "\nlastSchedulerError="
-                + (mLastSchedulerError.isEmpty() ? "none" : mLastSchedulerError);
+                + (mLastSchedulerError.isEmpty() ? "none" : mLastSchedulerError)
+                + mZuioptScene.stateLines();
     }
 
     private static boolean isUperfMode(String value) {

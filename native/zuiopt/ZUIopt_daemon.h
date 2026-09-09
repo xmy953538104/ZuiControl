@@ -3,6 +3,7 @@
 #include "ZUIopt_binder.h"
 #include "ZUIopt_owner.h"
 #include "ZUIopt_events.h"
+#include "ZUIopt_scene.h"
 #include <csignal>
 #include <deque>
 #include <memory>
@@ -21,6 +22,7 @@ class Core {
     Counters counters;std::map<int,ProcessState> states;
     std::unique_ptr<Journal> journal;std::unique_ptr<Placement> placement;std::unique_ptr<Observer> observer;
     RawEvents events;RuntimeBlocker runtimeBlocker;
+    std::unique_ptr<SceneObserver> sceneObserver;SceneBurst sceneBurst;
     int eventFd=-1,signalFd=-1;bool serviceDied=false;
 public:
     Core(std::string path,const std::string& statePath):configPath(std::move(path)),stateRoot(statePath){
@@ -69,15 +71,7 @@ public:
         auto& p=states[s.pid];p.pid=s.pid;p.uid=s.uid;p.generation=id.start;p.name=s.name;p.package=s.packages[0];p.alive=true;return &p;
     }
     void reconcile(const std::vector<Snapshot>& snapshot){
-        counters.snapshots++;std::set<int> present;
-        for(auto& s:snapshot){
-            auto* p=resolve(s);if(!p)continue;
-            present.insert(s.pid);p->activity_foreground=(s.state==2)&&((s.flags&4)!=0);
-            ZUIOPT_NOTE("SNAPSHOT","pid="+std::to_string(s.pid)+" name="+s.name+" state="+std::to_string(s.state)+" focused="+std::to_string(s.focused)+" generation="+std::to_string(p->generation));
-        }
-        for(auto it=states.begin();it!=states.end();)if(!present.count(it->first)){placement->release(it->second);it=states.erase(it);}else ++it;
-        ZUIOPT_NOTE("RECONCILE","records="+std::to_string(present.size()));
-        edges();for(auto& [_,p]:states)activate(p);
+        counters.snapshots++;reconcileSnapshot(snapshot,states,*this);
     }
     void edges(){
         for(auto& e:events.take()){
@@ -136,12 +130,21 @@ public:
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::PLACEMENT_OK);
         phase=StartupStage::RECONCILE;reconcile(initial);
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::RECONCILE_OK);
+        sceneObserver=std::make_unique<SceneObserver>([this](int64_t seq){events.pushScene(eventFd,seq);});
         phase=StartupStage::READY;prctl(PR_SET_NAME,"ZUIopt",0,0,0);ZUIOPT_NOTE("READY","pid="+std::to_string(getpid()));
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::READY);bool stop=false;
         while(!stop){
             phase=StartupStage::EVENT_LOOP; // In-memory only; there are no steady-state receipt writes.
             edges();require(!serviceDied,"activity service died: fail closed");for(auto& [_,p]:states)if(p.managed&&p.next<=now())scan(p);
-            int timeout=-1;for(auto& [_,p]:states)if(p.managed){int delay=static_cast<int>(std::max<int64_t>(0,p.next-now()));timeout=timeout<0?delay:std::min(timeout,delay);}
+            sceneBurst.accept(events.takeScene(),now());
+            if(sceneBurst.timeout(now())==0){
+                auto seq=sceneBurst.sequence;auto snapshot=observer->snapshot();
+                if(events.latestScene(seq)){
+                    reconcile(snapshot);
+                    if(sceneBurst.complete(now())&&events.latestScene(seq))sceneObserver->ack(seq);
+                }
+            }
+            int timeout=sceneBurst.timeout(now());for(auto& [_,p]:states)if(p.managed){int delay=static_cast<int>(std::max<int64_t>(0,p.next-now()));timeout=timeout<0?delay:std::min(timeout,delay);}
             pollfd fds[]={{eventFd,POLLIN,0},{signalFd,POLLIN,0}};int n=poll(fds,2,timeout);if(n<0&&errno==EINTR)continue;require(n>=0,"poll failed");counters.wakeups++;
             if(fds[0].revents&POLLIN){uint64_t v;ssize_t ignored=::read(eventFd,&v,sizeof(v));(void)ignored;}
             if(fds[1].revents&POLLIN){signalfd_siginfo s{};while(::read(signalFd,&s,sizeof(s))==sizeof(s)){
@@ -152,8 +155,8 @@ public:
                 }
             }}
         }
-        phase=StartupStage::STOP;observer.reset();releaseAll();ZUIOPT_NOTE("STOPPED","owner_release=PASS");return 0;
-    }catch(const std::exception& e){recordLifecycle(stateRoot,journal->currentBootId(),phase,&e);ZUIOPT_NOTE("FATAL",e.what());observer.reset();try{releaseAll();}catch(const std::exception& x){ZUIOPT_NOTE("RELEASE_BLOCKER",x.what());return 3;}return 2;}}
-    ~Core(){observer.reset();if(signalFd>=0)close(signalFd);if(eventFd>=0)close(eventFd);}
+        phase=StartupStage::STOP;sceneObserver.reset();observer.reset();releaseAll();ZUIOPT_NOTE("STOPPED","owner_release=PASS");return 0;
+    }catch(const std::exception& e){recordLifecycle(stateRoot,journal->currentBootId(),phase,&e);ZUIOPT_NOTE("FATAL",e.what());sceneObserver.reset();observer.reset();try{releaseAll();}catch(const std::exception& x){ZUIOPT_NOTE("RELEASE_BLOCKER",x.what());return 3;}return 2;}}
+    ~Core(){sceneObserver.reset();observer.reset();if(signalFd>=0)close(signalFd);if(eventFd>=0)close(eventFd);}
 };
 }

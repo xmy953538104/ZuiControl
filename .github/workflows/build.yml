@@ -109,6 +109,7 @@ jobs:
           python3 tests/zuiopt/TestProductionContracts.py
           python3 tests/zuiopt/TestTerminalContracts.py
           python3 tests/zuiopt/TestPuritySource.py
+          python3 tests/zuiopt/TestSceneAuthority.py
           sudo python3 host_retirement/TestRetirement.py
           bash -n payload/system/etc/zuiopt/zuiopt_boot_state.sh
           bash -n payload/system/etc/zuiopt/crash_gate.sh
@@ -130,6 +131,10 @@ jobs:
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptBinderTest.cpp -lz \
             -o "$RUNNER_TEMP/zuiopt-binder-fixture"
           "$RUNNER_TEMP/zuiopt-binder-fixture" | tee "$receipt/binder_abi_fixtures.txt"
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror -pthread \
+            -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptSceneTest.cpp -lz -ldl -Wl,--export-dynamic \
+            -o "$RUNNER_TEMP/zuiopt-scene-fixture"
+          sudo "$RUNNER_TEMP/zuiopt-scene-fixture" | tee "$receipt/scene_liveness_fixtures.txt"
           python3 scripts/build/BuildZUIopt.py \
             --ndk "$ANDROID_SDK_ROOT/ndk/27.2.12479018" \
             --output payload/system/bin/ZUIopt --receipt "$receipt/build.json"
@@ -277,9 +282,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV49 payload/system/priv-app/ZuiControlV50
           rm -rf payload/system/priv-app/ZuiControlV51
           rm -rf payload/system/priv-app/ZuiControlV52
-          mkdir -p payload/system/priv-app/ZuiControlV53
+          rm -rf payload/system/priv-app/ZuiControlV53
+          mkdir -p payload/system/priv-app/ZuiControlV54
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV53/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV54/ZuiControl.apk
 
       - name: Verify compiled payload semantic purity
         run: python3 tests/zuiopt/RuntimePurityAudit.py --system payload/system

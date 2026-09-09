@@ -158,6 +158,7 @@
 (allow zuiopt servicemanager (file (open read getattr)))
 (allow zuiopt activity_service (service_manager (find)))
 (allow zuiopt package_service (service_manager (find)))
+(allow zuiopt zui_control_service (service_manager (find)))
 (allow zuiopt system_server (binder (call transfer)))
 (allow system_server zuiopt (binder (call transfer)))
 (allow system_server zuiopt (fd (use)))

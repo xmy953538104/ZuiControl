@@ -62,7 +62,7 @@ struct RuntimeFixture {
     std::vector<std::string> packageAuthority(int){packageQueries++;return authority;}
     std::vector<Snapshot> activitySnapshot(){snapshotQueries++;return absent?std::vector<Snapshot>{}:std::vector<Snapshot>{app};}
     void release(ProcessState& p){released.push_back(p.generation);p.managed=false;}
-    void activate(ProcessState& p){if(!p.activity_foreground){if(p.managed)release(p);}else{p.managed=true;placements++;}}
+    void activate(ProcessState& p){if(!p.activity_foreground){if(p.managed)release(p);}else if(!p.managed){p.managed=true;placements++;}}
     ProcessState* resolve(const Snapshot& s){
         Identity id;try{id=validateManagedSnapshot(s,config,*this);}
         catch(const ProcError& e){if(!e.permission())throw;blockers++;return nullptr;}

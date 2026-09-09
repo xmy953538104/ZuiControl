@@ -14,6 +14,8 @@ public class HealthFixture {
         static String get(String key, String fallback) { return values.getOrDefault(key, fallback); }
     }
     String mLastSchedulerError = "";
+    static class SceneStatus { String stateLines(){return "\\nzuioptSceneSeq=12\\nzuioptSceneAck=11\\nzuioptSceneSync=pending";} }
+    SceneStatus mZuioptScene = new SceneStatus();
 ''' + constants + methods + '''
     static void check(String active, String failed, String service, String uperf, String health, String state) {
         Map<String,String> p = SystemProperties.values;
