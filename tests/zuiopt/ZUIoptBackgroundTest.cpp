@@ -71,6 +71,11 @@ void deterministic(){
     {BackgroundFixture f;f.setup(200);Kernel::hook=[](const std::string& path){
         if(path=="/dev/cpuset/top-app/tasks"){Kernel::hook={};handoff(100,2);}
     };f.background();f.complete();cases++;}
+    {BackgroundFixture f;f.setup(200);bool open=false;int reads=0;
+        Kernel::hook=[&](const std::string& path){
+            if(path=="/dev/cpuset/top-app/tasks")open=true;
+            if(open&&path=="/proc/42/stat"&&++reads==2){Kernel::hook={};handoff(100,2);}
+        };f.background();f.complete();require(reads>=2,"late generation-read handoff not injected");cases++;}
     {BackgroundFixture f;f.setup(200);Kernel::stuck=true;f.background();
         require(f.p().backgroundReleasing&&f.p().next==300&&!f.p().acquiring&&!forceCoherence(f.p()),"release state cancellation");
         auto moves=Kernel::moves;for(int i=0;i<20;i++)f.background();require(Kernel::moves==moves,"duplicate release busy loop");

@@ -470,7 +470,7 @@ public:
                 int fd=open(("/dev/cpuset"+r.savedGroup+"/tasks").c_str(),O_WRONLY|O_CLOEXEC|O_NOFOLLOW);
                 require(fd>=0,"background release destination open");
                 bool moved=true;
-                try{if(journal.same(r)&&owned(group(tid))&&journal.same(r)){
+                try{if(journal.same(r)&&owned(group(tid))){
                     auto value=std::to_string(tid);moved=::write(fd,value.data(),value.size())==static_cast<ssize_t>(value.size());
                 }}catch(...){close(fd);throw;}
                 close(fd);
@@ -487,12 +487,14 @@ public:
             auto mask=affinity(tid);if(!journal.same(r))continue;
             if(!mask){pending=true;continue;}
             if(!applied||mask!=applied||mask==r.savedMask)continue;
-            Mask allowed=cpus(read("/dev/cpuset"+g+"/cpus"));
+            auto allowedText=read("/dev/cpuset"+g+"/cpus");
+            if(trim(allowedText).empty()){pending=true;continue;}
+            Mask allowed=cpus(allowedText);
             Mask restoreMask=r.savedMask&allowed&cpus(read("/sys/devices/system/cpu/online"));
             require(restoreMask!=0,"background unsafe affinity destination");
             // Restore only our exact residue, constrained by the CURRENT Android
             // group. A changed Android mask/group wins; no saved-cpuset rewrite.
-            if(journal.same(r)&&group(tid)==g&&affinity(tid)==applied&&journal.same(r)){
+            if(journal.same(r)&&group(tid)==g&&journal.same(r)&&affinity(tid)==applied){
                 if(!setAffinity(tid,restoreMask)&&journal.same(r))pending=true;
             }
         }
@@ -508,7 +510,9 @@ public:
             require(normalGroup(g),"invalid Android release owner");
             auto t=p.tasks.find(tid);
             if(t!=p.tasks.end()&&t->second.generation==r.threadStart&&t->second.appliedMask&&mask==t->second.appliedMask){
-                Mask safe=r.savedMask&cpus(read("/dev/cpuset"+g+"/cpus"));
+                auto allowedText=read("/dev/cpuset"+g+"/cpus");
+                if(trim(allowedText).empty()){residue=true;continue;}
+                Mask safe=r.savedMask&cpus(allowedText);
                 require(safe!=0,"background unsafe affinity destination");
                 if(mask!=safe)residue=true;
             }
