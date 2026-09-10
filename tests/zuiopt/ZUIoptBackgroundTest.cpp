@@ -11,7 +11,7 @@ extern "C" int __wrap_unlinkat(int fd,const char* name,int flags){
 struct BackgroundFixture:AcquisitionFixture {
     int passes=0;std::set<int> reused;
     void release(ProcessState& p){owner->release(p,p.alive?ReleaseCause::AUTHORITY_BACKGROUND:ReleaseCause::PROCESS_DEATH,Kernel::time);}
-    void activate(ProcessState& p){if(!p.activity_foreground){release(p);return;}if(!p.backgroundReleasing)beginAcquisition(p,Kernel::time);}
+    void activate(ProcessState& p){activateAuthority(p,p.alive&&p.activity_foreground,false,Kernel::time,*this);}
     void primary(){processEvent({1,42,10001,1,1},states,*this);}
     void background(bool reverse=false){
         app.state=19;app.flags=0;
@@ -32,10 +32,10 @@ struct BackgroundFixture:AcquisitionFixture {
     void complete(){
         for(int dt:{0,50,100,250,500}){
             Kernel::time=250+dt;
-            if(p().backgroundReleasing&&!p().releaseBlocked&&p().next<=Kernel::time){release(p());passes++;}
+            if(p().backgroundReleasing&&!p().releaseParked&&p().next<=Kernel::time){release(p());passes++;}
         }
         Kernel::hook={};
-        require(!p().backgroundReleasing&&!p().releaseBlocked,"bounded normal release unfinished");empty();
+        require(!p().backgroundReleasing&&!p().releaseParked&&!p().releaseBlocked,"bounded normal release unfinished");empty();
         for(auto& [_,t]:Kernel::tasks)require(t.group.rfind("/ZUIopt",0)!=0,"OWNER_LEAK");
         owner->release(p(),ReleaseCause::CRASH_RECOVERY,Kernel::time);
         owner->release(p(),ReleaseCause::CRASH_RECOVERY,Kernel::time);owner->cleanup();
@@ -87,7 +87,7 @@ void deterministic(){
     // Catch cleanup retains durable evidence instead of throwing status3.
     {BackgroundFixture f;f.setup(200);handoff(100,2);Kernel::tasks.at(43).mask=0;f.background();
         for(int dt:{50,100,250,500}){Kernel::time=250+dt;f.release(f.p());}
-        require(f.p().releaseBlocked&&f.p().backgroundReleasing&&!f.journal->entries.empty(),"external delay must retain journal");
+        require(f.p().releaseParked&&!f.p().releaseBlocked&&f.p().backgroundReleasing&&!f.journal->entries.empty(),"external delay must retain journal");
         auto reads=Kernel::reads,writes=Kernel::moves+Kernel::affinities;
         for(int i=0;i<100;i++)f.release(f.p());
         require(Kernel::reads==reads&&Kernel::moves+Kernel::affinities==writes,"blocked release idle polling");
@@ -104,7 +104,7 @@ void strictBoundaries(){
     {BackgroundFixture f;f.setup(200);f.journal->entries.erase(43);
         expectFailure([&]{f.background();},"write without durable owner identity");}
     {BackgroundFixture f;f.setup(200);Kernel::stuck=true;f.background();Kernel::time=750;
-        f.release(f.p());require(f.p().releaseBlocked&&!f.journal->entries.empty(),"known contention deadline killed daemon");
+        f.release(f.p());require(f.p().releaseParked&&!f.p().releaseBlocked&&!f.journal->entries.empty(),"known contention deadline killed daemon");
         auto reads=Kernel::reads;for(int i=0;i<100;i++)f.release(f.p());require(Kernel::reads==reads,"owned blocker idle polling");
         expectFailure([&]{f.owner->release(f.p(),ReleaseCause::CRASH_RECOVERY);},"background unrecoverable owned task");
         Kernel::stuck=false;f.owner->release(f.p(),ReleaseCause::RELOAD_OR_CONTROLLED_STOP);f.complete();}
@@ -148,6 +148,8 @@ void backgroundStress(){
     }catch(const std::exception& e){throw std::runtime_error("random release case="+std::to_string(i)+" "+e.what());}
     std::cout<<"RANDOM_RELEASE_STRESS_COUNT="<<total<<";GLOBAL_FATAL_RECOVERABLE=0;STATUS3_RECOVERABLE=0;OWNER_LEAK=0;STALE_PID=0;UNKNOWN_TASK_FALSE_POSITIVE=0;UNSAFE_CPUSET_REWRITE=0;UNSAFE_AFFINITY_REWRITE=0;JOURNAL_CLEAR_WITH_LIVE_ZUIOPT_TASK=0\n";
 }
+#ifndef ZUIOPT_BACKGROUND_LIBRARY
 int main(){try{std::cout<<std::unitbuf;timed("BACKGROUND_DETERMINISTIC",deterministic);timed("BACKGROUND_STRICT",strictBoundaries);timed("BACKGROUND_STRESS",backgroundStress);
     puts("NORMAL_BACKGROUND_RELEASE_STATUS3=0;BACKGROUND_RELEASE_FIXTURES=PASS");return 0;
 }catch(const std::exception& e){std::cerr<<"BACKGROUND_FAIL "<<e.what()<<'\n';return 1;}}
+#endif

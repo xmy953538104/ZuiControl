@@ -37,7 +37,17 @@ class BackgroundContracts(unittest.TestCase):
         self.assertIn('require(remaining.empty(),"background unrecoverable owned task")',lane)
         self.assertLess(lane.index('if(pending||!remaining.empty()||residue)return false;'),lane.index('journal.leases.erase(p.pid)'))
         self.assertIn('p.acquiring=false;p.acquireFinalConfirmation=false;p.baselineCandidate={}',lane)
-        self.assertIn('if(!terminal&&(p.releaseBlocked||p.next>time))return;',lane)
+        self.assertIn('if(!terminal&&(p.releaseParked||p.next>time))return;',lane)
+    def test_park_rearm_is_shared_and_authority_bounded(self):
+        core=text('ZUIopt_core.h');daemon=text('ZUIopt_daemon.h');owner=text('ZUIopt_owner.h')
+        helper=core.split('void activateAuthority(',1)[1].split('enum class BaselineResult',1)[0]
+        self.assertIn('p.releaseParked&&(fresh||newScene)',helper)
+        self.assertIn('activateAuthority(p,wanted,authorityEvent,now(),*this)',daemon)
+        self.assertIn('authorityEvent=sceneBurst.step==0',daemon)
+        self.assertIn('p.releaseBlocked=p.releaseRearmed&&p.activity_foreground',owner)
+        self.assertIn('if(p.releaseBlocked)blocked(RuntimeBlockerReason::BACKGROUND_RELEASE_BLOCKED)',daemon)
+        for token in ('journal.', 'group(', 'affinity(', 'write(', 'snapshot(', 'sleep('):self.assertNotIn(token,helper)
+        self.assertNotIn('background_release_pending',text('ZUIopt_lifecycle.h'))
     def test_substages_are_bounded_and_both_failures_persist(self):
         lifecycle=text('ZUIopt_lifecycle.h');daemon=text('ZUIopt_daemon.h')
         self.assertIn('cleanup_reason=',lifecycle);self.assertIn('data.size()<1024',lifecycle)

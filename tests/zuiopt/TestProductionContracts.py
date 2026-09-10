@@ -49,7 +49,8 @@ class ProductionContracts(unittest.TestCase):
         self.assertNotIn('authorityEvent=true;',daemon)
         self.assertLess(daemon.index('verifyCoherence(p,start)'),daemon.index('placement->prepare(p)'))
         self.assertIn('authorityEvent=sceneBurst.step==0;',daemon)
-        self.assertIn('if(authorityEvent)armCoherence(p,now());',daemon)
+        self.assertIn('activateAuthority(p,wanted,authorityEvent,now(),*this);',daemon)
+        self.assertIn('if(newScene)armCoherence(p,time);',core)
         self.assertIn('authorityEvent=outerAuthority;',daemon)
         self.assertIn('if(p.coherenceReleasing){relinquishCoherence(p);',owner)
         self.assertIn('ownership_contested',read('native/zuiopt/ZUIopt_lifecycle.h'))
@@ -79,7 +80,7 @@ class ProductionContracts(unittest.TestCase):
         activate=daemon.split('void activate(',1)[1].split('ProcessState* resolve(',1)[0]
         for token in ('group(', 'affinity(', 'ownershipFloor', 'managed=true'):self.assertNotIn(token,activate)
         self.assertIn('advanceAcquisition(p,now(),*this)',daemon)
-        self.assertIn('if((p.managed||p.acquiring)&&!p.releaseBlocked)',daemon)
+        self.assertIn('if((p.managed||p.acquiring)&&!p.releaseParked)',daemon)
         lifecycle=read('native/zuiopt/ZUIopt_lifecycle.h')
         self.assertIn('inheritance_baseline_unstable',lifecycle)
 

@@ -201,7 +201,11 @@ and acquisition, releases only journal/lease-authorized physical ownership, leav
 Android-owned cpusets untouched, and restores only exact known affinity residue
 constrained by the current Android group. Mixed Android baselines are allowed;
 unknown live ownership and corrupt journals remain fail-closed. A known safe
-release delay becomes a local blocker after the finite window, with no steady
-retry timer. Fatal receipts include bounded primary and cleanup substages/reasons.
+release delay parks after the finite window, without a timer or durable blocker.
+A fresh foreground edge or new scene authority can resume the old release once
+at 0/50/100/250/500ms; duplicate callbacks cannot extend that window. Completion
+immediately enables normal acquisition. Only a failed foreground rearm records
+the deduplicated local `background_release_blocked` receipt, retaining the journal.
+Fatal receipts include bounded primary and cleanup substages/reasons.
 After probation the existing cache remains; no idle polling or new steady
 physical scan is introduced. Device timing acceptance is a separate gate.

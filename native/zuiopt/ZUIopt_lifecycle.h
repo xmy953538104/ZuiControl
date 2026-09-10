@@ -114,7 +114,7 @@ inline bool recordLifecycle(const std::string& root,const std::string& boot,
         return true;
     }catch(...){return false;} // Diagnostics must never suppress owner release or the init fail-safe.
 }
-enum class RuntimeBlockerReason {PROC_READ_PERMISSION,PROC_UID_PERMISSION,PACKAGE_AUTHORITY_PERMISSION,INHERITANCE_BASELINE_UNSTABLE,OWNERSHIP_CONTESTED,BACKGROUND_RELEASE_PENDING};
+enum class RuntimeBlockerReason {PROC_READ_PERMISSION,PROC_UID_PERMISSION,PACKAGE_AUTHORITY_PERMISSION,INHERITANCE_BASELINE_UNSTABLE,OWNERSHIP_CONTESTED,BACKGROUND_RELEASE_BLOCKED};
 class RuntimeBlocker {
     unsigned seen=0;
 public:
@@ -126,7 +126,7 @@ public:
         seen|=1u<<index;
         try {
             require(boot.size()==36&&boot.find_first_not_of("0123456789abcdef-")==boot.npos,"diagnostic boot bound");
-            static constexpr const char* names[]={"proc_read_permission","proc_uid_permission","package_authority_permission","inheritance_baseline_unstable","ownership_contested","background_release_pending"};
+            static constexpr const char* names[]={"proc_read_permission","proc_uid_permission","package_authority_permission","inheritance_baseline_unstable","ownership_contested","background_release_blocked"};
             std::string data="ZUIOPT_RUNTIME_BLOCKER_V1\nboot="+boot+"\nstage="+(index==5?"BACKGROUND_RELEASE":index==4?"COHERENCE_REACQUIRE":index==3?"ACQUIRING_BASELINE":"APP_ACCESS")+"\nstate=BLOCKED\nreason="+names[index]+"\n";
             require(data.size()<1024,"runtime diagnostic bound");
             PrivateDir directory(root);directory.put("runtime_blocker.v1",data);return true;

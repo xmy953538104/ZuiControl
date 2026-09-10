@@ -53,7 +53,7 @@ public:
     void release(ProcessState& p){
         substage=EventSubstage::BACKGROUND_RELEASE;
         placement->release(p,p.alive?ReleaseCause::AUTHORITY_BACKGROUND:ReleaseCause::PROCESS_DEATH);
-        if(p.releaseBlocked)blocked(RuntimeBlockerReason::BACKGROUND_RELEASE_PENDING);
+        if(p.releaseBlocked)blocked(RuntimeBlockerReason::BACKGROUND_RELEASE_BLOCKED);
     }
     BaselineResult acquire(ProcessState& p){
         try{return placement->acquire(p);}
@@ -62,10 +62,7 @@ public:
     void baselineBlocked(){blocked(RuntimeBlockerReason::INHERITANCE_BASELINE_UNSTABLE);}
     void activate(ProcessState& p){
         bool wanted=p.alive&&p.activity_foreground&&config.find(p.package);
-        if(!wanted){release(p);return;}
-        if(p.backgroundReleasing)return; // Finish the durable release before a new foreground epoch.
-        if(authorityEvent)armCoherence(p,now());
-        beginAcquisition(p,now());
+        activateAuthority(p,wanted,authorityEvent,now(),*this);
     }
     ProcessState* resolve(const Snapshot& s){
         Identity id;
@@ -170,7 +167,7 @@ public:
                 if(p.backgroundReleasing){release(p);if(!p.backgroundReleasing)activate(p);continue;}
                 substage=EventSubstage::ACQUISITION;advanceAcquisition(p,now(),*this);if(p.managed&&p.next<=now())scan(p);
             }
-            int timeout=sceneBurst.timeout(now());for(auto& [_,p]:states)if((p.managed||p.acquiring)&&!p.releaseBlocked){int delay=static_cast<int>(std::max<int64_t>(0,p.next-now()));timeout=timeout<0?delay:std::min(timeout,delay);}
+            int timeout=sceneBurst.timeout(now());for(auto& [_,p]:states)if((p.managed||p.acquiring)&&!p.releaseParked){int delay=static_cast<int>(std::max<int64_t>(0,p.next-now()));timeout=timeout<0?delay:std::min(timeout,delay);}
             pollfd fds[]={{eventFd,POLLIN,0},{signalFd,POLLIN,0}};int n=poll(fds,2,timeout);if(n<0&&errno==EINTR)continue;require(n>=0,"poll failed");counters.wakeups++;
             if(fds[0].revents&POLLIN){uint64_t v;ssize_t ignored=::read(eventFd,&v,sizeof(v));(void)ignored;}
             if(fds[1].revents&POLLIN){signalfd_siginfo s{};while(::read(signalFd,&s,sizeof(s))==sizeof(s)){

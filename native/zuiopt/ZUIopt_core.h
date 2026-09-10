@@ -212,7 +212,8 @@ struct ProcessState {
     bool acquiring=false,acquireBlocked=false,acquireFinalConfirmation=false;int64_t acquireStarted=0;size_t acquireStep=0;
     BaselineCandidate baselineCandidate;uint64_t acquisitionEpoch=0;
     unsigned coherenceEpisodes=0;bool coherenceReleasing=false;
-    bool backgroundReleasing=false,releaseBlocked=false;int64_t releaseStarted=0;size_t releaseStep=0;
+    bool backgroundReleasing=false,releaseParked=false,releaseBlocked=false,releaseRearmed=false,releaseAuthorityForeground=false;
+    int64_t releaseStarted=0;size_t releaseStep=0;
     int64_t repairedAt=0;size_t repairStep=repairSchedule.size();
     int64_t activated=0,next=0;uint64_t ownershipFloor=0;size_t burst=0;std::string androidGroup;Mask androidMask=0;
     std::map<int,Task> tasks;
@@ -243,6 +244,21 @@ inline void finishScan(ProcessState& p,int64_t time,bool repaired=false){
     p.next=p.burst<coherenceSchedule.size()?p.activated+coherenceSchedule[p.burst]:time+1000;
     // One existing reactor deadline, not a second timer or a catch-up loop.
     if(p.repairStep<repairSchedule.size())p.next=std::min(p.next,p.repairedAt+repairSchedule[p.repairStep]);
+}
+// Shared by the real reactor and native lifecycle fixtures. No observation or
+// placement here: a fresh authority can only resume the OLD durable release.
+template<class Runtime> void activateAuthority(ProcessState& p,bool wanted,bool newScene,int64_t time,Runtime& runtime){
+    bool fresh=wanted&&!p.releaseAuthorityForeground;p.releaseAuthorityForeground=wanted;
+    if(!wanted){runtime.release(p);return;}
+    if(p.backgroundReleasing){
+        if(p.releaseParked&&(fresh||newScene)){
+            p.releaseParked=false;p.releaseBlocked=false;p.releaseRearmed=true;
+            p.releaseStarted=time;p.releaseStep=0;p.next=time;
+        }
+        return;
+    }
+    if(newScene)armCoherence(p,time);
+    beginAcquisition(p,time);
 }
 enum class BaselineResult {STABLE,DEFER,STALE};
 template<class Runtime> void advanceAcquisition(ProcessState& p,int64_t time,Runtime& runtime){

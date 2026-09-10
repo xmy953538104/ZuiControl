@@ -536,18 +536,19 @@ public:
         for(auto it=journal.entries.begin();it!=journal.entries.end();)
             if(it->second.pid==p.pid&&it->second.processStart==p.generation)it=journal.entries.erase(it);else ++it;
         journal.leases.erase(p.pid);journal.commit();p.tasks.clear();p.managed=false;discardAcquisition(p);
-        p.backgroundReleasing=false;p.releaseBlocked=false;p.coherenceReleasing=false;p.acquireBlocked=false;p.coherenceEpisodes=0;
+        p.backgroundReleasing=false;p.releaseParked=false;p.releaseBlocked=false;p.releaseRearmed=false;p.coherenceReleasing=false;p.acquireBlocked=false;p.coherenceEpisodes=0;
         count.releases++;return true;
     }
     void release(ProcessState& p,ReleaseCause cause=ReleaseCause::RELOAD_OR_CONTROLLED_STOP,int64_t time=now()){
+        if(cause==ReleaseCause::AUTHORITY_BACKGROUND&&!p.activity_foreground)p.releaseAuthorityForeground=false;
         if(p.managed&&(cause==ReleaseCause::AUTHORITY_BACKGROUND||p.backgroundReleasing)){
             if(!p.backgroundReleasing){
-                p.backgroundReleasing=true;p.releaseBlocked=false;p.releaseStarted=time;p.releaseStep=0;p.next=time;
+                p.backgroundReleasing=true;p.releaseParked=false;p.releaseBlocked=false;p.releaseRearmed=false;p.releaseStarted=time;p.releaseStep=0;p.next=time;
                 p.acquiring=false;p.acquireFinalConfirmation=false;p.baselineCandidate={};
                 p.coherenceReleasing=false;p.burst=coherenceSchedule.size();p.repairStep=repairSchedule.size();
             }
             bool terminal=cause!=ReleaseCause::AUTHORITY_BACKGROUND;
-            if(!terminal&&(p.releaseBlocked||p.next>time))return;
+            if(!terminal&&(p.releaseParked||p.next>time))return;
             bool last=terminal||time>=p.releaseStarted+backgroundReleaseSchedule.back();
             if(backgroundPass(p,terminal))return;
             if(last){
@@ -557,7 +558,7 @@ public:
                 // Catch/controlled-stop may retain durable external-only
                 // evidence for strict startup recovery. Do not turn a transient
                 // observation delay into a second fatal/status3.
-                p.releaseBlocked=true;return;
+                p.releaseParked=true;p.releaseBlocked=p.releaseRearmed&&p.activity_foreground;return;
             }
             do{++p.releaseStep;}while(p.releaseStep<backgroundReleaseSchedule.size()&&p.releaseStarted+backgroundReleaseSchedule[p.releaseStep]<=time);
             p.next=p.releaseStarted+backgroundReleaseSchedule[p.releaseStep];return;
