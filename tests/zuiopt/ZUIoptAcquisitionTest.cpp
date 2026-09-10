@@ -19,6 +19,8 @@ namespace fs=std::filesystem;
 namespace Kernel {
 struct Thread {uint64_t birth=10;std::string group="/top-app";Mask mask=255;};
 std::map<int,Thread> tasks;std::map<int,std::string> fds;
+std::map<std::string,std::string> procFiles;std::vector<int> listedTasks;
+uint64_t procMaterializations=0,taskMaterializations=0;
 std::string root,virtualRoot;int user=10001;int64_t time=0;int reads=0,moves=0,affinities=0;
 int groupReads=0,identityReads=0,uidReads=0,affinityReads=0;
 bool stuck=false;std::function<void(const std::string&)> hook;
@@ -38,11 +40,16 @@ bool procText(const std::string& path,std::string& text){
     if(path=="/proc/uptime"){text=std::to_string(100.+time/1000.)+" 0\n";return true;}
     if(path=="/proc/42/cmdline"){text="org.example.game";text.push_back(0);return true;}
     if(path=="/proc/42/status"){text="Tgid:\t42\n";return true;}
-    for(auto& [tid,t]:tasks){
-        auto prefix="/proc/"+std::to_string(tid);
-        if(path==prefix+"/stat"){text=statText(tid);return true;}
-        if(path==prefix+"/cgroup"){text="1:cpuset:"+t.group+"\n";return true;}
-        if(path==prefix+"/status"){text="Tgid:\t42\n";return true;}
+    if(path.rfind("/proc/",0)==0){
+        auto slash=path.find('/',6);auto number=path.substr(6,slash-6);
+        if(slash!=std::string::npos&&!number.empty()&&number.find_first_not_of("0123456789")==std::string::npos){
+            auto it=tasks.find(std::stoi(number));auto suffix=path.substr(slash);
+            if(it!=tasks.end()){
+                if(suffix=="/stat"){text=statText(it->first);return true;}
+                if(suffix=="/cgroup"){text="1:cpuset:"+it->second.group+"\n";return true;}
+                if(suffix=="/status"){text="Tgid:\t42\n";return true;}
+            }
+        }
     }
     if(path=="/proc/42/stat"){text=statText(42);return true;}
     if(path.rfind("/proc/42/task/",0)==0&&path.size()>5&&path.substr(path.size()-5)=="/stat"){
@@ -57,7 +64,7 @@ void initialize(){
     char ram[]="/dev/shm/zuiopt-kernel-XXXXXX";require(mkdtemp(ram),"exclusive virtual kernel root");virtualRoot=ram;
     struct statfs storage{};require(statfs(virtualRoot.c_str(),&storage)==0&&storage.f_type==0x01021994,"virtual kernel must be tmpfs");
     require(statfs(root.c_str(),&storage)==0&&storage.f_type!=0x01021994,"journal must remain disk-backed");
-    tasks={{42,{}},{43,{}}};fds.clear();user=10001;time=0;reads=moves=affinities=0;stuck=false;hook={};
+    tasks={{42,{}},{43,{}}};fds.clear();procFiles.clear();listedTasks.clear();user=10001;time=0;reads=moves=affinities=0;stuck=false;hook={};
     for(auto g:{"","/top-app","/background","/foreground","/ZUIopt"})for(auto f:{"tasks","mems","cpus"})put(virtualRoot+"/dev/cpuset"+g+"/"+f,f==std::string("mems")?"0":"0-7");
     fs::permissions(virtualRoot+"/dev/cpuset/ZUIopt",fs::perms::owner_all|fs::perms::group_read|fs::perms::group_exec|fs::perms::others_read|fs::perms::others_exec);
     fs::create_directories(virtualRoot+"/proc/42/task");
@@ -78,7 +85,9 @@ int __wrap_open(const char* path,int flags,...){
         if(procText(original,data)){reads++;
             if(original.size()>=7&&original.substr(original.size()-7)=="/cgroup")groupReads++;
             if(original.size()>=5&&original.substr(original.size()-5)=="/stat")identityReads++;
-            if(data.empty()){errno=ENOENT;return -1;}target=virtualRoot+"/read/"+std::to_string(checksum(original));put(target,data);}
+            if(data.empty()){errno=ENOENT;return -1;}target=virtualRoot+"/read/"+std::to_string(checksum(original));
+            // Generate fresh text on every read, but materialize only changed bytes.
+            auto& previous=procFiles[original];if(previous!=data){put(target,data);previous=data;procMaterializations++;}}
         else target=mapped(original);
         if(original.rfind("/dev/cpuset",0)==0&&original.size()>=6&&original.substr(original.size()-6)=="/tasks"){
             auto g=original.substr(11,original.size()-17);std::string members;
@@ -116,8 +125,13 @@ int __wrap_lstat(const char* path,struct stat* st){return __real_lstat(Kernel::r
 int __wrap_access(const char* path,int mode){return __real_access(Kernel::root.empty()?path:Kernel::mapped(path).c_str(),mode);}
 DIR* __wrap_opendir(const char* path){
     if(!Kernel::root.empty()&&std::string(path)=="/proc/42/task"){
-        auto dest=Kernel::mapped(path);fs::remove_all(dest);fs::create_directories(dest);
-        if(Kernel::tasks.count(42))for(auto& [tid,_]:Kernel::tasks)fs::create_directories(dest+"/"+std::to_string(tid));
+        std::vector<int> current;if(Kernel::tasks.count(42))for(auto& [tid,_]:Kernel::tasks)current.push_back(tid);
+        if(current!=Kernel::listedTasks){
+            auto dest=Kernel::mapped(path);fs::remove_all(dest);fs::create_directories(dest);
+            for(int tid:current)fs::create_directories(dest+"/"+std::to_string(tid));
+            Kernel::listedTasks=std::move(current);
+            Kernel::taskMaterializations++;
+        }
     }return __real_opendir(Kernel::root.empty()?path:Kernel::mapped(path).c_str());
 }
 int __wrap_mkdir(const char* path,mode_t mode){
@@ -181,6 +195,23 @@ struct AcquisitionFixture:RuntimeFixture {
     void background(){app.state=19;app.flags=0;primary();}
     void empty(){require(journal->entries.empty()&&journal->leases.empty()&&!p().managed&&!p().acquiring,"release owner leak");}
 };
+void kernelBacking(){
+    AcquisitionFixture f;
+    require(read("/proc/43/cgroup")=="1:cpuset:/top-app\n","initial virtual group");
+    auto files=Kernel::procMaterializations;
+    for(int i=0;i<20;i++)require(read("/proc/43/cgroup")=="1:cpuset:/top-app\n","repeat virtual read");
+    require(Kernel::procMaterializations==files,"unchanged read rematerialized");
+    Kernel::tasks.at(43).group="/foreground";require(read("/proc/43/cgroup")=="1:cpuset:/foreground\n"&&Kernel::procMaterializations==files+1,"stale group cache");
+    auto first=read("/proc/43/stat");Kernel::tasks.at(43).birth++;
+    require(read("/proc/43/stat")!=first,"stale generation cache");
+    require(ids("/proc/42/task").size()==2,"initial task list");auto dirs=Kernel::taskMaterializations;
+    for(int i=0;i<20;i++)require(ids("/proc/42/task").size()==2,"repeat task list");
+    require(Kernel::taskMaterializations==dirs,"unchanged list rebuilt");
+    Kernel::tasks.erase(43);require(ids("/proc/42/task").size()==1,"stale dead task");
+    Kernel::tasks[43]={99,"/top-app",255};require(ids("/proc/42/task").size()==2&&read("/proc/43/stat")!=first,"stale reborn task");
+    Kernel::tasks.clear();require(ids("/proc/42/task").empty(),"dead process task list");
+    puts("SYNTHETIC_KERNEL_CACHE_INVALIDATION=PASS;REAL_JOURNAL_DISK=PASS");
+}
 template<class F> void expectFailure(F action,const std::string& message){
     std::string observed="NO_EXCEPTION";try{action();}catch(const std::exception& e){observed=e.what();}
     if(observed.find(message)==observed.npos)throw std::runtime_error("strict guard expected="+message+" observed="+observed);
@@ -626,6 +657,7 @@ void timed(const char* name,void(*test)()){
         <<";BLOCK_OUT="<<after.ru_oublock-before.ru_oublock<<'\n';
 }
 int main(){try{std::cout<<std::unitbuf;require(getuid()==0,"isolated root fixture");
+    timed("kernel_backing",kernelBacking);
     timed("matrix",matrix);timed("recovery",recovery);timed("stress512",stress);timed("coherence1024",coherence);timed("horizon",horizon);timed("liveness1024",liveness);
     puts("ZUIOPT_BASELINE_NATIVE=PASS");return 0;}
 catch(const std::exception& e){std::cerr<<"BASELINE_FAIL "<<e.what()<<'\n';return 1;}}
