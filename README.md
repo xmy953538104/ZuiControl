@@ -74,6 +74,11 @@ python scripts/build/VerifiedContentCache.py ci-artifact --run-id <run> --artifa
 The same canonical paths are enforced by `.github/workflows/build.yml`.
 The native journal fixture requires root and creates/removes only its own
 exclusive temporary directory; it never starts an owner or changes cpusets.
+The acquisition fixture keeps only synthetic proc/cpuset files on `/dev/shm`
+tmpfs; its journal remains on disk-backed `/tmp`, with real fsync, atomic rename,
+locks and SIGKILL recovery. All stress cases still run. Each suite prints flushed
+wall/CPU/block-I/O measurements; CI bounds acquisition to five minutes and the
+complete native integration step to ten minutes, failing rather than skipping.
 The Binder fixture executes the production reply parser with typed mock Parcel
 calls; it is not proof of device wire bytes or SELinux permissions.
 

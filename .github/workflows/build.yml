@@ -115,6 +115,7 @@ jobs:
           bash -n payload/system/etc/zuiopt/crash_gate.sh
 
       - name: Test and build ZUIopt production integration
+        timeout-minutes: 10
         shell: bash
         run: |
           set -euo pipefail
@@ -140,7 +141,8 @@ jobs:
             -Wl,--wrap=open,--wrap=close,--wrap=write,--wrap=stat,--wrap=lstat,--wrap=access \
             -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
             -o "$RUNNER_TEMP/zuiopt-acquisition-fixture"
-          sudo "$RUNNER_TEMP/zuiopt-acquisition-fixture" | tee "$receipt/acquisition_fixtures.txt"
+          sudo /usr/bin/time -v -o "$receipt/acquisition_resources.txt" timeout --kill-after=10s 5m \
+            "$RUNNER_TEMP/zuiopt-acquisition-fixture" | tee "$receipt/acquisition_fixtures.txt"
           python3 scripts/build/BuildZUIopt.py \
             --ndk "$ANDROID_SDK_ROOT/ndk/27.2.12479018" \
             --output payload/system/bin/ZUIopt --receipt "$receipt/build.json"

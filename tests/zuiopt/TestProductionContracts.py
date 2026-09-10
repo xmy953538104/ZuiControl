@@ -9,6 +9,19 @@ ROOT=Path(__file__).resolve().parents[2]
 def read(path): return (ROOT/path).read_text(encoding='utf-8')
 
 class ProductionContracts(unittest.TestCase):
+    def test_fixture_io_isolation_and_ci_bound(self):
+        fixture=read('tests/zuiopt/ZUIoptAcquisitionTest.cpp')
+        self.assertIn('journal=std::make_unique<Journal>(Kernel::root+"/state")',fixture)
+        self.assertIn('storage.f_type!=0x01021994,"journal must remain disk-backed"',fixture)
+        self.assertIn('storage.f_type==0x01021994,"virtual kernel must be tmpfs"',fixture)
+        self.assertIn('target=virtualRoot+"/read/"',fixture)
+        workflow=read('.github/workflows/build.yml')
+        self.assertIn('timeout --kill-after=10s 5m',workflow)
+        self.assertIn('timeout-minutes: 10',workflow)
+        self.assertNotIn('--wrap=fsync',workflow)
+        for name in ('matrix','recovery','stress512','coherence1024','horizon','liveness1024'):
+            self.assertIn('timed("'+name+'",',fixture)
+
     def test_versioned_apk_staging_matches_app_and_payload_consumer(self):
         version=re.search(r'versionCode\s*=\s*(\d+)',read('app/build.gradle.kts'))[1]
         relative=f'system/priv-app/ZuiControlV{version}/ZuiControl.apk'

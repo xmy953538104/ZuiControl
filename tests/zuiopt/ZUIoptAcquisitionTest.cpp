@@ -11,16 +11,19 @@
 #include <fstream>
 #include <functional>
 #include <random>
+#include <chrono>
+#include <sys/resource.h>
+#include <sys/vfs.h>
 #include <sys/wait.h>
 namespace fs=std::filesystem;
 namespace Kernel {
 struct Thread {uint64_t birth=10;std::string group="/top-app";Mask mask=255;};
 std::map<int,Thread> tasks;std::map<int,std::string> fds;
-std::string root;int user=10001;int64_t time=0;int reads=0,moves=0,affinities=0;
+std::string root,virtualRoot;int user=10001;int64_t time=0;int reads=0,moves=0,affinities=0;
 int groupReads=0,identityReads=0,uidReads=0,affinityReads=0;
 bool stuck=false;std::function<void(const std::string&)> hook;
 std::string mapped(const std::string& path){
-    if(path.rfind("/dev/cpuset",0)==0||path=="/proc/42"||path.rfind("/proc/42/",0)==0)return root+path;
+    if(path.rfind("/dev/cpuset",0)==0||path=="/proc/42"||path.rfind("/proc/42/",0)==0)return virtualRoot+path;
     return path;
 }
 void put(const std::string& path,const std::string& data){
@@ -49,10 +52,15 @@ bool procText(const std::string& path,std::string& text){
 }
 void initialize(){
     char path[]="/tmp/zuiopt-acquire-XXXXXX";require(mkdtemp(path),"exclusive synthetic kernel root");root=path;
+    // Only emulated proc/cpuset files live in RAM, like the real kernel files.
+    // Journal/CRC/fsync/rename/locks/SIGKILL still use the disk-backed /tmp root.
+    char ram[]="/dev/shm/zuiopt-kernel-XXXXXX";require(mkdtemp(ram),"exclusive virtual kernel root");virtualRoot=ram;
+    struct statfs storage{};require(statfs(virtualRoot.c_str(),&storage)==0&&storage.f_type==0x01021994,"virtual kernel must be tmpfs");
+    require(statfs(root.c_str(),&storage)==0&&storage.f_type!=0x01021994,"journal must remain disk-backed");
     tasks={{42,{}},{43,{}}};fds.clear();user=10001;time=0;reads=moves=affinities=0;stuck=false;hook={};
-    for(auto g:{"","/top-app","/background","/foreground","/ZUIopt"})for(auto f:{"tasks","mems","cpus"})put(root+"/dev/cpuset"+g+"/"+f,f==std::string("mems")?"0":"0-7");
-    fs::permissions(root+"/dev/cpuset/ZUIopt",fs::perms::owner_all|fs::perms::group_read|fs::perms::group_exec|fs::perms::others_read|fs::perms::others_exec);
-    fs::create_directories(root+"/proc/42/task");
+    for(auto g:{"","/top-app","/background","/foreground","/ZUIopt"})for(auto f:{"tasks","mems","cpus"})put(virtualRoot+"/dev/cpuset"+g+"/"+f,f==std::string("mems")?"0":"0-7");
+    fs::permissions(virtualRoot+"/dev/cpuset/ZUIopt",fs::perms::owner_all|fs::perms::group_read|fs::perms::group_exec|fs::perms::others_read|fs::perms::others_exec);
+    fs::create_directories(virtualRoot+"/proc/42/task");
 }
 }
 extern "C" {
@@ -70,7 +78,7 @@ int __wrap_open(const char* path,int flags,...){
         if(procText(original,data)){reads++;
             if(original.size()>=7&&original.substr(original.size()-7)=="/cgroup")groupReads++;
             if(original.size()>=5&&original.substr(original.size()-5)=="/stat")identityReads++;
-            if(data.empty()){errno=ENOENT;return -1;}target=root+"/read/"+std::to_string(checksum(original));put(target,data);}
+            if(data.empty()){errno=ENOENT;return -1;}target=virtualRoot+"/read/"+std::to_string(checksum(original));put(target,data);}
         else target=mapped(original);
         if(original.rfind("/dev/cpuset",0)==0&&original.size()>=6&&original.substr(original.size()-6)=="/tasks"){
             auto g=original.substr(11,original.size()-17);std::string members;
@@ -143,7 +151,7 @@ struct AcquisitionFixture:RuntimeFixture {
         Kernel::initialize();journal=std::make_unique<Journal>(Kernel::root+"/state");
         owner=std::make_unique<Placement>(count,*journal);initialCommits=journal->commits;
     }
-    ~AcquisitionFixture(){owner.reset();journal.reset();Kernel::hook={};auto dir=Kernel::root;Kernel::root.clear();fs::remove_all(dir);}
+    ~AcquisitionFixture(){owner.reset();journal.reset();Kernel::hook={};auto dir=Kernel::root;Kernel::root.clear();fs::remove_all(dir);fs::remove_all(Kernel::virtualRoot);Kernel::virtualRoot.clear();}
     void activate(ProcessState& p){if(!p.activity_foreground){release(p);return;}beginAcquisition(p,Kernel::time);}
     void release(ProcessState& p){owner->release(p);}
     BaselineResult acquire(ProcessState& p){probes++;TimedProc proc;return owner->acquire(p,proc);}
@@ -253,7 +261,7 @@ void recovery(){
         f.journal=std::make_unique<Journal>(Kernel::root+"/state");f.owner=std::make_unique<Placement>(f.count,*f.journal);
         require(f.journal->entries.empty()&&f.journal->leases.empty(),"SIGKILL recovery journal leak");
         for(auto& [_,t]:Kernel::tasks)require(t.group=="/top-app"&&t.mask==255,"SIGKILL late-spawn strict restore");
-        require(fs::is_directory(Kernel::root+"/dev/cpuset/ZUIopt"),"KEEP_ROOT scaffold");}
+        require(fs::is_directory(Kernel::virtualRoot+"/dev/cpuset/ZUIopt"),"KEEP_ROOT scaffold");}
     {AcquisitionFixture f;Kernel::tasks.at(43).group="/ZUIopt";f.owner.reset();f.journal.reset();
         f.journal=std::make_unique<Journal>(Kernel::root+"/state");expectFailure([&]{Placement unknown(f.count,*f.journal);},"RECOVERY_UNKNOWN_TASK_FAIL_CLOSED");require(!Kernel::moves&&!Kernel::affinities,"unknown recovery wrote kernel");}
     puts("BASELINE_JOURNAL_SIGKILL_LATE_SPAWN_STRICT_RELEASE=PASS;UNKNOWN_LIVE_AND_BUSY_FAIL_CLOSED=PASS");
@@ -607,5 +615,17 @@ void liveness(){
     std::cout<<"V56_WAKE01_EXACT_CLASS=PASS;LATE_TIMER_SKIPPED_PROBE=0;LATE_CANDIDATES=8;ZERO_WRITE_PRECOMMIT=PASS;THREAD_CHURN=PASS;PERSISTENT_HETEROGENEITY=PASS\n";
     std::cout<<"ACQUISITION_LIVENESS_STRESS=1024;EVENTUAL_ACQUISITION_MISS=0;GLOBAL_FATAL=0;UNSAFE_WRITE=0;STALE_PID=0;OWNER_LEAK=0;IDLE_STEADY_ACQUISITION_TIMER=0;MAX_PROBES="<<maxProbes<<";RECOVERED_AFTER_SLA="<<lateRecovered<<";BIRTH_RACES="<<births<<";DEATH_RACES="<<deaths<<'\n';
 }
-int main(){try{require(getuid()==0,"isolated root fixture");matrix();recovery();stress();coherence();horizon();liveness();puts("ZUIOPT_BASELINE_NATIVE=PASS");return 0;}
+void timed(const char* name,void(*test)()){
+    using clock=std::chrono::steady_clock;auto start=clock::now();rusage before{},after{};
+    require(getrusage(RUSAGE_SELF,&before)==0,"fixture resource usage");
+    std::cout<<"ACQUISITION_PHASE_START="<<name<<'\n';test();
+    require(getrusage(RUSAGE_SELF,&after)==0,"fixture resource usage");
+    auto seconds=[](timeval t){return t.tv_sec+t.tv_usec/1000000.;};
+    std::cout<<"ACQUISITION_PHASE="<<name<<";WALL_S="<<std::chrono::duration<double>(clock::now()-start).count()
+        <<";USER_S="<<seconds(after.ru_utime)-seconds(before.ru_utime)<<";SYS_S="<<seconds(after.ru_stime)-seconds(before.ru_stime)
+        <<";BLOCK_OUT="<<after.ru_oublock-before.ru_oublock<<'\n';
+}
+int main(){try{std::cout<<std::unitbuf;require(getuid()==0,"isolated root fixture");
+    timed("matrix",matrix);timed("recovery",recovery);timed("stress512",stress);timed("coherence1024",coherence);timed("horizon",horizon);timed("liveness1024",liveness);
+    puts("ZUIOPT_BASELINE_NATIVE=PASS");return 0;}
 catch(const std::exception& e){std::cerr<<"BASELINE_FAIL "<<e.what()<<'\n';return 1;}}
