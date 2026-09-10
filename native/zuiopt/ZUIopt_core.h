@@ -251,7 +251,9 @@ template<class Runtime> void activateAuthority(ProcessState& p,bool wanted,bool 
     bool fresh=wanted&&!p.releaseAuthorityForeground;p.releaseAuthorityForeground=wanted;
     if(!wanted){runtime.release(p);return;}
     if(p.backgroundReleasing){
-        if(p.releaseParked&&(fresh||newScene)){
+        // A real foreground edge may arrive just BEFORE the old window parks.
+        // Give that epoch its one window too; a delayed scene cannot extend it.
+        if(fresh||(p.releaseParked&&newScene)){
             p.releaseParked=false;p.releaseBlocked=false;p.releaseRearmed=true;
             p.releaseStarted=time;p.releaseStep=0;p.next=time;
         }

@@ -64,7 +64,7 @@ struct ReentryFixture:BackgroundFixture {
         require(!p().backgroundReleasing&&!p().releaseParked&&!p().releaseBlocked&&p().acquiring,"STICKY_RELEASE_OUTAGE");
         require(journal->entries.empty()&&journal->leases.empty(),"old journal not cleared before acquisition");
         for(auto& [_,t]:Kernel::tasks)require(t.group.rfind("/ZUIopt",0)!=0,"old physical owner before acquisition");
-        auto start=p().acquireStarted;tick(time);for(int dt:{100,250,500,750,1000})if(!p().managed)tick(start+dt);
+        auto start=p().acquireStarted;tick(time);for(int dt:{100,250,500,750,1000})if(!p().managed)tick(std::max(start+dt,time+dt));
         require(p().managed&&!p().acquiring,"STICKY_RELEASE_OUTAGE");
         owner->prepare(p());
         auto g07=parseConfig("schema 2\nenabled true\nprofile G 2-6\nthread G R exact Render selector=rank:1 20 2-4\nthread G T exact Game selector=rank:1 10 7\npackage exact org.example.game G 100\n",255);
@@ -87,6 +87,9 @@ void reentryDeterministic(){
         if(mode==1)f.p().releaseAuthorityForeground=true;
         f.foreground(2250,mode);require(f.windows==1,"primary/scene rearm missing");f.acquireG07(2250);}
     {ReentryFixture f;f.setup();f.park();f.safe();f.idle(30250);f.foreground(31000,2);f.acquireG07(31000);}
+    {ReentryFixture f;f.setup();Kernel::stuck=true;f.background();f.foreground(700,2);
+        require(f.windows==1&&f.p().releaseStarted==700,"foreground before park lost epoch");
+        f.tick(750);f.safe();f.tick(800);f.acquireG07(800);}
     {ReentryFixture f;f.setup();f.park();f.foreground(2250);require(f.windows==1&&f.p().releaseStarted==2250,"first rearm");
         for(int dt:{1,50,100,250,499}){Kernel::time=2250+dt;f.primary();f.scene.accept(1,Kernel::time);f.tick(Kernel::time);
             require(f.windows==1&&f.p().releaseStarted==2250,"DUPLICATE_REARM_LOOP");}
@@ -112,15 +115,26 @@ void reentryStress(){
         ReentryFixture f;f.setup(4+random()%29);int delay=random()%2001,mode=random()%3;bool reverse=random()%2;
         Kernel::stuck=true;f.background();
         int subset=random()%101;handoff(subset,random()%3);
-        if(random()%2)Kernel::tasks[300]={f.p().ownershipFloor+1,"/ZUIopt/7c",0x7c};
+        if(random()%2){bool inherited=std::any_of(Kernel::tasks.begin(),Kernel::tasks.end(),[](const auto& t){return t.second.group=="/ZUIopt/7c";});
+            Kernel::tasks[300]={f.p().ownershipFloor+1,inherited?"/ZUIopt/7c":"/background",inherited?Mask(0x7c):Mask(255)};}
         if(random()%2)Kernel::tasks.erase(45);
-        for(int dt:{50,100,250,500}){if(dt>=delay)f.safe();f.tick(250+dt);}
-        if(f.p().releaseParked)f.idle(800);
-        f.safe();int64_t time=250+std::max(2000,delay)+random()%30000;
+        int64_t time=251+random()%2001,safeAt=250+delay;
+        for(int dt:{50,100,250,500})if(250+dt<time){if(250+dt>=safeAt)f.safe();f.tick(250+dt);}
+        if(time>=safeAt)f.safe();
         if(mode==1&&f.p().releaseParked)f.p().releaseAuthorityForeground=true;
         // Individually lost primary or scene; both delivered in either order.
         if(mode==0&&reverse){f.foreground(time,1);f.primary();}else f.foreground(time,mode);
-        require(f.windows<=1,"DUPLICATE_REARM_LOOP");f.acquireG07(time);
+        while(f.p().backgroundReleasing&&!f.p().releaseParked){
+            auto due=f.p().next;require(due>Kernel::time&&due<=time+500,"unbounded foreground release deadline");
+            if(due>=safeAt)f.safe();f.primary();f.scene.accept(1,Kernel::time);f.tick(due);
+        }
+        require(f.windows<=1,"DUPLICATE_REARM_LOOP");
+        if(f.p().releaseParked){
+            require(f.p().releaseBlocked&&f.blockerWrites==1,"failed foreground rearm classification");
+            f.idle(Kernel::time+1);f.background();f.safe();time=std::max(Kernel::time+100,safeAt);
+            f.foreground(time,mode,2);require(f.windows==2,"fresh recovery epoch lost");
+        }
+        f.safe();time=std::max(Kernel::time,safeAt);f.acquireG07(time);
     }catch(const std::exception& e){throw std::runtime_error("random reentry case="+std::to_string(i)+" "+e.what());}
     std::cout<<"RELEASE_REENTRY_RANDOM_STRESS_COUNT="<<total<<";RECOVERABLE_GLOBAL_FATAL=0;STATUS3_RECOVERABLE=0;STICKY_RELEASE_OUTAGE=0;DUPLICATE_REARM_LOOP=0;UNSAFE_CPUSET_REWRITE=0;UNSAFE_AFFINITY_REWRITE=0;JOURNAL_CLEAR_WITH_LIVE_ZUIOPT_TASK=0;STALE_PID=0;OWNER_LEAK=0\n";
 }

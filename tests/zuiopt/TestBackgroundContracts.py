@@ -41,7 +41,7 @@ class BackgroundContracts(unittest.TestCase):
     def test_park_rearm_is_shared_and_authority_bounded(self):
         core=text('ZUIopt_core.h');daemon=text('ZUIopt_daemon.h');owner=text('ZUIopt_owner.h')
         helper=core.split('void activateAuthority(',1)[1].split('enum class BaselineResult',1)[0]
-        self.assertIn('p.releaseParked&&(fresh||newScene)',helper)
+        self.assertIn('fresh||(p.releaseParked&&newScene)',helper)
         self.assertIn('activateAuthority(p,wanted,authorityEvent,now(),*this)',daemon)
         self.assertIn('authorityEvent=sceneBurst.step==0',daemon)
         self.assertIn('p.releaseBlocked=p.releaseRearmed&&p.activity_foreground',owner)
