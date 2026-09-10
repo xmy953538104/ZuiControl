@@ -656,8 +656,10 @@ void timed(const char* name,void(*test)()){
         <<";USER_S="<<seconds(after.ru_utime)-seconds(before.ru_utime)<<";SYS_S="<<seconds(after.ru_stime)-seconds(before.ru_stime)
         <<";BLOCK_OUT="<<after.ru_oublock-before.ru_oublock<<'\n';
 }
+#ifndef ZUIOPT_ACQUISITION_LIBRARY
 int main(){try{std::cout<<std::unitbuf;require(getuid()==0,"isolated root fixture");
     timed("kernel_backing",kernelBacking);
     timed("matrix",matrix);timed("recovery",recovery);timed("stress512",stress);timed("coherence1024",coherence);timed("horizon",horizon);timed("liveness1024",liveness);
     puts("ZUIOPT_BASELINE_NATIVE=PASS");return 0;}
 catch(const std::exception& e){std::cerr<<"BASELINE_FAIL "<<e.what()<<'\n';return 1;}}
+#endif

@@ -143,6 +143,13 @@ jobs:
             -o "$RUNNER_TEMP/zuiopt-acquisition-fixture"
           sudo /usr/bin/time -v -o "$receipt/acquisition_resources.txt" timeout --kill-after=10s 5m \
             "$RUNNER_TEMP/zuiopt-acquisition-fixture" | tee "$receipt/acquisition_fixtures.txt"
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
+            -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptBackgroundTest.cpp -lz \
+            -Wl,--wrap=open,--wrap=close,--wrap=write,--wrap=stat,--wrap=lstat,--wrap=access \
+            -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
+            -o "$RUNNER_TEMP/zuiopt-background-fixture"
+          sudo timeout --kill-after=10s 5m "$RUNNER_TEMP/zuiopt-background-fixture" \
+            | tee "$receipt/background_release_fixtures.txt"
           python3 scripts/build/BuildZUIopt.py \
             --ndk "$ANDROID_SDK_ROOT/ndk/27.2.12479018" \
             --output payload/system/bin/ZUIopt --receipt "$receipt/build.json"
