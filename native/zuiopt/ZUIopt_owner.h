@@ -422,7 +422,10 @@ public:
                 lease->second.user==p.uid&&lease->second.threadStart==p.ownershipFloor,"committed lease identity mismatch");
         for(auto& [tid,t]:p.tasks)if(t.owned&&same(p,tid,t)){
             auto e=journal.entries.find(tid);
-            require(e!=journal.entries.end()&&e->second.pid==p.pid&&e->second.threadStart==t.generation&&journal.same(e->second),"write without durable owner identity");
+            // Compare durable identities, not a second live observation inside
+            // the invariant: exit/reuse between two reads is not journal damage.
+            bool durable=e!=journal.entries.end()&&e->second.pid==p.pid&&e->second.processStart==p.generation&&e->second.user==p.uid&&e->second.threadStart==t.generation;
+            require(durable||!same(p,tid,t),"write without durable owner identity");
         }
         auto owned=[](const std::string& g){return g=="/ZUIopt"||g.rfind("/ZUIopt/",0)==0;};
         // Cross-check physical membership, including lease-covered children not

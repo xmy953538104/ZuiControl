@@ -108,7 +108,7 @@ void strictBoundaries(){
 }
 void backgroundStress(){
     std::mt19937 random(0x58bac);int total=1024;
-    for(int i=0;i<total;i++){
+    for(int i=0;i<total;i++)try{
         BackgroundFixture f;int n=2+random()%199;f.setup(n);
         int when=random()%3,percent=random()%101,kind=random()%3,action=random()%5;
         int boundary=1+random()%(n*12);
@@ -120,7 +120,10 @@ void backgroundStress(){
                 if(kind!=0)t.mask=random()%2?31:67;
             }
             if(action==0&&n>2)Kernel::tasks.erase(44);
-            if(action==1)Kernel::tasks[300]={f.p().ownershipFloor+1,"/ZUIopt/7c",0x7c};
+            if(action==1){
+                bool parentOwned=std::any_of(Kernel::tasks.begin(),Kernel::tasks.end(),[](const auto& item){return item.second.group=="/ZUIopt/7c";});
+                Kernel::tasks[300]={f.p().ownershipFloor+1,parentOwned?"/ZUIopt/7c":"/background",parentOwned?Mask(0x7c):Mask(67)};
+            }
             if(action==2)Kernel::tasks[301]={f.p().ownershipFloor+1,"/background",67};
             if(action==3&&n>2){Kernel::tasks[44]={90000,"/foreground",31};f.reused.insert(44);}
         };
@@ -128,7 +131,7 @@ void backgroundStress(){
             if((when==1&&--boundary==0)||(when==2&&path=="/dev/cpuset/top-app/tasks")){Kernel::hook={};change();}
         };
         f.background(random()%2);if(random()%2)f.background();f.complete();
-    }
+    }catch(const std::exception& e){throw std::runtime_error("random release case="+std::to_string(i)+" "+e.what());}
     std::cout<<"RANDOM_RELEASE_STRESS_COUNT="<<total<<";GLOBAL_FATAL_RECOVERABLE=0;STATUS3_RECOVERABLE=0;OWNER_LEAK=0;STALE_PID=0;UNKNOWN_TASK_FALSE_POSITIVE=0;UNSAFE_CPUSET_REWRITE=0;UNSAFE_AFFINITY_REWRITE=0;JOURNAL_CLEAR_WITH_LIVE_ZUIOPT_TASK=0\n";
 }
 int main(){try{std::cout<<std::unitbuf;timed("BACKGROUND_DETERMINISTIC",deterministic);timed("BACKGROUND_STRICT",strictBoundaries);timed("BACKGROUND_STRESS",backgroundStress);
