@@ -30,7 +30,11 @@ class ProductionContracts(unittest.TestCase):
 
     def test_acquisition_zero_write_and_local_bounded_deadlines(self):
         core=read('native/zuiopt/ZUIopt_core.h')
-        self.assertIn('schedule={0,100,250,500,750}',core)
+        self.assertIn('schedule={0,100,250,500,750,1000,1250,1500,2000,2500,3000}',core)
+        self.assertIn('auto result=runtime.acquire(p);',core)
+        self.assertNotIn('?BaselineResult::DEFER:runtime.acquire(p)',core)
+        self.assertIn('confirmation<=p.acquireStarted+3500',core)
+        self.assertIn('!p.acquireFinalConfirmation&&valid',core)
         self.assertIn('if(p.managed||p.acquiring||p.acquireBlocked)return;',core)
         self.assertIn('if(!p.acquiring||p.next>time)return;',core)
         owner=read('native/zuiopt/ZUIopt_owner.h')

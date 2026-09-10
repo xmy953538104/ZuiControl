@@ -207,7 +207,7 @@ struct ProcessState {
     int pid=0,uid=0;std::string name,package;uint64_t generation=0;
     bool activity_foreground=false,alive=true,managed=false;int foreground_service_state=0;
     // managed means a durable lease, never just a foreground acquisition request.
-    bool acquiring=false,acquireBlocked=false;int64_t acquireStarted=0;size_t acquireStep=0;
+    bool acquiring=false,acquireBlocked=false,acquireFinalConfirmation=false;int64_t acquireStarted=0;size_t acquireStep=0;
     BaselineCandidate baselineCandidate;uint64_t acquisitionEpoch=0;
     unsigned coherenceEpisodes=0;bool coherenceReleasing=false;
     int64_t repairedAt=0;size_t repairStep=repairSchedule.size();
@@ -217,12 +217,12 @@ struct ProcessState {
 inline void beginAcquisition(ProcessState& p,int64_t time){
     if(p.managed||p.acquiring||p.acquireBlocked)return;
     p.baselineCandidate={};++p.acquisitionEpoch;
-    p.acquiring=true;p.acquireStarted=time;p.acquireStep=0;p.next=time;
+    p.acquiring=true;p.acquireFinalConfirmation=false;p.acquireStarted=time;p.acquireStep=0;p.next=time;
 }
 inline void discardAcquisition(ProcessState& p){
     require(!p.managed,"discard committed ownership");
     for(auto& [_,t]:p.tasks)require(!t.owned,"uncommitted owned task");
-    p.tasks.clear();p.acquiring=false;p.acquireStarted=0;p.acquireStep=0;p.next=0;
+    p.tasks.clear();p.acquiring=false;p.acquireFinalConfirmation=false;p.acquireStarted=0;p.acquireStep=0;p.next=0;
     p.androidGroup.clear();p.androidMask=0;p.ownershipFloor=0;
     p.baselineCandidate={};p.burst=coherenceSchedule.size();p.repairStep=repairSchedule.size();
 }
@@ -243,16 +243,29 @@ inline void finishScan(ProcessState& p,int64_t time,bool repaired=false){
 }
 enum class BaselineResult {STABLE,DEFER,STALE};
 template<class Runtime> void advanceAcquisition(ProcessState& p,int64_t time,Runtime& runtime){
-    static constexpr std::array<int,5> schedule={0,100,250,500,750};
+    // Performance certification ends at 1000ms; safety/liveness does not.
+    static constexpr std::array<int,11> schedule={0,100,250,500,750,1000,1250,1500,2000,2500,3000};
     if(!p.acquiring||p.next>time)return;
-    // No catch-up storm, and no attempt outside the original bounded window.
-    auto result=time>p.acquireStarted+schedule.back()?BaselineResult::DEFER:runtime.acquire(p);
+    // Every due opportunity probes, even when the reactor runs late. Never
+    // manufacture DEFER from scheduling latency or replay expired probes.
+    auto result=runtime.acquire(p);
     if(result==BaselineResult::STABLE){require(p.managed&&!p.acquiring,"acquisition commit state");return;}
     if(result==BaselineResult::STALE){runtime.release(p);p.alive=false;return;}
-    do{++p.acquireStep;}while(p.acquireStep<schedule.size()&&p.acquireStarted+schedule[p.acquireStep]<time);
-    if(p.acquireStep==schedule.size()){
-        runtime.release(p);p.acquireBlocked=true;runtime.baselineBlocked();
-    }else p.next=p.acquireStarted+schedule[p.acquireStep];
+    auto& candidate=p.baselineCandidate;
+    bool valid=!candidate.group.empty()&&candidate.mask&&candidate.generation==p.generation&&
+        candidate.uid==p.uid&&candidate.epoch==p.acquisitionEpoch;
+    int64_t confirmation=candidate.firstStableAt+250;
+    if(time>=p.acquireStarted+schedule.back()){
+        // A late valid candidate gets exactly one confirmation, never a moving
+        // hard cap. These are scheduled deadlines, not OS latency guarantees.
+        if(!p.acquireFinalConfirmation&&valid&&confirmation>time&&confirmation<=p.acquireStarted+3500){
+            p.acquireFinalConfirmation=true;p.next=confirmation;return;
+        }
+        runtime.release(p);p.acquireBlocked=true;runtime.baselineBlocked();return;
+    }
+    while(p.acquireStep<schedule.size()&&p.acquireStarted+schedule[p.acquireStep]<=time)++p.acquireStep;
+    p.next=p.acquireStarted+schedule[p.acquireStep];
+    if(valid&&confirmation>time)p.next=std::min(p.next,confirmation);
 }
 #ifndef ZUIOPT_PRODUCTION
 inline void selftest(){

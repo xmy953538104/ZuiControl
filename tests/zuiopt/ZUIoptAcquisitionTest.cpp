@@ -138,7 +138,7 @@ int __wrap_sched_setaffinity(pid_t tid,size_t size,const cpu_set_t* set){
 struct AcquisitionFixture:RuntimeFixture {
     struct TimedProc:BaselineProc {int64_t time(){return Kernel::time;}};
     Counters count;std::unique_ptr<Journal> journal;std::unique_ptr<Placement> owner;
-    RuntimeBlocker receipt;int blockerAttempts=0;uint64_t initialCommits=0;SceneBurst scene;
+    RuntimeBlocker receipt;int blockerAttempts=0,probes=0;uint64_t initialCommits=0;SceneBurst scene;
     AcquisitionFixture(){
         Kernel::initialize();journal=std::make_unique<Journal>(Kernel::root+"/state");
         owner=std::make_unique<Placement>(count,*journal);initialCommits=journal->commits;
@@ -146,7 +146,7 @@ struct AcquisitionFixture:RuntimeFixture {
     ~AcquisitionFixture(){owner.reset();journal.reset();Kernel::hook={};auto dir=Kernel::root;Kernel::root.clear();fs::remove_all(dir);}
     void activate(ProcessState& p){if(!p.activity_foreground){release(p);return;}beginAcquisition(p,Kernel::time);}
     void release(ProcessState& p){owner->release(p);}
-    BaselineResult acquire(ProcessState& p){TimedProc proc;return owner->acquire(p,proc);}
+    BaselineResult acquire(ProcessState& p){probes++;TimedProc proc;return owner->acquire(p,proc);}
     void baselineBlocked(){blockerAttempts++;receipt.record(Kernel::root+"/state",journal->currentBootId(),RuntimeBlockerReason::INHERITANCE_BASELINE_UNSTABLE);}
     ProcessState* resolve(const Snapshot& s){
         auto id=validateManagedSnapshot(s,config,*this);if(!id.start)return nullptr;
@@ -191,21 +191,21 @@ void matrix(){
             f.tick(t);if(t<visible+250)f.noOwnership();
         }
         if(source==2)require(f.snapshotQueries==queries,"ProcessObserver-only retries queried activity");
-        if(visible==750){require(f.p().acquireBlocked&&f.blockerAttempts==1,"late unconfirmed baseline not blocked");}
-        else{require(f.p().managed&&f.journal->commits==f.initialCommits+1&&f.journal->leases.size()==1,"temporal acquire miss/duplicate lease");f.place();}
+        if(visible==750){f.noOwnership();require(!f.p().acquireBlocked,"SLA boundary blocker");f.tick(1000);}
+        require(f.p().managed&&f.journal->commits==f.initialCommits+1&&f.journal->leases.size()==1,"temporal acquire miss/duplicate lease");f.place();
         f.background();f.empty();
     }
     // D/E: timeout is local to this request; duplicate foreground cannot restart it.
     for(bool custom:{false,true}){
         AcquisitionFixture f;Kernel::tasks.at(43).mask=custom?128:67;if(!custom)Kernel::tasks.at(43).group="/background";
-        f.start(2);for(int t:{100,250,500,750}){f.tick(t);f.noOwnership();}
+        f.start(2);for(int t:{100,250,500,750,1000,1250,1500,2000,2500,3000}){f.tick(t);f.noOwnership();}
         require(f.blockerAttempts==1&&f.p().acquireBlocked&&!f.p().acquiring,"persistent mismatch not blocked");
         auto path=Kernel::root+"/state/runtime_blocker.v1";auto data=read(path);struct stat st{};require(lstat(path.c_str(),&st)==0,"blocker exists");auto inode=st.st_ino;
         require(data.find("reason=inheritance_baseline_unstable\n")!=data.npos&&data.find("org.example")==data.npos&&(st.st_mode&07777)==0600&&data.size()<1024,"blocker privacy/bound");
-        for(int t=1000;t<3000;t++){f.primary();f.tick(t);}
+        for(int t=3001;t<4000;t++){f.primary();f.tick(t);}
         require(f.blockerAttempts==1&&lstat(path.c_str(),&st)==0&&st.st_ino==inode,"persistent steady blocker writes");f.noOwnership();
         f.background();for(auto& [_,task]:Kernel::tasks){task.group="/top-app";task.mask=255;}
-        f.app.state=2;f.app.flags=4;f.primary();f.tick(3000);f.confirm();require(f.p().managed,"fresh authority did not retry");f.background();
+        f.app.state=2;f.app.flags=4;f.primary();f.tick(4000);f.confirm();require(f.p().managed,"fresh authority did not retry");f.background();
     }
     // F: disappearing/reused thread is not a baseline mismatch.
     for(bool reuse:{false,true}){
@@ -269,12 +269,11 @@ void stress(){
         if(visible){for(int tid=43;tid<=50;tid++)if(subset&(1u<<(tid-43))){Kernel::tasks.at(tid).group="/background";Kernel::tasks.at(tid).mask=67;}subsets.insert(subset);deferrals++;}
         f.initialCommits=f.journal->commits;Kernel::moves=Kernel::affinities=0;
         if(i%3!=1)f.primary();if(i%3!=2)f.scene.accept(i+10,base);
-        for(int dt:{0,100,250,500,750}){
+        for(int dt:{0,100,250,500,750,1000}){
             if(dt>=visible)for(auto& [_,t]:Kernel::tasks){t.group="/top-app";t.mask=255;}
             f.tick(base+dt);if(dt<visible)f.noOwnership();
         }
-        if(visible==700){f.noOwnership();require(f.p().acquireBlocked,"unconfirmed late baseline escaped deadline");}
-        else{
+        {
             require(f.p().managed&&f.journal->commits==f.initialCommits+1,"stress managed miss/duplicate lease");
             require(f.p().ownershipFloor>=static_cast<uint64_t>((100.+(base+visible+250)/1000.)*sysconf(_SC_CLK_TCK)),"lease predates temporal baseline");
             f.place();
@@ -283,7 +282,7 @@ void stress(){
     }
     auto proc=Kernel::reads,queries=f.snapshotQueries;auto commits=f.journal->commits;for(int t=2000000;t<2001000;t++)f.tick(t);
     require(Kernel::reads==proc&&f.snapshotQueries==queries&&f.journal->commits==commits&&!f.p().next&&f.scene.timeout(2001000)==-1,"idle baseline polling/timer");
-    require(deferrals>400&&subsets.size()>150&&observedWindows.size()==8&&f.blockerAttempts>0,"stress coverage/late blocker");
+    require(deferrals>400&&subsets.size()>150&&observedWindows.size()==8&&f.blockerAttempts==0,"stress coverage/recovery");
     std::cout<<"RANDOM_HETEROGENEOUS_SUBSETS="<<subsets.size()<<";STRESS_THREAD_COUNT=9;WINDOWS_COVERED="<<observedWindows.size()<<"\n";
     std::cout<<"TRANSIENT_STRESS_COUNT=512;DEFERRED="<<deferrals<<";TRANSIENT_STRESS_FATALS=0;UNSAFE_WRITES=0;OWNER_LEAK=0;STALE_PID=0;MANAGED_MISS=0;IDLE_ACQUISITION_TIMER=0\n";
 }
@@ -490,5 +489,118 @@ void horizon(){
     require(seconds==15,"second overwrite coverage");
     std::cout<<"SLEEP06_DELAYED_OVERWRITE=PASS;OVERWRITE_AFTER_2S_CASES="<<cases<<";OVERWRITE_NEAR_6S_CASES="<<near+21<<";SECOND_DRIFT_AFTER_REPAIR="<<seconds<<";LATE_WINDOW_UNDETECTED_DRIFT=0;POST_REPAIR_SECOND_DRIFT_MISS=0;POST_REPAIR_CONFIRMATION_MS=1000;NO_UNBOUNDED_REARM=PASS;LATE_RESPONSE_MAX_MS="<<worst<<'\n';
 }
-int main(){try{require(getuid()==0,"isolated root fixture");matrix();recovery();stress();coherence();horizon();puts("ZUIOPT_BASELINE_NATIVE=PASS");return 0;}
+void liveness(){
+    // Same class as wake01, not a claim to reconstruct unobserved Android writes.
+    for(bool old:{true,false}){
+        CoherenceFixture f;for(int tid=44;tid<238;tid++)Kernel::tasks[tid]={10,"/foreground",31};
+        f.uniform("/foreground",31);f.primary();
+        for(int t:{0,100,250,500,750,1000,1250,1500}){
+            Kernel::time=t;
+            if(t>=500){Kernel::tasks.at(42)={10,"/top-app",255};Kernel::tasks.at(43)={10,"/top-app",255};}
+            // Partial transitions reset the first candidate before its dwell.
+            if(t>=250)Kernel::tasks.at(44).mask=255;
+            if(t>=1200)f.uniform("/top-app",255);
+            if(old){ // Exact V56 scheduling semantics, using real Placement::acquire.
+                auto& p=f.p();if(p.acquiring&&p.next<=t){
+                    auto result=t>750?BaselineResult::DEFER:f.acquire(p);
+                    require(result!=BaselineResult::STABLE,"old exact-class unexpectedly committed");
+                    if(t>=750){f.release(p);p.acquireBlocked=true;f.baselineBlocked();}
+                    else {constexpr int due[]={100,250,500,750};for(int next:due)if(next>t){p.next=next;break;}}
+                }
+            }else f.tick(t);
+            if(!f.p().managed)f.noOwnership();
+            if(!old&&t<=1000)require(!f.p().acquireBlocked&&!f.blockerAttempts,"fast deadline disabled liveness");
+        }
+        if(old){require(f.p().acquireBlocked&&f.probes==5&&!f.p().acquiring,"old sticky gap absent");f.noOwnership();}
+        else{require(f.p().managed&&f.blockerAttempts==0,"wake01 eventual miss");
+            require(f.journal->leases.at(42).savedMask==255&&f.p().ownershipFloor==10150,"late safe commit floor");
+            f.scanAt(1500);f.managed();require(forceCoherence(f.p()),"late commit lost V56 coherence");}
+        f.background();f.empty();
+    }
+    // Late execution always performs exactly one fresh probe, never catch-up.
+    for(int late:{751,764,780,825}){
+        AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);
+        for(int t:{107,263,519,late,1012,1060,1257,1517,2020,2570,3010}){
+            bool due=f.p().acquiring&&f.p().next<=t;auto probes=f.probes;f.tick(t);
+            require(f.probes-probes==(due?1:0),"late timer skipped probe/catch-up storm");f.noOwnership();
+            if(t<=1060)require(!f.blockerAttempts,"jitter became terminal at SLA");
+        }
+        require(f.blockerAttempts==1&&!f.p().next,"late final probe did not close");f.background();
+    }
+    // Force first complete candidate observation at each requested boundary.
+    for(int first:{700,750,850,900,1000,1250,2750,2950}){
+        AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);
+        while(f.p().next<first){f.tick(f.p().next);f.noOwnership();}
+        // A delayed due callback may first observe the candidate at 'first'.
+        if(f.p().next>first){ // first is between fixed opportunities: shift the prior due call.
+            f.p().next=first; // only fixture scheduling, no baseline state injection
+        }
+        for(auto& [_,t]:Kernel::tasks){t.group="/top-app";t.mask=255;}
+        f.tick(first);f.noOwnership();require(f.p().baselineCandidate.firstStableAt==first,"late candidate not observed");
+        while(f.p().acquiring){auto due=f.p().next;require(due<=3500,"candidate cap moved");f.tick(due);if(!f.p().managed)f.noOwnership();}
+        require(f.p().managed&&Kernel::time==first+250&&!f.blockerAttempts,"250ms confirmation opportunity missing");f.background();
+    }
+    // A changed candidate in the final extension cannot buy a second extension.
+    {AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);
+        while(f.p().next<3000){f.tick(f.p().next);f.noOwnership();}
+        Kernel::tasks.at(43).mask=255;f.tick(3000);f.noOwnership();require(f.p().next==3250,"final candidate opportunity");
+        for(auto& [_,t]:Kernel::tasks)t.mask=31;
+        f.tick(3250);f.noOwnership();require(f.p().acquireBlocked&&f.blockerAttempts==1&&!f.p().next,"moving final extension");f.background();}
+    // Background/null/death/reuse during SELF_HEAL_SETTLE cancel without writes.
+    for(int mode=0;mode<4;mode++){
+        AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);
+        for(int t:{100,250,500,750,1000,1250})f.tick(t);f.noOwnership();
+        if(mode==0)f.background();
+        if(mode==1){f.absent=true;f.primary();}
+        if(mode==2){Kernel::tasks.clear();f.tick(1500);}
+        if(mode==3){Kernel::tasks.at(42).birth++;f.tick(1500);}
+        f.noOwnership();for(auto& [_,p]:f.states)require(!p.acquiring&&!p.next,"settlement cancel timer leak");
+    }
+    // Full 200-task persistent episode: count actual read boundaries, not zero cost.
+    {AcquisitionFixture f;for(int tid=44;tid<242;tid++)Kernel::tasks[tid]={10,"/top-app",255};Kernel::tasks.at(43).mask=67;
+        int g=Kernel::groupReads,a=Kernel::affinityReads,id=Kernel::identityReads,u=Kernel::uidReads;
+        f.start(2);while(f.p().acquiring){f.noOwnership();f.tick(f.p().next);}f.noOwnership();
+        require(f.probes==11&&f.blockerAttempts==1,"functional episode not finite");
+        std::cout<<"SETTLE_200_TASKS:PROBES="<<f.probes<<";GROUP_READS="<<Kernel::groupReads-g<<";AFFINITY_GET="<<Kernel::affinityReads-a<<";IDENTITY_READS="<<Kernel::identityReads-id<<";UID_READS="<<Kernel::uidReads-u<<'\n';
+        auto reads=Kernel::reads;for(int t=4000;t<5000;t++)f.tick(t);require(reads==Kernel::reads&&!f.p().next,"terminal idle polling");f.background();}
+    std::mt19937 random(0x57ac01);int maxProbes=0,lateRecovered=0,births=0,deaths=0;
+    {CoherenceFixture f;for(int tid=44;tid<58;tid++)Kernel::tasks[tid]={10,"/top-app",255};
+        for(int i=0;i<1024;i++){
+            int base=i*10000,settled=random()%2501;Kernel::time=base;f.app.state=2;f.app.flags=4;
+            f.uniform("/top-app",255);unsigned subset=1+random()%16383;
+            if(settled)for(auto& [tid,t]:Kernel::tasks)if(subset&(1u<<(tid-42))){t.group="/foreground";t.mask=31;}
+            // Guarantee nonuniform before settlement, regardless of random subset.
+            if(settled){Kernel::tasks.at(42)={10,"/top-app",255};Kernel::tasks.at(43)={10,"/foreground",31};}
+            f.initialCommits=f.journal->commits;Kernel::moves=Kernel::affinities=0;int probes=f.probes;
+            int source=i%4;
+            if(source!=1)f.primary();if(source!=2)f.scene.accept(i+100,base);
+            f.tick(base);if(!f.p().managed)f.noOwnership();
+            while(f.p().acquiring){
+                int64_t due=f.p().next,t=due+random()%101;
+                if(t-base>=settled)f.uniform("/top-app",255);
+                // A birth/death in a probe is never guessed as an inherited child.
+                if(t-base<settled){
+                    bool birth=random()%2;
+                    Kernel::hook=[&,birth](const std::string& path){if(path=="affinity/43"){
+                        Kernel::hook={};if(birth){Kernel::tasks[58]={10000+static_cast<uint64_t>(base/10),"/foreground",31};births++;}
+                        else{Kernel::tasks.erase(58);deaths++;}
+                    }};
+                }
+                auto before=f.probes;f.tick(t);require(f.probes==before+1,"random late probe skipped");
+                if(!f.p().managed)f.noOwnership();
+                require(!f.p().acquireBlocked,"safe settlement became sticky");
+            }
+            require(f.p().managed&&f.blockerAttempts==0,"random eventual acquisition miss");
+            require(f.journal->leases.at(42).savedMask==255&&f.journal->entries.size()==Kernel::tasks.size(),"random baseline/late child guess");
+            maxProbes=std::max(maxProbes,f.probes-probes);lateRecovered+=Kernel::time-base>1000;
+            f.scanAt(Kernel::time);f.managed();f.background();f.empty();Kernel::tasks.erase(58);
+        }
+        auto reads=Kernel::reads,queries=f.snapshotQueries;for(int t=11000000;t<11001000;t++)f.tick(t);
+        require(Kernel::reads==reads&&f.snapshotQueries==queries&&!f.p().next&&f.scene.timeout(11001000)==-1,"idle settlement work");
+    }
+    require(lateRecovered>500&&births>100&&deaths>100&&maxProbes<=21,"liveness stress coverage/bound");
+    std::cout<<"V56_WAKE01_EXACT_CLASS=PASS;LATE_TIMER_SKIPPED_PROBE=0;LATE_CANDIDATES=8;ZERO_WRITE_PRECOMMIT=PASS;THREAD_CHURN=PASS;PERSISTENT_HETEROGENEITY=PASS\n";
+    std::cout<<"ACQUISITION_LIVENESS_STRESS=1024;EVENTUAL_ACQUISITION_MISS=0;GLOBAL_FATAL=0;UNSAFE_WRITE=0;STALE_PID=0;OWNER_LEAK=0;IDLE_STEADY_ACQUISITION_TIMER=0;MAX_PROBES="<<maxProbes<<";RECOVERED_AFTER_SLA="<<lateRecovered<<";BIRTH_RACES="<<births<<";DEATH_RACES="<<deaths<<'\n';
+}
+int main(){try{require(getuid()==0,"isolated root fixture");matrix();recovery();stress();coherence();horizon();liveness();puts("ZUIOPT_BASELINE_NATIVE=PASS");return 0;}
 catch(const std::exception& e){std::cerr<<"BASELINE_FAIL "<<e.what()<<'\n';return 1;}}

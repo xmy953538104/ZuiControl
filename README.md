@@ -147,14 +147,22 @@ reactor blocks indefinitely. There is no watcher thread or idle polling timer.
 
 Acquisition is distinct from managed ownership: INACTIVE -> ACQUIRING_BASELINE
 -> MANAGED. Each pending request probes a fresh generation/UID-checked common
-Android cpuset/affinity baseline at 0/100/250/500/750ms. A uniform first pass is
+Android cpuset/affinity baseline at 0/100/250/500/750/1000ms, then bounded
+SELF_HEAL_SETTLE at 1250/1500/2000/2500/3000ms. The 1000ms performance deadline
+never disables runtime acquisition or writes a baseline blocker. A uniform first pass is
 only an in-memory candidate; complete fresh probes must confirm the same
 generation/UID/group/mask for at least 250ms. Changes or loss of uniformity reset
 the candidate; task-set changes alone do not. Pending probes perform
 no journal, placement or ownership writes. The temporally confirmed pass commits the
 inheritance floor/lease and original task records durably before placement.
 Background, death and stale generation cancel pending work without release.
-Persistent heterogeneity stays Android-owned and records the bounded private
+Candidate confirmation may run at firstStableAt+250ms. At/after 3000ms a real
+probe either commits, blocks, or grants exactly one valid pending candidate its
+final confirmation, scheduled no later than 3500ms from acquisition start.
+Timer lateness never substitutes DEFER for a real probe; expired intermediate
+deadlines are skipped without a catch-up storm. OS scheduling lateness cannot
+be given a wall-clock guarantee, but cannot extend or re-arm the final probe.
+Persistent heterogeneity through this functional cap stays Android-owned and records the bounded private
 `inheritance_baseline_unstable` blocker; duplicate foreground events cannot
 restart an exhausted window. A subsequent background/foreground transition can.
 The acquisition deadline is local to the reactor, independent of scene retries,
@@ -170,7 +178,8 @@ repair adds finite 100/250/500/1000ms confirmation relative to completed placeme
 including repair at the last checkpoint. Both schedules share the existing next
 deadline; repair neither shortens the original horizon nor resets episode budget.
 Duplicate same-state ProcessObserver callbacks do not re-arm; fresh accepted
-scene sequences may. Initial baseline dwell/deadline remain unchanged.
+scene sequences may. Baseline dwell remains 250ms; pre-commit functional
+settlement is separate from this unchanged post-commit verification window.
 During this finite window applied-mask cache hits cannot hide external cpuset
 or affinity drift. One isolated drift may be repaired; broad or repeated drift
 freezes placement, preflights every live task and safely relinquishes the old
