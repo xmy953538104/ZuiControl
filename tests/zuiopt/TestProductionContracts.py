@@ -19,6 +19,8 @@ class ProductionContracts(unittest.TestCase):
         self.assertIn(f'rm -rf payload/system/priv-app/ZuiControlV{int(version)-1}',stage)
         self.assertIn(f'"ZuiControlV{version}"',read('scripts/build/BuildZuiControl.ps1'))
         self.assertIn(f"priv-app\\ZuiControlV{version}\\ZuiControl.apk",read('scripts/build/VerifyZuiControlFlashPackage.ps1'))
+        from VerifyZUIoptPayload import REQUIRED
+        self.assertEqual({p for p in REQUIRED if p.endswith('/ZuiControl.apk')},{'/'+relative})
 
     def test_temporal_and_coherence_production_wiring(self):
         owner=read('native/zuiopt/ZUIopt_owner.h');core=read('native/zuiopt/ZUIopt_core.h');daemon=read('native/zuiopt/ZUIopt_daemon.h')
