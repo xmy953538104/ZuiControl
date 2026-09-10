@@ -9,6 +9,17 @@ ROOT=Path(__file__).resolve().parents[2]
 def read(path): return (ROOT/path).read_text(encoding='utf-8')
 
 class ProductionContracts(unittest.TestCase):
+    def test_versioned_apk_staging_matches_app_and_payload_consumer(self):
+        version=re.search(r'versionCode\s*=\s*(\d+)',read('app/build.gradle.kts'))[1]
+        relative=f'system/priv-app/ZuiControlV{version}/ZuiControl.apk'
+        self.assertIn(f'APP_APK_PATH = "{relative}"',read('scripts/build/ApplyZuiControlPayload.py'))
+        stage=read('.github/workflows/build.yml').split('- name: Stage payload APK',1)[1].split('- name:',1)[0]
+        self.assertEqual(re.findall(r'mkdir -p (\S+)',stage),['payload/'+relative.rsplit('/',1)[0]])
+        self.assertEqual(re.findall(r'payload/system/priv-app/ZuiControlV\d+/ZuiControl.apk',stage),['payload/'+relative])
+        self.assertIn(f'rm -rf payload/system/priv-app/ZuiControlV{int(version)-1}',stage)
+        self.assertIn(f'"ZuiControlV{version}"',read('scripts/build/BuildZuiControl.ps1'))
+        self.assertIn(f"priv-app\\ZuiControlV{version}\\ZuiControl.apk",read('scripts/build/VerifyZuiControlFlashPackage.ps1'))
+
     def test_temporal_and_coherence_production_wiring(self):
         owner=read('native/zuiopt/ZUIopt_owner.h');core=read('native/zuiopt/ZUIopt_core.h');daemon=read('native/zuiopt/ZUIopt_daemon.h')
         for field in ('BaselineCandidate','firstStableAt','lastStableAt','acquisitionEpoch','coherenceEpisodes'):

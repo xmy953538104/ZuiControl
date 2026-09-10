@@ -291,9 +291,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV53
           rm -rf payload/system/priv-app/ZuiControlV54
           rm -rf payload/system/priv-app/ZuiControlV55
-          mkdir -p payload/system/priv-app/ZuiControlV56
+          rm -rf payload/system/priv-app/ZuiControlV56
+          mkdir -p payload/system/priv-app/ZuiControlV57
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV56/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV57/ZuiControl.apk
 
       - name: Verify compiled payload semantic purity
         run: python3 tests/zuiopt/RuntimePurityAudit.py --system payload/system
