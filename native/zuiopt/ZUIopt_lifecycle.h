@@ -65,6 +65,7 @@ inline std::string fatalReason(const std::exception& error) {
         "background unknown owned task","background release destination open",
         "background unsafe affinity destination","background unrecoverable owned task","background cleanup incomplete",
         "background owned release failed","background affinity release denied",
+        "background physical owner unavailable",
         "ZUIopt requires root identity","state directory create","unsafe state directory",
         "owner lock open","another ZUIopt owner holds journal lock","boot identity","signal mask","event descriptors"
     };

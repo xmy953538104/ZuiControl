@@ -111,6 +111,10 @@ void strictBoundaries(){
     {BackgroundFixture f;f.setup(200);Kernel::moveError=EACCES;
         expectFailure([&]{f.background();},"background owned release failed");
         expectFailure([&]{f.owner->release(f.p(),ReleaseCause::CRASH_RECOVERY);},"background owned release failed");}
+    {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,"/ZUIopt/7c",0x7c};
+        Kernel::hook=[](const std::string& path){if(path=="/proc/300/cgroup"){Kernel::hook={};Kernel::tasks.at(300).group.clear();}};
+        expectFailure([&]{f.background();},"background physical owner unavailable");
+        require(!f.journal->entries.empty(),"unobservable live physical owner ignored");}
     {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,"/ZUIopt/7c",0x7c};f.owner.reset();
         f.journal->entries.clear();f.journal->leases.clear();
         expectFailure([&]{Placement recovery(f.count,*f.journal);},"RECOVERY_UNKNOWN_TASK_FAIL_CLOSED");}

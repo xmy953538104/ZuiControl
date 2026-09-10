@@ -434,7 +434,12 @@ public:
         auto cover=[&](){
             std::set<int> ours;bool added=false;auto paths=groups();paths.insert(root);
             for(auto& path:paths)for(int tid:members(path)){
-                auto id=identity(tid);if(!id.start||!owned(group(tid)))continue;
+                auto id=identity(tid);if(!id.start)continue;
+                auto current=group(tid);if(normalGroup(current))continue;
+                if(!owned(current)){
+                    if(identity(tid).start!=id.start)continue;
+                    throw std::runtime_error("background physical owner unavailable");
+                }
                 auto e=journal.entries.find(tid);OwnerRecord r;
                 if(e!=journal.entries.end()&&journal.same(e->second))r=e->second;
                 else if(journal.inherited(tid,r)){
@@ -450,7 +455,7 @@ public:
                     }
                 }
                 else {
-                    if(identity(tid).start!=id.start||!owned(group(tid)))continue;
+                    if(identity(tid).start!=id.start||normalGroup(group(tid)))continue;
                     throw std::runtime_error("background unknown owned task");
                 }
                 if(r.pid==p.pid&&r.processStart==p.generation)ours.insert(tid);
