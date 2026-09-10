@@ -146,6 +146,7 @@ jobs:
             "$RUNNER_TEMP/zuiopt-acquisition-fixture" | tee "$receipt/acquisition_fixtures.txt"
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptBackgroundTest.cpp -lz \
+            -Wl,--wrap=unlinkat \
             -Wl,--wrap=open,--wrap=close,--wrap=write,--wrap=stat,--wrap=lstat,--wrap=access \
             -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
             -o "$RUNNER_TEMP/zuiopt-background-fixture"

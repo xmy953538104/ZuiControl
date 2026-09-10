@@ -112,8 +112,11 @@ ssize_t __wrap_write(int fd,const void* bytes,size_t size){
             if(!tasks.count(tid)){errno=ESRCH;return -1;}
             if(beforeWrite)beforeWrite(tid,true,0);
             moves++;if(!stuck||tid<44)tasks.at(tid).group=path.substr(11,path.size()-17);
+            return static_cast<ssize_t>(size);
         }
-        return static_cast<ssize_t>(size);
+        // cpus/mems are kernel files too; new release fixtures read the mask
+        // written by Placement::target instead of an uninitialized empty file.
+        return __real_write(fd,bytes,size);
     }
     return __real_write(fd,bytes,size);
 }

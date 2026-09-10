@@ -2,6 +2,12 @@
 // V57 reproduction is sealed at 5a52c215 / CI 34504713515, not rewritten as V58 proof.
 #define ZUIOPT_ACQUISITION_LIBRARY 1
 #include "ZUIoptAcquisitionTest.cpp"
+extern "C" int __real_unlinkat(int,const char*,int);
+extern "C" int __wrap_unlinkat(int fd,const char* name,int flags){
+    if(!Kernel::root.empty()&&std::string(name)=="owner_state.v1")
+        for(auto& [_,t]:Kernel::tasks)require(t.group.rfind("/ZUIopt",0)!=0,"JOURNAL_CLEAR_WITH_LIVE_ZUIOPT_TASK");
+    return __real_unlinkat(fd,name,flags);
+}
 struct BackgroundFixture:AcquisitionFixture {
     int passes=0;std::set<int> reused;
     void release(ProcessState& p){owner->release(p,p.alive?ReleaseCause::AUTHORITY_BACKGROUND:ReleaseCause::PROCESS_DEATH,Kernel::time);}
@@ -105,14 +111,21 @@ void backgroundStress(){
     for(int i=0;i<total;i++){
         BackgroundFixture f;int n=2+random()%199;f.setup(n);
         int when=random()%3,percent=random()%101,kind=random()%3,action=random()%5;
-        auto change=[&]{handoff(percent,kind);
+        int boundary=1+random()%(n*12);
+        auto change=[&]{
+            std::vector<int> subset;for(auto& [tid,_]:Kernel::tasks)subset.push_back(tid);
+            std::shuffle(subset.begin(),subset.end(),random);subset.resize(subset.size()*percent/100);
+            for(int tid:subset){auto& t=Kernel::tasks.at(tid);
+                if(kind!=1)t.group=random()%2?"/foreground":"/background";
+                if(kind!=0)t.mask=random()%2?31:67;
+            }
             if(action==0&&n>2)Kernel::tasks.erase(44);
             if(action==1)Kernel::tasks[300]={f.p().ownershipFloor+1,"/ZUIopt/7c",0x7c};
             if(action==2)Kernel::tasks[301]={f.p().ownershipFloor+1,"/background",67};
             if(action==3&&n>2){Kernel::tasks[44]={90000,"/foreground",31};f.reused.insert(44);}
         };
         if(when==0)change();else Kernel::hook=[&](const std::string& path){
-            if(path==(when==1?"affinity/42":"/dev/cpuset/top-app/tasks")){Kernel::hook={};change();}
+            if((when==1&&--boundary==0)||(when==2&&path=="/dev/cpuset/top-app/tasks")){Kernel::hook={};change();}
         };
         f.background(random()%2);if(random()%2)f.background();f.complete();
     }
