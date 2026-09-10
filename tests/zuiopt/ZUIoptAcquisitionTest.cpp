@@ -17,6 +17,7 @@ namespace Kernel {
 struct Thread {uint64_t birth=10;std::string group="/top-app";Mask mask=255;};
 std::map<int,Thread> tasks;std::map<int,std::string> fds;
 std::string root;int user=10001;int64_t time=0;int reads=0,moves=0,affinities=0;
+int groupReads=0,identityReads=0,uidReads=0,affinityReads=0;
 bool stuck=false;std::function<void(const std::string&)> hook;
 std::string mapped(const std::string& path){
     if(path.rfind("/dev/cpuset",0)==0||path=="/proc/42"||path.rfind("/proc/42/",0)==0)return root+path;
@@ -66,7 +67,10 @@ int __wrap_open(const char* path,int flags,...){
     if(!root.empty()){
         auto callback=hook;if(callback)callback(original);
         std::string data;
-        if(procText(original,data)){reads++;if(data.empty()){errno=ENOENT;return -1;}target=root+"/read/"+std::to_string(checksum(original));put(target,data);}
+        if(procText(original,data)){reads++;
+            if(original.size()>=7&&original.substr(original.size()-7)=="/cgroup")groupReads++;
+            if(original.size()>=5&&original.substr(original.size()-5)=="/stat")identityReads++;
+            if(data.empty()){errno=ENOENT;return -1;}target=root+"/read/"+std::to_string(checksum(original));put(target,data);}
         else target=mapped(original);
         if(original.rfind("/dev/cpuset",0)==0&&original.size()>=6&&original.substr(original.size()-6)=="/tasks"){
             auto g=original.substr(11,original.size()-17);std::string members;
@@ -96,6 +100,7 @@ ssize_t __wrap_write(int fd,const void* bytes,size_t size){
 }
 int __wrap_stat(const char* path,struct stat* st){
     if(!Kernel::root.empty()&&std::string(path)=="/proc/42"){
+        Kernel::uidReads++;
         if(!Kernel::tasks.count(42)){errno=ENOENT;return -1;}memset(st,0,sizeof(*st));st->st_uid=Kernel::user;st->st_mode=S_IFDIR|0555;return 0;
     }return __real_stat(Kernel::root.empty()?path:Kernel::mapped(path).c_str(),st);
 }
@@ -118,6 +123,7 @@ int __wrap_rmdir(const char* path){
 }
 int __wrap_sched_getaffinity(pid_t tid,size_t size,cpu_set_t* set){
     if(Kernel::root.empty())return __real_sched_getaffinity(tid,size,set);
+    Kernel::affinityReads++;
     auto callback=Kernel::hook;if(callback)callback("affinity/"+std::to_string(tid));
     auto it=Kernel::tasks.find(tid);if(it==Kernel::tasks.end()){errno=ESRCH;return -1;}
     CPU_ZERO(set);for(int i=0;i<64;i++)if(it->second.mask&(Mask(1)<<i))CPU_SET(i,set);return 0;
@@ -282,12 +288,13 @@ void stress(){
     std::cout<<"TRANSIENT_STRESS_COUNT=512;DEFERRED="<<deferrals<<";TRANSIENT_STRESS_FATALS=0;UNSAFE_WRITES=0;OWNER_LEAK=0;STALE_PID=0;MANAGED_MISS=0;IDLE_ACQUISITION_TIMER=0\n";
 }
 struct CoherenceFixture:AcquisitionFixture {
-    int drift=0,repairs=0,reacquires=0,contested=0;
+    int drift=0,repairs=0,reacquires=0,contested=0,scans=0;
     Mask desired(int tid){return tid==43?28:tid==44?128:124;}
     void uniform(const std::string& group,Mask mask){for(auto& [_,t]:Kernel::tasks){t.group=group;t.mask=mask;}}
     void scanAt(int64_t time){
         tick(time);
         if(!p().managed||p().next>time)return;
+        scans++;
         auto result=owner->verifyCoherence(p(),time);
         if(result!=CoherenceResult::CLEAN)drift++;
         if(result==CoherenceResult::REPAIR)repairs++;
@@ -296,7 +303,7 @@ struct CoherenceFixture:AcquisitionFixture {
         if(!p().managed){if(p().acquiring)advanceAcquisition(p(),time,*this);return;}
         owner->prepare(p());
         for(auto& [tid,t]:p().tasks)owner->apply(p(),tid,t,desired(tid),"fixture_G07");
-        finishScan(p(),time);
+        finishScan(p(),time,result==CoherenceResult::REPAIR);
     }
     void managed(){
         require(p().managed,"coherence managed miss");
@@ -379,15 +386,15 @@ void coherence(){
     {CoherenceFixture f;f.boot();f.uniform("/top-app",255);Kernel::tasks.at(42).birth++;
         auto writes=Kernel::moves+Kernel::affinities;f.owner->relinquishCoherence(f.p());f.empty();require(Kernel::moves+Kernel::affinities==writes,"stale PID write");}
     // End probation: cache remains cheap. Only an explicit event re-arms verification.
-    {CoherenceFixture f;f.boot();auto base=Kernel::time;for(int dt:{100,250,500,1000,1500,2000})f.scanAt(base+dt);
+    {CoherenceFixture f;f.boot();auto base=Kernel::time;for(int dt:coherenceSchedule)f.scanAt(base+dt);
         require(!forceCoherence(f.p()),"probation never ended");auto reads=Kernel::reads;
-        f.scanAt(base+3000);require(Kernel::reads==reads,"steady physical scan");
-        f.overwrite(100,2);armCoherence(f.p(),base+3100);f.scanAt(base+3100);require(f.drift==1,"authority invalidation absent");f.settle();f.background();
+        f.scanAt(base+7000);require(Kernel::reads==reads,"steady physical scan");
+        f.overwrite(100,2);armCoherence(f.p(),base+7100);f.scanAt(base+7100);require(f.drift==1,"authority invalidation absent");f.settle();f.background();
         reads=Kernel::reads;auto commits=f.journal->commits;for(int t=100000;t<101000;t++)f.scanAt(t);
         require(Kernel::reads==reads&&f.journal->commits==commits&&!f.p().next,"idle coherence work");}
-    std::mt19937 random(0x56c0ae);int recovered=0;std::set<int> types,subsets,windows;
+    std::mt19937 random(0x56c0ae);int recovered=0;std::set<int> types,subsets,windows;std::array<int,6> buckets{};
     {CoherenceFixture f;for(int tid=44;tid<58;tid++)Kernel::tasks[tid]={10,"/top-app",255};
-        for(int i=0;i<512;i++){
+        for(int i=0;i<1024;i++){
             int base=i*10000;Kernel::time=base;f.app.state=2;f.app.flags=4;
             // Uniform intermediate states below dwell, and later heterogeneous
             // Android handoffs (which must never count as candidate dwell).
@@ -402,8 +409,8 @@ void coherence(){
             f.managed();require(f.journal->leases.at(42).savedGroup=="/top-app"&&f.journal->leases.at(42).savedMask==255,"random intermediate commit");
             int percents[]={0,25,50,75,100};int percent=percents[random()%5],type=random()%3;
             types.insert(type);subsets.insert(percent);auto committed=Kernel::time;
-            int when=1+random()%1999;bool injected=false;auto before=f.drift;
-            for(int dt:{100,250,500,1000,1500,2000}){
+            int when=1+random()%5999;buckets[when/1000]++;bool injected=false;auto before=f.drift;
+            for(int dt:coherenceSchedule){
                 if(!injected&&dt>=when){f.overwrite(percent,type);injected=true;}
                 f.scanAt(committed+dt);
                 if(injected){require(f.drift==before+1,"random silent divergence");if(f.p().acquiring)f.settle();f.managed();
@@ -413,9 +420,75 @@ void coherence(){
             for(auto& [_,t]:Kernel::tasks)require(t.group=="/top-app"&&t.mask==255,"random owner leak");
         }
     }
-    require(recovered==512&&types.size()==3&&subsets.size()==5&&windows.size()>150,"random coherence coverage");
+    require(recovered==1024&&types.size()==3&&subsets.size()==5&&windows.size()>150,"random coherence coverage");
+    for(int n:buckets)require(n>=100,"sparse random timing bucket");
+    std::cout<<"RANDOM_0_6S_BUCKET_COVERAGE=";for(int n:buckets)std::cout<<n<<',';std::cout<<'\n';
     std::cout<<"RANDOM_COHERENCE_COUNT="<<recovered<<";GLOBAL_FATAL_RECOVERABLE=0;UNSAFE_JOURNAL_CLEAR=0;UNKNOWN_ZUIOPT_TASK=0;STALE_PID=0;OWNER_LEAK=0;SILENT_JOURNAL_PHYSICAL_DIVERGENCE=0\n";
     std::cout<<"SLEEP06_EXACT=PASS;OVERWRITE_CASES=150;PARTIAL_100_100=PASS;CPUSET_ONLY=PASS;AFFINITY_ONLY=PASS;COHERENCE_RESPONSE_MAX_MS="<<worst<<";CONTESTED_BUDGET=2;CACHE_IDLE=PASS\n";
 }
-int main(){try{require(getuid()==0,"isolated root fixture");matrix();recovery();stress();coherence();puts("ZUIOPT_BASELINE_NATIVE=PASS");return 0;}
+void horizon(){
+    constexpr int times[]={2001,2100,2250,2499,2500,2750,3000,3250,3500,3750,4000,4250,4500,4750,5000,5250,5500,5750,5999};
+    constexpr int percents[]={0,25,50,75,100};int cases=0,near=0,worst=0;
+    for(int when:times)for(int type=0;type<3;type++){
+        CoherenceFixture f;f.boot(200);auto base=Kernel::time;int percent=percents[cases%5];
+        for(int dt:coherenceSchedule){
+            if(dt>=when)f.overwrite(percent,type);
+            f.scanAt(base+dt);
+            if(dt>=when){require(f.drift==1,"late window undetected drift");if(f.p().acquiring)f.settle();f.managed();
+                worst=std::max(worst,static_cast<int>(Kernel::time-base-when));break;}
+        }
+        require(f.p().coherenceEpisodes==1,"late window episode budget");cases++;near+=when>=5750;f.background();f.empty();
+    }
+    require(cases==57&&near==6&&worst<=750,"late timing coverage/budget");
+    // Historical overwrite time is censored, not known to be exactly 3.5s.
+    // This deliberately delayed fixture closes the old 2s blind spot.
+    {CoherenceFixture f;f.boot(200);auto base=Kernel::time;
+        for(int dt:coherenceSchedule){if(dt>3500)break;f.scanAt(base+dt);f.managed();}
+        f.overwrite(100,2);require(f.journal->entries.size()==200,"delayed journal unexpectedly gone");
+        for(auto& [_,t]:Kernel::tasks)require(t.group=="/top-app"&&t.mask==255,"delayed external takeover");
+        f.scanAt(base+4000);require(f.reacquires==1,"delayed sleep06 missed");f.settle();f.managed();f.background();f.empty();}
+    // Last-checkpoint repair and broad reacquisition both retain confirmation.
+    // Also inject a second overwrite at each interval of post-repair confirmation.
+    int seconds=0;
+    for(int second:{0,1,101,251,501,999})for(int type=0;type<3;type++){
+        CoherenceFixture f;f.boot(200);auto base=Kernel::time;
+        for(int dt:coherenceSchedule){if(dt==6000)f.overwrite(0,type);f.scanAt(base+dt);}
+        f.managed();require(f.repairs==1&&f.p().coherenceEpisodes==1&&forceCoherence(f.p())&&f.p().next==base+6100,"last repair lost confirmation");
+        for(int dt:repairSchedule){
+            if(second&&dt>=second)f.overwrite(25,type);
+            f.scanAt(base+6000+dt);
+            if(second&&dt>=second){require(f.drift==2&&f.reacquires==1&&f.p().coherenceEpisodes==2,"post repair second drift miss/budget reset");
+                f.settle();f.managed();require(forceCoherence(f.p()),"reacquire lost new window");seconds++;break;}
+        }
+        if(!second)require(!forceCoherence(f.p())&&f.p().coherenceEpisodes==1,"repair confirmation did not expire");
+        f.background();f.empty();
+    }
+    for(int type=0;type<3;type++){
+        CoherenceFixture f;f.boot(200);auto base=Kernel::time;
+        for(int dt:coherenceSchedule){if(dt==6000)f.overwrite(100,type);f.scanAt(base+dt);}
+        require(f.reacquires==1,"last broad overwrite missed");f.settle();auto committed=Kernel::time;
+        for(int dt:coherenceSchedule)f.scanAt(committed+dt);
+        f.managed();require(!forceCoherence(f.p()),"broad re-acquisition timer unbounded");f.background();f.empty();
+    }
+    // Count actual production verify/prepare/apply POSIX operations for 200 tasks.
+    // Core discovery/rank reads are unchanged and accounted separately in report.
+    {CoherenceFixture f;f.boot(200);auto base=Kernel::time;
+        int g=Kernel::groupReads,a=Kernel::affinityReads,id=Kernel::identityReads,u=Kernel::uidReads,s=f.scans;
+        for(int dt:coherenceSchedule)f.scanAt(base+dt);
+        int groups=Kernel::groupReads-g,affinity=Kernel::affinityReads-a,identities=Kernel::identityReads-id,users=Kernel::uidReads-u;
+        require(f.scans-s==14&&groups==5600&&affinity==5600,"bounded scan/group/affinity count");
+        std::cout<<"ACTIVE_200_THREADS:SCANS="<<f.scans-s<<";GROUP_READS="<<groups<<";AFFINITY_GET="<<affinity<<";IDENTITY_READS="<<identities<<";UID_READS="<<users<<'\n';
+        auto original=f.p().activated;auto commits=f.journal->commits;auto moves=Kernel::moves+Kernel::affinities;
+        // Same production primary activation contract: duplicates do not arm.
+        for(int i=0;i<1000;i++){f.primary();f.scanAt(base+6001+i);}
+        require(!forceCoherence(f.p())&&f.p().activated==original&&commits==f.journal->commits&&moves==Kernel::moves+Kernel::affinities,"duplicate rearm/write");
+        f.scanAt(base+8000);require(Kernel::groupReads==g+groups&&Kernel::affinityReads==a+affinity,"cache did not resume");
+        f.background();f.empty();auto reads=Kernel::reads;commits=f.journal->commits;
+        for(int i=0;i<1000;i++)f.scanAt(base+9000+i);
+        require(!f.p().next&&!forceCoherence(f.p())&&reads==Kernel::reads&&commits==f.journal->commits,"idle coherence work");
+    }
+    require(seconds==15,"second overwrite coverage");
+    std::cout<<"SLEEP06_DELAYED_OVERWRITE=PASS;OVERWRITE_AFTER_2S_CASES="<<cases<<";OVERWRITE_NEAR_6S_CASES="<<near+21<<";SECOND_DRIFT_AFTER_REPAIR="<<seconds<<";LATE_WINDOW_UNDETECTED_DRIFT=0;POST_REPAIR_SECOND_DRIFT_MISS=0;POST_REPAIR_CONFIRMATION_MS=1000;NO_UNBOUNDED_REARM=PASS;LATE_RESPONSE_MAX_MS="<<worst<<'\n';
+}
+int main(){try{require(getuid()==0,"isolated root fixture");matrix();recovery();stress();coherence();horizon();puts("ZUIOPT_BASELINE_NATIVE=PASS");return 0;}
 catch(const std::exception& e){std::cerr<<"BASELINE_FAIL "<<e.what()<<'\n';return 1;}}

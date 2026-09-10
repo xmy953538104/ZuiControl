@@ -77,7 +77,9 @@ public:
         for(auto& e:events.take()){
             counters.events++;ZUIOPT_NOTE("EVENT","seq="+std::to_string(e.sequence)+" code="+std::to_string(e.code));
             if(e.code==0){serviceDied=true;continue;}
-            authorityEvent=true;
+            // Primary transitions acquire/release normally. Same-state duplicate
+            // callbacks cannot extend probation; only a new scene sequence can.
+            authorityEvent=false;
             try{processEvent(e,states,*this);}
             catch(const ProcError& error){if(!error.permission())throw;procBlocked(error);}
             authorityEvent=outerAuthority;
@@ -114,7 +116,7 @@ public:
         if(!p.managed)return;
         placement->prepare(p);
         for(auto& [tid,t]:p.tasks){auto it=selected.find(tid);auto* r=it==selected.end()?nullptr:it->second;placement->apply(p,tid,t,r?r->mask:profile->general,r?r->cls:"default");}
-        finishScan(p,now());
+        finishScan(p,now(),coherence==CoherenceResult::REPAIR);
         ZUIOPT_NOTE("SCAN","pid="+std::to_string(p.pid)+" tids="+std::to_string(p.tasks.size())+" elapsed_ms="+std::to_string(now()-start)+" next="+std::to_string(p.next));
     }
     void stats(){size_t active=0,tasks=0;for(auto& [_,p]:states){active+=p.managed;tasks+=p.tasks.size();}

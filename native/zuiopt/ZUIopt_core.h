@@ -201,6 +201,8 @@ struct BaselineCandidate {
     std::string group;Mask mask=0;int64_t firstStableAt=0,lastStableAt=0;
     uint64_t generation=0,epoch=0;int uid=0;
 };
+inline constexpr std::array<int,14> coherenceSchedule={100,250,500,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000};
+inline constexpr std::array<int,4> repairSchedule={100,250,500,1000};
 struct ProcessState {
     int pid=0,uid=0;std::string name,package;uint64_t generation=0;
     bool activity_foreground=false,alive=true,managed=false;int foreground_service_state=0;
@@ -208,6 +210,7 @@ struct ProcessState {
     bool acquiring=false,acquireBlocked=false;int64_t acquireStarted=0;size_t acquireStep=0;
     BaselineCandidate baselineCandidate;uint64_t acquisitionEpoch=0;
     unsigned coherenceEpisodes=0;bool coherenceReleasing=false;
+    int64_t repairedAt=0;size_t repairStep=repairSchedule.size();
     int64_t activated=0,next=0;uint64_t ownershipFloor=0;size_t burst=0;std::string androidGroup;Mask androidMask=0;
     std::map<int,Task> tasks;
 };
@@ -221,18 +224,22 @@ inline void discardAcquisition(ProcessState& p){
     for(auto& [_,t]:p.tasks)require(!t.owned,"uncommitted owned task");
     p.tasks.clear();p.acquiring=false;p.acquireStarted=0;p.acquireStep=0;p.next=0;
     p.androidGroup.clear();p.androidMask=0;p.ownershipFloor=0;
-    p.baselineCandidate={};p.burst=6;
+    p.baselineCandidate={};p.burst=coherenceSchedule.size();p.repairStep=repairSchedule.size();
 }
 // Reuse the finite discovery deadlines; never arm from a periodic snapshot.
 inline void armCoherence(ProcessState& p,int64_t time){
     if(!p.managed)return;
-    p.activated=time;p.burst=0;p.next=time;
+    p.activated=time;p.burst=0;p.next=time;p.repairStep=repairSchedule.size();
 }
-inline bool forceCoherence(const ProcessState& p){return p.managed&&p.burst<6;}
-inline void finishScan(ProcessState& p,int64_t time){
-    static constexpr std::array<int,6> burst={100,250,500,1000,1500,2000};
-    while(p.burst<burst.size()&&p.activated+burst[p.burst]<=time)p.burst++;
-    p.next=p.burst<burst.size()?p.activated+burst[p.burst]:time+1000;
+inline bool forceCoherence(const ProcessState& p){return p.managed&&(p.burst<coherenceSchedule.size()||p.repairStep<repairSchedule.size());}
+inline void finishScan(ProcessState& p,int64_t time,bool repaired=false){
+    // Arm only after successful placement; keep the original horizon and episode budget.
+    if(repaired){p.repairedAt=time;p.repairStep=0;}
+    while(p.burst<coherenceSchedule.size()&&p.activated+coherenceSchedule[p.burst]<=time)p.burst++;
+    while(p.repairStep<repairSchedule.size()&&p.repairedAt+repairSchedule[p.repairStep]<=time)p.repairStep++;
+    p.next=p.burst<coherenceSchedule.size()?p.activated+coherenceSchedule[p.burst]:time+1000;
+    // One existing reactor deadline, not a second timer or a catch-up loop.
+    if(p.repairStep<repairSchedule.size())p.next=std::min(p.next,p.repairedAt+repairSchedule[p.repairStep]);
 }
 enum class BaselineResult {STABLE,DEFER,STALE};
 template<class Runtime> void advanceAcquisition(ProcessState& p,int64_t time,Runtime& runtime){

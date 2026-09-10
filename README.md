@@ -163,8 +163,14 @@ strict. The acquisition fixture intercepts only synthetic proc/cpuset paths in
 its exclusive temporary tree; it never writes real host or device scheduling.
 
 Each commit and accepted foreground authority event arms physical coherence
-verification at 0/100/250/500/1000/1500/2000ms. The 1500ms point bounds detection
-plus a new 250ms baseline confirmation to 750ms, excluding execution overhead.
+verification at implicit commit T0, then 100/250/500/1000/1500/2000ms and every
+500ms through 6000ms. Detection plus a new 250ms baseline confirmation remains
+bounded to 750ms logically, excluding execution overhead. Successful isolated
+repair adds finite 100/250/500/1000ms confirmation relative to completed placement,
+including repair at the last checkpoint. Both schedules share the existing next
+deadline; repair neither shortens the original horizon nor resets episode budget.
+Duplicate same-state ProcessObserver callbacks do not re-arm; fresh accepted
+scene sequences may. Initial baseline dwell/deadline remain unchanged.
 During this finite window applied-mask cache hits cannot hide external cpuset
 or affinity drift. One isolated drift may be repaired; broad or repeated drift
 freezes placement, preflights every live task and safely relinquishes the old
