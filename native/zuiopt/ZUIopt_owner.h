@@ -434,7 +434,18 @@ public:
                 auto id=identity(tid);if(!id.start||!owned(group(tid)))continue;
                 auto e=journal.entries.find(tid);OwnerRecord r;
                 if(e!=journal.entries.end()&&journal.same(e->second))r=e->second;
-                else if(journal.inherited(tid,r)){journal.entries[tid]=r;added=true;}
+                else if(journal.inherited(tid,r)){
+                    journal.entries[tid]=r;added=true;
+                    if(r.pid==p.pid&&r.processStart==p.generation){
+                        // A child born inside a known mask cpuset inherits that
+                        // constraint. Record only an exact observed group-mask
+                        // match; independently changed affinity is not our residue.
+                        auto g=group(tid);auto m=affinity(tid);Mask applied=0;
+                        if(created.count("/dev/cpuset"+g)&&m==cpus(read("/dev/cpuset"+g+"/cpus"))&&journal.same(r))applied=m;
+                        Task t;t.generation=r.threadStart;t.savedGroup=r.savedGroup;t.savedMask=r.savedMask;t.appliedMask=applied;t.owned=true;
+                        p.tasks[tid]=std::move(t);
+                    }
+                }
                 else {
                     if(identity(tid).start!=id.start||!owned(group(tid)))continue;
                     throw std::runtime_error("background unknown owned task");
@@ -468,8 +479,7 @@ public:
             if(g.empty()){pending=true;continue;}
             require(normalGroup(g),"invalid Android release owner");
             auto t=p.tasks.find(tid);
-            // No known last-applied mask for a late inherited child: no guessed
-            // affinity write. Its durable lease authorizes only cpuset release.
+            // No known last-applied/inherited constraint: no guessed affinity write.
             Mask applied=t!=p.tasks.end()&&t->second.generation==r.threadStart?t->second.appliedMask:0;
             auto mask=affinity(tid);if(!journal.same(r))continue;
             if(!mask){pending=true;continue;}
@@ -522,7 +532,10 @@ public:
             if(last){
                 // Only safe external observation/residue can reach this state;
                 // known live owned residue is fatal above. No steady retry timer.
-                require(!terminal,"background cleanup incomplete");p.releaseBlocked=true;return;
+                // Catch/controlled-stop may retain this durable external-only
+                // evidence for strict startup recovery. Do not turn a transient
+                // observation delay into a second fatal/status3.
+                p.releaseBlocked=true;return;
             }
             do{++p.releaseStep;}while(p.releaseStep<backgroundReleaseSchedule.size()&&p.releaseStarted+backgroundReleaseSchedule[p.releaseStep]<=time);
             p.next=p.releaseStarted+backgroundReleaseSchedule[p.releaseStep];return;

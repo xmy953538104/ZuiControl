@@ -85,6 +85,7 @@ void strictBoundaries(){
         expectFailure([&]{f.release(f.p());},"background unrecoverable owned task");
         expectFailure([&]{f.owner->release(f.p(),ReleaseCause::CRASH_RECOVERY);},"background unrecoverable owned task");}
     {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,"/ZUIopt/7c",0x7c};f.owner.reset();
+        f.journal->entries.clear();f.journal->leases.clear();
         expectFailure([&]{Placement recovery(f.count,*f.journal);},"RECOVERY_UNKNOWN_TASK_FAIL_CLOSED");}
     puts("BACKGROUND_TRUE_FATAL_BOUNDARIES=PASS;CRASH_RECOVERY_STRICT=PASS");
 }
