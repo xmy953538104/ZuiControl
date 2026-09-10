@@ -200,8 +200,8 @@ uses a separate durable, idempotent lane at 0/50/100/250/500ms. It cancels place
 and acquisition, releases only journal/lease-authorized physical ownership, leaves
 Android-owned cpusets untouched, and restores only exact known affinity residue
 constrained by the current Android group. Mixed Android baselines are allowed;
-unknown live ownership and corrupt journals remain fail-closed. A safe external
-observation delay becomes a local blocker after the finite window, with no steady
+unknown live ownership and corrupt journals remain fail-closed. A known safe
+release delay becomes a local blocker after the finite window, with no steady
 retry timer. Fatal receipts include bounded primary and cleanup substages/reasons.
 After probation the existing cache remains; no idle polling or new steady
 physical scan is introduced. Device timing acceptance is a separate gate.

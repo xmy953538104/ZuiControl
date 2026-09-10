@@ -469,12 +469,16 @@ public:
                 // earlier observation must not move an external task backwards.
                 int fd=open(("/dev/cpuset"+r.savedGroup+"/tasks").c_str(),O_WRONLY|O_CLOEXEC|O_NOFOLLOW);
                 require(fd>=0,"background release destination open");
-                bool moved=true;
+                bool moved=true;int moveError=0;
                 try{if(journal.same(r)&&owned(group(tid))){
-                    auto value=std::to_string(tid);moved=::write(fd,value.data(),value.size())==static_cast<ssize_t>(value.size());
+                    auto value=std::to_string(tid);auto n=::write(fd,value.data(),value.size());
+                    moved=n==static_cast<ssize_t>(value.size());if(!moved)moveError=n<0?errno:EIO;
                 }}catch(...){close(fd);throw;}
                 close(fd);
-                if(!moved&&journal.same(r)&&owned(group(tid)))pending=true;
+                if(!moved&&journal.same(r)&&owned(group(tid))){
+                    require(moveError==ESRCH||moveError==ENOENT||moveError==EINTR||moveError==EAGAIN||moveError==EBUSY,"background owned release failed");
+                    pending=true;
+                }
                 g=group(tid);
             }
             if(!journal.same(r))continue;
@@ -495,7 +499,12 @@ public:
             // Restore only our exact residue, constrained by the CURRENT Android
             // group. A changed Android mask/group wins; no saved-cpuset rewrite.
             if(journal.same(r)&&group(tid)==g&&journal.same(r)&&affinity(tid)==applied){
-                if(!setAffinity(tid,restoreMask)&&journal.same(r))pending=true;
+                if(!setAffinity(tid,restoreMask)){
+                    int error=errno;
+                    if(journal.same(r)&&affinity(tid)==applied){
+                        require(error!=EACCES&&error!=EPERM,"background affinity release denied");pending=true;
+                    }
+                }
             }
         }
         auto remaining=cover();
@@ -535,11 +544,12 @@ public:
             bool terminal=cause!=ReleaseCause::AUTHORITY_BACKGROUND;
             if(!terminal&&(p.releaseBlocked||p.next>time))return;
             bool last=terminal||time>=p.releaseStarted+backgroundReleaseSchedule.back();
-            if(backgroundPass(p,last))return;
+            if(backgroundPass(p,terminal))return;
             if(last){
-                // Only safe external observation/residue can reach this state;
-                // known live owned residue is fatal above. No steady retry timer.
-                // Catch/controlled-stop may retain this durable external-only
+                // A deadline alone is not evidence of permanent write failure.
+                // Known journal-covered contention keeps the daemon alive, with
+                // no further timer. Explicit permanent errors fail closed above.
+                // Catch/controlled-stop may retain durable external-only
                 // evidence for strict startup recovery. Do not turn a transient
                 // observation delay into a second fatal/status3.
                 p.releaseBlocked=true;return;

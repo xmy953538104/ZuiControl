@@ -23,7 +23,7 @@ std::map<std::string,std::string> procFiles;std::vector<int> listedTasks;
 uint64_t procMaterializations=0,taskMaterializations=0;
 std::string root,virtualRoot;int user=10001;int64_t time=0;int reads=0,moves=0,affinities=0;
 int groupReads=0,identityReads=0,uidReads=0,affinityReads=0;
-bool stuck=false;std::function<void(const std::string&)> hook;
+bool stuck=false;int moveError=0;std::function<void(const std::string&)> hook;
 std::function<void(int,bool,Mask)> beforeWrite;
 std::string mapped(const std::string& path){
     if(path.rfind("/dev/cpuset",0)==0||path=="/proc/42"||path.rfind("/proc/42/",0)==0)return virtualRoot+path;
@@ -65,7 +65,7 @@ void initialize(){
     char ram[]="/dev/shm/zuiopt-kernel-XXXXXX";require(mkdtemp(ram),"exclusive virtual kernel root");virtualRoot=ram;
     struct statfs storage{};require(statfs(virtualRoot.c_str(),&storage)==0&&storage.f_type==0x01021994,"virtual kernel must be tmpfs");
     require(statfs(root.c_str(),&storage)==0&&storage.f_type!=0x01021994,"journal must remain disk-backed");
-    tasks={{42,{}},{43,{}}};fds.clear();procFiles.clear();listedTasks.clear();user=10001;time=0;reads=moves=affinities=0;stuck=false;hook={};beforeWrite={};
+    tasks={{42,{}},{43,{}}};fds.clear();procFiles.clear();listedTasks.clear();user=10001;time=0;reads=moves=affinities=0;stuck=false;moveError=0;hook={};beforeWrite={};
     for(auto g:{"","/top-app","/background","/foreground","/ZUIopt"})for(auto f:{"tasks","mems","cpus"})put(virtualRoot+"/dev/cpuset"+g+"/"+f,f==std::string("mems")?"0":"0-7");
     fs::permissions(virtualRoot+"/dev/cpuset/ZUIopt",fs::perms::owner_all|fs::perms::group_read|fs::perms::group_exec|fs::perms::others_read|fs::perms::others_exec);
     fs::create_directories(virtualRoot+"/proc/42/task");
@@ -111,6 +111,7 @@ ssize_t __wrap_write(int fd,const void* bytes,size_t size){
             int tid=std::stoi(std::string(static_cast<const char*>(bytes),size));
             if(!tasks.count(tid)){errno=ESRCH;return -1;}
             if(beforeWrite)beforeWrite(tid,true,0);
+            if(moveError){errno=moveError;return -1;}
             moves++;if(!stuck||tid<44)tasks.at(tid).group=path.substr(11,path.size()-17);
             return static_cast<ssize_t>(size);
         }

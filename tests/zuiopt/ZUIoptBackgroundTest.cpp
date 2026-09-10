@@ -104,8 +104,13 @@ void strictBoundaries(){
     {BackgroundFixture f;f.setup(200);f.journal->entries.erase(43);
         expectFailure([&]{f.background();},"write without durable owner identity");}
     {BackgroundFixture f;f.setup(200);Kernel::stuck=true;f.background();Kernel::time=750;
-        expectFailure([&]{f.release(f.p());},"background unrecoverable owned task");
-        expectFailure([&]{f.owner->release(f.p(),ReleaseCause::CRASH_RECOVERY);},"background unrecoverable owned task");}
+        f.release(f.p());require(f.p().releaseBlocked&&!f.journal->entries.empty(),"known contention deadline killed daemon");
+        auto reads=Kernel::reads;for(int i=0;i<100;i++)f.release(f.p());require(Kernel::reads==reads,"owned blocker idle polling");
+        expectFailure([&]{f.owner->release(f.p(),ReleaseCause::CRASH_RECOVERY);},"background unrecoverable owned task");
+        Kernel::stuck=false;f.owner->release(f.p(),ReleaseCause::RELOAD_OR_CONTROLLED_STOP);f.complete();}
+    {BackgroundFixture f;f.setup(200);Kernel::moveError=EACCES;
+        expectFailure([&]{f.background();},"background owned release failed");
+        expectFailure([&]{f.owner->release(f.p(),ReleaseCause::CRASH_RECOVERY);},"background owned release failed");}
     {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,"/ZUIopt/7c",0x7c};f.owner.reset();
         f.journal->entries.clear();f.journal->leases.clear();
         expectFailure([&]{Placement recovery(f.count,*f.journal);},"RECOVERY_UNKNOWN_TASK_FAIL_CLOSED");}
