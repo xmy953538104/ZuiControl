@@ -9,6 +9,22 @@ ROOT=Path(__file__).resolve().parents[2]
 def read(path): return (ROOT/path).read_text(encoding='utf-8')
 
 class ProductionContracts(unittest.TestCase):
+    def test_temporal_and_coherence_production_wiring(self):
+        owner=read('native/zuiopt/ZUIopt_owner.h');core=read('native/zuiopt/ZUIopt_core.h');daemon=read('native/zuiopt/ZUIopt_daemon.h')
+        for field in ('BaselineCandidate','firstStableAt','lastStableAt','acquisitionEpoch','coherenceEpisodes'):
+            self.assertIn(field,core)
+        self.assertLess(owner.index('time-candidate.firstStableAt<250'),owner.index('const auto floor=proc.floor()'))
+        self.assertIn('if(result!=BaselineResult::STABLE){p.baselineCandidate={};return result;}',owner)
+        self.assertIn('!forceCoherence(p)&&t.appliedMask==m',owner)
+        self.assertIn('p.coherenceEpisodes>=2',owner)
+        self.assertIn('burst={100,250,500,1000,1500,2000}',core)
+        self.assertLess(daemon.index('verifyCoherence(p,start)'),daemon.index('placement->prepare(p)'))
+        self.assertIn('authorityEvent=sceneBurst.step==0;',daemon)
+        self.assertIn('if(authorityEvent)armCoherence(p,now());',daemon)
+        self.assertIn('authorityEvent=outerAuthority;',daemon)
+        self.assertIn('if(p.coherenceReleasing){relinquishCoherence(p);',owner)
+        self.assertIn('ownership_contested',read('native/zuiopt/ZUIopt_lifecycle.h'))
+
     def test_acquisition_zero_write_and_local_bounded_deadlines(self):
         core=read('native/zuiopt/ZUIopt_core.h')
         self.assertIn('schedule={0,100,250,500,750}',core)

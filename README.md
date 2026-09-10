@@ -147,8 +147,11 @@ reactor blocks indefinitely. There is no watcher thread or idle polling timer.
 
 Acquisition is distinct from managed ownership: INACTIVE -> ACQUIRING_BASELINE
 -> MANAGED. Each pending request probes a fresh generation/UID-checked common
-Android cpuset/affinity baseline at 0/100/250/500/750ms. Pending probes perform
-no journal, placement or ownership writes. The successful pass commits the
+Android cpuset/affinity baseline at 0/100/250/500/750ms. A uniform first pass is
+only an in-memory candidate; complete fresh probes must confirm the same
+generation/UID/group/mask for at least 250ms. Changes or loss of uniformity reset
+the candidate; task-set changes alone do not. Pending probes perform
+no journal, placement or ownership writes. The temporally confirmed pass commits the
 inheritance floor/lease and original task records durably before placement.
 Background, death and stale generation cancel pending work without release.
 Persistent heterogeneity stays Android-owned and records the bounded private
@@ -158,3 +161,20 @@ The acquisition deadline is local to the reactor, independent of scene retries,
 and disappears when no acquisition is pending. Committed recovery/release stays
 strict. The acquisition fixture intercepts only synthetic proc/cpuset paths in
 its exclusive temporary tree; it never writes real host or device scheduling.
+
+Each commit and accepted foreground authority event arms physical coherence
+verification at 0/100/250/500/1000/1500/2000ms. The 1500ms point bounds detection
+plus a new 250ms baseline confirmation to 750ms, excluding execution overhead.
+During this finite window applied-mask cache hits cannot hide external cpuset
+or affinity drift. One isolated drift may be repaired; broad or repeated drift
+freezes placement, preflights every live task and safely relinquishes the old
+epoch before temporal reacquisition. At most two repair/reacquisition episodes
+are allowed per foreground epoch (authority duplicates do not replenish them).
+Exhaustion safely releases to Android and deduplicates `ownership_contested`.
+External affinities containing the entire saved mask are left untouched. Only
+a proven last-applied residue in the exact saved group may be restored there;
+unproven external narrowing and unknown/busy owned tasks remain fail-closed.
+Journal clearing follows a fresh complete zero-owned/zero-residue check. Normal
+background release and crash recovery retain their existing strict semantics.
+After probation the existing cache remains; no idle polling or new steady
+physical scan is introduced. Device timing acceptance is a separate gate.

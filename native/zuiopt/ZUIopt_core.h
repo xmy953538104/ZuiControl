@@ -197,16 +197,23 @@ struct Counters {uint64_t events=0,snapshots=0,scans=0,comm=0,schedstat=0,placem
 struct Task {
     uint64_t generation=0;std::string comm,savedGroup;Mask savedMask=0,appliedMask=0;int64_t discovered=0,renamed=0,verified=0;unsigned renameStage=0;bool owned=false;
 };
+struct BaselineCandidate {
+    std::string group;Mask mask=0;int64_t firstStableAt=0,lastStableAt=0;
+    uint64_t generation=0,epoch=0;int uid=0;
+};
 struct ProcessState {
     int pid=0,uid=0;std::string name,package;uint64_t generation=0;
     bool activity_foreground=false,alive=true,managed=false;int foreground_service_state=0;
     // managed means a durable lease, never just a foreground acquisition request.
     bool acquiring=false,acquireBlocked=false;int64_t acquireStarted=0;size_t acquireStep=0;
+    BaselineCandidate baselineCandidate;uint64_t acquisitionEpoch=0;
+    unsigned coherenceEpisodes=0;bool coherenceReleasing=false;
     int64_t activated=0,next=0;uint64_t ownershipFloor=0;size_t burst=0;std::string androidGroup;Mask androidMask=0;
     std::map<int,Task> tasks;
 };
 inline void beginAcquisition(ProcessState& p,int64_t time){
     if(p.managed||p.acquiring||p.acquireBlocked)return;
+    p.baselineCandidate={};++p.acquisitionEpoch;
     p.acquiring=true;p.acquireStarted=time;p.acquireStep=0;p.next=time;
 }
 inline void discardAcquisition(ProcessState& p){
@@ -214,6 +221,18 @@ inline void discardAcquisition(ProcessState& p){
     for(auto& [_,t]:p.tasks)require(!t.owned,"uncommitted owned task");
     p.tasks.clear();p.acquiring=false;p.acquireStarted=0;p.acquireStep=0;p.next=0;
     p.androidGroup.clear();p.androidMask=0;p.ownershipFloor=0;
+    p.baselineCandidate={};p.burst=6;
+}
+// Reuse the finite discovery deadlines; never arm from a periodic snapshot.
+inline void armCoherence(ProcessState& p,int64_t time){
+    if(!p.managed)return;
+    p.activated=time;p.burst=0;p.next=time;
+}
+inline bool forceCoherence(const ProcessState& p){return p.managed&&p.burst<6;}
+inline void finishScan(ProcessState& p,int64_t time){
+    static constexpr std::array<int,6> burst={100,250,500,1000,1500,2000};
+    while(p.burst<burst.size()&&p.activated+burst[p.burst]<=time)p.burst++;
+    p.next=p.burst<burst.size()?p.activated+burst[p.burst]:time+1000;
 }
 enum class BaselineResult {STABLE,DEFER,STALE};
 template<class Runtime> void advanceAcquisition(ProcessState& p,int64_t time,Runtime& runtime){

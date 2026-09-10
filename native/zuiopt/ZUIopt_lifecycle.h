@@ -91,7 +91,7 @@ inline bool recordLifecycle(const std::string& root,const std::string& boot,
         return true;
     }catch(...){return false;} // Diagnostics must never suppress owner release or the init fail-safe.
 }
-enum class RuntimeBlockerReason {PROC_READ_PERMISSION,PROC_UID_PERMISSION,PACKAGE_AUTHORITY_PERMISSION,INHERITANCE_BASELINE_UNSTABLE};
+enum class RuntimeBlockerReason {PROC_READ_PERMISSION,PROC_UID_PERMISSION,PACKAGE_AUTHORITY_PERMISSION,INHERITANCE_BASELINE_UNSTABLE,OWNERSHIP_CONTESTED};
 class RuntimeBlocker {
     unsigned seen=0;
 public:
@@ -99,12 +99,12 @@ public:
         // At most one attempt per reason per process lifetime, even if storage fails.
         // Retained evidence is historical, not a continuously refreshed health status.
         const unsigned index=static_cast<unsigned>(reason);
-        if(index>=4||(seen&(1u<<index)))return false;
+        if(index>=5||(seen&(1u<<index)))return false;
         seen|=1u<<index;
         try {
             require(boot.size()==36&&boot.find_first_not_of("0123456789abcdef-")==boot.npos,"diagnostic boot bound");
-            static constexpr const char* names[]={"proc_read_permission","proc_uid_permission","package_authority_permission","inheritance_baseline_unstable"};
-            std::string data="ZUIOPT_RUNTIME_BLOCKER_V1\nboot="+boot+"\nstage="+(index==3?"ACQUIRING_BASELINE":"APP_ACCESS")+"\nstate=BLOCKED\nreason="+names[index]+"\n";
+            static constexpr const char* names[]={"proc_read_permission","proc_uid_permission","package_authority_permission","inheritance_baseline_unstable","ownership_contested"};
+            std::string data="ZUIOPT_RUNTIME_BLOCKER_V1\nboot="+boot+"\nstage="+(index==4?"COHERENCE_REACQUIRE":index==3?"ACQUIRING_BASELINE":"APP_ACCESS")+"\nstate=BLOCKED\nreason="+names[index]+"\n";
             require(data.size()<1024,"runtime diagnostic bound");
             PrivateDir directory(root);directory.put("runtime_blocker.v1",data);return true;
         }catch(...){return false;}

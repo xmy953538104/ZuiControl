@@ -26,6 +26,7 @@ inline void writeAll(int fd,const std::string& s){
     }
 }
 struct BaselineProc {
+    int64_t time(){return now();}
     Identity process(int pid){return identity(pid);}
     Identity thread(int pid,int tid){return identity(pid,tid);}
     int user(int pid){return uid(pid);}
@@ -170,6 +171,7 @@ public:
         }catch(...){if(fd>=0)close(fd);throw;}
     }
 };
+enum class CoherenceResult {CLEAN,REPAIR,REACQUIRE,CONTESTED};
 class Placement {
     const std::string root="/dev/cpuset/ZUIopt";
     std::set<std::string> created;
@@ -261,7 +263,15 @@ public:
     template<class Proc> BaselineResult acquire(ProcessState& p,Proc& proc){
         requireUncommitted(p);require(p.acquiring,"acquisition not pending");
         AndroidBaseline baseline;auto result=probeBaseline(p,proc,baseline);
-        if(result!=BaselineResult::STABLE)return result;
+        if(result!=BaselineResult::STABLE){p.baselineCandidate={};return result;}
+        auto time=proc.time();auto& candidate=p.baselineCandidate;
+        if(candidate.group!=baseline.group||candidate.mask!=baseline.mask||candidate.generation!=p.generation||
+           candidate.uid!=p.uid||candidate.epoch!=p.acquisitionEpoch){
+            candidate={baseline.group,baseline.mask,time,time,p.generation,p.acquisitionEpoch,p.uid};
+            return BaselineResult::DEFER;
+        }
+        candidate.lastStableAt=time;
+        if(time-candidate.firstStableAt<250)return BaselineResult::DEFER;
         // No ownership mutation until the complete fresh baseline has passed.
         // Commit L and original T records in one durable batch before placement.
         std::map<int,Task> tasks;
@@ -276,7 +286,7 @@ public:
         for(auto& [tid,t]:tasks)journal.entries[tid]=OwnerRecord{p.pid,p.uid,tid,p.generation,t.generation,p.package,p.name,t.savedGroup,t.savedMask};
         journal.commit();
         p.androidGroup=std::move(baseline.group);p.androidMask=baseline.mask;p.ownershipFloor=floor;p.tasks=std::move(tasks);
-        p.managed=true;p.acquiring=false;p.acquireStarted=0;p.acquireStep=0;p.activated=now();p.next=p.activated;p.burst=0;
+        p.managed=true;p.acquiring=false;p.acquireStarted=0;p.acquireStep=0;p.baselineCandidate={};armCoherence(p,time);
         return BaselineResult::STABLE;
     }
     BaselineResult acquire(ProcessState& p){BaselineProc proc;return acquire(p,proc);}
@@ -310,7 +320,7 @@ public:
     }
     void apply(ProcessState& p,int tid,Task& t,Mask m,const std::string& cls){
         // Cached default tasks do not reopen affinity/cgroup every second. Verify on change and 30s safety.
-        if(t.appliedMask==m&&now()-t.verified<30000)return;
+        if(!forceCoherence(p)&&t.appliedMask==m&&now()-t.verified<30000)return;
         if(!t.owned||!same(p,tid,t))return;
         auto it=journal.entries.find(tid);require(it!=journal.entries.end()&&journal.same(it->second),"write without durable owner identity");
         auto path=target(m);if(group(tid)==path.substr(11)&&affinity(tid)==m){t.appliedMask=m;t.verified=now();return;}
@@ -320,8 +330,93 @@ public:
         t.appliedMask=m;t.verified=now();
         count.placements++;ZUIOPT_NOTE("PLACE","pid="+std::to_string(p.pid)+" tid="+std::to_string(tid)+" class="+cls+" mask="+cpuText(m));
     }
+    bool relinquishCoherence(ProcessState& p){
+        // Freeze before preflight, including the exception/releaseAll path. No
+        // ordinary release may overwrite an unproven external affinity later.
+        p.coherenceReleasing=true;
+        for(int pass=0;pass<8;pass++){
+            std::map<int,OwnerRecord> live;std::set<int> restoreOwned,restoreResidue;
+            if(identity(p.pid).start==p.generation&&uid(p.pid)==p.uid){
+                auto tids=ids("/proc/"+std::to_string(p.pid)+"/task");
+                // Cross-check physical membership, including late inherited children.
+                auto paths=groups();paths.insert(root);
+                for(auto& path:paths)for(int tid:members(path))if(identity(p.pid,tid).start)tids.push_back(tid);
+                for(int tid:tids){
+                    auto id=identity(p.pid,tid);if(!id.start)continue;
+                    auto g=group(tid);auto m=affinity(tid);
+                    if(identity(p.pid,tid).start!=id.start)continue;
+                    OwnerRecord r;auto entry=journal.entries.find(tid);
+                    bool owned=g.rfind("/ZUIopt",0)==0;
+                    if(entry!=journal.entries.end()&&journal.same(entry->second))r=entry->second;
+                    else if(owned){require(journal.inherited(tid,r),"coherence unknown owned task");}
+                    else continue; // A never-owned Android child has no restore effect.
+                    live[tid]=r;
+                    if(owned){restoreOwned.insert(tid);continue;}
+                    require(normalGroup(g)&&m,"coherence external owner unavailable");
+                    // A mask containing the entire saved Android affinity cannot
+                    // retain our narrowing. Leave the external placement untouched.
+                    if((m&r.savedMask)==r.savedMask)continue;
+                    auto task=p.tasks.find(tid);
+                    // Cpuset-only handoff back to the exact saved group: undo only
+                    // our last affinity, never move Android to an old cpuset.
+                    require(g==r.savedGroup&&task!=p.tasks.end()&&task->second.generation==id.start&&
+                            task->second.appliedMask&&m==task->second.appliedMask,
+                            "coherence unresolved external affinity");
+                    restoreResidue.insert(tid);
+                }
+            }
+            // Preflight the entire set before changing any task or durable record.
+            if(restoreOwned.empty()&&restoreResidue.empty()){
+                BaselineProc proc;AndroidBaseline baseline;
+                bool uniform=probeBaseline(p,proc,baseline)==BaselineResult::STABLE;
+                for(auto it=journal.entries.begin();it!=journal.entries.end();)
+                    if(it->second.pid==p.pid&&it->second.processStart==p.generation)it=journal.entries.erase(it);else ++it;
+                journal.leases.erase(p.pid);journal.commit();p.tasks.clear();p.managed=false;
+                discardAcquisition(p);p.coherenceReleasing=false;return uniform;
+            }
+            bool added=false;
+            for(auto& [tid,r]:live)if(!journal.entries.count(tid)){journal.entries[tid]=r;added=true;}
+            if(added)journal.commit(); // Inherited originals stay crash-recoverable.
+            for(int tid:restoreOwned){auto& r=live.at(tid);
+                if(!journal.same(r)||group(tid).rfind("/ZUIopt",0)!=0)continue;
+                bool moved=journal.same(r)&&write("/dev/cpuset"+r.savedGroup+"/tasks",std::to_string(tid));
+                bool restored=journal.same(r)&&group(tid)==r.savedGroup&&setAffinity(tid,r.savedMask);
+                require((moved&&restored)||!journal.same(r),"coherence owned release failed");count.releases++;
+            }
+            for(int tid:restoreResidue){auto& r=live.at(tid);auto& t=p.tasks.at(tid);
+                if(journal.same(r)&&group(tid)==r.savedGroup&&affinity(tid)==t.appliedMask)
+                    require(setAffinity(tid,r.savedMask)||!journal.same(r),"coherence affinity release failed");
+            }
+            // A fresh complete pass proves there is no owned member/residue before clear.
+        }
+        throw std::runtime_error("coherence release busy");
+    }
+    CoherenceResult verifyCoherence(ProcessState& p,int64_t time){
+        if(!forceCoherence(p))return CoherenceResult::CLEAN;
+        size_t checked=0,drift=0;
+        for(auto& [tid,t]:p.tasks){
+            if(!t.owned||!t.appliedMask||!same(p,tid,t))continue;
+            auto entry=journal.entries.find(tid);
+            require(entry!=journal.entries.end()&&journal.same(entry->second),"write without durable owner identity");
+            auto g=group(tid);auto m=affinity(tid);if(!same(p,tid,t))continue;
+            std::ostringstream expected;expected<<"/ZUIopt/"<<std::hex<<t.appliedMask;
+            checked++;if(g!=expected.str()||m!=t.appliedMask)drift++;
+        }
+        if(!drift)return CoherenceResult::CLEAN;
+        require(p.activity_foreground&&p.alive,"coherence authority absent");
+        // One budget per foreground epoch, NOT per task, scan, or scene retry.
+        bool exhausted=p.coherenceEpisodes>=2;
+        if(!exhausted)++p.coherenceEpisodes;
+        if(!exhausted&&p.coherenceEpisodes==1&&drift*2<checked)return CoherenceResult::REPAIR;
+        bool uniform=relinquishCoherence(p);
+        // Individually proven safe but heterogeneous Android handoff: close
+        // without guessing a shared baseline; wait for fresh foreground authority.
+        if(exhausted||!uniform){p.acquireBlocked=true;return CoherenceResult::CONTESTED;}
+        beginAcquisition(p,time);return CoherenceResult::REACQUIRE;
+    }
     void release(ProcessState& p){
-        if(!p.managed){requireUncommitted(p);discardAcquisition(p);p.acquireBlocked=false;return;}
+        if(!p.managed){requireUncommitted(p);discardAcquisition(p);p.acquireBlocked=false;p.coherenceEpisodes=0;return;}
+        if(p.coherenceReleasing){relinquishCoherence(p);p.acquireBlocked=false;p.coherenceEpisodes=0;return;}
         if(identity(p.pid).start==p.generation)for(int tid:ids("/proc/"+std::to_string(p.pid)+"/task")){
             auto id=identity(p.pid,tid);if(!id.start)continue;
             auto it=p.tasks.find(tid);
@@ -340,7 +435,7 @@ public:
         }
         for(int tid:ids("/proc/"+std::to_string(p.pid)+"/task"))require(group(tid).rfind("/ZUIopt/",0)!=0,"release busy process");
         for(auto it=journal.entries.begin();it!=journal.entries.end();)if(it->second.pid==p.pid&&it->second.processStart==p.generation)it=journal.entries.erase(it);else ++it;
-        journal.leases.erase(p.pid);journal.commit();p.tasks.clear();p.managed=false;discardAcquisition(p);p.acquireBlocked=false;
+        journal.leases.erase(p.pid);journal.commit();p.tasks.clear();p.managed=false;discardAcquisition(p);p.acquireBlocked=false;p.coherenceEpisodes=0;
     }
     void cleanup(){
         requireScaffold();

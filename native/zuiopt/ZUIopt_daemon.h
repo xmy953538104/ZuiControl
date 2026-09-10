@@ -23,7 +23,7 @@ class Core {
     std::unique_ptr<Journal> journal;std::unique_ptr<Placement> placement;std::unique_ptr<Observer> observer;
     RawEvents events;RuntimeBlocker runtimeBlocker;
     std::unique_ptr<SceneObserver> sceneObserver;SceneBurst sceneBurst;
-    int eventFd=-1,signalFd=-1;bool serviceDied=false;
+    int eventFd=-1,signalFd=-1;bool serviceDied=false,authorityEvent=false;
 public:
     Core(std::string path,const std::string& statePath):configPath(std::move(path)),stateRoot(statePath){
         available=cpus(read("/sys/devices/system/cpu/online"));config=parseConfig(read(configPath),available);ZUIOPT_debug=config.debug;
@@ -52,12 +52,13 @@ public:
     void release(ProcessState& p){placement->release(p);}
     BaselineResult acquire(ProcessState& p){
         try{return placement->acquire(p);}
-        catch(const ProcError& error){if(!error.permission())throw;procBlocked(error);return BaselineResult::DEFER;}
+        catch(const ProcError& error){if(!error.permission())throw;p.baselineCandidate={};procBlocked(error);return BaselineResult::DEFER;}
     }
     void baselineBlocked(){blocked(RuntimeBlockerReason::INHERITANCE_BASELINE_UNSTABLE);}
     void activate(ProcessState& p){
         bool wanted=p.alive&&p.activity_foreground&&config.find(p.package);
         if(!wanted){placement->release(p);return;}
+        if(authorityEvent)armCoherence(p,now());
         beginAcquisition(p,now());
     }
     ProcessState* resolve(const Snapshot& s){
@@ -72,11 +73,14 @@ public:
         counters.snapshots++;reconcileSnapshot(snapshot,states,*this);
     }
     void edges(){
+        bool outerAuthority=authorityEvent;
         for(auto& e:events.take()){
             counters.events++;ZUIOPT_NOTE("EVENT","seq="+std::to_string(e.sequence)+" code="+std::to_string(e.code));
             if(e.code==0){serviceDied=true;continue;}
+            authorityEvent=true;
             try{processEvent(e,states,*this);}
             catch(const ProcError& error){if(!error.permission())throw;procBlocked(error);}
+            authorityEvent=outerAuthority;
         }
     }
     void scan(ProcessState& p){
@@ -105,11 +109,12 @@ public:
         for(auto it=p.tasks.begin();it!=p.tasks.end();)if(!live.count(it->first))it=p.tasks.erase(it);else ++it;
         for(auto& [cls,items]:candidates){auto* rule=groups.at(cls);int tid=representative(items,rule->rank);if(tid)selected[tid]=rule;
             ZUIOPT_NOTE("REPRESENTATIVE","pid="+std::to_string(p.pid)+" class="+cls+" rank="+std::to_string(rule->rank)+" tid="+std::to_string(tid));}
+        auto coherence=placement->verifyCoherence(p,start);
+        if(coherence==CoherenceResult::CONTESTED)blocked(RuntimeBlockerReason::OWNERSHIP_CONTESTED);
+        if(!p.managed)return;
         placement->prepare(p);
         for(auto& [tid,t]:p.tasks){auto it=selected.find(tid);auto* r=it==selected.end()?nullptr:it->second;placement->apply(p,tid,t,r?r->mask:profile->general,r?r->cls:"default");}
-        static constexpr std::array<int,5> burst={100,250,500,1000,2000};
-        while(p.burst<burst.size()&&p.activated+burst[p.burst]<=now())p.burst++;
-        p.next=p.burst<burst.size()?p.activated+burst[p.burst]:now()+1000;
+        finishScan(p,now());
         ZUIOPT_NOTE("SCAN","pid="+std::to_string(p.pid)+" tids="+std::to_string(p.tasks.size())+" elapsed_ms="+std::to_string(now()-start)+" next="+std::to_string(p.next));
     }
     void stats(){size_t active=0,tasks=0;for(auto& [_,p]:states){active+=p.managed;tasks+=p.tasks.size();}
@@ -139,7 +144,9 @@ public:
             if(sceneBurst.timeout(now())==0){
                 auto seq=sceneBurst.sequence;auto snapshot=observer->snapshot();
                 if(events.latestScene(seq)){
+                    authorityEvent=sceneBurst.step==0;
                     reconcile(snapshot);
+                    authorityEvent=false;
                     if(sceneBurst.complete(now())&&events.latestScene(seq))sceneObserver->ack(seq);
                 }
             }

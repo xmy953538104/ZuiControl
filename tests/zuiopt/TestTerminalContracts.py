@@ -46,12 +46,16 @@ class TerminalContracts(unittest.TestCase):
             self.assertEqual(hashlib.sha256(read('native/zuiopt/'+name).encode()).hexdigest(),sha,name)
         core=read('native/zuiopt/ZUIopt_core.h')
         owner=read('native/zuiopt/ZUIopt_owner.h')
+        release=owner[owner.index('    void release(ProcessState& p)'):]
+        # V56 authorizes only the cache guard, not the placement write algorithm.
+        apply=owner[owner.index('    void apply('):owner.index('    bool relinquishCoherence(')]
+        apply=apply.replace('!forceCoherence(p)&&t.appliedMask==m','t.appliedMask==m')
         frozen={
-            'core_algorithms':(core.split('struct ProcessState {',1)[0],'41eb596f82dd00c8d193bcad6ed3dbc8521baa643133cad54d518a73b1a9db30'),
-            'journal':(owner[owner.index('class Journal {'):owner.index('class Placement {')],'61134ccb4ffcfbf35f494268062b856e5f1d2766c73b1a53dc4ce429cd98857b'),
+            'core_algorithms':(core.split('struct BaselineCandidate {',1)[0],'41eb596f82dd00c8d193bcad6ed3dbc8521baa643133cad54d518a73b1a9db30'),
+            'journal':(owner[owner.index('class Journal {'):owner.index('enum class CoherenceResult')],'61134ccb4ffcfbf35f494268062b856e5f1d2766c73b1a53dc4ce429cd98857b'),
             'restore_recovery':(owner[owner.index('    void restore('):owner.index('public:\n    // Used before acquisition')],'cf9a5c1db858b0a5ef72878c72c5a83079b6712a3e330d3fc316a4ee02646dcd'),
-            'apply':(owner[owner.index('    void apply('):owner.index('    void release(')],'94b1a359c55e2737013b27bc3f6037789a9587ec0ec323a2681f46791156c278'),
-            'committed_release':(owner[owner.index('        if(identity(p.pid).start==p.generation)for('):owner.index('        journal.leases.erase(p.pid)')],'cb815de5d13eaeb861c18d67cb9671c305b0cb9373382a2656ca442bb61255cc'),
+            'apply':(apply,'94b1a359c55e2737013b27bc3f6037789a9587ec0ec323a2681f46791156c278'),
+            'committed_release':(release[release.index('        if(identity(p.pid).start==p.generation)for('):release.index('        journal.leases.erase(p.pid)')],'cb815de5d13eaeb861c18d67cb9671c305b0cb9373382a2656ca442bb61255cc'),
         }
         for name,(text,sha) in frozen.items():self.assertEqual(hashlib.sha256(text.encode()).hexdigest(),sha,name)
         # The new scene queue/lifecycle shares these files; freeze the unchanged
