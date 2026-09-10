@@ -47,7 +47,7 @@ template<class Runtime> void processEvent(const Event& e,std::map<int,ProcessSta
     if(it!=states.end()){
         auto id=runtime.procIdentity(e.pid);int user=runtime.procUid(e.pid);
         if(!sameProcess(it->second,id,user)){
-            runtime.release(it->second);states.erase(it);it=states.end();
+            it->second.alive=false;runtime.release(it->second);states.erase(it);it=states.end();
         }
     }
     // A delayed death callback never removes a live, same-generation/UID state.
@@ -62,7 +62,7 @@ template<class Runtime> void processEvent(const Event& e,std::map<int,ProcessSta
         runtime.activate(*p);return;
     }
     // A missing authority record is an acquisition race, not a daemon fatal.
-    if(it!=states.end()){runtime.release(it->second);states.erase(it);}
+    if(it!=states.end()){it->second.activity_foreground=false;runtime.release(it->second);if(!it->second.backgroundReleasing)states.erase(it);}
 }
 
 // Shared with event-loss fixtures; the existing authority/ownership path is unchanged.
@@ -73,7 +73,10 @@ template<class Runtime> void reconcileSnapshot(const std::vector<Snapshot>& snap
         present.insert(s.pid);p->activity_foreground=(s.state==2)&&((s.flags&4)!=0);
         ZUIOPT_NOTE("SNAPSHOT","pid="+std::to_string(s.pid)+" name="+s.name+" state="+std::to_string(s.state)+" focused="+std::to_string(s.focused)+" generation="+std::to_string(p->generation));
     }
-    for(auto it=states.begin();it!=states.end();)if(!present.count(it->first)){runtime.release(it->second);it=states.erase(it);}else ++it;
+    for(auto it=states.begin();it!=states.end();)if(!present.count(it->first)){
+        it->second.activity_foreground=false;runtime.release(it->second);
+        if(!it->second.backgroundReleasing)it=states.erase(it);else ++it;
+    }else ++it;
     ZUIOPT_NOTE("RECONCILE","records="+std::to_string(present.size()));
     runtime.edges();for(auto& [_,p]:states)runtime.activate(p);
 }

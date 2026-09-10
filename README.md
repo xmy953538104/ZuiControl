@@ -195,6 +195,13 @@ External affinities containing the entire saved mask are left untouched. Only
 a proven last-applied residue in the exact saved group may be restored there;
 unproven external narrowing and unknown/busy owned tasks remain fail-closed.
 Journal clearing follows a fresh complete zero-owned/zero-residue check. Normal
-background release and crash recovery retain their existing strict semantics.
+crash recovery retains its existing strict semantics. Normal background release
+uses a separate durable, idempotent lane at 0/50/100/250/500ms. It cancels placement
+and acquisition, releases only journal/lease-authorized physical ownership, leaves
+Android-owned cpusets untouched, and restores only exact known affinity residue
+constrained by the current Android group. Mixed Android baselines are allowed;
+unknown live ownership and corrupt journals remain fail-closed. A safe external
+observation delay becomes a local blocker after the finite window, with no steady
+retry timer. Fatal receipts include bounded primary and cleanup substages/reasons.
 After probation the existing cache remains; no idle polling or new steady
 physical scan is introduced. Device timing acceptance is a separate gate.

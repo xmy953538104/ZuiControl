@@ -61,7 +61,7 @@ class ProductionContracts(unittest.TestCase):
         self.assertNotIn('?BaselineResult::DEFER:runtime.acquire(p)',core)
         self.assertIn('confirmation<=p.acquireStarted+3500',core)
         self.assertIn('!p.acquireFinalConfirmation&&valid',core)
-        self.assertIn('if(p.managed||p.acquiring||p.acquireBlocked)return;',core)
+        self.assertIn('if(p.backgroundReleasing||p.managed||p.acquiring||p.acquireBlocked)return;',core)
         self.assertIn('if(!p.acquiring||p.next>time)return;',core)
         owner=read('native/zuiopt/ZUIopt_owner.h')
         probe=owner.split('BaselineResult probeBaseline(',1)[1].split('class Journal {',1)[0]
@@ -71,7 +71,7 @@ class ProductionContracts(unittest.TestCase):
         self.assertLess(acquire.index('probeBaseline('),acquire.index('proc.floor()'))
         self.assertLess(acquire.index('proc.floor()'),acquire.index('journal.leases['))
         self.assertLess(acquire.index('journal.commit()'),acquire.index('p.managed=true'))
-        release=owner.split('void release(ProcessState& p)',1)[1].split('void cleanup()',1)[0]
+        release=owner.split('void release(ProcessState& p,ReleaseCause',1)[1].split('void cleanup()',1)[0]
         self.assertLess(release.index('if(!p.managed)'),release.index('prepare(p)'))
         pending=release.split('if(!p.managed)',1)[1].split('return;}',1)[0]
         for token in ('prepare(', 'journal.commit(', 'restore(', 'write(', 'identity('):self.assertNotIn(token,pending)
@@ -79,7 +79,7 @@ class ProductionContracts(unittest.TestCase):
         activate=daemon.split('void activate(',1)[1].split('ProcessState* resolve(',1)[0]
         for token in ('group(', 'affinity(', 'ownershipFloor', 'managed=true'):self.assertNotIn(token,activate)
         self.assertIn('advanceAcquisition(p,now(),*this)',daemon)
-        self.assertIn('if(p.managed||p.acquiring)',daemon)
+        self.assertIn('if((p.managed||p.acquiring)&&!p.releaseBlocked)',daemon)
         lifecycle=read('native/zuiopt/ZUIopt_lifecycle.h')
         self.assertIn('inheritance_baseline_unstable',lifecycle)
 
@@ -121,9 +121,10 @@ class ProductionContracts(unittest.TestCase):
         reactor=daemon.split('int run()',1)[1]
         loop=reactor.split('while(!stop){',1)[1].split('phase=StartupStage::STOP;',1)[0]
         self.assertNotIn('recordLifecycle(',loop)
-        fatal=reactor.split('}catch(const std::exception& e){recordLifecycle',1)[1]
-        self.assertLess(fatal.index('stateRoot,journal->currentBootId(),phase,&e)'),fatal.index('observer.reset()'))
-        self.assertLess(fatal.index('stateRoot,journal->currentBootId(),phase,&e)'),fatal.index('releaseAll()'))
+        fatal=reactor.split('const auto primarySubstage=substage;',1)[1]
+        self.assertLess(fatal.index('phase,&e,primarySubstage)'),fatal.index('observer.reset()'))
+        self.assertLess(fatal.index('phase,&e,primarySubstage)'),fatal.index('releaseAll()'))
+        self.assertIn('phase,&e,primarySubstage,&x,substage)',fatal)
         self.assertIn('return 3;',fatal)
         self.assertIn('return 2;',fatal)
         lifecycle=read('native/zuiopt/ZUIopt_lifecycle.h')

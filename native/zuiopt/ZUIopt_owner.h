@@ -414,7 +414,120 @@ public:
         if(exhausted||!uniform){p.acquireBlocked=true;return CoherenceResult::CONTESTED;}
         beginAcquisition(p,time);return CoherenceResult::REACQUIRE;
     }
-    void release(ProcessState& p){
+    // One finite pass, never an acquisition baseline probe. Crash recovery above
+    // deliberately retains its original strict restore/coverRemaining contract.
+    bool backgroundPass(ProcessState& p,bool finalPass){
+        auto lease=journal.leases.find(p.pid);
+        require(p.managed&&lease!=journal.leases.end()&&lease->second.processStart==p.generation&&
+                lease->second.user==p.uid&&lease->second.threadStart==p.ownershipFloor,"committed lease identity mismatch");
+        for(auto& [tid,t]:p.tasks)if(t.owned&&same(p,tid,t)){
+            auto e=journal.entries.find(tid);
+            require(e!=journal.entries.end()&&e->second.pid==p.pid&&e->second.threadStart==t.generation&&journal.same(e->second),"write without durable owner identity");
+        }
+        auto owned=[](const std::string& g){return g=="/ZUIopt"||g.rfind("/ZUIopt/",0)==0;};
+        // Cross-check physical membership, including lease-covered children not
+        // yet discovered by the foreground scan. Recheck stale enumeration before
+        // declaring unknown ownership; Android may have moved/exited that TID.
+        auto cover=[&](){
+            std::set<int> ours;bool added=false;auto paths=groups();paths.insert(root);
+            for(auto& path:paths)for(int tid:members(path)){
+                auto id=identity(tid);if(!id.start||!owned(group(tid)))continue;
+                auto e=journal.entries.find(tid);OwnerRecord r;
+                if(e!=journal.entries.end()&&journal.same(e->second))r=e->second;
+                else if(journal.inherited(tid,r)){journal.entries[tid]=r;added=true;}
+                else {
+                    if(identity(tid).start!=id.start||!owned(group(tid)))continue;
+                    throw std::runtime_error("background unknown owned task");
+                }
+                if(r.pid==p.pid&&r.processStart==p.generation)ours.insert(tid);
+            }
+            if(added)journal.commit(); // Durable before the first inherited write.
+            return ours;
+        };
+        cover();
+        bool pending=false;
+        for(auto& [tid,r]:journal.entries){
+            if(r.pid!=p.pid||r.processStart!=p.generation||!journal.same(r))continue;
+            journal.validate(r);
+            auto g=group(tid);if(!journal.same(r))continue;
+            if(owned(g)){
+                // Open first, then revalidate. An Android handoff during open or
+                // earlier observation must not move an external task backwards.
+                int fd=open(("/dev/cpuset"+r.savedGroup+"/tasks").c_str(),O_WRONLY|O_CLOEXEC|O_NOFOLLOW);
+                require(fd>=0,"background release destination open");
+                bool moved=true;
+                try{if(journal.same(r)&&owned(group(tid))&&journal.same(r)){
+                    auto value=std::to_string(tid);moved=::write(fd,value.data(),value.size())==static_cast<ssize_t>(value.size());
+                }}catch(...){close(fd);throw;}
+                close(fd);
+                if(!moved&&journal.same(r)&&owned(group(tid)))pending=true;
+                g=group(tid);
+            }
+            if(!journal.same(r))continue;
+            if(owned(g)){pending=true;continue;}
+            if(g.empty()){pending=true;continue;}
+            require(normalGroup(g),"invalid Android release owner");
+            auto t=p.tasks.find(tid);
+            // No known last-applied mask for a late inherited child: no guessed
+            // affinity write. Its durable lease authorizes only cpuset release.
+            Mask applied=t!=p.tasks.end()&&t->second.generation==r.threadStart?t->second.appliedMask:0;
+            auto mask=affinity(tid);if(!journal.same(r))continue;
+            if(!mask){pending=true;continue;}
+            if(!applied||mask!=applied||mask==r.savedMask)continue;
+            Mask allowed=cpus(read("/dev/cpuset"+g+"/cpus"));
+            Mask restoreMask=r.savedMask&allowed&cpus(read("/sys/devices/system/cpu/online"));
+            require(restoreMask!=0,"background unsafe affinity destination");
+            // Restore only our exact residue, constrained by the CURRENT Android
+            // group. A changed Android mask/group wins; no saved-cpuset rewrite.
+            if(journal.same(r)&&group(tid)==g&&affinity(tid)==applied&&journal.same(r)){
+                if(!setAffinity(tid,restoreMask)&&journal.same(r))pending=true;
+            }
+        }
+        auto remaining=cover();
+        bool residue=false;
+        // Fresh read proves completion; never clear on the basis of successful
+        // writes alone. Heterogeneous Android groups/masks are legitimate here.
+        for(auto& [tid,r]:journal.entries){
+            if(r.pid!=p.pid||r.processStart!=p.generation||!journal.same(r))continue;
+            auto g=group(tid);auto mask=affinity(tid);if(!journal.same(r))continue;
+            if(owned(g)){remaining.insert(tid);continue;}
+            if(g.empty()||!mask){residue=true;continue;}
+            require(normalGroup(g),"invalid Android release owner");
+            auto t=p.tasks.find(tid);
+            if(t!=p.tasks.end()&&t->second.generation==r.threadStart&&t->second.appliedMask&&mask==t->second.appliedMask){
+                Mask safe=r.savedMask&cpus(read("/dev/cpuset"+g+"/cpus"));
+                require(safe!=0,"background unsafe affinity destination");
+                if(mask!=safe)residue=true;
+            }
+        }
+        if(finalPass)require(remaining.empty(),"background unrecoverable owned task");
+        if(pending||!remaining.empty()||residue)return false;
+        for(auto it=journal.entries.begin();it!=journal.entries.end();)
+            if(it->second.pid==p.pid&&it->second.processStart==p.generation)it=journal.entries.erase(it);else ++it;
+        journal.leases.erase(p.pid);journal.commit();p.tasks.clear();p.managed=false;discardAcquisition(p);
+        p.backgroundReleasing=false;p.releaseBlocked=false;p.coherenceReleasing=false;p.acquireBlocked=false;p.coherenceEpisodes=0;
+        count.releases++;return true;
+    }
+    void release(ProcessState& p,ReleaseCause cause=ReleaseCause::RELOAD_OR_CONTROLLED_STOP,int64_t time=now()){
+        if(p.managed&&(cause==ReleaseCause::AUTHORITY_BACKGROUND||p.backgroundReleasing)){
+            if(!p.backgroundReleasing){
+                p.backgroundReleasing=true;p.releaseBlocked=false;p.releaseStarted=time;p.releaseStep=0;p.next=time;
+                p.acquiring=false;p.acquireFinalConfirmation=false;p.baselineCandidate={};
+                p.coherenceReleasing=false;p.burst=coherenceSchedule.size();p.repairStep=repairSchedule.size();
+            }
+            bool terminal=cause!=ReleaseCause::AUTHORITY_BACKGROUND;
+            if(!terminal&&(p.releaseBlocked||p.next>time))return;
+            bool last=terminal||time>=p.releaseStarted+backgroundReleaseSchedule.back();
+            if(backgroundPass(p,last))return;
+            if(last){
+                // Only safe external observation/residue can reach this state;
+                // known live owned residue is fatal above. No steady retry timer.
+                require(!terminal,"background cleanup incomplete");p.releaseBlocked=true;return;
+            }
+            do{++p.releaseStep;}while(p.releaseStep<backgroundReleaseSchedule.size()&&p.releaseStarted+backgroundReleaseSchedule[p.releaseStep]<=time);
+            p.next=p.releaseStarted+backgroundReleaseSchedule[p.releaseStep];return;
+        }
+        if(cause==ReleaseCause::COHERENCE_RELINQUISH){relinquishCoherence(p);return;}
         if(!p.managed){requireUncommitted(p);discardAcquisition(p);p.acquireBlocked=false;p.coherenceEpisodes=0;return;}
         if(p.coherenceReleasing){relinquishCoherence(p);p.acquireBlocked=false;p.coherenceEpisodes=0;return;}
         if(identity(p.pid).start==p.generation)for(int tid:ids("/proc/"+std::to_string(p.pid)+"/task")){

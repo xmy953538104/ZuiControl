@@ -53,6 +53,10 @@ void lifecycleTests(const fs::path& parent){
     require(fatalReason(std::runtime_error("parcel/status=-13"))=="binder_status_-13","bounded Binder status");
     require(fatalReason(std::runtime_error("journal release failed TID=12345"))=="journal_release_failed","release TID redacted");
     require(fatalReason(std::runtime_error("RECOVERY_UNKNOWN_TASK_FAIL_CLOSED tid=12345"))=="recovery_unknown_task_fail_closed","unknown task TID redacted");
+    std::runtime_error cleanup("journal release failed TID=12345");
+    require(recordLifecycle(root.string(),boot,StartupStage::EVENT_LOOP,&fatal,EventSubstage::BACKGROUND_RELEASE,&cleanup,EventSubstage::CATCH_RELEASE_ALL),"status3 dual receipt");
+    data=read((root/"fatal.v1").string());
+    require(data.size()<1024&&data.find("substage=BACKGROUND_RELEASE\n")!=data.npos&&data.find("cleanup_substage=CATCH_RELEASE_ALL\ncleanup_reason=journal_release_failed\n")!=data.npos&&data.find("12345")==data.npos,"status3 privacy and primary retention");
     for(auto text:{std::string("org.private.app RenderThread pid=12345\n"),std::string(10000,'x'),std::string("parcel/status=org.private.app"),std::string("parcel/status=123456789012345")}){
         auto reason=fatalReason(std::runtime_error(text));require(reason=="unclassified_exception"&&reason.size()<=96,"private or unbounded exception redacted");
     }

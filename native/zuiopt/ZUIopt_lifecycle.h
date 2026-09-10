@@ -4,6 +4,11 @@
 #include <system_error>
 
 namespace ZUIopt {
+enum class EventSubstage {NONE,PROCESS_EVENT,SCENE_RECONCILE,BACKGROUND_RELEASE,ACQUISITION,SCAN_COHERENCE,SCAN_PREPARE,SCAN_APPLY,RELOAD_RELEASE,STOP_RELEASE,CATCH_RELEASE_ALL,CLEANUP};
+inline const char* substageName(EventSubstage stage){
+    static constexpr const char* names[]={"NONE","PROCESS_EVENT","SCENE_RECONCILE","BACKGROUND_RELEASE","ACQUISITION","SCAN_COHERENCE","SCAN_PREPARE","SCAN_APPLY","RELOAD_RELEASE","STOP_RELEASE","CATCH_RELEASE_ALL","CLEANUP"};
+    auto index=static_cast<unsigned>(stage);return index<sizeof(names)/sizeof(names[0])?names[index]:"UNKNOWN";
+}
 enum class StartupStage {
     CORE_CONSTRUCTED, OBSERVER, REGISTER_PROCESS_OBSERVER, OBSERVER_OK,
     SNAPSHOT, SNAPSHOT_OK, PACKAGE_ABI, PACKAGE_ABI_OK, PLACEMENT, PLACEMENT_OK,
@@ -51,7 +56,16 @@ inline std::string fatalReason(const std::exception& error) {
         "cpuset initialization","ambiguous original thread inheritance baseline",
         "foreign owner during acquire","uncovered inherited task",
         "write without durable owner identity","cpuset child create","cpuset child initialize",
-        "placement failed","release unknown inherited task","release busy process"
+        "placement failed","release unknown inherited task","release busy process",
+        "committed lease identity mismatch","coherence unknown owned task",
+        "coherence external owner unavailable","coherence unresolved external affinity",
+        "coherence owned release failed","coherence affinity release failed","coherence release busy",
+        "coherence authority absent","uncommitted owned task","uncommitted lease state",
+        "uncommitted journal state","discard committed ownership","acquisition not pending","acquisition commit state",
+        "background unknown owned task","background release destination open",
+        "background unsafe affinity destination","background unrecoverable owned task","background cleanup incomplete",
+        "ZUIopt requires root identity","state directory create","unsafe state directory",
+        "owner lock open","another ZUIopt owner holds journal lock","boot identity","signal mask","event descriptors"
     };
     for(auto reason:known)if(strcmp(text,reason)==0){
         std::string value(reason);
@@ -78,20 +92,27 @@ inline std::string fatalReason(const std::exception& error) {
     return "unclassified_exception";
 }
 inline bool recordLifecycle(const std::string& root,const std::string& boot,
-                            StartupStage stage,const std::exception* fatal=nullptr) noexcept {
+                            StartupStage stage,const std::exception* fatal=nullptr,
+                            EventSubstage substage=EventSubstage::NONE,
+                            const std::exception* cleanup=nullptr,EventSubstage cleanupStage=EventSubstage::NONE) noexcept {
     try {
         require(boot.size()==36&&boot.find_first_not_of("0123456789abcdef-")==boot.npos,"diagnostic boot bound");
         auto reason=fatal?fatalReason(*fatal):"none";
         require(reason.size()<=96&&reason.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-")==reason.npos,"diagnostic reason bound");
         std::string data=std::string(fatal?"ZUIOPT_FATAL_V1\n":"ZUIOPT_STARTUP_V1\n")+
-            "boot="+boot+"\nstage="+stageName(stage)+"\nstate="+(fatal?"FAIL":"OK")+"\nreason="+reason+"\n";
+            "boot="+boot+"\nstage="+stageName(stage)+"\nstate="+(fatal?"FAIL":"OK")+"\nreason="+reason+"\nsubstage="+substageName(substage)+"\n";
+        if(cleanup){
+            auto secondary=fatalReason(*cleanup);
+            require(secondary.size()<=96&&secondary.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-")==secondary.npos,"diagnostic reason bound");
+            data+="cleanup_substage="+std::string(substageName(cleanupStage))+"\ncleanup_reason="+secondary+"\n";
+        }
         require(data.size()<1024,"diagnostic receipt bound");
         PrivateDir directory(root);
         directory.put(fatal?"fatal.v1":"startup.v1",data);
         return true;
     }catch(...){return false;} // Diagnostics must never suppress owner release or the init fail-safe.
 }
-enum class RuntimeBlockerReason {PROC_READ_PERMISSION,PROC_UID_PERMISSION,PACKAGE_AUTHORITY_PERMISSION,INHERITANCE_BASELINE_UNSTABLE,OWNERSHIP_CONTESTED};
+enum class RuntimeBlockerReason {PROC_READ_PERMISSION,PROC_UID_PERMISSION,PACKAGE_AUTHORITY_PERMISSION,INHERITANCE_BASELINE_UNSTABLE,OWNERSHIP_CONTESTED,BACKGROUND_RELEASE_PENDING};
 class RuntimeBlocker {
     unsigned seen=0;
 public:
@@ -99,12 +120,12 @@ public:
         // At most one attempt per reason per process lifetime, even if storage fails.
         // Retained evidence is historical, not a continuously refreshed health status.
         const unsigned index=static_cast<unsigned>(reason);
-        if(index>=5||(seen&(1u<<index)))return false;
+        if(index>=6||(seen&(1u<<index)))return false;
         seen|=1u<<index;
         try {
             require(boot.size()==36&&boot.find_first_not_of("0123456789abcdef-")==boot.npos,"diagnostic boot bound");
-            static constexpr const char* names[]={"proc_read_permission","proc_uid_permission","package_authority_permission","inheritance_baseline_unstable","ownership_contested"};
-            std::string data="ZUIOPT_RUNTIME_BLOCKER_V1\nboot="+boot+"\nstage="+(index==4?"COHERENCE_REACQUIRE":index==3?"ACQUIRING_BASELINE":"APP_ACCESS")+"\nstate=BLOCKED\nreason="+names[index]+"\n";
+            static constexpr const char* names[]={"proc_read_permission","proc_uid_permission","package_authority_permission","inheritance_baseline_unstable","ownership_contested","background_release_pending"};
+            std::string data="ZUIOPT_RUNTIME_BLOCKER_V1\nboot="+boot+"\nstage="+(index==5?"BACKGROUND_RELEASE":index==4?"COHERENCE_REACQUIRE":index==3?"ACQUIRING_BASELINE":"APP_ACCESS")+"\nstate=BLOCKED\nreason="+names[index]+"\n";
             require(data.size()<1024,"runtime diagnostic bound");
             PrivateDir directory(root);directory.put("runtime_blocker.v1",data);return true;
         }catch(...){return false;}

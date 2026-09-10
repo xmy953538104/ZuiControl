@@ -24,6 +24,7 @@ class Core {
     RawEvents events;RuntimeBlocker runtimeBlocker;
     std::unique_ptr<SceneObserver> sceneObserver;SceneBurst sceneBurst;
     int eventFd=-1,signalFd=-1;bool serviceDied=false,authorityEvent=false;
+    EventSubstage substage=EventSubstage::NONE;
 public:
     Core(std::string path,const std::string& statePath):configPath(std::move(path)),stateRoot(statePath){
         available=cpus(read("/sys/devices/system/cpu/online"));config=parseConfig(read(configPath),available);ZUIOPT_debug=config.debug;
@@ -49,7 +50,11 @@ public:
         catch(const std::runtime_error&){return {};}
     }
     std::vector<Snapshot> activitySnapshot(){counters.snapshots++;return observer->snapshot();}
-    void release(ProcessState& p){placement->release(p);}
+    void release(ProcessState& p){
+        substage=EventSubstage::BACKGROUND_RELEASE;
+        placement->release(p,p.alive?ReleaseCause::AUTHORITY_BACKGROUND:ReleaseCause::PROCESS_DEATH);
+        if(p.releaseBlocked)blocked(RuntimeBlockerReason::BACKGROUND_RELEASE_PENDING);
+    }
     BaselineResult acquire(ProcessState& p){
         try{return placement->acquire(p);}
         catch(const ProcError& error){if(!error.permission())throw;p.baselineCandidate={};procBlocked(error);return BaselineResult::DEFER;}
@@ -57,7 +62,8 @@ public:
     void baselineBlocked(){blocked(RuntimeBlockerReason::INHERITANCE_BASELINE_UNSTABLE);}
     void activate(ProcessState& p){
         bool wanted=p.alive&&p.activity_foreground&&config.find(p.package);
-        if(!wanted){placement->release(p);return;}
+        if(!wanted){release(p);return;}
+        if(p.backgroundReleasing)return; // Finish the durable release before a new foreground epoch.
         if(authorityEvent)armCoherence(p,now());
         beginAcquisition(p,now());
     }
@@ -66,7 +72,7 @@ public:
         try{id=validateManagedSnapshot(s,config,*this);}
         catch(const ProcError& error){if(!error.permission())throw;procBlocked(error);return nullptr;}
         if(!id.start)return nullptr;
-        auto it=states.find(s.pid);if(it!=states.end()&&(it->second.generation!=id.start||it->second.uid!=s.uid)){placement->release(it->second);states.erase(it);}
+        auto it=states.find(s.pid);if(it!=states.end()&&(it->second.generation!=id.start||it->second.uid!=s.uid)){it->second.alive=false;release(it->second);states.erase(it);}
         auto& p=states[s.pid];p.pid=s.pid;p.uid=s.uid;p.generation=id.start;p.name=s.name;p.package=s.packages[0];p.alive=true;return &p;
     }
     void reconcile(const std::vector<Snapshot>& snapshot){
@@ -80,14 +86,17 @@ public:
             // Primary transitions acquire/release normally. Same-state duplicate
             // callbacks cannot extend probation; only a new scene sequence can.
             authorityEvent=false;
+            substage=EventSubstage::PROCESS_EVENT;
             try{processEvent(e,states,*this);}
             catch(const ProcError& error){if(!error.permission())throw;procBlocked(error);}
             authorityEvent=outerAuthority;
         }
     }
     void scan(ProcessState& p){
-        if(identity(p.pid).start!=p.generation){p.alive=false;placement->release(p);return;}
-        const auto* profile=config.find(p.package);if(!profile){placement->release(p);return;}
+        if(p.backgroundReleasing)return;
+        substage=EventSubstage::SCAN_COHERENCE;
+        if(identity(p.pid).start!=p.generation){p.alive=false;release(p);return;}
+        const auto* profile=config.find(p.package);if(!profile){release(p);return;}
         counters.scans++;auto start=now();auto tids=ids("/proc/"+std::to_string(p.pid)+"/task");std::set<int> live;
         std::map<std::string,std::vector<RankedTask>> candidates;
         std::map<std::string,const Rule*> groups;std::map<int,const Rule*> selected;
@@ -114,14 +123,18 @@ public:
         auto coherence=placement->verifyCoherence(p,start);
         if(coherence==CoherenceResult::CONTESTED)blocked(RuntimeBlockerReason::OWNERSHIP_CONTESTED);
         if(!p.managed)return;
-        placement->prepare(p);
+        substage=EventSubstage::SCAN_PREPARE;placement->prepare(p);
+        substage=EventSubstage::SCAN_APPLY;
         for(auto& [tid,t]:p.tasks){auto it=selected.find(tid);auto* r=it==selected.end()?nullptr:it->second;placement->apply(p,tid,t,r?r->mask:profile->general,r?r->cls:"default");}
         finishScan(p,now(),coherence==CoherenceResult::REPAIR);
         ZUIOPT_NOTE("SCAN","pid="+std::to_string(p.pid)+" tids="+std::to_string(p.tasks.size())+" elapsed_ms="+std::to_string(now()-start)+" next="+std::to_string(p.next));
     }
     void stats(){size_t active=0,tasks=0;for(auto& [_,p]:states){active+=p.managed;tasks+=p.tasks.size();}
         ZUIOPT_NOTE("STATS","events="+std::to_string(counters.events)+" snapshots="+std::to_string(counters.snapshots)+" scans="+std::to_string(counters.scans)+" comm="+std::to_string(counters.comm)+" schedstat="+std::to_string(counters.schedstat)+" placements="+std::to_string(counters.placements)+" releases="+std::to_string(counters.releases)+" wakeups="+std::to_string(counters.wakeups)+" reloads="+std::to_string(counters.reloads)+" active="+std::to_string(active)+" tasks="+std::to_string(tasks)+" journal_commits="+std::to_string(journal->commits));}
-    void releaseAll(){if(placement){for(auto& [_,p]:states)placement->release(p);placement->cleanup();placement.reset();}stats();}
+    void releaseAll(ReleaseCause cause=ReleaseCause::CRASH_RECOVERY){
+        if(placement){for(auto& [_,p]:states)placement->release(p,cause);
+            substage=EventSubstage::CLEANUP;placement->cleanup();placement.reset();}stats();
+    }
     int run(){StartupStage phase=StartupStage::CORE_CONSTRUCTED;try{
         recordLifecycle(stateRoot,journal->currentBootId(),phase);
         phase=StartupStage::OBSERVER;
@@ -144,6 +157,7 @@ public:
             edges();require(!serviceDied,"activity service died: fail closed");
             sceneBurst.accept(events.takeScene(),now());
             if(sceneBurst.timeout(now())==0){
+                substage=EventSubstage::SCENE_RECONCILE;
                 auto seq=sceneBurst.sequence;auto snapshot=observer->snapshot();
                 if(events.latestScene(seq)){
                     authorityEvent=sceneBurst.step==0;
@@ -152,20 +166,27 @@ public:
                     if(sceneBurst.complete(now())&&events.latestScene(seq))sceneObserver->ack(seq);
                 }
             }
-            for(auto& [_,p]:states){advanceAcquisition(p,now(),*this);if(p.managed&&p.next<=now())scan(p);}
-            int timeout=sceneBurst.timeout(now());for(auto& [_,p]:states)if(p.managed||p.acquiring){int delay=static_cast<int>(std::max<int64_t>(0,p.next-now()));timeout=timeout<0?delay:std::min(timeout,delay);}
+            for(auto& [_,p]:states){
+                if(p.backgroundReleasing){release(p);if(!p.backgroundReleasing)activate(p);continue;}
+                substage=EventSubstage::ACQUISITION;advanceAcquisition(p,now(),*this);if(p.managed&&p.next<=now())scan(p);
+            }
+            int timeout=sceneBurst.timeout(now());for(auto& [_,p]:states)if((p.managed||p.acquiring)&&!p.releaseBlocked){int delay=static_cast<int>(std::max<int64_t>(0,p.next-now()));timeout=timeout<0?delay:std::min(timeout,delay);}
             pollfd fds[]={{eventFd,POLLIN,0},{signalFd,POLLIN,0}};int n=poll(fds,2,timeout);if(n<0&&errno==EINTR)continue;require(n>=0,"poll failed");counters.wakeups++;
             if(fds[0].revents&POLLIN){uint64_t v;ssize_t ignored=::read(eventFd,&v,sizeof(v));(void)ignored;}
             if(fds[1].revents&POLLIN){signalfd_siginfo s{};while(::read(signalFd,&s,sizeof(s))==sizeof(s)){
                 if(s.ssi_signo==SIGTERM||s.ssi_signo==SIGINT){stop=true;break;}if(s.ssi_signo==SIGUSR1)stats();
                 if(s.ssi_signo==SIGHUP){
                     Config next;bool valid=false;try{next=parseConfig(read(configPath),available);valid=true;}catch(const std::exception& e){ZUIOPT_NOTE("RELOAD_REJECTED",e.what());}
-                    if(valid){phase=StartupStage::RELOAD;for(auto& [_,p]:states)placement->release(p);config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;reconcile(observer->snapshot());ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
+                    if(valid){phase=StartupStage::RELOAD;substage=EventSubstage::RELOAD_RELEASE;for(auto& [_,p]:states)placement->release(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP);config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;reconcile(observer->snapshot());ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
                 }
             }}
         }
-        phase=StartupStage::STOP;sceneObserver.reset();observer.reset();releaseAll();ZUIOPT_NOTE("STOPPED","owner_release=PASS");return 0;
-    }catch(const std::exception& e){recordLifecycle(stateRoot,journal->currentBootId(),phase,&e);ZUIOPT_NOTE("FATAL",e.what());sceneObserver.reset();observer.reset();try{releaseAll();}catch(const std::exception& x){ZUIOPT_NOTE("RELEASE_BLOCKER",x.what());return 3;}return 2;}}
+        phase=StartupStage::STOP;substage=EventSubstage::STOP_RELEASE;sceneObserver.reset();observer.reset();releaseAll(ReleaseCause::RELOAD_OR_CONTROLLED_STOP);ZUIOPT_NOTE("STOPPED","owner_release=PASS");return 0;
+    }catch(const std::exception& e){
+        const auto primarySubstage=substage;recordLifecycle(stateRoot,journal->currentBootId(),phase,&e,primarySubstage);
+        ZUIOPT_NOTE("FATAL",e.what());sceneObserver.reset();observer.reset();
+        try{substage=EventSubstage::CATCH_RELEASE_ALL;releaseAll();}
+        catch(const std::exception& x){recordLifecycle(stateRoot,journal->currentBootId(),phase,&e,primarySubstage,&x,substage);ZUIOPT_NOTE("RELEASE_BLOCKER",x.what());return 3;}return 2;}}
     ~Core(){sceneObserver.reset();observer.reset();if(signalFd>=0)close(signalFd);if(eventFd>=0)close(eventFd);}
 };
 }

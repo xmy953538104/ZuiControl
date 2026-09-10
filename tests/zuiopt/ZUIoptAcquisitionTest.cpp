@@ -24,6 +24,7 @@ uint64_t procMaterializations=0,taskMaterializations=0;
 std::string root,virtualRoot;int user=10001;int64_t time=0;int reads=0,moves=0,affinities=0;
 int groupReads=0,identityReads=0,uidReads=0,affinityReads=0;
 bool stuck=false;std::function<void(const std::string&)> hook;
+std::function<void(int,bool,Mask)> beforeWrite;
 std::string mapped(const std::string& path){
     if(path.rfind("/dev/cpuset",0)==0||path=="/proc/42"||path.rfind("/proc/42/",0)==0)return virtualRoot+path;
     return path;
@@ -64,7 +65,7 @@ void initialize(){
     char ram[]="/dev/shm/zuiopt-kernel-XXXXXX";require(mkdtemp(ram),"exclusive virtual kernel root");virtualRoot=ram;
     struct statfs storage{};require(statfs(virtualRoot.c_str(),&storage)==0&&storage.f_type==0x01021994,"virtual kernel must be tmpfs");
     require(statfs(root.c_str(),&storage)==0&&storage.f_type!=0x01021994,"journal must remain disk-backed");
-    tasks={{42,{}},{43,{}}};fds.clear();procFiles.clear();listedTasks.clear();user=10001;time=0;reads=moves=affinities=0;stuck=false;hook={};
+    tasks={{42,{}},{43,{}}};fds.clear();procFiles.clear();listedTasks.clear();user=10001;time=0;reads=moves=affinities=0;stuck=false;hook={};beforeWrite={};
     for(auto g:{"","/top-app","/background","/foreground","/ZUIopt"})for(auto f:{"tasks","mems","cpus"})put(virtualRoot+"/dev/cpuset"+g+"/"+f,f==std::string("mems")?"0":"0-7");
     fs::permissions(virtualRoot+"/dev/cpuset/ZUIopt",fs::perms::owner_all|fs::perms::group_read|fs::perms::group_exec|fs::perms::others_read|fs::perms::others_exec);
     fs::create_directories(virtualRoot+"/proc/42/task");
@@ -95,7 +96,7 @@ int __wrap_open(const char* path,int flags,...){
             put(target,members);
         }
         // Synthetic absent TID reads must never fall through to real host proc.
-        if(original.rfind("/proc/43/",0)==0||original.rfind("/proc/44/",0)==0||original.rfind("/proc/45/",0)==0){
+        if(original.rfind("/proc/",0)==0&&original.size()>6&&original[6]>='0'&&original[6]<='9'){
             if(target==original){errno=ENOENT;return -1;}
         }
     }
@@ -109,6 +110,7 @@ ssize_t __wrap_write(int fd,const void* bytes,size_t size){
         if(path.substr(path.size()-6)=="/tasks"){
             int tid=std::stoi(std::string(static_cast<const char*>(bytes),size));
             if(!tasks.count(tid)){errno=ESRCH;return -1;}
+            if(beforeWrite)beforeWrite(tid,true,0);
             moves++;if(!stuck||tid<44)tasks.at(tid).group=path.substr(11,path.size()-17);
         }
         return static_cast<ssize_t>(size);
@@ -153,7 +155,9 @@ int __wrap_sched_getaffinity(pid_t tid,size_t size,cpu_set_t* set){
 int __wrap_sched_setaffinity(pid_t tid,size_t size,const cpu_set_t* set){
     if(Kernel::root.empty())return __real_sched_setaffinity(tid,size,set);
     auto it=Kernel::tasks.find(tid);if(it==Kernel::tasks.end()){errno=ESRCH;return -1;}
-    Mask mask=0;for(int i=0;i<64;i++)if(CPU_ISSET(i,set))mask|=Mask(1)<<i;it->second.mask=mask;Kernel::affinities++;return 0;
+    Mask mask=0;for(int i=0;i<64;i++)if(CPU_ISSET(i,set))mask|=Mask(1)<<i;
+    if(Kernel::beforeWrite)Kernel::beforeWrite(tid,false,mask);
+    it->second.mask=mask;Kernel::affinities++;return 0;
 }
 }
 

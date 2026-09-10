@@ -203,6 +203,8 @@ struct BaselineCandidate {
 };
 inline constexpr std::array<int,14> coherenceSchedule={100,250,500,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000};
 inline constexpr std::array<int,4> repairSchedule={100,250,500,1000};
+enum class ReleaseCause {AUTHORITY_BACKGROUND,PROCESS_DEATH,RELOAD_OR_CONTROLLED_STOP,CRASH_RECOVERY,COHERENCE_RELINQUISH};
+inline constexpr std::array<int,5> backgroundReleaseSchedule={0,50,100,250,500};
 struct ProcessState {
     int pid=0,uid=0;std::string name,package;uint64_t generation=0;
     bool activity_foreground=false,alive=true,managed=false;int foreground_service_state=0;
@@ -210,12 +212,13 @@ struct ProcessState {
     bool acquiring=false,acquireBlocked=false,acquireFinalConfirmation=false;int64_t acquireStarted=0;size_t acquireStep=0;
     BaselineCandidate baselineCandidate;uint64_t acquisitionEpoch=0;
     unsigned coherenceEpisodes=0;bool coherenceReleasing=false;
+    bool backgroundReleasing=false,releaseBlocked=false;int64_t releaseStarted=0;size_t releaseStep=0;
     int64_t repairedAt=0;size_t repairStep=repairSchedule.size();
     int64_t activated=0,next=0;uint64_t ownershipFloor=0;size_t burst=0;std::string androidGroup;Mask androidMask=0;
     std::map<int,Task> tasks;
 };
 inline void beginAcquisition(ProcessState& p,int64_t time){
-    if(p.managed||p.acquiring||p.acquireBlocked)return;
+    if(p.backgroundReleasing||p.managed||p.acquiring||p.acquireBlocked)return;
     p.baselineCandidate={};++p.acquisitionEpoch;
     p.acquiring=true;p.acquireFinalConfirmation=false;p.acquireStarted=time;p.acquireStep=0;p.next=time;
 }
@@ -228,10 +231,10 @@ inline void discardAcquisition(ProcessState& p){
 }
 // Reuse the finite discovery deadlines; never arm from a periodic snapshot.
 inline void armCoherence(ProcessState& p,int64_t time){
-    if(!p.managed)return;
+    if(!p.managed||p.backgroundReleasing)return;
     p.activated=time;p.burst=0;p.next=time;p.repairStep=repairSchedule.size();
 }
-inline bool forceCoherence(const ProcessState& p){return p.managed&&(p.burst<coherenceSchedule.size()||p.repairStep<repairSchedule.size());}
+inline bool forceCoherence(const ProcessState& p){return p.managed&&!p.backgroundReleasing&&(p.burst<coherenceSchedule.size()||p.repairStep<repairSchedule.size());}
 inline void finishScan(ProcessState& p,int64_t time,bool repaired=false){
     // Arm only after successful placement; keep the original horizon and episode budget.
     if(repaired){p.repairedAt=time;p.repairStep=0;}

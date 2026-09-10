@@ -46,7 +46,7 @@ class TerminalContracts(unittest.TestCase):
             self.assertEqual(hashlib.sha256(read('native/zuiopt/'+name).encode()).hexdigest(),sha,name)
         core=read('native/zuiopt/ZUIopt_core.h')
         owner=read('native/zuiopt/ZUIopt_owner.h')
-        release=owner[owner.index('    void release(ProcessState& p)'):]
+        release=owner[owner.index('    void release(ProcessState& p,ReleaseCause'):]
         # V56 authorizes only the cache guard, not the placement write algorithm.
         apply=owner[owner.index('    void apply('):owner.index('    bool relinquishCoherence(')]
         apply=apply.replace('!forceCoherence(p)&&t.appliedMask==m','t.appliedMask==m')
@@ -62,6 +62,9 @@ class TerminalContracts(unittest.TestCase):
         # authority and IProcessObserver implementations against the V53 bytes.
         events=read('native/zuiopt/ZUIopt_events.h').split('inline bool sameProcess(',1)[1]
         events=events.split('\n// Shared with event-loss fixtures;',1)[0]+'}\n'
+        # V58 changes only release lifecycle bookkeeping, not the authority ABI.
+        events=events.replace('it->second.alive=false;runtime.release(it->second);states.erase(it);','runtime.release(it->second);states.erase(it);')
+        events=events.replace('it->second.activity_foreground=false;runtime.release(it->second);if(!it->second.backgroundReleasing)states.erase(it);','runtime.release(it->second);states.erase(it);')
         self.assertEqual(hashlib.sha256(events.encode()).hexdigest(),'462eea41086a097f85d6fb9a6bf0b66094f8b0f90f8659cf612631cf239f3a1a')
         observer=read('native/zuiopt/ZUIopt_binder.h').split('struct Observer {',1)[1]
         self.assertEqual(hashlib.sha256(observer.encode()).hexdigest(),'cc8f4702213ded4f9c47db9fa1cd88edbadf8c3a90944d310490e94a4742ed76')
