@@ -530,11 +530,10 @@ void liveness(){
     // Force first complete candidate observation at each requested boundary.
     for(int first:{700,750,850,900,1000,1250,2750,2950}){
         AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);
-        while(f.p().next<first){f.tick(f.p().next);f.noOwnership();}
-        // A delayed due callback may first observe the candidate at 'first'.
-        if(f.p().next>first){ // first is between fixed opportunities: shift the prior due call.
-            f.p().next=first; // only fixture scheduling, no baseline state injection
-        }
+        int lastDue=0;for(int due:{0,100,250,500,750,1000,1250,1500,2000,2500,3000})if(due<=first)lastDue=due;
+        while(f.p().next<lastDue){f.tick(f.p().next);f.noOwnership();}
+        // Execute the last due opportunity late, never edit production deadlines.
+        require(f.p().next<=first,"candidate fixture needs a due timer");
         for(auto& [_,t]:Kernel::tasks){t.group="/top-app";t.mask=255;}
         f.tick(first);f.noOwnership();require(f.p().baselineCandidate.firstStableAt==first,"late candidate not observed");
         while(f.p().acquiring){auto due=f.p().next;require(due<=3500,"candidate cap moved");f.tick(due);if(!f.p().managed)f.noOwnership();}
@@ -546,6 +545,11 @@ void liveness(){
         Kernel::tasks.at(43).mask=255;f.tick(3000);f.noOwnership();require(f.p().next==3250,"final candidate opportunity");
         for(auto& [_,t]:Kernel::tasks)t.mask=31;
         f.tick(3250);f.noOwnership();require(f.p().acquireBlocked&&f.blockerAttempts==1&&!f.p().next,"moving final extension");f.background();}
+    {AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);
+        while(f.p().next<3000){f.tick(f.p().next);f.noOwnership();}
+        Kernel::tasks.at(43).mask=255;f.tick(3250);f.noOwnership();
+        require(f.p().next==3500&&f.p().acquireFinalConfirmation,"absolute final confirmation missing");
+        f.tick(3500);require(f.p().managed&&!f.blockerAttempts,"absolute cap safe commit miss");f.background();}
     // Background/null/death/reuse during SELF_HEAL_SETTLE cancel without writes.
     for(int mode=0;mode<4;mode++){
         AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);
@@ -594,6 +598,7 @@ void liveness(){
             require(f.journal->leases.at(42).savedMask==255&&f.journal->entries.size()==Kernel::tasks.size(),"random baseline/late child guess");
             maxProbes=std::max(maxProbes,f.probes-probes);lateRecovered+=Kernel::time-base>1000;
             f.scanAt(Kernel::time);f.managed();f.background();f.empty();Kernel::tasks.erase(58);
+            f.tick(base+5000); // Drain any already-pending scene burst before idle accounting.
         }
         auto reads=Kernel::reads,queries=f.snapshotQueries;for(int t=11000000;t<11001000;t++)f.tick(t);
         require(Kernel::reads==reads&&f.snapshotQueries==queries&&!f.p().next&&f.scene.timeout(11001000)==-1,"idle settlement work");
