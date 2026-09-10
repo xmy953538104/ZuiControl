@@ -72,7 +72,18 @@ void deterministic(){
     {BackgroundFixture f;f.setup(200);Kernel::stuck=true;
         reconcileSnapshot(std::vector<Snapshot>{},f.states,f);require(f.states.count(42)&&f.p().backgroundReleasing,"pending state erased");
         Kernel::stuck=false;f.complete();cases++;}
-    std::cout<<"BACKGROUND_DETERMINISTIC_A_TO_O=PASS;CASES="<<cases<<";INITIAL_TASKS=200\n";
+    // Safe external observation delay expires locally; duplicates do not poll.
+    // Catch cleanup retains durable evidence instead of throwing status3.
+    {BackgroundFixture f;f.setup(200);handoff(100,2);Kernel::tasks.at(43).mask=0;f.background();
+        for(int dt:{50,100,250,500}){Kernel::time=250+dt;f.release(f.p());}
+        require(f.p().releaseBlocked&&f.p().backgroundReleasing&&!f.journal->entries.empty(),"external delay must retain journal");
+        auto reads=Kernel::reads,writes=Kernel::moves+Kernel::affinities;
+        for(int i=0;i<100;i++)f.release(f.p());
+        require(Kernel::reads==reads&&Kernel::moves+Kernel::affinities==writes,"blocked release idle polling");
+        f.owner->release(f.p(),ReleaseCause::CRASH_RECOVERY,Kernel::time);
+        require(!f.journal->entries.empty(),"incomplete observation cleared journal");
+        Kernel::tasks.at(43).mask=67;f.owner->release(f.p(),ReleaseCause::CRASH_RECOVERY,Kernel::time);f.complete();cases++;}
+    std::cout<<"BACKGROUND_DETERMINISTIC_A_TO_O=PASS;CASES="<<cases<<";INITIAL_TASKS=200;LOCAL_BLOCKER_IDLE_POLLING=0;CATCH_CLEANUP_IDEMPOTENT=PASS\n";
 }
 void strictBoundaries(){
     {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,"/ZUIopt/7c",0x7c};

@@ -53,6 +53,12 @@ void lifecycleTests(const fs::path& parent){
     require(fatalReason(std::runtime_error("parcel/status=-13"))=="binder_status_-13","bounded Binder status");
     require(fatalReason(std::runtime_error("journal release failed TID=12345"))=="journal_release_failed","release TID redacted");
     require(fatalReason(std::runtime_error("RECOVERY_UNKNOWN_TASK_FAIL_CLOSED tid=12345"))=="recovery_unknown_task_fail_closed","unknown task TID redacted");
+    for(auto literal:{"committed lease identity mismatch","coherence unknown owned task","coherence external owner unavailable",
+                     "coherence unresolved external affinity","coherence owned release failed","coherence affinity release failed",
+                     "coherence release busy","coherence authority absent","uncommitted owned task","background unknown owned task",
+                     "background unrecoverable owned task","background unsafe affinity destination"}){
+        auto reason=fatalReason(std::runtime_error(literal));require(reason!="unclassified_exception"&&reason.size()<=96,"known release diagnostic mapped");
+    }
     std::runtime_error cleanup("journal release failed TID=12345");
     require(recordLifecycle(root.string(),boot,StartupStage::EVENT_LOOP,&fatal,EventSubstage::BACKGROUND_RELEASE,&cleanup,EventSubstage::CATCH_RELEASE_ALL),"status3 dual receipt");
     data=read((root/"fatal.v1").string());
