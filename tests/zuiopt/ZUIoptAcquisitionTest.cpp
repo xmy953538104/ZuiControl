@@ -323,7 +323,7 @@ void coherence(){
         f.uniform("/top-app",255);f.scanAt(3250);f.noOwnership();
         require(f.p().baselineCandidate.firstStableAt==3250,"candidate not reset");
         f.scanAt(3500);f.managed();auto& lease=f.journal->leases.at(42);
-        require(lease.savedGroup=="/top-app"&&lease.savedMask==255&&f.p().ownershipFloor==13500,"intermediate commit/floor");
+        require(lease.savedGroup=="/top-app"&&lease.savedMask==255&&f.p().ownershipFloor==10350,"intermediate commit/floor");
         f.background();f.empty();}
     // Candidate generation/UID/epoch resets and unchanged uniform thread growth/shrink.
     {CoherenceFixture f;f.start(2);f.noOwnership();Kernel::tasks[44]={10,"/top-app",255};f.tick(100);
@@ -364,6 +364,14 @@ void coherence(){
         expectFailure([&]{f.scanAt(f.p().next);},"coherence unresolved external affinity");
         require(f.journal->entries.size()==entries&&f.journal->commits==commits&&Kernel::moves==moves,"unsafe external preflight clear/write");
         f.uniform("/top-app",255);f.owner->relinquishCoherence(f.p());f.empty();}
+    {CoherenceFixture f;f.boot();f.uniform("/top-app",255);Kernel::tasks.at(43).group="/foreground";
+        f.scanAt(f.p().next);require(f.contested==1&&f.p().acquireBlocked&&!f.p().managed,"heterogeneous handoff guessed baseline");
+        require(f.journal->entries.empty()&&Kernel::tasks.at(43).group=="/foreground","safe external handoff rewritten");f.background();}
+    {CoherenceFixture f;f.boot();Kernel::tasks[60]={1,"/ZUIopt/7c",124};f.overwrite(75,2);
+        auto commits=f.journal->commits;auto moves=Kernel::moves;
+        expectFailure([&]{f.scanAt(f.p().next);},"coherence unknown owned task");
+        require(f.journal->commits==commits&&Kernel::moves==moves&&!f.journal->entries.empty(),"unknown coherence owner cleared");
+        Kernel::tasks.erase(60);f.uniform("/top-app",255);f.owner->relinquishCoherence(f.p());f.empty();}
     // Late inherited, death and reuse safety during a coherence release.
     {CoherenceFixture f;f.boot();Kernel::tasks[60]={f.p().ownershipFloor+1,"/ZUIopt/7c",124};f.overwrite(75,2);
         f.scanAt(f.p().next);require(f.p().acquiring&&Kernel::tasks.at(60).group=="/top-app"&&Kernel::tasks.at(60).mask==255,"late owned leak");f.settle();f.background();}
