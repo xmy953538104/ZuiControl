@@ -453,10 +453,14 @@ void coherence(){
     {CoherenceFixture f;f.boot();Kernel::tasks.clear();f.owner->relinquishCoherence(f.p());f.empty();}
     {CoherenceFixture f;f.boot();f.uniform("/top-app",255);Kernel::tasks.at(42).birth++;
         auto writes=Kernel::moves+Kernel::affinities;f.owner->relinquishCoherence(f.p());f.empty();require(Kernel::moves+Kernel::affinities==writes,"stale PID write");}
-    // End probation: cache remains cheap. Only an explicit event re-arms verification.
+    // End probation: cache suppresses writes, not R2's mandatory per-task observation.
     {CoherenceFixture f;f.boot();auto base=Kernel::time;for(int dt:coherenceSchedule)f.scanAt(base+dt);
         require(!forceCoherence(f.p()),"probation never ended");auto reads=Kernel::reads;
-        f.scanAt(base+7000);require(Kernel::reads==reads,"steady physical scan");
+        auto groups=Kernel::groupReads,affinities=Kernel::affinityReads,writes=Kernel::moves+Kernel::affinities;
+        auto journalCommits=f.journal->commits;
+        f.scanAt(base+7000);
+        require(Kernel::groupReads-groups==8&&Kernel::affinityReads-affinities==8,"cached per-task observation missing");
+        require(Kernel::moves+Kernel::affinities==writes&&f.journal->commits==journalCommits&&!forceCoherence(f.p()),"cached apply rearmed or wrote");
         f.overwrite(100,2);armCoherence(f.p(),base+7100);f.scanAt(base+7100);require(f.drift==1,"authority invalidation absent");f.settle();f.background();
         reads=Kernel::reads;auto commits=f.journal->commits;for(int t=100000;t<101000;t++)f.scanAt(t);
         require(Kernel::reads==reads&&f.journal->commits==commits&&!f.p().next,"idle coherence work");}
