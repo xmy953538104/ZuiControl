@@ -113,5 +113,21 @@ void leaseStress(){
     require(delays.size()==251&&kinds.size()==3&&orders.size()==4&&mutations.size()==5,"STRESS_COVERAGE_MISSING");
     std::cout<<"RANDOM_STRESS_COUNT="<<total<<";RECOVERABLE_GLOBAL_FATAL=0;STATUS3_RECOVERABLE=0;PLACEMENT_AFTER_REVOKE=0;STALE_PID=0;OWNER_LEAK=0;UNSAFE_JOURNAL_CLEAR=0;NORMAL_HOME_BLOCKER=0;EVENTUAL_RELEASE_MISS=0\n";
 }
-int main(){try{std::cout<<std::unitbuf;timed("LEASE_TRANSITIONS",leaseTransitions);timed("LEASE_DETERMINISTIC",leaseDeterministic);timed("LEASE_RANDOM5000",leaseStress);return 0;}
+void physicalSyscallBoundary(){
+    // Do not conflate "zero after OBSERVED revoke" with the stronger zero-write
+    // physical-first contract. The OS can run after the last userspace read and
+    // before cpuset write/sched_setaffinity takes effect. No callback is delivered.
+    LeaseFixture f;f.setup();bool injected=false;int writesAfterPhysical=0;
+    Kernel::beforeWrite=[&](int,bool move,Mask){
+        if(!injected&&move){handoff(100,2);injected=true;}
+        if(injected)writesAfterPhysical++;
+    };
+    f.owner->apply(f.p(),43,f.p().tasks.at(43),128,"syscall_interleave");
+    require(injected,"SYSCALL_INTERLEAVING_NOT_EXERCISED");
+    std::cout<<"PHYSICAL_FIRST_SYSCALL_BOUNDARY_WRITES="<<writesAfterPhysical
+             <<";CALLBACKS_DELIVERED=0;TASKS=200;OBSERVATION_STATE="
+             <<(f.p().writable()?"ZUIOPT_OWNED":"NOT_WRITABLE")<<'\n';
+    require(writesAfterPhysical==0,"PHYSICAL_FIRST_GAP_STILL_PERMITS_NEW_ZUIOPT_WRITES");
+}
+int main(){try{std::cout<<std::unitbuf;timed("LEASE_TRANSITIONS",leaseTransitions);timed("LEASE_DETERMINISTIC",leaseDeterministic);timed("LEASE_RANDOM5000",leaseStress);timed("PHYSICAL_SYSCALL_BOUNDARY",physicalSyscallBoundary);return 0;}
     catch(const std::exception& e){std::cerr<<"LEASE_FAIL "<<e.what()<<'\n';return 1;}}

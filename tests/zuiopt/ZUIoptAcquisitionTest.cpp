@@ -287,7 +287,7 @@ void recovery(){
         auto saved=f.journal->entries;f.journal->entries.clear();f.journal->leases.clear();f.journal->load();require(f.journal->entries.size()==saved.size(),"V2 durable reload");
         f.background();f.empty();for(auto& [_,t]:Kernel::tasks)require(t.group=="/top-app"&&t.mask==255,"strict original restore changed");}
     {AcquisitionFixture f;f.start(2);f.place();Kernel::tasks[44]={f.p().ownershipFloor+1,"/ZUIopt/7c",124};Kernel::stuck=true;
-        expectFailure([&]{f.background();},"release busy process");Kernel::stuck=false;f.background();f.empty();}
+        expectFailure([&]{f.background();},"background unrecoverable owned task");Kernel::stuck=false;f.background();f.empty();}
     {AcquisitionFixture f;f.start(2);f.place();auto r=f.journal->entries.at(42);f.journal->entries.erase(42);expectFailure([&]{f.owner->prepare(f.p());},"durable owner identity");f.journal->entries[42]=r;
         auto lease=f.journal->leases.at(42);f.journal->leases.at(42).processStart++;expectFailure([&]{f.owner->prepare(f.p());},"lease identity mismatch");f.journal->leases[42]=lease;f.background();}
     {AcquisitionFixture f;Kernel::tasks.at(43).group="/ZUIopt/7c";expectFailure([&]{f.start(2);},"initial Android owner unavailable");require(!Kernel::moves&&!Kernel::affinities&&f.journal->leases.empty(),"unknown acquisition wrote ownership");}
@@ -342,6 +342,8 @@ struct CoherenceFixture:AcquisitionFixture {
         if(valid!=sceneIdentity.valid){sceneIdentity.valid=valid;++sceneIdentity.sequence;}
         arbitrateLease(p,sceneIdentity,Kernel::time,*this);
     }
+    void primary(){processEvent({1,42,10001,1,1},states,*this);}
+    void background(){app.state=19;app.flags=0;primary();}
     Mask desired(int tid){return tid==43?28:tid==44?128:124;}
     void uniform(const std::string& group,Mask mask){for(auto& [_,t]:Kernel::tasks){t.group=group;t.mask=mask;}}
     void scanAt(int64_t time){

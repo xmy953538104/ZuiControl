@@ -121,29 +121,30 @@ jobs:
         run: |
           set -euo pipefail
           receipt="$RUNNER_TEMP/zuiopt-gate"
+          native_failed=0
           mkdir -p "$receipt"
           clang++ --version > "$receipt/host_compiler.txt"
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             tests/zuiopt/ZUIoptTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-fixture"
           sudo "$RUNNER_TEMP/zuiopt-fixture" payload/system/etc/zuiopt/factory_rules.conf \
-            | tee "$receipt/native_tests.txt"
+            | tee "$receipt/native_tests.txt" || native_failed=1
           python3 tests/zuiopt/TestNativeRuleParity.py "$RUNNER_TEMP/zuiopt-fixture" \
-            | tee "$receipt/native_reference_parity.txt"
+            | tee "$receipt/native_reference_parity.txt" || native_failed=1
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptBinderTest.cpp -lz \
             -o "$RUNNER_TEMP/zuiopt-binder-fixture"
-          "$RUNNER_TEMP/zuiopt-binder-fixture" | tee "$receipt/binder_abi_fixtures.txt"
+          "$RUNNER_TEMP/zuiopt-binder-fixture" | tee "$receipt/binder_abi_fixtures.txt" || native_failed=1
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror -pthread \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptSceneTest.cpp -lz -ldl -Wl,--export-dynamic \
             -o "$RUNNER_TEMP/zuiopt-scene-fixture"
-          sudo "$RUNNER_TEMP/zuiopt-scene-fixture" | tee "$receipt/scene_liveness_fixtures.txt"
+          sudo "$RUNNER_TEMP/zuiopt-scene-fixture" | tee "$receipt/scene_liveness_fixtures.txt" || native_failed=1
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptAcquisitionTest.cpp -lz \
             -Wl,--wrap=open,--wrap=close,--wrap=write,--wrap=stat,--wrap=lstat,--wrap=access \
             -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
             -o "$RUNNER_TEMP/zuiopt-acquisition-fixture"
           sudo /usr/bin/time -v -o "$receipt/acquisition_resources.txt" timeout --kill-after=10s 5m \
-            "$RUNNER_TEMP/zuiopt-acquisition-fixture" | tee "$receipt/acquisition_fixtures.txt"
+            "$RUNNER_TEMP/zuiopt-acquisition-fixture" | tee "$receipt/acquisition_fixtures.txt" || native_failed=1
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptBackgroundTest.cpp -lz \
             -Wl,--wrap=unlinkat \
@@ -151,7 +152,7 @@ jobs:
             -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
             -o "$RUNNER_TEMP/zuiopt-background-fixture"
           sudo timeout --kill-after=10s 5m "$RUNNER_TEMP/zuiopt-background-fixture" \
-            | tee "$receipt/background_release_fixtures.txt"
+            | tee "$receipt/background_release_fixtures.txt" || native_failed=1
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptReleaseReentryTest.cpp -lz \
             -Wl,--wrap=unlinkat \
@@ -159,7 +160,7 @@ jobs:
             -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
             -o "$RUNNER_TEMP/zuiopt-release-reentry-fixture"
           sudo timeout --kill-after=10s 5m "$RUNNER_TEMP/zuiopt-release-reentry-fixture" \
-            | tee "$receipt/release_reentry_fixtures.txt"
+            | tee "$receipt/release_reentry_fixtures.txt" || native_failed=1
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptAuthorityTest.cpp -lz \
             -Wl,--wrap=unlinkat \
@@ -167,7 +168,7 @@ jobs:
             -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
             -o "$RUNNER_TEMP/zuiopt-authority-fixture"
           sudo /usr/bin/time -v -o "$receipt/authority_resources.txt" timeout --kill-after=10s 5m \
-            "$RUNNER_TEMP/zuiopt-authority-fixture" | tee "$receipt/authority_epoch_fixtures.txt"
+            "$RUNNER_TEMP/zuiopt-authority-fixture" | tee "$receipt/authority_epoch_fixtures.txt" || native_failed=1
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptLeaseTest.cpp -lz \
             -Wl,--wrap=unlinkat \
@@ -175,7 +176,8 @@ jobs:
             -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
             -o "$RUNNER_TEMP/zuiopt-lease-fixture"
           sudo /usr/bin/time -v -o "$receipt/lease_resources.txt" timeout --kill-after=10s 5m \
-            "$RUNNER_TEMP/zuiopt-lease-fixture" | tee "$receipt/os_authority_lease_fixtures.txt"
+            "$RUNNER_TEMP/zuiopt-lease-fixture" | tee "$receipt/os_authority_lease_fixtures.txt" || native_failed=1
+          test "$native_failed" -eq 0
           python3 scripts/build/BuildZUIopt.py \
             --ndk "$ANDROID_SDK_ROOT/ndk/27.2.12479018" \
             --output payload/system/bin/ZUIopt --receipt "$receipt/build.json"
