@@ -138,6 +138,8 @@ void reentryStress(){
     }catch(const std::exception& e){throw std::runtime_error("random reentry case="+std::to_string(i)+" "+e.what());}
     std::cout<<"RELEASE_REENTRY_RANDOM_STRESS_COUNT="<<total<<";RECOVERABLE_GLOBAL_FATAL=0;STATUS3_RECOVERABLE=0;STICKY_RELEASE_OUTAGE=0;DUPLICATE_REARM_LOOP=0;UNSAFE_CPUSET_REWRITE=0;UNSAFE_AFFINITY_REWRITE=0;JOURNAL_CLEAR_WITH_LIVE_ZUIOPT_TASK=0;STALE_PID=0;OWNER_LEAK=0\n";
 }
+#ifndef ZUIOPT_REENTRY_LIBRARY
 int main(){try{std::cout<<std::unitbuf;timed("RELEASE_REENTRY_DETERMINISTIC",reentryDeterministic);timed("RELEASE_REENTRY_STRESS",reentryStress);
     puts("RELEASE_REENTRY_FIXTURES=PASS");return 0;
 }catch(const std::exception& e){std::cerr<<"RELEASE_REENTRY_FAIL "<<e.what()<<'\n';return 1;}}
+#endif

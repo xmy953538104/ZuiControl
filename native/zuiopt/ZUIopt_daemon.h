@@ -25,6 +25,7 @@ class Core {
     std::unique_ptr<SceneObserver> sceneObserver;SceneBurst sceneBurst;
     int eventFd=-1,signalFd=-1;bool serviceDied=false,authorityEvent=false;
     EventSubstage substage=EventSubstage::NONE;
+    uint64_t acceptedAuthority=0;
 public:
     Core(std::string path,const std::string& statePath):configPath(std::move(path)),stateRoot(statePath){
         available=cpus(read("/sys/devices/system/cpu/online"));config=parseConfig(read(configPath),available);ZUIOPT_debug=config.debug;
@@ -91,6 +92,16 @@ public:
     }
     void scan(ProcessState& p){
         if(p.backgroundReleasing)return;
+        // Never bless a queued epoch using foreground state from an older snapshot.
+        const auto token=acceptedAuthority;const auto episodes=p.coherenceEpisodes;
+        AuthorityFence authority{[&]{return events.authorityCurrent(token);},[&]{
+            auto snapshot=activitySnapshot();
+            for(const auto& s:snapshot)if(s.pid==p.pid&&s.uid==p.uid&&s.state==2&&(s.flags&4))
+                return validateManagedSnapshot(s,config,*this).start==p.generation;
+            return false;
+        }};
+        try{
+        authority.check();
         substage=EventSubstage::SCAN_COHERENCE;
         if(identity(p.pid).start!=p.generation){p.alive=false;release(p);return;}
         const auto* profile=config.find(p.package);if(!profile){release(p);return;}
@@ -98,6 +109,7 @@ public:
         std::map<std::string,std::vector<RankedTask>> candidates;
         std::map<std::string,const Rule*> groups;std::map<int,const Rule*> selected;
         for(int tid:tids){
+            authority.check();
             auto id=identity(p.pid,tid);if(!id.start)continue;live.insert(tid);auto& t=p.tasks[tid];bool fresh=t.generation!=id.start;
             if(fresh){t=Task{};t.generation=id.start;t.discovered=start;}
             bool firstName=fresh||t.comm.empty();if(firstName)t.discovered=start;
@@ -117,14 +129,21 @@ public:
         for(auto it=p.tasks.begin();it!=p.tasks.end();)if(!live.count(it->first))it=p.tasks.erase(it);else ++it;
         for(auto& [cls,items]:candidates){auto* rule=groups.at(cls);int tid=representative(items,rule->rank);if(tid)selected[tid]=rule;
             ZUIOPT_NOTE("REPRESENTATIVE","pid="+std::to_string(p.pid)+" class="+cls+" rank="+std::to_string(rule->rank)+" tid="+std::to_string(tid));}
-        auto coherence=placement->verifyCoherence(p,start);
+        authority.check();
+        auto coherence=placement->verifyCoherence(p,start,&authority);
+        authority.check();
         if(coherence==CoherenceResult::CONTESTED)blocked(RuntimeBlockerReason::OWNERSHIP_CONTESTED);
         if(!p.managed)return;
-        substage=EventSubstage::SCAN_PREPARE;placement->prepare(p);
+        substage=EventSubstage::SCAN_PREPARE;authority.check();placement->prepare(p,&authority);authority.check();
         substage=EventSubstage::SCAN_APPLY;
-        for(auto& [tid,t]:p.tasks){auto it=selected.find(tid);auto* r=it==selected.end()?nullptr:it->second;placement->apply(p,tid,t,r?r->mask:profile->general,r?r->cls:"default");}
+        for(auto& [tid,t]:p.tasks){authority.check();auto it=selected.find(tid);auto* r=it==selected.end()?nullptr:it->second;placement->apply(p,tid,t,r?r->mask:profile->general,r?r->cls:"default",&authority);}
         finishScan(p,now(),coherence==CoherenceResult::REPAIR);
         ZUIOPT_NOTE("SCAN","pid="+std::to_string(p.pid)+" tids="+std::to_string(p.tasks.size())+" elapsed_ms="+std::to_string(now()-start)+" next="+std::to_string(p.next));
+        }catch(const StaleAuthorityScan&){
+            p.coherenceReleasing=false;p.coherenceEpisodes=episodes;
+            if(authority.background){p.activity_foreground=false;release(p);}
+            // Pending callbacks retain their eventfd notification for the reactor.
+        }
     }
     void stats(){size_t active=0,tasks=0;for(auto& [_,p]:states){active+=p.managed;tasks+=p.tasks.size();}
         ZUIOPT_NOTE("STATS","events="+std::to_string(counters.events)+" snapshots="+std::to_string(counters.snapshots)+" scans="+std::to_string(counters.scans)+" comm="+std::to_string(counters.comm)+" schedstat="+std::to_string(counters.schedstat)+" placements="+std::to_string(counters.placements)+" releases="+std::to_string(counters.releases)+" wakeups="+std::to_string(counters.wakeups)+" reloads="+std::to_string(counters.reloads)+" active="+std::to_string(active)+" tasks="+std::to_string(tasks)+" journal_commits="+std::to_string(journal->commits));}
@@ -151,6 +170,7 @@ public:
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::READY);bool stop=false;
         while(!stop){
             phase=StartupStage::EVENT_LOOP; // In-memory only; there are no steady-state receipt writes.
+            auto epoch=events.authorityEpoch();
             edges();require(!serviceDied,"activity service died: fail closed");
             sceneBurst.accept(events.takeScene(),now());
             if(sceneBurst.timeout(now())==0){
@@ -163,6 +183,7 @@ public:
                     if(sceneBurst.complete(now())&&events.latestScene(seq))sceneObserver->ack(seq);
                 }
             }
+            if(events.authorityCurrent(epoch))acceptedAuthority=epoch;
             for(auto& [_,p]:states){
                 if(p.backgroundReleasing){release(p);if(!p.backgroundReleasing)activate(p);continue;}
                 substage=EventSubstage::ACQUISITION;advanceAcquisition(p,now(),*this);if(p.managed&&p.next<=now())scan(p);

@@ -209,3 +209,10 @@ the deduplicated local `background_release_blocked` receipt, retaining the journ
 Fatal receipts include bounded primary and cleanup substages/reasons.
 After probation the existing cache remains; no idle polling or new steady
 physical scan is introduced. Device timing acceptance is a separate gate.
+
+Foreground scans are fenced by the last reconciled in-memory event epoch.
+New scene sequences and primary callbacks invalidate an in-flight scan without
+consuming its notification. Fences surround coherence, durable preparation and
+each task write. Drift alone allows one fresh authoritative snapshot; a normal
+background transition returns to the existing release lane. Same-authority
+foreground corruption stays strict. No Binder ABI, watcher or polling is added.

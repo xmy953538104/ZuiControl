@@ -9,7 +9,7 @@ namespace ZUIopt {
 struct Event {int code,pid,uid,value;uint64_t sequence;};
 class RawEvents {
     std::mutex mutex;std::deque<Event> queue;uint64_t sequence=0;
-    int64_t scene=-1;bool scenePending=false;
+    int64_t scene=-1;bool scenePending=false;uint64_t epoch=0;
     static void notify(int fd){
         uint64_t one=1;ssize_t n;
         do{n=::write(fd,&one,sizeof(one));}while(n<0&&errno==EINTR);
@@ -18,18 +18,20 @@ class RawEvents {
 public:
     void push(int fd,int code,int pid,int user,int value){
         // Callback boundary: value copy + queue + eventfd only. No process observation.
-        {std::lock_guard<std::mutex> lock(mutex);queue.push_back({code,pid,user,value,++sequence});}
+        {std::lock_guard<std::mutex> lock(mutex);queue.push_back({code,pid,user,value,++sequence});++epoch;}
         notify(fd);
     }
     std::deque<Event> take(){std::deque<Event> result;std::lock_guard<std::mutex> lock(mutex);result.swap(queue);return result;}
     // Independent AUTHORITY_RECONCILE slot, not an IProcessObserver transaction.
     void pushScene(int fd,int64_t seq){
         bool wake;
-        {std::lock_guard<std::mutex> lock(mutex);if(seq<0||seq<=scene)return;scene=seq;wake=!scenePending;scenePending=true;}
+        {std::lock_guard<std::mutex> lock(mutex);if(seq<0||seq<=scene)return;scene=seq;++epoch;wake=!scenePending;scenePending=true;}
         if(wake)notify(fd);
     }
     int64_t takeScene(){std::lock_guard<std::mutex> lock(mutex);if(!scenePending)return -1;scenePending=false;return scene;}
     bool latestScene(int64_t seq){std::lock_guard<std::mutex> lock(mutex);return scene==seq;}
+    uint64_t authorityEpoch(){std::lock_guard<std::mutex> lock(mutex);return epoch;}
+    bool authorityCurrent(uint64_t token){std::lock_guard<std::mutex> lock(mutex);return epoch==token&&!scenePending&&queue.empty();}
 };
 inline bool sameProcess(const ProcessState& p,const Identity& id,int user){
     return id.start&&id.start==p.generation&&user==p.uid;

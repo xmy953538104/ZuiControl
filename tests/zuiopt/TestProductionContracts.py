@@ -9,6 +9,25 @@ ROOT=Path(__file__).resolve().parents[2]
 def read(path): return (ROOT/path).read_text(encoding='utf-8')
 
 class ProductionContracts(unittest.TestCase):
+    def test_authority_epoch_scan_and_write_fences(self):
+        daemon=read('native/zuiopt/ZUIopt_daemon.h');owner=read('native/zuiopt/ZUIopt_owner.h')
+        scan=daemon.split('void scan(ProcessState& p)',1)[1].split('    void stats()',1)[0]
+        self.assertIn('const auto token=acceptedAuthority',scan)
+        self.assertNotIn('token=events.authorityEpoch()',scan)
+        self.assertIn('for(int tid:tids){\n            authority.check();',scan)
+        for call in ('verifyCoherence(p,start,&authority)','prepare(p,&authority)','r?r->cls:"default",&authority)'):
+            self.assertIn(call,scan)
+        self.assertIn('catch(const StaleAuthorityScan&)',scan)
+        self.assertIn('if(authority.background){p.activity_foreground=false;release(p);}',scan)
+        self.assertEqual(scan.count('activitySnapshot()'),1)
+        self.assertIn('validateManagedSnapshot(s,config,*this).start==p.generation',scan)
+        self.assertIn('if(events.authorityCurrent(epoch))acceptedAuthority=epoch',daemon)
+        self.assertLess(owner.index('if(authority)authority->drift()'),owner.index('bool exhausted=p.coherenceEpisodes'))
+        self.assertIn('fence(authority);placed=setAffinity(tid,m)',owner)
+        self.assertIn('write(path+"/tasks",std::to_string(tid),authority)',owner)
+        self.assertIn('if(placed)t.appliedMask=m;',owner)
+        self.assertIn('catch(const StaleAuthorityScan&){if(changed)journal.commit();throw;}',owner)
+
     def test_fixture_io_isolation_and_ci_bound(self):
         fixture=read('tests/zuiopt/ZUIoptAcquisitionTest.cpp')
         self.assertIn('journal=std::make_unique<Journal>(Kernel::root+"/state")',fixture)
@@ -47,7 +66,7 @@ class ProductionContracts(unittest.TestCase):
         self.assertIn('repairSchedule={100,250,500,1000}',core)
         self.assertIn('finishScan(p,now(),coherence==CoherenceResult::REPAIR)',daemon)
         self.assertNotIn('authorityEvent=true;',daemon)
-        self.assertLess(daemon.index('verifyCoherence(p,start)'),daemon.index('placement->prepare(p)'))
+        self.assertLess(daemon.index('verifyCoherence(p,start,&authority)'),daemon.index('placement->prepare(p,&authority)'))
         self.assertIn('authorityEvent=sceneBurst.step==0;',daemon)
         self.assertIn('activateAuthority(p,wanted,authorityEvent,now(),*this);',daemon)
         self.assertIn('if(newScene)armCoherence(p,time);',core)

@@ -10,6 +10,7 @@
 #include <cstring>
 #include <dirent.h>
 #include <fcntl.h>
+#include <functional>
 #include <iomanip>
 #include <map>
 #include <set>
@@ -19,6 +20,19 @@
 #include <unistd.h>
 
 namespace ZUIopt {
+// Local control flow, never a daemon fatal. Callback threads only publish epochs.
+struct StaleAuthorityScan {};
+struct AuthorityFence {
+    std::function<bool()> current,foreground;
+    bool stale=false,background=false,revalidated=false;
+    void check(){if(stale||!current()){stale=true;throw StaleAuthorityScan{};}}
+    void drift(){
+        check();
+        if(!revalidated){revalidated=true;bool valid=foreground();check();
+            if(!valid){background=true;stale=true;throw StaleAuthorityScan{};}}
+    }
+};
+inline void fence(AuthorityFence* authority){if(authority)authority->check();}
 using Mask=uint64_t;
 inline int64_t now(){return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();}
 inline bool ZUIOPT_debug=false;
@@ -52,8 +66,9 @@ inline std::string read(const std::string& path,bool strict=false){
     while((n=::read(fd,b,sizeof(b)))!=0){if(n<0&&errno==EINTR)continue;if(n<0){error=errno;break;}out.append(b,n);if(out.size()>65536){out.clear();n=-1;error=EOVERFLOW;break;}}
     close(fd);if(strict&&n!=0){if(error==ENOENT||error==ESRCH)return {};throw ProcError(error,"proc identity read failed");}return out;
 }
-inline bool write(const std::string& path,const std::string& value){
+inline bool write(const std::string& path,const std::string& value,AuthorityFence* authority=nullptr){
     int fd=open(path.c_str(),O_WRONLY|O_CLOEXEC);if(fd<0)return false;
+    try{fence(authority);}catch(...){close(fd);throw;}
     ssize_t n=::write(fd,value.data(),value.size());int e=errno;close(fd);errno=e;return n==static_cast<ssize_t>(value.size());
 }
 inline std::string trim(std::string s){auto p=s.find_last_not_of(" \r\n\t");if(p==s.npos)return {};s.erase(p+1);p=s.find_first_not_of(" \r\n\t");return s.substr(p);}
