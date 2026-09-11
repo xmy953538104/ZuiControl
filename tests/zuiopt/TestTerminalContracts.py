@@ -52,6 +52,8 @@ class TerminalContracts(unittest.TestCase):
         apply=owner[owner.index('    void apply('):owner.index('    // A physical mismatch')]
         apply=apply.replace('        if(!p.writable())throw PhysicalRevoke{};\n','')
         apply=apply.replace('        if(physicalRevoke(p,tid,t))throw PhysicalRevoke{};\n','')
+        apply=apply.replace('        // Every apply observes physical ownership, including cached default/rank\n        // tasks. Only the current task can pass this check before an OS handoff.\n',
+                            '        // Cached default tasks do not reopen affinity/cgroup every second. Verify on change and 30s safety.\n')
         apply=apply.replace('!forceCoherence(p)&&t.appliedMask==m','t.appliedMask==m')
         frozen={
             'core_algorithms':(core.split('struct BaselineCandidate {',1)[0],'b04b1041265bfc512ee864c4164d8de80d4e6ca592e17cde3c3c9f2d0475786a'),

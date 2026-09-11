@@ -25,6 +25,7 @@ std::string root,virtualRoot;int user=10001;int64_t time=0;int reads=0,moves=0,a
 int groupReads=0,identityReads=0,uidReads=0,affinityReads=0;
 bool stuck=false;int moveError=0;std::function<void(const std::string&)> hook;
 std::function<void(int,bool,Mask)> beforeWrite;
+std::function<void(int,bool,Mask)> afterWrite;
 std::string mapped(const std::string& path){
     if(path.rfind("/dev/cpuset",0)==0||path=="/proc/42"||path.rfind("/proc/42/",0)==0)return virtualRoot+path;
     return path;
@@ -65,7 +66,7 @@ void initialize(){
     char ram[]="/dev/shm/zuiopt-kernel-XXXXXX";require(mkdtemp(ram),"exclusive virtual kernel root");virtualRoot=ram;
     struct statfs storage{};require(statfs(virtualRoot.c_str(),&storage)==0&&storage.f_type==0x01021994,"virtual kernel must be tmpfs");
     require(statfs(root.c_str(),&storage)==0&&storage.f_type!=0x01021994,"journal must remain disk-backed");
-    tasks={{42,{}},{43,{}}};fds.clear();procFiles.clear();listedTasks.clear();user=10001;time=0;reads=moves=affinities=0;stuck=false;moveError=0;hook={};beforeWrite={};
+    tasks={{42,{}},{43,{}}};fds.clear();procFiles.clear();listedTasks.clear();user=10001;time=0;reads=moves=affinities=0;stuck=false;moveError=0;hook={};beforeWrite={};afterWrite={};
     for(auto g:{"","/top-app","/background","/foreground","/ZUIopt"})for(auto f:{"tasks","mems","cpus"})put(virtualRoot+"/dev/cpuset"+g+"/"+f,f==std::string("mems")?"0":"0-7");
     fs::permissions(virtualRoot+"/dev/cpuset/ZUIopt",fs::perms::owner_all|fs::perms::group_read|fs::perms::group_exec|fs::perms::others_read|fs::perms::others_exec);
     fs::create_directories(virtualRoot+"/proc/42/task");
@@ -113,6 +114,7 @@ ssize_t __wrap_write(int fd,const void* bytes,size_t size){
             if(beforeWrite)beforeWrite(tid,true,0);
             if(moveError){errno=moveError;return -1;}
             moves++;if(!stuck||tid<44)tasks.at(tid).group=path.substr(11,path.size()-17);
+            if(afterWrite)afterWrite(tid,true,0);
             return static_cast<ssize_t>(size);
         }
         // cpus/mems are kernel files too; new release fixtures read the mask
@@ -161,7 +163,9 @@ int __wrap_sched_setaffinity(pid_t tid,size_t size,const cpu_set_t* set){
     auto it=Kernel::tasks.find(tid);if(it==Kernel::tasks.end()){errno=ESRCH;return -1;}
     Mask mask=0;for(int i=0;i<64;i++)if(CPU_ISSET(i,set))mask|=Mask(1)<<i;
     if(Kernel::beforeWrite)Kernel::beforeWrite(tid,false,mask);
-    it->second.mask=mask;Kernel::affinities++;return 0;
+    it->second.mask=mask;Kernel::affinities++;
+    if(Kernel::afterWrite)Kernel::afterWrite(tid,false,mask);
+    return 0;
 }
 }
 
@@ -344,6 +348,9 @@ struct CoherenceFixture:AcquisitionFixture {
     }
     void primary(){processEvent({1,42,10001,1,1},states,*this);}
     void background(){app.state=19;app.flags=0;primary();}
+    // Templates dispatch on *this's static type: the inherited start() invoked
+    // AcquisitionFixture::primary, bypassing this fixture's scene arbitration.
+    void start(int mode=0){if(mode!=1)primary();if(mode!=2)scene.accept(1,0);tick(0);}
     Mask desired(int tid){return tid==43?28:tid==44?128:124;}
     void uniform(const std::string& group,Mask mask){for(auto& [_,t]:Kernel::tasks){t.group=group;t.mask=mask;}}
     void scanAt(int64_t time){
@@ -543,10 +550,17 @@ void horizon(){
         require(f.scans-s==14&&groups==8400&&affinity==8400,"bounded scan/group/affinity count");
         std::cout<<"ACTIVE_200_THREADS:SCANS="<<f.scans-s<<";GROUP_READS="<<groups<<";AFFINITY_GET="<<affinity<<";IDENTITY_READS="<<identities<<";UID_READS="<<users<<'\n';
         auto original=f.p().activated;auto commits=f.journal->commits;auto moves=Kernel::moves+Kernel::affinities;
+        require(f.p().leaseScene==f.sceneIdentity.sequence,"initial scene was not arbitrated");
+        auto scansBeforeDuplicates=f.scans;
         // Same production primary activation contract: duplicates do not arm.
         for(int i=0;i<1000;i++){f.primary();f.scanAt(base+6001+i);}
         require(!forceCoherence(f.p())&&f.p().activated==original&&commits==f.journal->commits&&moves==Kernel::moves+Kernel::affinities,"duplicate rearm/write");
-        f.scanAt(base+8000);require(Kernel::groupReads==g+groups&&Kernel::affinityReads==a+affinity,"cache did not resume");
+        f.scanAt(base+8000);
+        // The R2 contract requires one fresh physical observation per task even
+        // on cache hits; cache still prevents extra writes and journal commits.
+        auto mandatoryReads=200*(f.scans-scansBeforeDuplicates);
+        require(Kernel::groupReads==g+groups+mandatoryReads&&Kernel::affinityReads==a+affinity+mandatoryReads,"per-task revoke observation count");
+        puts("ACQUISITION_HORIZON=PASS;DUPLICATE_REARM_WRITE=0;INITIAL_SCENE_ARBITRATION=PASS");
         f.background();f.empty();auto reads=Kernel::reads;commits=f.journal->commits;
         for(int i=0;i<1000;i++)f.scanAt(base+9000+i);
         require(!f.p().next&&!forceCoherence(f.p())&&reads==Kernel::reads&&commits==f.journal->commits,"idle coherence work");

@@ -114,20 +114,78 @@ void leaseStress(){
     std::cout<<"RANDOM_STRESS_COUNT="<<total<<";RECOVERABLE_GLOBAL_FATAL=0;STATUS3_RECOVERABLE=0;PLACEMENT_AFTER_REVOKE=0;STALE_PID=0;OWNER_LEAK=0;UNSAFE_JOURNAL_CLEAR=0;NORMAL_HOME_BLOCKER=0;EVENTUAL_RELEASE_MISS=0\n";
 }
 void physicalSyscallBoundary(){
-    // Do not conflate "zero after OBSERVED revoke" with the stronger zero-write
-    // physical-first contract. The OS can run after the last userspace read and
-    // before cpuset write/sched_setaffinity takes effect. No callback is delivered.
-    LeaseFixture f;f.setup();bool injected=false;int writesAfterPhysical=0;
-    Kernel::beforeWrite=[&](int,bool move,Mask){
-        if(!injected&&move){handoff(100,2);injected=true;}
-        if(injected)writesAfterPhysical++;
-    };
-    f.owner->apply(f.p(),43,f.p().tasks.at(43),128,"syscall_interleave");
-    require(injected,"SYSCALL_INTERLEAVING_NOT_EXERCISED");
-    std::cout<<"PHYSICAL_FIRST_SYSCALL_BOUNDARY_WRITES="<<writesAfterPhysical
-             <<";CALLBACKS_DELIVERED=0;TASKS=200;OBSERVATION_STATE="
-             <<(f.p().writable()?"ZUIOPT_OWNED":"NOT_WRITABLE")<<'\n';
-    require(writesAfterPhysical==0,"PHYSICAL_FIRST_GAP_STILL_PERMITS_NEW_ZUIOPT_WRITES");
+    // One process, not one apply. Count ALL optimization effects after the
+    // physical handoff, separately from writes after an observed cancellation.
+    int cases=0,failed=0,maxTasks=0,maxCalls=0,postObserved=0,nextAfterRevoke=0;
+    for(int index:{0,100,199})for(int population:{1,50,100,150,200})
+    for(int phase=0;phase<4;phase++)for(int delay:{0,10,25,50,100,200}){
+        LeaseFixture f;f.setup(200);
+        const int target=42+index;
+        bool injected=false,optimizing=true,observed=false;
+        int calls=0,afterObserved=0,nextWrites=0;
+        std::set<int> written,handed;
+        auto inject=[&]{
+            require(!injected,"DUPLICATE_HANDOFF");
+            injected=true;
+            // Cyclic contiguous population includes the current task; a single
+            // task handoff does NOT magically alter its remaining 199 siblings.
+            for(int n=0;n<population;n++){
+                int tid=42+(index+n)%200;handed.insert(tid);
+                Kernel::tasks.at(tid).group="/background";Kernel::tasks.at(tid).mask=67;
+            }
+        };
+        Kernel::hook=[&](const std::string& path){
+            if(optimizing&&!injected&&phase==0&&path=="/proc/"+std::to_string(target)+"/cgroup")inject();
+        };
+        Kernel::beforeWrite=[&](int tid,bool move,Mask){
+            if(!optimizing)return;
+            require(f.journal->entries.count(tid)&&f.journal->same(f.journal->entries.at(tid)),"UNJOURNALED_OPTIMIZATION");
+            if(!injected&&tid==target&&((phase==1&&move)||(phase==2&&!move)))inject();
+            if(injected){calls++;written.insert(tid);}
+            if(observed||f.p().revoked()){afterObserved++;if(tid!=target)nextWrites++;}
+        };
+        Kernel::afterWrite=[&](int tid,bool move,Mask){
+            if(optimizing&&!injected&&phase==3&&tid==target&&!move)inject();
+        };
+        try{
+            for(auto& [tid,t]:f.p().tasks)
+                f.owner->apply(f.p(),tid,t,128,tid%2?"rank":"default");
+        }catch(const PhysicalRevoke&){observed=true;}
+        require(injected,"SYSCALL_INTERLEAVING_NOT_EXERCISED");
+        // No optimization may start once the process is actually revoked.
+        if(observed){
+            auto before=calls;bool rejected=false;
+            try{f.owner->apply(f.p(),target,f.p().tasks.at(target),128,"blocked_next");}
+            catch(const PhysicalRevoke&){rejected=true;}
+            require(rejected&&before==calls,"NEXT_TASK_WRITE_AFTER_REVOKE");
+        }
+        maxTasks=std::max(maxTasks,static_cast<int>(written.size()));
+        maxCalls=std::max(maxCalls,calls);postObserved+=afterObserved;nextAfterRevoke+=nextWrites;
+        bool bounded=written.size()<=1&&calls<=2&&!afterObserved&&!nextWrites;
+        if(!bounded){
+            failed++;
+            // Preserve the exact counterexample; never count only handed-off
+            // tasks and silently omit optimization writes to unaffected siblings.
+            std::cout<<"TAIL_CASE_FAIL index="<<index<<";population="<<population
+                     <<";phase="<<phase<<";delay="<<delay<<";tasks_written="<<written.size()
+                     <<";syscalls="<<calls<<";revoke_observed="<<observed<<'\n';
+        }
+        optimizing=false;Kernel::hook={};Kernel::beforeWrite={};Kernel::afterWrite={};
+        f.accepted={};f.activate(f.p()); // Unknown slow-path authority: park, do not guess.
+        auto writes=Kernel::moves+Kernel::affinities;
+        for(int dt=0;dt<delay;dt++)f.tick(250+dt);
+        require(Kernel::moves+Kernel::affinities==writes,"PENDING_PLACEMENT_TAIL");
+        f.accepted={11,0,true,"org.example.launcher"};f.activate(f.p());
+        for(int dt:{0,50,100,250,500})f.tick(250+delay+dt);
+        f.done();cases++;
+    }
+    std::cout<<"SYSCALL_BOUNDARY_CASES="<<cases<<";FAILED="<<failed
+             <<";MAX_POST_PHYSICAL_HANDOFF_TASKS_WRITTEN="<<maxTasks
+             <<";MAX_POST_PHYSICAL_HANDOFF_SYSCALLS="<<maxCalls
+             <<";POST_REVOKE_OBSERVED_WRITES="<<postObserved
+             <<";NEXT_TASK_WRITE_AFTER_REVOKE="<<nextAfterRevoke
+             <<";EVENTUAL_RELEASE_MISS=0;RECOVERABLE_GLOBAL_FATAL=0\n";
+    require(!failed,"BOUNDED_INFLIGHT_TAIL_EXCEEDED");
 }
 int main(){try{std::cout<<std::unitbuf;timed("LEASE_TRANSITIONS",leaseTransitions);timed("LEASE_DETERMINISTIC",leaseDeterministic);timed("LEASE_RANDOM5000",leaseStress);timed("PHYSICAL_SYSCALL_BOUNDARY",physicalSyscallBoundary);return 0;}
     catch(const std::exception& e){std::cerr<<"LEASE_FAIL "<<e.what()<<'\n';return 1;}}

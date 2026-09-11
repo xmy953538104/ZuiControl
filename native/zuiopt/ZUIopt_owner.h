@@ -327,9 +327,10 @@ public:
     void apply(ProcessState& p,int tid,Task& t,Mask m,const std::string& cls,AuthorityFence* authority=nullptr){
         fence(authority);
         if(!p.writable())throw PhysicalRevoke{};
-        // Cached default tasks do not reopen affinity/cgroup every second. Verify on change and 30s safety.
-        if(!forceCoherence(p)&&t.appliedMask==m&&now()-t.verified<30000)return;
         if(physicalRevoke(p,tid,t))throw PhysicalRevoke{};
+        // Every apply observes physical ownership, including cached default/rank
+        // tasks. Only the current task can pass this check before an OS handoff.
+        if(!forceCoherence(p)&&t.appliedMask==m&&now()-t.verified<30000)return;
         if(!t.owned||!same(p,tid,t))return;
         auto it=journal.entries.find(tid);require(it!=journal.entries.end()&&journal.same(it->second),"write without durable owner identity");
         auto path=target(m);if(group(tid)==path.substr(11)&&affinity(tid)==m){t.appliedMask=m;t.verified=now();return;}

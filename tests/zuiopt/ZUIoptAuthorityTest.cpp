@@ -7,9 +7,29 @@ struct AuthorityFixture:ReentryFixture {
     RawEvents raw;int fd=eventfd(0,EFD_CLOEXEC|EFD_NONBLOCK);
     uint64_t accepted=0;int transitions=0,aborts=0,fresh=0;bool scanning=false;
     AuthorityFence* active=nullptr;
+    SceneAuthority currentScene{9,0,true,"org.example.game"};
+    bool sceneForeground(const ProcessState& p,bool)const{return currentScene.wants(p.package,p.uid);}
+    void ownershipBlocked(){throw std::runtime_error("unexpected authority contention");}
+    void activate(ProcessState& p){arbitrateLease(p,currentScene,Kernel::time,*this);}
+    void primary(){processEvent({1,42,10001,1,1},states,*this);}
+    void tick(int64_t time){
+        Kernel::time=time;
+        if(scene.timeout(time)==0){reconcileSnapshot(activitySnapshot(),states,*this);scene.complete(time);}
+        for(auto& [_,p]:states){
+            if(p.revoked()){activate(p);continue;}
+            if(p.backgroundReleasing()){release(p);if(!p.backgroundReleasing())activate(p);continue;}
+            advanceAcquisition(p,time,*this);
+        }
+    }
+    void foreground(int64_t time,int mode){
+        Kernel::time=time;app.state=2;app.flags=4;
+        currentScene={currentScene.sequence+1,0,true,"org.example.game"};
+        if(mode!=1)primary();if(mode!=2)scene.accept(currentScene.sequence,time);tick(time);
+    }
     ~AuthorityFixture(){close(fd);}
     void setup(int n=200){
         ReentryFixture::setup(n);
+        p().leaseScene=currentScene.sequence;
         owner->apply(p(),43,p().tasks.at(43),0x1c,"render");
         owner->apply(p(),44,p().tasks.at(44),0x80,"game");
         raw.pushScene(fd,9);raw.takeScene();accepted=raw.authorityEpoch();
@@ -24,6 +44,7 @@ struct AuthorityFixture:ReentryFixture {
     void transition(int mode,int percent,int kind){
         require(++transitions==1,"duplicate transition injection");
         app.state=19;app.flags=0;handoff(percent,kind);
+        currentScene={10,0,true,"org.example.launcher"};
         if(mode==0||mode==2||mode==5)raw.pushScene(fd,10);
         if(mode==1||mode==3||mode==5)raw.push(fd,1,42,10001,0);
         if(mode==0||mode==3)raw.push(fd,1,42,10001,0);
@@ -68,7 +89,7 @@ struct AuthorityFixture:ReentryFixture {
             }
             finishScan(p(),Kernel::time);
         }catch(const PhysicalRevoke&){
-            aborts++;fresh++;scanning=false;p().activity_foreground=false;release(p());
+            aborts++;fresh++;scanning=false;activate(p());
         }catch(const StaleAuthorityScan&){
             aborts++;p().coherenceEpisodes=episodes;
             scanning=false;
@@ -79,7 +100,8 @@ struct AuthorityFixture:ReentryFixture {
         require(fresh<=1,"DRIFT_SNAPSHOT_LOOP");
         reactor();
         for(int dt:{50,100,250,500})tick(250+dt);
-        require(!p().managed()&&!p().backgroundReleasing()&&!p().releaseBlocked,"OWNER_LEAK");
+        require(!p().managed()&&!p().backgroundReleasing()&&!p().releaseBlocked,
+                ("OWNER_LEAK state="+std::to_string(static_cast<int>(p().ownership))+" journal="+std::to_string(journal->entries.size())+" point="+std::to_string(point)+" mode="+std::to_string(mode)).c_str());
         require(journal->entries.empty()&&journal->leases.empty()&&!fs::exists(Kernel::root+"/state/owner_state.v1"),"JOURNAL_NOT_CLOSED");
         for(auto& [_,t]:Kernel::tasks)require(t.group.rfind("/ZUIopt",0)!=0,"PHYSICAL_OWNER_LEAK");
         require(!fs::exists(Kernel::root+"/state/fatal.v1")&&!fs::exists(Kernel::root+"/state/runtime_blocker.v1"),"RECOVERABLE_FATAL_OR_BLOCKER");
