@@ -333,7 +333,10 @@ public:
         if(!forceCoherence(p)&&t.appliedMask==m&&now()-t.verified<30000)return;
         if(!t.owned||!same(p,tid,t))return;
         auto it=journal.entries.find(tid);require(it!=journal.entries.end()&&journal.same(it->second),"write without durable owner identity");
-        auto path=target(m);if(group(tid)==path.substr(11)&&affinity(tid)==m){t.appliedMask=m;t.verified=now();return;}
+        // physicalRevoke already validated the last-applied physical state.
+        // Do not take a second observation and then ignore its revocation signal.
+        if(t.appliedMask==m){t.verified=now();return;}
+        auto path=target(m);
         bool moved=same(p,tid,t)&&write(path+"/tasks",std::to_string(tid),authority),placed=false;
         if(same(p,tid,t)){fence(authority);placed=setAffinity(tid,m);}
         if(placed)t.appliedMask=m; // Preserve exact residue even if authority changes inside the syscall.
@@ -341,6 +344,8 @@ public:
         if((!moved||!placed)&&same(p,tid,t))throw std::runtime_error("placement failed");
         t.appliedMask=m;t.verified=now();
         count.placements++;ZUIOPT_NOTE("PLACE","pid="+std::to_string(p.pid)+" tid="+std::to_string(tid)+" class="+cls+" mask="+cpuText(m));
+        // Catch a surviving handoff of the current task before starting a sibling.
+        if(physicalRevoke(p,tid,t))throw PhysicalRevoke{};
     }
     // A physical mismatch is revocation, not permission to repair Android.
     // This probe is read-only; ownership state changes before returning control.

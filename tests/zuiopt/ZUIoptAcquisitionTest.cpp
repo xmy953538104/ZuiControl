@@ -547,7 +547,7 @@ void horizon(){
         int g=Kernel::groupReads,a=Kernel::affinityReads,id=Kernel::identityReads,u=Kernel::uidReads,s=f.scans;
         for(int dt:coherenceSchedule)f.scanAt(base+dt);
         int groups=Kernel::groupReads-g,affinity=Kernel::affinityReads-a,identities=Kernel::identityReads-id,users=Kernel::uidReads-u;
-        require(f.scans-s==14&&groups==8400&&affinity==8400,"bounded scan/group/affinity count");
+        require(f.scans-s==14&&groups==5600&&affinity==5600,"bounded scan/group/affinity count");
         std::cout<<"ACTIVE_200_THREADS:SCANS="<<f.scans-s<<";GROUP_READS="<<groups<<";AFFINITY_GET="<<affinity<<";IDENTITY_READS="<<identities<<";UID_READS="<<users<<'\n';
         auto original=f.p().activated;auto commits=f.journal->commits;auto moves=Kernel::moves+Kernel::affinities;
         require(f.p().leaseScene==f.sceneIdentity.sequence,"initial scene was not arbitrated");

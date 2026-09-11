@@ -114,6 +114,16 @@ void leaseStress(){
     std::cout<<"RANDOM_STRESS_COUNT="<<total<<";RECOVERABLE_GLOBAL_FATAL=0;STATUS3_RECOVERABLE=0;PLACEMENT_AFTER_REVOKE=0;STALE_PID=0;OWNER_LEAK=0;UNSAFE_JOURNAL_CLEAR=0;NORMAL_HOME_BLOCKER=0;EVENTUAL_RELEASE_MISS=0\n";
 }
 void physicalSyscallBoundary(){
+    // Cache hits have no exemption from REVOKE_OBSERVED, for either class.
+    for(auto cls:{"default","rank"}){
+        LeaseFixture f;f.setup();f.p().burst=coherenceSchedule.size();f.p().repairStep=repairSchedule.size();
+        Kernel::tasks.at(42).group="/background";Kernel::tasks.at(42).mask=67;
+        auto writes=Kernel::moves+Kernel::affinities;bool caught=false;
+        try{f.owner->apply(f.p(),42,f.p().tasks.at(42),124,cls);}catch(const PhysicalRevoke&){caught=true;}
+        require(caught&&f.p().revoked()&&writes==Kernel::moves+Kernel::affinities,"CACHED_TASK_REVOKE_BYPASS");
+        f.accepted={11,0,true,"org.example.launcher"};f.activate(f.p());f.done();
+    }
+    puts("DEFAULT_RANK_CACHE_REVOKE_OBSERVATION=PASS");
     // One process, not one apply. Count ALL optimization effects after the
     // physical handoff, separately from writes after an observed cancellation.
     int cases=0,failed=0,maxTasks=0,maxCalls=0,postObserved=0,nextAfterRevoke=0;
@@ -162,14 +172,12 @@ void physicalSyscallBoundary(){
         maxTasks=std::max(maxTasks,static_cast<int>(written.size()));
         maxCalls=std::max(maxCalls,calls);postObserved+=afterObserved;nextAfterRevoke+=nextWrites;
         bool bounded=written.size()<=1&&calls<=2&&!afterObserved&&!nextWrites;
-        if(!bounded){
-            failed++;
-            // Preserve the exact counterexample; never count only handed-off
-            // tasks and silently omit optimization writes to unaffected siblings.
-            std::cout<<"TAIL_CASE_FAIL index="<<index<<";population="<<population
+        if(!bounded)failed++;
+        // Keep PASS rows too. Never count only handed-off tasks and silently
+        // omit optimization writes to unaffected siblings.
+        std::cout<<"TAIL_CASE="<<(bounded?"PASS":"FAIL")<<";index="<<index<<";population="<<population
                      <<";phase="<<phase<<";delay="<<delay<<";tasks_written="<<written.size()
                      <<";syscalls="<<calls<<";revoke_observed="<<observed<<'\n';
-        }
         optimizing=false;Kernel::hook={};Kernel::beforeWrite={};Kernel::afterWrite={};
         f.accepted={};f.activate(f.p()); // Unknown slow-path authority: park, do not guess.
         auto writes=Kernel::moves+Kernel::affinities;
