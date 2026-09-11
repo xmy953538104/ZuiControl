@@ -10,8 +10,11 @@ final class ZuioptSceneAuthority {
     static final int REGISTER = 1001;
     static final int UNREGISTER = 1002;
     static final int ACK = 1003;
+    static final int CURRENT = 1004;
     static final String CALLBACK_DESCRIPTOR = "com.zui.server.control.IZuioptSceneCallback";
     private long mSeq;
+    private String mPackage = "";
+    private int mUser;
     private long mAck = -1;
     private Registration mRegistration;
 
@@ -62,9 +65,20 @@ final class ZuioptSceneAuthority {
         if (old != null) old.callback.unlinkToDeath(old, 0);
     }
 
-    synchronized void changed() {
+    synchronized void changed(String pkg, int user) {
+        if (pkg == null || user < 0) throw new IllegalArgumentException("scene identity");
+        mPackage = pkg;
+        mUser = user;
         mSeq = Math.addExact(mSeq, 1L);
         replay();
+    }
+
+    synchronized void writeCurrent(IBinder callback, int pid, Parcel reply) {
+        if (!matches(callback, pid)) throw new SecurityException("unregistered scene reader");
+        reply.writeLong(mSeq);
+        reply.writeInt(mUser);
+        reply.writeInt(mPackage.isEmpty() ? 0 : 1);
+        reply.writeString(mPackage);
     }
 
     private void replay() {

@@ -48,6 +48,7 @@ void rejects(std::vector<Atom> atoms,const std::string& reason,bool ok=true){
     require(rejected,"malformed Parcel accepted");
 }
 struct RuntimeFixture {
+    bool sceneForeground(const ProcessState&,bool am)const{return am;}
     Config config=parseConfig("schema 2\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n",255);
     std::map<int,ProcessState> states;
     Snapshot app{"org.example.game",42,10001,4,100,2,true,{"org.example.game"}};
@@ -61,8 +62,8 @@ struct RuntimeFixture {
     std::string procName(int){procReads++;return "org.example.game";}
     std::vector<std::string> packageAuthority(int){packageQueries++;return authority;}
     std::vector<Snapshot> activitySnapshot(){snapshotQueries++;return absent?std::vector<Snapshot>{}:std::vector<Snapshot>{app};}
-    void release(ProcessState& p){released.push_back(p.generation);p.managed=false;}
-    void activate(ProcessState& p){if(!p.activity_foreground){if(p.managed)release(p);}else if(!p.managed){p.managed=true;placements++;}}
+    void release(ProcessState& p){released.push_back(p.generation);p.ownership=Ownership::ANDROID_OWNED;}
+    void activate(ProcessState& p){if(!p.activity_foreground){if(p.managed())release(p);}else if(!p.managed()){p.ownership=Ownership::ZUIOPT_OWNED;placements++;}}
     ProcessState* resolve(const Snapshot& s){
         Identity id;try{id=validateManagedSnapshot(s,config,*this);}
         catch(const ProcError& e){if(!e.permission())throw;blockers++;return nullptr;}
@@ -103,7 +104,7 @@ void eventTests(){
     {RuntimeFixture r;r.app.state=19;r.app.flags=0;r.edge();require(!r.states.at(42).activity_foreground&&r.placements==0,"new state uses current snapshot not stale true");}
     {RuntimeFixture r;r.edge();require(r.states.at(42).generation==10&&r.placements==1,"managed acquisition");
         r.edge(1,0);require(r.states.at(42).activity_foreground,"known state rejects stale false through current snapshot");
-        r.app.state=19;r.app.flags=0;r.edge(1,1);require(!r.states.at(42).managed,"known state stale true does not retain foreground");}
+        r.app.state=19;r.app.flags=0;r.edge(1,1);require(!r.states.at(42).managed(),"known state stale true does not retain foreground");}
     {RuntimeFixture r;r.edge();r.generation=20;r.edge();require(r.released==std::vector<uint64_t>{10}&&r.states.at(42).generation==20,"release old generation before new acquisition");}
     {RuntimeFixture r;r.edge();r.user=10002;r.app.uid=10002;r.edge();require(r.states.empty()&&r.released==std::vector<uint64_t>{10},"UID mismatch releases stale state, old callback cannot acquire");}
     {RuntimeFixture r;r.edge(3);require(r.procReads==0&&r.snapshotQueries==0,"unknown death zero observation");}

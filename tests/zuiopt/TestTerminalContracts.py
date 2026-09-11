@@ -47,16 +47,17 @@ class TerminalContracts(unittest.TestCase):
         core=read('native/zuiopt/ZUIopt_core.h')
         owner=read('native/zuiopt/ZUIopt_owner.h')
         release=owner[owner.index('    void release(ProcessState& p,ReleaseCause'):]
-        # V59 authorizes the reviewed epoch fences and partial-write bookkeeping.
+        # V60 authorizes physical revocation and one OS-preserving release path.
         # All other algorithm/recovery hashes below remain the accepted baseline.
-        apply=owner[owner.index('    void apply('):owner.index('    bool relinquishCoherence(')]
+        apply=owner[owner.index('    void apply('):owner.index('    // A physical mismatch')]
+        apply=apply.replace('        if(!p.writable())throw PhysicalRevoke{};\n','')
+        apply=apply.replace('        if(physicalRevoke(p,tid,t))throw PhysicalRevoke{};\n','')
         apply=apply.replace('!forceCoherence(p)&&t.appliedMask==m','t.appliedMask==m')
         frozen={
             'core_algorithms':(core.split('struct BaselineCandidate {',1)[0],'b04b1041265bfc512ee864c4164d8de80d4e6ca592e17cde3c3c9f2d0475786a'),
             'journal':(owner[owner.index('class Journal {'):owner.index('enum class CoherenceResult')],'61134ccb4ffcfbf35f494268062b856e5f1d2766c73b1a53dc4ce429cd98857b'),
             'restore_recovery':(owner[owner.index('    void restore('):owner.index('public:\n    // Used before acquisition')],'cf9a5c1db858b0a5ef72878c72c5a83079b6712a3e330d3fc316a4ee02646dcd'),
             'apply':(apply,'6b31262d7b7470762a92e72c5ebee4fb621c3f4431290264d146630c60377e85'),
-            'committed_release':(release[release.index('        if(identity(p.pid).start==p.generation)for('):release.index('        journal.leases.erase(p.pid)')],'cb815de5d13eaeb861c18d67cb9671c305b0cb9373382a2656ca442bb61255cc'),
         }
         for name,(text,sha) in frozen.items():self.assertEqual(hashlib.sha256(text.encode()).hexdigest(),sha,name)
         # The new scene queue/lifecycle shares these files; freeze the unchanged
@@ -65,7 +66,9 @@ class TerminalContracts(unittest.TestCase):
         events=events.split('\n// Shared with event-loss fixtures;',1)[0]+'}\n'
         # V58 changes only release lifecycle bookkeeping, not the authority ABI.
         events=events.replace('it->second.alive=false;runtime.release(it->second);states.erase(it);','runtime.release(it->second);states.erase(it);')
-        events=events.replace('it->second.activity_foreground=false;runtime.release(it->second);if(!it->second.backgroundReleasing)states.erase(it);','runtime.release(it->second);states.erase(it);')
+        events=events.replace('p->activity_foreground=runtime.sceneForeground(*p,s.state==2&&(s.flags&4)!=0);','p->activity_foreground=s.state==2&&(s.flags&4)!=0;')
+        events=re.sub(r'    if\(it!=states.end\(\)\)\{\n        it->second.activity_foreground=runtime.sceneForeground.*?\n    \}',
+                      '    if(it!=states.end()){runtime.release(it->second);states.erase(it);}',events,flags=re.S)
         self.assertEqual(hashlib.sha256(events.encode()).hexdigest(),'462eea41086a097f85d6fb9a6bf0b66094f8b0f90f8659cf612631cf239f3a1a')
         observer=read('native/zuiopt/ZUIopt_binder.h').split('struct Observer {',1)[1]
         self.assertEqual(hashlib.sha256(observer.encode()).hexdigest(),'cc8f4702213ded4f9c47db9fa1cd88edbadf8c3a90944d310490e94a4742ed76')
@@ -76,7 +79,7 @@ class TerminalContracts(unittest.TestCase):
         text=re.sub(r'^.*private static final String PROP_ZUIOPT_(SERVICE|FAILED).*\n','',text,flags=re.M)
         text=text.replace('import android.os.IBinder;\n','')
         text=text.replace('    private final ZuioptSceneAuthority mZuioptScene = new ZuioptSceneAuthority();\n','')
-        text=re.sub(r'^\s*mZuioptScene.changed\(\);\n','',text,flags=re.M)
+        text=re.sub(r'^\s*mZuioptScene.changed\(pkg, userId\);\n','',text,flags=re.M)
         text=re.sub(r'            if \(code >= ZuioptSceneAuthority.REGISTER.*?(?=            if \(code >= 1)', '',text,flags=re.S)
         self.assertEqual(hashlib.sha256(text.encode()).hexdigest(),'40bf756fe681be07809b41924d8003d3f2074997474acb19e1588811c2dc4764')
         self.assertIs(json.loads(read('payload/system/etc/zui_control/uperf-sm8650.json'))['modules']['sched']['enable'],False)

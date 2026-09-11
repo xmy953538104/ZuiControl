@@ -31,18 +31,18 @@ class BackgroundContracts(unittest.TestCase):
         self.assertEqual(missing,set())
         print('KNOWN_PRODUCTION_EXCEPTION_UNCLASSIFIED=0')
     def test_background_has_no_acquisition_or_busy_retry(self):
-        lane=text('ZUIopt_owner.h').split('bool backgroundPass(',1)[1].split('    void cleanup()',1)[0].split('        if(!p.managed)',1)[0]
+        lane=text('ZUIopt_owner.h').split('bool backgroundPass(',1)[1].split('    void cleanup()',1)[0].split('        if(!p.managed())',1)[0]
         for forbidden in ('probeBaseline(', 'prepare(p)', 'restore(r)', 'for(int pass=', 'usleep(', 'sleep('):self.assertNotIn(forbidden,lane)
         self.assertIn('backgroundReleaseSchedule={0,50,100,250,500}',text('ZUIopt_core.h'))
         self.assertIn('require(remaining.empty(),"background unrecoverable owned task")',lane)
         self.assertLess(lane.index('if(pending||!remaining.empty()||residue)return false;'),lane.index('journal.leases.erase(p.pid)'))
-        self.assertIn('p.acquiring=false;p.acquireFinalConfirmation=false;p.baselineCandidate={}',lane)
+        self.assertIn('p.acquireFinalConfirmation=false;p.baselineCandidate={}',lane)
         self.assertIn('if(!terminal&&(p.releaseParked||p.next>time))return;',lane)
     def test_park_rearm_is_shared_and_authority_bounded(self):
         core=text('ZUIopt_core.h');daemon=text('ZUIopt_daemon.h');owner=text('ZUIopt_owner.h')
         helper=core.split('void activateAuthority(',1)[1].split('enum class BaselineResult',1)[0]
         self.assertIn('fresh||(p.releaseParked&&newScene)',helper)
-        self.assertIn('activateAuthority(p,wanted,authorityEvent,now(),*this)',daemon)
+        self.assertIn('arbitrateLease(p,currentScene,now(),*this)',daemon)
         self.assertIn('authorityEvent=sceneBurst.step==0',daemon)
         self.assertIn('p.releaseBlocked=p.releaseRearmed&&p.activity_foreground',owner)
         self.assertIn('if(p.releaseBlocked)blocked(RuntimeBlockerReason::BACKGROUND_RELEASE_BLOCKED)',daemon)

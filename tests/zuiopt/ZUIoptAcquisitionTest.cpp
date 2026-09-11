@@ -195,13 +195,13 @@ struct AcquisitionFixture:RuntimeFixture {
     void noOwnership(){
         require(journal->leases.empty()&&journal->entries.empty()&&journal->commits==initialCommits,"pending journal write");
         require(Kernel::moves==0&&Kernel::affinities==0,"pending kernel write");
-        for(auto& [_,p]:states){require(!p.managed&&!p.ownershipFloor&&p.androidGroup.empty()&&!p.androidMask,"pending ownership state");for(auto& [__,t]:p.tasks)require(!t.owned,"pending owned flag");}
+        for(auto& [_,p]:states){require(!p.managed()&&!p.ownershipFloor&&p.androidGroup.empty()&&!p.androidMask,"pending ownership state");for(auto& [__,t]:p.tasks)require(!t.owned,"pending owned flag");}
         for(auto& [_,t]:Kernel::tasks)require(t.group.find("/ZUIopt")==std::string::npos,"pending cpuset membership");
     }
-    void confirm(){auto base=p().acquireStarted;for(int dt:{100,250,500,750})if(!p().managed)tick(base+dt);require(p().managed,"fixture temporal confirmation");}
-    void place(){if(!p().managed)confirm();owner->prepare(p());for(auto& [tid,t]:p().tasks)owner->apply(p(),tid,t,cpus("2-6"),"default");}
+    void confirm(){auto base=p().acquireStarted;for(int dt:{100,250,500,750})if(!p().managed())tick(base+dt);require(p().managed(),"fixture temporal confirmation");}
+    void place(){if(!p().managed())confirm();owner->prepare(p());for(auto& [tid,t]:p().tasks)owner->apply(p(),tid,t,cpus("2-6"),"default");}
     void background(){app.state=19;app.flags=0;primary();}
-    void empty(){require(journal->entries.empty()&&journal->leases.empty()&&!p().managed&&!p().acquiring,"release owner leak");}
+    void empty(){require(journal->entries.empty()&&journal->leases.empty()&&!p().managed()&&!p().acquiring(),"release owner leak");}
 };
 void kernelBacking(){
     AcquisitionFixture f;
@@ -238,32 +238,32 @@ void matrix(){
             f.tick(t);if(t<visible+250)f.noOwnership();
         }
         if(source==2)require(f.snapshotQueries==queries,"ProcessObserver-only retries queried activity");
-        if(visible==750){f.noOwnership();require(!f.p().acquireBlocked,"SLA boundary blocker");f.tick(1000);}
-        require(f.p().managed&&f.journal->commits==f.initialCommits+1&&f.journal->leases.size()==1,"temporal acquire miss/duplicate lease");f.place();
+        if(visible==750){f.noOwnership();require(!f.p().acquireBlocked(),"SLA boundary blocker");f.tick(1000);}
+        require(f.p().managed()&&f.journal->commits==f.initialCommits+1&&f.journal->leases.size()==1,"temporal acquire miss/duplicate lease");f.place();
         f.background();f.empty();
     }
     // D/E: timeout is local to this request; duplicate foreground cannot restart it.
     for(bool custom:{false,true}){
         AcquisitionFixture f;Kernel::tasks.at(43).mask=custom?128:67;if(!custom)Kernel::tasks.at(43).group="/background";
         f.start(2);for(int t:{100,250,500,750,1000,1250,1500,2000,2500,3000}){f.tick(t);f.noOwnership();}
-        require(f.blockerAttempts==1&&f.p().acquireBlocked&&!f.p().acquiring,"persistent mismatch not blocked");
+        require(f.blockerAttempts==1&&f.p().acquireBlocked()&&!f.p().acquiring(),"persistent mismatch not blocked");
         auto path=Kernel::root+"/state/runtime_blocker.v1";auto data=read(path);struct stat st{};require(lstat(path.c_str(),&st)==0,"blocker exists");auto inode=st.st_ino;
         require(data.find("reason=inheritance_baseline_unstable\n")!=data.npos&&data.find("org.example")==data.npos&&(st.st_mode&07777)==0600&&data.size()<1024,"blocker privacy/bound");
         for(int t=3001;t<4000;t++){f.primary();f.tick(t);}
         require(f.blockerAttempts==1&&lstat(path.c_str(),&st)==0&&st.st_ino==inode,"persistent steady blocker writes");f.noOwnership();
         f.background();for(auto& [_,task]:Kernel::tasks){task.group="/top-app";task.mask=255;}
-        f.app.state=2;f.app.flags=4;f.primary();f.tick(4000);f.confirm();require(f.p().managed,"fresh authority did not retry");f.background();
+        f.app.state=2;f.app.flags=4;f.primary();f.tick(4000);f.confirm();require(f.p().managed(),"fresh authority did not retry");f.background();
     }
     // F: disappearing/reused thread is not a baseline mismatch.
     for(bool reuse:{false,true}){
         AcquisitionFixture f;Kernel::tasks.at(43).mask=67;
         Kernel::hook=[&](const std::string& path){if(path=="affinity/43"){Kernel::hook={};if(reuse)Kernel::tasks.at(43).birth++;else Kernel::tasks.erase(43);}};
         f.start(2);if(reuse){f.noOwnership();Kernel::tasks.at(43).mask=255;f.tick(100);}
-        f.confirm();require(f.p().managed,"exit/reuse observation recovery");f.background();
+        f.confirm();require(f.p().managed(),"exit/reuse observation recovery");f.background();
     }
     // G: an original child born in the observation pass forces a new full pass.
     {AcquisitionFixture f;Kernel::hook=[](const std::string& path){if(path=="affinity/43"){Kernel::hook={};Kernel::tasks[44]={10000,"/top-app",255};}};
-        f.start(2);f.noOwnership();f.tick(100);f.noOwnership();f.confirm();require(f.p().managed&&f.journal->entries.count(44)&&f.p().ownershipFloor>10000,"pending-born child baseline/floor");
+        f.start(2);f.noOwnership();f.tick(100);f.noOwnership();f.confirm();require(f.p().managed()&&f.journal->entries.count(44)&&f.p().ownershipFloor>10000,"pending-born child baseline/floor");
         f.place();OwnerRecord child;f.journal->entries.erase(44);require(!f.journal->inherited(44,child),"precommit child retroactively inherited");
         Kernel::tasks.erase(44);f.p().tasks.erase(44);f.background();}
     // H/I/J/K/O: pending death, PID reuse, background, scene supersession, stop.
@@ -274,8 +274,8 @@ void matrix(){
         if(mode==2)f.background();
         if(mode==3){f.app.flags=0;f.app.state=19;f.scene.accept(12,10);f.tick(10);}
         if(mode==4){for(auto& [_,p]:f.states)f.release(p);f.owner->cleanup();}
-        f.noOwnership();require(!f.p().acquiring&&!f.p().next,"pending deadline survived cancellation");
-        if(mode==1){f.generation=20;Kernel::tasks.at(43).mask=255;f.primary();f.tick(100);f.confirm();require(f.p().managed&&f.journal->leases.at(42).processStart==20,"stale PID acquired");f.background();}
+        f.noOwnership();require(!f.p().acquiring()&&!f.p().next,"pending deadline survived cancellation");
+        if(mode==1){f.generation=20;Kernel::tasks.at(43).mask=255;f.primary();f.tick(100);f.confirm();require(f.p().managed()&&f.journal->leases.at(42).processStart==20,"stale PID acquired");f.background();}
     }
     puts("BASELINE_CASES_A_TO_P=PASS;PENDING_RELEASE_NOOP=PASS;ZERO_WRITE_PROBE=PASS");
 }
@@ -321,7 +321,7 @@ void stress(){
             f.tick(base+dt);if(dt<visible)f.noOwnership();
         }
         {
-            require(f.p().managed&&f.journal->commits==f.initialCommits+1,"stress managed miss/duplicate lease");
+            require(f.p().managed()&&f.journal->commits==f.initialCommits+1,"stress managed miss/duplicate lease");
             require(f.p().ownershipFloor>=static_cast<uint64_t>((100.+(base+visible+250)/1000.)*sysconf(_SC_CLK_TCK)),"lease predates temporal baseline");
             f.place();
         }
@@ -335,30 +335,42 @@ void stress(){
 }
 struct CoherenceFixture:AcquisitionFixture {
     int drift=0,repairs=0,reacquires=0,contested=0,scans=0;
+    SceneAuthority sceneIdentity{1,0,true,"org.example.game"};
+    void ownershipBlocked(){contested++;receipt.record(Kernel::root+"/state",journal->currentBootId(),RuntimeBlockerReason::OWNERSHIP_CONTESTED);}
+    void activate(ProcessState& p){
+        bool valid=app.state==2&&(app.flags&4);
+        if(valid!=sceneIdentity.valid){sceneIdentity.valid=valid;++sceneIdentity.sequence;}
+        arbitrateLease(p,sceneIdentity,Kernel::time,*this);
+    }
     Mask desired(int tid){return tid==43?28:tid==44?128:124;}
     void uniform(const std::string& group,Mask mask){for(auto& [_,t]:Kernel::tasks){t.group=group;t.mask=mask;}}
     void scanAt(int64_t time){
         tick(time);
-        if(!p().managed||p().next>time)return;
+        if(!p().managed()||p().next>time)return;
         scans++;
         auto result=owner->verifyCoherence(p(),time);
         if(result!=CoherenceResult::CLEAN)drift++;
+        if(result==CoherenceResult::REVOKED){
+            arbitrateLease(p(),sceneIdentity,time,*this);
+            if(p().acquiring())reacquires++;
+            return;
+        }
         if(result==CoherenceResult::REPAIR)repairs++;
         if(result==CoherenceResult::REACQUIRE)reacquires++;
         if(result==CoherenceResult::CONTESTED){contested++;receipt.record(Kernel::root+"/state",journal->currentBootId(),RuntimeBlockerReason::OWNERSHIP_CONTESTED);}
-        if(!p().managed){if(p().acquiring)advanceAcquisition(p(),time,*this);return;}
+        if(!p().managed()){if(p().acquiring())advanceAcquisition(p(),time,*this);return;}
         owner->prepare(p());
         for(auto& [tid,t]:p().tasks)owner->apply(p(),tid,t,desired(tid),"fixture_G07");
         finishScan(p(),time,result==CoherenceResult::REPAIR);
     }
     void managed(){
-        require(p().managed,"coherence managed miss");
+        require(p().managed(),"coherence managed miss");
         for(auto& [tid,t]:Kernel::tasks){std::ostringstream expected;expected<<"/ZUIopt/"<<std::hex<<desired(tid);
             require(t.group==expected.str()&&t.mask==desired(tid),"silent journal/physical divergence");
             require(journal->entries.count(tid)&&journal->same(journal->entries.at(tid)),"unknown owned task");
         }
     }
-    void settle(){auto base=p().acquireStarted;for(int dt:{0,100,250,500,750})if(!p().managed)scanAt(base+dt);managed();}
+    void settle(){auto base=p().acquireStarted;for(int dt:{0,100,250,500,750})if(!p().managed())scanAt(base+dt);managed();}
     void boot(int threads=8){for(int tid=44;tid<42+threads;tid++)Kernel::tasks[tid]={10,"/top-app",255};start(2);settle();}
     void overwrite(int percent,int type){
         size_t n=percent?std::max<size_t>(1,Kernel::tasks.size()*percent/100):1;
@@ -381,8 +393,8 @@ void coherence(){
     // Candidate generation/UID/epoch resets and unchanged uniform thread growth/shrink.
     {CoherenceFixture f;f.start(2);f.noOwnership();Kernel::tasks[44]={10,"/top-app",255};f.tick(100);
         require(f.p().baselineCandidate.firstStableAt==0,"uniform growth reset dwell");Kernel::tasks.erase(43);f.tick(250);
-        require(f.p().managed&&f.journal->entries.count(44)&&!f.journal->entries.count(43),"fresh final task set");f.background();}
-    {CoherenceFixture f;f.start(2);Kernel::user++;f.tick(100);f.noOwnership();require(!f.p().acquiring,"UID change not cancelled");}
+        require(f.p().managed()&&f.journal->entries.count(44)&&!f.journal->entries.count(43),"fresh final task set");f.background();}
+    {CoherenceFixture f;f.start(2);Kernel::user++;f.tick(100);f.noOwnership();require(!f.p().acquiring(),"UID change not cancelled");}
     // Timing variants + edge just after 1000ms cover the worst old 1s gap.
     int worst=0;
     for(int when:{20,50,80,120,200,400,700,1000,1001,1500})for(int type=0;type<3;type++)for(int percent:{0,25,50,75,100}){
@@ -390,10 +402,10 @@ void coherence(){
         for(int dt:{100,250,500,1000,1500,2000}){
             if(!injected&&dt>=when){f.overwrite(percent,type);injected=true;}
             f.scanAt(committed+dt);
-            if(injected){require(f.drift==1,"cache hid overwrite");if(f.p().acquiring)f.settle();f.managed();
+            if(injected){require(f.drift==1,"cache hid overwrite");if(f.p().acquiring())f.settle();f.managed();
                 worst=std::max(worst,static_cast<int>(Kernel::time-committed-when));break;}
         }
-        require(f.p().coherenceEpisodes==1&&f.repairs+f.reacquires==1,"repair counted per task");
+        require(f.p().revokeEpisodes==1&&f.repairs+f.reacquires==1,"repair counted per task");
         f.background();f.empty();
     }
     require(worst<=750,"coherence response budget");
@@ -401,9 +413,9 @@ void coherence(){
     {CoherenceFixture f;f.boot(200);
         for(int episode=0;episode<3;episode++){
             f.overwrite(100,2);f.scanAt(f.p().next);
-            if(episode<2){require(f.p().acquiring,"broad handoff not reacquiring");f.settle();}
+            if(episode<2){require(f.p().acquiring(),"broad handoff not reacquiring");f.settle();}
         }
-        require(!f.p().managed&&!f.p().acquiring&&f.p().acquireBlocked&&f.contested==1&&f.p().coherenceEpisodes==2,"unbounded contention");
+        require(!f.p().managed()&&!f.p().acquiring()&&f.p().acquireBlocked()&&f.contested==1&&f.p().revokeEpisodes==3,"unbounded contention");
         require(f.journal->entries.empty()&&f.journal->leases.empty(),"contested journal leak");
         for(auto& [_,t]:Kernel::tasks)require(t.group=="/top-app"&&t.mask==255,"contested residual owner");
         auto path=Kernel::root+"/state/runtime_blocker.v1";struct stat st{};require(lstat(path.c_str(),&st)==0,"contested receipt absent");auto inode=st.st_ino;
@@ -411,23 +423,24 @@ void coherence(){
         auto writes=Kernel::moves+Kernel::affinities;auto commits=f.journal->commits;
         for(int t=10000;t<11000;t++){f.primary();f.scanAt(t);f.receipt.record(Kernel::root+"/state",f.journal->currentBootId(),RuntimeBlockerReason::OWNERSHIP_CONTESTED);}
         require(lstat(path.c_str(),&st)==0&&st.st_ino==inode&&commits==f.journal->commits&&writes==Kernel::moves+Kernel::affinities&&!f.p().next,"contested steady writes/timer");f.background();}
-    // No guessing: changed external group + our narrow mask is unresolved residue.
+    // Changed normal Android placement is accepted, not fatal. Exact own
+    // affinity residue is cleaned within the current group before a new baseline.
     {CoherenceFixture f;f.boot();for(auto& [_,t]:Kernel::tasks)t.group="/foreground";
-        auto entries=f.journal->entries.size();auto commits=f.journal->commits;auto moves=Kernel::moves;
-        expectFailure([&]{f.scanAt(f.p().next);},"coherence unresolved external affinity");
-        require(f.journal->entries.size()==entries&&f.journal->commits==commits&&Kernel::moves==moves,"unsafe external preflight clear/write");
-        f.uniform("/top-app",255);f.owner->relinquishCoherence(f.p());f.empty();}
+        f.scanAt(f.p().next);require(f.p().acquiring()&&f.contested==0,"normal group handoff fatal");
+        for(auto& [_,t]:Kernel::tasks)require(t.group=="/foreground"&&t.mask==255,"residue cleanup lost Android group");
+        f.settle();f.background();f.empty();}
     {CoherenceFixture f;f.boot();f.uniform("/top-app",255);Kernel::tasks.at(43).group="/foreground";
-        f.scanAt(f.p().next);require(f.contested==1&&f.p().acquireBlocked&&!f.p().managed,"heterogeneous handoff guessed baseline");
-        require(f.journal->entries.empty()&&Kernel::tasks.at(43).group=="/foreground","safe external handoff rewritten");f.background();}
+        f.scanAt(f.p().next);require(f.p().acquiring()&&!f.p().managed()&&f.contested==0,"heterogeneous handoff not stabilized");
+        require(f.journal->entries.empty()&&Kernel::tasks.at(43).group=="/foreground","safe external handoff rewritten");
+        f.uniform("/top-app",255);f.settle();f.background();}
     {CoherenceFixture f;f.boot();Kernel::tasks[60]={1,"/ZUIopt/7c",124};f.overwrite(75,2);
         auto commits=f.journal->commits;auto moves=Kernel::moves;
-        expectFailure([&]{f.scanAt(f.p().next);},"coherence unknown owned task");
+        expectFailure([&]{f.scanAt(f.p().next);},"background unknown owned task");
         require(f.journal->commits==commits&&Kernel::moves==moves&&!f.journal->entries.empty(),"unknown coherence owner cleared");
         Kernel::tasks.erase(60);f.uniform("/top-app",255);f.owner->relinquishCoherence(f.p());f.empty();}
     // Late inherited, death and reuse safety during a coherence release.
     {CoherenceFixture f;f.boot();Kernel::tasks[60]={f.p().ownershipFloor+1,"/ZUIopt/7c",124};f.overwrite(75,2);
-        f.scanAt(f.p().next);require(f.p().acquiring&&Kernel::tasks.at(60).group=="/top-app"&&Kernel::tasks.at(60).mask==255,"late owned leak");f.settle();f.background();}
+        f.scanAt(f.p().next);require(f.p().acquiring()&&Kernel::tasks.at(60).group=="/top-app"&&Kernel::tasks.at(60).mask==255,"late owned leak");f.settle();f.background();}
     {CoherenceFixture f;f.boot();Kernel::tasks.clear();f.owner->relinquishCoherence(f.p());f.empty();}
     {CoherenceFixture f;f.boot();f.uniform("/top-app",255);Kernel::tasks.at(42).birth++;
         auto writes=Kernel::moves+Kernel::affinities;f.owner->relinquishCoherence(f.p());f.empty();require(Kernel::moves+Kernel::affinities==writes,"stale PID write");}
@@ -449,7 +462,7 @@ void coherence(){
             for(int dt:{0,100,250,500,750}){
                 if(dt>=duration)f.uniform("/top-app",255);
                 f.scanAt(base+dt);
-                if(f.p().managed)break;
+                if(f.p().managed())break;
                 f.noOwnership();
             }
             f.managed();require(f.journal->leases.at(42).savedGroup=="/top-app"&&f.journal->leases.at(42).savedMask==255,"random intermediate commit");
@@ -459,7 +472,7 @@ void coherence(){
             for(int dt:coherenceSchedule){
                 if(!injected&&dt>=when){f.overwrite(percent,type);injected=true;}
                 f.scanAt(committed+dt);
-                if(injected){require(f.drift==before+1,"random silent divergence");if(f.p().acquiring)f.settle();f.managed();
+                if(injected){require(f.drift==before+1,"random silent divergence");if(f.p().acquiring())f.settle();f.managed();
                     require(Kernel::time-committed-when<=750,"random response budget");break;}
             }
             recovered++;f.background();f.empty();
@@ -480,10 +493,10 @@ void horizon(){
         for(int dt:coherenceSchedule){
             if(dt>=when)f.overwrite(percent,type);
             f.scanAt(base+dt);
-            if(dt>=when){require(f.drift==1,"late window undetected drift");if(f.p().acquiring)f.settle();f.managed();
+            if(dt>=when){require(f.drift==1,"late window undetected drift");if(f.p().acquiring())f.settle();f.managed();
                 worst=std::max(worst,static_cast<int>(Kernel::time-base-when));break;}
         }
-        require(f.p().coherenceEpisodes==1,"late window episode budget");cases++;near+=when>=5750;f.background();f.empty();
+        require(f.p().revokeEpisodes==1,"late window episode budget");cases++;near+=when>=5750;f.background();f.empty();
     }
     require(cases==57&&near==6&&worst<=750,"late timing coverage/budget");
     // Historical overwrite time is censored, not known to be exactly 3.5s.
@@ -499,14 +512,17 @@ void horizon(){
     for(int second:{0,1,101,251,501,999})for(int type=0;type<3;type++){
         CoherenceFixture f;f.boot(200);auto base=Kernel::time;
         for(int dt:coherenceSchedule){if(dt==6000)f.overwrite(0,type);f.scanAt(base+dt);}
-        f.managed();require(f.repairs==1&&f.p().coherenceEpisodes==1&&forceCoherence(f.p())&&f.p().next==base+6100,"last repair lost confirmation");
+        require(f.reacquires==1&&f.p().revokeEpisodes==1&&f.p().acquiring(),"last revoke lost reacquisition");
+        f.settle();auto recommitted=Kernel::time;
+        require(forceCoherence(f.p()),"new lease lost confirmation");
         for(int dt:repairSchedule){
             if(second&&dt>=second)f.overwrite(25,type);
-            f.scanAt(base+6000+dt);
-            if(second&&dt>=second){require(f.drift==2&&f.reacquires==1&&f.p().coherenceEpisodes==2,"post repair second drift miss/budget reset");
+            f.scanAt(recommitted+dt);
+            if(second&&dt>=second){require(f.drift==2&&f.reacquires==2&&f.p().revokeEpisodes==2,"post reacquire second drift miss/budget reset");
                 f.settle();f.managed();require(forceCoherence(f.p()),"reacquire lost new window");seconds++;break;}
         }
-        if(!second)require(!forceCoherence(f.p())&&f.p().coherenceEpisodes==1,"repair confirmation did not expire");
+        if(!second){for(int dt:coherenceSchedule)f.scanAt(recommitted+dt);
+            require(!forceCoherence(f.p())&&f.p().revokeEpisodes==1,"lease confirmation did not expire");}
         f.background();f.empty();
     }
     for(int type=0;type<3;type++){
@@ -522,7 +538,7 @@ void horizon(){
         int g=Kernel::groupReads,a=Kernel::affinityReads,id=Kernel::identityReads,u=Kernel::uidReads,s=f.scans;
         for(int dt:coherenceSchedule)f.scanAt(base+dt);
         int groups=Kernel::groupReads-g,affinity=Kernel::affinityReads-a,identities=Kernel::identityReads-id,users=Kernel::uidReads-u;
-        require(f.scans-s==14&&groups==5600&&affinity==5600,"bounded scan/group/affinity count");
+        require(f.scans-s==14&&groups==8400&&affinity==8400,"bounded scan/group/affinity count");
         std::cout<<"ACTIVE_200_THREADS:SCANS="<<f.scans-s<<";GROUP_READS="<<groups<<";AFFINITY_GET="<<affinity<<";IDENTITY_READS="<<identities<<";UID_READS="<<users<<'\n';
         auto original=f.p().activated;auto commits=f.journal->commits;auto moves=Kernel::moves+Kernel::affinities;
         // Same production primary activation contract: duplicates do not arm.
@@ -548,18 +564,18 @@ void liveness(){
             if(t>=250)Kernel::tasks.at(44).mask=255;
             if(t>=1200)f.uniform("/top-app",255);
             if(old){ // Exact V56 scheduling semantics, using real Placement::acquire.
-                auto& p=f.p();if(p.acquiring&&p.next<=t){
+                auto& p=f.p();if(p.acquiring()&&p.next<=t){
                     auto result=t>750?BaselineResult::DEFER:f.acquire(p);
                     require(result!=BaselineResult::STABLE,"old exact-class unexpectedly committed");
-                    if(t>=750){f.release(p);p.acquireBlocked=true;f.baselineBlocked();}
+                    if(t>=750){f.release(p);p.transition(Ownership::LOCAL_BLOCKED);f.baselineBlocked();}
                     else {constexpr int due[]={100,250,500,750};for(int next:due)if(next>t){p.next=next;break;}}
                 }
             }else f.tick(t);
-            if(!f.p().managed)f.noOwnership();
-            if(!old&&t<=1000)require(!f.p().acquireBlocked&&!f.blockerAttempts,"fast deadline disabled liveness");
+            if(!f.p().managed())f.noOwnership();
+            if(!old&&t<=1000)require(!f.p().acquireBlocked()&&!f.blockerAttempts,"fast deadline disabled liveness");
         }
-        if(old){require(f.p().acquireBlocked&&f.probes==5&&!f.p().acquiring,"old sticky gap absent");f.noOwnership();}
-        else{require(f.p().managed&&f.blockerAttempts==0,"wake01 eventual miss");
+        if(old){require(f.p().acquireBlocked()&&f.probes==5&&!f.p().acquiring(),"old sticky gap absent");f.noOwnership();}
+        else{require(f.p().managed()&&f.blockerAttempts==0,"wake01 eventual miss");
             require(f.journal->leases.at(42).savedMask==255&&f.p().ownershipFloor==10150,"late safe commit floor");
             f.scanAt(1500);f.managed();require(forceCoherence(f.p()),"late commit lost V56 coherence");}
         f.background();f.empty();
@@ -568,7 +584,7 @@ void liveness(){
     for(int late:{751,764,780,825}){
         AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);
         for(int t:{107,263,519,late,1012,1060,1257,1517,2020,2570,3010}){
-            bool due=f.p().acquiring&&f.p().next<=t;auto probes=f.probes;f.tick(t);
+            bool due=f.p().acquiring()&&f.p().next<=t;auto probes=f.probes;f.tick(t);
             require(f.probes-probes==(due?1:0),"late timer skipped probe/catch-up storm");f.noOwnership();
             if(t<=1060)require(!f.blockerAttempts,"jitter became terminal at SLA");
         }
@@ -583,20 +599,20 @@ void liveness(){
         require(f.p().next<=first,"candidate fixture needs a due timer");
         for(auto& [_,t]:Kernel::tasks){t.group="/top-app";t.mask=255;}
         f.tick(first);f.noOwnership();require(f.p().baselineCandidate.firstStableAt==first,"late candidate not observed");
-        while(f.p().acquiring){auto due=f.p().next;require(due<=3500,"candidate cap moved");f.tick(due);if(!f.p().managed)f.noOwnership();}
-        require(f.p().managed&&Kernel::time==first+250&&!f.blockerAttempts,"250ms confirmation opportunity missing");f.background();
+        while(f.p().acquiring()){auto due=f.p().next;require(due<=3500,"candidate cap moved");f.tick(due);if(!f.p().managed())f.noOwnership();}
+        require(f.p().managed()&&Kernel::time==first+250&&!f.blockerAttempts,"250ms confirmation opportunity missing");f.background();
     }
     // A changed candidate in the final extension cannot buy a second extension.
     {AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);
         while(f.p().next<3000){f.tick(f.p().next);f.noOwnership();}
         Kernel::tasks.at(43).mask=255;f.tick(3000);f.noOwnership();require(f.p().next==3250,"final candidate opportunity");
         for(auto& [_,t]:Kernel::tasks)t.mask=31;
-        f.tick(3250);f.noOwnership();require(f.p().acquireBlocked&&f.blockerAttempts==1&&!f.p().next,"moving final extension");f.background();}
+        f.tick(3250);f.noOwnership();require(f.p().acquireBlocked()&&f.blockerAttempts==1&&!f.p().next,"moving final extension");f.background();}
     {AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);
         while(f.p().next<3000){f.tick(f.p().next);f.noOwnership();}
         Kernel::tasks.at(43).mask=255;f.tick(3250);f.noOwnership();
         require(f.p().next==3500&&f.p().acquireFinalConfirmation,"absolute final confirmation missing");
-        f.tick(3500);require(f.p().managed&&!f.blockerAttempts,"absolute cap safe commit miss");f.background();}
+        f.tick(3500);require(f.p().managed()&&!f.blockerAttempts,"absolute cap safe commit miss");f.background();}
     // Background/null/death/reuse during SELF_HEAL_SETTLE cancel without writes.
     for(int mode=0;mode<4;mode++){
         AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);
@@ -605,12 +621,12 @@ void liveness(){
         if(mode==1){f.absent=true;f.primary();}
         if(mode==2){Kernel::tasks.clear();f.tick(1500);}
         if(mode==3){Kernel::tasks.at(42).birth++;f.tick(1500);}
-        f.noOwnership();for(auto& [_,p]:f.states)require(!p.acquiring&&!p.next,"settlement cancel timer leak");
+        f.noOwnership();for(auto& [_,p]:f.states)require(!p.acquiring()&&!p.next,"settlement cancel timer leak");
     }
     // Full 200-task persistent episode: count actual read boundaries, not zero cost.
     {AcquisitionFixture f;for(int tid=44;tid<242;tid++)Kernel::tasks[tid]={10,"/top-app",255};Kernel::tasks.at(43).mask=67;
         int g=Kernel::groupReads,a=Kernel::affinityReads,id=Kernel::identityReads,u=Kernel::uidReads;
-        f.start(2);while(f.p().acquiring){f.noOwnership();f.tick(f.p().next);}f.noOwnership();
+        f.start(2);while(f.p().acquiring()){f.noOwnership();f.tick(f.p().next);}f.noOwnership();
         require(f.probes==11&&f.blockerAttempts==1,"functional episode not finite");
         std::cout<<"SETTLE_200_TASKS:PROBES="<<f.probes<<";GROUP_READS="<<Kernel::groupReads-g<<";AFFINITY_GET="<<Kernel::affinityReads-a<<";IDENTITY_READS="<<Kernel::identityReads-id<<";UID_READS="<<Kernel::uidReads-u<<'\n';
         auto reads=Kernel::reads;for(int t=4000;t<5000;t++)f.tick(t);require(reads==Kernel::reads&&!f.p().next,"terminal idle polling");f.background();}
@@ -625,8 +641,8 @@ void liveness(){
             f.initialCommits=f.journal->commits;Kernel::moves=Kernel::affinities=0;int probes=f.probes;
             int source=i%4;
             if(source!=1)f.primary();if(source!=2)f.scene.accept(i+100,base);
-            f.tick(base);if(!f.p().managed)f.noOwnership();
-            while(f.p().acquiring){
+            f.tick(base);if(!f.p().managed())f.noOwnership();
+            while(f.p().acquiring()){
                 int64_t due=f.p().next,t=due+random()%101;
                 if(t-base>=settled)f.uniform("/top-app",255);
                 // A birth/death in a probe is never guessed as an inherited child.
@@ -638,10 +654,10 @@ void liveness(){
                     }};
                 }
                 auto before=f.probes;f.tick(t);require(f.probes==before+1,"random late probe skipped");
-                if(!f.p().managed)f.noOwnership();
-                require(!f.p().acquireBlocked,"safe settlement became sticky");
+                if(!f.p().managed())f.noOwnership();
+                require(!f.p().acquireBlocked(),"safe settlement became sticky");
             }
-            require(f.p().managed&&f.blockerAttempts==0,"random eventual acquisition miss");
+            require(f.p().managed()&&f.blockerAttempts==0,"random eventual acquisition miss");
             require(f.journal->leases.at(42).savedMask==255&&f.journal->entries.size()==Kernel::tasks.size(),"random baseline/late child guess");
             maxProbes=std::max(maxProbes,f.probes-probes);lateRecovered+=Kernel::time-base>1000;
             f.scanAt(Kernel::time);f.managed();f.background();f.empty();Kernel::tasks.erase(58);

@@ -127,8 +127,15 @@ be managed USER0 apps are rejected before any proc identity/cmdline/UID read.
 
 Binder callbacks only validate arguments, queue raw events and notify eventfd.
 The reactor validates current PID generation/UID and package authority before
-acquisition; current ActivityManager snapshots, not delayed callback values,
-decide foreground state. Death events cannot discard a live matching generation.
+acquisition. Accepted system_server top-resumed scene identity decides foreground
+ownership; ActivityManager remains the process-discovery source and may lag.
+The private registered-owner-only scene query runs on events or physical revoke,
+never periodically. Death events cannot discard a live matching generation.
+Ownership is an explicit Android/acquiring/owned/revoke-pending/releasing/locally
+blocked lifecycle. Observed physical takeover forbids new placement before scene
+arbitration. Release preserves new Android groups/masks and cleans only proven
+last-applied affinity residue. Same-scene reacquisition first closes the old
+journal lease and repeats the temporal baseline, with two episodes per scene.
 Permission failures produce a private, bounded `runtime_blocker.v1` diagnostic:
 at most one write attempt per allowlisted reason per daemon lifetime, no process
 or package names. It is retained evidence, not a continuous health indicator.

@@ -21,7 +21,6 @@ struct BackgroundFixture:AcquisitionFixture {
     void setup(int n){
         for(int tid=44;tid<42+n;tid++)Kernel::tasks[tid]={10,"/top-app",255};
         start(2);place();require(p().tasks.size()==static_cast<size_t>(n),"initial committed count");
-        p().coherenceReleasing=true;
         Kernel::beforeWrite=[this](int tid,bool move,Mask mask){
             require(!reused.count(tid),"STALE_PID");const auto& t=Kernel::tasks.at(tid);
             require(!journal->leases.empty(),"write without live lease");
@@ -32,10 +31,10 @@ struct BackgroundFixture:AcquisitionFixture {
     void complete(){
         for(int dt:{0,50,100,250,500}){
             Kernel::time=250+dt;
-            if(p().backgroundReleasing&&!p().releaseParked&&p().next<=Kernel::time){release(p());passes++;}
+            if(p().backgroundReleasing()&&!p().releaseParked&&p().next<=Kernel::time){release(p());passes++;}
         }
         Kernel::hook={};
-        require(!p().backgroundReleasing&&!p().releaseParked&&!p().releaseBlocked,"bounded normal release unfinished");empty();
+        require(!p().backgroundReleasing()&&!p().releaseParked&&!p().releaseBlocked,"bounded normal release unfinished");empty();
         for(auto& [_,t]:Kernel::tasks)require(t.group.rfind("/ZUIopt",0)!=0,"OWNER_LEAK");
         owner->release(p(),ReleaseCause::CRASH_RECOVERY,Kernel::time);
         owner->release(p(),ReleaseCause::CRASH_RECOVERY,Kernel::time);owner->cleanup();
@@ -77,17 +76,17 @@ void deterministic(){
             if(open&&path=="/proc/42/stat"&&++reads==2){Kernel::hook={};handoff(100,2);}
         };f.background();f.complete();require(reads>=2,"late generation-read handoff not injected");cases++;}
     {BackgroundFixture f;f.setup(200);Kernel::stuck=true;f.background();
-        require(f.p().backgroundReleasing&&f.p().next==300&&!f.p().acquiring&&!forceCoherence(f.p()),"release state cancellation");
+        require(f.p().backgroundReleasing()&&f.p().next==300&&!f.p().acquiring()&&!forceCoherence(f.p()),"release state cancellation");
         auto moves=Kernel::moves;for(int i=0;i<20;i++)f.background();require(Kernel::moves==moves,"duplicate release busy loop");
         Kernel::stuck=false;f.complete();cases++;}
     {BackgroundFixture f;f.setup(200);Kernel::stuck=true;
-        reconcileSnapshot(std::vector<Snapshot>{},f.states,f);require(f.states.count(42)&&f.p().backgroundReleasing,"pending state erased");
+        reconcileSnapshot(std::vector<Snapshot>{},f.states,f);require(f.states.count(42)&&f.p().backgroundReleasing(),"pending state erased");
         Kernel::stuck=false;f.complete();cases++;}
     // Safe external observation delay expires locally; duplicates do not poll.
     // Catch cleanup retains durable evidence instead of throwing status3.
     {BackgroundFixture f;f.setup(200);handoff(100,2);Kernel::tasks.at(43).mask=0;f.background();
         for(int dt:{50,100,250,500}){Kernel::time=250+dt;f.release(f.p());}
-        require(f.p().releaseParked&&!f.p().releaseBlocked&&f.p().backgroundReleasing&&!f.journal->entries.empty(),"external delay must retain journal");
+        require(f.p().releaseParked&&!f.p().releaseBlocked&&f.p().backgroundReleasing()&&!f.journal->entries.empty(),"external delay must retain journal");
         auto reads=Kernel::reads,writes=Kernel::moves+Kernel::affinities;
         for(int i=0;i<100;i++)f.release(f.p());
         require(Kernel::reads==reads&&Kernel::moves+Kernel::affinities==writes,"blocked release idle polling");

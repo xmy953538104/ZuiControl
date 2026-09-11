@@ -22,7 +22,9 @@ class ProductionContracts(unittest.TestCase):
         self.assertEqual(scan.count('activitySnapshot()'),1)
         self.assertIn('validateManagedSnapshot(s,config,*this).start==p.generation',scan)
         self.assertIn('if(events.authorityCurrent(epoch))acceptedAuthority=epoch',daemon)
-        self.assertLess(owner.index('if(authority)authority->drift()'),owner.index('bool exhausted=p.coherenceEpisodes'))
+        self.assertIn('p.transition(Ownership::REVOKE_PENDING);p.next=0;',owner)
+        self.assertIn('catch(const PhysicalRevoke&)',scan)
+        self.assertNotIn('authority->drift()',owner)
         self.assertIn('fence(authority);placed=setAffinity(tid,m)',owner)
         self.assertIn('write(path+"/tasks",std::to_string(tid),authority)',owner)
         self.assertIn('if(placed)t.appliedMask=m;',owner)
@@ -61,17 +63,18 @@ class ProductionContracts(unittest.TestCase):
         self.assertLess(owner.index('time-candidate.firstStableAt<250'),owner.index('const auto floor=proc.floor()'))
         self.assertIn('if(result!=BaselineResult::STABLE){p.baselineCandidate={};return result;}',owner)
         self.assertIn('!forceCoherence(p)&&t.appliedMask==m',owner)
-        self.assertIn('p.coherenceEpisodes>=2',owner)
+        self.assertIn('p.revokeEpisodes>2',core)
         self.assertIn('coherenceSchedule={100,250,500,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000}',core)
         self.assertIn('repairSchedule={100,250,500,1000}',core)
         self.assertIn('finishScan(p,now(),coherence==CoherenceResult::REPAIR)',daemon)
         self.assertNotIn('authorityEvent=true;',daemon)
         self.assertLess(daemon.index('verifyCoherence(p,start,&authority)'),daemon.index('placement->prepare(p,&authority)'))
         self.assertIn('authorityEvent=sceneBurst.step==0;',daemon)
-        self.assertIn('activateAuthority(p,wanted,authorityEvent,now(),*this);',daemon)
+        self.assertIn('arbitrateLease(p,currentScene,now(),*this);',daemon)
         self.assertIn('if(newScene)armCoherence(p,time);',core)
         self.assertIn('authorityEvent=outerAuthority;',daemon)
-        self.assertIn('if(p.coherenceReleasing){relinquishCoherence(p);',owner)
+        self.assertNotIn('coherenceReleasing',owner)
+        self.assertIn('p.transition(Ownership::RELEASING)',owner)
         self.assertIn('ownership_contested',read('native/zuiopt/ZUIopt_lifecycle.h'))
 
     def test_acquisition_zero_write_and_local_bounded_deadlines(self):
@@ -81,8 +84,8 @@ class ProductionContracts(unittest.TestCase):
         self.assertNotIn('?BaselineResult::DEFER:runtime.acquire(p)',core)
         self.assertIn('confirmation<=p.acquireStarted+3500',core)
         self.assertIn('!p.acquireFinalConfirmation&&valid',core)
-        self.assertIn('if(p.backgroundReleasing||p.managed||p.acquiring||p.acquireBlocked)return;',core)
-        self.assertIn('if(!p.acquiring||p.next>time)return;',core)
+        self.assertIn('if(p.backgroundReleasing()||p.managed()||p.acquiring()||p.acquireBlocked())return;',core)
+        self.assertIn('if(!p.acquiring()||p.next>time)return;',core)
         owner=read('native/zuiopt/ZUIopt_owner.h')
         probe=owner.split('BaselineResult probeBaseline(',1)[1].split('class Journal {',1)[0]
         for token in ('journal.','setAffinity(', 'write(', 'p.managed=', 'p.ownershipFloor='):
@@ -90,16 +93,16 @@ class ProductionContracts(unittest.TestCase):
         acquire=owner.split('BaselineResult acquire(ProcessState& p,Proc& proc)',1)[1].split('void prepare(',1)[0]
         self.assertLess(acquire.index('probeBaseline('),acquire.index('proc.floor()'))
         self.assertLess(acquire.index('proc.floor()'),acquire.index('journal.leases['))
-        self.assertLess(acquire.index('journal.commit()'),acquire.index('p.managed=true'))
+        self.assertLess(acquire.index('journal.commit()'),acquire.index('p.transition(Ownership::ZUIOPT_OWNED)'))
         release=owner.split('void release(ProcessState& p,ReleaseCause',1)[1].split('void cleanup()',1)[0]
-        self.assertLess(release.index('if(!p.managed)'),release.index('prepare(p)'))
-        pending=release.split('if(!p.managed)',1)[1].split('return;}',1)[0]
+        self.assertNotIn('prepare(p)',release)
+        pending=release.split('if(!p.managed())',1)[1].split('return;}',1)[0]
         for token in ('prepare(', 'journal.commit(', 'restore(', 'write(', 'identity('):self.assertNotIn(token,pending)
         daemon=read('native/zuiopt/ZUIopt_daemon.h')
         activate=daemon.split('void activate(',1)[1].split('ProcessState* resolve(',1)[0]
         for token in ('group(', 'affinity(', 'ownershipFloor', 'managed=true'):self.assertNotIn(token,activate)
         self.assertIn('advanceAcquisition(p,now(),*this)',daemon)
-        self.assertIn('if((p.managed||p.acquiring)&&!p.releaseParked)',daemon)
+        self.assertIn('if((p.writable()||p.backgroundReleasing()||p.acquiring())&&!p.releaseParked)',daemon)
         lifecycle=read('native/zuiopt/ZUIopt_lifecycle.h')
         self.assertIn('inheritance_baseline_unstable',lifecycle)
 
@@ -129,7 +132,7 @@ class ProductionContracts(unittest.TestCase):
         self.assertIn('processEvent(e,states,*this)',daemon)
         self.assertIn('processName(pid,true)',daemon)
         self.assertIn('catch(const ProcError& error){if(!error.permission())throw;procBlocked(error);',daemon)
-        self.assertIn('p->activity_foreground=s.state==2&&(s.flags&4)!=0;',events)
+        self.assertIn('p->activity_foreground=runtime.sceneForeground(*p,s.state==2&&(s.flags&4)!=0);',events)
         self.assertNotIn('activity_foreground=e.value',events)
         self.assertIn('id.start==p.generation&&user==p.uid',events)
         binder=read('native/zuiopt/ZUIopt_binder.h')

@@ -291,7 +291,7 @@ public final class ZuiControlService extends Binder {
                     + generation + " package=" + pkg + " userId=" + userId);
             mUperfScenePolicy.onTopResumedChanged(
                     pkg, userId, "topResumedValid", eventNanos);
-            mZuioptScene.changed();
+            mZuioptScene.changed(pkg, userId);
             publishState();
             return;
         }
@@ -349,7 +349,7 @@ public final class ZuiControlService extends Binder {
         }
         mUperfScenePolicy.onTopResumedChanged(pkg, userId, event,
                 SystemClock.elapsedRealtimeNanos());
-        mZuioptScene.changed();
+        mZuioptScene.changed(pkg, userId);
         publishState();
     }
 
@@ -548,7 +548,7 @@ public final class ZuiControlService extends Binder {
     @Override
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
         try {
-            if (code >= ZuioptSceneAuthority.REGISTER && code <= ZuioptSceneAuthority.ACK) {
+            if (code >= ZuioptSceneAuthority.REGISTER && code <= ZuioptSceneAuthority.CURRENT) {
                 if ((flags & IBinder.FLAG_ONEWAY) != 0) return false;
                 data.enforceInterface(DESCRIPTOR);
                 // App/shell cannot register or acknowledge the root task owner's channel.
@@ -561,8 +561,9 @@ public final class ZuiControlService extends Binder {
                 int pid = Binder.getCallingPid();
                 if (code == ZuioptSceneAuthority.REGISTER) mZuioptScene.register(callback, pid);
                 else if (code == ZuioptSceneAuthority.UNREGISTER) mZuioptScene.unregister(callback, pid);
-                else mZuioptScene.ack(callback, pid, seq);
+                else if (code == ZuioptSceneAuthority.ACK) mZuioptScene.ack(callback, pid, seq);
                 reply.writeNoException();
+                if (code == ZuioptSceneAuthority.CURRENT) mZuioptScene.writeCurrent(callback, pid, reply);
                 return true;
             }
             if (code >= 1 && code <= TX_NOTIFY_CONTROL_REQUEST) {

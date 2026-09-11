@@ -9,16 +9,16 @@ struct AuthorityFixture:ReentryFixture {
     AuthorityFence* active=nullptr;
     ~AuthorityFixture(){close(fd);}
     void setup(int n=200){
-        ReentryFixture::setup(n);p().coherenceReleasing=false;
+        ReentryFixture::setup(n);
         owner->apply(p(),43,p().tasks.at(43),0x1c,"render");
         owner->apply(p(),44,p().tasks.at(44),0x80,"game");
         raw.pushScene(fd,9);raw.takeScene();accepted=raw.authorityEpoch();
         auto previous=Kernel::beforeWrite;
         Kernel::beforeWrite=[&,previous](int tid,bool move,Mask mask){
             if(scanning)require(active&&!active->stale,"PLACEMENT_AFTER_STALE_AUTHORITY");
-            if(!scanning&&!p().backgroundReleasing){previous(tid,move,mask);return;}
+            if(!scanning&&!p().backgroundReleasing()){previous(tid,move,mask);return;}
             require(journal->entries.count(tid)&&journal->same(journal->entries.at(tid)),"STALE_PID_OR_UNJOURNALED_WRITE");
-            if(p().backgroundReleasing&&move)require(Kernel::tasks.at(tid).group.rfind("/ZUIopt",0)==0,"UNSAFE_CPUSET_REWRITE");
+            if(p().backgroundReleasing()&&move)require(Kernel::tasks.at(tid).group.rfind("/ZUIopt",0)==0,"UNSAFE_CPUSET_REWRITE");
         };
     }
     void transition(int mode,int percent,int kind){
@@ -57,6 +57,7 @@ struct AuthorityFixture:ReentryFixture {
             if(point==2)inject();guard.check();
             if(point==3)Kernel::hook=[&](const std::string& path){if(path=="affinity/43"){Kernel::hook={};inject();}};
             auto result=owner->verifyCoherence(p(),Kernel::time,&guard);guard.check();
+            if(result==CoherenceResult::REVOKED)throw PhysicalRevoke{};
             require(result==CoherenceResult::CLEAN,"unexpected pretransition drift");
             if(point==4)inject();guard.check();owner->prepare(p(),&guard);guard.check();
             if(point==5)Kernel::hook=[&](const std::string& path){if(path=="/dev/cpuset/ZUIopt/80/tasks"){Kernel::hook={};inject();}};
@@ -66,8 +67,10 @@ struct AuthorityFixture:ReentryFixture {
                 owner->apply(p(),tid,t,0x80,"race",&guard);
             }
             finishScan(p(),Kernel::time);
+        }catch(const PhysicalRevoke&){
+            aborts++;fresh++;scanning=false;p().activity_foreground=false;release(p());
         }catch(const StaleAuthorityScan&){
-            aborts++;p().coherenceReleasing=false;p().coherenceEpisodes=episodes;
+            aborts++;p().coherenceEpisodes=episodes;
             scanning=false;
             if(guard.background){p().activity_foreground=false;release(p());}
         }
@@ -76,7 +79,7 @@ struct AuthorityFixture:ReentryFixture {
         require(fresh<=1,"DRIFT_SNAPSHOT_LOOP");
         reactor();
         for(int dt:{50,100,250,500})tick(250+dt);
-        require(!p().managed&&!p().backgroundReleasing&&!p().releaseBlocked,"OWNER_LEAK");
+        require(!p().managed()&&!p().backgroundReleasing()&&!p().releaseBlocked,"OWNER_LEAK");
         require(journal->entries.empty()&&journal->leases.empty()&&!fs::exists(Kernel::root+"/state/owner_state.v1"),"JOURNAL_NOT_CLOSED");
         for(auto& [_,t]:Kernel::tasks)require(t.group.rfind("/ZUIopt",0)!=0,"PHYSICAL_OWNER_LEAK");
         require(!fs::exists(Kernel::root+"/state/fatal.v1")&&!fs::exists(Kernel::root+"/state/runtime_blocker.v1"),"RECOVERABLE_FATAL_OR_BLOCKER");
@@ -84,9 +87,9 @@ struct AuthorityFixture:ReentryFixture {
     }
 };
 void authorityDeterministic(){
-    // V58 no-fence path: same physical observation, no invented device TID.
+    // Physical-first no-event path now revokes instead of entering the V59 fatal.
     {AuthorityFixture f;f.setup();f.transition(0,100,2);
-        expectFailure([&]{f.owner->verifyCoherence(f.p(),250);},"coherence unresolved external affinity");}
+        require(f.owner->verifyCoherence(f.p(),250)==CoherenceResult::REVOKED&&f.p().revoked(),"physical revocation absent");}
     auto daemon=getpid();
     for(int point=0;point<7;point++)for(int mode:{0,1,2,3,5}){
         AuthorityFixture f;f.setup();f.scan(point,mode,100,2,100);
@@ -95,8 +98,8 @@ void authorityDeterministic(){
     {AuthorityFixture f;f.setup();f.scan(3,4);require(f.fresh==1,"fresh background authority missing");}
     {AuthorityFixture f;f.setup();handoff(100,2);
         AuthorityFence guard{[&]{return f.raw.authorityCurrent(f.accepted);},[&]{f.fresh++;return true;}};
-        expectFailure([&]{f.owner->verifyCoherence(f.p(),250,&guard);},"coherence unresolved external affinity");
-        require(f.fresh==1&&!f.journal->entries.empty(),"SAME_AUTHORITY_DRIFT_WEAKENED");}
+        require(f.owner->verifyCoherence(f.p(),250,&guard)==CoherenceResult::REVOKED,"same authority must revoke first");
+        require(f.fresh==0&&f.p().revoked()&&!f.journal->entries.empty(),"SAME_AUTHORITY_DRIFT_IGNORED");}
     {RawEvents raw;int fd=eventfd(0,EFD_CLOEXEC|EFD_NONBLOCK);raw.pushScene(fd,10);
         auto epoch=raw.authorityEpoch();require(!raw.authorityCurrent(epoch),"pending scene accepted as reconciled");
         raw.pushScene(fd,10);require(raw.authorityEpoch()==epoch,"duplicate scene invalidation");raw.takeScene();
@@ -104,7 +107,7 @@ void authorityDeterministic(){
         for(int i=0;i<10000;i++)require(raw.authorityCurrent(epoch),"idle epoch changed");
         uint64_t value;require(::read(fd,&value,sizeof(value))==sizeof(value)&&value==1,"idle extra wake");
         require(::read(fd,&value,sizeof(value))<0&&errno==EAGAIN,"idle polling notification");close(fd);}
-    puts("V58_NO_FENCE_A01=SCAN_COHERENCE_FATAL;V59_A01_200_TASKS=PASS;EXACT_DEVICE_TID=NOT_PROVEN;RACE_A_TO_F=PASS;EVENT_SOURCE_VARIANTS=PASS;FRESH_DRIFT_AUTHORITY_REVALIDATION=PASS;SAME_AUTHORITY_DRIFT_FAIL_CLOSED=PASS;IDLE_EXTRA_WAKE=0");
+    puts("V59_FATAL_PATH_REPLACED_BY_REVOCATION=PASS;A01_200_TASKS=PASS;EXACT_DEVICE_TID=NOT_PROVEN;RACE_A_TO_F=PASS;EVENT_SOURCE_VARIANTS=PASS;SAME_AUTHORITY_DRIFT_PENDING=PASS;IDLE_EXTRA_WAKE=0");
 }
 void authorityStress(){
     std::mt19937 random(0x59e90c);constexpr int total=2000;

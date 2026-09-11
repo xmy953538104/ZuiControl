@@ -219,38 +219,66 @@ struct BaselineCandidate {
 inline constexpr std::array<int,14> coherenceSchedule={100,250,500,1000,1500,2000,2500,3000,3500,4000,4500,5000,5500,6000};
 inline constexpr std::array<int,4> repairSchedule={100,250,500,1000};
 enum class ReleaseCause {AUTHORITY_BACKGROUND,PROCESS_DEATH,RELOAD_OR_CONTROLLED_STOP,CRASH_RECOVERY,COHERENCE_RELINQUISH};
+enum class Ownership {ANDROID_OWNED,ACQUIRING,ZUIOPT_OWNED,REVOKE_PENDING,RELEASING,LOCAL_BLOCKED};
+inline bool legalOwnershipTransition(Ownership from,Ownership to){
+    if(from==to)return true;
+    switch(from){
+    case Ownership::ANDROID_OWNED:return to==Ownership::ACQUIRING||to==Ownership::LOCAL_BLOCKED;
+    case Ownership::ACQUIRING:return to==Ownership::ANDROID_OWNED||to==Ownership::ZUIOPT_OWNED||to==Ownership::LOCAL_BLOCKED;
+    case Ownership::ZUIOPT_OWNED:return to==Ownership::REVOKE_PENDING||to==Ownership::RELEASING;
+    case Ownership::REVOKE_PENDING:return to==Ownership::RELEASING;
+    case Ownership::RELEASING:return to==Ownership::ANDROID_OWNED;
+    case Ownership::LOCAL_BLOCKED:return to==Ownership::ANDROID_OWNED;
+    }
+    return false;
+}
+struct SceneAuthority {
+    int64_t sequence=-1;int user=0;bool valid=false;std::string package;
+    bool known()const{return sequence>=0;}
+    bool wants(const std::string& pkg,int uid)const{return known()&&valid&&user==uid/100000&&package==pkg;}
+};
+struct PhysicalRevoke {};
 inline constexpr std::array<int,5> backgroundReleaseSchedule={0,50,100,250,500};
 struct ProcessState {
     int pid=0,uid=0;std::string name,package;uint64_t generation=0;
-    bool activity_foreground=false,alive=true,managed=false;int foreground_service_state=0;
+    bool activity_foreground=false,alive=true;int foreground_service_state=0;
+    Ownership ownership=Ownership::ANDROID_OWNED;
+    void transition(Ownership next){require(legalOwnershipTransition(ownership,next),"illegal ownership transition");ownership=next;}
+    bool managed()const{return ownership==Ownership::ZUIOPT_OWNED||ownership==Ownership::REVOKE_PENDING||ownership==Ownership::RELEASING;}
+    bool acquiring()const{return ownership==Ownership::ACQUIRING;}
+    bool acquireBlocked()const{return ownership==Ownership::LOCAL_BLOCKED;}
+    bool backgroundReleasing()const{return ownership==Ownership::RELEASING;}
+    bool revoked()const{return ownership==Ownership::REVOKE_PENDING;}
+    bool writable()const{return ownership==Ownership::ZUIOPT_OWNED;}
+    int64_t leaseScene=-1;unsigned revokeEpisodes=0;
     // managed means a durable lease, never just a foreground acquisition request.
-    bool acquiring=false,acquireBlocked=false,acquireFinalConfirmation=false;int64_t acquireStarted=0;size_t acquireStep=0;
+    bool acquireFinalConfirmation=false;int64_t acquireStarted=0;size_t acquireStep=0;
     BaselineCandidate baselineCandidate;uint64_t acquisitionEpoch=0;
-    unsigned coherenceEpisodes=0;bool coherenceReleasing=false;
-    bool backgroundReleasing=false,releaseParked=false,releaseBlocked=false,releaseRearmed=false,releaseAuthorityForeground=false;
+    unsigned coherenceEpisodes=0;
+    bool releaseParked=false,releaseBlocked=false,releaseRearmed=false,releaseAuthorityForeground=false;
     int64_t releaseStarted=0;size_t releaseStep=0;
     int64_t repairedAt=0;size_t repairStep=repairSchedule.size();
     int64_t activated=0,next=0;uint64_t ownershipFloor=0;size_t burst=0;std::string androidGroup;Mask androidMask=0;
     std::map<int,Task> tasks;
 };
 inline void beginAcquisition(ProcessState& p,int64_t time){
-    if(p.backgroundReleasing||p.managed||p.acquiring||p.acquireBlocked)return;
+    if(p.backgroundReleasing()||p.managed()||p.acquiring()||p.acquireBlocked())return;
     p.baselineCandidate={};++p.acquisitionEpoch;
-    p.acquiring=true;p.acquireFinalConfirmation=false;p.acquireStarted=time;p.acquireStep=0;p.next=time;
+    p.transition(Ownership::ACQUIRING);p.acquireFinalConfirmation=false;p.acquireStarted=time;p.acquireStep=0;p.next=time;
 }
 inline void discardAcquisition(ProcessState& p){
-    require(!p.managed,"discard committed ownership");
+    require(!p.managed(),"discard committed ownership");
     for(auto& [_,t]:p.tasks)require(!t.owned,"uncommitted owned task");
-    p.tasks.clear();p.acquiring=false;p.acquireFinalConfirmation=false;p.acquireStarted=0;p.acquireStep=0;p.next=0;
+    p.tasks.clear();p.transition(Ownership::ANDROID_OWNED);p.acquireFinalConfirmation=false;p.acquireStarted=0;p.acquireStep=0;p.next=0;
     p.androidGroup.clear();p.androidMask=0;p.ownershipFloor=0;
     p.baselineCandidate={};p.burst=coherenceSchedule.size();p.repairStep=repairSchedule.size();
 }
 // Reuse the finite discovery deadlines; never arm from a periodic snapshot.
 inline void armCoherence(ProcessState& p,int64_t time){
-    if(!p.managed||p.backgroundReleasing)return;
+    if(!p.writable())return;
     p.activated=time;p.burst=0;p.next=time;p.repairStep=repairSchedule.size();
 }
-inline bool forceCoherence(const ProcessState& p){return p.managed&&!p.backgroundReleasing&&(p.burst<coherenceSchedule.size()||p.repairStep<repairSchedule.size());}
+inline bool forceCoherence(const ProcessState& p){return p.writable()&&(p.burst<coherenceSchedule.size()||p.repairStep<repairSchedule.size());}
 inline void finishScan(ProcessState& p,int64_t time,bool repaired=false){
     // Arm only after successful placement; keep the original horizon and episode budget.
     if(repaired){p.repairedAt=time;p.repairStep=0;}
@@ -263,9 +291,10 @@ inline void finishScan(ProcessState& p,int64_t time,bool repaired=false){
 // Shared by the real reactor and native lifecycle fixtures. No observation or
 // placement here: a fresh authority can only resume the OLD durable release.
 template<class Runtime> void activateAuthority(ProcessState& p,bool wanted,bool newScene,int64_t time,Runtime& runtime){
+    if(p.revoked())return; // Only explicit scene arbitration may leave pending.
     bool fresh=wanted&&!p.releaseAuthorityForeground;p.releaseAuthorityForeground=wanted;
     if(!wanted){runtime.release(p);return;}
-    if(p.backgroundReleasing){
+    if(p.backgroundReleasing()){
         // A real foreground edge may arrive just BEFORE the old window parks.
         // Give that epoch its one window too; a delayed scene cannot extend it.
         if(fresh||(p.releaseParked&&newScene)){
@@ -277,15 +306,40 @@ template<class Runtime> void activateAuthority(ProcessState& p,bool wanted,bool 
     if(newScene)armCoherence(p,time);
     beginAcquisition(p,time);
 }
+// One reactor-only arbitration path. Unknown authority parks with the journal
+// intact and no deadline; a scene/primary event will provide the next opportunity.
+template<class Runtime> void arbitrateLease(ProcessState& p,const SceneAuthority& scene,int64_t time,Runtime& runtime){
+    if(!scene.known()){
+        if(p.writable()){p.transition(Ownership::REVOKE_PENDING);p.next=0;}
+        if(p.acquiring())runtime.release(p);
+        return;
+    }
+    bool fresh=p.leaseScene!=scene.sequence;
+    if(fresh){
+        p.leaseScene=scene.sequence;p.revokeEpisodes=0;
+        if(p.acquireBlocked())p.transition(Ownership::ANDROID_OWNED);
+    }
+    bool wanted=p.alive&&scene.wants(p.package,p.uid);
+    p.activity_foreground=wanted;
+    if(p.revoked()){
+        if(wanted)++p.revokeEpisodes;
+        runtime.release(p); // Same foreground still relinquishes BEFORE reacquire.
+    }
+    if(!p.managed()&&wanted&&p.revokeEpisodes>2){
+        if(!p.acquireBlocked()){p.transition(Ownership::LOCAL_BLOCKED);runtime.ownershipBlocked();}
+        return;
+    }
+    activateAuthority(p,wanted,fresh,time,runtime);
+}
 enum class BaselineResult {STABLE,DEFER,STALE};
 template<class Runtime> void advanceAcquisition(ProcessState& p,int64_t time,Runtime& runtime){
     // Performance certification ends at 1000ms; safety/liveness does not.
     static constexpr std::array<int,11> schedule={0,100,250,500,750,1000,1250,1500,2000,2500,3000};
-    if(!p.acquiring||p.next>time)return;
+    if(!p.acquiring()||p.next>time)return;
     // Every due opportunity probes, even when the reactor runs late. Never
     // manufacture DEFER from scheduling latency or replay expired probes.
     auto result=runtime.acquire(p);
-    if(result==BaselineResult::STABLE){require(p.managed&&!p.acquiring,"acquisition commit state");return;}
+    if(result==BaselineResult::STABLE){require(p.managed()&&!p.acquiring(),"acquisition commit state");return;}
     if(result==BaselineResult::STALE){runtime.release(p);p.alive=false;return;}
     auto& candidate=p.baselineCandidate;
     bool valid=!candidate.group.empty()&&candidate.mask&&candidate.generation==p.generation&&
@@ -297,7 +351,7 @@ template<class Runtime> void advanceAcquisition(ProcessState& p,int64_t time,Run
         if(!p.acquireFinalConfirmation&&valid&&confirmation>time&&confirmation<=p.acquireStarted+3500){
             p.acquireFinalConfirmation=true;p.next=confirmation;return;
         }
-        runtime.release(p);p.acquireBlocked=true;runtime.baselineBlocked();return;
+        runtime.release(p);p.transition(Ownership::LOCAL_BLOCKED);runtime.baselineBlocked();return;
     }
     while(p.acquireStep<schedule.size()&&p.acquireStarted+schedule[p.acquireStep]<=time)++p.acquireStep;
     p.next=p.acquireStarted+schedule[p.acquireStep];

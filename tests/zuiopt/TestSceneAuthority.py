@@ -28,6 +28,9 @@ public class Parcel {
  public static Parcel obtain(){return new Parcel();}
  public void writeInterfaceToken(String s){descriptor=s;}
  public void writeLong(long s){seq=s;}
+ public java.util.List<Integer> ints=new java.util.ArrayList<>(); public String pkg;
+ public void writeInt(int v){ints.add(v);}
+ public void writeString(String s){pkg=s;}
  public void recycle(){}
 }''',
 }
@@ -54,23 +57,29 @@ public class SceneFixture {
   ZuioptSceneAuthority s=new ZuioptSceneAuthority();Peer a=new Peer();
   s.register(a,42);check(a.seqs.equals(Arrays.asList(0L)));check(s.stateLines().contains("Sync=pending"));
   s.ack(a,42,0);check(s.stateLines().contains("Sync=ok"));
-  for(int i=0;i<12;i++)s.changed();check(a.seqs.get(12)==12L);
+  for(int i=0;i<12;i++)s.changed("org.example.game", 0);check(a.seqs.get(12)==12L);
   check(s.stateLines().contains("Ack=0")&&s.stateLines().contains("Sync=pending"));
   s.ack(a,42,12);s.ack(a,42,10);check(s.stateLines().contains("Ack=12"));
   rejected(()->s.ack(a,43,12));rejected(()->s.ack(new Peer(),42,12));
   rejected(()->s.ack(a,42,13));rejected(()->s.ack(a,42,-1));
   try{s.register(new Peer(),43);throw new AssertionError();}catch(SecurityException expected){}
-  s.unregister(a,43);s.changed();check(a.seqs.get(13)==13L);
+  s.unregister(a,43);s.changed("org.example.game", 0);check(a.seqs.get(13)==13L);
   IBinder.DeathRecipient stale=a.death;
-  s.unregister(a,42);s.changed();s.changed();check(a.seqs.size()==14);
+  s.unregister(a,42);s.changed("org.example.game", 0);s.changed("org.example.game", 0);check(a.seqs.size()==14);
   Peer b=new Peer();s.register(b,52);check(b.seqs.equals(Arrays.asList(15L)));
-  stale.binderDied();s.changed();check(b.seqs.equals(Arrays.asList(15L,16L)));
+  stale.binderDied();s.changed("org.example.game", 0);check(b.seqs.equals(Arrays.asList(15L,16L)));
   s.ack(b,52,16);b.die();check(s.stateLines().contains("Sync=pending"));
-  s.changed();s.changed();Peer c=new Peer();s.register(c,62);check(c.seqs.equals(Arrays.asList(18L)));
+  s.changed("org.example.game", 0);s.changed("org.example.game", 0);Peer c=new Peer();s.register(c,62);check(c.seqs.equals(Arrays.asList(18L)));
   check(s.stateLines().contains("Ack=-1"));s.ack(c,62,18);check(s.stateLines().contains("Sync=ok"));
-  c.fail=true;s.changed();check(s.stateLines().contains("Sync=pending"));
+  c.fail=true;s.changed("org.example.game", 0);check(s.stateLines().contains("Sync=pending"));
   Peer d=new Peer();s.register(d,72);check(d.seqs.equals(Arrays.asList(19L)));
-  for(int i=0;i<128;i++){s.unregister(d,72);s.changed();s.register(d,72);s.ack(d,72,20L+i);check(s.stateLines().contains("Sync=ok"));}
+  for(int i=0;i<128;i++){s.unregister(d,72);s.changed("org.example.game", 0);s.register(d,72);s.ack(d,72,20L+i);check(s.stateLines().contains("Sync=ok"));}
+  Parcel current=Parcel.obtain();s.writeCurrent(d,72,current);
+  check(current.seq==147 && current.ints.equals(Arrays.asList(0,1)) && current.pkg.equals("org.example.game"));
+  rejected(()->s.writeCurrent(d,73,Parcel.obtain()));
+  s.changed("",0);current=Parcel.obtain();s.writeCurrent(d,72,current);
+  check(current.seq==148 && current.ints.equals(Arrays.asList(0,0)) && current.pkg.isEmpty());
+  System.out.println("SCENE_EXPLICIT_CURRENT_VALID_NULL_USER_REGISTERED_READER=PASS");
   System.out.println("SCENE_REGISTRY_ONEWAY_LATEST_REPLAY_DEATH_REREGISTER_ACK=PASS transitions=147");
  }
 }'''
@@ -96,11 +105,11 @@ class SceneAuthorityTests(unittest.TestCase):
         start = service.index('    private synchronized void handleTopResumedActivityChanged(')
         end = service.index('    public void onFocusedWindowChanged(')
         section = service[start:end]
-        self.assertEqual(section.count('mZuioptScene.changed();'), 2)
+        self.assertEqual(section.count('mZuioptScene.changed(pkg, userId);'), 2)
         valid, revalidate = section.split('    private synchronized void revalidateTopResumed(')
-        self.assertLess(valid.index('acceptValid('), valid.index('mZuioptScene.changed();'))
-        self.assertLess(valid.index('mZuioptScene.changed();'), valid.index('deferNull('))
-        self.assertLess(revalidate.index('REVALIDATE_SAME'), revalidate.index('mZuioptScene.changed();'))
+        self.assertLess(valid.index('acceptValid('), valid.index('mZuioptScene.changed(pkg, userId);'))
+        self.assertLess(valid.index('mZuioptScene.changed(pkg, userId);'), valid.index('deferNull('))
+        self.assertLess(revalidate.index('REVALIDATE_SAME'), revalidate.index('mZuioptScene.changed(pkg, userId);'))
         self.assertIn('Binder.getCallingUid() != 0', service)
         self.assertIn('data.dataAvail() != 0', service)
         self.assertIn('Binder.getCallingPid()', service)

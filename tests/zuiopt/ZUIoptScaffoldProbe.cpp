@@ -23,7 +23,7 @@ void dropDac(){
 }
 ProcessState state(int pid){
     ProcessState p;p.pid=pid;p.uid=uid(pid);p.generation=identity(pid).start;
-    p.package="org.example.zuioptfixture";p.name=processName(pid);p.alive=true;p.managed=true;
+    p.package="org.example.zuioptfixture";p.name=processName(pid);p.alive=true;p.ownership=Ownership::ZUIOPT_OWNED;
     p.androidGroup=ZUIopt::group(pid);p.androidMask=affinity(pid);p.ownershipFloor=p.generation;
     Task task;task.generation=identity(pid,pid).start;p.tasks[pid]=task;return p;
 }

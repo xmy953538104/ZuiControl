@@ -46,6 +46,7 @@ binder_status_t AIBinder_transact(AIBinder* b,transaction_code_t code,AParcel** 
     if(code==1001){AParcel replay{{{'w',SceneWire::seq,{}}},0,true};require(SceneObserver::transact(cb,1,&replay,nullptr)==STATUS_OK,"immediate registration replay");
         if(SceneWire::malformed)(*out)->atoms.push_back(integer(1));}
     else if(code==1003){require(p->atoms[1].kind=='w',"ACK int64 wire type");SceneWire::ack=p->atoms[1].number;}
+    else if(code==1004)(*out)->atoms={{'w',SceneWire::seq,{}},integer(0),integer(1),string("org.example.game")};
     else require(code==1002,"private unregister code");
     delete p;*input=nullptr;return STATUS_OK;
 }
@@ -78,12 +79,12 @@ struct SceneFixture:RuntimeFixture {
         if(journal->entries.erase(p.pid)){journal->leases.erase(p.pid);journal->commit();}
     }
     void activate(ProcessState& p){
-        if(!p.activity_foreground){if(p.managed)release(p);return;}
-        if(!p.managed){
+        if(!p.activity_foreground){if(p.managed())release(p);return;}
+        if(!p.managed()){
             require(ownerModel.emplace(p.pid,p.generation).second,"duplicate owner model");
             OwnerRecord record{p.pid,p.uid,p.pid,p.generation,p.generation,p.package,p.name,"/top-app",1};
             journal->entries[p.pid]=record;journal->leases[p.pid]=record;journal->commit();
-            placements++;p.managed=true;
+            placements++;p.ownership=Ownership::ZUIOPT_OWNED;
         }
     }
     ProcessState* resolve(const Snapshot& s){
@@ -102,10 +103,10 @@ struct SceneFixture:RuntimeFixture {
             if(queue.latestScene(seq)){reconcileSnapshot(snapshot,states,*this);reconciles++;if(burst.complete(time)&&queue.latestScene(seq))ack=seq;}}
     }
     void finish(int64_t base=0){for(int offset:SceneBurst::schedule)tick(base+offset);}
-    bool managed()const{auto p=states.find(42);return p!=states.end()&&p->second.managed&&p->second.generation==generation;}
+    bool managed()const{auto p=states.find(42);return p!=states.end()&&p->second.managed()&&p->second.generation==generation;}
     void verifyModel(){
         journal->entries.clear();journal->leases.clear();journal->load();
-        for(auto& [pid,p]:states)if(p.managed){
+        for(auto& [pid,p]:states)if(p.managed()){
             require(p.generation==generation&&ownerModel.at(pid)==p.generation,"stale PID/model");
             require(journal->entries.at(pid).processStart==p.generation&&journal->leases.at(pid).processStart==p.generation,"journal generation mismatch");
         }
@@ -196,9 +197,10 @@ void registrationWireAndWake(){
     {
         SceneObserver observer([&](int64_t seq){r.scene(seq);});
         require(SceneWire::requests==std::vector<int>{1001}&&r.snapshotQueries==0&&SceneWire::ack==-1,"registration only queues latest, no early ACK");
+        auto current=observer.current();require(current.sequence==81&&current.user==0&&current.valid&&current.package=="org.example.game","explicit scene reply parser");
         r.finish();observer.ack(r.ack);require(SceneWire::ack==81,"reactor completed ACK wire");
     }
-    require(SceneWire::requests==std::vector<int>({1001,1003,1002})&&SceneWire::peers.empty(),"unregister and release callback strong reference");
+    require(SceneWire::requests==std::vector<int>({1001,1004,1003,1002})&&SceneWire::peers.empty(),"unregister and release callback strong reference");
     SceneWire::seq=103;
     {SceneFixture fresh;SceneObserver observer([&](int64_t seq){fresh.scene(seq);});fresh.finish();require(fresh.ack==103&&fresh.managed(),"daemon restart replay latest unregistered scene");}
     SceneWire::malformed=true;SceneWire::requests.clear();bool rejected=false;

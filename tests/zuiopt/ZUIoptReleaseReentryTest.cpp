@@ -26,7 +26,7 @@ struct ReentryFixture:BackgroundFixture {
         Kernel::time=time;
         if(scene.timeout(time)==0){newScene=scene.step==0;reconcileSnapshot(activitySnapshot(),states,*this);newScene=false;scene.complete(time);}
         for(auto& [_,p]:states){
-            if(p.backgroundReleasing){release(p);if(!p.backgroundReleasing)activate(p);continue;}
+            if(p.backgroundReleasing()){release(p);if(!p.backgroundReleasing())activate(p);continue;}
             advanceAcquisition(p,time,*this);
         }
     }
@@ -36,7 +36,7 @@ struct ReentryFixture:BackgroundFixture {
             require(!reused.count(tid),"STALE_PID");
             auto record=journal->entries.find(tid);
             require(record!=journal->entries.end()&&journal->same(record->second),"unauthorized reentry write");
-            if(!p().backgroundReleasing){require(p().managed&&!p().acquiring,"placement before acquisition commit");return;}
+            if(!p().backgroundReleasing()){require(p().managed()&&!p().acquiring(),"placement before acquisition commit");return;}
             auto& current=Kernel::tasks.at(tid);
             if(move)require(current.group.rfind("/ZUIopt",0)==0,"UNSAFE_CPUSET_REWRITE");
             else require(normalGroup(current.group)&&current.mask==p().tasks.at(tid).appliedMask&&mask==255,"UNSAFE_AFFINITY_REWRITE");
@@ -45,7 +45,7 @@ struct ReentryFixture:BackgroundFixture {
     void background(){app.state=19;app.flags=0;primary();}
     void park(){
         Kernel::stuck=true;background();for(int dt:{50,100,250,500})tick(250+dt);
-        require(p().releaseParked&&p().backgroundReleasing&&!p().releaseBlocked&&!p().acquiring,"background timeout not parked");
+        require(p().releaseParked&&p().backgroundReleasing()&&!p().releaseBlocked&&!p().acquiring(),"background timeout not parked");
         require(blockerWrites==0&&!fs::exists(Kernel::root+"/state/runtime_blocker.v1"),"background-only durable blocker");
     }
     void idle(int64_t time){
@@ -61,11 +61,11 @@ struct ReentryFixture:BackgroundFixture {
         if(mode!=1)primary();if(mode!=2)scene.accept(seq,time);tick(time);
     }
     void acquireG07(int64_t time){
-        require(!p().backgroundReleasing&&!p().releaseParked&&!p().releaseBlocked&&p().acquiring,"STICKY_RELEASE_OUTAGE");
+        require(!p().backgroundReleasing()&&!p().releaseParked&&!p().releaseBlocked&&p().acquiring(),"STICKY_RELEASE_OUTAGE");
         require(journal->entries.empty()&&journal->leases.empty(),"old journal not cleared before acquisition");
         for(auto& [_,t]:Kernel::tasks)require(t.group.rfind("/ZUIopt",0)!=0,"old physical owner before acquisition");
-        auto start=p().acquireStarted;tick(time);for(int dt:{100,250,500,750,1000})if(!p().managed)tick(std::max(start+dt,time+dt));
-        require(p().managed&&!p().acquiring,"STICKY_RELEASE_OUTAGE");
+        auto start=p().acquireStarted;tick(time);for(int dt:{100,250,500,750,1000})if(!p().managed())tick(std::max(start+dt,time+dt));
+        require(p().managed()&&!p().acquiring(),"STICKY_RELEASE_OUTAGE");
         owner->prepare(p());
         auto g07=parseConfig("schema 2\nenabled true\nprofile G 2-6\nthread G R exact Render selector=rank:1 20 2-4\nthread G T exact Game selector=rank:1 10 7\npackage exact org.example.game G 100\n",255);
         const auto& profile=*g07.find("org.example.game");
@@ -76,11 +76,11 @@ struct ReentryFixture:BackgroundFixture {
             require(Kernel::tasks.at(tid).mask==(tid==43?0x1c:tid==44?0x80:0x7c),"G07 reentry mask");
         }
         // Cleanly release the new generation/transaction too, then strict cleanup.
-        background();require(!p().backgroundReleasing,"reentry final release");empty();owner->cleanup();
+        background();require(!p().backgroundReleasing(),"reentry final release");empty();owner->cleanup();
     }
 };
 void reentryDeterministic(){
-    {ReentryFixture f;f.setup();f.background();require(!f.p().backgroundReleasing,"A unchanged release");f.empty();}
+    {ReentryFixture f;f.setup();f.background();require(!f.p().backgroundReleasing(),"A unchanged release");f.empty();}
     for(int mode:{0,1,2}){ReentryFixture f;f.setup();f.park();f.idle(900);f.safe();f.idle(950);
         // Missing primary edge: the new scene generation alone must work even
         // when the last delivered foreground boolean is stale/unchanged.
@@ -124,7 +124,7 @@ void reentryStress(){
         if(mode==1&&f.p().releaseParked)f.p().releaseAuthorityForeground=true;
         // Individually lost primary or scene; both delivered in either order.
         if(mode==0&&reverse){f.foreground(time,1);f.primary();}else f.foreground(time,mode);
-        while(f.p().backgroundReleasing&&!f.p().releaseParked){
+        while(f.p().backgroundReleasing()&&!f.p().releaseParked){
             auto due=f.p().next;require(due>Kernel::time&&due<=time+500,"unbounded foreground release deadline");
             if(due>=safeAt)f.safe();f.primary();f.scene.accept(1,Kernel::time);f.tick(due);
         }

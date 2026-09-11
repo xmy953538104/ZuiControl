@@ -4,7 +4,7 @@
 
 namespace ZUIopt {
 struct SceneObserver {
-    static constexpr int REGISTER=1001,UNREGISTER=1002,ACK=1003;
+    static constexpr int REGISTER=1001,UNREGISTER=1002,ACK=1003,CURRENT=1004;
     Observer::Holder state;
     AIBinder* service=nullptr;AIBinder* callback=nullptr;bool registered=false;
     static binder_status_t transact(AIBinder* binder,transaction_code_t code,const AParcel* in,AParcel*){
@@ -36,6 +36,17 @@ struct SceneObserver {
         require(AParcel_getDataPosition(out.p)==AParcel_getDataSize(out.p),"scene reply trailing fields");
     }
     void ack(int64_t seq){request(ACK,seq);}
+    SceneAuthority current(){
+        Parcel in,out;checked(AIBinder_prepareTransaction(service,&in.p));
+        checked(AParcel_writeStrongBinder(in.p,callback));
+        checked(AIBinder_transact(service,CURRENT,&in.p,&out.p,0));out.status();
+        SceneAuthority result;result.sequence=out.wide();result.user=out.integer();
+        int valid=out.integer();result.package=out.str();result.valid=valid==1;
+        require(result.sequence>=0&&result.user>=0&&(valid==0||valid==1)&&
+                result.valid==!result.package.empty()&&result.package.size()<=255&&
+                AParcel_getDataPosition(out.p)==AParcel_getDataSize(out.p),"scene authority reply");
+        return result;
+    }
     void shutdown()noexcept{
         if(!state)return;
         state->stopAccepting();
