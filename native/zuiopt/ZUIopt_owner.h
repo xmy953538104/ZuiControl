@@ -352,8 +352,16 @@ public:
     bool physicalRevoke(ProcessState& p,int tid,const Task& t){
         if(!p.writable())return p.revoked();
         if(!t.owned||!t.appliedMask||!same(p,tid,t))return false;
+        // Only this adjacent durable-record comparison shares the successful
+        // same() observation. Never carry identity across the physical reads.
+        struct ObservedIdentity {int pid,user,tid;uint64_t processStart,threadStart;};
+        const ObservedIdentity observed{p.pid,p.uid,tid,p.generation,t.generation};
         auto entry=journal.entries.find(tid);
-        require(entry!=journal.entries.end()&&journal.same(entry->second),"write without durable owner identity");
+        require(entry!=journal.entries.end(),"write without durable owner identity");
+        const auto& r=entry->second;
+        require(journal.boot==journal.currentBootId()&&r.pid==observed.pid&&r.user==observed.user&&
+                r.tid==observed.tid&&r.processStart==observed.processStart&&r.threadStart==observed.threadStart,
+                "write without durable owner identity");
         auto g=group(tid);auto m=affinity(tid);
         if(!same(p,tid,t))return false;
         std::ostringstream expected;expected<<"/ZUIopt/"<<std::hex<<t.appliedMask;
