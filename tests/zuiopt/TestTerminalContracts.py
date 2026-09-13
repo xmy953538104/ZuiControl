@@ -11,8 +11,53 @@ from RuntimePurityAudit import audit_system
 ROOT=Path(__file__).resolve().parents[2]
 def read(name): return (ROOT/name).read_text(encoding='utf8')
 
+# Historical f98910e V21 identities; not retroactively replaced by V22 hashes.
+V21_WHOLE_CORE_HASH='b04b1041265bfc512ee864c4164d8de80d4e6ca592e17cde3c3c9f2d0475786a'
+V21_BASELINE_STAT_PARSER_SHA='a82c0a86935faf01751ef0f377edb737c73e71d2b3700df523fa7fb883521858'
+# Owner-authorized c0bbefc exception: exact statIdentity region and one include only.
+AUTHORIZED_V22_STAT_IDENTITY_PARSER='047d22cf74c32567429ad91523e0268c5ce084f91400fac7d4a37e010ca477ba'
+UNCHANGED_CORE_BASELINE_SHA='7e48c2e30b989517f57c86f7966e06dde9a4efb15a8f0b6ef9c050626e02d472'
+
 
 class TerminalContracts(unittest.TestCase):
+    def assert_core_contract(self,core):
+        self.assertEqual(core.count('struct BaselineCandidate {'),1)
+        frozen=core.split('struct BaselineCandidate {',1)[0]
+        start='inline Identity statIdentity(';end='inline Identity identity('
+        self.assertEqual(frozen.count(start),1)
+        self.assertEqual(frozen.count(end),1)
+        at=frozen.index(start);after=frozen.index(end,at)
+        parser=frozen[at:after]
+        self.assertEqual(hashlib.sha256(parser.encode()).hexdigest(),
+                         AUTHORIZED_V22_STAT_IDENTITY_PARSER,'authorized_stat_parser')
+        prefix=frozen[:at];suffix=frozen[after:]
+        include='#include <locale>\n'
+        self.assertEqual(core.count(include),1,'authorized_include_delta')
+        self.assertIn('#include <iomanip>\n'+include+'#include <map>\n',prefix,'authorized_include_delta')
+        unchanged=prefix.replace(include,'',1)+suffix
+        self.assertEqual(hashlib.sha256(unchanged.encode()).hexdigest(),
+                         UNCHANGED_CORE_BASELINE_SHA,'unchanged_core_algorithms')
+
+    def test_core_contract_rejects_mutations(self):
+        core=read('native/zuiopt/ZUIopt_core.h')
+        # In-memory copies only: exercise the same guard used by the real source test.
+        for old,new,guard in (
+            ('struct Identity {uint64_t start=0','struct Identity {uint64_t start=1','unchanged_core_algorithms'),
+            ('for(unsigned field=0;field<20;field++)','for(unsigned field=0;field<19;field++)','authorized_stat_parser'),
+            ('#include <locale>\n','#include <locale>\n#include <list>\n','authorized_include_delta'),
+        ):
+            with self.subTest(guard=guard):
+                self.assertEqual(core.count(old),1)
+                with self.assertRaisesRegex(AssertionError,guard):
+                    self.assert_core_contract(core.replace(old,new,1))
+        print('NON_PARSER_MUTATION_DETECTION=PASS;PARSER_MUTATION_DETECTION=PASS;INCLUDE_MUTATION_DETECTION=PASS')
+
+    def test_parser_semantics_have_one_differential_guard(self):
+        for path in ('tests/zuiopt/TestStatParser.py','tests/zuiopt/ZUIoptStatParserTest.cpp'):
+            self.assertTrue((ROOT/path).is_file(),path)
+        invocation='python3 tests/zuiopt/TestStatParser.py --compiler clang++ --output "$receipt/parser-differential"'
+        self.assertIn(invocation,[line.strip() for line in read('.github/workflows/build.yml').splitlines()])
+
     def test_reverse_verifier_loads_sibling_in_isolated_python(self):
         result=subprocess.run([sys.executable,'-I',str(ROOT/'tests/zuiopt/VerifyZUIoptPayload.py'),'--help'],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
@@ -45,6 +90,7 @@ class TerminalContracts(unittest.TestCase):
         for name,sha in expected.items():
             self.assertEqual(hashlib.sha256(read('native/zuiopt/'+name).encode()).hexdigest(),sha,name)
         core=read('native/zuiopt/ZUIopt_core.h')
+        self.assert_core_contract(core)
         owner=read('native/zuiopt/ZUIopt_owner.h')
         release=owner[owner.index('    void release(ProcessState& p,ReleaseCause'):]
         # V60 authorizes physical revocation and one OS-preserving release path.
@@ -59,7 +105,6 @@ class TerminalContracts(unittest.TestCase):
                             '        auto path=target(m);if(group(tid)==path.substr(11)&&affinity(tid)==m){t.appliedMask=m;t.verified=now();return;}')
         apply=apply.replace('!forceCoherence(p)&&t.appliedMask==m','t.appliedMask==m')
         frozen={
-            'core_algorithms':(core.split('struct BaselineCandidate {',1)[0],'b04b1041265bfc512ee864c4164d8de80d4e6ca592e17cde3c3c9f2d0475786a'),
             'journal':(owner[owner.index('class Journal {'):owner.index('enum class CoherenceResult')],'61134ccb4ffcfbf35f494268062b856e5f1d2766c73b1a53dc4ce429cd98857b'),
             'restore_recovery':(owner[owner.index('    void restore('):owner.index('public:\n    // Used before acquisition')],'cf9a5c1db858b0a5ef72878c72c5a83079b6712a3e330d3fc316a4ee02646dcd'),
             'apply':(apply,'6b31262d7b7470762a92e72c5ebee4fb621c3f4431290264d146630c60377e85'),
