@@ -124,6 +124,7 @@ jobs:
           native_failed=0
           mkdir -p "$receipt"
           clang++ --version > "$receipt/host_compiler.txt"
+          python3 tests/zuiopt/TestStatParser.py --compiler clang++ --output "$receipt/parser-differential"
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             tests/zuiopt/ZUIoptTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-fixture"
           sudo "$RUNNER_TEMP/zuiopt-fixture" payload/system/etc/zuiopt/factory_rules.conf \

@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <functional>
 #include <iomanip>
+#include <locale>
 #include <map>
 #include <set>
 #include <sstream>
@@ -91,9 +92,22 @@ inline std::vector<int> ids(const std::string& path){
 }
 struct Identity {uint64_t start=0,ticks=0;char state=0;};
 inline Identity statIdentity(const std::string& s){
-    Identity out;auto n=s.rfind(") ");if(n==s.npos)return out;std::istringstream in(s.substr(n+2));std::vector<std::string> a;std::string t;
-    while(in>>t)a.push_back(t);if(a.size()<20)return out;
-    try{out.start=std::stoull(a[19]);out.ticks=std::stoull(a[11])+std::stoull(a[12]);out.state=a[0][0];}catch(...){return {};}
+    Identity out;auto n=s.rfind(") ");if(n==s.npos)return out;
+    // Match the default stream's locale and token boundaries, including permissive
+    // numeric prefixes/signs. Grammar hardening is a separate semantic change.
+    const std::locale locale;const auto& chars=std::use_facet<std::ctype<char>>(locale);
+    const char* at=s.data()+n+2;const char* end=s.data()+s.size();
+    std::string utime,stime,start;char state=0;
+    for(unsigned field=0;field<20;field++){
+        at=chars.scan_not(std::ctype_base::space,at,end);if(at==end)return {};
+        const char* next=chars.scan_is(std::ctype_base::space,at,end);
+        if(field==0)state=*at;
+        else if(field==11)utime.assign(at,next);
+        else if(field==12)stime.assign(at,next);
+        else if(field==19)start.assign(at,next);
+        at=next;
+    }
+    try{out.start=std::stoull(start);out.ticks=std::stoull(utime)+std::stoull(stime);out.state=state;}catch(...){return {};}
     if(out.state=='Z'||out.state=='X')out.start=0;return out;
 }
 inline Identity identity(int pid,int tid=0){auto text=read("/proc/"+std::to_string(pid)+(tid?"/task/"+std::to_string(tid):"")+"/stat",true);auto id=statIdentity(text);require(text.empty()||id.start||id.state=='Z'||id.state=='X',"proc identity parse failed");return id;}
