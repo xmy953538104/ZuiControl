@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -47,6 +48,31 @@ def write_text_lf(path, text):
     path = pathlib.Path(path)
     with path.open("w", encoding="utf-8", newline="\n") as stream:
         stream.write(text)
+
+
+def patch_oem_touch_timer(unpack, dry_run, report):
+    """Extend the existing OEM boost; preserve every other build.prop byte."""
+    key = b"ro.surface_flinger.set_touch_timer_ms"
+    pattern = re.compile(rb"(?m)^" + re.escape(key) + rb"=([^\r\n]*)(?=\r?$)")
+    pending = []
+    for relative in ("system_a/system/build.prop", "vendor_a/build.prop"):
+        path = pathlib.Path(unpack) / relative
+        if not path.is_file() or path.is_symlink():
+            raise SystemExit("Missing/linked OEM touch timer input: " + relative)
+        before = path.read_bytes()
+        matches = list(pattern.finditer(before))
+        if len(matches) != 1 or matches[0][1] not in (b"2000", b"5000"):
+            raise SystemExit("Unexpected/duplicate OEM touch timer: " + relative)
+        after = pattern.sub(lambda _: key + b"=5000", before)
+        pending.append((path, before, after, matches[0][1].decode()))
+    # Validate both sources before writing either; dry-run never writes.
+    report["oem_touch_timer"] = []
+    for path, before, after, old in pending:
+        report["oem_touch_timer"].append({"path": str(path), "old": old, "new": "5000",
+            "changed": before != after, "before_sha256": hashlib.sha256(before).hexdigest(),
+            "after_sha256": hashlib.sha256(after).hexdigest()})
+        if before != after and not dry_run:
+            path.write_bytes(after)
 
 
 def ensure_line(path, key, line, changed, dry_run):
@@ -513,6 +539,7 @@ def main():
     if not apk.exists():
         raise SystemExit(f"Missing {APP_APK_PATH}. Run scripts/build/BuildZuiControl.ps1 before applying the payload.")
 
+    patch_oem_touch_timer(unpack, args.dry_run, report)
     remove_reviewed_oem_preinstall(unpack, args.dry_run, report)
     remove_reviewed_oem_metadata(image_root, unpack, args.dry_run, report)
     entries = copy_payload(payload, unpack, args.dry_run, report)

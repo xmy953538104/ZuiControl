@@ -92,6 +92,7 @@ jobs:
           bash tests/command_plane/TestZuiControldTransactions.sh
           python3 tests/command_plane/TestCommandPlaneArchitecture.py
           python3 tests/refresh/TestRefreshStateMachine.py
+          python3 tests/refresh/TestOemTouchTimer.py
           python3 tests/uperf/architecture/TestUperfArchitecture.py
           python3 tests/uperf/top_resumed/TestUperfTopResumedStateMachine.py
           python3 tests/uperf/startup/TestUperfStartupPolicy.py
