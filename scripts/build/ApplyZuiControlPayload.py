@@ -51,9 +51,11 @@ def write_text_lf(path, text):
 
 
 def patch_oem_touch_timer(unpack, dry_run, report):
-    """Extend the existing OEM boost; preserve every other build.prop byte."""
+    """Set OEM touch/idle deadlines; preserve every unrelated build.prop byte."""
     key = b"ro.surface_flinger.set_touch_timer_ms"
     pattern = re.compile(rb"(?m)^" + re.escape(key) + rb"=([^\r\n]*)(?=\r?$)")
+    idle_key = b"ro.surface_flinger.set_idle_timer_ms"
+    idle_pattern = re.compile(rb"(?m)^" + re.escape(idle_key) + rb"=([^\r\n]*)(?=\r?$)")
     pending = []
     for relative in ("system_a/system/build.prop", "vendor_a/build.prop"):
         path = pathlib.Path(unpack) / relative
@@ -64,9 +66,19 @@ def patch_oem_touch_timer(unpack, dry_run, report):
         if len(matches) != 1 or matches[0][1] not in (b"2000", b"5000"):
             raise SystemExit("Unexpected/duplicate OEM touch timer: " + relative)
         after = pattern.sub(lambda _: key + b"=5000", before)
+        if relative == "system_a/system/build.prop":
+            idle_matches = list(idle_pattern.finditer(before))
+            if len(idle_matches) != 1 or idle_matches[0][1] not in (b"2000", b"7000"):
+                raise SystemExit("Unexpected/duplicate OEM idle timer: " + relative)
+            after = idle_pattern.sub(lambda _: idle_key + b"=7000", after)
+            idle_report = {"path": str(path), "old": idle_matches[0][1].decode(),
+                           "new": "7000", "changed": idle_matches[0][1] != b"7000"}
+        elif re.search(rb"(?m)^\s*" + re.escape(idle_key) + rb"\s*=", before):
+            raise SystemExit("Unexpected vendor idle timer; authority review required")
         pending.append((path, before, after, matches[0][1].decode()))
     # Validate both sources before writing either; dry-run never writes.
     report["oem_touch_timer"] = []
+    report["oem_idle_timer"] = idle_report
     for path, before, after, old in pending:
         report["oem_touch_timer"].append({"path": str(path), "old": old, "new": "5000",
             "changed": before != after, "before_sha256": hashlib.sha256(before).hexdigest(),
