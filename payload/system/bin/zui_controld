@@ -302,6 +302,50 @@ request_field_count() {
     printf '%s\n' "$1" | awk -F '|' 'NR == 1 {print NF; exit}'
 }
 
+parse_request_fields() {
+    # Keep cut's multiline output and command-substitution LF trimming exactly.
+    # Normal Settings requests are single-line; never cache across requests.
+    case "$1" in *'
+'*)
+        request_parse_id="$(request_field "$1" 1)"
+        request_parse_cmd="$(request_field "$1" 2)"
+        request_parse_pkg="$(request_field "$1" 4)"
+        request_parse_mode="$(request_field "$1" 5)"
+        request_parse_count="$(request_field_count "$1")"
+        return
+        ;;
+    esac
+    request_parse_count=1
+    case "$1" in
+        *'|'*)
+            request_parse_id= request_parse_cmd= request_parse_pkg= request_parse_mode=
+            request_parse_rest="$1"
+            while :; do
+                case "$request_parse_rest" in
+                    *'|'*)
+                        request_parse_value="${request_parse_rest%%|*}"
+                        request_parse_rest="${request_parse_rest#*|}"
+                        request_parse_more=1 ;;
+                    *) request_parse_value="$request_parse_rest"; request_parse_more=0 ;;
+                esac
+                case "$request_parse_count" in
+                    1) request_parse_id="$request_parse_value" ;;
+                    2) request_parse_cmd="$request_parse_value" ;;
+                    4) request_parse_pkg="$request_parse_value" ;;
+                    5) request_parse_mode="$request_parse_value" ;;
+                esac
+                [ "$request_parse_more" = 1 ] || break
+                request_parse_count=$((request_parse_count + 1))
+            done
+            ;;
+        *)
+            request_parse_id="$1" request_parse_cmd="$1"
+            request_parse_pkg="$1" request_parse_mode="$1"
+            [ -n "$1" ] || request_parse_count=0
+            ;;
+    esac
+}
+
 valid_request_id() {
     [ -n "$1" ] && [ "${#1}" -le 64 ] || return 1
     case "$1" in *[!A-Za-z0-9._-]*) return 1 ;; esac
@@ -477,7 +521,8 @@ process_settings_request() {
         publish_pending_terminal_ack >/dev/null 2>&1 || true
         return 0
     fi
-    id="$(request_field "$request" 1)"
+    parse_request_fields "$request"
+    id="$request_parse_id"
     if [ -n "$LAST_COMPLETED_REQUEST_ID" ] && [ "$id" = "$LAST_COMPLETED_REQUEST_ID" ]; then
         if [ "$request" = "$replay_request" ]; then
             publish_pending_terminal_ack >/dev/null 2>&1 || true
@@ -487,10 +532,10 @@ process_settings_request() {
         LAST_SETTINGS_REQUEST="$request"
         return 0
     fi
-    cmd="$(request_field "$request" 2)"
-    pkg="$(request_field "$request" 4)"
-    mode="$(request_field "$request" 5)"
-    if [ "$(request_field_count "$request")" != "5" ] || [ -z "$id" ] || [ -z "$cmd" ]; then
+    cmd="$request_parse_cmd"
+    pkg="$request_parse_pkg"
+    mode="$request_parse_mode"
+    if [ "$request_parse_count" != "5" ] || [ -z "$id" ] || [ -z "$cmd" ]; then
         finish_request "$request" "${id:-invalid}" "${cmd:-invalid}" 1 invalid_request
         return $?
     fi

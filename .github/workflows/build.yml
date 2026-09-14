@@ -77,6 +77,22 @@ jobs:
           path: ${{ runner.temp }}/uperf-supervisor-gate
           if-no-files-found: error
 
+      - name: Qualify request parser equivalence and Linux benchmark
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/command_plane/TestRequestParser.py \
+            --receipt-dir "$RUNNER_TEMP/request-parser-gate" --benchmark
+
+      - name: Upload request parser qualification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zui-control-request-parser-gate
+          path: ${{ runner.temp }}/request-parser-gate
+          if-no-files-found: error
+
       - name: Check scripts
         run: |
           python3 -m py_compile scripts/build/ApplyZuiControlPayload.py
