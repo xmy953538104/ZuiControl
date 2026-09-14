@@ -1,5 +1,6 @@
 """Parameter-only payload contract; no device required."""
 from pathlib import Path
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,15 @@ PROPERTIES = (b'ro.surface_flinger.set_idle_timer_ms=2000\n'
               b'ro.config.lgsi.low_power_mode_require_fps=60\n'
               b'ro.config.lgsi.reading_mode_require_fps=30\n'
               b'# thermal and all unrelated bytes stay unchanged\n')
+
+
+def protected_payload(tree):
+    # Only the authorized command parser is qualified independently. Preserve
+    # every other path, blob and file mode from the accepted payload inventory.
+    rows = tree.splitlines()
+    parser = [row for row in rows if row.split(b'\t', 1)[1] == b'system/bin/zui_controld']
+    assert len(parser) == 1 and parser[0].startswith(b'100644 blob ')
+    return hashlib.sha256(b'\n'.join(row for row in rows if row != parser[0]) + b'\n').hexdigest()
 
 
 class OemTouchTimer(unittest.TestCase):
@@ -84,19 +94,42 @@ class OemTouchTimer(unittest.TestCase):
                     self.assertNotIn(KEY+b'2000', (root/n).read_bytes())
 
     def test_no_new_runtime_policy_or_native_inputs(self):
-        # Accepted runtime trees are identical; no Java listener/timer, native or payload edits.
+        # The parser has its own differential/transaction gate. Other production
+        # inputs retain their accepted identities; no new Refresh implementation.
         expected = {'app': 'b8058f77ce699fdd7f6d9470c4329e6ed1a6dd36',
                     'framework_patch': 'e54609edf29df83d8ad9a2c5dc01f41b108bb53c',
                     'native': '6790c7cf6c634b28b0360911686d603bc8616917',
-                    'payload': 'bdd42b192c8ac901d008d47892547b6e55fa8e10',
                     'upstream': '3dc065f74510060d3612ab3bf805ed305f2e447d'}
         for path, tree in expected.items():
             actual = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD:'+path], text=True).strip()
             self.assertEqual(actual, tree, path)
-        dirty = subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain', '--', *expected], text=True)
+        payload = subprocess.check_output(['git', '-C', str(ROOT), 'ls-tree', '-r', 'HEAD:payload'])
+        self.assertEqual(protected_payload(payload),
+                         '5a4c3bdf03c638495e299e62e78965376fa418f20497d3d215bc6e1623d451e0')
+        dirty = subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain', '--', *expected, 'payload'], text=True)
         self.assertEqual(dirty, '')
         source = (ROOT/'scripts/build/ApplyZuiControlPayload.py').read_text(encoding='utf-8')
         self.assertIn('patch_oem_touch_timer(unpack, args.dry_run, report)', source)
+
+    def test_payload_scope_guard_rejects_other_mutations(self):
+        parser = b'100644 blob ' + b'a'*40 + b'\tsystem/bin/zui_controld'
+        protected = b'100644 blob ' + b'b'*40 + b'\tsystem/etc/init/zui_control.rc'
+        baseline = parser + b'\n' + protected + b'\n'
+        fingerprint = protected_payload(baseline)
+        self.assertEqual(protected_payload(baseline.replace(b'a'*40, b'c'*40)), fingerprint)
+        # Blob, mode, path, deletion and addition remain protected. Similar names
+        # must not inherit the one exact-path exception.
+        for changed in (baseline.replace(b'b'*40, b'c'*40),
+                        parser+b'\n'+protected.replace(b'100644', b'100755')+b'\n',
+                        baseline.replace(b'zui_control.rc', b'other.rc'),
+                        parser+b'\n',
+                        baseline+protected.replace(b'zui_control.rc', b'zui_controld.extra')+b'\n'):
+            with self.subTest(changed=changed):
+                self.assertNotEqual(protected_payload(changed), fingerprint)
+        for changed in (protected+b'\n', baseline+parser+b'\n',
+                        baseline.replace(parser, parser.replace(b'100644', b'120000'))):
+            with self.subTest(invalid_parser=changed), self.assertRaises(AssertionError):
+                protected_payload(changed)
 
 
 if __name__ == '__main__':
