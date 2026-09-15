@@ -18,6 +18,7 @@ import time
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 CONTRACT_SHA = '09c2c927cec7d70b7d80aede2f1ce1471021fee73e21dff195dfdb586b996e78'
+CONTRACT_LF_SHA = '136b3a6eefbaaa883741d831314a16b15d38565b39a1c633049bd04febe467bd'
 
 
 def android_expected(value):
@@ -37,9 +38,15 @@ def android_expected(value):
     return tuple(outputs)
 
 
-def frozen_contract():
-    data = (HERE / 'AndroidOldParserContract.json').read_bytes()
-    assert hashlib.sha256(data).hexdigest() == CONTRACT_SHA, 'ANDROID_CONTRACT_CHANGED'
+def frozen_contract(data=None):
+    if data is None:
+        data = (HERE / 'AndroidOldParserContract.json').read_bytes()
+    # Git text=auto checks out LF on Linux and CRLF on Windows. Only these
+    # two sealed representations are allowed; neither permits changed values.
+    assert hashlib.sha256(data).hexdigest() in (CONTRACT_SHA, CONTRACT_LF_SHA), 'ANDROID_CONTRACT_CHANGED'
+    normalized = data.replace(b'\r\n', b'\n')
+    assert hashlib.sha256(normalized).hexdigest() == CONTRACT_LF_SHA, 'ANDROID_CONTRACT_LF_CHANGED'
+    assert hashlib.sha256(normalized.replace(b'\n', b'\r\n')).hexdigest() == CONTRACT_SHA, 'ANDROID_RAW_PROVENANCE_CHANGED'
     contract = json.loads(data)
     assert contract['authority'] == 'REAL_ANDROID_OLD_BEHAVIOR'
     assert len(contract['rows']) == 512
