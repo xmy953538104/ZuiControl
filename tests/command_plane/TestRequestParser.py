@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frozen cut/awk differential, deterministic corpus, optional Linux benchmark."""
+"""Android-frozen semantics, literal valid-record differential, Linux benchmark."""
 import argparse
 import hashlib
 import json
@@ -17,6 +17,50 @@ import time
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
+CONTRACT_SHA = '09c2c927cec7d70b7d80aede2f1ce1471021fee73e21dff195dfdb586b996e78'
+
+
+def android_expected(value):
+    # Byte-oriented model checked against every immutable real-Android OLD row.
+    lines = value.encode().split(b'\n')
+    outputs = []
+    for field in (0, 1, 3, 4):
+        selected = []
+        for line in lines:
+            fields = line.split(b'|')
+            if len(fields) == 1:
+                selected.append(line if len(line) > field else b'')
+            else:
+                selected.append(fields[field] if field < len(fields) else b'')
+        outputs.append(b'\n'.join(selected).rstrip(b'\n'))
+    outputs.append(str(len(lines[0].split(b'|')) if lines[0] else 0).encode())
+    return tuple(outputs)
+
+
+def frozen_contract():
+    data = (HERE / 'AndroidOldParserContract.json').read_bytes()
+    assert hashlib.sha256(data).hexdigest() == CONTRACT_SHA, 'ANDROID_CONTRACT_CHANGED'
+    contract = json.loads(data)
+    assert contract['authority'] == 'REAL_ANDROID_OLD_BEHAVIOR'
+    assert len(contract['rows']) == 512
+    for row in contract['rows']:
+        assert android_expected(row['input']) == tuple(row[k].encode() for k in
+            ('id', 'command', 'package', 'mode', 'count')), row
+    return contract
+
+
+# Host-only dependency adapter for the UNCHANGED multiline Android cut path.
+# Native Linux OLD/NEW equality is separately checked for every multiline input.
+# This never enters production and is never used in the benchmark.
+ANDROID_CUT = r'''
+cut() {
+    [ "$1" = -d ] && [ "$2" = '|' ] && [ "$3" = -f ] || return 99
+    LC_ALL=C awk -F '|' -v field="$4" '{
+        if (index($0, "|")) print $field
+        else print (length($0) >= field ? $0 : "")
+    }'
+}
+'''
 
 
 def function(text, name):
@@ -89,11 +133,17 @@ def main():
     ap.add_argument('--receipt-dir', type=Path, required=True)
     ap.add_argument('--benchmark', action='store_true')
     ap.add_argument('--shell', default=shutil.which('sh'))
+    ap.add_argument('--check-fixture-only', action='store_true')
     args = ap.parse_args()
     args.receipt_dir.mkdir(parents=True, exist_ok=True)
     def save(name, data):
         with (args.receipt_dir / name).open('x', encoding='utf8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+    contract = frozen_contract()
+    save('android_contract_model.json', dict(status='PASS',cases=512,sha256=CONTRACT_SHA,
+         authority='REAL_ANDROID_OLD_BEHAVIOR',shell_executed=False))
+    if args.check_fixture_only:
+        return
     if platform.system() != 'Linux':
         save('platform.json', dict(status='HOLD_REQUIRES_LINUX',platform=platform.platform(),
              reason='MINGW pipeline CRLF translation is not a Linux/Android parser oracle'))
@@ -104,14 +154,36 @@ def main():
         assert function(source, name) == function(old, name), 'FROZEN_HELPER_CHANGED'
     definitions = '\n'.join(function(source, n) for n in
                             ('request_field', 'request_field_count', 'parse_request_fields'))
+    fixture_inputs = [r['input'] for r in contract['rows']]
+    assert shell_parse(args.shell, definitions + ANDROID_CUT, 'parse_request_fields', fixture_inputs) == [
+        android_expected(v) for v in fixture_inputs], 'FROZEN_ANDROID_CONTRACT_MISMATCH'
+    save('android_contract_shell.json', dict(status='PASS',cases=512,mismatches=0,
+         sha256=CONTRACT_SHA,multiline_dependency='explicit host Android cut adapter; not native GNU cut'))
     structured, generated = corpus()
     records = structured + generated
+    platform_differences = 0
+    multiline_count = 0
+    literal_valid_count = 0
     for start in range(0, len(records), 500):
         batch = records[start:start+500]
         print('DIFFERENTIAL_BATCH',start,'/',len(records),flush=True)
         reference = shell_parse(args.shell, old, 'old_parse_request_fields', batch)
         actual = shell_parse(args.shell, definitions, 'parse_request_fields', batch)
-        for offset, (expected, result) in enumerate(zip(reference, actual)):
+        multiline = [v for v in batch if '\n' in v]
+        if multiline:
+            assert shell_parse(args.shell, definitions + ANDROID_CUT, 'parse_request_fields', multiline) == [
+                android_expected(v) for v in multiline], 'ANDROID_MULTILINE_CONTRACT_MISMATCH'
+        multiline_count += len(multiline)
+        for offset, (linux_old, result) in enumerate(zip(reference, actual)):
+            value = batch[offset]
+            android_old = android_expected(value)
+            # Multiline delegates to unchanged helpers: prove literal native parity
+            # here, and exact Android semantics with the dependency adapter above.
+            expected = linux_old if '\n' in value else android_old
+            platform_differences += linux_old != android_old
+            if '\n' not in value and value.count('|') == 4:
+                assert result == linux_old == android_old, 'VALID_FIVE_FIELD_LITERAL_MISMATCH'
+                literal_valid_count += 1
             if expected != result:
                 index = start + offset
                 save('differential.json', dict(status='FAIL',matches=index,mismatches=1,
@@ -120,7 +192,10 @@ def main():
         print('MATCH',min(start+500,len(records)),'/',len(records),flush=True)
     save('differential.json', dict(status='PASS',structured_cases=500,generated_cases=20000,
          match_count=len(records),mismatch_count=0,seed='0x225701',platform=platform.platform(),
-         oracle='frozen literal OLD shell4cut+1awk invoked for EVERY case; no emulated or batched reference',
+         oracle='literal Linux OLD invoked for all cases; valid five-field parity required; malformed authority is frozen Android OLD',
+         android_contract_sha256=CONTRACT_SHA,linux_android_difference_count=platform_differences,
+         literal_valid_five_field_count=literal_valid_count,
+         multiline_native_parity_and_android_adapter_count=multiline_count,
          source_sha256=hashlib.sha256(source.encode()).hexdigest(),
          corpus_sha256=hashlib.sha256(json.dumps(records,ensure_ascii=False).encode()).hexdigest()))
     if not args.benchmark:
@@ -145,7 +220,7 @@ def main():
          iterations_per_round=200,old_median=om,new_median=nm,
          old_p95=sorted(old_times)[math.ceil(.95*len(old_times))-1],
          new_p95=sorted(new_times)[math.ceil(.95*len(new_times))-1],speedup=om/nm,
-         external_execs_per_record_old=5,external_execs_per_record_new=0,
+         external_execs_per_record_old=5,external_execs_per_record_new=1,
          multiline_fallback_external_execs=5,platform=platform.platform(),
          caveat='whole batch shell launch and result output included equally; no device latency prediction'))
     assert nm<om,'STOP: new parser benchmark slower'

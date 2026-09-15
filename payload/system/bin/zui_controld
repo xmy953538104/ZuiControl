@@ -315,35 +315,26 @@ parse_request_fields() {
         return
         ;;
     esac
-    request_parse_count=1
-    case "$1" in
-        *'|'*)
-            request_parse_id= request_parse_cmd= request_parse_pkg= request_parse_mode=
-            request_parse_rest="$1"
-            while :; do
-                case "$request_parse_rest" in
-                    *'|'*)
-                        request_parse_value="${request_parse_rest%%|*}"
-                        request_parse_rest="${request_parse_rest#*|}"
-                        request_parse_more=1 ;;
-                    *) request_parse_value="$request_parse_rest"; request_parse_more=0 ;;
-                esac
-                case "$request_parse_count" in
-                    1) request_parse_id="$request_parse_value" ;;
-                    2) request_parse_cmd="$request_parse_value" ;;
-                    4) request_parse_pkg="$request_parse_value" ;;
-                    5) request_parse_mode="$request_parse_value" ;;
-                esac
-                [ "$request_parse_more" = 1 ] || break
-                request_parse_count=$((request_parse_count + 1))
-            done
-            ;;
-        *)
-            request_parse_id="$1" request_parse_cmd="$1"
-            request_parse_pkg="$1" request_parse_mode="$1"
-            [ -n "$1" ] || request_parse_count=0
-            ;;
-    esac
+    # Frozen Android cut contract: without a pipe, field selection is bounded
+    # by byte length ("a" yields only id; "id" also yields command).
+    # One awk, no eval; the final count preserves empty fields in substitution.
+    request_parse_values="$(printf '%s\n' "$1" | LC_ALL=C awk -F '|' '{
+        if (index($0, "|") == 0) {
+            n = length($0)
+            print $0; print (n >= 2 ? $0 : "")
+            print (n >= 4 ? $0 : ""); print (n >= 5 ? $0 : "")
+        } else { print $1; print $2; print $4; print $5 }
+        print NF
+    }')" || return 1
+    {
+        IFS= read -r request_parse_id
+        IFS= read -r request_parse_cmd
+        IFS= read -r request_parse_pkg
+        IFS= read -r request_parse_mode
+        IFS= read -r request_parse_count
+    } <<EOF_REQUEST_PARSE
+$request_parse_values
+EOF_REQUEST_PARSE
 }
 
 valid_request_id() {
