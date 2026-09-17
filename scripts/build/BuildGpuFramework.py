@@ -47,7 +47,10 @@ def build(original, helper, output, classpath, java='java'):
         raise ValueError('invalid helper DEX')
     output.mkdir(parents=True)
     def tool(main, *args):
-        cmd = [java, '-cp', classpath, 'com.android.tools.smali.'+main+'.Main', *map(str, args)]
+        # Python needs extended paths for long smali names; Java File rejects
+        # that prefix during canonicalization, but accepts the ordinary path.
+        java_args = [str(arg).removeprefix('\\\\?\\') for arg in args]
+        cmd = [java, '-cp', classpath, 'com.android.tools.smali.'+main+'.Main', *java_args]
         receipt = output/('tool_%02d.json' % len(list(output.glob('tool_*.json'))))
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=180)
