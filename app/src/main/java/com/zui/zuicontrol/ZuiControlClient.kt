@@ -38,6 +38,10 @@ object ZuiControlClient {
         return stateInt("targetDisplayHz")
     }
 
+    fun setGpuRange(pkg: String, range: GpuRanges.Range?): Reply = call {
+        it.setGpuRange(pkg, currentUserId(), range?.min ?: 0, range?.max ?: 0)
+    }
+
     fun editableDisplayHz(): Int? {
         return stateInt("editableDisplayHz")?.takeIf { it > 0 }
     }

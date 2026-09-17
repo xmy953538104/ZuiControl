@@ -2,9 +2,8 @@ package com.zui.server.control;
 
 import java.lang.reflect.Method;
 
-/** Event-driven, proof-only profiles. OEM hard thermal remains above this request. */
+/** Event-driven performance ranges. OEM hard thermal remains above this request. */
 final class GpuPolicyController {
-    static final String GAME = "com.kurogame.mingchao";
     interface Transport {
         int acquire(int duration, int[] pairs) throws Exception;
         int release(int handle) throws Exception;
@@ -36,10 +35,10 @@ final class GpuPolicyController {
     private final Transport transport;
     private String mode = "OFF";
     private String scene = "";
-    private boolean interactive = true;
     private boolean failed;
     private int handle;
-    private int maxLevel = -1;
+    private GpuRange requested;
+    private GpuRange owned;
     private int acquireCount;
     private int releaseCount;
     private int lastRelease = -1;
@@ -47,45 +46,33 @@ final class GpuPolicyController {
 
     GpuPolicyController(Transport transport) { this.transport = transport; }
 
-    synchronized void configure(String requested) {
-        if (!"OFF".equals(requested) && !"SAFE_CANARY".equals(requested)
-                && !"FULL_DYNAMIC".equals(requested)) {
-            throw new IllegalArgumentException("only OFF/SAFE_CANARY/FULL_DYNAMIC");
-        }
-        if (failed && !"OFF".equals(requested)) {
-            throw new IllegalStateException("GPU failsafe latched; release and review required");
-        }
-        mode = requested;
-        reconcile();
-    }
-
-    synchronized void scene(String pkg, boolean screenOn) {
+    synchronized void resolve(String pkg, String performanceMode, GpuRange override,
+            boolean eligible, boolean screenOn, boolean enabled) {
         scene = pkg == null ? "" : pkg;
-        interactive = screenOn;
+        mode = performanceMode;
+        requested = eligible && screenOn && enabled && !failed
+                ? (override == null ? GpuRange.defaults(performanceMode) : override) : null;
         reconcile();
     }
 
     synchronized void failSafe(String reason) {
         failed = true;
         mode = "OFF";
+        requested = null;
         error = reason;
         releaseOwned();
     }
 
     private void reconcile() {
-        int wanted = !failed && interactive && GAME.equals(scene)
-                ? ("SAFE_CANARY".equals(mode) ? 8 : "FULL_DYNAMIC".equals(mode) ? 0 : -1)
-                : -1;
-        if (handle > 0 && maxLevel == wanted) return;
-        if (!releaseOwned() || wanted < 0) return;
+        if (handle > 0 && owned.same(requested)) return;
+        if (!releaseOwned() || requested == null) return;
         try {
-            // Frozen TB321FU OPP mapping: min11=231MHz, max8=422 or max0=903.
-            // No arbitrary levels, frequency pin, custom opcode, or sysfs write.
-            int acquired = transport.acquire(0, new int[] {0x42804000, 11, 0x42808000, wanted});
+            int acquired = transport.acquire(0, new int[] {0x42804000,
+                    GpuRange.level(requested.minMHz), 0x42808000, GpuRange.level(requested.maxMHz)});
             acquireCount++;
             if (acquired <= 0) throw new IllegalStateException("acquire returned " + acquired);
             handle = acquired;
-            maxLevel = wanted;
+            owned = requested;
             error = "";
         } catch (Exception e) {
             failed = true;
@@ -101,7 +88,7 @@ final class GpuPolicyController {
             releaseCount++;
             if (lastRelease < 0) throw new IllegalStateException("release returned " + lastRelease);
             handle = 0;
-            maxLevel = -1;
+            owned = null;
             return true;
         } catch (Exception e) {
             // Keep the uncertain handle visible and never acquire a second one.
@@ -114,8 +101,11 @@ final class GpuPolicyController {
 
     synchronized String stateLines() {
         return "\ngpuMode=" + mode + "\ngpuHandle=" + handle
-                + "\ngpuRequestedMinLevel=" + (handle > 0 ? 11 : -1)
-                + "\ngpuRequestedMaxLevel=" + maxLevel + "\ngpuScene=" + scene
+                + "\ngpuRequestedMinLevel=" + (requested == null ? -1 : GpuRange.level(requested.minMHz))
+                + "\ngpuRequestedMaxLevel=" + (requested == null ? -1 : GpuRange.level(requested.maxMHz))
+                + "\ngpuOwnedMinLevel=" + (owned == null ? -1 : GpuRange.level(owned.minMHz))
+                + "\ngpuOwnedMaxLevel=" + (owned == null ? -1 : GpuRange.level(owned.maxMHz))
+                + "\ngpuScene=" + scene
                 + "\ngpuFailSafe=" + failed + "\ngpuLastError=" + error
                 + "\ngpuAcquireCount=" + acquireCount + "\ngpuReleaseCount=" + releaseCount
                 + "\ngpuLastRelease=" + lastRelease + "\ngpuTransport=QTI_PerfLock"

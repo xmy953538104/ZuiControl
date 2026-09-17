@@ -125,6 +125,11 @@ class TerminalContracts(unittest.TestCase):
 
     def test_refresh_and_macro_power_service_unchanged(self):
         text=read('framework_patch/src/services/com/zui/server/control/ZuiControlService.java')
+        # Owner-authorized Product R2 deltas are exact, reviewable fragments.
+        # Reverse only those before applying the existing proof/v21 hash guard.
+        for delta in json.loads(read('tests/gpu/product_service_delta.json')):
+            self.assertEqual(text.count(delta['after']), 1)
+            text=text.replace(delta['after'],delta['before'],1)
         # V23 Owner-approved GPU lane only. Remove exact additions, then retain
         # the original frozen Refresh/Uperf hash (never replace it with a new hash).
         additions = {

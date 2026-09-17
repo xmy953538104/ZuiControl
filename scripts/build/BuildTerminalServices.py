@@ -10,14 +10,14 @@ from pathlib import Path
 import shutil
 import subprocess
 import zipfile
-from PatchZuiControlFramework import compile_sources
+from PatchZuiControlFramework import compile_sources, rewrite_zip
 
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def build(repo, sdk, golden_dir, ci_dex, ci_run, output, gpu_helper=None, gpu_classpath=None, java='java'):
+def build(repo, sdk, golden_dir, ci_dex, ci_run, output, gpu_helper=None, gpu_classpath=None, java='java', ci_manager_dex=None):
     assert not output.exists(), 'Fresh terminal framework output required'
     expected={'framework.jar':'b5f57d62546569b9bd9ba34d8757678da000c33f876358dd93a4dc747b8f1b32',
         'services.jar':'245b4f2c55d5ed8b99ecba8bd473d1d76eb40c55d67116a477299cc9d8b62000'}
@@ -41,6 +41,11 @@ def build(repo, sdk, golden_dir, ci_dex, ci_run, output, gpu_helper=None, gpu_cl
         shutil.copy2(output/'gpu/framework.jar',output/'framework.jar')
     else:
         shutil.copy2(golden_dir/'framework.jar',output/'framework.jar')
+    if ci_manager_dex is not None:
+        assert gpu_receipt is not None, 'Product manager requires the qualified GPU backend'
+        manager=compile_sources(repo,repo,output,repo/'framework_patch/src/framework','classes6.dex',sdk)
+        assert sha(manager)==sha(ci_manager_dex), 'Current local/CI manager mismatch'
+        rewrite_zip(output/'framework.jar',output/'framework.jar',{'classes6.dex':ci_manager_dex})
     with zipfile.ZipFile(golden_dir/'services.jar') as old:
         assert len(old.namelist())==len(set(old.namelist())) and old.testzip() is None
         assert old.namelist().count('classes4.dex')==1
@@ -56,6 +61,9 @@ def build(repo, sdk, golden_dir, ci_dex, ci_run, output, gpu_helper=None, gpu_cl
         manifest.update(schema='V23_GPU_TERMINAL_FRAMEWORK_V1',framework_changed=True,
             golden_framework=entry(golden_dir/'framework.jar'),ci_gpu_helper=entry(gpu_helper),
             gpu_qualification=entry(gpu_receipt),gpu_patched_dex=entry(output/'gpu/classes4.dex'))
+    if ci_manager_dex is not None:
+        manifest.update(ci_manager_extension=entry(ci_manager_dex),
+            gpu_base_framework=entry(output/'gpu/framework.jar'))
     receipt=output/'terminal_framework.json'
     receipt.write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf8')
     from ApplyZuiControlPayload import terminal_framework
@@ -68,4 +76,5 @@ if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--sdk',type=Path,required=True);p.add_argument('--golden-dir',type=Path,required=True)
     p.add_argument('--ci-dex',type=Path,required=True);p.add_argument('--ci-run',type=int,required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--gpu-helper',type=Path);p.add_argument('--gpu-classpath');p.add_argument('--java',default='java')
-    a=p.parse_args();build(Path(__file__).resolve().parents[2],a.sdk,a.golden_dir,a.ci_dex,a.ci_run,a.output,a.gpu_helper,a.gpu_classpath,a.java)
+    p.add_argument('--ci-manager-dex',type=Path)
+    a=p.parse_args();build(Path(__file__).resolve().parents[2],a.sdk,a.golden_dir,a.ci_dex,a.ci_run,a.output,a.gpu_helper,a.gpu_classpath,a.java,a.ci_manager_dex)

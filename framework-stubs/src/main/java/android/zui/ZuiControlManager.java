@@ -8,6 +8,10 @@ public final class ZuiControlManager {
         throw new UnsupportedOperationException("framework stub");
     }
 
+    public String setGpuRange(String pkg, int userId, int minMHz, int maxMHz) {
+        throw new UnsupportedOperationException("framework stub");
+    }
+
     public String getVersion() {
         throw new UnsupportedOperationException("framework stub");
     }

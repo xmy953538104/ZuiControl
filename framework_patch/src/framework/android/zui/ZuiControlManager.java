@@ -21,6 +21,7 @@ public final class ZuiControlManager {
     private static final int TX_SET_MODULE_ENABLED = 10;
     private static final int TX_EXPORT_LOG = 11;
     private static final int TX_NOTIFY_CONTROL_REQUEST = 12;
+    private static final int TX_SET_GPU_RANGE = 13;
 
     private final IBinder mRemote;
 
@@ -119,6 +120,15 @@ public final class ZuiControlManager {
             public void write(Parcel data) {
                 data.writeString(requestId);
                 data.writeString(requestSha256);
+            }
+        });
+    }
+
+    public String setGpuRange(final String pkg, final int userId, final int minMHz, final int maxMHz) {
+        return transact(TX_SET_GPU_RANGE, new Writer() {
+            public void write(Parcel data) {
+                data.writeString(pkg); data.writeInt(userId);
+                data.writeInt(minMHz); data.writeInt(maxMHz);
             }
         });
     }

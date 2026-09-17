@@ -87,6 +87,7 @@ public final class ZuiControlService extends Binder {
     private static final int TX_SET_MODULE_ENABLED = 10;
     private static final int TX_EXPORT_LOG = 11;
     private static final int TX_NOTIFY_CONTROL_REQUEST = 12;
+    private static final int TX_SET_GPU_RANGE = 13;
     private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;
     private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;
     private static final int[] DISPLAY_HZ = new int[] {60, 90, 120, 144, 165};
@@ -111,6 +112,8 @@ public final class ZuiControlService extends Binder {
         }
     };
     private final Map<String, Profile> mProfiles = new HashMap<>();
+    private final Map<String, GpuRange> mGpuOverrides = new HashMap<>();
+    private volatile boolean mGpuSystemUi;
 
     private volatile FocusSnapshot mLatestFocus = new FocusSnapshot(
             "", -1, 0, Display.DEFAULT_DISPLAY, true);
@@ -294,7 +297,6 @@ public final class ZuiControlService extends Binder {
             mUperfScenePolicy.onTopResumedChanged(
                     pkg, userId, "topResumedValid", eventNanos);
             mZuioptScene.changed(pkg, userId);
-            mGpuPolicy.scene(pkg, mScreenInteractive);
             publishState();
             return;
         }
@@ -354,7 +356,6 @@ public final class ZuiControlService extends Binder {
         mUperfScenePolicy.onTopResumedChanged(pkg, userId, event,
                 SystemClock.elapsedRealtimeNanos());
         mZuioptScene.changed(pkg, userId);
-        mGpuPolicy.scene(pkg, mScreenInteractive);
         publishState();
     }
 
@@ -523,6 +524,13 @@ public final class ZuiControlService extends Binder {
         mRawFocusedPackage = safe(pkg);
         mRawFocusedUserId = userId;
         mRawFocusedDisplayId = resolveDisplayId(displayId);
+        if (mRawFocusedDisplayId == Display.DEFAULT_DISPLAY) {
+            boolean systemUi = "com.android.systemui".equals(mRawFocusedPackage);
+            if (mGpuSystemUi != systemUi) {
+                mGpuSystemUi = systemUi;
+                mUperfScenePolicy.refreshGpu();
+            }
+        }
         Profile refreshProfile;
         boolean transientFocus = forceTransient || mImeVisible || mRawFocusedPackage.isEmpty()
                 || isTransientPackage(mRawFocusedPackage);
@@ -571,7 +579,7 @@ public final class ZuiControlService extends Binder {
                 if (code == ZuioptSceneAuthority.CURRENT) mZuioptScene.writeCurrent(callback, pid, reply);
                 return true;
             }
-            if (code >= 1 && code <= TX_NOTIFY_CONTROL_REQUEST) {
+            if (code >= 1 && code <= TX_SET_GPU_RANGE) {
                 data.enforceInterface(DESCRIPTOR);
             }
             String result;
@@ -620,6 +628,11 @@ public final class ZuiControlService extends Binder {
                     enforceCommandCallerAllowed();
                     result = notifyControlRequest(data.readString(), data.readString());
                     break;
+                case TX_SET_GPU_RANGE:
+                    enforceCommandCallerAllowed();
+                    result = setGpuRange(data.readString(), data.readInt(),
+                            data.readInt(), data.readInt());
+                    break;
                 default:
                     return super.onTransact(code, data, reply, flags);
             }
@@ -634,15 +647,26 @@ public final class ZuiControlService extends Binder {
 
     @Override
     protected synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
-        if (args != null && args.length > 0 && "--gpu-proof".equals(args[0])) {
-            if (Binder.getCallingUid() != 0) throw new SecurityException("root GPU proof only");
-            if (args.length != 2) throw new IllegalArgumentException("--gpu-proof MODE");
-            if (!"OFF".equals(args[1]) && SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false)) {
-                throw new IllegalStateException("global controller disable");
-            }
-            mGpuPolicy.configure(args[1]);
-        }
         pw.print(state());
+    }
+
+    private synchronized String setGpuRange(String pkg, int userId, int min, int max) {
+        if (userId < 0 || userId != Binder.getCallingUid() / 100000
+                || !validPackage(pkg) || !packageExists(pkg) || isTransientPackage(pkg)) {
+            return "ok=0\nerror=invalid_gpu_target";
+        }
+        GpuRange value = min == 0 && max == 0 ? null : new GpuRange(min, max);
+        synchronized (mUperfScenePolicy) {
+            String k = key(userId, pkg);
+            GpuRange previous = mGpuOverrides.get(k);
+            if (value == null) mGpuOverrides.remove(k); else mGpuOverrides.put(k, value);
+            if (!saveProfiles()) {
+                if (previous == null) mGpuOverrides.remove(k); else mGpuOverrides.put(k, previous);
+                return "ok=0\nerror=gpu_profile_save";
+            }
+            mUperfScenePolicy.refreshGpu();
+        }
+        return "ok=1\ngpuOverride=" + (value == null ? "NONE" : min + "|" + max);
     }
 
     private synchronized String setCurrentSceneProfile(int displayHz, int fpsCap, String mode) {
@@ -1114,7 +1138,7 @@ public final class ZuiControlService extends Binder {
 
     private synchronized void onRefreshPropertiesChanged(int observedMask) {
         int disableMask = readRefreshDisableMask();
-        if ((disableMask & 1) != 0) mGpuPolicy.failSafe("global_disable");
+        mUperfScenePolicy.refreshGpu();
         synchronized (mRefreshPropertyLock) {
             mObservedRefreshDisableMask = disableMask;
         }
@@ -1230,7 +1254,6 @@ public final class ZuiControlService extends Binder {
             return;
         }
         mScreenInteractive = interactive;
-        mGpuPolicy.scene(mTopResumedState.stablePackage(), interactive);
         mUperfScenePolicy.onInteractiveChanged(interactive,
                 interactive ? "screenOn" : "screenOff", SystemClock.elapsedRealtimeNanos());
         publishState();
@@ -1352,6 +1375,7 @@ public final class ZuiControlService extends Binder {
 
     private void loadProfiles() {
         mProfiles.clear();
+        mGpuOverrides.clear();
         try {
             byte[] raw = mProfileFile.readFully();
             String text = new String(raw, StandardCharsets.UTF_8);
@@ -1361,6 +1385,18 @@ public final class ZuiControlService extends Binder {
                     continue;
                 }
                 String[] parts = line.split("\\|");
+                if (parts.length == 5 && "gpu".equals(parts[0])) {
+                    try {
+                        int user = Integer.parseInt(parts[1]);
+                        if (user >= 0 && validPackage(parts[2]) && !isTransientPackage(parts[2])) {
+                            mGpuOverrides.put(key(user, parts[2]), new GpuRange(
+                                    Integer.parseInt(parts[3]), Integer.parseInt(parts[4])));
+                        }
+                    } catch (IllegalArgumentException badRange) {
+                        Log.w(TAG, "Ignoring invalid persisted GPU range");
+                    }
+                    continue;
+                }
                 Profile p = null;
                 if (parts.length == 5 && "default".equals(parts[0])) {
                     p = neutralProfile(parseInt(parts[1], 0));
@@ -1396,6 +1432,10 @@ public final class ZuiControlService extends Binder {
                             .append('|').append(p.displayHz).append('|').append(p.fpsCap)
                             .append('|').append(p.mode).append('\n');
                 }
+            }
+            for (Map.Entry<String, GpuRange> e : mGpuOverrides.entrySet()) {
+                sb.append("gpu|").append(e.getKey().replace(':', '|')).append('|')
+                        .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz).append('\n');
             }
             out = mProfileFile.startWrite();
             out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
@@ -1602,6 +1642,10 @@ public final class ZuiControlService extends Binder {
 
     private String profileStateLines() {
         StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, GpuRange> e : mGpuOverrides.entrySet()) {
+            sb.append("\ngpuProfile=").append(e.getKey().replace(':', '|')).append('|')
+                    .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz);
+        }
         for (Profile p : mProfiles.values()) {
             if ("default".equals(p.packageName)) {
                 continue;
@@ -2030,6 +2074,7 @@ public final class ZuiControlService extends Binder {
                 mDesiredMode = mGlobalMode;
                 source = "global";
             }
+            refreshGpu();
             if (mDesiredMode.equals(mLastRequestedMode)) {
                 mLastReason = reason + ":" + source + ":sameTarget";
                 return;
@@ -2053,6 +2098,27 @@ public final class ZuiControlService extends Binder {
                 mLastReason = reason + ":propertySetFailed";
                 Log.w(TAG, "Uperf mode property set failed", t);
             }
+        }
+
+        synchronized void refreshGpu() {
+            // Window SystemUI and profile edits affect GPU only, never CPU mode.
+            boolean gpuEligible = mStarted && !mGpuSystemUi && !mScenePackage.isEmpty()
+                    && !isTransientPackage(mScenePackage);
+            long identity = Binder.clearCallingIdentity();
+            try {
+                android.content.pm.ResolveInfo home = mPm.resolveActivity(
+                        new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+                        PackageManager.MATCH_DEFAULT_ONLY);
+                if (home == null || home.activityInfo == null
+                        || mScenePackage.equals(home.activityInfo.packageName)) gpuEligible = false;
+            } catch (Throwable unavailable) {
+                gpuEligible = false;
+            } finally {
+                Binder.restoreCallingIdentity(identity);
+            }
+            mGpuPolicy.resolve(mScenePackage, mDesiredMode,
+                    mGpuOverrides.get(key(mSceneUserId, mScenePackage)), gpuEligible,
+                    mInteractive, !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false));
         }
 
         synchronized String stateLines() {

@@ -63,40 +63,59 @@ public final class GpuProofTest {
 
         Fake f = new Fake();
         GpuPolicyController c = new GpuPolicyController(f);
-        c.scene(GpuPolicyController.GAME, true);
-        check(f.count == 0);
-        c.configure("SAFE_CANARY");
+        String game = "com.kurogame.mingchao";
+        int[] opps = {231,310,366,422,500,578,629,680,720,770,834,903};
+        for (int i=0;i<opps.length;i++) check(GpuRange.level(opps[i]) == 11-i);
+        for (int[] bad : new int[][] {{232,903},{231,902},{903,231}}) {
+            try { new GpuRange(bad[0],bad[1]); throw new AssertionError(); }
+            catch (IllegalArgumentException expected) { }
+        }
+        String[] modes = {"powersave","balance","performance","fast"};
+        int[][] expectedLevels = {{11,8},{11,5},{11,0},{5,0}};
+        for (int i=0;i<modes.length;i++) {
+            c.resolve(game,modes[i],null,true,true,true);
+            check(f.last[1] == expectedLevels[i][0] && f.last[3] == expectedLevels[i][1]);
+        }
+        f = new Fake(); c = new GpuPolicyController(f);
+        c.resolve(game,"powersave",null,true,true,true);
         check(Arrays.equals(f.last, new int[] {MIN, 11, MAX, 8}));
-        for (int i = 0; i < 100; i++) c.scene(GpuPolicyController.GAME, true);
+        for (int i = 0; i < 100; i++) c.resolve(game,"powersave",null,true,true,true);
         check(f.count == 1 && f.releases == 0);
-        c.configure("FULL_DYNAMIC");
+        c.resolve(game,"performance",null,true,true,true);
         check(f.count == 2 && f.releases == 1 && f.last[3] == 0);
-        c.scene("com.zui.launcher", true);
+        c.resolve("com.zui.launcher","performance",null,false,true,true);
         check(f.active == 0 && f.releases == 2);
-        c.scene(GpuPolicyController.GAME, true);
-        c.scene(GpuPolicyController.GAME, false);
+        c.resolve(game,"performance",new GpuRange(366,720),true,true,true);
+        check(f.last[1] == 9 && f.last[3] == 3 && c.stateLines().contains("gpuMode=performance"));
+        int before = f.count;
+        c.resolve("other.app","balance",new GpuRange(366,720),true,true,true);
+        check(f.count == before); // same range, new app: no reacquire
+        c.resolve(game,"performance",new GpuRange(366,720),true,false,true);
         check(f.active == 0);
-        c.scene(GpuPolicyController.GAME, true);
-        c.configure("OFF");
+        c.resolve(game,"performance",new GpuRange(366,720),true,true,true);
+        check(f.last[1] == 9 && f.last[3] == 3);
+        c.resolve(game,"performance",null,true,true,true); // follow reset
+        check(f.last[1] == 11 && f.last[3] == 0);
+        c.resolve(game,"performance",null,true,true,false);
         check(f.active == 0);
-        c.configure("SAFE_CANARY");
+        c.resolve(game,"powersave",null,true,true,true);
         c.failSafe("test");
         check(f.active == 0 && c.stateLines().contains("gpuFailSafe=true"));
-        try { c.configure("FULL_DYNAMIC"); throw new AssertionError(); }
-        catch (IllegalStateException expected) { }
+        c.resolve(game,"performance",null,true,true,true);
+        check(f.active == 0); // latched failsafe
 
         f = new Fake(); c = new GpuPolicyController(f);
         f.acquireResult = -1;
-        c.scene(GpuPolicyController.GAME, true); c.configure("SAFE_CANARY");
+        c.resolve(game,"powersave",null,true,true,true);
         check(f.active == 0 && c.stateLines().contains("gpuFailSafe=true"));
         f = new Fake(); c = new GpuPolicyController(f);
-        c.scene(GpuPolicyController.GAME, true); c.configure("SAFE_CANARY");
+        c.resolve(game,"powersave",null,true,true,true);
         f.releaseResult = -1;
-        c.configure("FULL_DYNAMIC");
+        c.resolve(game,"performance",null,true,true,true);
         check(f.count == 1 && f.active > 0 && c.stateLines().contains("gpuFailSafe=true"));
-        f.releaseResult = 1; c.configure("OFF");
+        f.releaseResult = 1; c.resolve(game,"performance",null,true,true,false);
         check(f.active == 0);
-        try { c.configure("FAST"); throw new AssertionError(); }
+        try { GpuRange.defaults("FAST"); throw new AssertionError(); }
         catch (IllegalArgumentException expected) { }
         System.out.println("GPU_FILTER_POSITIVE=PASS; NEGATIVE_OTHER_UID1000=34; SYSTEM_SERVER=PASS; GPU_CONTROLLER_LIFECYCLE=PASS; IDLE_POLLING=0");
     }

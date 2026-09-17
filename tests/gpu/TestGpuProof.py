@@ -31,6 +31,7 @@ class GpuProof(unittest.TestCase):
             subprocess.run(['javac', '-d', str(tmp), str(log),
                 str(ROOT/'framework_patch/src/framework_gpu/android/zui/GpuRequestFilter.java'),
                 str(ROOT/'framework_patch/src/services/com/zui/server/control/GpuPolicyController.java'),
+                str(ROOT/'framework_patch/src/services/com/zui/server/control/GpuRange.java'),
                 str(Path(__file__).with_name('GpuProofTest.java'))], check=True)
             subprocess.run(['java', '-cp', str(tmp), 'com.zui.server.control.GpuProofTest'], check=True)
 

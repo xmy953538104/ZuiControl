@@ -1,0 +1,66 @@
+[
+  {
+    "before": "    private static final int TX_EXPORT_LOG = 11;\n    private static final int TX_NOTIFY_CONTROL_REQUEST = 12;\n    private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;\n    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;\n",
+    "after": "    private static final int TX_EXPORT_LOG = 11;\n    private static final int TX_NOTIFY_CONTROL_REQUEST = 12;\n    private static final int TX_SET_GPU_RANGE = 13;\n    private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;\n    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;\n"
+  },
+  {
+    "before": "    };\n    private final Map<String, Profile> mProfiles = new HashMap<>();\n\n    private volatile FocusSnapshot mLatestFocus = new FocusSnapshot(\n",
+    "after": "    };\n    private final Map<String, Profile> mProfiles = new HashMap<>();\n    private final Map<String, GpuRange> mGpuOverrides = new HashMap<>();\n    private volatile boolean mGpuSystemUi;\n\n    private volatile FocusSnapshot mLatestFocus = new FocusSnapshot(\n"
+  },
+  {
+    "before": "                    pkg, userId, \"topResumedValid\", eventNanos);\n            mZuioptScene.changed(pkg, userId);\n            mGpuPolicy.scene(pkg, mScreenInteractive);\n            publishState();\n            return;\n",
+    "after": "                    pkg, userId, \"topResumedValid\", eventNanos);\n            mZuioptScene.changed(pkg, userId);\n            publishState();\n            return;\n"
+  },
+  {
+    "before": "                SystemClock.elapsedRealtimeNanos());\n        mZuioptScene.changed(pkg, userId);\n        mGpuPolicy.scene(pkg, mScreenInteractive);\n        publishState();\n    }\n",
+    "after": "                SystemClock.elapsedRealtimeNanos());\n        mZuioptScene.changed(pkg, userId);\n        publishState();\n    }\n"
+  },
+  {
+    "before": "        mRawFocusedUserId = userId;\n        mRawFocusedDisplayId = resolveDisplayId(displayId);\n        Profile refreshProfile;\n        boolean transientFocus = forceTransient || mImeVisible || mRawFocusedPackage.isEmpty()\n",
+    "after": "        mRawFocusedUserId = userId;\n        mRawFocusedDisplayId = resolveDisplayId(displayId);\n        if (mRawFocusedDisplayId == Display.DEFAULT_DISPLAY) {\n            boolean systemUi = \"com.android.systemui\".equals(mRawFocusedPackage);\n            if (mGpuSystemUi != systemUi) {\n                mGpuSystemUi = systemUi;\n                mUperfScenePolicy.refreshGpu();\n            }\n        }\n        Profile refreshProfile;\n        boolean transientFocus = forceTransient || mImeVisible || mRawFocusedPackage.isEmpty()\n"
+  },
+  {
+    "before": "                return true;\n            }\n            if (code >= 1 && code <= TX_NOTIFY_CONTROL_REQUEST) {\n                data.enforceInterface(DESCRIPTOR);\n            }\n",
+    "after": "                return true;\n            }\n            if (code >= 1 && code <= TX_SET_GPU_RANGE) {\n                data.enforceInterface(DESCRIPTOR);\n            }\n"
+  },
+  {
+    "before": "                    result = notifyControlRequest(data.readString(), data.readString());\n                    break;\n                default:\n                    return super.onTransact(code, data, reply, flags);\n",
+    "after": "                    result = notifyControlRequest(data.readString(), data.readString());\n                    break;\n                case TX_SET_GPU_RANGE:\n                    enforceCommandCallerAllowed();\n                    result = setGpuRange(data.readString(), data.readInt(),\n                            data.readInt(), data.readInt());\n                    break;\n                default:\n                    return super.onTransact(code, data, reply, flags);\n"
+  },
+  {
+    "before": "    @Override\n    protected synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {\n        if (args != null && args.length > 0 && \"--gpu-proof\".equals(args[0])) {\n            if (Binder.getCallingUid() != 0) throw new SecurityException(\"root GPU proof only\");\n            if (args.length != 2) throw new IllegalArgumentException(\"--gpu-proof MODE\");\n            if (!\"OFF\".equals(args[1]) && SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false)) {\n                throw new IllegalStateException(\"global controller disable\");\n            }\n            mGpuPolicy.configure(args[1]);\n        }\n        pw.print(state());\n    }\n\n",
+    "after": "    @Override\n    protected synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {\n        pw.print(state());\n    }\n\n    private synchronized String setGpuRange(String pkg, int userId, int min, int max) {\n        if (userId < 0 || userId != Binder.getCallingUid() / 100000\n                || !validPackage(pkg) || !packageExists(pkg) || isTransientPackage(pkg)) {\n            return \"ok=0\\nerror=invalid_gpu_target\";\n        }\n        GpuRange value = min == 0 && max == 0 ? null : new GpuRange(min, max);\n        synchronized (mUperfScenePolicy) {\n            String k = key(userId, pkg);\n            GpuRange previous = mGpuOverrides.get(k);\n            if (value == null) mGpuOverrides.remove(k); else mGpuOverrides.put(k, value);\n            if (!saveProfiles()) {\n                if (previous == null) mGpuOverrides.remove(k); else mGpuOverrides.put(k, previous);\n                return \"ok=0\\nerror=gpu_profile_save\";\n            }\n            mUperfScenePolicy.refreshGpu();\n        }\n        return \"ok=1\\ngpuOverride=\" + (value == null ? \"NONE\" : min + \"|\" + max);\n    }\n\n"
+  },
+  {
+    "before": "    private synchronized void onRefreshPropertiesChanged(int observedMask) {\n        int disableMask = readRefreshDisableMask();\n        if ((disableMask & 1) != 0) mGpuPolicy.failSafe(\"global_disable\");\n        synchronized (mRefreshPropertyLock) {\n            mObservedRefreshDisableMask = disableMask;\n",
+    "after": "    private synchronized void onRefreshPropertiesChanged(int observedMask) {\n        int disableMask = readRefreshDisableMask();\n        mUperfScenePolicy.refreshGpu();\n        synchronized (mRefreshPropertyLock) {\n            mObservedRefreshDisableMask = disableMask;\n"
+  },
+  {
+    "before": "        }\n        mScreenInteractive = interactive;\n        mGpuPolicy.scene(mTopResumedState.stablePackage(), interactive);\n        mUperfScenePolicy.onInteractiveChanged(interactive,\n                interactive ? \"screenOn\" : \"screenOff\", SystemClock.elapsedRealtimeNanos());\n",
+    "after": "        }\n        mScreenInteractive = interactive;\n        mUperfScenePolicy.onInteractiveChanged(interactive,\n                interactive ? \"screenOn\" : \"screenOff\", SystemClock.elapsedRealtimeNanos());\n"
+  },
+  {
+    "before": "    private void loadProfiles() {\n        mProfiles.clear();\n        try {\n            byte[] raw = mProfileFile.readFully();\n",
+    "after": "    private void loadProfiles() {\n        mProfiles.clear();\n        mGpuOverrides.clear();\n        try {\n            byte[] raw = mProfileFile.readFully();\n"
+  },
+  {
+    "before": "                }\n                String[] parts = line.split(\"\\\\|\");\n                Profile p = null;\n                if (parts.length == 5 && \"default\".equals(parts[0])) {\n",
+    "after": "                }\n                String[] parts = line.split(\"\\\\|\");\n                if (parts.length == 5 && \"gpu\".equals(parts[0])) {\n                    try {\n                        int user = Integer.parseInt(parts[1]);\n                        if (user >= 0 && validPackage(parts[2]) && !isTransientPackage(parts[2])) {\n                            mGpuOverrides.put(key(user, parts[2]), new GpuRange(\n                                    Integer.parseInt(parts[3]), Integer.parseInt(parts[4])));\n                        }\n                    } catch (IllegalArgumentException badRange) {\n                        Log.w(TAG, \"Ignoring invalid persisted GPU range\");\n                    }\n                    continue;\n                }\n                Profile p = null;\n                if (parts.length == 5 && \"default\".equals(parts[0])) {\n"
+  },
+  {
+    "before": "                            .append('|').append(p.mode).append('\\n');\n                }\n            }\n            out = mProfileFile.startWrite();\n",
+    "after": "                            .append('|').append(p.mode).append('\\n');\n                }\n            }\n            for (Map.Entry<String, GpuRange> e : mGpuOverrides.entrySet()) {\n                sb.append(\"gpu|\").append(e.getKey().replace(':', '|')).append('|')\n                        .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz).append('\\n');\n            }\n            out = mProfileFile.startWrite();\n"
+  },
+  {
+    "before": "    private String profileStateLines() {\n        StringBuilder sb = new StringBuilder();\n        for (Profile p : mProfiles.values()) {\n            if (\"default\".equals(p.packageName)) {\n",
+    "after": "    private String profileStateLines() {\n        StringBuilder sb = new StringBuilder();\n        for (Map.Entry<String, GpuRange> e : mGpuOverrides.entrySet()) {\n            sb.append(\"\\ngpuProfile=\").append(e.getKey().replace(':', '|')).append('|')\n                    .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz);\n        }\n        for (Profile p : mProfiles.values()) {\n            if (\"default\".equals(p.packageName)) {\n"
+  },
+  {
+    "before": "                source = \"global\";\n            }\n            if (mDesiredMode.equals(mLastRequestedMode)) {\n                mLastReason = reason + \":\" + source + \":sameTarget\";\n",
+    "after": "                source = \"global\";\n            }\n            refreshGpu();\n            if (mDesiredMode.equals(mLastRequestedMode)) {\n                mLastReason = reason + \":\" + source + \":sameTarget\";\n"
+  },
+  {
+    "before": "                Log.w(TAG, \"Uperf mode property set failed\", t);\n            }\n        }\n\n",
+    "after": "                Log.w(TAG, \"Uperf mode property set failed\", t);\n            }\n        }\n\n        synchronized void refreshGpu() {\n            // Window SystemUI and profile edits affect GPU only, never CPU mode.\n            boolean gpuEligible = mStarted && !mGpuSystemUi && !mScenePackage.isEmpty()\n                    && !isTransientPackage(mScenePackage);\n            long identity = Binder.clearCallingIdentity();\n            try {\n                android.content.pm.ResolveInfo home = mPm.resolveActivity(\n                        new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),\n                        PackageManager.MATCH_DEFAULT_ONLY);\n                if (home == null || home.activityInfo == null\n                        || mScenePackage.equals(home.activityInfo.packageName)) gpuEligible = false;\n            } catch (Throwable unavailable) {\n                gpuEligible = false;\n            } finally {\n                Binder.restoreCallingIdentity(identity);\n            }\n            mGpuPolicy.resolve(mScenePackage, mDesiredMode,\n                    mGpuOverrides.get(key(mSceneUserId, mScenePackage)), gpuEligible,\n                    mInteractive, !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false));\n        }\n\n"
+  }
+]

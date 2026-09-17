@@ -472,19 +472,28 @@ def terminal_framework(root, manifest_path):
         helper = bound(manifest["ci_gpu_helper"])
         patched = bound(manifest["gpu_patched_dex"])
         proof = json.loads(bound(manifest["gpu_qualification"]))
+        product_manager = "ci_manager_extension" in manifest
+        proof_framework = bound(manifest["gpu_base_framework"]) if product_manager else result["framework.jar"]
         expected = dict(schema="V23_GPU_FRAMEWORK_V1", original_sha256=FRAMEWORK_SHA,
-            framework_sha256=hashlib.sha256(result["framework.jar"]).hexdigest(),
+            framework_sha256=hashlib.sha256(proof_framework).hexdigest(),
             helper_sha256=hashlib.sha256(helper).hexdigest(),
             patched_dex_sha256=hashlib.sha256(patched).hexdigest(),
             changed_method="android.util.BoostFramework.perfLockAcquire(I[I)I",
             package_manager_trust_changed=False, changed_members=["classes4.dex", "classes7.dex"])
         if any(proof.get(key) != value for key, value in expected.items()):
             raise SystemExit("GPU source qualification receipt mismatch")
-        before, after = members(original), members(result["framework.jar"])
+        before, after = members(original), members(proof_framework)
         if set(after) != set(before) | {"classes7.dex"} or after["classes7.dex"] != helper or after["classes4.dex"] != patched:
             raise SystemExit("GPU framework member identity mismatch")
         if any(after[name] != data for name, data in before.items() if name != "classes4.dex"):
             raise SystemExit("GPU unrelated framework member delta")
+        if product_manager:
+            final = members(result["framework.jar"])
+            manager = bound(manifest["ci_manager_extension"])
+            if set(final) != set(after) or final.get("classes6.dex") != manager:
+                raise SystemExit("GPU product manager identity mismatch")
+            if any(final[name] != data for name, data in after.items() if name != "classes6.dex"):
+                raise SystemExit("GPU product changed proven backend")
     return result, hashlib.sha256(path.read_bytes()).hexdigest()
 
 

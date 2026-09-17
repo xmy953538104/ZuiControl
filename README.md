@@ -35,6 +35,7 @@ Run from the repository root:
 
 ```text
 python tests/command_plane/TestCommandPlaneArchitecture.py
+python tests/gpu/TestGpuProof.py
 bash tests/command_plane/TestZuiControldTransactions.sh
 python tests/refresh/TestRefreshStateMachine.py
 python tests/uperf/architecture/TestUperfArchitecture.py
@@ -85,8 +86,10 @@ calls; it is not proof of device wire bytes or SELinux permissions.
 ## ROM integration
 
 The terminal candidate rebuilds the services extension from exact current source.
-The reviewed Golden framework.jar and unmodified services DEX members remain
-byte-identical. A source-bound terminal manifest is required for payload application:
+Unmodified services DEX members remain byte-identical. The GPU lane additionally
+binds the qualified TAssistent-only Java filter and exact CI framework manager
+extension; every unrelated framework member remains byte-identical. A source-bound
+terminal manifest is required for payload application:
 
 ```powershell
 python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image-root> --payload <ci-payload> --original-base-manifest <approved-original-manifest.json> --terminal-framework-manifest <terminal-jars.json> --dry-run
@@ -96,6 +99,15 @@ python scripts/build/ApplyZuiControlPayload.py --root . --unpack <unpacked-image
 Build outputs, ROM images, device evidence, review packages, and local project
 history do not belong in this repository. Runtime ownership and payload details
 are summarized in `payload/README.txt`.
+
+GPU follows the same four performance levels as Uperf: powersave231–422,
+balance231–629, performance231–903 and fast629–903MHz. The inline per-app range
+bar snaps to the twelve SM8650 OPPs. Optional `gpu|user|package|minMHz|maxMHz`
+records share the existing AtomicFile; absent records follow the resolved mode.
+Authenticated Binder transaction13 sets a range, or clears it with0/0. It does
+not alter Uperf rules. HOME/SystemUI/screen-off/disable release the single handle.
+The KGSL governor and OEM hard thermal remain authoritative; no SoftThermal,
+GPU daemon or sysfs writer is added.
 
 ZUIopt is the sole per-task/per-thread owner and starts automatically while the
 scheduler is active and no persistent failure exists. Rule imports use the existing authenticated command plane;
