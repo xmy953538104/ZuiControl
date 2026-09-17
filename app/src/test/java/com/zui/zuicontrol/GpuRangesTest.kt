@@ -4,6 +4,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class GpuRangesTest {
+    @Test fun globalConfigAndFixedTrackGeometry() {
+        assertEquals("performance" to GpuRanges.Range(231,500), GpuRanges.global("gpuGlobal=0|performance|231|500",0))
+        for (line in listOf("gpuGlobal=1|performance|231|500", "gpuGlobal=0|invalid|231|500",
+                "gpuGlobal=0|performance|500|231", "gpuGlobal=0|performance|232|500")) {
+            assertNull(GpuRanges.global(line,0))
+        }
+        val track = GpuRanges.track(400f,48f,8f)
+        assertEquals(32f,track.left,0f); assertEquals(368f,track.right,0f)
+        for (min in GpuRanges.opps) for (max in GpuRanges.opps.filter { it >= min }) {
+            val range = GpuRanges.Range(min,max)
+            assertTrue(track.x(min) >= track.left && track.x(max) <= track.right)
+            assertTrue(track.x(min) <= track.x(max))
+            assertEquals(min,track.snap(track.x(min))); assertEquals(max,track.snap(track.x(max)))
+            assertTrue(track.x(min)-24 >= 0 && track.x(max)+24 <= 400)
+            assertEquals(336f,track.right-track.left,0f) // independent of selected interval
+        }
+        assertTrue(track.labelsCollide(GpuRanges.Range(422,500),48f,48f,4f))
+        assertTrue(track.labelsCollide(GpuRanges.Range(500,500),48f,48f,4f))
+        assertFalse(track.labelsCollide(GpuRanges.Range(231,903),48f,48f,4f))
+    }
     @Test fun defaultsAndOverrideModel() {
         assertEquals(GpuRanges.Range(231,422), GpuRanges.default("powersave"))
         assertEquals(GpuRanges.Range(231,629), GpuRanges.default("balance"))

@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT/'scripts/build'))
 from GpuProofTransforms import gamepower, performance, FILTER_ENTRY
 from BuildGpuFramework import canonical_defaults
+from TestGpuProfiles import GpuProfiles
 
 
 class GpuProof(unittest.TestCase):

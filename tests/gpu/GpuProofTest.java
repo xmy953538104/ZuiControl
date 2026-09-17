@@ -115,6 +115,12 @@ public final class GpuProofTest {
         check(f.count == 1 && f.active > 0 && c.stateLines().contains("gpuFailSafe=true"));
         f.releaseResult = 1; c.resolve(game,"performance",null,true,true,false);
         check(f.active == 0);
+        GpuRange global = new GpuRange(231,500), override = new GpuRange(422,500);
+        check(GpuRange.resolve(null,null,"performance").same(new GpuRange(231,903)));
+        check(GpuRange.resolve(null,global,"performance").same(global));
+        check(GpuRange.resolve(override,global,"performance").same(override));
+        check(GpuRange.resolve(override,null,"powersave").same(override));
+        check(GpuRange.resolve(null,null,"powersave").same(new GpuRange(231,422)));
         try { GpuRange.defaults("FAST"); throw new AssertionError(); }
         catch (IllegalArgumentException expected) { }
         System.out.println("GPU_FILTER_POSITIVE=PASS; NEGATIVE_OTHER_UID1000=34; SYSTEM_SERVER=PASS; GPU_CONTROLLER_LIFECYCLE=PASS; IDLE_POLLING=0");

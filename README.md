@@ -102,10 +102,15 @@ are summarized in `payload/README.txt`.
 
 GPU follows the same four performance levels as Uperf: powersave231–422,
 balance231–629, performance231–903 and fast629–903MHz. The inline per-app range
-bar snaps to the twelve SM8650 OPPs. Optional `gpu|user|package|minMHz|maxMHz`
-records share the existing AtomicFile; absent records follow the resolved mode.
-Authenticated Binder transaction13 sets a range, or clears it with0/0. It does
-not alter Uperf rules. HOME/SystemUI/screen-off/disable release the single handle.
+bar snaps to the twelve SM8650 OPPs. Settings `GPU频率范围` configures these
+four global ranges; the custom-app editor uses the same full-width track with
+two persistent labels below their own thumbs. Close labels stagger vertically.
+Optional `gpu|user|package|minMHz|maxMHz` and `gpuGlobal|user|mode|minMHz|maxMHz`
+records share the existing AtomicFile. Resolution is app override, then current
+mode's global range, then factory default. Legacy records remain compatible.
+Authenticated Binder transaction13 sets an app range or clears it with0/0
+(`默认`); transaction14 persists a global mode range. Neither alters Uperf rules.
+HOME/SystemUI/screen-off/disable release the single handle.
 The KGSL governor and OEM hard thermal remain authoritative; no SoftThermal,
 GPU daemon or sysfs writer is added.
 

@@ -42,6 +42,7 @@ class MainActivity : Activity() {
     private val refreshRules = linkedMapOf<String, Int>()
     private val uperfRules = linkedMapOf<String, UperfMode>()
     private val gpuOverrides = linkedMapOf<String, GpuRanges.Range>()
+    private val gpuGlobals = linkedMapOf<String, GpuRanges.Range>()
     private val labelCache = linkedMapOf<String, String>()
 
     private lateinit var contentHost: FrameLayout
@@ -335,10 +336,7 @@ class MainActivity : Activity() {
             } else {
                 (uperfRules.keys + gpuOverrides.keys).forEach { pkg ->
                     val mode = uperfRules[pkg] ?: selected
-                    addView(vertical().apply {
-                        addView(appCard(pkg, "性能：${mode.title}") { showUperfAppDialog(pkg) })
-                        addView(gpuRangeEditor(pkg, mode), fieldMargins())
-                    }, cardMargins())
+                    addView(appCard(pkg, "性能：${mode.title}") { showUperfAppDialog(pkg) }, cardMargins())
                 }
             }
         }
@@ -357,9 +355,19 @@ class MainActivity : Activity() {
         val modes = UperfMode.entries
         val picker = traySpinner(modes.map { it.title })
         picker.setSelection(modes.indexOf(current ?: UperfMode.PERFORMANCE).coerceAtLeast(0))
+        val gpuEditor = gpuRangeEditor(pkg) { modes[picker.selectedItemPosition] }
+        picker.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                (gpuEditor.tag as GpuRangeBar).range = gpuOverrides[pkg] ?: globalGpuRange(modes[position])
+            }
+        }
+        val content = dialogContent(pkg, "性能模式", picker) as LinearLayout
+        content.addView(fieldTitle("GPU频率范围"), fieldMargins())
+        content.addView(gpuEditor)
         AlertDialog.Builder(this)
             .setTitle(if (current == null) "添加自定义应用" else "编辑自定义应用")
-            .setView(dialogContent(pkg, "性能模式", picker))
+            .setView(content)
             .setPositiveButton("保存") { _, _ -> setUperfApp(pkg, modes[picker.selectedItemPosition]) }
             .apply {
                 if (current != null) setNeutralButton("删除") { _, _ -> removeUperfApp(pkg) }
@@ -368,13 +376,13 @@ class MainActivity : Activity() {
             .showStyled()
     }
 
-    private fun gpuRangeEditor(pkg: String, mode: UperfMode): View = vertical().apply {
-        val follow = GpuRanges.default(mode.id)
-        val text = compactNote("")
-        val bar = GpuRangeBar(this@MainActivity, gpuOverrides[pkg] ?: follow)
-        fun update() { text.text = "GPU ${bar.range.min} – ${bar.range.max} MHz · " +
-            if (gpuOverrides.containsKey(pkg)) "应用覆盖" else "跟随${mode.title}档位" }
-        val reset = commandButton("跟随档位") { }
+    private fun globalGpuRange(mode: UperfMode) = gpuGlobals[mode.id] ?: GpuRanges.default(mode.id)
+
+    private fun gpuRangeEditor(pkg: String, mode: () -> UperfMode): View = vertical().apply {
+        val bar = GpuRangeBar(this@MainActivity, gpuOverrides[pkg] ?: globalGpuRange(mode()))
+        tag = bar
+        val reset = commandButton("默认") { }
+        fun update() { reset.visibility = if (gpuOverrides.containsKey(pkg)) View.VISIBLE else View.INVISIBLE }
         fun save(value: GpuRanges.Range?) {
             bar.isEnabled = false; reset.isEnabled = false
             Thread {
@@ -383,17 +391,38 @@ class MainActivity : Activity() {
                     if (reply.ok) {
                         if (value == null) gpuOverrides.remove(pkg) else gpuOverrides[pkg] = value
                     } else toast("GPU 范围保存失败：${reply.text}")
-                    bar.range = gpuOverrides[pkg] ?: follow
+                    bar.range = gpuOverrides[pkg] ?: globalGpuRange(mode())
                     bar.isEnabled = true; reset.isEnabled = true; update()
                 }
             }.start()
         }
-        bar.onPreview = { text.text = "GPU ${it.min} – ${it.max} MHz" }
         bar.onCommit = { save(it) }
         reset.setOnClickListener { save(null) }
-        addView(text); addView(bar, LinearLayout.LayoutParams(-1, dp(56)))
+        addView(bar, LinearLayout.LayoutParams(-1, maxOf(dp(92), bar.preferredHeight)))
         addView(reset, LinearLayout.LayoutParams(-2, dp(40)))
         update()
+    }
+
+    private fun showGlobalGpuRanges() {
+        val rows = vertical().apply { setPadding(dp(20), dp(6), dp(20), dp(8)) }
+        UperfMode.entries.forEach { mode ->
+            rows.addView(fieldTitle(if (mode == UperfMode.FAST) "快速" else mode.title), fieldMargins())
+            val bar = GpuRangeBar(this, globalGpuRange(mode))
+            bar.onCommit = { value ->
+                bar.isEnabled = false
+                Thread {
+                    val reply = ZuiControlClient.setGlobalGpuRange(mode.id, value)
+                    handler.post {
+                        if (reply.ok) gpuGlobals[mode.id] = value else toast("GPU 范围保存失败：${reply.text}")
+                        bar.range = globalGpuRange(mode); bar.isEnabled = true
+                    }
+                }.start()
+            }
+            rows.addView(bar, LinearLayout.LayoutParams(-1, maxOf(dp(92), bar.preferredHeight)))
+        }
+        AlertDialog.Builder(this).setTitle("GPU频率范围")
+            .setView(ScrollView(this).apply { addView(rows) })
+            .setPositiveButton("完成", null).showStyled()
     }
 
     private fun setUperfMode(mode: UperfMode) {
@@ -552,6 +581,9 @@ class MainActivity : Activity() {
                     "刷新率 owner：system · health：$schedulerError",
             ))
             addView(sectionTitle("工具"), sectionMargins())
+            addView(settingsAction(R.drawable.ic_nav_system, "GPU频率范围", "节能 · 均衡 · 性能 · 快速") {
+                showGlobalGpuRanges()
+            }, settingsActionMargins())
             addView(settingsAction(
                 R.drawable.ic_action_logs, "导出运行日志", "排查刷新率、Uperf 与 ZUIopt",
             ) { exportLogs() }, settingsActionMargins())
@@ -712,8 +744,10 @@ class MainActivity : Activity() {
         refreshRules.clear()
         val serviceState = ZuiControlClient.stateText()
         gpuOverrides.clear()
+        gpuGlobals.clear()
         serviceState.lineSequence().forEach { line ->
             GpuRanges.profile(line, ZuiControlClient.currentUserId())?.let { gpuOverrides[it.first] = it.second }
+            GpuRanges.global(line, ZuiControlClient.currentUserId())?.let { gpuGlobals[it.first] = it.second }
         }
         serviceState.lineSequence()
             .filter { it.startsWith("profile=") }

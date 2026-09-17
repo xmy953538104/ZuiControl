@@ -23,4 +23,7 @@ final class GpuRange {
     boolean same(GpuRange other) {
         return other != null && minMHz == other.minMHz && maxMHz == other.maxMHz;
     }
+    static GpuRange resolve(GpuRange override, GpuRange global, String mode) {
+        return override != null ? override : global != null ? global : defaults(mode);
+    }
 }

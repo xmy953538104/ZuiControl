@@ -42,6 +42,10 @@ object ZuiControlClient {
         it.setGpuRange(pkg, currentUserId(), range?.min ?: 0, range?.max ?: 0)
     }
 
+    fun setGlobalGpuRange(mode: String, range: GpuRanges.Range): Reply = call {
+        it.setGlobalGpuRange(mode, currentUserId(), range.min, range.max)
+    }
+
     fun editableDisplayHz(): Int? {
         return stateInt("editableDisplayHz")?.takeIf { it > 0 }
     }

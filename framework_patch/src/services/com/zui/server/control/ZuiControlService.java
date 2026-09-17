@@ -88,6 +88,7 @@ public final class ZuiControlService extends Binder {
     private static final int TX_EXPORT_LOG = 11;
     private static final int TX_NOTIFY_CONTROL_REQUEST = 12;
     private static final int TX_SET_GPU_RANGE = 13;
+    private static final int TX_SET_GLOBAL_GPU_RANGE = 14;
     private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;
     private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;
     private static final int[] DISPLAY_HZ = new int[] {60, 90, 120, 144, 165};
@@ -113,6 +114,7 @@ public final class ZuiControlService extends Binder {
     };
     private final Map<String, Profile> mProfiles = new HashMap<>();
     private final Map<String, GpuRange> mGpuOverrides = new HashMap<>();
+    private final Map<String, GpuRange> mGpuGlobalRanges = new HashMap<>();
     private volatile boolean mGpuSystemUi;
 
     private volatile FocusSnapshot mLatestFocus = new FocusSnapshot(
@@ -579,7 +581,7 @@ public final class ZuiControlService extends Binder {
                 if (code == ZuioptSceneAuthority.CURRENT) mZuioptScene.writeCurrent(callback, pid, reply);
                 return true;
             }
-            if (code >= 1 && code <= TX_SET_GPU_RANGE) {
+            if (code >= 1 && code <= TX_SET_GLOBAL_GPU_RANGE) {
                 data.enforceInterface(DESCRIPTOR);
             }
             String result;
@@ -633,6 +635,11 @@ public final class ZuiControlService extends Binder {
                     result = setGpuRange(data.readString(), data.readInt(),
                             data.readInt(), data.readInt());
                     break;
+                case TX_SET_GLOBAL_GPU_RANGE:
+                    enforceCommandCallerAllowed();
+                    result = setGlobalGpuRange(data.readString(), data.readInt(),
+                            data.readInt(), data.readInt());
+                    break;
                 default:
                     return super.onTransact(code, data, reply, flags);
             }
@@ -648,6 +655,28 @@ public final class ZuiControlService extends Binder {
     @Override
     protected synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.print(state());
+    }
+
+    private synchronized String setGlobalGpuRange(String mode, int userId, int min, int max) {
+        if (userId < 0 || userId != Binder.getCallingUid() / 100000 || !isUperfMode(mode)) {
+            return "ok=0\nerror=invalid_gpu_mode";
+        }
+        GpuRange value = new GpuRange(min, max);
+        synchronized (mUperfScenePolicy) {
+            Map<String, GpuRange> previous = new HashMap<>(mGpuGlobalRanges);
+            for (String level : new String[] {"powersave", "balance", "performance", "fast"}) {
+                String modeKey = key(userId, level);
+                if (!mGpuGlobalRanges.containsKey(modeKey)) mGpuGlobalRanges.put(modeKey, GpuRange.defaults(level));
+            }
+            String k = key(userId, mode);
+            mGpuGlobalRanges.put(k, value);
+            if (!saveProfiles()) {
+                mGpuGlobalRanges.clear(); mGpuGlobalRanges.putAll(previous);
+                return "ok=0\nerror=gpu_global_save";
+            }
+            mUperfScenePolicy.refreshGpu();
+        }
+        return "ok=1";
     }
 
     private synchronized String setGpuRange(String pkg, int userId, int min, int max) {
@@ -1376,6 +1405,7 @@ public final class ZuiControlService extends Binder {
     private void loadProfiles() {
         mProfiles.clear();
         mGpuOverrides.clear();
+        mGpuGlobalRanges.clear();
         try {
             byte[] raw = mProfileFile.readFully();
             String text = new String(raw, StandardCharsets.UTF_8);
@@ -1385,6 +1415,18 @@ public final class ZuiControlService extends Binder {
                     continue;
                 }
                 String[] parts = line.split("\\|");
+                if (parts.length == 5 && "gpuGlobal".equals(parts[0])) {
+                    try {
+                        int user = Integer.parseInt(parts[1]);
+                        if (user >= 0 && isUperfMode(parts[2])) {
+                            mGpuGlobalRanges.put(key(user, parts[2]), new GpuRange(
+                                    Integer.parseInt(parts[3]), Integer.parseInt(parts[4])));
+                        }
+                    } catch (IllegalArgumentException badRange) {
+                        Log.w(TAG, "Ignoring invalid persisted global GPU range");
+                    }
+                    continue;
+                }
                 if (parts.length == 5 && "gpu".equals(parts[0])) {
                     try {
                         int user = Integer.parseInt(parts[1]);
@@ -1435,6 +1477,10 @@ public final class ZuiControlService extends Binder {
             }
             for (Map.Entry<String, GpuRange> e : mGpuOverrides.entrySet()) {
                 sb.append("gpu|").append(e.getKey().replace(':', '|')).append('|')
+                        .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz).append('\n');
+            }
+            for (Map.Entry<String, GpuRange> e : mGpuGlobalRanges.entrySet()) {
+                sb.append("gpuGlobal|").append(e.getKey().replace(':', '|')).append('|')
                         .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz).append('\n');
             }
             out = mProfileFile.startWrite();
@@ -1642,6 +1688,10 @@ public final class ZuiControlService extends Binder {
 
     private String profileStateLines() {
         StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, GpuRange> e : mGpuGlobalRanges.entrySet()) {
+            sb.append("\ngpuGlobal=").append(e.getKey().replace(':', '|')).append('|')
+                    .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz);
+        }
         for (Map.Entry<String, GpuRange> e : mGpuOverrides.entrySet()) {
             sb.append("\ngpuProfile=").append(e.getKey().replace(':', '|')).append('|')
                     .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz);
@@ -2116,8 +2166,9 @@ public final class ZuiControlService extends Binder {
             } finally {
                 Binder.restoreCallingIdentity(identity);
             }
-            mGpuPolicy.resolve(mScenePackage, mDesiredMode,
-                    mGpuOverrides.get(key(mSceneUserId, mScenePackage)), gpuEligible,
+            GpuRange resolved = GpuRange.resolve(mGpuOverrides.get(key(mSceneUserId, mScenePackage)),
+                    mGpuGlobalRanges.get(key(mSceneUserId, mDesiredMode)), mDesiredMode);
+            mGpuPolicy.resolve(mScenePackage, mDesiredMode, resolved, gpuEligible,
                     mInteractive, !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false));
         }
 

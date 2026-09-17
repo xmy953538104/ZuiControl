@@ -1,0 +1,42 @@
+[
+  {
+    "before": "    private static final int TX_NOTIFY_CONTROL_REQUEST = 12;\n    private static final int TX_SET_GPU_RANGE = 13;\n    private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;\n    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;\n",
+    "after": "    private static final int TX_NOTIFY_CONTROL_REQUEST = 12;\n    private static final int TX_SET_GPU_RANGE = 13;\n    private static final int TX_SET_GLOBAL_GPU_RANGE = 14;\n    private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;\n    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;\n"
+  },
+  {
+    "before": "    private final Map<String, Profile> mProfiles = new HashMap<>();\n    private final Map<String, GpuRange> mGpuOverrides = new HashMap<>();\n    private volatile boolean mGpuSystemUi;\n\n",
+    "after": "    private final Map<String, Profile> mProfiles = new HashMap<>();\n    private final Map<String, GpuRange> mGpuOverrides = new HashMap<>();\n    private final Map<String, GpuRange> mGpuGlobalRanges = new HashMap<>();\n    private volatile boolean mGpuSystemUi;\n\n"
+  },
+  {
+    "before": "                return true;\n            }\n            if (code >= 1 && code <= TX_SET_GPU_RANGE) {\n                data.enforceInterface(DESCRIPTOR);\n            }\n",
+    "after": "                return true;\n            }\n            if (code >= 1 && code <= TX_SET_GLOBAL_GPU_RANGE) {\n                data.enforceInterface(DESCRIPTOR);\n            }\n"
+  },
+  {
+    "before": "                            data.readInt(), data.readInt());\n                    break;\n                default:\n                    return super.onTransact(code, data, reply, flags);\n",
+    "after": "                            data.readInt(), data.readInt());\n                    break;\n                case TX_SET_GLOBAL_GPU_RANGE:\n                    enforceCommandCallerAllowed();\n                    result = setGlobalGpuRange(data.readString(), data.readInt(),\n                            data.readInt(), data.readInt());\n                    break;\n                default:\n                    return super.onTransact(code, data, reply, flags);\n"
+  },
+  {
+    "before": "    protected synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {\n        pw.print(state());\n    }\n\n",
+    "after": "    protected synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {\n        pw.print(state());\n    }\n\n    private synchronized String setGlobalGpuRange(String mode, int userId, int min, int max) {\n        if (userId < 0 || userId != Binder.getCallingUid() / 100000 || !isUperfMode(mode)) {\n            return \"ok=0\\nerror=invalid_gpu_mode\";\n        }\n        GpuRange value = new GpuRange(min, max);\n        synchronized (mUperfScenePolicy) {\n            Map<String, GpuRange> previous = new HashMap<>(mGpuGlobalRanges);\n            for (String level : new String[] {\"powersave\", \"balance\", \"performance\", \"fast\"}) {\n                String modeKey = key(userId, level);\n                if (!mGpuGlobalRanges.containsKey(modeKey)) mGpuGlobalRanges.put(modeKey, GpuRange.defaults(level));\n            }\n            String k = key(userId, mode);\n            mGpuGlobalRanges.put(k, value);\n            if (!saveProfiles()) {\n                mGpuGlobalRanges.clear(); mGpuGlobalRanges.putAll(previous);\n                return \"ok=0\\nerror=gpu_global_save\";\n            }\n            mUperfScenePolicy.refreshGpu();\n        }\n        return \"ok=1\";\n    }\n\n"
+  },
+  {
+    "before": "        mProfiles.clear();\n        mGpuOverrides.clear();\n        try {\n            byte[] raw = mProfileFile.readFully();\n",
+    "after": "        mProfiles.clear();\n        mGpuOverrides.clear();\n        mGpuGlobalRanges.clear();\n        try {\n            byte[] raw = mProfileFile.readFully();\n"
+  },
+  {
+    "before": "                }\n                String[] parts = line.split(\"\\\\|\");\n                if (parts.length == 5 && \"gpu\".equals(parts[0])) {\n                    try {\n",
+    "after": "                }\n                String[] parts = line.split(\"\\\\|\");\n                if (parts.length == 5 && \"gpuGlobal\".equals(parts[0])) {\n                    try {\n                        int user = Integer.parseInt(parts[1]);\n                        if (user >= 0 && isUperfMode(parts[2])) {\n                            mGpuGlobalRanges.put(key(user, parts[2]), new GpuRange(\n                                    Integer.parseInt(parts[3]), Integer.parseInt(parts[4])));\n                        }\n                    } catch (IllegalArgumentException badRange) {\n                        Log.w(TAG, \"Ignoring invalid persisted global GPU range\");\n                    }\n                    continue;\n                }\n                if (parts.length == 5 && \"gpu\".equals(parts[0])) {\n                    try {\n"
+  },
+  {
+    "before": "            for (Map.Entry<String, GpuRange> e : mGpuOverrides.entrySet()) {\n                sb.append(\"gpu|\").append(e.getKey().replace(':', '|')).append('|')\n                        .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz).append('\\n');\n            }\n",
+    "after": "            for (Map.Entry<String, GpuRange> e : mGpuOverrides.entrySet()) {\n                sb.append(\"gpu|\").append(e.getKey().replace(':', '|')).append('|')\n                        .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz).append('\\n');\n            }\n            for (Map.Entry<String, GpuRange> e : mGpuGlobalRanges.entrySet()) {\n                sb.append(\"gpuGlobal|\").append(e.getKey().replace(':', '|')).append('|')\n                        .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz).append('\\n');\n            }\n"
+  },
+  {
+    "before": "    private String profileStateLines() {\n        StringBuilder sb = new StringBuilder();\n        for (Map.Entry<String, GpuRange> e : mGpuOverrides.entrySet()) {\n            sb.append(\"\\ngpuProfile=\").append(e.getKey().replace(':', '|')).append('|')\n",
+    "after": "    private String profileStateLines() {\n        StringBuilder sb = new StringBuilder();\n        for (Map.Entry<String, GpuRange> e : mGpuGlobalRanges.entrySet()) {\n            sb.append(\"\\ngpuGlobal=\").append(e.getKey().replace(':', '|')).append('|')\n                    .append(e.getValue().minMHz).append('|').append(e.getValue().maxMHz);\n        }\n        for (Map.Entry<String, GpuRange> e : mGpuOverrides.entrySet()) {\n            sb.append(\"\\ngpuProfile=\").append(e.getKey().replace(':', '|')).append('|')\n"
+  },
+  {
+    "before": "                Binder.restoreCallingIdentity(identity);\n            }\n            mGpuPolicy.resolve(mScenePackage, mDesiredMode,\n                    mGpuOverrides.get(key(mSceneUserId, mScenePackage)), gpuEligible,\n                    mInteractive, !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false));\n        }\n",
+    "after": "                Binder.restoreCallingIdentity(identity);\n            }\n            GpuRange resolved = GpuRange.resolve(mGpuOverrides.get(key(mSceneUserId, mScenePackage)),\n                    mGpuGlobalRanges.get(key(mSceneUserId, mDesiredMode)), mDesiredMode);\n            mGpuPolicy.resolve(mScenePackage, mDesiredMode, resolved, gpuEligible,\n                    mInteractive, !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false));\n        }\n"
+  }
+]

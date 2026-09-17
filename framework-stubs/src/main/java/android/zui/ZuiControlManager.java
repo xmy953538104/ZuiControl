@@ -59,4 +59,8 @@ public final class ZuiControlManager {
     public String notifyControlRequest(String requestId, String requestSha256) {
         throw new UnsupportedOperationException("framework stub");
     }
+
+    public String setGlobalGpuRange(String mode, int userId, int minMHz, int maxMHz) {
+        throw new UnsupportedOperationException("framework stub");
+    }
 }
