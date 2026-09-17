@@ -101,6 +101,8 @@ public final class ZuiControlService extends Binder {
     private final AtomicLong mTopResumedCallbackGeneration = new AtomicLong();
     private final TopResumedNullState mTopResumedState = new TopResumedNullState();
     private final ZuioptSceneAuthority mZuioptScene = new ZuioptSceneAuthority();
+    private final GpuPolicyController mGpuPolicy =
+            new GpuPolicyController(new GpuPolicyController.QtiTransport());
     private ActivityTaskSupervisor mTopResumedAuthority;
     private final Runnable mTopResumedNullRevalidation = new Runnable() {
         @Override
@@ -292,6 +294,7 @@ public final class ZuiControlService extends Binder {
             mUperfScenePolicy.onTopResumedChanged(
                     pkg, userId, "topResumedValid", eventNanos);
             mZuioptScene.changed(pkg, userId);
+            mGpuPolicy.scene(pkg, mScreenInteractive);
             publishState();
             return;
         }
@@ -322,6 +325,7 @@ public final class ZuiControlService extends Binder {
             current = mTopResumedAuthority.getZuiControlTopResumedActivity();
         } catch (Throwable t) {
             mTopResumedState.authorityError(generation);
+            mGpuPolicy.failSafe("top_resumed_authority_error");
             Log.w(TAG, "uperf_top_resumed event=topResumedRevalidateAuthorityError"
                     + " generation=" + generation + " trigger=" + trigger, t);
             return;
@@ -350,6 +354,7 @@ public final class ZuiControlService extends Binder {
         mUperfScenePolicy.onTopResumedChanged(pkg, userId, event,
                 SystemClock.elapsedRealtimeNanos());
         mZuioptScene.changed(pkg, userId);
+        mGpuPolicy.scene(pkg, mScreenInteractive);
         publishState();
     }
 
@@ -629,6 +634,14 @@ public final class ZuiControlService extends Binder {
 
     @Override
     protected synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+        if (args != null && args.length > 0 && "--gpu-proof".equals(args[0])) {
+            if (Binder.getCallingUid() != 0) throw new SecurityException("root GPU proof only");
+            if (args.length != 2) throw new IllegalArgumentException("--gpu-proof MODE");
+            if (!"OFF".equals(args[1]) && SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false)) {
+                throw new IllegalStateException("global controller disable");
+            }
+            mGpuPolicy.configure(args[1]);
+        }
         pw.print(state());
     }
 
@@ -1101,6 +1114,7 @@ public final class ZuiControlService extends Binder {
 
     private synchronized void onRefreshPropertiesChanged(int observedMask) {
         int disableMask = readRefreshDisableMask();
+        if ((disableMask & 1) != 0) mGpuPolicy.failSafe("global_disable");
         synchronized (mRefreshPropertyLock) {
             mObservedRefreshDisableMask = disableMask;
         }
@@ -1216,6 +1230,7 @@ public final class ZuiControlService extends Binder {
             return;
         }
         mScreenInteractive = interactive;
+        mGpuPolicy.scene(mTopResumedState.stablePackage(), interactive);
         mUperfScenePolicy.onInteractiveChanged(interactive,
                 interactive ? "screenOn" : "screenOff", SystemClock.elapsedRealtimeNanos());
         publishState();
@@ -1503,6 +1518,7 @@ public final class ZuiControlService extends Binder {
                 + (observeSchedulerHealth ? schedulerHealthStateLines() : "")
                 + "\nrefreshOwner=system"
                 + "\nsystemServiceAlive=true"
+                + mGpuPolicy.stateLines()
                 + "\ndaemonRefreshDisabled=true"
                 + "\ndaemonRetired=true"
                 + "\nrefreshDisabled=" + mRefreshDisabled

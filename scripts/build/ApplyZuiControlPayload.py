@@ -431,7 +431,8 @@ def terminal_framework(root, manifest_path):
     if not git:
         raise SystemExit("Git required for terminal source binding")
     head = subprocess.check_output([git, "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
-    if manifest.get("source_commit") != head or manifest.get("schema") != "ZUIOPT_TERMINAL_FRAMEWORK_V1":
+    gpu = manifest.get("schema") == "V23_GPU_TERMINAL_FRAMEWORK_V1"
+    if manifest.get("source_commit") != head or manifest.get("schema") not in ("ZUIOPT_TERMINAL_FRAMEWORK_V1", "V23_GPU_TERMINAL_FRAMEWORK_V1"):
         raise SystemExit("Terminal framework source/schema mismatch")
     if subprocess.check_output([git, "-C", str(root), "status", "--porcelain"]):
         raise SystemExit("Terminal framework requires clean exact source")
@@ -446,7 +447,7 @@ def terminal_framework(root, manifest_path):
             raise SystemExit("Terminal artifact hash/size mismatch")
         return data
     result = {name: bound(entry) for name, entry in manifest["jars"].items()}
-    if set(result) != {"framework.jar", "services.jar"} or hashlib.sha256(result["framework.jar"]).hexdigest() != "b5f57d62546569b9bd9ba34d8757678da000c33f876358dd93a4dc747b8f1b32":
+    if set(result) != {"framework.jar", "services.jar"} or (not gpu and hashlib.sha256(result["framework.jar"]).hexdigest() != "b5f57d62546569b9bd9ba34d8757678da000c33f876358dd93a4dc747b8f1b32"):
         raise SystemExit("Unexpected framework container change")
     old = bound(manifest["golden_services"])
     if hashlib.sha256(old).hexdigest() != "245b4f2c55d5ed8b99ecba8bd473d1d76eb40c55d67116a477299cc9d8b62000":
@@ -463,6 +464,27 @@ def terminal_framework(root, manifest_path):
         raise SystemExit("Terminal services extension identity mismatch")
     if before["classes4.dex"] == extension or any(before[name] != after[name] for name in before if name != "classes4.dex"):
         raise SystemExit("Unexplained services member delta")
+    if gpu:
+        from GpuProofTransforms import FRAMEWORK_SHA
+        original = bound(manifest["golden_framework"])
+        if hashlib.sha256(original).hexdigest() != FRAMEWORK_SHA:
+            raise SystemExit("Unqualified GPU framework original")
+        helper = bound(manifest["ci_gpu_helper"])
+        patched = bound(manifest["gpu_patched_dex"])
+        proof = json.loads(bound(manifest["gpu_qualification"]))
+        expected = dict(schema="V23_GPU_FRAMEWORK_V1", original_sha256=FRAMEWORK_SHA,
+            framework_sha256=hashlib.sha256(result["framework.jar"]).hexdigest(),
+            helper_sha256=hashlib.sha256(helper).hexdigest(),
+            patched_dex_sha256=hashlib.sha256(patched).hexdigest(),
+            changed_method="android.util.BoostFramework.perfLockAcquire(I[I)I",
+            package_manager_trust_changed=False, changed_members=["classes4.dex", "classes7.dex"])
+        if any(proof.get(key) != value for key, value in expected.items()):
+            raise SystemExit("GPU source qualification receipt mismatch")
+        before, after = members(original), members(result["framework.jar"])
+        if set(after) != set(before) | {"classes7.dex"} or after["classes7.dex"] != helper or after["classes4.dex"] != patched:
+            raise SystemExit("GPU framework member identity mismatch")
+        if any(after[name] != data for name, data in before.items() if name != "classes4.dex"):
+            raise SystemExit("GPU unrelated framework member delta")
     return result, hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -535,6 +557,11 @@ def main():
         "build_base": "EXACT_ORIGINAL_072",
         "original_identity": original_identity,
     }
+    gpu_proof = bool(args.terminal_framework_manifest and json.loads(
+        pathlib.Path(args.terminal_framework_manifest).read_text(encoding="utf8")).get("schema") == "V23_GPU_TERMINAL_FRAMEWORK_V1")
+    if gpu_proof:
+        from GpuProofTransforms import apply_gpu_configs
+        report["gpu_proof"] = apply_gpu_configs(unpack, args.dry_run)
     apk = payload.joinpath(*APP_APK_PATH.split("/"))
     if not apk.exists():
         raise SystemExit(f"Missing {APP_APK_PATH}. Run scripts/build/BuildZuiControl.ps1 before applying the payload.")
@@ -563,6 +590,8 @@ def main():
         if not args.dry_run:
             destination.write_bytes(data)
     report["framework_patch"] = "TERMINAL_EXACT_CI_SERVICES_EXTENSION" if args.terminal_framework_manifest else "PRESERVED_EXACT_GOLDEN_NO_SOURCE_CHANGE"
+    if gpu_proof:
+        report["framework_patch"] = "V23_GPU_SIGNATURE_PRESERVING_EXACT_SCOPE"
     report["framework_manifest_sha256"] = framework_manifest_sha
     report["framework_jars"] = {name: hashlib.sha256(data).hexdigest() for name, data in framework.items()}
     update_metadata(image_root, unpack, entries, args.dry_run, report)

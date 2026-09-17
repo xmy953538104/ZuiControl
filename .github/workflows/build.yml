@@ -95,6 +95,7 @@ jobs:
           python3 tests/command_plane/TestCommandPlaneArchitecture.py
           python3 tests/refresh/TestRefreshStateMachine.py
           python3 tests/refresh/TestOemTouchTimer.py
+          python3 tests/gpu/TestGpuProof.py
           python3 tests/uperf/architecture/TestUperfArchitecture.py
           python3 tests/uperf/top_resumed/TestUperfTopResumedStateMachine.py
           python3 tests/uperf/startup/TestUperfStartupPolicy.py
@@ -300,6 +301,7 @@ jobs:
           out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'terminal-framework'
           out.mkdir()
           compile_sources(repo, repo, out, repo/'framework_patch/src/services', 'classes4.dex', pathlib.Path(os.environ['ANDROID_SDK_ROOT']))
+          compile_sources(repo, repo, out, repo/'framework_patch/src/framework_gpu', 'gpu-helper.dex', pathlib.Path(os.environ['ANDROID_SDK_ROOT']))
           PY
           sha256sum "$RUNNER_TEMP/terminal-framework/classes4.dex"
 
@@ -307,7 +309,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: zui-control-framework-gate
-          path: ${{ runner.temp }}/terminal-framework/classes4.dex
+          path: |
+            ${{ runner.temp }}/terminal-framework/classes4.dex
+            ${{ runner.temp }}/terminal-framework/gpu-helper.dex
           if-no-files-found: error
 
       - name: Build release APK

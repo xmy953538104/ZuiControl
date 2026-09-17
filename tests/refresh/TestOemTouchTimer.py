@@ -1,5 +1,6 @@
 """Parameter-only payload contract; no device required."""
 from pathlib import Path
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -84,9 +85,10 @@ class OemTouchTimer(unittest.TestCase):
                     self.assertNotIn(KEY+b'2000', (root/n).read_bytes())
 
     def test_no_new_runtime_policy_or_native_inputs(self):
-        # Accepted runtime trees are identical; no Java listener/timer, native or payload edits.
+        # Refresh inputs stay frozen. V23 separately authorizes three GPU Java
+        # files; TestTerminalContracts removes their exact service additions and
+        # verifies the original Refresh/Uperf source hash.
         expected = {'app': 'b8058f77ce699fdd7f6d9470c4329e6ed1a6dd36',
-                    'framework_patch': 'e54609edf29df83d8ad9a2c5dc01f41b108bb53c',
                     'native': '6790c7cf6c634b28b0360911686d603bc8616917',
                     'payload': 'bdd42b192c8ac901d008d47892547b6e55fa8e10',
                     'upstream': '3dc065f74510060d3612ab3bf805ed305f2e447d'}
@@ -95,6 +97,18 @@ class OemTouchTimer(unittest.TestCase):
             self.assertEqual(actual, tree, path)
         dirty = subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain', '--', *expected], text=True)
         self.assertEqual(dirty, '')
+        allowed = {'framework_patch/src/framework_gpu/android/zui/GpuRequestFilter.java',
+                   'framework_patch/src/services/com/zui/server/control/GpuPolicyController.java',
+                   'framework_patch/src/services/com/zui/server/control/ZuiControlService.java'}
+        entries = subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r','HEAD','--','framework_patch']).splitlines()
+        frozen = [line for line in entries if line.split(b'\t',1)[1].decode() not in allowed]
+        self.assertEqual(hashlib.sha256(b'\n'.join(frozen)).hexdigest(),
+                         'ba9d75378e57004acc1810043f7d6c834461a248774fda3432a2ccfe6afb2a85')
+        changed = subprocess.check_output(['git','-C',str(ROOT),'diff','--name-only',
+            'HEAD','--','framework_patch'],text=True).splitlines()
+        untracked = subprocess.check_output(['git','-C',str(ROOT),'ls-files','--others',
+            '--exclude-standard','--','framework_patch'],text=True).splitlines()
+        self.assertLessEqual(set(changed+untracked), allowed)
         source = (ROOT/'scripts/build/ApplyZuiControlPayload.py').read_text(encoding='utf-8')
         self.assertIn('patch_oem_touch_timer(unpack, args.dry_run, report)', source)
 

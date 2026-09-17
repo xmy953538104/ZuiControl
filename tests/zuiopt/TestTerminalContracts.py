@@ -125,6 +125,29 @@ class TerminalContracts(unittest.TestCase):
 
     def test_refresh_and_macro_power_service_unchanged(self):
         text=read('framework_patch/src/services/com/zui/server/control/ZuiControlService.java')
+        # V23 Owner-approved GPU lane only. Remove exact additions, then retain
+        # the original frozen Refresh/Uperf hash (never replace it with a new hash).
+        additions = {
+            '    private final GpuPolicyController mGpuPolicy =\n            new GpuPolicyController(new GpuPolicyController.QtiTransport());\n': 1,
+            '            mGpuPolicy.scene(pkg, mScreenInteractive);\n': 1,
+            '        mGpuPolicy.scene(pkg, mScreenInteractive);\n': 1,
+            '            mGpuPolicy.failSafe("top_resumed_authority_error");\n': 1,
+            '        if ((disableMask & 1) != 0) mGpuPolicy.failSafe("global_disable");\n': 1,
+            '        mGpuPolicy.scene(mTopResumedState.stablePackage(), interactive);\n': 1,
+            '                + mGpuPolicy.stateLines()\n': 1,
+            '''        if (args != null && args.length > 0 && "--gpu-proof".equals(args[0])) {
+            if (Binder.getCallingUid() != 0) throw new SecurityException("root GPU proof only");
+            if (args.length != 2) throw new IllegalArgumentException("--gpu-proof MODE");
+            if (!"OFF".equals(args[1]) && SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false)) {
+                throw new IllegalStateException("global controller disable");
+            }
+            mGpuPolicy.configure(args[1]);
+        }
+''': 1,
+        }
+        for addition, count in additions.items():
+            self.assertEqual(text.count(addition), count, addition)
+            text=text.replace(addition, '')
         text=re.sub(r'    private String schedulerHealthStateLines\(\).*?(?=    private static boolean isUperfMode)','',text,flags=re.S)
         text=re.sub(r'^.*private static final String PROP_ZUIOPT_(SERVICE|FAILED).*\n','',text,flags=re.M)
         text=text.replace('import android.os.IBinder;\n','')

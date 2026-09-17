@@ -17,7 +17,7 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def build(repo, sdk, golden_dir, ci_dex, ci_run, output):
+def build(repo, sdk, golden_dir, ci_dex, ci_run, output, gpu_helper=None, gpu_classpath=None, java='java'):
     assert not output.exists(), 'Fresh terminal framework output required'
     expected={'framework.jar':'b5f57d62546569b9bd9ba34d8757678da000c33f876358dd93a4dc747b8f1b32',
         'services.jar':'245b4f2c55d5ed8b99ecba8bd473d1d76eb40c55d67116a477299cc9d8b62000'}
@@ -30,7 +30,17 @@ def build(repo, sdk, golden_dir, ci_dex, ci_run, output):
     output.mkdir(parents=True)
     compiled=compile_sources(repo,repo,output,repo/'framework_patch/src/services','classes4.dex',sdk)
     assert sha(compiled)==sha(ci_dex), 'Current local/CI services compiler output mismatch'
-    shutil.copy2(golden_dir/'framework.jar',output/'framework.jar')
+    gpu_receipt = None
+    if gpu_helper is not None:
+        assert gpu_classpath, 'Explicit qualified GPU toolchain required'
+        local_helper=compile_sources(repo,repo,output,repo/'framework_patch/src/framework_gpu','gpu-helper.dex',sdk)
+        assert sha(local_helper)==sha(gpu_helper), 'Current local/CI GPU helper mismatch'
+        from BuildGpuFramework import build as build_gpu
+        build_gpu(golden_dir/'framework.jar',gpu_helper,output/'gpu',gpu_classpath,java)
+        gpu_receipt=output/'gpu/gpu_framework.json'
+        shutil.copy2(output/'gpu/framework.jar',output/'framework.jar')
+    else:
+        shutil.copy2(golden_dir/'framework.jar',output/'framework.jar')
     with zipfile.ZipFile(golden_dir/'services.jar') as old:
         assert len(old.namelist())==len(set(old.namelist())) and old.testzip() is None
         assert old.namelist().count('classes4.dex')==1
@@ -42,6 +52,10 @@ def build(repo, sdk, golden_dir, ci_dex, ci_run, output):
         golden_services=entry(golden_dir/'services.jar'),ci_services_extension=entry(ci_dex),
         jars={name:entry(output/name) for name in expected},
         services_changed=True,framework_changed=False,changed_members=['classes4.dex'])
+    if gpu_receipt is not None:
+        manifest.update(schema='V23_GPU_TERMINAL_FRAMEWORK_V1',framework_changed=True,
+            golden_framework=entry(golden_dir/'framework.jar'),ci_gpu_helper=entry(gpu_helper),
+            gpu_qualification=entry(gpu_receipt),gpu_patched_dex=entry(output/'gpu/classes4.dex'))
     receipt=output/'terminal_framework.json'
     receipt.write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf8')
     from ApplyZuiControlPayload import terminal_framework
@@ -53,4 +67,5 @@ def build(repo, sdk, golden_dir, ci_dex, ci_run, output):
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--sdk',type=Path,required=True);p.add_argument('--golden-dir',type=Path,required=True)
     p.add_argument('--ci-dex',type=Path,required=True);p.add_argument('--ci-run',type=int,required=True);p.add_argument('--output',type=Path,required=True)
-    a=p.parse_args();build(Path(__file__).resolve().parents[2],a.sdk,a.golden_dir,a.ci_dex,a.ci_run,a.output)
+    p.add_argument('--gpu-helper',type=Path);p.add_argument('--gpu-classpath');p.add_argument('--java',default='java')
+    a=p.parse_args();build(Path(__file__).resolve().parents[2],a.sdk,a.golden_dir,a.ci_dex,a.ci_run,a.output,a.gpu_helper,a.gpu_classpath,a.java)
