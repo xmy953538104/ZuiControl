@@ -92,10 +92,19 @@ class OemTouchTimer(unittest.TestCase):
                     'payload': 'bdd42b192c8ac901d008d47892547b6e55fa8e10',
                     'upstream': '3dc065f74510060d3612ab3bf805ed305f2e447d'}
         for path, tree in expected.items():
+            if path == 'payload':
+                old = subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r',tree]).splitlines()
+                new = subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r','HEAD:payload']).splitlines()
+                self.assertEqual([x for x in old if not x.endswith(b'\tREADME.txt')],
+                                 [x for x in new if not x.endswith(b'\tREADME.txt')])
+                old_doc = subprocess.check_output(['git','-C',str(ROOT),'show',tree+':README.txt'])
+                self.assertEqual((ROOT/'payload/README.txt').read_bytes().replace(b'\r\n',b'\n'),
+                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV61').replace(b'App V60',b'App V61'))
+                continue
             actual = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD:'+path], text=True).strip()
             self.assertEqual(actual, tree, path)
         dirty = subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain', '--', *expected], text=True)
-        self.assertEqual(dirty, '')
+        self.assertTrue(all(line[3:] == 'payload/README.txt' for line in dirty.splitlines()), dirty)
         allowed = {'app/src/main/java/com/zui/zuicontrol/MainActivity.kt',
                    'app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt',
                    'app/src/main/java/com/zui/zuicontrol/GpuRanges.kt',
@@ -106,6 +115,18 @@ class OemTouchTimer(unittest.TestCase):
                    'framework_patch/src/services/com/zui/server/control/GpuPolicyController.java',
                    'framework_patch/src/services/com/zui/server/control/ZuiControlService.java'}
         entries = subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r','HEAD','--','app','framework_patch']).splitlines()
+        # Metadata recovery changes only these two Gradle identity literals.
+        identity_path = 'app/build.gradle.kts'
+        old = subprocess.check_output(['git','-C',str(ROOT),'show',
+            '57afe239a82b8af98415ef06986a1fcbf965f622:'+identity_path])
+        current = (ROOT/identity_path).read_bytes().replace(b'\r\n', b'\n')
+        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 61')
+            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.24"'))
+        entry = next(line for line in entries if line.endswith(b'\tapp/build.gradle.kts'))
+        entries.remove(entry)
+        old_entry = subprocess.check_output(['git','-C',str(ROOT),'ls-tree',
+            '57afe239a82b8af98415ef06986a1fcbf965f622','--',identity_path]).strip()
+        entries.append(old_entry)
         # Reverse the exact Owner-authorized monitor tree delta; keep the old hash.
         monitor = json.loads((ROOT/'tests/monitor/production_delta.json').read_text(encoding='utf-8'))
         for delta in monitor['tree']:
@@ -121,7 +142,7 @@ class OemTouchTimer(unittest.TestCase):
             'HEAD','--','app','framework_patch'],text=True).splitlines()
         untracked = subprocess.check_output(['git','-C',str(ROOT),'ls-files','--others',
             '--exclude-standard','--','app','framework_patch'],text=True).splitlines()
-        self.assertLessEqual(set(changed+untracked), allowed | {d['path'] for d in monitor['tree']})
+        self.assertLessEqual(set(changed+untracked), allowed | {d['path'] for d in monitor['tree']} | {identity_path})
         source = (ROOT/'scripts/build/ApplyZuiControlPayload.py').read_text(encoding='utf-8')
         self.assertIn('patch_oem_touch_timer(unpack, args.dry_run, report)', source)
 
