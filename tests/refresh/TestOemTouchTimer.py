@@ -1,6 +1,7 @@
 """Parameter-only payload contract; no device required."""
 from pathlib import Path
 import hashlib
+import json
 import subprocess
 import sys
 import tempfile
@@ -105,6 +106,14 @@ class OemTouchTimer(unittest.TestCase):
                    'framework_patch/src/services/com/zui/server/control/GpuPolicyController.java',
                    'framework_patch/src/services/com/zui/server/control/ZuiControlService.java'}
         entries = subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r','HEAD','--','app','framework_patch']).splitlines()
+        # Reverse the exact Owner-authorized monitor tree delta; keep the old hash.
+        monitor = json.loads((ROOT/'tests/monitor/production_delta.json').read_text(encoding='utf-8'))
+        for delta in monitor['tree']:
+            self.assertEqual(entries.count(delta['after'].encode()), 1, delta['path'])
+            entries.remove(delta['after'].encode())
+            if delta['before'] is not None:
+                entries.append(delta['before'].encode())
+        entries.sort(key=lambda line: line.split(b'\t',1)[1])
         frozen = [line for line in entries if line.split(b'\t',1)[1].decode() not in allowed]
         self.assertEqual(hashlib.sha256(b'\n'.join(frozen)).hexdigest(),
                          '038e79b1749067c66557a1db9dac1f7f841a554bd7dbb481a3b0ccac1ba9a11d')
@@ -112,7 +121,7 @@ class OemTouchTimer(unittest.TestCase):
             'HEAD','--','app','framework_patch'],text=True).splitlines()
         untracked = subprocess.check_output(['git','-C',str(ROOT),'ls-files','--others',
             '--exclude-standard','--','app','framework_patch'],text=True).splitlines()
-        self.assertLessEqual(set(changed+untracked), allowed)
+        self.assertLessEqual(set(changed+untracked), allowed | {d['path'] for d in monitor['tree']})
         source = (ROOT/'scripts/build/ApplyZuiControlPayload.py').read_text(encoding='utf-8')
         self.assertIn('patch_oem_touch_timer(unpack, args.dry_run, report)', source)
 
