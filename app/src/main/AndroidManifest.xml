@@ -73,6 +73,7 @@
             </intent-filter>
         </receiver>
 
+        <activity android:name="com.zui.zuicontrol.PerformanceRecordActivity" android:exported="false" />
         <activity
             android:name="com.zui.zuicontrol.MainActivity"
             android:excludeFromRecents="true"

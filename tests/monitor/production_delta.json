@@ -2,108 +2,124 @@
   "base": "e18ad6d12d6136e06379e0c26a57177721fe5155",
   "service": [
     {
-      "before": "    private static final int TX_SET_GLOBAL_GPU_RANGE = 14;\n    private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;\n",
-      "after": "    private static final int TX_SET_GLOBAL_GPU_RANGE = 14;\n    private static final int TX_MONITOR = 15;\n    private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;\n"
+      "before": "    private static final int TX_NOTIFY_CONTROL_REQUEST = 12;\n    private static final int TX_SET_GPU_RANGE = 13;\n    private static final int TX_SET_GLOBAL_GPU_RANGE = 14;\n    private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;\n    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;\n    private static final int[] DISPLAY_HZ = new int[] {60, 90, 120, 144, 165};\n",
+      "after": "    private static final int TX_NOTIFY_CONTROL_REQUEST = 12;\n    private static final int TX_SET_GPU_RANGE = 13;\n    private static final int TX_SET_GLOBAL_GPU_RANGE = 14;\n    private static final int TX_MONITOR = 15;\n    private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;\n    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;\n    private static final int[] DISPLAY_HZ = new int[] {60, 90, 120, 144, 165};\n"
     },
     {
-      "before": "    private final UperfScenePolicy mUperfScenePolicy;\n    private final AtomicLong mTopResumedCallbackGeneration = new AtomicLong();\n",
-      "after": "    private final UperfScenePolicy mUperfScenePolicy;\n    private final MonitorCollector mMonitor;\n    private final java.util.Set<String> mMonitorApps = new java.util.HashSet<>();\n    private final MonitorLifecycle mMonitorLifecycle = new MonitorLifecycle();\n    private boolean mMonitorExpanded;\n    private int mMonitorClientUser = -1;\n    private final AtomicLong mTopResumedCallbackGeneration = new AtomicLong();\n"
+      "before": "    private final AtomicFile mProfileFile;\n    private final Handler mWorker;\n    private final UperfScenePolicy mUperfScenePolicy;\n    private final AtomicLong mTopResumedCallbackGeneration = new AtomicLong();\n    private final TopResumedNullState mTopResumedState = new TopResumedNullState();\n    private final ZuioptSceneAuthority mZuioptScene = new ZuioptSceneAuthority();\n",
+      "after": "    private final AtomicFile mProfileFile;\n    private final Handler mWorker;\n    private final UperfScenePolicy mUperfScenePolicy;\n    private final MonitorCollector mMonitor;\n    private final java.util.Set<String> mMonitorApps = new java.util.HashSet<>();\n    private int mMonitorClientUser = -1;\n    private final AtomicLong mTopResumedCallbackGeneration = new AtomicLong();\n    private final TopResumedNullState mTopResumedState = new TopResumedNullState();\n    private final ZuioptSceneAuthority mZuioptScene = new ZuioptSceneAuthority();\n"
     },
     {
-      "before": "        mWorker = new Handler(workerThread.getLooper());\n        mUperfScenePolicy = new UperfScenePolicy();\n",
-      "after": "        mWorker = new Handler(workerThread.getLooper());\n        mMonitor = new MonitorCollector(context);\n        mUperfScenePolicy = new UperfScenePolicy();\n"
+      "before": "        HandlerThread workerThread = new HandlerThread(\"ZuiControl\");\n        workerThread.start();\n        mWorker = new Handler(workerThread.getLooper());\n        mUperfScenePolicy = new UperfScenePolicy();\n        File dir = new File(DATA_DIR);\n        if (!dir.exists() && !dir.mkdirs()) {\n",
+      "after": "        HandlerThread workerThread = new HandlerThread(\"ZuiControl\");\n        workerThread.start();\n        mWorker = new Handler(workerThread.getLooper());\n        mMonitor = new MonitorCollector(context);\n        mUperfScenePolicy = new UperfScenePolicy();\n        File dir = new File(DATA_DIR);\n        if (!dir.exists() && !dir.mkdirs()) {\n"
     },
     {
-      "before": "            mZuioptScene.changed(pkg, userId);\n            publishState();\n",
-      "after": "            mZuioptScene.changed(pkg, userId);\n            refreshMonitor();\n            publishState();\n"
+      "before": "            mUperfScenePolicy.onTopResumedChanged(\n                    pkg, userId, \"topResumedValid\", eventNanos);\n            mZuioptScene.changed(pkg, userId);\n            publishState();\n            return;\n        }\n",
+      "after": "            mUperfScenePolicy.onTopResumedChanged(\n                    pkg, userId, \"topResumedValid\", eventNanos);\n            mZuioptScene.changed(pkg, userId);\n            refreshMonitor();\n            publishState();\n            return;\n        }\n"
     },
     {
-      "before": "            mGpuPolicy.failSafe(\"top_resumed_authority_error\");\n            Log.w(TAG, \"uperf_top_resumed event=topResumedRevalidateAuthorityError\"\n",
-      "after": "            mGpuPolicy.failSafe(\"top_resumed_authority_error\");\n            mMonitor.stop();\n            Log.w(TAG, \"uperf_top_resumed event=topResumedRevalidateAuthorityError\"\n"
+      "before": "        } catch (Throwable t) {\n            mTopResumedState.authorityError(generation);\n            mGpuPolicy.failSafe(\"top_resumed_authority_error\");\n            Log.w(TAG, \"uperf_top_resumed event=topResumedRevalidateAuthorityError\"\n                    + \" generation=\" + generation + \" trigger=\" + trigger, t);\n            return;\n",
+      "after": "        } catch (Throwable t) {\n            mTopResumedState.authorityError(generation);\n            mGpuPolicy.failSafe(\"top_resumed_authority_error\");\n            mMonitor.scene(\"\", 0, false);\n            Log.w(TAG, \"uperf_top_resumed event=topResumedRevalidateAuthorityError\"\n                    + \" generation=\" + generation + \" trigger=\" + trigger, t);\n            return;\n"
     },
     {
-      "before": "        mZuioptScene.changed(pkg, userId);\n        publishState();\n",
-      "after": "        mZuioptScene.changed(pkg, userId);\n        refreshMonitor();\n        publishState();\n"
+      "before": "        mUperfScenePolicy.onTopResumedChanged(pkg, userId, event,\n                SystemClock.elapsedRealtimeNanos());\n        mZuioptScene.changed(pkg, userId);\n        publishState();\n    }\n\n",
+      "after": "        mUperfScenePolicy.onTopResumedChanged(pkg, userId, event,\n                SystemClock.elapsedRealtimeNanos());\n        mZuioptScene.changed(pkg, userId);\n        refreshMonitor();\n        publishState();\n    }\n\n"
     },
     {
-      "before": "        mRawFocusTransient = transientFocus;\n        if (transientFocus) {\n",
-      "after": "        mRawFocusTransient = transientFocus;\n        refreshMonitor();\n        if (transientFocus) {\n"
+      "before": "        boolean transientFocus = forceTransient || mImeVisible || mRawFocusedPackage.isEmpty()\n                || isTransientPackage(mRawFocusedPackage);\n        mRawFocusTransient = transientFocus;\n        if (transientFocus) {\n            refreshProfile = neutralProfile(userId);\n        } else {\n",
+      "after": "        boolean transientFocus = forceTransient || mImeVisible || mRawFocusedPackage.isEmpty()\n                || isTransientPackage(mRawFocusedPackage);\n        mRawFocusTransient = transientFocus;\n        refreshMonitor();\n        if (transientFocus) {\n            refreshProfile = neutralProfile(userId);\n        } else {\n"
     },
     {
-      "before": "            }\n            if (code >= 1 && code <= TX_SET_GLOBAL_GPU_RANGE) {\n                data.enforceInterface(DESCRIPTOR);\n",
-      "after": "            }\n            if (code >= 1 && code <= TX_MONITOR) {\n                data.enforceInterface(DESCRIPTOR);\n"
+      "before": "                if (code == ZuioptSceneAuthority.CURRENT) mZuioptScene.writeCurrent(callback, pid, reply);\n                return true;\n            }\n            if (code >= 1 && code <= TX_SET_GLOBAL_GPU_RANGE) {\n                data.enforceInterface(DESCRIPTOR);\n            }\n            String result;\n            switch (code) {\n                case TX_GET_VERSION:\n                    result = \"ok=1\\nversion=19\\nname=ZuiControl\";\n                    break;\n",
+      "after": "                if (code == ZuioptSceneAuthority.CURRENT) mZuioptScene.writeCurrent(callback, pid, reply);\n                return true;\n            }\n            if (code >= 1 && code <= TX_MONITOR) {\n                data.enforceInterface(DESCRIPTOR);\n            }\n            String result;\n            switch (code) {\n                case TX_MONITOR:\n                    enforceCommandCallerAllowed();\n                    result = monitorCommand(data);\n                    break;\n                case TX_GET_VERSION:\n                    result = \"ok=1\\nversion=19\\nname=ZuiControl\";\n                    break;\n"
     },
     {
-      "before": "            switch (code) {\n                case TX_GET_VERSION:\n",
-      "after": "            switch (code) {\n                case TX_MONITOR:\n                    enforceCommandCallerAllowed();\n                    result = monitorCommand(data);\n                    break;\n                case TX_GET_VERSION:\n"
+      "before": "            mUperfScenePolicy.refreshGpu();\n        }\n        return \"ok=1\";\n    }\n\n    private synchronized String setGpuRange(String pkg, int userId, int min, int max) {\n",
+      "after": "            mUperfScenePolicy.refreshGpu();\n        }\n        return \"ok=1\";\n    }\n\n    private synchronized String monitorCommand(Parcel data) throws RemoteException {\n        String command = data.readString();\n        int callerUser = Binder.getCallingUid() / 100000;\n        if (\"register\".equals(command)) {\n            mMonitor.register(data.readStrongBinder());\n            mMonitorClientUser = callerUser;\n        }\n        String argument = \"recordRead\".equals(command) ? data.readString() : \"\";\n        long identity = Binder.clearCallingIdentity();\n        try {\n            refreshMonitor();\n            String result = mMonitor.command(\"register\".equals(command) ? \"state\" : command,\n                    callerUser, argument == null ? \"\" : argument);\n            if (result.startsWith(\"ok=1\") && (\"full\".equals(command) || \"fps\".equals(command))) {\n                // Existing system-server authority, only after the authenticated direct user action.\n                try { mContext.sendBroadcastAsUser(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS),\n                        android.os.UserHandle.getUserHandleForUid(callerUser * 100000)); }\n                catch (RuntimeException e) { Log.w(TAG, \"monitor notification collapse unavailable\", e); }\n            }\n            return result;\n        } finally { Binder.restoreCallingIdentity(identity); }\n    }\n\n    private synchronized void refreshMonitor() {\n        String pkg = mTopResumedState.stablePackage();\n        int user = mTopResumedState.stableUserId();\n        android.app.KeyguardManager lock = mContext.getSystemService(android.app.KeyguardManager.class);\n        boolean eligible = user == mMonitorClientUser && !mGpuSystemUi && mScreenInteractive && lock != null && !lock.isKeyguardLocked()\n                && !pkg.isEmpty() && !isTransientPackage(pkg)\n                && !mRawFocusTransient && pkg.equals(mRawFocusedPackage) && user == mRawFocusedUserId\n                && !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false);\n        android.content.pm.ResolveInfo home = mPm.resolveActivity(\n                new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);\n        if (home == null || home.activityInfo == null || pkg.equals(home.activityInfo.packageName)) eligible = false;\n        mMonitor.scene(pkg, user, eligible);\n    }\n\n    private synchronized String setGpuRange(String pkg, int userId, int min, int max) {\n"
     },
     {
-      "before": "        return \"ok=1\";\n    }\n",
-      "after": "        return \"ok=1\";\n    }\n\n    private synchronized String monitorCommand(Parcel data) throws RemoteException {\n        String command = data.readString();\n        int callerUser = Binder.getCallingUid() / 100000;\n        if (\"register\".equals(command)) {\n            mMonitor.register(data.readStrongBinder());\n            mMonitorClientUser = callerUser;\n        } else if (\"manual\".equals(command)) {\n            mMonitorLifecycle.setManual(data.readInt() != 0);\n            mMonitorExpanded = data.readInt() != 0;\n        } else if (\"auto\".equals(command)) {\n            String pkg = data.readString();\n            boolean enabled = data.readInt() != 0;\n            if (!validPackage(pkg) || !packageExists(pkg) || isTransientPackage(pkg)) {\n                return \"ok=0\\nerror=invalid_monitor_target\";\n            }\n            String target = key(callerUser, pkg);\n            boolean old = mMonitorApps.contains(target);\n            if (enabled) mMonitorApps.add(target); else mMonitorApps.remove(target);\n            if (!saveProfiles()) {\n                if (old) mMonitorApps.add(target); else mMonitorApps.remove(target);\n                return \"ok=0\\nerror=monitor_profile_save\";\n            }\n        } else if (!\"state\".equals(command)) {\n            return \"ok=0\\nerror=invalid_monitor_command\";\n        }\n        if (!\"state\".equals(command)) {\n            long identity = Binder.clearCallingIdentity();\n            try { refreshMonitor(); } finally { Binder.restoreCallingIdentity(identity); }\n        }\n        StringBuilder result = new StringBuilder(\"ok=1\").append(mMonitor.state())\n                .append(\"\\nmonitorManual=\").append(mMonitorLifecycle.manual)\n                .append(\"\\nmonitorExpanded=\").append(mMonitorExpanded)\n                .append(\"\\nmonitorSnapshot=\").append(mMonitor.snapshot());\n        for (String target : mMonitorApps) if (target.startsWith(callerUser + \":\")) {\n            result.append(\"\\nmonitorAuto=\").append(target.substring(target.indexOf(':') + 1));\n        }\n        return result.toString();\n    }\n\n    private synchronized void refreshMonitor() {\n        if (!mMonitorLifecycle.manual && mMonitorApps.isEmpty()) {\n            mMonitor.select(\"\", 0, mMonitorExpanded);\n            return;\n        }\n        String pkg = mTopResumedState.stablePackage();\n        int user = mTopResumedState.stableUserId();\n        android.app.KeyguardManager lock = mContext.getSystemService(android.app.KeyguardManager.class);\n        boolean eligible = user == mMonitorClientUser && !mGpuSystemUi && mScreenInteractive && lock != null && !lock.isKeyguardLocked()\n                && !pkg.isEmpty() && !isTransientPackage(pkg)\n                && !mRawFocusTransient && pkg.equals(mRawFocusedPackage) && user == mRawFocusedUserId\n                && !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false);\n        android.content.pm.ResolveInfo home = mPm.resolveActivity(\n                new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);\n        if (home == null || home.activityInfo == null || pkg.equals(home.activityInfo.packageName)) eligible = false;\n        String selected = mMonitorLifecycle.select(key(user, pkg), eligible, mMonitorApps.contains(key(user, pkg)));\n        mMonitor.select(selected.isEmpty() ? \"\" : pkg, user, mMonitorExpanded);\n    }\n"
+      "before": "    }\n\n    private synchronized void onRefreshPropertiesChanged(int observedMask) {\n        int disableMask = readRefreshDisableMask();\n        mUperfScenePolicy.refreshGpu();\n        synchronized (mRefreshPropertyLock) {\n",
+      "after": "    }\n\n    private synchronized void onRefreshPropertiesChanged(int observedMask) {\n        refreshMonitor();\n        int disableMask = readRefreshDisableMask();\n        mUperfScenePolicy.refreshGpu();\n        synchronized (mRefreshPropertyLock) {\n"
     },
     {
-      "before": "    private synchronized void onRefreshPropertiesChanged(int observedMask) {\n        int disableMask = readRefreshDisableMask();\n",
-      "after": "    private synchronized void onRefreshPropertiesChanged(int observedMask) {\n        refreshMonitor();\n        int disableMask = readRefreshDisableMask();\n"
+      "before": "            IntentFilter filter = new IntentFilter();\n            filter.addAction(Intent.ACTION_SCREEN_ON);\n            filter.addAction(Intent.ACTION_SCREEN_OFF);\n            mContext.registerReceiver(new BroadcastReceiver() {\n                @Override\n                public void onReceive(Context context, Intent intent) {\n",
+      "after": "            IntentFilter filter = new IntentFilter();\n            filter.addAction(Intent.ACTION_SCREEN_ON);\n            filter.addAction(Intent.ACTION_SCREEN_OFF);\n            filter.addAction(Intent.ACTION_USER_PRESENT);\n            mContext.registerReceiver(new BroadcastReceiver() {\n                @Override\n                public void onReceive(Context context, Intent intent) {\n"
     },
     {
-      "before": "            filter.addAction(Intent.ACTION_SCREEN_OFF);\n            mContext.registerReceiver(new BroadcastReceiver() {\n",
-      "after": "            filter.addAction(Intent.ACTION_SCREEN_OFF);\n            filter.addAction(Intent.ACTION_USER_PRESENT);\n            mContext.registerReceiver(new BroadcastReceiver() {\n"
+      "before": "                        onScreenInteractiveChanged(true);\n                    } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {\n                        onScreenInteractiveChanged(false);\n                    }\n                }\n            }, filter, null, mWorker);\n",
+      "after": "                        onScreenInteractiveChanged(true);\n                    } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {\n                        onScreenInteractiveChanged(false);\n                    } else if (Intent.ACTION_USER_PRESENT.equals(action)) {\n                        refreshMonitor();\n                    }\n                }\n            }, filter, null, mWorker);\n"
     },
     {
-      "before": "                        onScreenInteractiveChanged(false);\n                    }\n",
-      "after": "                        onScreenInteractiveChanged(false);\n                    } else if (Intent.ACTION_USER_PRESENT.equals(action)) {\n                        refreshMonitor();\n                    }\n"
+      "before": "            return;\n        }\n        mScreenInteractive = interactive;\n        mUperfScenePolicy.onInteractiveChanged(interactive,\n                interactive ? \"screenOn\" : \"screenOff\", SystemClock.elapsedRealtimeNanos());\n        publishState();\n",
+      "after": "            return;\n        }\n        mScreenInteractive = interactive;\n        refreshMonitor();\n        mUperfScenePolicy.onInteractiveChanged(interactive,\n                interactive ? \"screenOn\" : \"screenOff\", SystemClock.elapsedRealtimeNanos());\n        publishState();\n"
     },
     {
-      "before": "        mScreenInteractive = interactive;\n        mUperfScenePolicy.onInteractiveChanged(interactive,\n",
-      "after": "        mScreenInteractive = interactive;\n        refreshMonitor();\n        mUperfScenePolicy.onInteractiveChanged(interactive,\n"
+      "before": "        mProfiles.clear();\n        mGpuOverrides.clear();\n        mGpuGlobalRanges.clear();\n        try {\n            byte[] raw = mProfileFile.readFully();\n            String text = new String(raw, StandardCharsets.UTF_8);\n",
+      "after": "        mProfiles.clear();\n        mGpuOverrides.clear();\n        mGpuGlobalRanges.clear();\n        mMonitorApps.clear();\n        try {\n            byte[] raw = mProfileFile.readFully();\n            String text = new String(raw, StandardCharsets.UTF_8);\n"
     },
     {
-      "before": "        mGpuGlobalRanges.clear();\n        try {\n",
-      "after": "        mGpuGlobalRanges.clear();\n        mMonitorApps.clear();\n        try {\n"
+      "before": "                    continue;\n                }\n                String[] parts = line.split(\"\\\\|\");\n                if (parts.length == 5 && \"gpuGlobal\".equals(parts[0])) {\n                    try {\n                        int user = Integer.parseInt(parts[1]);\n",
+      "after": "                    continue;\n                }\n                String[] parts = line.split(\"\\\\|\");\n                if (parts.length == 3 && \"monitor\".equals(parts[0])) {\n                    int user = parseInt(parts[1], -1);\n                    if (user >= 0 && validPackage(parts[2]) && !isTransientPackage(parts[2])) {\n                        mMonitorApps.add(key(user, parts[2]));\n                    }\n                    continue;\n                }\n                if (parts.length == 5 && \"gpuGlobal\".equals(parts[0])) {\n                    try {\n                        int user = Integer.parseInt(parts[1]);\n"
     },
     {
-      "before": "                String[] parts = line.split(\"\\\\|\");\n                if (parts.length == 5 && \"gpuGlobal\".equals(parts[0])) {\n",
-      "after": "                String[] parts = line.split(\"\\\\|\");\n                if (parts.length == 3 && \"monitor\".equals(parts[0])) {\n                    int user = parseInt(parts[1], -1);\n                    if (user >= 0 && validPackage(parts[2]) && !isTransientPackage(parts[2])) {\n                        mMonitorApps.add(key(user, parts[2]));\n                    }\n                    continue;\n                }\n                if (parts.length == 5 && \"gpuGlobal\".equals(parts[0])) {\n"
+      "before": "        try {\n            StringBuilder sb = new StringBuilder();\n            sb.append(\"# ZuiControl profiles v1\\nversion=1\\n\");\n            for (Profile p : mProfiles.values()) {\n                if (\"default\".equals(p.packageName)) {\n                    sb.append(\"default|\").append(p.userId).append('|').append(p.displayHz)\n",
+      "after": "        try {\n            StringBuilder sb = new StringBuilder();\n            sb.append(\"# ZuiControl profiles v1\\nversion=1\\n\");\n            for (String target : mMonitorApps) sb.append(\"monitor|\").append(target.replace(':', '|')).append('\\n');\n            for (Profile p : mProfiles.values()) {\n                if (\"default\".equals(p.packageName)) {\n                    sb.append(\"default|\").append(p.userId).append('|').append(p.displayHz)\n"
     },
     {
-      "before": "            sb.append(\"# ZuiControl profiles v1\\nversion=1\\n\");\n            for (Profile p : mProfiles.values()) {\n",
-      "after": "            sb.append(\"# ZuiControl profiles v1\\nversion=1\\n\");\n            for (String target : mMonitorApps) sb.append(\"monitor|\").append(target.replace(':', '|')).append('\\n');\n            for (Profile p : mProfiles.values()) {\n"
-    },
-    {
-      "before": "                + mGpuPolicy.stateLines()\n                + \"\\ndaemonRefreshDisabled=true\"\n",
-      "after": "                + mGpuPolicy.stateLines()\n                + mMonitor.state()\n                + \"\\ndaemonRefreshDisabled=true\"\n"
+      "before": "                + \"\\nrefreshOwner=system\"\n                + \"\\nsystemServiceAlive=true\"\n                + mGpuPolicy.stateLines()\n                + \"\\ndaemonRefreshDisabled=true\"\n                + \"\\ndaemonRetired=true\"\n                + \"\\nrefreshDisabled=\" + mRefreshDisabled\n",
+      "after": "                + \"\\nrefreshOwner=system\"\n                + \"\\nsystemServiceAlive=true\"\n                + mGpuPolicy.stateLines()\n                + mMonitor.state()\n                + \"\\ndaemonRefreshDisabled=true\"\n                + \"\\ndaemonRetired=true\"\n                + \"\\nrefreshDisabled=\" + mRefreshDisabled\n"
     }
   ],
   "tree": [
     {
       "path": "app/src/main/AndroidManifest.xml",
       "before": "100644 blob a56d01e65cc7d43108d0e50de102658ccea5242b\tapp/src/main/AndroidManifest.xml",
-      "after": "100644 blob 47f8b7f9a5b195a0fb2041c9dd28486428de8afb\tapp/src/main/AndroidManifest.xml"
+      "after": "100644 blob 7d74f2ba60eecb016fb4bdb8fa2342439c7d64eb\tapp/src/main/AndroidManifest.xml"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob 62a169f235324d3b56dfae00045f27bce6a53600\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob a2c62b9340df26f7bdc31a1999395464d2a95b00\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob 87dcefc3cd65392d22082a78cac6e2a8fadb8f9b\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MonitorGesture.kt",
+      "before": null,
+      "after": "100644 blob 7f8335f1c244d049bfe5199b70bfe19e0bf6a172\tapp/src/main/java/com/zui/zuicontrol/MonitorGesture.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
       "before": null,
-      "after": "100644 blob 50fbeee9dea8fc89cb5f125148845493dca17b40\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt"
+      "after": "100644 blob 6bf999d39c0fe3a8a4ecdc12deaa8d6f50452432\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
+      "before": null,
+      "after": "100644 blob f8c681abbacf21e69903aae2fad9332d22025f92\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
       "before": "100644 blob 59248850bbe17ba9a8c2c6be7790d7d1dc3e67e5\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
-      "after": "100644 blob 6824aa92c1e6bd075b25441726f917d1d8b61e3f\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt"
+      "after": "100644 blob 9ad86e468e950511db76b3375cfc6e0a9906e484\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt"
+    },
+    {
+      "path": "app/src/main/res/layout/notification_zuicontrol.xml",
+      "before": "100644 blob 5e7dc56171be8ef300cec470cc4cfde5956407ae\tapp/src/main/res/layout/notification_zuicontrol.xml",
+      "after": "100644 blob 6ba0c249d1e98da2e3a4e33f3e8481ccafdc79d8\tapp/src/main/res/layout/notification_zuicontrol.xml"
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/MonitorGestureTest.kt",
+      "before": null,
+      "after": "100644 blob 47280c72b8b71e952341f8128d6382edc6663b17\tapp/src/test/java/com/zui/zuicontrol/MonitorGestureTest.kt"
     },
     {
       "path": "framework_patch/src/framework/android/zui/ZuiControlManager.java",
       "before": "100644 blob 8c584386e510de37649dc42a5f03ba60a1e41441\tframework_patch/src/framework/android/zui/ZuiControlManager.java",
-      "after": "100644 blob cea62ce08ffc96eab7e0332d0b097d449a9eaa64\tframework_patch/src/framework/android/zui/ZuiControlManager.java"
+      "after": "100644 blob 6959df8572cfced5b98b4bb72e00204b7f30bec6\tframework_patch/src/framework/android/zui/ZuiControlManager.java"
     },
     {
       "path": "framework_patch/src/services/com/zui/server/control/MonitorCollector.java",
       "before": null,
-      "after": "100644 blob 8c5f42d938cb43f5601a002f6b89e404957707ac\tframework_patch/src/services/com/zui/server/control/MonitorCollector.java"
+      "after": "100644 blob 6754b8fa77042c796b2f982ca9e8e93a1d2485b0\tframework_patch/src/services/com/zui/server/control/MonitorCollector.java"
     },
     {
       "path": "framework_patch/src/services/com/zui/server/control/MonitorLifecycle.java",
@@ -111,14 +127,29 @@
       "after": "100644 blob 8ad43a55e9f5d60440d4e989a5bb5a1e251144b7\tframework_patch/src/services/com/zui/server/control/MonitorLifecycle.java"
     },
     {
+      "path": "framework_patch/src/services/com/zui/server/control/MonitorSession.java",
+      "before": null,
+      "after": "100644 blob 469cdeeb3d190275e51756191fb22c29e4194b9d\tframework_patch/src/services/com/zui/server/control/MonitorSession.java"
+    },
+    {
       "path": "framework_patch/src/services/com/zui/server/control/MonitorSnapshot.java",
       "before": null,
       "after": "100644 blob 0ef49f4e139f4aa4829d08598470c3d62b59f0eb\tframework_patch/src/services/com/zui/server/control/MonitorSnapshot.java"
     },
     {
+      "path": "framework_patch/src/services/com/zui/server/control/MonitorSources.java",
+      "before": null,
+      "after": "100644 blob a844d91ce44e84f32bbb5d3c54af707aabd48f66\tframework_patch/src/services/com/zui/server/control/MonitorSources.java"
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/MonitorStore.java",
+      "before": null,
+      "after": "100644 blob cf4adb87b3101fe63c7a8179b49dda577ba65f6a\tframework_patch/src/services/com/zui/server/control/MonitorStore.java"
+    },
+    {
       "path": "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
       "before": "100644 blob a3bef1259d461e9504d433c2315e1342ecabd73c\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
-      "after": "100644 blob 10a58b95c7702b6bc9b710ad250d3c72a455d4fb\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java"
+      "after": "100644 blob 9620c51a41502914b3921dfaed62176df602fa2e\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java"
     }
   ]
 }

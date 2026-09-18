@@ -22,28 +22,15 @@
         android:textStyle="bold" />
 
     <TextView
-        android:id="@+id/rate_60"
+        android:id="@+id/monitor_toggle"
         style="@style/NotificationRateButton"
-        android:text="60" />
+        android:layout_width="88dp"
+        android:text="监视器" />
 
     <TextView
-        android:id="@+id/rate_90"
+        android:id="@+id/fps_toggle"
         style="@style/NotificationRateButton"
-        android:text="90" />
-
-    <TextView
-        android:id="@+id/rate_120"
-        style="@style/NotificationRateButton"
-        android:text="120" />
-
-    <TextView
-        android:id="@+id/rate_144"
-        style="@style/NotificationRateButton"
-        android:text="144" />
-
-    <TextView
-        android:id="@+id/rate_165"
-        style="@style/NotificationRateButton"
-        android:text="165" />
+        android:layout_width="72dp"
+        android:text="FPS" />
 
 </LinearLayout>

@@ -37,6 +37,8 @@ Run from the repository root:
 python tests/command_plane/TestCommandPlaneArchitecture.py
 python tests/gpu/TestGpuProof.py
 python tests/monitor/TestMonitor.py
+python tests/monitor/TestRecordSql.py
+python tests/monitor/TestPackageIdentity.py
 bash tests/command_plane/TestZuiControldTransactions.sh
 python tests/refresh/TestRefreshStateMachine.py
 python tests/uperf/architecture/TestUperfArchitecture.py
@@ -86,15 +88,21 @@ calls; it is not proof of device wire bytes or SELinux permissions.
 
 ## ROM integration
 
-The read-only performance monitor uses one 3000ms system-server collector and
-one-way snapshots for compact/Top15 rendering. Its behavioral reference is
+The performance monitor uses one 1000ms system-server scalar collector and
+one-way snapshots for an FPS/device-power/quiet-therm bar or circle. Its behavioral reference is
 helloklf/vtools tag 4.7.3, commit `6c66b8de7d29b19ff3a16cd7bce86cb430717066`
-(GPLv3 upstream); no upstream source/assets are copied. Process CPU uses one core
-=100%, aggregate CPU uses all-core capacity. FPS is explicitly labeled display-driver
-measured FPS, not game present FPS or display refresh. Unreadable sources show unsupported. Manual monitoring binds the
-next eligible app; per-app auto mode follows the accepted top-resumed authority.
-HOME, app leave, keyguard, screen-off, callback death and overlay failure stop the
-collector; GPU/Uperf/ZUIopt/thermal ownership is unchanged.
+(GPLv3 upstream); no upstream source/assets are copied. FPS means display-driver
+measured FPS, not game present FPS or display refresh. Power is battery-side V*I
+only while discharging; external power is unavailable. Quiet is resolved by type
+once per collector generation. No Monitor KGSL access is made.
+The compact notification toggles mutually exclusive OFF/FULL/FPS modes; it does
+not itself enable sampling. Display-only never enumerates tasks or writes storage.
+A full two-second circle hold starts one transactional SQLite recording slot;
+recording-only Top15 thread deltas use one core=100% at approximately three seconds.
+App leave, HOME and screen-off pause rather than finalize. Explicit circle tap
+stops; callback death preserves incomplete data. The native latest-record page
+shows scalar charts and generation-qualified thread details. GPU/Uperf/ZUIopt/
+thermal ownership is unchanged.
 
 The terminal candidate rebuilds the services extension from exact current source.
 Unmodified services DEX members remain byte-identical. The GPU lane additionally

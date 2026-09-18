@@ -7,239 +7,67 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.database.ContentObserver
-import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
-import android.os.SystemClock
 import android.provider.Settings
 import android.widget.RemoteViews
+import android.widget.Toast
 
+/** One persistent control surface. Its existence does not enable sampling. */
 class ZuiControlQuickService : Service() {
-    private val handler = Handler(Looper.getMainLooper())
-    private val refreshNotificationRunnable = Runnable { updateNotification(preferPending = false) }
-    private val settlePendingRateRunnable = Runnable { updateNotification(preferPending = false) }
-    private lateinit var notificationManager: NotificationManager
-    private var stateObserver: ContentObserver? = null
-    private var pendingRate: Int? = null
-    private var pendingRateUntilMs = 0L
     private var monitor: PerformanceMonitor? = null
-
     override fun onCreate() {
         super.onCreate()
-        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        createChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
-        registerStateObserver()
-        monitor = PerformanceMonitor(this).also { it.start() }
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(NotificationChannel(CHANNEL,"ZuiControl",NotificationManager.IMPORTANCE_LOW).apply {
+            description="性能监视器与 FPS 显示";setSound(null,null);enableVibration(false);setShowBadge(false)
+        })
+        startForeground(18701,notification())
+        monitor=PerformanceMonitor(this).also { it.start() }
     }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == "com.zui.zuicontrol.MONITOR_CONNECT") {
-            monitor?.close()
-            monitor = PerformanceMonitor(this).also { it.start() }
-        }
-        val rate = when (intent?.action) {
-            ZuiControlContract.ACTION_SET_60 -> 60
-            ZuiControlContract.ACTION_SET_90 -> 90
-            ZuiControlContract.ACTION_SET_120 -> 120
-            ZuiControlContract.ACTION_SET_144 -> 144
-            ZuiControlContract.ACTION_SET_165 -> 165
-            else -> intent?.getIntExtra(ZuiControlContract.EXTRA_RATE, 0)?.takeIf {
-                it in ZuiControlContract.rates
+        when(intent?.action) {
+            "com.zui.zuicontrol.MONITOR_CONNECT" -> {
+                if (monitor==null) monitor=PerformanceMonitor(this).also { it.start() }
+                else monitor?.start()
+            }
+            FULL,FPS -> {
+                if(!Settings.canDrawOverlays(this)) {
+                    Toast.makeText(this,"请先在系统设置允许 ZuiControl 显示悬浮窗",Toast.LENGTH_LONG).show()
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } else {
+                    monitor?.start()
+                    val reply=monitor?.toggle(if(intent.action==FULL)"full" else "fps")
+                    if(reply?.startsWith("ok=1")!=true) Toast.makeText(this,"监视器不可用",Toast.LENGTH_SHORT).show()
+                }
             }
         }
-        if (rate != null) {
-            val reply = ZuiControlClient.setCurrentSceneDisplayHz(rate)
-            pendingRate = if (reply.ok) rate else null
-            pendingRateUntilMs = if (reply.ok) {
-                SystemClock.elapsedRealtime() + PENDING_RATE_TIMEOUT_MS
-            } else {
-                0L
-            }
-            handler.removeCallbacks(refreshNotificationRunnable)
-            handler.removeCallbacks(settlePendingRateRunnable)
-            updateNotification(if (reply.ok) rate else currentRate())
-            handler.postDelayed(settlePendingRateRunnable, PENDING_RATE_TIMEOUT_MS + 80L)
-        } else {
-            updateNotification(preferPending = false)
-        }
+        getSystemService(NotificationManager::class.java).notify(18701,notification())
         return START_STICKY
     }
-
-    override fun onBind(intent: Intent?): IBinder? = null
-
-    override fun onDestroy() {
-        monitor?.close()
-        monitor = null
-        stateObserver?.let { contentResolver.unregisterContentObserver(it) }
-        stateObserver = null
-        handler.removeCallbacks(refreshNotificationRunnable)
-        handler.removeCallbacks(settlePendingRateRunnable)
-        super.onDestroy()
-    }
-
-    private fun updateNotification(rateOverride: Int? = null, preferPending: Boolean = true) {
-        if (!preferPending && rateOverride == null) {
-            clearPendingRate()
-        }
-        notificationManager.notify(NOTIFICATION_ID, buildNotification(rateOverride, preferPending))
-    }
-
-    private fun buildNotification(rateOverride: Int? = null, preferPending: Boolean = true): Notification {
-        val selectedRate = rateOverride
-            ?: (if (preferPending) pendingDisplayRate() else null)
-            ?: currentRate()
-        val content = RemoteViews(packageName, R.layout.notification_zuicontrol).apply {
-            setTextViewText(R.id.notification_title, "ZuiControl")
-            bindRate(this, R.id.rate_60, 60, selectedRate, ZuiControlContract.ACTION_SET_60)
-            bindRate(this, R.id.rate_90, 90, selectedRate, ZuiControlContract.ACTION_SET_90)
-            bindRate(this, R.id.rate_120, 120, selectedRate, ZuiControlContract.ACTION_SET_120)
-            bindRate(this, R.id.rate_144, 144, selectedRate, ZuiControlContract.ACTION_SET_144)
-            bindRate(this, R.id.rate_165, 165, selectedRate, ZuiControlContract.ACTION_SET_165)
-        }
-        val openIntent = PendingIntent.getActivity(
-            this,
-            1,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-        } else {
-            Notification.Builder(this)
-        }
-        builder
-            .setSmallIcon(R.drawable.ic_stat_zuicontrol)
-            .setContentTitle("ZuiControl")
-            .setContentText("${selectedRate}Hz")
-            .setContentIntent(openIntent)
-            .setCustomContentView(content)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setShowWhen(false)
-            .setLocalOnly(true)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .setPriority(Notification.PRIORITY_LOW)
-            .setDefaults(0)
-            .setSound(null)
-            .setVibrate(null)
-        return builder.build()
-    }
-
-    private fun registerStateObserver() {
-        val observer = object : ContentObserver(handler) {
-            override fun onChange(selfChange: Boolean) {
-                scheduleNotificationRefresh()
+    private fun notification(): Notification {
+        val state=PerformanceMonitor.command("state")
+        val mode=ZuiControlClient.stateValue(state,"monitorMode")?.toIntOrNull() ?: 0
+        val content=RemoteViews(packageName,R.layout.notification_zuicontrol).apply {
+            listOf(Triple(R.id.monitor_toggle,FULL,1),Triple(R.id.fps_toggle,FPS,2)).forEach { (id,action,value) ->
+                setInt(id,"setBackgroundResource",if(mode==value)R.drawable.notify_rate_selected else R.drawable.notify_rate_normal)
+                setTextColor(id,if(mode==value)0xFFFFFFFF.toInt() else 0xFF1C222A.toInt())
+                setOnClickPendingIntent(id,PendingIntent.getService(this@ZuiControlQuickService,value,
+                    Intent(this@ZuiControlQuickService,ZuiControlQuickService::class.java).setAction(action),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
             }
         }
-        stateObserver = observer
-        contentResolver.registerContentObserver(
-            Settings.System.getUriFor(ZuiControlContract.KEY_ACTIVE_REFRESH),
-            false,
-            observer,
-        )
-        contentResolver.registerContentObserver(
-            Settings.System.getUriFor(ZuiControlContract.KEY_SCENE_EVENT_TEXT),
-            false,
-            observer,
-        )
-        contentResolver.registerContentObserver(
-            Settings.System.getUriFor(ZuiControlContract.KEY_STATUS_TEXT),
-            false,
-            observer,
-        )
+        return Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_stat_zuicontrol)
+            .setContentTitle("ZuiControl").setCustomContentView(content).setOngoing(true)
+            .setOnlyAlertOnce(true).setShowWhen(false).setLocalOnly(true)
+            .setCategory(Notification.CATEGORY_SERVICE).build()
     }
-
-    private fun scheduleNotificationRefresh() {
-        handler.removeCallbacks(refreshNotificationRunnable)
-        handler.postDelayed(refreshNotificationRunnable, NOTIFICATION_REFRESH_DEBOUNCE_MS)
-    }
-
-    private fun pendingDisplayRate(): Int? {
-        val rate = pendingRate ?: return null
-        if (SystemClock.elapsedRealtime() <= pendingRateUntilMs) {
-            return rate
-        }
-        clearPendingRate()
-        return null
-    }
-
-    private fun clearPendingRate() {
-        pendingRate = null
-        pendingRateUntilMs = 0L
-    }
-
-    private fun bindRate(
-        views: RemoteViews,
-        viewId: Int,
-        rate: Int,
-        selectedRate: Int,
-        action: String,
-    ) {
-        val selected = rate == selectedRate
-        views.setTextViewText(viewId, rate.toString())
-        views.setInt(
-            viewId,
-            "setBackgroundResource",
-            if (selected) R.drawable.notify_rate_selected else R.drawable.notify_rate_normal,
-        )
-        views.setTextColor(viewId, if (selected) COLOR_SELECTED_TEXT else COLOR_NORMAL_TEXT)
-        views.setOnClickPendingIntent(
-            viewId,
-            PendingIntent.getService(
-                this,
-                rate,
-                Intent(this, ZuiControlQuickService::class.java)
-                    .setAction(action)
-                    .putExtra(ZuiControlContract.EXTRA_RATE, rate),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            ),
-        )
-    }
-
-    private fun currentRate(): Int {
-        return ZuiControlClient.editableDisplayHz() ?: RefreshSceneController.currentRate(this)
-    }
-
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return
-        }
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "ZuiControl refresh",
-            NotificationManager.IMPORTANCE_LOW,
-        ).apply {
-            description = "Per-app refresh quick controls"
-            setSound(null, null)
-            enableVibration(false)
-            setShowBadge(false)
-        }
-        notificationManager.deleteNotificationChannel("zui_control_quick_v3")
-        notificationManager.deleteNotificationChannel("zui_control_quick_v4")
-        notificationManager.deleteNotificationChannel("zui_control_quick_v5")
-        notificationManager.deleteNotificationChannel("zui_control_quick_v6")
-        notificationManager.createNotificationChannel(channel)
-    }
-
+    override fun onBind(intent: Intent?): IBinder?=null
+    override fun onDestroy(){monitor?.close();monitor=null;super.onDestroy()}
     companion object {
-        private const val CHANNEL_ID = "zui_control_quick_v7"
-        private const val NOTIFICATION_ID = 18701
-        private const val PENDING_RATE_TIMEOUT_MS = 1600L
-        private const val NOTIFICATION_REFRESH_DEBOUNCE_MS = 160L
-        private const val COLOR_SELECTED_TEXT = 0xFFFFFFFF.toInt()
-        private const val COLOR_NORMAL_TEXT = 0xFF1C222A.toInt()
-
-        fun start(context: Context) {
-            val intent = Intent(context, ZuiControlQuickService::class.java)
-                .setAction(ZuiControlContract.ACTION_REFRESH_NOTIFICATION)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-        }
+        private const val CHANNEL="zui_control_monitor_v1"
+        const val FULL="com.zui.zuicontrol.MONITOR_FULL"
+        const val FPS="com.zui.zuicontrol.MONITOR_FPS"
+        fun start(context: Context){context.startForegroundService(Intent(context,ZuiControlQuickService::class.java))}
     }
 }

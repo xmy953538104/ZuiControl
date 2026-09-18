@@ -13,185 +13,171 @@ import android.os.Parcel;
 import android.os.SystemClock;
 import android.system.Os;
 import android.system.OsConstants;
-import org.json.JSONArray;
 import org.json.JSONObject;
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** One observer-only collector. No shell, control writes, independent view scanners or OFF timer. */
-final class MonitorCollector {
-    static final String CALLBACK = "android.zui.IMonitorSnapshot";
+/** One scalar clock; task enumeration exists only inside an active user recording. */
+class MonitorCollector {
+    static final String CALLBACK="android.zui.IMonitorSnapshot";
     private final Context context;
+    final MonitorSession session=new MonitorSession();
+    private final MonitorSources sources=new MonitorSources();
+    private final MonitorStore store=new MonitorStore();
     private IBinder callback;
     private IBinder.DeathRecipient death;
     private HandlerThread thread;
     private Handler handler;
-    private long epoch, samples, reads;
-    private String target = "", lastSnapshot = "{}", error = "";
-    private int targetUser;
-    private boolean expanded;
-    private List<MonitorSnapshot.Task> previous = Collections.emptyList();
+    private long epoch,samples,threadReads,enumerations,lastThreadTime;
+    private String lastSnapshot="{}",error="";
+    private List<MonitorSnapshot.Task> previous=Collections.emptyList();
     private int previousPid;
-    private long previousStart, previousTime;
-    private long[] previousCpu;
-    private final long hz = Os.sysconf(OsConstants._SC_CLK_TCK);
+    private long previousStart;
+    private final long hz=Os.sysconf(OsConstants._SC_CLK_TCK);
 
-    MonitorCollector(Context context) { this.context = context; }
-
-    synchronized void register(IBinder binder) throws android.os.RemoteException {
+    MonitorCollector(Context context){this.context=context;}
+    synchronized void register(IBinder binder)throws android.os.RemoteException{
+        if(callback==binder)return;
         stop();
-        if (callback != null && death != null) callback.unlinkToDeath(death, 0);
-        callback = binder;
-        lastSnapshot = "{}";
-        death = null;
-        if (binder != null) {
-            death = () -> {
-                synchronized (MonitorCollector.this) {
-                    if (callback == binder) { stop(); callback = null; death = null; }
-                }
-            };
-            binder.linkToDeath(death, 0);
-        }
+        if(callback!=null&&death!=null)callback.unlinkToDeath(death,0);
+        callback=binder;death=null;
+        if(binder!=null){
+            death=()->{synchronized(MonitorCollector.this){if(callback==binder){
+                stop();callback=null;death=null;session.mode=MonitorSession.OFF;
+                session.stop();store.abandon();
+            }}};
+            binder.linkToDeath(death,0);
+        }else{session.mode=MonitorSession.OFF;session.stop();store.abandon();}
     }
-
-    synchronized void select(String pkg, int user, boolean showThreads) {
-        if (pkg.equals(target) && user == targetUser && expanded == showThreads
-                && (pkg.isEmpty() || thread != null)) return;
-        stop();
-        expanded = showThreads;
-        if (pkg.isEmpty() || callback == null) return;
-        target = pkg; targetUser = user;
-        previous = Collections.emptyList(); previousPid = 0; previousStart = 0;
-        previousTime = 0; previousCpu = null; error = "";
-        thread = new HandlerThread("ZuiMonitor");
-        thread.start();
-        handler = new Handler(thread.getLooper());
-        final long ticket = epoch;
-        handler.post(() -> sample(ticket));
+    synchronized void scene(String pkg,int user,boolean eligible){
+        boolean changed=!pkg.equals(session.foreground)||user!=session.user||eligible!=session.eligible;
+        session.scene(pkg,user,eligible);
+        if(changed){clearThreadBaseline();stop();}
+        schedule();
     }
-
-    synchronized void stop() {
+    synchronized String command(String action,int user,String arg){
+        try{
+            long now=SystemClock.elapsedRealtime();
+            if("recordRead".equals(action))return store.read(user,arg);
+            if("full".equals(action))session.toggle(MonitorSession.FULL);
+            else if("fps".equals(action))session.toggle(MonitorSession.FPS);
+            else if("off".equals(action)){session.mode=MonitorSession.OFF;session.cancelArm();}
+            else if("arm".equals(action)){if(!session.arm(now))return "ok=0\nerror=not_eligible";}
+            else if("cancelArm".equals(action))session.cancelArm();
+            else if("recordStart".equals(action)){
+                if(!session.canStart(now)||session.user!=user)return "ok=0\nerror=hold_or_scene_changed";
+                MonitorSnapshot.Task task=identity(findPid());
+                if(task==null)return "ok=0\nerror=process_unavailable";
+                String label=context.getPackageManager().getApplicationLabel(
+                        context.getPackageManager().getApplicationInfo(session.foreground,0)).toString();
+                store.start(session.foreground,label,user,task.tid,task.start,now);
+                session.started();clearThreadBaseline();
+            }else if("recordStop".equals(action)){
+                if(session.recordingUser!=user)return "ok=0\nerror=wrong_user";
+                store.finish(now);session.stop();clearThreadBaseline();
+            }else if(!"state".equals(action))return "ok=0\nerror=unknown_monitor_action";
+            if(!"state".equals(action)&&!"arm".equals(action)&&!"cancelArm".equals(action)){stop();schedule();}
+            return "ok=1"+state()+"\nmonitorSnapshot="+lastSnapshot;
+        }catch(Exception e){error=e.getClass().getSimpleName()+":"+e.getMessage();return "ok=0\nerror="+error;}
+    }
+    private void clearThreadBaseline(){previous=Collections.emptyList();previousPid=0;previousStart=0;lastThreadTime=0;}
+    private void schedule(){
+        if(callback==null||!session.sampling()){stop();return;}
+        if(handler!=null)return;
+        thread=new HandlerThread("ZuiMonitor");thread.start();handler=new Handler(thread.getLooper());
+        long ticket=epoch;handler.post(()->sample(ticket));
+    }
+    synchronized void stop(){
         epoch++;
-        target = "";
-        if (handler != null) handler.removeCallbacksAndMessages(null);
-        if (thread != null) thread.quitSafely();
-        handler = null; thread = null;
-        previous = Collections.emptyList(); previousCpu = null;
-        deliver("{\"active\":false}");
+        if(handler!=null)handler.removeCallbacksAndMessages(null);
+        if(thread!=null)thread.quitSafely();
+        handler=null;thread=null;
+        deliver("{\"active\":false,\"recordState\":\""+session.recordingState()+"\"}");
     }
-
-    synchronized String state() {
-        return "\nmonitorActive=" + (thread != null) + "\nmonitorTarget=" + target
-                + "\nmonitorSamples=" + samples + "\nmonitorReads=" + reads
-                + "\nmonitorIntervalMs=" + MonitorSnapshot.INTERVAL_MS
-                + "\nmonitorTimer=" + (handler != null) + "\nmonitorError=" + error;
+    synchronized String snapshot(){return lastSnapshot;}
+    synchronized String state(){
+        return "\nmonitorActive="+(thread!=null)+"\nmonitorTarget="+session.foreground
+            +"\nmonitorMode="+session.mode+"\nmonitorSamples="+samples+"\nmonitorReads="+sources.scalarReads
+            +"\nmonitorScalarReads="+sources.scalarReads+"\nmonitorThreadReads="+threadReads
+            +"\nmonitorThreadEnumerations="+enumerations+"\nmonitorDbWrites="+store.writes
+            +"\nmonitorScalarRows="+store.scalarRows+"\nmonitorThreadRows="+store.threadRows
+            +"\nmonitorRecordState="+session.recordingState()+"\nmonitorRecordTarget="+session.recordingPackage
+            +"\nmonitorIntervalMs=1000\nmonitorThreadIntervalMs=3000\nmonitorTimer="+(handler!=null)
+            +"\nmonitorQuietPath="+sources.quietPath+"\nmonitorQuietUnit=millidegree_C\nmonitorQuietDiscovery="+sources.discoveryReads
+            +"\nmonitorQuietError="+sources.quietError+"\nmonitorError="+error;
     }
-
-    synchronized String snapshot() { return lastSnapshot; }
-
-    private void sample(long ticket) {
-        // Serialize stop with bounded proc reads; no old generation can enqueue after stop.
-        synchronized (this) {
-            if (ticket != epoch || handler == null || target.isEmpty()) return;
-            try {
-                KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
-                if (keyguard == null || keyguard.isKeyguardLocked()) { stop(); return; }
-                long now = SystemClock.elapsedRealtime();
-                int pid = findPid();
-                MonitorSnapshot.Task process = pid > 0 ? MonitorSnapshot.Task.parse(read("/proc/" + pid + "/stat")) : null;
-                List<MonitorSnapshot.Task> tasks = new ArrayList<>();
-                if (process != null) {
-                    File[] entries = new File("/proc/" + pid + "/task").listFiles();
-                    if (entries == null) throw new java.io.IOException("task_directory_unreadable");
-                    if (entries.length > 8192) throw new java.io.IOException("task_population_limit");
-                    for (File entry : entries) {
-                        if (!entry.getName().matches("[0-9]+")) continue;
-                        MonitorSnapshot.Task task = MonitorSnapshot.Task.parse(read(entry + "/stat"));
-                        if (task != null) tasks.add(task);
-                    }
-                    MonitorSnapshot.Task after = MonitorSnapshot.Task.parse(read("/proc/" + pid + "/stat"));
-                    if (after == null || after.start != process.start) { process = null; tasks.clear(); }
-                }
-                boolean same = process != null && previousPid == pid && previousStart == process.start;
-                List<MonitorSnapshot.Row> rows = MonitorSnapshot.delta(previous, tasks,
-                        now - previousTime, hz, same);
-                long[] cpu = MonitorSnapshot.cpuTimes(read("/proc/stat"));
-                JSONObject data = new JSONObject();
-                data.put("active", true).put("package", target).put("pid", process == null ? 0 : pid)
-                        .put("elapsedMs", now).put("expanded", expanded).put("sample", ++samples)
-                        .put("cpu", MonitorSnapshot.aggregateCpu(previousCpu, cpu))
-                        .put("fps", MonitorSnapshot.displayFps(read("/sys/class/drm/sde-crtc-0/measured_fps")))
-                        .put("fpsSource", "display_measured_fps_not_game_present")
-                        .put("gpuMHz", numeric("/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq", 1000000))
-                        .put("gpuPercent", numeric("/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage", 1));
-                Intent battery = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-                data.put("batteryC", battery != null && battery.hasExtra(BatteryManager.EXTRA_TEMPERATURE)
-                        ? battery.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) / 10.0 : -1);
-                JSONArray jsonRows = new JSONArray();
-                for (MonitorSnapshot.Row row : rows) {
-                    jsonRows.put(new JSONObject().put("tid", row.task.tid)
-                            .put("name", row.task.name).put("cpu", row.cpu));
-                }
-                data.put("threads", jsonRows).put("population", tasks.size())
-                        .put("threadStatus", process == null ? "process_unavailable" : tasks.isEmpty() ? "threads_unreadable" : "ok")
-                        .put("reads", reads);
-                previous = tasks; previousPid = pid;
-                previousStart = process == null ? 0 : process.start;
-                previousTime = now; previousCpu = cpu;
-                lastSnapshot = data.toString();
-                deliver(lastSnapshot);
-            } catch (Exception failure) {
-                error = failure.getClass().getSimpleName() + ":" + failure.getMessage();
-                stop();
+    private void sample(long ticket){synchronized(this){
+        if(ticket!=epoch||handler==null||!session.sampling())return;
+        try{
+            KeyguardManager keyguard=context.getSystemService(KeyguardManager.class);
+            if(keyguard==null||keyguard.isKeyguardLocked()){
+                session.scene(session.foreground,session.user,false);clearThreadBaseline();stop();return;
             }
-            if (ticket == epoch && handler != null) handler.postDelayed(() -> sample(ticket), MonitorSnapshot.INTERVAL_MS);
-        }
+            long now=SystemClock.elapsedRealtime();
+            double fps=sources.fps(),quiet=-1,power=-1;
+            boolean capture=session.recordingActive();
+            if(session.mode==MonitorSession.FULL||capture){
+                quiet=sources.quiet();sources.scalarReads++;
+                Intent battery=context.registerReceiver(null,new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+                BatteryManager manager=context.getSystemService(BatteryManager.class);
+                if(battery!=null&&manager!=null)power=MonitorSources.batteryWatts(
+                    battery.getIntExtra(BatteryManager.EXTRA_PLUGGED,-1),battery.getIntExtra(BatteryManager.EXTRA_STATUS,-1),
+                    battery.getIntExtra(BatteryManager.EXTRA_VOLTAGE,-1),manager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW));
+            }
+            if(capture){
+                MonitorSnapshot.Task process=identity(findPid());
+                if(process!=null){
+                    List<MonitorSnapshot.Row> rows=Collections.emptyList();
+                    if(lastThreadTime==0||now-lastThreadTime>=3000){
+                        enumerations++;
+                        List<MonitorSnapshot.Task> tasks=readTasks(process.tid);
+                        MonitorSnapshot.Task after=identity(process.tid);
+                        if(after==null||after.start!=process.start){clearThreadBaseline();process=null;}
+                        else{
+                            rows=MonitorSnapshot.delta(previous,tasks,now-lastThreadTime,hz,previousPid==process.tid&&previousStart==process.start);
+                            previous=tasks;previousPid=process.tid;previousStart=process.start;lastThreadTime=now;
+                        }
+                    }
+                    if(process!=null)store.append(now,fps,power,quiet,process.tid,process.start,rows);
+                }else clearThreadBaseline();
+                session.processAvailable=process!=null;
+            }else clearThreadBaseline();
+            JSONObject data=new JSONObject().put("active",true).put("package",session.foreground)
+                .put("mode",session.mode).put("sample",++samples).put("elapsedMs",now)
+                .put("fps",fps).put("fpsSource","display_measured_fps_not_game_present")
+                .put("powerW",power).put("powerSource","DEVICE_POWER_W_BATTERY_DISCHARGE_MV_UA")
+                .put("quietC",quiet).put("recordState",session.recordingState());
+            lastSnapshot=data.toString();deliver(lastSnapshot);
+        }catch(Exception e){error=e.getClass().getSimpleName()+":"+e.getMessage();
+            session.mode=MonitorSession.OFF;session.stop();store.abandon();stop();}
+        if(ticket==epoch&&handler!=null)handler.postDelayed(()->sample(ticket),1000);
+    }}
+    private MonitorSnapshot.Task parse(String path){
+        try{return MonitorSnapshot.Task.parse(MonitorSources.line(path));}catch(java.io.IOException e){return null;}
     }
-
-    private int findPid() {
-        ActivityManager manager = context.getSystemService(ActivityManager.class);
-        List<ActivityManager.RunningAppProcessInfo> processes = manager.getRunningAppProcesses();
-        if (processes != null) for (ActivityManager.RunningAppProcessInfo p : processes) {
-            if (target.equals(p.processName) && p.uid / 100000 == targetUser) return p.pid;
-        }
+    List<MonitorSnapshot.Task> readTasks(int pid){
+        List<MonitorSnapshot.Task> tasks=new ArrayList<>();
+        File[] entries=new File("/proc/"+pid+"/task").listFiles();
+        if(entries==null && identity(pid)==null)return tasks;
+        if(entries==null||entries.length>8192)throw new IllegalStateException("task_directory_unavailable");
+        for(File entry:entries){threadReads++;MonitorSnapshot.Task task=parse(entry.getPath()+"/stat");if(task!=null)tasks.add(task);}
+        return tasks;
+    }
+    MonitorSnapshot.Task identity(int pid){return pid>0?parse("/proc/"+pid+"/stat"):null;}
+    int findPid(){
+        ActivityManager manager=context.getSystemService(ActivityManager.class);
+        List<ActivityManager.RunningAppProcessInfo> processes=manager.getRunningAppProcesses();
+        if(processes!=null)for(ActivityManager.RunningAppProcessInfo p:processes)
+            if(session.foreground.equals(p.processName)&&p.uid/100000==session.user)return p.pid;
         return 0;
     }
-
-    private String read(String path) {
-        reads++;
-        try (BufferedReader reader = new BufferedReader(new FileReader(path), 1024)) {
-            // Every chosen source is one line; bound malformed input without readLine's unlimited allocation.
-            char[] text = new char[4096];
-            int n = reader.read(text);
-            if (n <= 0) return "";
-            String s = new String(text, 0, n);
-            int newline = s.indexOf('\n');
-            return newline < 0 ? s : s.substring(0, newline);
-        } catch (java.io.IOException unavailable) { return ""; }
-    }
-
-    private double numeric(String path, double divisor) {
-        try {
-            double n = Double.parseDouble(read(path).trim().replace("%", "")) / divisor;
-            return Double.isFinite(n) && n >= 0 ? n : -1;
-        } catch (RuntimeException unavailable) { return -1; }
-    }
-
-    private void deliver(String snapshot) {
-        if (callback == null) return;
-        Parcel data = Parcel.obtain();
-        try {
-            data.writeInterfaceToken(CALLBACK); data.writeString(snapshot);
-            callback.transact(1, data, null, IBinder.FLAG_ONEWAY);
-        } catch (android.os.RemoteException dead) {
-            callback = null;
-            // Death recipient will cancel sampling; also fail closed if it has not run yet.
-            if (handler != null) { handler.removeCallbacksAndMessages(null); thread.quitSafely(); }
-            handler = null; thread = null; target = ""; epoch++;
-        } finally { data.recycle(); }
+    private void deliver(String text){
+        if(callback==null)return;Parcel data=Parcel.obtain();
+        try{data.writeInterfaceToken(CALLBACK);data.writeString(text);callback.transact(1,data,null,IBinder.FLAG_ONEWAY);}
+        catch(android.os.RemoteException e){callback=null;session.mode=MonitorSession.OFF;session.stop();store.abandon();
+            if(handler!=null)handler.removeCallbacksAndMessages(null);if(thread!=null)thread.quitSafely();handler=null;thread=null;epoch++;}
+        finally{data.recycle();}
     }
 }

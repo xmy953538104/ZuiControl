@@ -757,7 +757,11 @@ class ProductionBindingTest(unittest.TestCase):
         self.assertIn("isForegroundBusinessPackage(pkg, mCurrentUserId)", self.service)
         self.assertIn('return stateInt("editableDisplayHz")', self.client)
         self.assertIn("ZuiControlClient.editableDisplayHz()", self.tile)
-        self.assertIn("ZuiControlClient.editableDisplayHz()", self.quick)
+        # R4 notification is Monitor/FPS-display only; the Refresh tile is unchanged.
+        self.assertNotIn("editableDisplayHz", self.quick)
+        self.assertNotIn("setCurrentSceneProfile", self.quick)
+        self.assertNotIn("cycleCurrentScene", self.quick)
+        self.assertIn('monitor?.toggle(if(intent.action==FULL)"full" else "fps")', self.quick)
 
     def test_apply_success_order_and_failure_cleanup(self) -> None:
         apply_method = self.service[

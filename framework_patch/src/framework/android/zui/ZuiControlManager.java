@@ -33,8 +33,7 @@ public final class ZuiControlManager {
             public void write(Parcel data) {
                 data.writeString(command);
                 if ("register".equals(command)) data.writeStrongBinder((IBinder) callback);
-                else if ("manual".equals(command)) { data.writeInt(enabled ? 1 : 0); data.writeInt(expanded ? 1 : 0); }
-                else if ("auto".equals(command)) { data.writeString(pkg); data.writeInt(enabled ? 1 : 0); }
+                else if ("recordRead".equals(command)) data.writeString(pkg);
             }
         });
     }

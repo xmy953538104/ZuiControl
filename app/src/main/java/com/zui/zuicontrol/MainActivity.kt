@@ -365,21 +365,6 @@ class MainActivity : Activity() {
         val content = dialogContent(pkg, "性能模式", picker) as LinearLayout
         content.addView(fieldTitle("GPU频率范围"), fieldMargins())
         content.addView(gpuEditor)
-        val monitorState = PerformanceMonitor.command("state")
-        content.addView(android.widget.CheckBox(this).apply {
-            text = "进入此应用自动显示性能监视器"
-            isChecked = monitorState.lineSequence().any { it == "monitorAuto=$pkg" }
-            setOnCheckedChangeListener { button, checked ->
-                if (checked && !android.provider.Settings.canDrawOverlays(this@MainActivity)) {
-                    button.isChecked = false
-                    requestMonitorPermission()
-                } else {
-                    connectMonitor()
-                    val result = PerformanceMonitor.command("auto", pkg, checked)
-                    if (!ZuiControlClient.replyIsOk(result)) toast("监视器设置失败：$result")
-                }
-            }
-        }, fieldMargins())
         AlertDialog.Builder(this)
             .setTitle(if (current == null) "添加自定义应用" else "编辑自定义应用")
             .setView(content)
@@ -596,8 +581,11 @@ class MainActivity : Activity() {
                     "刷新率 owner：system · health：$schedulerError",
             ))
             addView(sectionTitle("工具"), sectionMargins())
-            addView(settingsAction(R.drawable.ic_nav_threads, "性能监视器", "只读 · CPU / GPU / 电池 / 热点线程") {
+            addView(settingsAction(R.drawable.ic_nav_threads, "性能监视器", "通知快捷控制 · FPS / W / quiet") {
                 showPerformanceMonitor()
+            }, settingsActionMargins())
+            addView(settingsAction(R.drawable.ic_action_logs, "性能记录", "最近一次记录 · 曲线与热点线程") {
+                startActivity(Intent(this@MainActivity, PerformanceRecordActivity::class.java))
             }, settingsActionMargins())
             addView(settingsAction(R.drawable.ic_nav_system, "GPU频率范围", "节能 · 均衡 · 性能 · 快速") {
                 showGlobalGpuRanges()
@@ -635,32 +623,12 @@ class MainActivity : Activity() {
         })
     }
 
-    private fun monitorManual(enabled: Boolean, expanded: Boolean) {
-        val result = PerformanceMonitor.command("manual", enabled = enabled, expanded = expanded)
-        toast(if (!ZuiControlClient.replyIsOk(result)) "监视器设置失败：$result"
-            else if (enabled) "已准备，请进入要监视的应用" else "手动监视器已关闭")
-    }
-
     private fun showPerformanceMonitor() {
-        val state = PerformanceMonitor.command("state")
         val content = vertical().apply {
             setPadding(dp(20), dp(8), dp(20), dp(12))
-            addView(compactNote("只读观测，不调整调度、频率或温控。每3秒共享采样；返回桌面、切出目标或锁屏后停止。屏幕FPS来自显示驱动，不是游戏逐帧统计；不可读时标注不支持。"))
-            addView(commandButton("显示精简监视器") {
-                if (!android.provider.Settings.canDrawOverlays(this@MainActivity)) requestMonitorPermission()
-                else { connectMonitor(); monitorManual(true, false) }
-            }, fieldMargins())
-            addView(commandButton("显示 Top15 线程") {
-                if (!android.provider.Settings.canDrawOverlays(this@MainActivity)) requestMonitorPermission()
-                else { connectMonitor(); monitorManual(true, true) }
-            }, fieldMargins())
-            addView(commandButton("关闭手动监视器") {
-                monitorManual(false, false)
-            }, fieldMargins())
-            val snapshot = ZuiControlClient.stateValue(state, "monitorSnapshot")
-            val parsed = runCatching { org.json.JSONObject(snapshot ?: "{}") }.getOrNull()
-            addView(compactNote("最后共享快照（非独立采样）\n" +
-                if (parsed != null && parsed.has("package")) PerformanceMonitor.format(parsed) else "尚无样本"), fieldMargins())
+            addView(compactNote("从通知点击「监视器」或「FPS」。日常显示不写记录、不扫描线程。\n轻触长条切换圆形；长按圆形 2 秒开始录制，轻触录制圆形结束。切换应用/锁屏仅暂停，返回目标应用继续。成功开始新录制才替换上一条。\n屏幕 FPS 非游戏逐帧统计；W 为设备功率，充电时显示 --。quiet 为独立温度传感器。"))
+            addView(commandButton("悬浮窗权限") { requestMonitorPermission() },fieldMargins())
+            addView(commandButton("显示快捷通知") { connectMonitor() },fieldMargins())
         }
         AlertDialog.Builder(this).setTitle("性能监视器").setView(ScrollView(this).apply { addView(content) })
             .setPositiveButton("完成", null).showStyled()

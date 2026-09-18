@@ -103,8 +103,6 @@ public final class ZuiControlService extends Binder {
     private final UperfScenePolicy mUperfScenePolicy;
     private final MonitorCollector mMonitor;
     private final java.util.Set<String> mMonitorApps = new java.util.HashSet<>();
-    private final MonitorLifecycle mMonitorLifecycle = new MonitorLifecycle();
-    private boolean mMonitorExpanded;
     private int mMonitorClientUser = -1;
     private final AtomicLong mTopResumedCallbackGeneration = new AtomicLong();
     private final TopResumedNullState mTopResumedState = new TopResumedNullState();
@@ -338,7 +336,7 @@ public final class ZuiControlService extends Binder {
         } catch (Throwable t) {
             mTopResumedState.authorityError(generation);
             mGpuPolicy.failSafe("top_resumed_authority_error");
-            mMonitor.stop();
+            mMonitor.scene("", 0, false);
             Log.w(TAG, "uperf_top_resumed event=topResumedRevalidateAuthorityError"
                     + " generation=" + generation + " trigger=" + trigger, t);
             return;
@@ -700,44 +698,24 @@ public final class ZuiControlService extends Binder {
         if ("register".equals(command)) {
             mMonitor.register(data.readStrongBinder());
             mMonitorClientUser = callerUser;
-        } else if ("manual".equals(command)) {
-            mMonitorLifecycle.setManual(data.readInt() != 0);
-            mMonitorExpanded = data.readInt() != 0;
-        } else if ("auto".equals(command)) {
-            String pkg = data.readString();
-            boolean enabled = data.readInt() != 0;
-            if (!validPackage(pkg) || !packageExists(pkg) || isTransientPackage(pkg)) {
-                return "ok=0\nerror=invalid_monitor_target";
+        }
+        String argument = "recordRead".equals(command) ? data.readString() : "";
+        long identity = Binder.clearCallingIdentity();
+        try {
+            refreshMonitor();
+            String result = mMonitor.command("register".equals(command) ? "state" : command,
+                    callerUser, argument == null ? "" : argument);
+            if (result.startsWith("ok=1") && ("full".equals(command) || "fps".equals(command))) {
+                // Existing system-server authority, only after the authenticated direct user action.
+                try { mContext.sendBroadcastAsUser(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS),
+                        android.os.UserHandle.getUserHandleForUid(callerUser * 100000)); }
+                catch (RuntimeException e) { Log.w(TAG, "monitor notification collapse unavailable", e); }
             }
-            String target = key(callerUser, pkg);
-            boolean old = mMonitorApps.contains(target);
-            if (enabled) mMonitorApps.add(target); else mMonitorApps.remove(target);
-            if (!saveProfiles()) {
-                if (old) mMonitorApps.add(target); else mMonitorApps.remove(target);
-                return "ok=0\nerror=monitor_profile_save";
-            }
-        } else if (!"state".equals(command)) {
-            return "ok=0\nerror=invalid_monitor_command";
-        }
-        if (!"state".equals(command)) {
-            long identity = Binder.clearCallingIdentity();
-            try { refreshMonitor(); } finally { Binder.restoreCallingIdentity(identity); }
-        }
-        StringBuilder result = new StringBuilder("ok=1").append(mMonitor.state())
-                .append("\nmonitorManual=").append(mMonitorLifecycle.manual)
-                .append("\nmonitorExpanded=").append(mMonitorExpanded)
-                .append("\nmonitorSnapshot=").append(mMonitor.snapshot());
-        for (String target : mMonitorApps) if (target.startsWith(callerUser + ":")) {
-            result.append("\nmonitorAuto=").append(target.substring(target.indexOf(':') + 1));
-        }
-        return result.toString();
+            return result;
+        } finally { Binder.restoreCallingIdentity(identity); }
     }
 
     private synchronized void refreshMonitor() {
-        if (!mMonitorLifecycle.manual && mMonitorApps.isEmpty()) {
-            mMonitor.select("", 0, mMonitorExpanded);
-            return;
-        }
         String pkg = mTopResumedState.stablePackage();
         int user = mTopResumedState.stableUserId();
         android.app.KeyguardManager lock = mContext.getSystemService(android.app.KeyguardManager.class);
@@ -748,8 +726,7 @@ public final class ZuiControlService extends Binder {
         android.content.pm.ResolveInfo home = mPm.resolveActivity(
                 new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);
         if (home == null || home.activityInfo == null || pkg.equals(home.activityInfo.packageName)) eligible = false;
-        String selected = mMonitorLifecycle.select(key(user, pkg), eligible, mMonitorApps.contains(key(user, pkg)));
-        mMonitor.select(selected.isEmpty() ? "" : pkg, user, mMonitorExpanded);
+        mMonitor.scene(pkg, user, eligible);
     }
 
     private synchronized String setGpuRange(String pkg, int userId, int min, int max) {
