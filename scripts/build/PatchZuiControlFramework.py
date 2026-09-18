@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import copy
 import os
 import pathlib
 import shutil
@@ -79,13 +80,18 @@ def rewrite_zip(src, dst, replacements):
     if tmp.exists():
         tmp.unlink()
     with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(tmp, "w") as zout:
-        skip = set(replacements)
+        if len(zin.namelist()) != len(set(zin.namelist())):
+            raise ValueError("duplicate ZIP member")
         for item in zin.infolist():
-            if item.filename in skip:
-                continue
-            zout.writestr(item, zin.read(item.filename))
-        for name, path in replacements.items():
-            zout.write(path, name)
+            info = copy.copy(item)
+            info.date_time = (1980, 1, 1, 0, 0, 0)
+            data = replacements[item.filename].read_bytes() if item.filename in replacements else zin.read(item.filename)
+            zout.writestr(info, data)
+        for name in sorted(set(replacements) - set(zin.namelist())):
+            info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            zout.writestr(info, replacements[name].read_bytes())
     tmp.replace(dst)
 
 

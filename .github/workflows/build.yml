@@ -95,6 +95,7 @@ jobs:
           python3 tests/command_plane/TestCommandPlaneArchitecture.py
           python3 tests/monitor/TestMonitor.py
           python3 tests/monitor/TestPackageIdentity.py
+          python3 tests/monitor/TestDeterministicZip.py
           python3 tests/refresh/TestRefreshStateMachine.py
           python3 tests/refresh/TestOemTouchTimer.py
           python3 tests/gpu/TestGpuProof.py
