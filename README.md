@@ -36,6 +36,7 @@ Run from the repository root:
 ```text
 python tests/command_plane/TestCommandPlaneArchitecture.py
 python tests/gpu/TestGpuProof.py
+python tests/monitor/TestMonitor.py
 bash tests/command_plane/TestZuiControldTransactions.sh
 python tests/refresh/TestRefreshStateMachine.py
 python tests/uperf/architecture/TestUperfArchitecture.py
@@ -84,6 +85,16 @@ The Binder fixture executes the production reply parser with typed mock Parcel
 calls; it is not proof of device wire bytes or SELinux permissions.
 
 ## ROM integration
+
+The read-only performance monitor uses one 3000ms system-server collector and
+one-way snapshots for compact/Top15 rendering. Its behavioral reference is
+helloklf/vtools tag 4.7.3, commit `6c66b8de7d29b19ff3a16cd7bce86cb430717066`
+(GPLv3 upstream); no upstream source/assets are copied. Process CPU uses one core
+=100%, aggregate CPU uses all-core capacity. FPS is explicitly labeled display-driver
+measured FPS, not game present FPS or display refresh. Unreadable sources show unsupported. Manual monitoring binds the
+next eligible app; per-app auto mode follows the accepted top-resumed authority.
+HOME, app leave, keyguard, screen-off, callback death and overlay failure stop the
+collector; GPU/Uperf/ZUIopt/thermal ownership is unchanged.
 
 The terminal candidate rebuilds the services extension from exact current source.
 Unmodified services DEX members remain byte-identical. The GPU lane additionally

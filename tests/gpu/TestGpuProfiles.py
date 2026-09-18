@@ -10,7 +10,7 @@ class GpuProfiles(unittest.TestCase):
         def method(start,end):
             return source[source.index(start):source.index(end,source.index(start))]
         methods=method('    private void loadProfiles()', '    private void applyGlobalRenderVote(')
-        methods+=method('    private synchronized String setGlobalGpuRange(', '    private synchronized String setGpuRange(')
+        methods+=method('    private synchronized String setGlobalGpuRange(', '    private synchronized String monitorCommand(')
         methods+=method('    private static boolean isUperfMode(', '    private String profileStateLines(')
         java=r'''package com.zui.server.control;
 import java.io.*; import java.nio.charset.StandardCharsets; import java.nio.file.*; import java.util.*;
@@ -29,6 +29,7 @@ public class ProfileFixture {
  static class Profile {String packageName,mode;int userId,displayHz,fpsCap;
   Profile(String p,int u,int h,int f,String m){packageName=p;userId=u;displayHz=h;fpsCap=f;mode=m;}}
  final Map<String,Profile> mProfiles=new LinkedHashMap<>();
+ final Set<String> mMonitorApps=new HashSet<>();
  final Map<String,GpuRange> mGpuOverrides=new LinkedHashMap<>(),mGpuGlobalRanges=new LinkedHashMap<>();
  final Policy mUperfScenePolicy=new Policy();
  final AtomicFile mProfileFile;String mLastError="";static final String TAG="test";
@@ -58,6 +59,9 @@ public class ProfileFixture {
   check(again.mGpuOverrides.get("0:com.kurogame.mingchao").same(new GpuRange(422,500)));
   again.mGpuOverrides.clear();check(again.saveProfiles());
   check(new ProfileFixture(file).mGpuOverrides.isEmpty());
+  check(new ProfileFixture(file).mGpuGlobalRanges.get("0:performance").same(new GpuRange(231,500)));
+  again.mMonitorApps.add("0:com.kurogame.mingchao");check(again.saveProfiles());
+  check(new ProfileFixture(file).mMonitorApps.contains("0:com.kurogame.mingchao"));
   check(new ProfileFixture(file).mGpuGlobalRanges.get("0:performance").same(new GpuRange(231,500)));
   String saved=Files.readString(file.toPath());again.mProfileFile.fail=true;
   check(again.setGlobalGpuRange("performance",0,231,903).startsWith("ok=0"));

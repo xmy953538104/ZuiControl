@@ -24,6 +24,7 @@ class ZuiControlQuickService : Service() {
     private var stateObserver: ContentObserver? = null
     private var pendingRate: Int? = null
     private var pendingRateUntilMs = 0L
+    private var monitor: PerformanceMonitor? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -31,9 +32,14 @@ class ZuiControlQuickService : Service() {
         createChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         registerStateObserver()
+        monitor = PerformanceMonitor(this).also { it.start() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "com.zui.zuicontrol.MONITOR_CONNECT") {
+            monitor?.close()
+            monitor = PerformanceMonitor(this).also { it.start() }
+        }
         val rate = when (intent?.action) {
             ZuiControlContract.ACTION_SET_60 -> 60
             ZuiControlContract.ACTION_SET_90 -> 90
@@ -65,6 +71,8 @@ class ZuiControlQuickService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        monitor?.close()
+        monitor = null
         stateObserver?.let { contentResolver.unregisterContentObserver(it) }
         stateObserver = null
         handler.removeCallbacks(refreshNotificationRunnable)

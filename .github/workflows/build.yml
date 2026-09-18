@@ -93,6 +93,7 @@ jobs:
           bash -n payload/system/etc/zui_control/zui_uperf_crash_gate.sh
           bash tests/command_plane/TestZuiControldTransactions.sh
           python3 tests/command_plane/TestCommandPlaneArchitecture.py
+          python3 tests/monitor/TestMonitor.py
           python3 tests/refresh/TestRefreshStateMachine.py
           python3 tests/refresh/TestOemTouchTimer.py
           python3 tests/gpu/TestGpuProof.py

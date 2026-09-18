@@ -26,6 +26,19 @@ public final class ZuiControlManager {
 
     private final IBinder mRemote;
 
+    public String monitor(final String command, final String pkg, final boolean enabled,
+            final boolean expanded, final Object callback) {
+        if (callback != null && !(callback instanceof IBinder)) throw new IllegalArgumentException("callback binder required");
+        return transact(15, new Writer() {
+            public void write(Parcel data) {
+                data.writeString(command);
+                if ("register".equals(command)) data.writeStrongBinder((IBinder) callback);
+                else if ("manual".equals(command)) { data.writeInt(enabled ? 1 : 0); data.writeInt(expanded ? 1 : 0); }
+                else if ("auto".equals(command)) { data.writeString(pkg); data.writeInt(enabled ? 1 : 0); }
+            }
+        });
+    }
+
     private ZuiControlManager(IBinder remote) {
         mRemote = remote;
     }

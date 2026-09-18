@@ -1,6 +1,9 @@
 package android.zui;
 
 public final class ZuiControlManager {
+    public String monitor(String command, String pkg, boolean enabled, boolean expanded, Object callback) {
+        throw new UnsupportedOperationException("framework stub");
+    }
     private ZuiControlManager() {
     }
 
