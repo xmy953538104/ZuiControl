@@ -93,11 +93,21 @@ class OemTouchTimer(unittest.TestCase):
                     'upstream': '3dc065f74510060d3612ab3bf805ed305f2e447d'}
         for path, tree in expected.items():
             if path == 'payload':
-                old = subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r',tree]).splitlines()
+                identity = json.loads((ROOT/'tests/monitor/package_identity_baseline.json').read_text(encoding='utf8'))
+                old = [line.encode() for line in identity['payload_entries']]
                 new = subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r','HEAD:payload']).splitlines()
                 self.assertEqual([x for x in old if not x.endswith(b'\tREADME.txt')],
                                  [x for x in new if not x.endswith(b'\tREADME.txt')])
-                old_doc = subprocess.check_output(['git','-C',str(ROOT),'show',tree+':README.txt'])
+                old_doc = identity['readme_text'].encode()
+                old_blob = hashlib.sha1(b'blob '+str(len(old_doc)).encode()+b'\0'+old_doc).hexdigest()
+                top = subprocess.check_output(['git','-C',str(ROOT),'ls-tree','HEAD:payload']).splitlines()
+                raw_tree = b''
+                for line in top:
+                    meta, name = line.split(b'\t',1)
+                    mode, _, oid = meta.split()
+                    if name == b'README.txt': oid = old_blob.encode()
+                    raw_tree += mode.lstrip(b'0')+b' '+name+b'\0'+bytes.fromhex(oid.decode())
+                self.assertEqual(hashlib.sha1(b'tree '+str(len(raw_tree)).encode()+b'\0'+raw_tree).hexdigest(),tree)
                 self.assertEqual((ROOT/'payload/README.txt').read_bytes().replace(b'\r\n',b'\n'),
                                  old_doc.replace(b'ZuiControlV60',b'ZuiControlV61').replace(b'App V60',b'App V61'))
                 continue
@@ -117,15 +127,13 @@ class OemTouchTimer(unittest.TestCase):
         entries = subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r','HEAD','--','app','framework_patch']).splitlines()
         # Metadata recovery changes only these two Gradle identity literals.
         identity_path = 'app/build.gradle.kts'
-        old = subprocess.check_output(['git','-C',str(ROOT),'show',
-            '57afe239a82b8af98415ef06986a1fcbf965f622:'+identity_path])
+        old = identity['gradle_text'].encode()
         current = (ROOT/identity_path).read_bytes().replace(b'\r\n', b'\n')
         self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 61')
             .replace(b'versionName = "0.21.23"', b'versionName = "0.21.24"'))
         entry = next(line for line in entries if line.endswith(b'\tapp/build.gradle.kts'))
         entries.remove(entry)
-        old_entry = subprocess.check_output(['git','-C',str(ROOT),'ls-tree',
-            '57afe239a82b8af98415ef06986a1fcbf965f622','--',identity_path]).strip()
+        old_entry = identity['gradle_entry'].encode()
         entries.append(old_entry)
         # Reverse the exact Owner-authorized monitor tree delta; keep the old hash.
         monitor = json.loads((ROOT/'tests/monitor/production_delta.json').read_text(encoding='utf-8'))
