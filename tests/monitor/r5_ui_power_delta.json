@@ -1,0 +1,56 @@
+{
+  "base": "afebefe9f4e35c797ee248f76e24b5872aedc461",
+  "scope": "Owner R5 power and presentation only",
+  "tree": [
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
+      "before": "100644 blob 69bcf0a5de72028c3eb2b703360b26e8342456d1\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
+      "after": "100644 blob b5db5f21c72ae70f09d3fefd2b5c60176cb8d8e5\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/LivePower.kt",
+      "before": null,
+      "after": "100644 blob 72ceec827af7a84061889a7f9138d2a3072de457\tapp/src/main/java/com/zui/zuicontrol/LivePower.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "before": "100644 blob 87dcefc3cd65392d22082a78cac6e2a8fadb8f9b\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob a7f24f15979e8e3eae49b006ede17267c777ee7d\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "before": "100644 blob 6bf999d39c0fe3a8a4ecdc12deaa8d6f50452432\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "after": "100644 blob 35554adef2b3fa47a460beaee9610258316ce630\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/UiControls.kt",
+      "before": null,
+      "after": "100644 blob 786a6481b4148a888756b84901b32c0956412eb6\tapp/src/main/java/com/zui/zuicontrol/UiControls.kt"
+    },
+    {
+      "path": "app/src/main/res/values/styles.xml",
+      "before": "100644 blob e83f61c22f28cecea910a6bdb1854c614c4c73aa\tapp/src/main/res/values/styles.xml",
+      "after": "100644 blob b33d67481b8a9a252eda257024c6fd19386a07bb\tapp/src/main/res/values/styles.xml"
+    },
+    {
+      "path": "app/src/main/res/values/ui_tokens.xml",
+      "before": null,
+      "after": "100644 blob 209a60e984c8ff005438c84ac458120218899a0c\tapp/src/main/res/values/ui_tokens.xml"
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/LivePowerTest.kt",
+      "before": null,
+      "after": "100644 blob 19401587926a052b954d0d05e30afe28e3672cb2\tapp/src/test/java/com/zui/zuicontrol/LivePowerTest.kt"
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/MonitorCollector.java",
+      "before": "100644 blob 6754b8fa77042c796b2f982ca9e8e93a1d2485b0\tframework_patch/src/services/com/zui/server/control/MonitorCollector.java",
+      "after": "100644 blob 170294e28d377a0c988183b6a3fccee376353022\tframework_patch/src/services/com/zui/server/control/MonitorCollector.java"
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/MonitorSources.java",
+      "before": "100644 blob a844d91ce44e84f32bbb5d3c54af707aabd48f66\tframework_patch/src/services/com/zui/server/control/MonitorSources.java",
+      "after": "100644 blob d59115c210c4eb061a966066ea10f4d00cdc53b4\tframework_patch/src/services/com/zui/server/control/MonitorSources.java"
+    }
+  ]
+}

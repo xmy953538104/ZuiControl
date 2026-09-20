@@ -31,6 +31,8 @@ class PerformanceMonitor(private val context: Context) {
     private var closed = false
     private var circle = false
     private var snapshot = JSONObject()
+    private val livePower = LivePower()
+    private var displayPower = -1.0
     private val callback = object : Binder() {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             if (code != 1 || flags and IBinder.FLAG_ONEWAY == 0 || getCallingUid() != 1000) return false
@@ -58,9 +60,12 @@ class PerformanceMonitor(private val context: Context) {
         view?.cancelGesture()
         view?.let { runCatching { windows.removeViewImmediate(it) } }
         view = null
+        livePower.clear(); displayPower = -1.0
     }
     private fun render(text: String) {
         val next = runCatching { JSONObject(text) }.getOrNull() ?: return
+        if (next.optString("package") != snapshot.optString("package")) livePower.clear()
+        displayPower = livePower.add(next.optDouble("powerW", -1.0))
         snapshot = next
         if (!next.optBoolean("active") || !Settings.canDrawOverlays(context)) { hide(); return }
         if (recording()) circle = true
@@ -73,7 +78,7 @@ class PerformanceMonitor(private val context: Context) {
                         (if (next.optInt("mode") == 2) WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE else 0),
                     PixelFormat.TRANSLUCENT).apply {
                     gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                    y = (8 * context.resources.displayMetrics.density).toInt()
+                    y = context.resources.getDimensionPixelSize(R.dimen.monitor_top_inset)
                     layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
                     title = "ZuiControl 性能监视器"
                 }
@@ -85,6 +90,10 @@ class PerformanceMonitor(private val context: Context) {
     private inner class MonitorView(context: Context) : View(context) {
         private val density = resources.displayMetrics.density
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private fun dimen(id: Int) = resources.getDimension(id)
+        private val unitScale = resources.getFraction(R.fraction.monitor_unit_scale, 1, 1)
+        private var metrics = emptyList<Pair<String, String>>()
+        private var valueSize = dimen(R.dimen.monitor_value_text)
         private val gesture = MonitorGesture()
         private val down get() = gesture.down
         private var x0 = 0f
@@ -110,37 +119,69 @@ class PerformanceMonitor(private val context: Context) {
         fun update() {
             val now = SystemClock.elapsedRealtime()
             gesture.cycle(now)
+            val all = listOf(number(snapshot.optDouble("fps", -1.0)) to "FPS",
+                number(displayPower) to "W", number(snapshot.optDouble("quietC", -1.0)) to "°C")
+            metrics = if (snapshot.optInt("mode") == 2) listOf(all[0])
+                else if (circle) listOf(all[when (metric) { 0 -> 0; 1 -> 2; else -> 1 }]) else all
             contentDescription = if (snapshot.optInt("mode") == 2) "FPS ${number(snapshot.optDouble("fps", -1.0))}"
-                else if (circle) "性能监视器 圆形 ${snapshot.optString("recordState")} ${circleText()}"
-                else "性能监视器 长条 ${format(snapshot)}"
+                else "性能监视器 ${if (circle) "圆形" else "长条"} ${snapshot.optString("recordState")} " +
+                    metrics.joinToString("   ") { "${it.first} ${it.second}" }
             requestLayout(); invalidate()
         }
-        private fun circleText(): String = when (metric) {
-            0 -> "${number(snapshot.optDouble("fps", -1.0))}\nFPS"
-            1 -> "${number(snapshot.optDouble("quietC", -1.0))}°\nquiet"
-            else -> "${number(snapshot.optDouble("powerW", -1.0))}\nW"
+        private fun metricWidth(metric: Pair<String, String>): Float {
+            paint.textSize = valueSize
+            val value = paint.measureText(metric.first)
+            paint.textSize = valueSize * unitScale
+            return value + dimen(R.dimen.monitor_unit_gap) + paint.measureText(metric.second)
         }
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            val fps = snapshot.optInt("mode") == 2
-            setMeasuredDimension(((if (fps) 62 else if (circle) 62 else 276) * density).toInt(),
-                ((if (fps) 28 else if (circle) 62 else 32) * density).toInt())
+            val round = circle && snapshot.optInt("mode") != 2
+            valueSize = dimen(if (round) R.dimen.monitor_circle_text else R.dimen.monitor_value_text)
+            if (round && metrics.isNotEmpty()) {
+                val available = dimen(R.dimen.monitor_circle_diameter) - 6 * density
+                val measured = metricWidth(metrics[0])
+                if (measured > available) valueSize *= available / measured
+            }
+            val content = metrics.sumOf { metricWidth(it).toDouble() }.toFloat() +
+                (metrics.size - 1).coerceAtLeast(0) * dimen(R.dimen.monitor_metric_gap)
+            val w = if (round) dimen(R.dimen.monitor_touch_diameter) else content + 2 * dimen(R.dimen.monitor_bar_padding)
+            val h = dimen(if (round) R.dimen.monitor_touch_diameter else R.dimen.monitor_bar_height)
+            setMeasuredDimension(kotlin.math.ceil(w).toInt(), kotlin.math.ceil(h).toInt())
         }
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             val fps = snapshot.optInt("mode") == 2
-            paint.style = Paint.Style.FILL; paint.color = Color.argb(210, 23, 35, 54)
-            canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), height / 2f, height / 2f, paint)
-            paint.color = Color.rgb(238, 243, 255); paint.textSize = 12 * density; paint.textAlign = Paint.Align.CENTER
-            val text = if (fps) number(snapshot.optDouble("fps", -1.0)) else if (circle) circleText() else format(snapshot)
-            val lines = text.split('\n')
-            lines.forEachIndexed { index, line ->
-                canvas.drawText(line, width / 2f, height / 2f + (index - (lines.size - 1) / 2f) * 16 * density - (paint.ascent() + paint.descent()) / 2, paint)
+            val round = circle && !fps
+            val inset = if (round) (width - dimen(R.dimen.monitor_circle_diameter)) / 2 else 0f
+            val radius = if (round) dimen(R.dimen.monitor_circle_diameter) / 2 else dimen(R.dimen.monitor_bar_radius)
+            val bounds = RectF(inset, inset, width - inset, height - inset)
+            paint.clearShadowLayer(); paint.style = Paint.Style.FILL
+            paint.color = context.getColor(R.color.monitor_glass)
+            canvas.drawRoundRect(bounds, radius, radius, paint)
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = density * 0.5f
+            paint.color = context.getColor(R.color.monitor_border)
+            bounds.inset(paint.strokeWidth / 2, paint.strokeWidth / 2)
+            canvas.drawRoundRect(bounds, radius, radius, paint)
+            paint.style = Paint.Style.FILL; paint.textAlign = Paint.Align.LEFT
+            paint.setShadowLayer(1.5f * density, 0f, density * 0.5f, Color.argb(190, 0, 0, 0))
+            paint.textSize = valueSize
+            val baseline = height / 2f - (paint.ascent() + paint.descent()) / 2
+            var x = if (round && metrics.isNotEmpty()) (width - metricWidth(metrics[0])) / 2 else dimen(R.dimen.monitor_bar_padding)
+            metrics.forEach { (value, unit) ->
+                paint.textSize = valueSize; paint.color = context.getColor(R.color.monitor_value)
+                canvas.drawText(value, x, baseline, paint)
+                x += paint.measureText(value) + dimen(R.dimen.monitor_unit_gap)
+                paint.textSize = valueSize * unitScale; paint.color = context.getColor(R.color.monitor_unit)
+                canvas.drawText(unit, x, baseline, paint)
+                x += paint.measureText(unit) + dimen(R.dimen.monitor_metric_gap)
             }
             if (!fps && circle && (down >= 0 || recording())) {
-                paint.style = Paint.Style.STROKE; paint.strokeWidth = 3 * density
-                paint.color = if (snapshot.optString("recordState") == "PAUSED") 0xFFE6BC67.toInt() else 0xFF79A9FF.toInt()
+                paint.clearShadowLayer(); paint.style = Paint.Style.STROKE
+                paint.strokeWidth = dimen(R.dimen.monitor_ring_width)
+                paint.color = if (snapshot.optString("recordState") == "PAUSED") 0xFFE6BC67.toInt() else context.getColor(R.color.ui_accent)
                 val progress = if (recording()) 1f else ((SystemClock.elapsedRealtime() - down) / 2000f).coerceIn(0f, 1f)
-                canvas.drawArc(RectF(2*density,2*density,width-2*density,height-2*density),-90f,360f*progress,false,paint)
+                val ringInset = inset - dimen(R.dimen.monitor_ring_gap)
+                canvas.drawArc(RectF(ringInset,ringInset,width-ringInset,height-ringInset),-90f,360f*progress,false,paint)
                 if (down >= 0 && !completed && !moved) postInvalidateOnAnimation()
             }
         }
@@ -185,6 +226,5 @@ class PerformanceMonitor(private val context: Context) {
             runCatching { ZuiControlManager.get()?.monitor(action,pkg,enabled,expanded,null) ?: "ok=0\nerror=service_unavailable" }
                 .getOrElse { "ok=0\nerror=${it.javaClass.simpleName}" }
         private fun number(n: Double) = if (!n.isFinite() || n<0) "--" else String.format(Locale.ROOT,"%.1f",n)
-        internal fun format(data: JSONObject) = "FPS ${number(data.optDouble("fps",-1.0))}   ${number(data.optDouble("powerW",-1.0))} W   quiet ${number(data.optDouble("quietC",-1.0))}°"
     }
 }

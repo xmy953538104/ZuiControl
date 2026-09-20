@@ -15,14 +15,16 @@ import kotlin.math.abs
 /** One inline interval; only the twelve supported OPPs can be emitted. */
 @SuppressLint("ViewConstructor") // Programmatic range dependency; never inflated from XML.
 class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
-    var range = initial
-        set(value) { field = value; describe(); invalidate() }
-    var onPreview: (GpuRanges.Range) -> Unit = {}
+    private var currentRange = initial
+    var range: GpuRanges.Range
+        get() = currentRange
+        set(value) { currentRange = value; describe(); invalidate() }
     var onCommit: (GpuRanges.Range) -> Unit = {}
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val unit = resources.displayMetrics.density
+    private val accent = context.getColor(R.color.ui_accent)
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xff616772.toInt(); textAlign = Paint.Align.CENTER
+        color = context.getColor(R.color.ui_secondary); textAlign = Paint.Align.CENTER
         textSize = 12f * resources.displayMetrics.scaledDensity
     }
     private val widestLabel = GpuRanges.opps.maxOf { labelPaint.measureText("${it}MHz") }
@@ -40,13 +42,13 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
         val y = 20f * unit
         paint.strokeWidth = 4 * unit; paint.strokeCap = Paint.Cap.ROUND
         paint.color = 0xffd5dde5.toInt(); canvas.drawLine(x(231), y, x(903), y, paint)
-        paint.color = 0xff3478b8.toInt(); canvas.drawLine(x(range.min), y, x(range.max), y, paint)
+        paint.color = accent; canvas.drawLine(x(range.min), y, x(range.max), y, paint)
         for (opp in GpuRanges.opps) {
-            paint.color = if (opp in range.min..range.max) 0xff3478b8.toInt() else 0xffd5dde5.toInt()
+            paint.color = if (opp in range.min..range.max) accent else 0xffd5dde5.toInt()
             canvas.drawCircle(x(opp), y, 2 * unit, paint)
         }
         for (opp in listOf(range.min, range.max)) {
-            paint.color = 0xff3478b8.toInt(); canvas.drawCircle(x(opp), y, 10 * unit, paint)
+            paint.color = accent; canvas.drawCircle(x(opp), y, 10 * unit, paint)
             paint.color = 0xffffffff.toInt(); canvas.drawCircle(x(opp), y, 5 * unit, paint)
         }
         val minLabel = "${range.min}MHz"; val maxLabel = "${range.max}MHz"
@@ -57,9 +59,9 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
         canvas.drawText(maxLabel, x(range.max), baseline + stagger, labelPaint)
     }
     private fun preview(value: Int) {
-        range = if (minimumThumb) GpuRanges.Range(value.coerceAtMost(range.max), range.max)
+        val next = if (minimumThumb) GpuRanges.Range(value.coerceAtMost(range.max), range.max)
             else GpuRanges.Range(range.min, value.coerceAtLeast(range.min))
-        onPreview(range)
+        if (next != currentRange) { currentRange = next; postInvalidateOnAnimation() }
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isEnabled) return false
@@ -70,13 +72,16 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
                     else abs(event.x - x(range.min)) <= abs(event.x - x(range.max))
                 requestFocus(); parent?.requestDisallowInterceptTouchEvent(true)
             }
-            MotionEvent.ACTION_CANCEL -> { range = beforeDrag; onPreview(range); parent?.requestDisallowInterceptTouchEvent(false); return true }
-            MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> Unit
+            MotionEvent.ACTION_CANCEL -> { range = beforeDrag; parent?.requestDisallowInterceptTouchEvent(false); return true }
+            // MOVE has no callback/description/layout/persistence path. Labels are drawn locally.
+            MotionEvent.ACTION_MOVE -> { preview(track().snap(event.x)); return true }
+            MotionEvent.ACTION_UP -> Unit
             else -> return false
         }
         preview(track().snap(event.x))
         if (event.actionMasked == MotionEvent.ACTION_UP) {
             parent?.requestDisallowInterceptTouchEvent(false)
+            describe()
             if (range != beforeDrag) onCommit(range)
             super.performClick() // Touch emits click accessibility semantics without changing active thumb.
             sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SELECTED)
@@ -91,6 +96,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
         val old = range
         val index = GpuRanges.opps.indexOf(if (minimumThumb) range.min else range.max)
         preview(GpuRanges.opps[(index + delta).coerceIn(0, GpuRanges.opps.lastIndex)])
+        describe()
         if (range != old) onCommit(range)
         return true
     }

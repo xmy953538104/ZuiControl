@@ -52,10 +52,12 @@ final class MonitorSources {
         catch (IOException e) { return -1; }
     }
     static double batteryWatts(int plugged, int status, int milliVolts, long microAmps) {
-        // Android battery broadcast is mV; BatteryManager CURRENT_NOW is signed microampere.
-        // Charging/full/external power is not a measurement of total device input power.
-        if (plugged != 0 || status != 3 || milliVolts <= 0 || microAmps == Long.MIN_VALUE
-                || microAmps == Integer.MIN_VALUE || microAmps >= 0) return -1;
-        return Math.abs(milliVolts / 1000.0 * (microAmps / 1000000.0));
+        // TB321FU broadcast voltage is mV; CURRENT_NOW is uA, positive on proven discharge.
+        // Status + absence of external power determine direction; vendor sign does not.
+        // Broad single-cell bounds reject missing/sentinel inputs and mV/uV or A/uA confusion.
+        double amps = Math.abs(microAmps / 1000000.0);
+        if (plugged != 0 || status != 3 || milliVolts < 2000 || milliVolts > 6000
+                || amps < 0.001 || amps > 30.0) return -1;
+        return milliVolts / 1000.0 * amps;
     }
 }

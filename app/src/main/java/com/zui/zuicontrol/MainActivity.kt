@@ -8,7 +8,6 @@ import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -30,7 +29,6 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.ScrollView
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import java.text.SimpleDateFormat
@@ -216,50 +214,14 @@ class MainActivity : Activity() {
         return "v$version · ${displayHz}Hz"
     }
 
-    private fun isWideLayout(): Boolean {
-        val config = resources.configuration
-        return config.screenWidthDp >= 700 &&
-            config.orientation == Configuration.ORIENTATION_LANDSCAPE
-    }
-
     private fun buildRefreshPage(): View {
         val root = FrameLayout(this)
         val content = vertical().apply { setPadding(0, 0, 0, dp(76)) }
         if (refreshRules.isEmpty()) {
             content.addView(emptyText("点击右下角 + 添加应用"), matchWrap())
         } else {
-            val columns = if (isWideLayout()) 3 else 2
-            refreshRules.entries.chunked(columns).forEach { entries ->
-                val row = horizontalRow().apply {
-                    background = null
-                    elevation = 0f
-                    setPadding(0, 0, 0, 0)
-                }
-                entries.forEachIndexed { index, (pkg, rate) ->
-                    val card = horizontalRow().apply {
-                        setPadding(dp(12), dp(10), dp(12), dp(10))
-                        background = rounded(Color.WHITE, dp(20), Color.TRANSPARENT)
-                        elevation = 0f
-                        addView(appIcon(pkg), LinearLayout.LayoutParams(dp(42), dp(42)))
-                        addView(label(labelForPackage(pkg), 12f, COLOR_TEXT, Typeface.BOLD).apply {
-                            gravity = Gravity.CENTER_VERTICAL
-                            maxLines = 1
-                        }, LinearLayout.LayoutParams(
-                            0, ViewGroup.LayoutParams.MATCH_PARENT, 1f,
-                        ).apply { setMargins(dp(10), 0, dp(8), 0) })
-                        addView(rateBadge("${rate}Hz"), LinearLayout.LayoutParams(dp(78), dp(38)))
-                        setOnClickListener { showRefreshRateDialog(pkg, rate) }
-                    }
-                    row.addView(card, LinearLayout.LayoutParams(
-                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f,
-                    ).apply { if (index > 0) setMargins(dp(8), 0, 0, 0) })
-                }
-                repeat(columns - entries.size) { index ->
-                    row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply {
-                        if (entries.isNotEmpty() || index > 0) setMargins(dp(8), 0, 0, 0)
-                    })
-                }
-                content.addView(row, cardMargins())
+            addAppGrid(content, refreshRules.keys.toList(), { "${refreshRules.getValue(it)}Hz" }) {
+                showRefreshRateDialog(it, refreshRules[it])
             }
         }
         root.addView(ScrollView(this).apply { addView(content) }, matchMatchFrame())
@@ -319,25 +281,19 @@ class MainActivity : Activity() {
                 elevation = 0f
                 setPadding(0, 0, 0, 0)
                 UperfMode.entries.forEachIndexed { index, mode ->
-                    addView(commandButton(
-                        if (mode == selected) "✓${mode.title}" else mode.title,
-                    ) { setUperfMode(mode) }, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
-                        if (index > 0) setMargins(dp(6), 0, 0, 0)
+                    addView(UiControls.chip(this@MainActivity, mode.title, mode == selected).apply {
+                        setOnClickListener { setUperfMode(mode) }
+                    }, LinearLayout.LayoutParams(0, dimen(R.dimen.ui_chip_height), 1f).apply {
+                        if (index > 0) setMargins(dimen(R.dimen.ui_row_gap), 0, 0, 0)
                     })
                 }
             })
-            addView(compactNote(
-                "熄屏固定节能；亮屏时先匹配自定义应用，其余应用使用全局模式。" +
-                    "本阶段保留原厂 KGSL DVFS 与热保护。",
-            ), fieldMargins())
             addView(sectionTitle("自定义应用"), sectionMargins())
             if (uperfRules.isEmpty() && gpuOverrides.isEmpty()) {
                 addView(emptyText("点击右下角 + 添加应用"))
             } else {
-                (uperfRules.keys + gpuOverrides.keys).forEach { pkg ->
-                    val mode = uperfRules[pkg] ?: selected
-                    addView(appCard(pkg, "性能：${mode.title}") { showUperfAppDialog(pkg) }, cardMargins())
-                }
+                addAppGrid(this, (uperfRules.keys + gpuOverrides.keys).toList(),
+                    { (uperfRules[it] ?: selected).title }) { showUperfAppDialog(it) }
             }
         }
         root.addView(ScrollView(this).apply { addView(content) }, matchMatchFrame())
@@ -356,11 +312,8 @@ class MainActivity : Activity() {
         val picker = traySpinner(modes.map { it.title })
         picker.setSelection(modes.indexOf(current ?: UperfMode.PERFORMANCE).coerceAtLeast(0))
         val gpuEditor = gpuRangeEditor(pkg) { modes[picker.selectedItemPosition] }
-        picker.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                (gpuEditor.tag as GpuRangeBar).range = gpuOverrides[pkg] ?: globalGpuRange(modes[position])
-            }
+        picker.onSelection = { position ->
+            (gpuEditor.tag as GpuRangeBar).range = gpuOverrides[pkg] ?: globalGpuRange(modes[position])
         }
         val content = dialogContent(pkg, "性能模式", picker) as LinearLayout
         content.addView(fieldTitle("GPU频率范围"), fieldMargins())
@@ -378,11 +331,12 @@ class MainActivity : Activity() {
 
     private fun globalGpuRange(mode: UperfMode) = gpuGlobals[mode.id] ?: GpuRanges.default(mode.id)
 
-    private fun gpuRangeEditor(pkg: String, mode: () -> UperfMode): View = vertical().apply {
+    private fun gpuRangeEditor(pkg: String, mode: () -> UperfMode): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         val bar = GpuRangeBar(this@MainActivity, gpuOverrides[pkg] ?: globalGpuRange(mode()))
         tag = bar
-        val reset = commandButton("默认") { }
-        fun update() { reset.visibility = if (gpuOverrides.containsKey(pkg)) View.VISIBLE else View.INVISIBLE }
+        val reset = chip("默认")
+        fun update() { reset.isEnabled = gpuOverrides.containsKey(pkg); reset.alpha = if (reset.isEnabled) 1f else 0.5f }
         fun save(value: GpuRanges.Range?) {
             bar.isEnabled = false; reset.isEnabled = false
             Thread {
@@ -398,15 +352,17 @@ class MainActivity : Activity() {
         }
         bar.onCommit = { save(it) }
         reset.setOnClickListener { save(null) }
-        addView(bar, LinearLayout.LayoutParams(-1, maxOf(dp(92), bar.preferredHeight)))
-        addView(reset, LinearLayout.LayoutParams(-2, dp(40)))
+        addView(bar, LinearLayout.LayoutParams(0, bar.preferredHeight, 1f))
+        addView(reset, LinearLayout.LayoutParams(-2, dimen(R.dimen.ui_chip_height)).apply {
+            marginStart = dimen(R.dimen.ui_row_gap)
+        })
         update()
     }
 
     private fun showGlobalGpuRanges() {
-        val rows = vertical().apply { setPadding(dp(20), dp(6), dp(20), dp(8)) }
+        val rows = vertical().apply { setPadding(dimen(R.dimen.ui_dialog_spacing), 0,
+            dimen(R.dimen.ui_dialog_spacing), dimen(R.dimen.ui_row_gap)) }
         UperfMode.entries.forEach { mode ->
-            rows.addView(fieldTitle(if (mode == UperfMode.FAST) "快速" else mode.title), fieldMargins())
             val bar = GpuRangeBar(this, globalGpuRange(mode))
             bar.onCommit = { value ->
                 bar.isEnabled = false
@@ -418,7 +374,13 @@ class MainActivity : Activity() {
                     }
                 }.start()
             }
-            rows.addView(bar, LinearLayout.LayoutParams(-1, maxOf(dp(92), bar.preferredHeight)))
+            rows.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                addView(chip(mode.title), LinearLayout.LayoutParams(-2, dimen(R.dimen.ui_chip_height)).apply {
+                    marginEnd = dimen(R.dimen.ui_row_gap)
+                })
+                addView(bar, LinearLayout.LayoutParams(0, bar.preferredHeight, 1f))
+            }, cardMargins())
         }
         AlertDialog.Builder(this).setTitle("GPU频率范围")
             .setView(ScrollView(this).apply { addView(rows) })
@@ -457,7 +419,7 @@ class MainActivity : Activity() {
             ))
             addView(settingsAction(
                 R.drawable.ic_action_refresh, "刷新规则与运行状态", "按需查询，不在后台轮询线程",
-            ) { zuioptAction("正在查询规则") {} }, settingsActionMargins(spaced = true))
+            ) { zuioptAction("正在查询规则") {} }, settingsActionMargins())
             if (ZuioptRules.field(zuioptState, "failure") == "1") {
                 addView(settingsAction(
                     R.drawable.ic_action_refresh, "清除 ZUIopt 故障保护", "下次重启重新启用 ZUIopt；保留所有规则",
@@ -469,7 +431,7 @@ class MainActivity : Activity() {
                                 ZuioptRules.command(this@MainActivity, "reset")
                             }
                         }.setNegativeButton("取消", null).showStyled()
-                }, settingsActionMargins(spaced = true))
+                }, settingsActionMargins())
             } else if (ZuioptRules.field(zuioptState, "fail_safe") == "1") {
                 addView(compactNote("下次重启重新启用 ZUIopt。本次开机继续使用 Android 默认调度。"), fieldMargins())
             }
@@ -479,7 +441,7 @@ class MainActivity : Activity() {
             }, settingsActionMargins())
             addView(settingsAction(R.drawable.ic_action_import, "导入 AppOpt 文本", "最多 64 KiB；必须有明确的应用默认 CPU") {
                 openZuioptImport(REQUEST_IMPORT_APPOPT)
-            }, settingsActionMargins(spaced = true))
+            }, settingsActionMargins())
             zuioptState.lineSequence().filter { it.startsWith("pack=") }.forEach { line ->
                 val pack = line.substringAfter('=').split('|')
                 if (pack.size == 5) addView(settingsAction(
@@ -489,7 +451,7 @@ class MainActivity : Activity() {
                     zuioptAction("正在修改规则包状态") {
                         ZuioptRules.command(this@MainActivity, if (pack[3] == "1") "disable" else "enable", pack[0])
                     }
-                }, settingsActionMargins(spaced = true))
+                }, settingsActionMargins())
             }
             addView(sectionTitle("User Rules"), sectionMargins())
             addView(compactNote("用户规则 > 已启用规则包 > 工厂规则。工厂库：27 个 profile / 316 条应用映射；这是静态兼容库，不代表全部应用已实机测试。"))
@@ -498,10 +460,10 @@ class MainActivity : Activity() {
                 runCommand("正在读取用户规则", success = null, onSuccess = { editZuioptRules(text) }) {
                     text = ZuioptRules.userRules(this@MainActivity); null
                 }
-            }, settingsActionMargins(spaced = true))
+            }, settingsActionMargins())
             addView(settingsAction(R.drawable.ic_action_refresh, "回退上一份规则", "仅回退规则，不改变故障保护") {
                 zuioptAction("正在回退规则") { ZuioptRules.command(this@MainActivity, "rollback") }
-            }, settingsActionMargins(spaced = true))
+            }, settingsActionMargins())
         })
     }
 
@@ -575,11 +537,24 @@ class MainActivity : Activity() {
                 "0" -> "inactive"
                 else -> "unknown"
             }
-            addView(compactNote(
-                "调度：$ownership · " +
-                    "Uperf：$uperfState / $uperfMode · ZUIopt：$threadState\n" +
-                    "刷新率 owner：system · health：$schedulerError",
-            ))
+            listOf("调度" to ownership, "Uperf" to "$uperfState / $uperfMode",
+                "ZUIopt" to threadState, "刷新率" to "system").chunked(2).forEach { items ->
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    items.forEachIndexed { index, (title, value) ->
+                        addView(vertical().apply {
+                            val pad = dimen(R.dimen.ui_chip_padding)
+                            setPadding(pad, dimen(R.dimen.ui_row_gap), pad, dimen(R.dimen.ui_row_gap))
+                            background = rounded(COLOR_FIELD, dimen(R.dimen.ui_card_radius), Color.TRANSPARENT)
+                            addView(label(title, 11f, COLOR_SUBTLE, Typeface.NORMAL))
+                            addView(label(value, 14f, COLOR_TEXT, Typeface.BOLD).apply { maxLines = 1 })
+                        }, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                            if (index > 0) marginStart = dimen(R.dimen.ui_row_gap)
+                        })
+                    }
+                }, cardMargins())
+            }
+            addView(label("health：$schedulerError", 11f, COLOR_SUBTLE, Typeface.NORMAL))
             addView(sectionTitle("工具"), sectionMargins())
             addView(settingsAction(R.drawable.ic_nav_threads, "性能监视器", "通知快捷控制 · FPS / W / quiet") {
                 showPerformanceMonitor()
@@ -599,7 +574,7 @@ class MainActivity : Activity() {
                 runCommand("正在重启调度核心", success = "调度核心已重启") {
                     ZuiControlRequest.send(this@MainActivity, ZuiControlContract.CMD_RESTART_SCHEDULER)
                 }
-            }, settingsActionMargins(spaced = true))
+            }, settingsActionMargins())
         })
     }
 
@@ -670,25 +645,45 @@ class MainActivity : Activity() {
         })
     }
 
+    private fun addAppGrid(content: LinearLayout, packages: List<String>, badge: (String) -> String, open: (String) -> Unit) {
+        val available = if (contentHost.width > 0) (contentHost.width / resources.displayMetrics.density).toInt()
+            else resources.configuration.screenWidthDp - 32 -
+                if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 116 else 0
+        val columns = UiControls.gridColumns(available)
+        packages.chunked(columns).forEach { entries ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            repeat(columns) { index ->
+                val pkg = entries.getOrNull(index)
+                row.addView(if (pkg == null) View(this) else appCard(pkg, badge(pkg)) { open(pkg) },
+                    LinearLayout.LayoutParams(0, -2, 1f).apply {
+                        if (index > 0) marginStart = dimen(R.dimen.ui_row_gap)
+                    })
+            }
+            content.addView(row, cardMargins())
+        }
+    }
+
     private fun appCard(pkg: String, badge: String, action: () -> Unit): View = horizontalRow().apply {
-        setPadding(dp(14), dp(12), dp(14), dp(12))
-        background = rounded(Color.WHITE, dp(18), Color.TRANSPARENT)
-        addView(appIcon(pkg), LinearLayout.LayoutParams(dp(44), dp(44)))
-        addView(vertical().apply {
-            addView(label(labelForPackage(pkg), 15f, COLOR_TEXT, Typeface.BOLD))
-            addView(label(pkg, 11f, COLOR_SUBTLE, Typeface.NORMAL))
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            setMargins(dp(12), 0, dp(12), 0)
+        val pad = dimen(R.dimen.ui_chip_padding)
+        setPadding(pad, pad, pad, pad)
+        background = rounded(Color.WHITE, dimen(R.dimen.ui_card_radius), Color.TRANSPARENT)
+        elevation = 0f
+        addView(appIcon(pkg), LinearLayout.LayoutParams(dp(40), dp(40)))
+        addView(label(labelForPackage(pkg), 12f, COLOR_TEXT, Typeface.BOLD).apply {
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply {
+            setMargins(dimen(R.dimen.ui_row_gap), 0, dimen(R.dimen.ui_row_gap), 0)
         })
-        addView(rateBadge(badge), LinearLayout.LayoutParams(dp(78), dp(38)))
+        addView(UiControls.chip(this@MainActivity, badge, true),
+            LinearLayout.LayoutParams(-2, dimen(R.dimen.ui_chip_height)))
         setOnClickListener { action() }
     }
 
     private fun dialogContent(pkg: String, title: String, field: View): View = vertical().apply {
-        setPadding(dp(20), dp(6), dp(20), 0)
+        setPadding(dimen(R.dimen.ui_dialog_spacing), dimen(R.dimen.ui_row_gap), dimen(R.dimen.ui_dialog_spacing), 0)
         addView(appIdentity(pkg))
         addView(fieldTitle(title), fieldMargins())
-        addView(field, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply {
+        addView(field, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dimen(R.dimen.ui_control_height)).apply {
             setMargins(0, dp(6), 0, 0)
         })
     }
@@ -703,8 +698,8 @@ class MainActivity : Activity() {
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val userTab = chip("用户应用")
         val systemTab = chip("系统应用")
-        tabs.addView(userTab, LinearLayout.LayoutParams(0, dp(44), 1f))
-        if (!userAppsOnly) tabs.addView(systemTab, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+        tabs.addView(userTab, LinearLayout.LayoutParams(0, dimen(R.dimen.ui_chip_height), 1f))
+        if (!userAppsOnly) tabs.addView(systemTab, LinearLayout.LayoutParams(0, dimen(R.dimen.ui_chip_height), 1f).apply {
             setMargins(dp(8), 0, 0, 0)
         })
         root.addView(tabs)
@@ -925,12 +920,7 @@ class MainActivity : Activity() {
         setOnClickListener { action() }
     }
 
-    private fun traySpinner(items: List<String>) = Spinner(this).apply {
-        adapter = SimpleTextAdapter(items)
-        background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
-        setPopupBackgroundDrawable(rounded(COLOR_SURFACE, dp(24), Color.TRANSPARENT))
-        setPadding(dp(6), 0, dp(6), 0)
-    }
+    private fun traySpinner(items: List<String>) = AnchoredDropdown(this, items)
 
     private fun appIcon(pkg: String) = ImageView(this).apply {
         scaleType = ImageView.ScaleType.CENTER_CROP
@@ -955,7 +945,7 @@ class MainActivity : Activity() {
     private fun settingsAction(iconRes: Int, title: String, subtitle: String, action: () -> Unit) =
         horizontalRow().apply {
             setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = rounded(COLOR_FIELD, dp(18), Color.TRANSPARENT)
+            background = rounded(COLOR_FIELD, dimen(R.dimen.ui_card_radius), Color.TRANSPARENT)
             elevation = 0f
             addView(ImageView(this@MainActivity).apply {
                 setImageResource(iconRes)
@@ -973,18 +963,8 @@ class MainActivity : Activity() {
             setOnClickListener { action() }
         }
 
-    private fun chip(text: String) = label(text, 13f, COLOR_TEXT, Typeface.BOLD).apply {
-        gravity = Gravity.CENTER
-        background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
-    }
-
-    private fun styleChip(view: TextView, selected: Boolean) {
-        view.setTextColor(if (selected) Color.WHITE else COLOR_TEXT)
-        view.background = rounded(
-            if (selected) COLOR_ACCENT else COLOR_FIELD,
-            dp(22), if (selected) COLOR_ACCENT else Color.TRANSPARENT,
-        )
-    }
+    private fun chip(text: String) = UiControls.chip(this, text)
+    private fun styleChip(view: TextView, selected: Boolean) = UiControls.styleChip(view, selected)
 
     private fun label(value: String, size: Float, color: Int, style: Int) = TextView(this).apply {
         text = value
@@ -1013,10 +993,11 @@ class MainActivity : Activity() {
     ).apply { setMargins(0, dp(14), 0, 0) }
     private fun cardMargins() = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-    ).apply { setMargins(0, 0, 0, dp(8)) }
-    private fun settingsActionMargins(spaced: Boolean = false) = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, dp(68),
-    ).apply { setMargins(0, if (spaced) dp(8) else 0, 0, 0) }
+    ).apply { setMargins(0, 0, 0, dimen(R.dimen.ui_row_gap)) }
+    private fun settingsActionMargins() = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dimen(R.dimen.ui_tool_height),
+    ).apply { setMargins(0, 0, 0, dimen(R.dimen.ui_row_gap)) }
+    private fun dimen(id: Int) = resources.getDimensionPixelSize(id)
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
     private inner class PackageEntry(val info: ApplicationInfo) {
@@ -1076,30 +1057,11 @@ class MainActivity : Activity() {
         }
     }
 
-    private inner class SimpleTextAdapter(private val items: List<String>) : BaseAdapter() {
-        override fun getCount(): Int = items.size
-        override fun getItem(position: Int): Any = items[position]
-        override fun getItemId(position: Int): Long = position.toLong()
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View =
-            label(items[position], 14f, COLOR_TEXT, Typeface.BOLD).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(16), 0, dp(16), 0)
-                background = rounded(COLOR_FIELD, dp(22), Color.TRANSPARENT)
-            }
-        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup?): View =
-            label(items[position], 14f, COLOR_TEXT, Typeface.NORMAL).apply {
-                minHeight = dp(48)
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(18), dp(12), dp(18), dp(12))
-                background = ColorDrawable(Color.TRANSPARENT)
-            }
-    }
-
     private enum class UperfMode(val id: String, val title: String) {
         POWERSAVE("powersave", "节能"),
         BALANCE("balance", "均衡"),
         PERFORMANCE("performance", "性能"),
-        FAST("fast", "极速");
+        FAST("fast", "快速");
 
         companion object {
             fun fromId(value: String): UperfMode? = entries.firstOrNull { it.id == value }
@@ -1113,18 +1075,18 @@ class MainActivity : Activity() {
         SYSTEM("系统", R.drawable.ic_nav_system),
     }
 
+    private val COLOR_SURFACE get() = getColor(R.color.ui_surface)
+    private val COLOR_FIELD get() = getColor(R.color.ui_field)
+    private val COLOR_TEXT get() = getColor(R.color.ui_text)
+    private val COLOR_SUBTLE get() = getColor(R.color.ui_secondary)
+    private val COLOR_ACCENT get() = getColor(R.color.ui_accent)
     companion object {
         private const val REQUEST_EXPORT_LOG = 901
         private const val REQUEST_IMPORT_ZUIOPT = 902
         private const val REQUEST_IMPORT_APPOPT = 903
         private const val STATE_PAGE = "page"
         private val COLOR_BG = Color.rgb(248, 247, 252)
-        private val COLOR_SURFACE = Color.rgb(250, 249, 253)
-        private val COLOR_FIELD = Color.rgb(240, 241, 247)
         private val COLOR_NOTE = Color.rgb(245, 247, 241)
         private val COLOR_SELECTED = Color.rgb(224, 230, 248)
-        private val COLOR_TEXT = Color.rgb(34, 35, 42)
-        private val COLOR_SUBTLE = Color.rgb(87, 89, 99)
-        private val COLOR_ACCENT = Color.rgb(68, 91, 139)
     }
 }

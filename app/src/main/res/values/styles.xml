@@ -13,7 +13,7 @@
 
     <style name="Theme.ZuiControl" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#445B8B</item>
+        <item name="android:colorAccent">@color/ui_accent</item>
         <item name="android:windowBackground">#F8F7FC</item>
         <item name="android:statusBarColor">#F8F7FC</item>
         <item name="android:navigationBarColor">#F8F7FC</item>

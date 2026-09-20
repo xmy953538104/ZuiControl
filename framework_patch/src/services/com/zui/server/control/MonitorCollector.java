@@ -117,14 +117,20 @@ class MonitorCollector {
             }
             long now=SystemClock.elapsedRealtime();
             double fps=sources.fps(),quiet=-1,power=-1;
+            int plugged=-1,batteryStatus=-1,milliVolts=-1;
+            long microAmps=Long.MIN_VALUE;
             boolean capture=session.recordingActive();
             if(session.mode==MonitorSession.FULL||capture){
                 quiet=sources.quiet();sources.scalarReads++;
                 Intent battery=context.registerReceiver(null,new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
                 BatteryManager manager=context.getSystemService(BatteryManager.class);
-                if(battery!=null&&manager!=null)power=MonitorSources.batteryWatts(
-                    battery.getIntExtra(BatteryManager.EXTRA_PLUGGED,-1),battery.getIntExtra(BatteryManager.EXTRA_STATUS,-1),
-                    battery.getIntExtra(BatteryManager.EXTRA_VOLTAGE,-1),manager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW));
+                if(battery!=null&&manager!=null){
+                    plugged=battery.getIntExtra(BatteryManager.EXTRA_PLUGGED,-1);
+                    batteryStatus=battery.getIntExtra(BatteryManager.EXTRA_STATUS,-1);
+                    milliVolts=battery.getIntExtra(BatteryManager.EXTRA_VOLTAGE,-1);
+                    microAmps=manager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
+                    power=MonitorSources.batteryWatts(plugged,batteryStatus,milliVolts,microAmps);
+                }
             }
             if(capture){
                 MonitorSnapshot.Task process=identity(findPid());
@@ -148,6 +154,10 @@ class MonitorCollector {
                 .put("mode",session.mode).put("sample",++samples).put("elapsedMs",now)
                 .put("fps",fps).put("fpsSource","display_measured_fps_not_game_present")
                 .put("powerW",power).put("powerSource","DEVICE_POWER_W_BATTERY_DISCHARGE_MV_UA")
+                // Same-sample diagnostics in the existing in-memory snapshot; no extra sampler/storage.
+                .put("batteryStatus",batteryStatus).put("batteryPlugged",plugged)
+                .put("batteryVoltageMv",milliVolts).put("batteryCurrentUa",microAmps)
+                .put("batteryCurrentMagnitudeA",power<0?-1:Math.abs(microAmps/1000000.0))
                 .put("quietC",quiet).put("recordState",session.recordingState());
             lastSnapshot=data.toString();deliver(lastSnapshot);
         }catch(Exception e){error=e.getClass().getSimpleName()+":"+e.getMessage();
