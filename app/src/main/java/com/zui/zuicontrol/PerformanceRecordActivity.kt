@@ -60,7 +60,7 @@ class PerformanceRecordActivity : Activity() {
             if(threads.length()==0)content.addView(label("尚无可用线程增量样本"))
             for(i in 0 until threads.length()){
                 val row=threads.getJSONArray(i)
-                val line=label("${row.optString(1)}\n入榜均值 ${num(row,2)}% · 峰值 ${num(row,3)}%\n${row.optString(0)}")
+                val line=label("${row.optString(1)}\n入榜均值 ${num(row,2)}% · 峰值 ${num(row,3)}%\n有效样本 ${row.optLong(4)} 次 · ${row.optString(0)}")
                 line.setOnClickListener{detail(row.optString(0),row.optString(1),duration)}
                 content.addView(line)
             }

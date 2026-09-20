@@ -94,7 +94,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
       "before": null,
-      "after": "100644 blob f8c681abbacf21e69903aae2fad9332d22025f92\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
+      "after": "100644 blob 787698eb07d33bff8c8c285cf185b273b8b13fc0\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
