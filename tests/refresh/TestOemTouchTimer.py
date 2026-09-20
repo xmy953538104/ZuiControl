@@ -109,7 +109,7 @@ class OemTouchTimer(unittest.TestCase):
                     raw_tree += mode.lstrip(b'0')+b' '+name+b'\0'+bytes.fromhex(oid.decode())
                 self.assertEqual(hashlib.sha1(b'tree '+str(len(raw_tree)).encode()+b'\0'+raw_tree).hexdigest(),tree)
                 self.assertEqual((ROOT/'payload/README.txt').read_bytes().replace(b'\r\n',b'\n'),
-                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV63').replace(b'App V60',b'App V63'))
+                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV64').replace(b'App V60',b'App V64'))
                 continue
             actual = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD:'+path], text=True).strip()
             self.assertEqual(actual, tree, path)
@@ -136,12 +136,19 @@ class OemTouchTimer(unittest.TestCase):
         identity_path = 'app/build.gradle.kts'
         old = identity['gradle_text'].encode()
         current = (ROOT/identity_path).read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 63')
-            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.26"'))
+        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 64')
+            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.27"'))
         entry = next(line for line in entries if line.endswith(b'\tapp/build.gradle.kts'))
         entries.remove(entry)
         old_entry = identity['gradle_entry'].encode()
         entries.append(old_entry)
+        # R6 reverses its exact Owner-approved App/Monitor delta to the accepted R5 tree.
+        product = json.loads((ROOT/'tests/monitor/r6_product_delta.json').read_text(encoding='utf-8'))
+        for delta in product['tree']:
+            self.assertEqual(entries.count(delta['after'].encode()), 1, delta['path'])
+            entries.remove(delta['after'].encode())
+            if delta['before'] is not None:
+                entries.append(delta['before'].encode())
         # R5 reverses only its exact reviewed power/UI delta to the accepted R4 tree.
         polish = json.loads((ROOT/'tests/monitor/r5_ui_power_delta.json').read_text(encoding='utf-8'))
         for delta in polish['tree']:
@@ -165,7 +172,7 @@ class OemTouchTimer(unittest.TestCase):
         untracked = subprocess.check_output(['git','-C',str(ROOT),'ls-files','--others',
             '--exclude-standard','--','app','framework_patch'],text=True).splitlines()
         self.assertLessEqual(set(changed+untracked), allowed | {d['path'] for d in monitor['tree']}
-                            | {d['path'] for d in polish['tree']} | {identity_path})
+                            | {d['path'] for d in polish['tree']} | {d['path'] for d in product['tree']} | {identity_path})
         source = (ROOT/'scripts/build/ApplyZuiControlPayload.py').read_text(encoding='utf-8')
         self.assertIn('patch_oem_touch_timer(unpack, args.dry_run, report)', source)
 

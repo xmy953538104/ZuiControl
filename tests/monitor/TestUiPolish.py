@@ -38,7 +38,7 @@ class UiPolish(unittest.TestCase):
         self.assertNotIn('Spinner(this)', main)
         self.assertNotIn('✓', main); self.assertNotIn('性能：', main)
         self.assertNotIn('熄屏固定节能', main)
-        self.assertIn('mode.title, mode == selected', main)
+        self.assertIn('UiControls.modeChip(this@MainActivity, mode, mode == selected)', main)
         self.assertIn('(contentWidthDp / 260).coerceIn(2, 4)', ui)
         self.assertEqual(main.count('addAppGrid('), 3)  # definition + both callers
         settings = main.split('private fun buildSystemPage()', 1)[1].split('private fun exportLogs()', 1)[0]

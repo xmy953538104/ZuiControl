@@ -61,6 +61,8 @@ class MonitorCollector {
         try{
             long now=SystemClock.elapsedRealtime();
             if("recordRead".equals(action))return store.read(user,arg);
+            if("recordList".equals(action))return store.list(user);
+            if("recordDelete".equals(action))return store.delete(user,arg);
             if("full".equals(action))session.toggle(MonitorSession.FULL);
             else if("fps".equals(action))session.toggle(MonitorSession.FPS);
             else if("off".equals(action)){session.mode=MonitorSession.OFF;session.cancelArm();}
@@ -94,7 +96,7 @@ class MonitorCollector {
         if(handler!=null)handler.removeCallbacksAndMessages(null);
         if(thread!=null)thread.quitSafely();
         handler=null;thread=null;
-        deliver("{\"active\":false,\"recordState\":\""+session.recordingState()+"\"}");
+        deliver("{\"active\":false,\"mode\":"+session.mode+",\"recordState\":\""+session.recordingState()+"\"}");
     }
     synchronized String snapshot(){return lastSnapshot;}
     synchronized String state(){

@@ -1,6 +1,8 @@
 package com.zui.zuicontrol
 
 import android.content.Context
+import android.app.AlertDialog
+import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -11,8 +13,30 @@ import android.widget.ArrayAdapter
 import android.widget.ListView
 import android.widget.PopupWindow
 import android.widget.TextView
+import android.widget.FrameLayout
 
 internal object UiControls {
+    fun styleDialog(dialog: AlertDialog) = with(dialog) {
+        val r = context.resources
+        val margin = r.getDimensionPixelSize(R.dimen.ui_dialog_spacing)
+        window?.apply {
+            setBackgroundDrawable(shape(context, R.color.ui_surface, r.getDimension(R.dimen.ui_card_radius)))
+            setLayout(minOf(r.getDimensionPixelSize(R.dimen.ui_dialog_max_width),
+                r.displayMetrics.widthPixels - 2 * margin), ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        // The platform title and action panels use 24dp; custom content shares those edges.
+        findViewById<FrameLayout>(android.R.id.custom)?.let { slot ->
+            slot.setPadding(margin, r.getDimensionPixelSize(R.dimen.ui_dialog_vertical_spacing),
+                margin, r.getDimensionPixelSize(R.dimen.ui_dialog_vertical_spacing))
+            slot.getChildAt(0)?.setPadding(0, 0, 0, 0)
+        }
+    }
+    fun modeChip(context: Context, mode: UperfMode, selected: Boolean = false) =
+        chip(context, mode.title, selected).apply {
+            background = shape(context, if (selected) mode.color else R.color.ui_field,
+                resources.getDimension(R.dimen.ui_chip_height) / 2)
+            setTextColor(if (selected) Color.WHITE else context.getColor(mode.color))
+        }
     fun shape(context: Context, color: Int, radius: Float) = GradientDrawable().apply {
         setColor(context.getColor(color)); cornerRadius = radius
     }
@@ -37,25 +61,34 @@ internal object UiControls {
 }
 
 /** Both Refresh and Uperf use this single below-anchor, same-width native popup. */
-internal class AnchoredDropdown(context: Context, private val items: List<String>) : TextView(context) {
+internal class AnchoredDropdown(context: Context, private val items: List<String>) : android.widget.LinearLayout(context) {
     var selectedItemPosition = 0; private set
     var onSelection: (Int) -> Unit = {}
     private var popup: PopupWindow? = null
-    init {
-        gravity = Gravity.CENTER_VERTICAL
+    private val selectedText = TextView(context).apply {
         textSize = 14f; typeface = Typeface.DEFAULT_BOLD
-        setTextColor(context.getColor(R.color.ui_text))
+        setTextColor(context.getColor(R.color.ui_text)); setSingleLine(true)
+    }
+    init {
+        orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         val pad = resources.getDimensionPixelSize(R.dimen.ui_chip_padding)
         setPadding(pad, 0, pad, 0)
-        minHeight = resources.getDimensionPixelSize(R.dimen.ui_control_height)
+        minimumHeight = resources.getDimensionPixelSize(R.dimen.ui_control_height)
         background = UiControls.shape(context, R.color.ui_field, resources.getDimension(R.dimen.ui_card_radius))
         isFocusable = true
+        addView(selectedText, LayoutParams(0, -2, 1f))
+        addView(TextView(context).apply {
+            text = "▾"; textSize = 16f; gravity = Gravity.END
+            setTextColor(context.getColor(R.color.ui_secondary))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LayoutParams(-2, -2))
         setSelection(0)
         setOnClickListener { showChoices() }
     }
     fun setSelection(position: Int) {
         selectedItemPosition = position.coerceIn(items.indices)
-        text = "${items[selectedItemPosition]}  ▾"
+        selectedText.text = items[selectedItemPosition]
+        contentDescription = items[selectedItemPosition]
         onSelection(selectedItemPosition)
     }
     private fun showChoices() {
@@ -63,7 +96,7 @@ internal class AnchoredDropdown(context: Context, private val items: List<String
         val frame = Rect(); getWindowVisibleDisplayFrame(frame)
         val xy = IntArray(2); getLocationOnScreen(xy)
         val gap = resources.getDimensionPixelSize(R.dimen.ui_dropdown_gap)
-        val rowHeight = resources.getDimensionPixelSize(R.dimen.ui_control_height)
+        val rowHeight = resources.getDimensionPixelSize(R.dimen.ui_dropdown_row_height)
         val pad = resources.getDimensionPixelSize(R.dimen.ui_dropdown_padding)
         val available = frame.bottom - xy[1] - height - gap
         val popupHeight = minOf(items.size * rowHeight + 2 * pad,
@@ -74,8 +107,12 @@ internal class AnchoredDropdown(context: Context, private val items: List<String
             adapter = object : ArrayAdapter<String>(context, android.R.layout.simple_list_item_1, items) {
                 override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
                     ((convertView as? TextView) ?: TextView(context)).apply {
-                        text = items[position]; UiControls.styleChip(this, position == selectedItemPosition)
-                        gravity = Gravity.CENTER_VERTICAL
+                        text = items[position]; textSize = 14f; includeFontPadding = false
+                        setTextColor(context.getColor(R.color.ui_text))
+                        setPadding(resources.getDimensionPixelSize(R.dimen.ui_chip_padding), 0,
+                            resources.getDimensionPixelSize(R.dimen.ui_chip_padding), 0)
+                        setBackgroundColor(if (position == selectedItemPosition) context.getColor(R.color.ui_field) else Color.TRANSPARENT)
+                        gravity = Gravity.CENTER_VERTICAL or Gravity.START
                         layoutParams = android.widget.AbsListView.LayoutParams(-1, rowHeight)
                     }
             }
@@ -88,7 +125,7 @@ internal class AnchoredDropdown(context: Context, private val items: List<String
             inputMethodMode = PopupWindow.INPUT_METHOD_NOT_NEEDED
             showAsDropDown(this@AnchoredDropdown, 0, gap, Gravity.START)
         }
-        list.setSelection(selectedItemPosition)
+        if (popupHeight < items.size * rowHeight + 2 * pad) list.setSelection(selectedItemPosition)
     }
     override fun onDetachedFromWindow() { popup?.dismiss(); popup = null; super.onDetachedFromWindow() }
     override fun getAccessibilityClassName(): CharSequence = "android.widget.Spinner"

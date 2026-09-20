@@ -24,7 +24,7 @@ import org.json.JSONObject
 import java.util.Locale
 
 /** Rendering and explicit gestures only. No independent scalar/task sampling. */
-class PerformanceMonitor(private val context: Context) {
+class PerformanceMonitor(private val context: Context, private val onModeChanged: () -> Unit = {}) {
     private val handler = Handler(Looper.getMainLooper())
     private val windows = context.getSystemService(WindowManager::class.java)
     private var view: MonitorView? = null
@@ -64,6 +64,7 @@ class PerformanceMonitor(private val context: Context) {
     }
     private fun render(text: String) {
         val next = runCatching { JSONObject(text) }.getOrNull() ?: return
+        if (next.has("mode") && next.optInt("mode") != snapshot.optInt("mode")) onModeChanged()
         if (next.optString("package") != snapshot.optString("package")) livePower.clear()
         displayPower = livePower.add(next.optDouble("powerW", -1.0))
         snapshot = next
@@ -92,6 +93,11 @@ class PerformanceMonitor(private val context: Context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private fun dimen(id: Int) = resources.getDimension(id)
         private val unitScale = resources.getFraction(R.fraction.monitor_unit_scale, 1, 1)
+        // Physical millimetres use xdpi, never logical density/dp.
+        private val sideExtension = android.util.TypedValue.applyDimension(
+            android.util.TypedValue.COMPLEX_UNIT_MM, 0.5f, resources.displayMetrics)
+        private val barPadding get() = dimen(R.dimen.monitor_bar_padding) + sideExtension
+        private val unitSize get() = if (circle && snapshot.optInt("mode") != 2) valueSize * unitScale else dimen(R.dimen.monitor_unit_text)
         private var metrics = emptyList<Pair<String, String>>()
         private var valueSize = dimen(R.dimen.monitor_value_text)
         private val gesture = MonitorGesture()
@@ -120,9 +126,9 @@ class PerformanceMonitor(private val context: Context) {
             val now = SystemClock.elapsedRealtime()
             gesture.cycle(now)
             val all = listOf(number(snapshot.optDouble("fps", -1.0)) to "FPS",
-                number(displayPower) to "W", number(snapshot.optDouble("quietC", -1.0)) to "°C")
+                number(snapshot.optDouble("quietC", -1.0)) to "°C", number(displayPower) to "W")
             metrics = if (snapshot.optInt("mode") == 2) listOf(all[0])
-                else if (circle) listOf(all[when (metric) { 0 -> 0; 1 -> 2; else -> 1 }]) else all
+                else if (circle) listOf(all[metric]) else all
             contentDescription = if (snapshot.optInt("mode") == 2) "FPS ${number(snapshot.optDouble("fps", -1.0))}"
                 else "性能监视器 ${if (circle) "圆形" else "长条"} ${snapshot.optString("recordState")} " +
                     metrics.joinToString("   ") { "${it.first} ${it.second}" }
@@ -131,7 +137,7 @@ class PerformanceMonitor(private val context: Context) {
         private fun metricWidth(metric: Pair<String, String>): Float {
             paint.textSize = valueSize
             val value = paint.measureText(metric.first)
-            paint.textSize = valueSize * unitScale
+            paint.textSize = unitSize
             return value + dimen(R.dimen.monitor_unit_gap) + paint.measureText(metric.second)
         }
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -144,7 +150,7 @@ class PerformanceMonitor(private val context: Context) {
             }
             val content = metrics.sumOf { metricWidth(it).toDouble() }.toFloat() +
                 (metrics.size - 1).coerceAtLeast(0) * dimen(R.dimen.monitor_metric_gap)
-            val w = if (round) dimen(R.dimen.monitor_touch_diameter) else content + 2 * dimen(R.dimen.monitor_bar_padding)
+            val w = if (round) dimen(R.dimen.monitor_touch_diameter) else content + 2 * barPadding
             val h = dimen(if (round) R.dimen.monitor_touch_diameter else R.dimen.monitor_bar_height)
             setMeasuredDimension(kotlin.math.ceil(w).toInt(), kotlin.math.ceil(h).toInt())
         }
@@ -166,12 +172,12 @@ class PerformanceMonitor(private val context: Context) {
             paint.setShadowLayer(1.5f * density, 0f, density * 0.5f, Color.argb(190, 0, 0, 0))
             paint.textSize = valueSize
             val baseline = height / 2f - (paint.ascent() + paint.descent()) / 2
-            var x = if (round && metrics.isNotEmpty()) (width - metricWidth(metrics[0])) / 2 else dimen(R.dimen.monitor_bar_padding)
+            var x = if (round && metrics.isNotEmpty()) (width - metricWidth(metrics[0])) / 2 else barPadding
             metrics.forEach { (value, unit) ->
                 paint.textSize = valueSize; paint.color = context.getColor(R.color.monitor_value)
                 canvas.drawText(value, x, baseline, paint)
                 x += paint.measureText(value) + dimen(R.dimen.monitor_unit_gap)
-                paint.textSize = valueSize * unitScale; paint.color = context.getColor(R.color.monitor_unit)
+                paint.textSize = unitSize; paint.color = context.getColor(R.color.monitor_unit)
                 canvas.drawText(unit, x, baseline, paint)
                 x += paint.measureText(unit) + dimen(R.dimen.monitor_metric_gap)
             }

@@ -41,6 +41,11 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
     private var trackingTouch = false
     private var dragging = false
     init { isFocusable = true; isClickable = true; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES; describe() }
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        setMeasuredDimension(minOf(MeasureSpec.getSize(widthMeasureSpec),
+            resources.getDimensionPixelSize(R.dimen.gpu_visual_max_width)),
+            resolveSize(preferredHeight, heightMeasureSpec))
+    }
     private fun x(mhz: Int) = track().x(mhz)
     private fun describe() {
         contentDescription = "GPU ${range.min} 至 ${range.max} MHz，调整${if (minimumThumb) "最小" else "最大"}值，点击切换端点"

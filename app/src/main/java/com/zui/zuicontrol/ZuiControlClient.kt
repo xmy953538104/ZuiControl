@@ -54,6 +54,8 @@ object ZuiControlClient {
         return call { it.getState() }.text
     }
 
+    fun currentSceneText(): String = call { it.getCurrentScene() }.text
+
     fun currentUserId(): Int = Process.myUid() / PER_USER_RANGE
 
     internal fun stateValue(state: String, key: String): String? =

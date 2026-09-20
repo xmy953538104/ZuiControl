@@ -699,7 +699,7 @@ public final class ZuiControlService extends Binder {
             mMonitor.register(data.readStrongBinder());
             mMonitorClientUser = callerUser;
         }
-        String argument = "recordRead".equals(command) ? data.readString() : "";
+        String argument = ("recordRead".equals(command) || "recordDelete".equals(command)) ? data.readString() : "";
         long identity = Binder.clearCallingIdentity();
         try {
             refreshMonitor();

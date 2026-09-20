@@ -5,6 +5,10 @@
     <color name="ui_field">#F0F1F7</color>
     <color name="ui_text">#22232A</color>
     <color name="ui_secondary">#575963</color>
+    <color name="mode_powersave">#538C35</color>
+    <color name="mode_balance">#4774CE</color>
+    <color name="mode_performance">#CA6B21</color>
+    <color name="mode_fast">#D64E70</color>
     <dimen name="ui_control_height">48dp</dimen>
     <dimen name="ui_card_radius">18dp</dimen>
     <dimen name="ui_chip_height">32dp</dimen>
@@ -12,9 +16,15 @@
     <dimen name="ui_chip_padding">12dp</dimen>
     <dimen name="ui_chip_text">13sp</dimen>
     <dimen name="ui_row_gap">8dp</dimen>
-    <dimen name="ui_dialog_spacing">20dp</dimen>
+    <dimen name="ui_dialog_spacing">24dp</dimen>
+    <dimen name="ui_dialog_vertical_spacing">16dp</dimen>
+    <dimen name="ui_dialog_max_width">560dp</dimen>
+    <dimen name="ui_mode_group_width">448dp</dimen>
+    <dimen name="ui_mode_height">48dp</dimen>
+    <dimen name="gpu_visual_max_width">448dp</dimen>
     <dimen name="ui_dropdown_gap">4dp</dimen>
     <dimen name="ui_dropdown_padding">4dp</dimen>
+    <dimen name="ui_dropdown_row_height">38dp</dimen>
     <dimen name="ui_dropdown_max_height">288dp</dimen>
     <dimen name="ui_tool_height">68dp</dimen>
     <dimen name="gpu_track_center_y">20dp</dimen>
@@ -26,13 +36,14 @@
     <dimen name="monitor_touch_diameter">56dp</dimen>
     <dimen name="monitor_ring_width">2dp</dimen>
     <dimen name="monitor_ring_gap">2dp</dimen>
-    <dimen name="monitor_value_text">16sp</dimen>
+    <dimen name="monitor_value_text">15sp</dimen>
+    <dimen name="monitor_unit_text">9.6sp</dimen>
     <dimen name="monitor_circle_text">12sp</dimen>
     <dimen name="monitor_unit_gap">2dp</dimen>
     <dimen name="monitor_top_inset">8dp</dimen>
     <color name="monitor_glass">#4714161A</color>
     <color name="monitor_border">#24FFFFFF</color>
     <color name="monitor_value">#F5FFFFFF</color>
-    <color name="monitor_unit">#B3FFFFFF</color>
+    <color name="monitor_unit">#DEFFFFFF</color>
     <fraction name="monitor_unit_scale">60%</fraction>
 </resources>

@@ -53,6 +53,16 @@ class MainActivity : Activity() {
     private var lastCommandAt = 0L
     private var pendingExportText = ""
     private var zuioptState = ""
+    private val refreshUi = Runnable {
+        if (!commandInFlight && !isFinishing && ::contentHost.isInitialized) {
+            reloadState(); renderCurrentPage()
+        }
+    }
+    private val profileObserver = object : android.database.ContentObserver(handler) {
+        override fun onChange(selfChange: Boolean) {
+            handler.removeCallbacks(refreshUi); handler.postDelayed(refreshUi, 100)
+        }
+    }
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,10 +91,20 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        listOf(ZuiControlContract.KEY_STATUS_TEXT, ZuiControlContract.KEY_UPERF_MODE,
+            ZuiControlContract.KEY_UPERF_RULES_TEXT).forEach {
+            contentResolver.registerContentObserver(Settings.System.getUriFor(it), false, profileObserver)
+        }
         if (::contentHost.isInitialized) {
             reloadState()
             renderCurrentPage()
         }
+    }
+
+    override fun onPause() {
+        contentResolver.unregisterContentObserver(profileObserver)
+        handler.removeCallbacks(refreshUi)
+        super.onPause()
     }
 
     private fun buildRoot(): View {
@@ -281,19 +301,23 @@ class MainActivity : Activity() {
                 elevation = 0f
                 setPadding(0, 0, 0, 0)
                 UperfMode.entries.forEachIndexed { index, mode ->
-                    addView(UiControls.chip(this@MainActivity, mode.title, mode == selected).apply {
+                    addView(UiControls.modeChip(this@MainActivity, mode, mode == selected).apply {
+                        textSize = 15f
                         setOnClickListener { setUperfMode(mode) }
-                    }, LinearLayout.LayoutParams(0, dimen(R.dimen.ui_chip_height), 1f).apply {
+                    }, LinearLayout.LayoutParams(0, dimen(R.dimen.ui_mode_height), 1f).apply {
                         if (index > 0) setMargins(dimen(R.dimen.ui_row_gap), 0, 0, 0)
                     })
                 }
-            })
+            }, LinearLayout.LayoutParams(minOf(dimen(R.dimen.ui_mode_group_width),
+                dp(resources.configuration.screenWidthDp - 48 -
+                    if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 116 else 0)), -2)
+                .apply { gravity = Gravity.CENTER_HORIZONTAL })
             addView(sectionTitle("自定义应用"), sectionMargins())
             if (uperfRules.isEmpty() && gpuOverrides.isEmpty()) {
                 addView(emptyText("点击右下角 + 添加应用"))
             } else {
                 addAppGrid(this, (uperfRules.keys + gpuOverrides.keys).toList(),
-                    { (uperfRules[it] ?: selected).title }) { showUperfAppDialog(it) }
+                    { (uperfRules[it] ?: selected).title }, { (uperfRules[it] ?: selected) }) { showUperfAppDialog(it) }
             }
         }
         root.addView(ScrollView(this).apply { addView(content) }, matchMatchFrame())
@@ -361,8 +385,7 @@ class MainActivity : Activity() {
     }
 
     private fun showGlobalGpuRanges() {
-        val rows = vertical().apply { setPadding(dimen(R.dimen.ui_dialog_spacing), 0,
-            dimen(R.dimen.ui_dialog_spacing), dimen(R.dimen.ui_row_gap)) }
+        val rows = vertical()
         UperfMode.entries.forEach { mode ->
             val bar = GpuRangeBar(this, globalGpuRange(mode))
             bar.onCommit = { value ->
@@ -558,10 +581,10 @@ class MainActivity : Activity() {
             }
             addView(label("health：$schedulerError", 11f, COLOR_SUBTLE, Typeface.NORMAL))
             addView(sectionTitle("工具"), sectionMargins())
-            addView(settingsAction(R.drawable.ic_nav_threads, "性能监视器", "通知快捷控制 · FPS / W / quiet") {
+            addView(settingsAction(R.drawable.ic_nav_threads, "性能监视器", "通知快捷控制 · FPS / quiet / W") {
                 showPerformanceMonitor()
             }, settingsActionMargins())
-            addView(settingsAction(R.drawable.ic_action_logs, "性能记录", "最近一次记录 · 曲线与热点线程") {
+            addView(settingsAction(R.drawable.ic_action_logs, "应用记录", "每个应用的最近一次记录") {
                 startActivity(Intent(this@MainActivity, PerformanceRecordActivity::class.java))
             }, settingsActionMargins())
             addView(settingsAction(R.drawable.ic_nav_system, "GPU频率范围", "节能 · 均衡 · 性能 · 快速") {
@@ -602,8 +625,11 @@ class MainActivity : Activity() {
 
     private fun showPerformanceMonitor() {
         val content = vertical().apply {
-            setPadding(dp(20), dp(8), dp(20), dp(12))
-            addView(compactNote("从通知点击「监视器」或「FPS」。日常显示不写记录、不扫描线程。\n轻触长条切换圆形；长按圆形 2 秒开始录制，轻触录制圆形结束。切换应用/锁屏仅暂停，返回目标应用继续。成功开始新录制才替换上一条。\n屏幕 FPS 非游戏逐帧统计；W 为设备功率，充电时显示 --。quiet 为独立温度传感器。"))
+            addView(compactNote("从通知点击监视器图标。日常显示不写记录、不扫描线程。\n轻触长条切换圆形；长按圆形 2 秒开始录制，轻触录制圆形结束。切换应用/锁屏仅暂停，返回目标应用继续。成功开始新录制才替换该应用的上一条。\n屏幕 FPS 非游戏逐帧统计；W 为设备功率，充电时显示 --。quiet 为独立温度传感器。"))
+            addView(commandButton("开启 / 关闭监视器") {
+                startForegroundService(Intent(this@MainActivity, ZuiControlQuickService::class.java)
+                    .setAction(ZuiControlQuickService.FULL))
+            },fieldMargins())
             addView(commandButton("悬浮窗权限") { requestMonitorPermission() },fieldMargins())
             addView(commandButton("显示快捷通知") { connectMonitor() },fieldMargins())
         }
@@ -647,7 +673,8 @@ class MainActivity : Activity() {
         })
     }
 
-    private fun addAppGrid(content: LinearLayout, packages: List<String>, badge: (String) -> String, open: (String) -> Unit) {
+    private fun addAppGrid(content: LinearLayout, packages: List<String>, badge: (String) -> String,
+        mode: ((String) -> UperfMode)? = null, open: (String) -> Unit) {
         val available = if (contentHost.width > 0) (contentHost.width / resources.displayMetrics.density).toInt()
             else resources.configuration.screenWidthDp - 32 -
                 if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 116 else 0
@@ -656,7 +683,7 @@ class MainActivity : Activity() {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             repeat(columns) { index ->
                 val pkg = entries.getOrNull(index)
-                row.addView(if (pkg == null) View(this) else appCard(pkg, badge(pkg)) { open(pkg) },
+                row.addView(if (pkg == null) View(this) else appCard(pkg, badge(pkg), mode?.invoke(pkg)) { open(pkg) },
                     LinearLayout.LayoutParams(0, -2, 1f).apply {
                         if (index > 0) marginStart = dimen(R.dimen.ui_row_gap)
                     })
@@ -665,7 +692,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun appCard(pkg: String, badge: String, action: () -> Unit): View = horizontalRow().apply {
+    private fun appCard(pkg: String, badge: String, mode: UperfMode?, action: () -> Unit): View = horizontalRow().apply {
         val pad = dimen(R.dimen.ui_chip_padding)
         setPadding(pad, pad, pad, pad)
         background = rounded(Color.WHITE, dimen(R.dimen.ui_card_radius), Color.TRANSPARENT)
@@ -676,7 +703,7 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(0, -2, 1f).apply {
             setMargins(dimen(R.dimen.ui_row_gap), 0, dimen(R.dimen.ui_row_gap), 0)
         })
-        addView(UiControls.chip(this@MainActivity, badge, true),
+        addView(mode?.let { UiControls.modeChip(this@MainActivity, it, true) } ?: UiControls.chip(this@MainActivity, badge, true),
             LinearLayout.LayoutParams(-2, dimen(R.dimen.ui_chip_height)))
         setOnClickListener { action() }
     }
@@ -861,9 +888,7 @@ class MainActivity : Activity() {
     private fun AlertDialog.Builder.showStyled(): AlertDialog = createStyled().also { it.show() }
 
     private fun AlertDialog.Builder.createStyled(): AlertDialog = create().apply {
-        setOnShowListener {
-            window?.setBackgroundDrawable(rounded(COLOR_SURFACE, dp(24), Color.TRANSPARENT))
-        }
+        setOnShowListener { UiControls.styleDialog(this) }
     }
 
     private fun labelForPackage(pkg: String): String = labelCache.getOrPut(pkg) {
@@ -1056,17 +1081,6 @@ class MainActivity : Activity() {
             (text.getChildAt(0) as TextView).text = entry.label()
             (text.getChildAt(1) as TextView).text = entry.info.packageName
             return row
-        }
-    }
-
-    private enum class UperfMode(val id: String, val title: String) {
-        POWERSAVE("powersave", "节能"),
-        BALANCE("balance", "均衡"),
-        PERFORMANCE("performance", "性能"),
-        FAST("fast", "快速");
-
-        companion object {
-            fun fromId(value: String): UperfMode? = entries.firstOrNull { it.id == value }
         }
     }
 

@@ -125,6 +125,10 @@ class TerminalContracts(unittest.TestCase):
 
     def test_refresh_and_macro_power_service_unchanged(self):
         text=read('framework_patch/src/services/com/zui/server/control/ZuiControlService.java')
+        # R6 only extends the authenticated Monitor record-delete argument.
+        for delta in json.loads(read('tests/monitor/r6_product_delta.json'))['service']:
+            self.assertEqual(text.count(delta['after']), 1)
+            text=text.replace(delta['after'],delta['before'],1)
         # Exact monitor-only additions are reversed before the unchanged historical guard.
         for delta in json.loads(read('tests/monitor/production_delta.json'))['service']:
             self.assertEqual(text.count(delta['after']), 1)

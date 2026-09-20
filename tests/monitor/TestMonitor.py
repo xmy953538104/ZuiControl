@@ -27,7 +27,7 @@ stubs.update({
  void start(String p,String l,int u,int pid,long g,long t){if(active)throw new AssertionError();active=true;starts++;writes++;scalarRows=threadRows=0;}
  void append(long t,double f,double p,double q,int pid,long g,List<MonitorSnapshot.Row> r){if(!active)throw new AssertionError();scalarRows++;threadRows+=r.size();writes+=1+r.size();}
  void finish(long n){if(active){finishes++;writes++;active=false;}}void abandon(){active=false;}
- String read(int u,String key){return "{}";}}''',
+ String read(int u,String key){return "{}";}String list(int u){return "{}";}String delete(int u,String p){return "ok=1";}}''',
  'com/zui/server/control/CollectorTest.java':'''package com.zui.server.control;
  import android.os.*;import android.app.*;import android.content.*;import java.util.*;
  public class CollectorTest {

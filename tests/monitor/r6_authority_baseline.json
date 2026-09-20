@@ -1,0 +1,9 @@
+{
+  "private String editableScenePackage()": "7d2bc343d6b0e1ad4f9edbc51daafbb2387f5a92891d79d0ccd150edcc74901e",
+  "private synchronized String currentSceneState()": "d24fb49d970c7fe3ced8cd1740c778d41c96f3817e3c2946b5b2189ee67602cd",
+  "private synchronized String setCurrentSceneProfile(": "4c320fe4025fde7910881c554c13b89296f21dae180c464a567bd9c9f402d125",
+  "private void updateBusinessScene(": "945bd0bd30143ce5033c0cea5e647c54644503f52f86871c5eb17bf515a8edae",
+  "private void handleEffectiveFocus(": "879a45a9dad6fd3595dd90dfea01073a83519b9247ae7527920b32774b11f71b",
+  "private static boolean isTransientPackage(": "1cae42176a489fce0a9e11db410935a1400a772c5c1f756606a3cac4db01dbeb",
+  "private final class UperfScenePolicy": "21c0cad6997090d5ad9438b973f4e5ac09d918a264bcf7101efcdc62ef541ad4"
+}

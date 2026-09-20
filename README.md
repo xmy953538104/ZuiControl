@@ -39,6 +39,7 @@ python tests/command_plane/TestCommandPlaneArchitecture.py
 python tests/gpu/TestGpuProof.py
 python tests/monitor/TestMonitor.py
 python tests/monitor/TestUiPolish.py
+python tests/monitor/TestProductR6.py
 python tests/monitor/TestRecordSql.py
 python tests/monitor/TestPackageIdentity.py
 bash tests/command_plane/TestZuiControldTransactions.sh
