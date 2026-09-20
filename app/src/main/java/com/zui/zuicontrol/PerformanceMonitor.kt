@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.os.Binder
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -19,6 +20,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.view.WindowInsets
 import android.zui.ZuiControlManager
 import org.json.JSONObject
 import java.util.Locale
@@ -62,6 +64,16 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
         view = null
         livePower.clear(); displayPower = -1.0
     }
+    private fun safeTop(insets: WindowInsets?): Int {
+        val systemTop = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            insets?.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars() or
+                WindowInsets.Type.displayCutout() or WindowInsets.Type.captionBar())?.top ?: 0
+        } else {
+            @Suppress("DEPRECATION")
+            maxOf(insets?.systemWindowInsetTop ?: 0, insets?.displayCutout?.safeInsetTop ?: 0)
+        }
+        return systemTop + context.resources.getDimensionPixelSize(R.dimen.monitor_top_inset)
+    }
     private fun render(text: String) {
         val next = runCatching { JSONObject(text) }.getOrNull() ?: return
         if (next.has("mode") && next.optInt("mode") != snapshot.optInt("mode")) onModeChanged()
@@ -73,13 +85,25 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
         try {
             if (view == null) {
                 val fresh = MonitorView(context)
+                fresh.setOnApplyWindowInsetsListener { target, insets ->
+                    val layout = target.layoutParams as WindowManager.LayoutParams
+                    val top = safeTop(insets)
+                    if (layout.y != top && target.isAttachedToWindow) {
+                        layout.y = top
+                        windows.updateViewLayout(target, layout)
+                    }
+                    insets
+                }
                 val params = WindowManager.LayoutParams(-2, -2,
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                         (if (next.optInt("mode") == 2) WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE else 0),
                     PixelFormat.TRANSLUCENT).apply {
                     gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                    y = context.resources.getDimensionPixelSize(R.dimen.monitor_top_inset)
+                    // Absolute display coordinates; account for each inset once, even in immersive apps.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setFitInsetsTypes(0)
+                    y = safeTop(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                        windows.currentWindowMetrics.windowInsets else null)
                     layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
                     title = "ZuiControl 性能监视器"
                 }

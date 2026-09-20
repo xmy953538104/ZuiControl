@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ui_accent">#445B8B</color>
+    <color name="monitor_active">#C77B28</color>
+    <color name="notification_track">#CAD2E0</color>
     <color name="ui_surface">#FAF9FD</color>
     <color name="ui_field">#F0F1F7</color>
     <color name="ui_text">#22232A</color>

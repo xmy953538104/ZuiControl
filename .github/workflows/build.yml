@@ -96,6 +96,9 @@ jobs:
           python3 tests/monitor/TestMonitor.py
           python3 tests/monitor/TestUiPolish.py
           python3 tests/monitor/TestProductR6.py
+          python3 tests/monitor/TestProductR7.py
+          python3 tests/monitor/TestNotificationTransform.py
+          bash tests/uperf/TestConfigurableAppPolicy.sh
           python3 tests/monitor/TestRecordSql.py
           python3 tests/monitor/TestPackageIdentity.py
           python3 tests/monitor/TestDeterministicZip.py
@@ -295,6 +298,7 @@ jobs:
         run: |
           gradle -p . :app:testDebugUnitTest :app:lintDebug
           python3 tests/gpu/TestGpuTouch.py
+          python3 tests/monitor/TestDropdownSelection.py
 
       - name: Compile exact services extension and test scheduler health
         shell: bash
@@ -354,9 +358,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV61
           rm -rf payload/system/priv-app/ZuiControlV62
           rm -rf payload/system/priv-app/ZuiControlV63
-          mkdir -p payload/system/priv-app/ZuiControlV64
+          rm -rf payload/system/priv-app/ZuiControlV64
+          mkdir -p payload/system/priv-app/ZuiControlV65
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV64/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV65/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

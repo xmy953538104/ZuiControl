@@ -47,7 +47,9 @@ class UiPolish(unittest.TestCase):
         self.assertIn('addView(reset, LinearLayout.LayoutParams(-2, dimen(R.dimen.ui_chip_height))', main)
         self.assertEqual(main.count('gravity = Gravity.TOP; topMargin = bar.chipTopMargin'), 2)
         self.assertNotIn('maxOf(dp(92)', main)
-        self.assertIn('"ZUIopt" to threadState, "刷新率" to "system").chunked(2)', main)
+        self.assertIn('"ZUIopt" to threadState)', settings)
+        self.assertNotIn('.chunked(2)', settings)
+        self.assertNotIn('"刷新率" to', settings)
 
     def test_overlay_tokens_and_raw_recording_boundary(self):
         tokens = {x.attrib['name']: x.text for x in ET.parse(ROOT/'app/src/main/res/values/ui_tokens.xml').getroot()}

@@ -44,7 +44,7 @@ class MainActivity : Activity() {
     private val labelCache = linkedMapOf<String, String>()
 
     private lateinit var contentHost: FrameLayout
-    private lateinit var tabButtons: Map<Page, TextView>
+    private lateinit var tabButtons: Map<Page, LinearLayout>
     private lateinit var settingsButton: ImageView
     private lateinit var headerStatus: TextView
 
@@ -163,13 +163,24 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setBackgroundColor(COLOR_BG)
         }
-        val map = linkedMapOf<Page, TextView>()
+        val map = linkedMapOf<Page, LinearLayout>()
         Page.entries.filter { it != Page.SYSTEM }.forEach { page ->
-            val button = label(page.title, 12f, COLOR_SUBTLE, Typeface.BOLD).apply {
+            val button = vertical().apply {
                 gravity = Gravity.CENTER
-                includeFontPadding = false
-                setCompoundDrawablesRelativeWithIntrinsicBounds(0, page.iconRes, 0, 0)
-                compoundDrawablePadding = dp(4)
+                contentDescription = page.title
+                if (page == Page.REFRESH) {
+                    addView(label("Hz", 21f, COLOR_SUBTLE, Typeface.BOLD).apply {
+                        gravity = Gravity.CENTER; includeFontPadding = false
+                    }, LinearLayout.LayoutParams(dp(28), dp(26)))
+                } else {
+                    addView(ImageView(this@MainActivity).apply {
+                        setImageResource(page.iconRes)
+                        imageTintList = ColorStateList.valueOf(COLOR_SUBTLE)
+                    }, LinearLayout.LayoutParams(dp(26), dp(26)))
+                }
+                addView(label(page.title, 12f, COLOR_SUBTLE, Typeface.BOLD).apply {
+                    gravity = Gravity.CENTER; includeFontPadding = false
+                }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(4) })
                 setPadding(dp(10), dp(7), dp(10), dp(6))
                 setOnClickListener { showPage(page) }
             }
@@ -193,8 +204,11 @@ class MainActivity : Activity() {
         tabButtons.forEach { (item, view) ->
             val selected = item == page
             val color = if (selected) COLOR_ACCENT else COLOR_SUBTLE
-            view.setTextColor(color)
-            view.compoundDrawableTintList = ColorStateList.valueOf(color)
+            (view.getChildAt(1) as TextView).setTextColor(color)
+            when (val icon = view.getChildAt(0)) {
+                is TextView -> icon.setTextColor(color)
+                is ImageView -> icon.imageTintList = ColorStateList.valueOf(color)
+            }
             view.background = rounded(
                 if (selected) COLOR_SELECTED else Color.TRANSPARENT,
                 dp(18), Color.TRANSPARENT,
@@ -226,12 +240,10 @@ class MainActivity : Activity() {
     }
 
     private fun headerStatusText(): String {
-        val displayHz = ZuiControlClient.currentDisplayHz()?.toString()
-            ?: setting(ZuiControlContract.KEY_ACTIVE_REFRESH).removeSuffix(".0").ifBlank { "120" }
         val version = runCatching {
             packageManager.getPackageInfo(packageName, 0).versionName
         }.getOrNull() ?: "unknown"
-        return "v$version · ${displayHz}Hz"
+        return "v$version"
     }
 
     private fun buildRefreshPage(): View {
@@ -256,7 +268,7 @@ class MainActivity : Activity() {
 
     private fun showRefreshRateDialog(pkg: String, currentRate: Int?) {
         val picker = traySpinner(ZuiControlContract.rates.map { "${it}Hz" })
-        picker.setSelection(
+        picker.commitSelection(
             ZuiControlContract.rates.indexOf(currentRate).takeIf { it >= 0 }
                 ?: ZuiControlContract.rates.indexOf(RefreshSceneController.BASE_REFRESH_RATE),
         )
@@ -324,8 +336,7 @@ class MainActivity : Activity() {
         addFloatingButton(root) {
             showPackagePicker(
                 "选择 Uperf 应用",
-                userAppsOnly = true,
-                launchableOnly = true,
+                uperfOnly = true,
             ) { showUperfAppDialog(it.info.packageName) }
         }
         return root
@@ -334,7 +345,7 @@ class MainActivity : Activity() {
     private fun showUperfAppDialog(pkg: String, current: UperfMode? = uperfRules[pkg]) {
         val modes = UperfMode.entries
         val picker = traySpinner(modes.map { it.title })
-        picker.setSelection(modes.indexOf(current ?: UperfMode.PERFORMANCE).coerceAtLeast(0))
+        picker.commitSelection(modes.indexOf(current ?: UperfMode.PERFORMANCE).coerceAtLeast(0))
         val gpuEditor = gpuRangeEditor(pkg) { modes[picker.selectedItemPosition] }
         picker.onSelection = { position ->
             (gpuEditor.tag as GpuRangeBar).range = gpuOverrides[pkg] ?: globalGpuRange(modes[position])
@@ -420,6 +431,7 @@ class MainActivity : Activity() {
 
     private fun setUperfApp(pkg: String, mode: UperfMode) {
         runCommand("正在保存自定义应用", success = "自定义应用已保存") {
+            check(UperfAppPolicy.isConfigurable(packageManager, pkg)) { "此应用不支持性能配置" }
             ZuiControlRequest.send(
                 this, ZuiControlContract.CMD_SET_UPERF_APP, pkg = pkg, mode = mode.id,
             )
@@ -562,36 +574,37 @@ class MainActivity : Activity() {
                 "0" -> "inactive"
                 else -> "unknown"
             }
-            listOf("调度" to ownership, "Uperf" to "$uperfState / $uperfMode",
-                "ZUIopt" to threadState, "刷新率" to "system").chunked(2).forEach { items ->
-                addView(LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    items.forEachIndexed { index, (title, value) ->
-                        addView(vertical().apply {
-                            val pad = dimen(R.dimen.ui_chip_padding)
-                            setPadding(pad, dimen(R.dimen.ui_row_gap), pad, dimen(R.dimen.ui_row_gap))
-                            background = rounded(COLOR_FIELD, dimen(R.dimen.ui_card_radius), Color.TRANSPARENT)
-                            addView(label(title, 11f, COLOR_SUBTLE, Typeface.NORMAL))
-                            addView(label(value, 14f, COLOR_TEXT, Typeface.BOLD).apply { maxLines = 1 })
-                        }, LinearLayout.LayoutParams(0, -2, 1f).apply {
-                            if (index > 0) marginStart = dimen(R.dimen.ui_row_gap)
-                        })
-                    }
-                }, cardMargins())
+            val items = listOf("调度" to ownership, "Uperf" to "$uperfState / $uperfMode",
+                "ZUIopt" to threadState)
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                items.forEachIndexed { index, (title, value) ->
+                    addView(vertical().apply {
+                        val pad = dimen(R.dimen.ui_chip_padding)
+                        setPadding(pad, dimen(R.dimen.ui_row_gap), pad, dimen(R.dimen.ui_row_gap))
+                        background = rounded(COLOR_FIELD, dimen(R.dimen.ui_card_radius), Color.TRANSPARENT)
+                        addView(label(title, 11f, COLOR_SUBTLE, Typeface.NORMAL))
+                        addView(label(value, 14f, COLOR_TEXT, Typeface.BOLD).apply { maxLines = 1 })
+                    }, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                        if (index > 0) marginStart = dimen(R.dimen.ui_row_gap)
+                    })
+                }
+            }, cardMargins())
+            if (schedulerError != "ok") {
+                addView(label("调度状态：$schedulerError", 12f, getColor(R.color.mode_fast), Typeface.BOLD))
             }
-            addView(label("health：$schedulerError", 11f, COLOR_SUBTLE, Typeface.NORMAL))
             addView(sectionTitle("工具"), sectionMargins())
-            addView(settingsAction(R.drawable.ic_nav_threads, "性能监视器", "通知快捷控制 · FPS / quiet / W") {
+            addView(settingsAction(R.drawable.ic_tool_monitor, "性能监视器", "通知快捷控制 · FPS / quiet / W") {
                 showPerformanceMonitor()
             }, settingsActionMargins())
-            addView(settingsAction(R.drawable.ic_action_logs, "应用记录", "每个应用的最近一次记录") {
+            addView(settingsAction(R.drawable.ic_tool_records, "应用记录", "每个应用的最近一次记录") {
                 startActivity(Intent(this@MainActivity, PerformanceRecordActivity::class.java))
             }, settingsActionMargins())
-            addView(settingsAction(R.drawable.ic_nav_system, "GPU频率范围", "节能 · 均衡 · 性能 · 快速") {
+            addView(settingsAction(R.drawable.ic_tool_range, "GPU频率范围", "节能 · 均衡 · 性能 · 快速") {
                 showGlobalGpuRanges()
             }, settingsActionMargins())
             addView(settingsAction(
-                R.drawable.ic_action_logs, "导出运行日志", "排查刷新率、Uperf 与 ZUIopt",
+                R.drawable.ic_tool_export, "导出运行日志", "排查刷新率、Uperf 与 ZUIopt",
             ) { exportLogs() }, settingsActionMargins())
             addView(settingsAction(
                 R.drawable.ic_action_refresh, "重启调度核心", "重新加载 Uperf 配置并检查 ZUIopt；不清除故障保护",
@@ -624,16 +637,60 @@ class MainActivity : Activity() {
     }
 
     private fun showPerformanceMonitor() {
-        val content = vertical().apply {
-            addView(compactNote("从通知点击监视器图标。日常显示不写记录、不扫描线程。\n轻触长条切换圆形；长按圆形 2 秒开始录制，轻触录制圆形结束。切换应用/锁屏仅暂停，返回目标应用继续。成功开始新录制才替换该应用的上一条。\n屏幕 FPS 非游戏逐帧统计；W 为设备功率，充电时显示 --。quiet 为独立温度传感器。"))
-            addView(commandButton("开启 / 关闭监视器") {
-                startForegroundService(Intent(this@MainActivity, ZuiControlQuickService::class.java)
-                    .setAction(ZuiControlQuickService.FULL))
-            },fieldMargins())
-            addView(commandButton("悬浮窗权限") { requestMonitorPermission() },fieldMargins())
-            addView(commandButton("显示快捷通知") { connectMonitor() },fieldMargins())
+        val monitorState = label("", 12f, COLOR_SUBTLE, Typeface.NORMAL)
+        val toggle = UiControls.chip(this, "")
+        fun refreshMode() {
+            val enabled = ZuiControlClient.stateValue(PerformanceMonitor.command("state"), "monitorMode") == "1"
+            monitorState.text = if (enabled) "已开启" else "已关闭"
+            toggle.text = if (enabled) "关闭" else "开启"
         }
-        AlertDialog.Builder(this).setTitle("性能监视器").setView(ScrollView(this).apply { addView(content) })
+        refreshMode()
+        toggle.setOnClickListener {
+            if (!Settings.canDrawOverlays(this)) requestMonitorPermission()
+            else {
+                connectMonitor()
+                val reply = PerformanceMonitor.command("full")
+                if (!reply.startsWith("ok=1")) toast("监视器不可用")
+                refreshMode()
+            }
+        }
+        fun row(title: String, state: TextView, action: View) = horizontalRow().apply {
+            setPadding(dp(14), dp(8), dp(10), dp(8))
+            background = rounded(COLOR_FIELD, dimen(R.dimen.ui_card_radius), Color.TRANSPARENT)
+            addView(label(title, 14f, COLOR_TEXT, Typeface.BOLD), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(state, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(12) })
+            addView(action, LinearLayout.LayoutParams(-2, dimen(R.dimen.ui_chip_height)))
+        }
+        val notificationState = label(
+            if (getSystemService(android.app.NotificationManager::class.java).activeNotifications
+                .any { it.notification.channelId == "zui_control_monitor_v1" }) "已显示" else "未显示",
+            12f, COLOR_SUBTLE, Typeface.NORMAL)
+        val content = vertical().apply {
+            addView(row("性能监视器", monitorState, toggle), cardMargins())
+            addView(row("悬浮窗权限",
+                label(if (Settings.canDrawOverlays(this@MainActivity)) "已允许" else "未允许", 12f, COLOR_SUBTLE, Typeface.NORMAL),
+                UiControls.chip(this@MainActivity, "去设置").apply {
+                    setOnClickListener { requestMonitorPermission() }
+                }), cardMargins())
+            addView(row("快捷通知", notificationState, UiControls.chip(this@MainActivity, "显示").apply {
+                setOnClickListener {
+                    connectMonitor()
+                    handler.postDelayed({
+                        notificationState.text = if (getSystemService(android.app.NotificationManager::class.java)
+                            .activeNotifications.any { it.notification.channelId == "zui_control_monitor_v1" })
+                            "已显示" else "未显示"
+                    }, 300)
+                }
+            }))
+        }
+        AlertDialog.Builder(this).setTitle("性能监视器").setView(content)
+            .setNeutralButton("帮助") { _, _ -> showMonitorHelp() }
+            .setPositiveButton("完成", null).showStyled()
+    }
+
+    private fun showMonitorHelp() {
+        AlertDialog.Builder(this).setTitle("监视器帮助")
+            .setMessage("默认关闭，手动点击通知或设置中的开关开启；在桌面和正常应用中显示 FPS、quiet、W。日常显示不写记录、不扫描线程。\n\n轻触长条切换圆形；轻触或不足 2 秒的短按返回长条，不录制。长按圆形满 2 秒开始录制，轻触录制圆形结束。切换应用/锁屏仅暂停，返回目标应用继续。成功开始新录制才替换该应用的上一条。\n\nFPS 是屏幕实测帧率，非游戏逐帧统计。W 为设备电池侧瞬时功率，非应用独占功率；充电时显示 --。quiet 为按类型识别的独立 quiet-therm 温度传感器。")
             .setPositiveButton("完成", null).showStyled()
     }
 
@@ -719,8 +776,7 @@ class MainActivity : Activity() {
 
     private fun showPackagePicker(
         title: String,
-        userAppsOnly: Boolean = false,
-        launchableOnly: Boolean = false,
+        uperfOnly: Boolean = false,
         onSelected: (PackageEntry) -> Unit,
     ) {
         val root = vertical().apply { setPadding(dp(16), dp(8), dp(16), 0) }
@@ -728,7 +784,7 @@ class MainActivity : Activity() {
         val userTab = chip("用户应用")
         val systemTab = chip("系统应用")
         tabs.addView(userTab, LinearLayout.LayoutParams(0, dimen(R.dimen.ui_chip_height), 1f))
-        if (!userAppsOnly) tabs.addView(systemTab, LinearLayout.LayoutParams(0, dimen(R.dimen.ui_chip_height), 1f).apply {
+        if (!uperfOnly) tabs.addView(systemTab, LinearLayout.LayoutParams(0, dimen(R.dimen.ui_chip_height), 1f).apply {
             setMargins(dp(8), 0, 0, 0)
         })
         root.addView(tabs)
@@ -749,7 +805,7 @@ class MainActivity : Activity() {
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(520)))
         val dialog = AlertDialog.Builder(this)
             .setTitle(title).setView(root).setNegativeButton("取消", null).createStyled()
-        val adapter = PackagePickerAdapter()
+        val adapter = PackagePickerAdapter(uperfOnly)
         list.adapter = adapter
         list.setOnItemClickListener { _, _, position, _ ->
             adapter.getEntry(position)?.let { entry ->
@@ -759,14 +815,14 @@ class MainActivity : Activity() {
             }
         }
         fun selectSystem(system: Boolean) {
-            if (userAppsOnly && system) return
+            if (uperfOnly && system) return
             adapter.systemApps = system
             adapter.applyFilter(search.text.toString())
             styleChip(userTab, !system)
             styleChip(systemTab, system)
         }
         userTab.setOnClickListener { selectSystem(false) }
-        if (!userAppsOnly) systemTab.setOnClickListener { selectSystem(true) }
+        if (!uperfOnly) systemTab.setOnClickListener { selectSystem(true) }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun afterTextChanged(s: Editable?) = Unit
@@ -782,8 +838,7 @@ class MainActivity : Activity() {
                 .asSequence()
                 .filter { it.packageName != packageName }
                 .map(::PackageEntry)
-                .filter { !userAppsOnly || !it.system }
-                .filter { !launchableOnly || packageManager.getLaunchIntentForPackage(it.info.packageName) != null }
+                .filter { !uperfOnly || UperfAppPolicy.isConfigurable(packageManager, it.info.packageName) }
                 .sortedBy { it.info.packageName.lowercase(Locale.ROOT) }
                 .toList()
             handler.post {
@@ -1036,7 +1091,7 @@ class MainActivity : Activity() {
         }.getOrDefault(info.packageName).also { resolvedLabel = it }
     }
 
-    private inner class PackagePickerAdapter : BaseAdapter() {
+    private inner class PackagePickerAdapter(private val uperfOnly: Boolean) : BaseAdapter() {
         private val all = mutableListOf<PackageEntry>()
         private val visible = mutableListOf<PackageEntry>()
         var systemApps = false
@@ -1050,7 +1105,7 @@ class MainActivity : Activity() {
             val lower = query.trim().lowercase(Locale.ROOT)
             visible.clear()
             visible.addAll(all.filter {
-                it.system == systemApps && (lower.isBlank() ||
+                (uperfOnly || it.system == systemApps) && (lower.isBlank() ||
                     it.info.packageName.lowercase(Locale.ROOT).contains(lower) ||
                     it.label().lowercase(Locale.ROOT).contains(lower))
             })
@@ -1086,7 +1141,7 @@ class MainActivity : Activity() {
 
     private enum class Page(val title: String, val iconRes: Int) {
         REFRESH("刷新率", R.drawable.ic_nav_display_rate),
-        UPERF("Uperf", R.drawable.ic_nav_performance),
+        UPERF("性能", R.drawable.ic_nav_performance),
         THREADS("线程", R.drawable.ic_nav_threads),
         SYSTEM("系统", R.drawable.ic_nav_system),
     }

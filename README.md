@@ -40,6 +40,10 @@ python tests/gpu/TestGpuProof.py
 python tests/monitor/TestMonitor.py
 python tests/monitor/TestUiPolish.py
 python tests/monitor/TestProductR6.py
+python tests/monitor/TestProductR7.py
+python tests/monitor/TestNotificationTransform.py
+python tests/monitor/TestDropdownSelection.py
+bash tests/uperf/TestConfigurableAppPolicy.sh
 python tests/monitor/TestRecordSql.py
 python tests/monitor/TestPackageIdentity.py
 bash tests/command_plane/TestZuiControldTransactions.sh
@@ -100,14 +104,23 @@ only with DISCHARGING status and no external power, using broadcast mV and the
 magnitude of API microamps (vendor sign is not direction). Live power uses a
 three-sample median; recordings retain raw watts. External power is unavailable. Quiet is resolved by type
 once per collector generation. No Monitor KGSL access is made.
-The compact notification toggles mutually exclusive OFF/FULL/FPS modes; it does
-not itself enable sampling. Display-only never enumerates tasks or writes storage.
-A full two-second circle hold starts one transactional SQLite recording slot;
+The compact notification controls Monitor, Refresh and per-app Uperf through the
+existing editable scene authority. Its presence does not enable sampling; Monitor
+defaults OFF and is enabled manually. The target SDK stays 35. The ROM permits
+undecorated custom content only for the system ZuiControl controller channel;
+see `docs/NOTIFICATION_CONTROLLER.md`. Display-only never enumerates tasks or writes storage.
+A full two-second circle hold replaces the bound app's latest SQLite recording;
 recording-only Top15 thread deltas use one core=100% at approximately three seconds.
-App leave, HOME and screen-off pause rather than finalize. Explicit circle tap
-stops; callback death preserves incomplete data. The native latest-record page
+Leaving the bound app and screen-off pause rather than finalize. HOME is eligible
+for live display and its own recording; the original app's record stays paused
+while HOME is foreground. Explicit circle tap stops; callback death preserves incomplete data.
+The native per-app latest-record page
 shows scalar charts and generation-qualified thread details. GPU/Uperf/ZUIopt/
 thermal ownership is unchanged.
+
+Uperf's picker, notification and daemon accept only enabled, launchable apps whose
+canonical APK paths all lie under the qualified `/data/app/` or `/system/preinstall/`
+roots. See `docs/UPERF_CONFIGURABLE_APP.md` for the shared contract and parser gate.
 
 The terminal candidate rebuilds the services extension from exact current source.
 Unmodified services DEX members remain byte-identical. The GPU lane additionally

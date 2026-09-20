@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.view.View
 import android.widget.RemoteViews
 import android.widget.Toast
 
@@ -66,7 +67,7 @@ class ZuiControlQuickService : Service() {
                     // Read the accepted editable scene at this action, never shade focus or a cache.
                     val scene = ZuiControlClient.currentSceneText()
                     val pkg = ZuiControlClient.stateValue(scene, "editableScenePackage").orEmpty()
-                    check(PackageNames.isValid(pkg)) { "当前没有可配置应用" }
+                    check(UperfAppPolicy.isConfigurable(packageManager, pkg)) { "当前应用不支持性能配置" }
                     val request = ZuiControlRequest.send(this, ZuiControlContract.CMD_SET_UPERF_APP,
                         pkg = pkg, mode = mode.id)
                     val ack = ZuiControlRequest.awaitTerminalAck(this, request)
@@ -104,26 +105,28 @@ class ZuiControlQuickService : Service() {
             setting(ZuiControlContract.KEY_UPERF_RULES_TEXT), pkg)
         val desired = ZuiControlClient.stateValue(PerformanceMonitor.command("state"), "monitorMode") == "1"
         val enabled = PackageNames.isValid(pkg)
+        val uperfEnabled = UperfAppPolicy.isConfigurable(packageManager, pkg)
         val content = RemoteViews(packageName, R.layout.notification_zuicontrol).apply {
             setInt(R.id.monitor_toggle, "setBackgroundResource",
-                if (desired) R.drawable.notify_rate_selected else R.drawable.notify_rate_normal)
-            setInt(R.id.monitor_toggle, "setColorFilter", if (desired) android.graphics.Color.WHITE else getColor(R.color.ui_accent))
+                if (desired) R.drawable.notify_monitor_active else R.drawable.notify_monitor_off)
+            setInt(R.id.monitor_toggle, "setColorFilter", android.graphics.Color.WHITE)
             setContentDescription(R.id.monitor_toggle, "监视器 ${if (desired) "开启" else "关闭"}")
             setOnClickPendingIntent(R.id.monitor_toggle, pending(FULL, 1))
             listOf(R.id.refresh_60, R.id.refresh_90, R.id.refresh_120, R.id.refresh_144, R.id.refresh_165)
                 .zip(ZuiControlContract.rates).forEach { (id, value) ->
                     val selected = value == rate
                     setInt(id, "setBackgroundResource", if (selected) R.drawable.notify_rate_selected else R.drawable.notify_rate_normal)
-                    setTextColor(id, if (selected) android.graphics.Color.WHITE else getColor(R.color.ui_text))
+                    setTextColor(id, getColor(if (selected) R.color.ui_accent else R.color.ui_text))
                     setBoolean(id, "setEnabled", enabled)
                     setContentDescription(id, "${value}Hz ${if (selected) "已选择" else "未选择"}")
                     setOnClickPendingIntent(id, pending(REFRESH + value, value))
                 }
             listOf(R.id.mode_powersave, R.id.mode_balance, R.id.mode_performance, R.id.mode_fast)
                 .zip(UperfMode.entries).forEach { (id, value) ->
-                    setTextViewText(id, "${if (value == mode) "●" else "○"}\n${value.title.first()}")
-                    setTextColor(id, getColor(value.color))
-                    setBoolean(id, "setEnabled", enabled)
+                    val dot = listOf(R.id.dot_powersave, R.id.dot_balance, R.id.dot_performance, R.id.dot_fast)[value.ordinal]
+                    setViewVisibility(dot, if (value == mode) View.VISIBLE else View.INVISIBLE)
+                    setInt(dot, "setColorFilter", getColor(value.color))
+                    setBoolean(id, "setEnabled", uperfEnabled)
                     setContentDescription(id, "${value.title} ${if (value == mode) "已选择" else "未选择"}")
                     setOnClickPendingIntent(id, pending(UPERF + value.id, 200 + value.ordinal))
                 }

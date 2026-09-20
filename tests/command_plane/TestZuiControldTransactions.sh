@@ -101,9 +101,10 @@ setup_state() {
     sleep() { :; }
     pidof() { return 0; }
     getprop() { return 0; }
-    pm() {
-        [ "$1" = path ] && [ "$2" != com.android.systemui ] || return 1
-        printf 'package:/data/app/%s/base.apk\n' "$2"
+    # These transaction fixtures isolate persistence/ACK behavior from PackageManager.
+    # Exact eligibility parser and real filesystem checks have dedicated host/device gates.
+    package_is_user_app() {
+        valid_package_name "$1" && [ "$1" != com.android.systemui ]
     }
     id() {
         [ "${1:-}" = "-u" ] && printf '0\n'

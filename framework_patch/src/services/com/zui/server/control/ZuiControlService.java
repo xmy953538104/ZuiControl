@@ -723,9 +723,6 @@ public final class ZuiControlService extends Binder {
                 && !pkg.isEmpty() && !isTransientPackage(pkg)
                 && !mRawFocusTransient && pkg.equals(mRawFocusedPackage) && user == mRawFocusedUserId
                 && !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false);
-        android.content.pm.ResolveInfo home = mPm.resolveActivity(
-                new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);
-        if (home == null || home.activityInfo == null || pkg.equals(home.activityInfo.packageName)) eligible = false;
         mMonitor.scene(pkg, user, eligible);
     }
 

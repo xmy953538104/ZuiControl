@@ -35,7 +35,7 @@ internal object UiControls {
         chip(context, mode.title, selected).apply {
             background = shape(context, if (selected) mode.color else R.color.ui_field,
                 resources.getDimension(R.dimen.ui_chip_height) / 2)
-            setTextColor(if (selected) Color.WHITE else context.getColor(mode.color))
+            setTextColor(if (selected) Color.WHITE else context.getColor(R.color.ui_text))
         }
     fun shape(context: Context, color: Int, radius: Float) = GradientDrawable().apply {
         setColor(context.getColor(color)); cornerRadius = radius
@@ -82,10 +82,10 @@ internal class AnchoredDropdown(context: Context, private val items: List<String
             setTextColor(context.getColor(R.color.ui_secondary))
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }, LayoutParams(-2, -2))
-        setSelection(0)
+        commitSelection(0)
         setOnClickListener { showChoices() }
     }
-    fun setSelection(position: Int) {
+    fun commitSelection(position: Int) {
         selectedItemPosition = position.coerceIn(items.indices)
         selectedText.text = items[selectedItemPosition]
         contentDescription = items[selectedItemPosition]
@@ -116,7 +116,10 @@ internal class AnchoredDropdown(context: Context, private val items: List<String
                         layoutParams = android.widget.AbsListView.LayoutParams(-1, rowHeight)
                     }
             }
-            setOnItemClickListener { _, _, position, _ -> setSelection(position); popup?.dismiss() }
+            setOnItemClickListener { _, _, position, _ ->
+                this@AnchoredDropdown.commitSelection(position)
+                popup?.dismiss()
+            }
         }
         popup = PopupWindow(list, width, popupHeight, true).apply {
             setBackgroundDrawable(UiControls.shape(context, R.color.ui_surface, resources.getDimension(R.dimen.ui_card_radius)))

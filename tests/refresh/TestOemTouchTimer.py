@@ -11,6 +11,21 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts/build'))
 from ApplyZuiControlPayload import patch_oem_touch_timer
 
+def payload_tree_hash(lines):
+    root = {}
+    for line in lines:
+        meta,path=line.split(b'\t');mode,_,oid=meta.split();node=root
+        parts=path.split(b'/')
+        for part in parts[:-1]:node=node.setdefault(part,{})
+        node[parts[-1]]=(mode,oid)
+    def tree(node):
+        raw=b''
+        for name,value in sorted(node.items(),key=lambda item:item[0]+(b'/' if isinstance(item[1],dict) else b'')):
+            mode,oid=(b'40000',tree(value)) if isinstance(value,dict) else (value[0].lstrip(b'0'),bytes.fromhex(value[1].decode()))
+            raw+=mode+b' '+name+b'\0'+oid
+        return hashlib.sha1(b'tree '+str(len(raw)).encode()+b'\0'+raw).digest()
+    return tree(root).hex()
+
 KEY = b'ro.surface_flinger.set_touch_timer_ms='
 PATHS = ('system_a/system/build.prop', 'vendor_a/build.prop')
 PROPERTIES = (b'ro.surface_flinger.set_idle_timer_ms=2000\n'
@@ -95,26 +110,30 @@ class OemTouchTimer(unittest.TestCase):
             if path == 'payload':
                 identity = json.loads((ROOT/'tests/monitor/package_identity_baseline.json').read_text(encoding='utf8'))
                 old = [line.encode() for line in identity['payload_entries']]
-                new = subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r','HEAD:payload']).splitlines()
+                delta=json.loads((ROOT/'tests/monitor/r7_product_delta.json').read_text(encoding='utf8'))
+                new=[]
+                for line in old:
+                    meta,name=line.split(b'\t',1)
+                    data=(ROOT/'payload'/name.decode()).read_bytes()
+                    if name==b'system/bin/zui_controld':
+                        text=data.decode().replace('\r\n','\n')
+                        self.assertEqual(text.count(delta['daemon']['after']),1)
+                        data=text.replace(delta['daemon']['after'],delta['daemon']['before'],1).encode()
+                    oid=subprocess.check_output(['git','-C',str(ROOT),'hash-object','--path=payload/'+name.decode(),'--stdin'],input=data).strip()
+                    new.append(meta.split(b' ',1)[0]+b' blob '+oid+b'\t'+name)
+                files=subprocess.check_output(['git','-C',str(ROOT),'ls-files','--cached','--others','--exclude-standard','--','payload'],text=True).splitlines()
+                self.assertEqual(sorted(files),sorted('payload/'+x.split(b'\t',1)[1].decode() for x in old))
                 self.assertEqual([x for x in old if not x.endswith(b'\tREADME.txt')],
                                  [x for x in new if not x.endswith(b'\tREADME.txt')])
                 old_doc = identity['readme_text'].encode()
-                old_blob = hashlib.sha1(b'blob '+str(len(old_doc)).encode()+b'\0'+old_doc).hexdigest()
-                top = subprocess.check_output(['git','-C',str(ROOT),'ls-tree','HEAD:payload']).splitlines()
-                raw_tree = b''
-                for line in top:
-                    meta, name = line.split(b'\t',1)
-                    mode, _, oid = meta.split()
-                    if name == b'README.txt': oid = old_blob.encode()
-                    raw_tree += mode.lstrip(b'0')+b' '+name+b'\0'+bytes.fromhex(oid.decode())
-                self.assertEqual(hashlib.sha1(b'tree '+str(len(raw_tree)).encode()+b'\0'+raw_tree).hexdigest(),tree)
+                self.assertEqual(payload_tree_hash(old),tree)
                 self.assertEqual((ROOT/'payload/README.txt').read_bytes().replace(b'\r\n',b'\n'),
-                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV64').replace(b'App V60',b'App V64'))
+                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV65').replace(b'App V60',b'App V65'))
                 continue
             actual = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD:'+path], text=True).strip()
             self.assertEqual(actual, tree, path)
         dirty = subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain', '--', *expected], text=True)
-        self.assertTrue(all(line[3:] == 'payload/README.txt' for line in dirty.splitlines()), dirty)
+        self.assertTrue(all(line[3:] in ('payload/README.txt','payload/system/bin/zui_controld') for line in dirty.splitlines()), dirty)
         allowed = {'app/src/main/java/com/zui/zuicontrol/MainActivity.kt',
                    'app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt',
                    'app/src/main/java/com/zui/zuicontrol/GpuRanges.kt',
@@ -136,12 +155,18 @@ class OemTouchTimer(unittest.TestCase):
         identity_path = 'app/build.gradle.kts'
         old = identity['gradle_text'].encode()
         current = (ROOT/identity_path).read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 64')
-            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.27"'))
+        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 65')
+            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.28"'))
         entry = next(line for line in entries if line.endswith(b'\tapp/build.gradle.kts'))
         entries.remove(entry)
         old_entry = identity['gradle_entry'].encode()
         entries.append(old_entry)
+        # R7 reverses only its exact reviewed UI/policy/HOME increment; old hashes remain.
+        stability = json.loads((ROOT/'tests/monitor/r7_product_delta.json').read_text(encoding='utf8'))
+        for delta in stability['tree']:
+            self.assertEqual(entries.count(delta['after'].encode()),1,delta['path'])
+            entries.remove(delta['after'].encode())
+            if delta['before'] is not None:entries.append(delta['before'].encode())
         # R6 reverses its exact Owner-approved App/Monitor delta to the accepted R5 tree.
         product = json.loads((ROOT/'tests/monitor/r6_product_delta.json').read_text(encoding='utf-8'))
         for delta in product['tree']:
@@ -172,7 +197,8 @@ class OemTouchTimer(unittest.TestCase):
         untracked = subprocess.check_output(['git','-C',str(ROOT),'ls-files','--others',
             '--exclude-standard','--','app','framework_patch'],text=True).splitlines()
         self.assertLessEqual(set(changed+untracked), allowed | {d['path'] for d in monitor['tree']}
-                            | {d['path'] for d in polish['tree']} | {d['path'] for d in product['tree']} | {identity_path})
+                            | {d['path'] for d in polish['tree']} | {d['path'] for d in product['tree']}
+                            | {d['path'] for d in stability['tree']} | {identity_path})
         source = (ROOT/'scripts/build/ApplyZuiControlPayload.py').read_text(encoding='utf-8')
         self.assertIn('patch_oem_touch_timer(unpack, args.dry_run, report)', source)
 

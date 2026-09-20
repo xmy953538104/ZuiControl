@@ -1,0 +1,121 @@
+{
+  "base": "115978ea4259d46eaee194a58dd0a4cd5045bd29",
+  "work_package": "V23_PRODUCT_STABILITY_UI_NOTIFICATION_R7",
+  "tree": [
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "before": "100644 blob 81bd9c9ef8a57e3cf3ecbe371c51c8c812e6db10\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob a98596e9b62ea9a9372442f2f3805d3d4f22a407\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "before": "100644 blob b0f063b944ef75f4b00a9999c8b9fa5fb712faaf\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "after": "100644 blob 83833ae4def98d8ff60914602561c1694724dc2c\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
+      "before": "100644 blob f9b24f43feb88c992259f01cb5795acab1a03cdf\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
+      "after": "100644 blob c4e46688a49746cf0d6333dc9a9faac55cccf204\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/UiControls.kt",
+      "before": "100644 blob 762b6d57d2aff59ea73371335d8ce2546d6e9937\tapp/src/main/java/com/zui/zuicontrol/UiControls.kt",
+      "after": "100644 blob bb932f4d8da85e282491a535a9668dc6338c736c\tapp/src/main/java/com/zui/zuicontrol/UiControls.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/UperfAppPolicy.kt",
+      "before": null,
+      "after": "100644 blob 2b9b58bb150d30e35722905866c8a7d134039c42\tapp/src/main/java/com/zui/zuicontrol/UperfAppPolicy.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
+      "before": "100644 blob 34e35560fdfa11fde0deef6cdffd6b67b17d8db2\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
+      "after": "100644 blob e9a287f882ee9b915dec1d24c570379ea682e57e\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_nav_performance.xml",
+      "before": "100644 blob 31b0061088fb13bcd210334effc98d98b617508c\tapp/src/main/res/drawable/ic_nav_performance.xml",
+      "after": "100644 blob fd0bdc935c483bd4f14117d8b70912dca5cda300\tapp/src/main/res/drawable/ic_nav_performance.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_tool_export.xml",
+      "before": null,
+      "after": "100644 blob efffa2b444164a572c709b4e176b72f4ccd855ea\tapp/src/main/res/drawable/ic_tool_export.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_tool_monitor.xml",
+      "before": null,
+      "after": "100644 blob e8a210ff879b37204df3f62d0a3fb270fd5efeae\tapp/src/main/res/drawable/ic_tool_monitor.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_tool_range.xml",
+      "before": null,
+      "after": "100644 blob d8f5e7e18bbe3bfe8bb9e21c34458b07be144343\tapp/src/main/res/drawable/ic_tool_range.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_tool_records.xml",
+      "before": null,
+      "after": "100644 blob 0a4be246298581107d4fa35f976facb898642f9c\tapp/src/main/res/drawable/ic_tool_records.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_dot.xml",
+      "before": null,
+      "after": "100644 blob 9da404d50646357b94268598dd3d1f82fe25d500\tapp/src/main/res/drawable/notify_mode_dot.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_monitor_active.xml",
+      "before": null,
+      "after": "100644 blob 8b3012be28e16de96c0e815ce0270f8795964d17\tapp/src/main/res/drawable/notify_monitor_active.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_monitor_off.xml",
+      "before": null,
+      "after": "100644 blob 1777c50a002e87e2c953637f2f1e337e6bb7bcac\tapp/src/main/res/drawable/notify_monitor_off.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_rate_normal.xml",
+      "before": "100644 blob 144e12b7d77aa1543b04ad165dc12c53f5f111c5\tapp/src/main/res/drawable/notify_rate_normal.xml",
+      "after": "100644 blob d49d0dfcce88d0b1da94250568a1e79ac1c9aa51\tapp/src/main/res/drawable/notify_rate_normal.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_rate_selected.xml",
+      "before": "100644 blob c87afd8637cf5185a1e0b82f608fc7690dde4630\tapp/src/main/res/drawable/notify_rate_selected.xml",
+      "after": "100644 blob c2570ee8b3ff5222068a1f589366a6b30cd122a0\tapp/src/main/res/drawable/notify_rate_selected.xml"
+    },
+    {
+      "path": "app/src/main/res/layout/notification_zuicontrol.xml",
+      "before": "100644 blob 34a1b9ac6e13e7f85d42bffe1fd7d83b46af5567\tapp/src/main/res/layout/notification_zuicontrol.xml",
+      "after": "100644 blob 224c70d6c59026f512b944558a668d18d564da80\tapp/src/main/res/layout/notification_zuicontrol.xml"
+    },
+    {
+      "path": "app/src/main/res/values/styles.xml",
+      "before": "100644 blob bbf5a283880fd1346741af434428280e8a707b2b\tapp/src/main/res/values/styles.xml",
+      "after": "100644 blob 77a576109829dff520453eeab046307dac1849f2\tapp/src/main/res/values/styles.xml"
+    },
+    {
+      "path": "app/src/main/res/values/ui_tokens.xml",
+      "before": "100644 blob 316ba99e11d48cfc0f12c1004a1f9bb34e498c85\tapp/src/main/res/values/ui_tokens.xml",
+      "after": "100644 blob ac8455a469a35444bb26cb1dab22091eecaa0ccb\tapp/src/main/res/values/ui_tokens.xml"
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/UperfAppPolicyTest.kt",
+      "before": null,
+      "after": "100644 blob bd83aaa47bf5b06779d1882c55cf1a1063358c4f\tapp/src/test/java/com/zui/zuicontrol/UperfAppPolicyTest.kt"
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "before": "100644 blob c2f3b8861409cb1d3746520f42650e0be30d3ee9\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "after": "100644 blob ff4137aea2178420b2893a35c3d9040ab3dfe3fe\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java"
+    }
+  ],
+  "service": [
+    {
+      "before": "    private synchronized void refreshMonitor() {\n        String pkg = mTopResumedState.stablePackage();\n        int user = mTopResumedState.stableUserId();\n        android.app.KeyguardManager lock = mContext.getSystemService(android.app.KeyguardManager.class);\n        boolean eligible = user == mMonitorClientUser && !mGpuSystemUi && mScreenInteractive && lock != null && !lock.isKeyguardLocked()\n                && !pkg.isEmpty() && !isTransientPackage(pkg)\n                && !mRawFocusTransient && pkg.equals(mRawFocusedPackage) && user == mRawFocusedUserId\n                && !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false);\n        android.content.pm.ResolveInfo home = mPm.resolveActivity(\n                new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);\n        if (home == null || home.activityInfo == null || pkg.equals(home.activityInfo.packageName)) eligible = false;\n        mMonitor.scene(pkg, user, eligible);\n    }\n",
+      "after": "    private synchronized void refreshMonitor() {\n        String pkg = mTopResumedState.stablePackage();\n        int user = mTopResumedState.stableUserId();\n        android.app.KeyguardManager lock = mContext.getSystemService(android.app.KeyguardManager.class);\n        boolean eligible = user == mMonitorClientUser && !mGpuSystemUi && mScreenInteractive && lock != null && !lock.isKeyguardLocked()\n                && !pkg.isEmpty() && !isTransientPackage(pkg)\n                && !mRawFocusTransient && pkg.equals(mRawFocusedPackage) && user == mRawFocusedUserId\n                && !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false);\n        mMonitor.scene(pkg, user, eligible);\n    }\n"
+    }
+  ],
+  "daemon": {
+    "before": "package_is_user_app() {\n    apk=\"$(pm path \"$1\" </dev/null 2>/dev/null | sed -n 's/^package://p' | head -n 1)\"\n    case \"$apk\" in /data/app/*) return 0 ;; esac\n    return 1\n}\n\n",
+    "after": "# UPERF_CONFIGURABLE_APP: exact mirror of UperfAppPolicy; see docs contract.\nuperf_apk_path_allowed() {\n    case \"$1\" in\n        \"\"|*[!A-Za-z0-9_./+=~-]*|*//*|*/./*|*/../*) return 1 ;;\n    esac\n    case \"$1\" in /data/app/?*.apk|/system/preinstall/?*.apk) return 0 ;; esac\n    return 1\n}\n\nuperf_launchable_query_allowed() {\n    awk -v pkg=\"$1\" '\n        $1 == \"ActivityInfo:\" {section=1; activities++; next}\n        $1 == \"ApplicationInfo:\" {section=2; applications++; next}\n        {\n            for (i=1;i<=NF;i++) {\n                if ($i ~ /^packageName=/) {\n                    if (section == 1) {activityPackage++; if ($i != \"packageName=\" pkg) bad=1}\n                    if (section == 2) {appPackage++; if ($i != \"packageName=\" pkg) bad=1}\n                }\n                if ($i ~ /^enabled=/) {\n                    if (section == 1) activityEnabled++\n                    if (section == 2) appEnabled++\n                    if ($i != \"enabled=true\") bad=1\n                }\n                if (section == 1 && $i ~ /^exported=/) {\n                    exported++; if ($i != \"exported=true\") bad=1\n                }\n            }\n        }\n        END {exit !(activities==1 && applications==1 && activityPackage==1 &&\n            appPackage==1 && activityEnabled==1 && appEnabled==1 && exported==1 && !bad)}\n    '\n}\n\npackage_is_user_app() (\n    valid_package_name \"$1\" || return 1\n    case \"$1\" in android|com.android.systemui|com.zui.zuicontrol) return 1 ;; esac\n    case \"$1\" in *.*) ;; *) return 1 ;; esac\n    paths=\"$(timeout 5 pm path --user current \"$1\" </dev/null 2>/dev/null)\" || return 1\n    [ -n \"$paths\" ] || return 1\n    while IFS= read -r line; do\n        case \"$line\" in package:*) apk=\"${line#package:}\" ;; *) return 1 ;; esac\n        uperf_apk_path_allowed \"$apk\" || return 1\n        [ -f \"$apk\" ] && [ \"$(readlink -f \"$apk\" 2>/dev/null)\" = \"$apk\" ] || return 1\n    done <<EOF_UPERF_PATHS\n$paths\nEOF_UPERF_PATHS\n    launch=\"$(timeout 5 cmd package resolve-activity --user current -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p \"$1\" </dev/null 2>/dev/null)\" || return 1\n    printf '%s\\n' \"$launch\" | uperf_launchable_query_allowed \"$1\"\n)\n\n"
+  }
+}

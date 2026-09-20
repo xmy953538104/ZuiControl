@@ -93,7 +93,11 @@ class PerformanceRecordActivity : Activity() {
             else -> showDetail(content, data)
         }
         val max = if (pkg.isEmpty()) 880 else 760
-        val scroll = ScrollView(this).apply { isFillViewport = false; addView(content) }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = false
+            addView(content)
+        }
         setContentView(FrameLayout(this).apply {
             setBackgroundColor(getColor(R.color.ui_field))
             addView(scroll, FrameLayout.LayoutParams(minOf(resources.displayMetrics.widthPixels, dp(max)), -1, Gravity.CENTER_HORIZONTAL))

@@ -91,11 +91,56 @@ valid_package_name() {
     return 0
 }
 
-package_is_user_app() {
-    apk="$(pm path "$1" </dev/null 2>/dev/null | sed -n 's/^package://p' | head -n 1)"
-    case "$apk" in /data/app/*) return 0 ;; esac
+# UPERF_CONFIGURABLE_APP: exact mirror of UperfAppPolicy; see docs contract.
+uperf_apk_path_allowed() {
+    case "$1" in
+        ""|*[!A-Za-z0-9_./+=~-]*|*//*|*/./*|*/../*) return 1 ;;
+    esac
+    case "$1" in /data/app/?*.apk|/system/preinstall/?*.apk) return 0 ;; esac
     return 1
 }
+
+uperf_launchable_query_allowed() {
+    awk -v pkg="$1" '
+        $1 == "ActivityInfo:" {section=1; activities++; next}
+        $1 == "ApplicationInfo:" {section=2; applications++; next}
+        {
+            for (i=1;i<=NF;i++) {
+                if ($i ~ /^packageName=/) {
+                    if (section == 1) {activityPackage++; if ($i != "packageName=" pkg) bad=1}
+                    if (section == 2) {appPackage++; if ($i != "packageName=" pkg) bad=1}
+                }
+                if ($i ~ /^enabled=/) {
+                    if (section == 1) activityEnabled++
+                    if (section == 2) appEnabled++
+                    if ($i != "enabled=true") bad=1
+                }
+                if (section == 1 && $i ~ /^exported=/) {
+                    exported++; if ($i != "exported=true") bad=1
+                }
+            }
+        }
+        END {exit !(activities==1 && applications==1 && activityPackage==1 &&
+            appPackage==1 && activityEnabled==1 && appEnabled==1 && exported==1 && !bad)}
+    '
+}
+
+package_is_user_app() (
+    valid_package_name "$1" || return 1
+    case "$1" in android|com.android.systemui|com.zui.zuicontrol) return 1 ;; esac
+    case "$1" in *.*) ;; *) return 1 ;; esac
+    paths="$(timeout 5 pm path --user current "$1" </dev/null 2>/dev/null)" || return 1
+    [ -n "$paths" ] || return 1
+    while IFS= read -r line; do
+        case "$line" in package:*) apk="${line#package:}" ;; *) return 1 ;; esac
+        uperf_apk_path_allowed "$apk" || return 1
+        [ -f "$apk" ] && [ "$(readlink -f "$apk" 2>/dev/null)" = "$apk" ] || return 1
+    done <<EOF_UPERF_PATHS
+$paths
+EOF_UPERF_PATHS
+    launch="$(timeout 5 cmd package resolve-activity --user current -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p "$1" </dev/null 2>/dev/null)" || return 1
+    printf '%s\n' "$launch" | uperf_launchable_query_allowed "$1"
+)
 
 valid_uperf_preset() {
     case "$1" in
