@@ -291,7 +291,9 @@ jobs:
           printf '%s' "${{ secrets.KEYSTORE }}" | base64 -d > "$RUNNER_TEMP/ZuiControl-release.jks"
 
       - name: Test app
-        run: gradle -p . :app:testDebugUnitTest :app:lintDebug
+        run: |
+          gradle -p . :app:testDebugUnitTest :app:lintDebug
+          python3 tests/gpu/TestGpuTouch.py
 
       - name: Compile exact services extension and test scheduler health
         shell: bash

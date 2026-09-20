@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlin.math.abs
@@ -32,6 +33,11 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
     private fun track() = GpuRanges.track(width.toFloat(), widestLabel, 8f * unit)
     private var minimumThumb = true
     private var beforeDrag = initial
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var downX = 0f
+    private var downY = 0f
+    private var trackingTouch = false
+    private var dragging = false
     init { isFocusable = true; isClickable = true; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES; describe() }
     private fun x(mhz: Int) = track().x(mhz)
     private fun describe() {
@@ -67,24 +73,43 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
         if (!isEnabled) return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                trackingTouch = false; dragging = false
+                // Labels/blank space belong to the containing scroll view, not the range.
+                if (abs(event.y - 20f * unit) > 20f * unit) return false
                 beforeDrag = range
+                downX = event.x; downY = event.y; trackingTouch = true
                 minimumThumb = if (range.min == range.max) event.x <= x(range.min)
                     else abs(event.x - x(range.min)) <= abs(event.x - x(range.max))
-                requestFocus(); parent?.requestDisallowInterceptTouchEvent(true)
+                requestFocus()
             }
-            MotionEvent.ACTION_CANCEL -> { range = beforeDrag; parent?.requestDisallowInterceptTouchEvent(false); return true }
-            // MOVE has no callback/description/layout/persistence path. Labels are drawn locally.
-            MotionEvent.ACTION_MOVE -> { preview(track().snap(event.x)); return true }
-            MotionEvent.ACTION_UP -> Unit
+            MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> {
+                if (!trackingTouch) return false
+                range = beforeDrag; trackingTouch = false; dragging = false
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            // Take ownership only after horizontal intent; vertical scrolling never previews.
+            MotionEvent.ACTION_MOVE -> {
+                if (!trackingTouch) return false
+                if (!dragging) {
+                    val dx = abs(event.x - downX); val dy = abs(event.y - downY)
+                    if (dy > touchSlop && dy >= dx) { trackingTouch = false; return false }
+                    if (dx <= touchSlop || dx <= dy) return true
+                    dragging = true; parent?.requestDisallowInterceptTouchEvent(true)
+                }
+                preview(track().snap(event.x))
+            }
+            MotionEvent.ACTION_UP -> {
+                if (!trackingTouch) return false
+                if (dragging) preview(track().snap(event.x))
+                val changed = dragging && range != beforeDrag
+                trackingTouch = false; dragging = false
+                parent?.requestDisallowInterceptTouchEvent(false)
+                describe()
+                if (changed) onCommit(range)
+                super.performClick() // Announce the selected thumb without toggling it.
+                sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SELECTED)
+            }
             else -> return false
-        }
-        preview(track().snap(event.x))
-        if (event.actionMasked == MotionEvent.ACTION_UP) {
-            parent?.requestDisallowInterceptTouchEvent(false)
-            describe()
-            if (range != beforeDrag) onCommit(range)
-            super.performClick() // Touch emits click accessibility semantics without changing active thumb.
-            sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SELECTED)
         }
         return true
     }

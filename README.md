@@ -23,6 +23,7 @@ JDK 17, Android SDK 35, and Gradle 9.3.1 are expected.
 
 ```powershell
 gradle -p . :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+python tests/gpu/TestGpuTouch.py
 powershell -NoProfile -File scripts/build/BuildZuiControl.ps1 -Configuration Debug
 ```
 

@@ -9,16 +9,18 @@ def source(name): return (APP/name).read_text(encoding='utf8')
 class UiPolish(unittest.TestCase):
     def test_move_returns_before_commit_and_preview_is_local(self):
         text = source('GpuRangeBar.kt')
-        move = re.search(r'MotionEvent.ACTION_MOVE -> \{([^}]+)\}', text)[1].strip()
-        self.assertEqual(move, 'preview(track().snap(event.x)); return true')
+        move = text.split('MotionEvent.ACTION_MOVE -> {', 1)[1].split('MotionEvent.ACTION_UP -> {', 1)[0]
+        for forbidden in ('onCommit', 'onPreview', 'describe(', 'requestLayout', 'ZuiControlClient', 'range ='):
+            self.assertNotIn(forbidden, move)
+        self.assertIn('preview(track().snap(event.x))', move)
         preview = text.split('private fun preview(value: Int) {', 1)[1].split('override fun onTouchEvent', 1)[0]
         for forbidden in ('onCommit', 'onPreview', 'describe(', 'requestLayout', 'Thread', 'ZuiControlClient', 'range =', 'setContentDescription'):
             self.assertNotIn(forbidden, preview)
         self.assertIn('currentRange = next; postInvalidateOnAnimation()', preview)
         touch = text.split('override fun onTouchEvent', 1)[1].split('override fun performClick', 1)[0]
         self.assertEqual(touch.count('onCommit(range)'), 1)
-        self.assertIn('if (event.actionMasked == MotionEvent.ACTION_UP)', touch)
-        self.assertIn('if (range != beforeDrag) onCommit(range)', touch)
+        self.assertIn('val changed = dragging && range != beforeDrag', touch)
+        self.assertIn('if (changed) onCommit(range)', touch)
         self.assertLess(touch.index('MotionEvent.ACTION_MOVE'), touch.index('onCommit(range)'))
         for forbidden in ('requestLayout', 'setGpuRange', 'setGlobalGpuRange', 'onPreview'):
             self.assertNotIn(forbidden, text)

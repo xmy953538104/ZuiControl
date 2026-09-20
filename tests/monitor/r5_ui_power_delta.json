@@ -5,7 +5,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
       "before": "100644 blob 69bcf0a5de72028c3eb2b703360b26e8342456d1\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
-      "after": "100644 blob b5db5f21c72ae70f09d3fefd2b5c60176cb8d8e5\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt"
+      "after": "100644 blob 9678f5bcb4a7760d4b09ea2b5852df9ef9964c74\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/LivePower.kt",
