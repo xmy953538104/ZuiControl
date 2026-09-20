@@ -5,7 +5,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
       "before": "100644 blob 69bcf0a5de72028c3eb2b703360b26e8342456d1\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
-      "after": "100644 blob 9678f5bcb4a7760d4b09ea2b5852df9ef9964c74\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt"
+      "after": "100644 blob d4189895da75198799f4df3b29d451f91dc522c6\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/LivePower.kt",
@@ -15,7 +15,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob 87dcefc3cd65392d22082a78cac6e2a8fadb8f9b\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob a7f24f15979e8e3eae49b006ede17267c777ee7d\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob 166d8a235e452c33fa1f5ec0c7e9d7750dc16a85\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
@@ -35,7 +35,7 @@
     {
       "path": "app/src/main/res/values/ui_tokens.xml",
       "before": null,
-      "after": "100644 blob 209a60e984c8ff005438c84ac458120218899a0c\tapp/src/main/res/values/ui_tokens.xml"
+      "after": "100644 blob d3b635a427e8e589117662de7f8539b27eb12214\tapp/src/main/res/values/ui_tokens.xml"
     },
     {
       "path": "app/src/test/java/com/zui/zuicontrol/LivePowerTest.kt",

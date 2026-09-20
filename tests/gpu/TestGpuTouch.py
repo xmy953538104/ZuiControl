@@ -39,6 +39,7 @@ class UnderTest(initial: GpuRanges.Range) : HostView() {
         set(v) { currentRange=v }
     var commits=0; var onCommit: (GpuRanges.Range)->Unit = { commits++ }
     private val unit=1f
+    private val trackCenterY=20f
     private fun track()=GpuRanges.Track(0f,1100f)
     private fun x(mhz:Int)=track().x(mhz)
     private fun describe() {}

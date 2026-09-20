@@ -355,6 +355,7 @@ class MainActivity : Activity() {
         addView(bar, LinearLayout.LayoutParams(0, bar.preferredHeight, 1f))
         addView(reset, LinearLayout.LayoutParams(-2, dimen(R.dimen.ui_chip_height)).apply {
             marginStart = dimen(R.dimen.ui_row_gap)
+            gravity = Gravity.TOP; topMargin = bar.chipTopMargin
         })
         update()
     }
@@ -378,6 +379,7 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
                 addView(chip(mode.title), LinearLayout.LayoutParams(-2, dimen(R.dimen.ui_chip_height)).apply {
                     marginEnd = dimen(R.dimen.ui_row_gap)
+                    gravity = Gravity.TOP; topMargin = bar.chipTopMargin
                 })
                 addView(bar, LinearLayout.LayoutParams(0, bar.preferredHeight, 1f))
             }, cardMargins())

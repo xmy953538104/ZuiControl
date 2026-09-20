@@ -23,6 +23,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
     var onCommit: (GpuRanges.Range) -> Unit = {}
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val unit = resources.displayMetrics.density
+    private val trackCenterY = resources.getDimension(R.dimen.gpu_track_center_y)
     private val accent = context.getColor(R.color.ui_accent)
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = context.getColor(R.color.ui_secondary); textAlign = Paint.Align.CENTER
@@ -30,6 +31,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
     }
     private val widestLabel = GpuRanges.opps.maxOf { labelPaint.measureText("${it}MHz") }
     val preferredHeight: Int get() = (40f * unit + 2f * labelPaint.fontSpacing + 0.5f).toInt()
+    val chipTopMargin: Int get() = (trackCenterY - resources.getDimension(R.dimen.ui_chip_height) / 2).toInt().coerceAtLeast(0)
     private fun track() = GpuRanges.track(width.toFloat(), widestLabel, 8f * unit)
     private var minimumThumb = true
     private var beforeDrag = initial
@@ -45,7 +47,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
     }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val y = 20f * unit
+        val y = trackCenterY
         paint.strokeWidth = 4 * unit; paint.strokeCap = Paint.Cap.ROUND
         paint.color = 0xffd5dde5.toInt(); canvas.drawLine(x(231), y, x(903), y, paint)
         paint.color = accent; canvas.drawLine(x(range.min), y, x(range.max), y, paint)
@@ -75,7 +77,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
             MotionEvent.ACTION_DOWN -> {
                 trackingTouch = false; dragging = false
                 // Labels/blank space belong to the containing scroll view, not the range.
-                if (abs(event.y - 20f * unit) > 20f * unit) return false
+                if (abs(event.y - trackCenterY) > trackCenterY) return false
                 beforeDrag = range
                 downX = event.x; downY = event.y; trackingTouch = true
                 minimumThumb = if (range.min == range.max) event.x <= x(range.min)

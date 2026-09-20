@@ -17,6 +17,7 @@
     <dimen name="ui_dropdown_padding">4dp</dimen>
     <dimen name="ui_dropdown_max_height">288dp</dimen>
     <dimen name="ui_tool_height">68dp</dimen>
+    <dimen name="gpu_track_center_y">20dp</dimen>
     <dimen name="monitor_bar_height">29dp</dimen>
     <dimen name="monitor_bar_padding">10dp</dimen>
     <dimen name="monitor_metric_gap">11dp</dimen>
