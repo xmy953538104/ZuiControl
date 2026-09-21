@@ -20,7 +20,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
       "before": "100644 blob 83833ae4def98d8ff60914602561c1694724dc2c\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
-      "after": "100644 blob a85b3bb141a66a5b9f281ae74088c63a63b89510\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt"
+      "after": "100644 blob 3a2f177f7e565648885c7713605e99a0ad3b3444\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/QuickControlTrace.kt",

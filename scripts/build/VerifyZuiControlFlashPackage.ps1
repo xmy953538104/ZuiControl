@@ -27,8 +27,8 @@ $ExtractErofs = Join-Path $ToolsDir 'super-tools\AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'smali-apk\apktool.jar'
 $Avbtool = Join-Path $ToolsDir 'avb\downloaded\avbtool_aosp_c0af371_1.2.0.py'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '66'
-$ExpectedVersionName = '0.21.29'
+$ExpectedVersionCode = '67'
+$ExpectedVersionName = '0.21.30'
 $ExpectedUperfSha256 = 'f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8'
 $ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371'
 $ExpectedBuildFingerprintMarker = 'ZUI_16.1.11.072_241118_PRC'
@@ -455,11 +455,11 @@ try {
     $System = Join-Path $SystemRoot 'system'
     $PlatSelinux = Join-Path $System 'etc\selinux'
     $VendorSelinux = Join-Path $VendorRoot 'etc\selinux'
-    $AppApk = Join-Path $System 'priv-app\ZuiControlV66\ZuiControl.apk'
+    $AppApk = Join-Path $System 'priv-app\ZuiControlV67\ZuiControl.apk'
     $packageDirs = @(Get-ChildItem -LiteralPath (Join-Path $System 'priv-app') -Directory |
         Where-Object { $_.Name -match '^ZuiControlV\d+$' })
-    if ($packageDirs.Count -ne 1 -or $packageDirs[0].Name -ne 'ZuiControlV66') {
-        throw 'Expected exactly one ZuiControlV66 system package directory.'
+    if ($packageDirs.Count -ne 1 -or $packageDirs[0].Name -ne 'ZuiControlV67') {
+        throw 'Expected exactly one ZuiControlV67 system package directory.'
     }
     $Daemon = Join-Path $System 'bin\zui_controld'
     $Uperf = Join-Path $System 'bin\uperf'

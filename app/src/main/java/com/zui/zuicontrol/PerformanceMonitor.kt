@@ -286,7 +286,8 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
         }
         fun cancelGesture() {
             if (down >= 0 && !completed) command("cancelArm")
-            handler.removeCallbacks(commit); gesture.cancel()
+            // View.handler is null after detach; the controller owns this timer.
+            this@PerformanceMonitor.handler.removeCallbacks(commit); gesture.cancel()
             if (attached) state(if (recording()) "RECORDING" else if (circle) "CIRCLE" else "LONG_BAR")
             invalidate()
         }
@@ -296,7 +297,7 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
                 MotionEvent.ACTION_DOWN -> {
                     x0=event.rawX;y0=event.rawY
                     gesture.press(SystemClock.elapsedRealtime())
-                    if (circle && !recording() && command("arm").startsWith("ok=1")) handler.postDelayed(commit,2000)
+                    if (circle && !recording() && command("arm").startsWith("ok=1")) this@PerformanceMonitor.handler.postDelayed(commit,2000)
                     if (circle && !recording()) state("ARMING")
                     invalidate()
                 }
@@ -307,7 +308,7 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
                     if (!moved && !completed && down >= 0 && circle && !recording()
                         && SystemClock.elapsedRealtime()-down >= 2000) commit.run()
                     val short = gesture.shortRelease(SystemClock.elapsedRealtime())
-                    handler.removeCallbacks(commit)
+                    this@PerformanceMonitor.handler.removeCallbacks(commit)
                     if (!short && !completed && !recording()) command("cancelArm")
                     if (short) performClick()
                     gesture.release(SystemClock.elapsedRealtime());update()
