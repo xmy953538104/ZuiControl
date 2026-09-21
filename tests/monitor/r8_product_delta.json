@@ -52,5 +52,11 @@
       "before": "100644 blob ff4137aea2178420b2893a35c3d9040ab3dfe3fe\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
       "after": "100644 blob 5086afd858689c370d0af778960860c5219a62c3\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java"
     }
+  ],
+  "service": [
+    {
+      "before": "        boolean eligible = user == mMonitorClientUser && !mGpuSystemUi && mScreenInteractive && lock != null && !lock.isKeyguardLocked()\n                && !pkg.isEmpty() && !isTransientPackage(pkg)\n                && !mRawFocusTransient && pkg.equals(mRawFocusedPackage) && user == mRawFocusedUserId\n                && !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false);\n        mMonitor.scene(pkg, user, eligible);\n",
+      "after": "        boolean eligible = user == mMonitorClientUser && mScreenInteractive && lock != null && !lock.isKeyguardLocked()\n                && !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false);\n        // Visibility follows screen lifecycle; recording still requires the actual target App.\n        // Keep editableScene, Refresh and Uperf transient-focus policy unchanged.\n        boolean recordEligible = eligible && !pkg.isEmpty() && !mGpuSystemUi && !mImeVisible\n                && (!isTransientPackage(pkg) || \"com.zui.zuicontrol\".equals(pkg))\n                && pkg.equals(mRawFocusedPackage) && user == mRawFocusedUserId;\n        mMonitor.scene(pkg, user, eligible, recordEligible);\n"
+    }
   ]
 }
