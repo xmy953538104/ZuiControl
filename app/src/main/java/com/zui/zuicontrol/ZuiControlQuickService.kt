@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.database.ContentObserver
 import android.os.Handler
 import android.os.IBinder
@@ -15,13 +16,16 @@ import android.provider.Settings
 import android.view.View
 import android.widget.RemoteViews
 import android.widget.Toast
+import java.io.FileDescriptor
+import java.io.PrintWriter
 
 /** Event-driven controller over the existing scene, profiles and Monitor desired mode. */
 class ZuiControlQuickService : Service() {
     private var monitor: PerformanceMonitor? = null
     private val handler = Handler(Looper.getMainLooper())
     private var commandInFlight = false
-    private val update = Runnable { refreshNotification() }
+    private var refreshPosted = false
+    private val update = Runnable { refreshPosted = false; refreshNotification() }
     private val observer = object : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean) { requestRefresh() }
     }
@@ -55,23 +59,31 @@ class ZuiControlQuickService : Service() {
             }
             action.startsWith(REFRESH) -> {
                 val rate = action.removePrefix(REFRESH).toIntOrNull()
+                val trace = QuickControlTrace.begin("Refresh",rate.toString())
                 if (rate in ZuiControlContract.rates) mutate {
+                    val scene = ZuiControlClient.currentSceneText()
+                    QuickControlTrace.target(trace,ZuiControlClient.stateValue(scene,"editableScenePackage").orEmpty())
                     // Same transaction as the accepted current-scene Refresh control.
                     val reply = ZuiControlClient.setCurrentSceneDisplayHz(rate!!)
                     check(reply.ok) { reply.text }
+                    QuickControlTrace.mark(trace,"T2","profile_transaction_committed")
                 }
             }
             action.startsWith(UPERF) -> {
                 val mode = UperfMode.fromId(action.removePrefix(UPERF))
+                val trace = QuickControlTrace.begin("Uperf",mode?.id.orEmpty())
                 if (mode != null) mutate {
                     // Read the accepted editable scene at this action, never shade focus or a cache.
                     val scene = ZuiControlClient.currentSceneText()
                     val pkg = ZuiControlClient.stateValue(scene, "editableScenePackage").orEmpty()
+                    QuickControlTrace.target(trace,pkg)
                     check(UperfAppPolicy.isConfigurable(packageManager, pkg)) { "当前应用不支持性能配置" }
                     val request = ZuiControlRequest.send(this, ZuiControlContract.CMD_SET_UPERF_APP,
                         pkg = pkg, mode = mode.id)
+                    QuickControlTrace.mark(trace,"dispatch",request)
                     val ack = ZuiControlRequest.awaitTerminalAck(this, request)
                     check(ack.succeeded) { ack.detail }
+                    QuickControlTrace.mark(trace,"terminalAck",ack.detail)
                 }
             }
         }
@@ -91,18 +103,29 @@ class ZuiControlQuickService : Service() {
         }.start()
     }
     private fun errorToast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-    private fun requestRefresh() { handler.removeCallbacks(update); handler.postDelayed(update, 80) }
-    private fun refreshNotification() = getSystemService(NotificationManager::class.java).notify(ID, notification())
+    private fun requestRefresh() {
+        if (refreshPosted) return
+        refreshPosted = true
+        handler.post(update)
+    }
+    private fun refreshNotification() {
+        var trace = 0L
+        val content = notification { pkg,rate,mode -> trace = QuickControlTrace.observed(pkg,rate,mode,"T2") }
+        getSystemService(NotificationManager::class.java).notify(ID, content)
+        QuickControlTrace.mark(trace,"T3","NotificationManager.notify_returned_logical_state")
+    }
     private fun setting(key: String) = Settings.System.getString(contentResolver, key).orEmpty()
     private fun pending(action: String, request: Int) = PendingIntent.getService(this, request,
         Intent(this, ZuiControlQuickService::class.java).setAction(action),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-    private fun notification(): Notification {
+    @Suppress("DEPRECATION")
+    private fun notification(onState: ((String, Int, String) -> Unit)? = null): Notification {
         val scene = ZuiControlClient.currentSceneText()
         val pkg = ZuiControlClient.stateValue(scene, "editableScenePackage").orEmpty()
         val rate = ZuiControlClient.stateValue(scene, "editableDisplayHz")?.toIntOrNull() ?: 0
         val mode = UperfMode.resolve(setting(ZuiControlContract.KEY_UPERF_MODE),
             setting(ZuiControlContract.KEY_UPERF_RULES_TEXT), pkg)
+        onState?.invoke(pkg,rate,mode.id)
         val desired = ZuiControlClient.stateValue(PerformanceMonitor.command("state"), "monitorMode") == "1"
         val enabled = PackageNames.isValid(pkg)
         val uperfEnabled = UperfAppPolicy.isConfigurable(packageManager, pkg)
@@ -132,11 +155,22 @@ class ZuiControlQuickService : Service() {
                 }
         }
         return Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_zuicontrol)
-            .setContentTitle("ZuiControl").setCustomContentView(content).setOngoing(true)
+            .setContentTitle("ZuiControl").setContent(content).setOngoing(true)
             .setOnlyAlertOnce(true).setShowWhen(false).setLocalOnly(true)
             .setCategory(Notification.CATEGORY_SERVICE).build()
     }
     override fun onBind(intent: Intent?): IBinder? = null
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        monitor?.environmentChanged()
+    }
+    override fun dump(fd: FileDescriptor, writer: PrintWriter, args: Array<out String>) {
+        args.firstOrNull { it.startsWith("--trace-seconds=") }?.substringAfter('=')?.toIntOrNull()?.let {
+            QuickControlTrace.enable(it); monitor?.trace(it)
+        }
+        writer.println("quickCommandInFlight=$commandInFlight refreshPosted=$refreshPosted")
+        monitor?.dump(writer); QuickControlTrace.dump(writer)
+    }
     override fun onDestroy() {
         contentResolver.unregisterContentObserver(observer)
         monitor?.close(); monitor = null

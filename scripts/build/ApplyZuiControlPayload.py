@@ -13,7 +13,7 @@ from datetime import datetime
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
-APP_APK_PATH = "system/priv-app/ZuiControlV65/ZuiControl.apk"
+APP_APK_PATH = "system/priv-app/ZuiControlV66/ZuiControl.apk"
 LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -189,7 +189,7 @@ def copy_payload(payload, unpack, dry_run, report):
     for base in (payload / "system/priv-app", unpack / "system_a/system/priv-app"):
         if base.is_dir():
             for path in base.iterdir():
-                if re.fullmatch(r"ZuiControlV\d+", path.name) and path.name != "ZuiControlV65":
+                if re.fullmatch(r"ZuiControlV\d+", path.name) and path.name != "ZuiControlV66":
                     raise SystemExit("Stale ZuiControl package directory: " + str(path))
     copied = []
     metadata = []
@@ -499,24 +499,7 @@ def terminal_framework(root, manifest_path):
             manager = bound(manifest["ci_manager_extension"])
             if set(final) != set(after) or final.get("classes6.dex") != manager:
                 raise SystemExit("GPU product manager identity mismatch")
-            allowed_members = {"classes6.dex"}
-            if "notification_qualification" in manifest:
-                from NotificationProofTransforms import ORIGINAL_DEX_SHA
-                notification_dex = bound(manifest["notification_patched_dex"])
-                qualification = json.loads(bound(manifest["notification_qualification"]))
-                expected_notification = dict(schema="ZUI_NOTIFICATION_CONTROLLER_V1",
-                    original_dex_sha256=ORIGINAL_DEX_SHA,
-                    patched_dex_sha256=hashlib.sha256(notification_dex).hexdigest(),
-                    changed_method="android.app.Notification$Builder.fullyCustomViewRequiresDecoration(Z)Z",
-                    target_sdk=35, package="com.zui.zuicontrol", channel="zui_control_monitor_v1",
-                    require_system_app=True, systemui_changed=False,
-                    transform_sha256=hashlib.sha256((root/"scripts/build/NotificationProofTransforms.py").read_bytes()).hexdigest())
-                if any(qualification.get(k) != v for k,v in expected_notification.items()):
-                    raise SystemExit("Notification controller qualification mismatch")
-                if hashlib.sha256(after["classes.dex"]).hexdigest() != ORIGINAL_DEX_SHA or final.get("classes.dex") != notification_dex:
-                    raise SystemExit("Notification controller DEX identity mismatch")
-                allowed_members.add("classes.dex")
-            if any(final[name] != data for name, data in after.items() if name not in allowed_members):
+            if any(final[name] != data for name, data in after.items() if name != "classes6.dex"):
                 raise SystemExit("GPU product changed proven backend")
     return result, hashlib.sha256(path.read_bytes()).hexdigest()
 

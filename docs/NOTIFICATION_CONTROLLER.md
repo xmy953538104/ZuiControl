@@ -1,19 +1,24 @@
 # ROM notification controller
 
-ZuiControl retains target SDK 35. The TB321FU notification template reserves an
-application icon tile even for direct/custom RemoteViews. The ROM applies one
-Owner-authorized exception in Notification.Builder.fullyCustomViewRequiresDecoration:
-package `com.zui.zuicontrol`, FLAG_SYSTEM and channel `zui_control_monitor_v1`
-must all match. Other packages/channels retain the original SDK check.
+ZuiControl deliberately targets SDK 30 while compiling with SDK 35. One production
+package uses the platform legacy custom RemoteViews surface on the qualified ROM.
+No Notification.Builder or SystemUI decoration exception is applied. The R7-only
+transform is retired; the original classes.dex payload must remain exact.
 
-`scripts/build/NotificationProofTransforms.py` accepts only the qualified original
-Builder class; `BuildNotificationFramework.py` reassembles classes.dex and compares
-every class and every other Builder method after decoding again. The transformation
-does not change SystemUI, target SDK, package identity, permission checks, service
-lifecycle or the required status-bar small icon. RemoteViews content is still a
-single compact controller; notification presence does not enable the Monitor.
+One persistent foreground-service notification uses a single content RemoteViews,
+the required small status icon, explicit immutable service PendingIntents and the
+existing controller channel. No decorated style, BigContentView or secondary panel.
+Notification existence does not enable sampling. Controls read editableScene and
+persisted profiles; no optimistic state store. Uperf still uses authenticated
+ZuiControlRequest/daemon persistence and existing system-server/backend application.
+Settings publication immediately refreshes the controller independently of the
+terminal-command waiter. Backend completion is separate from accepted UI state.
 
-The terminal manifest binds the exact original/patched DEX, transformation source
-and qualification report. Final-super and firstboot verification must retain that
-binding. Source tests and the exact guard VM matrix do not replace device rendering
-and click/synchronization acceptance.
+Opt-in diagnostics (`dumpsys activity service com.zui.zuicontrol/.ZuiControlQuickService
+--trace-seconds=600`) retain at most sixteen action timelines and ninety-six overlay
+events in memory for up to ten minutes. They never select product state or write a
+database. T3 is NotificationManager notify return (logical state); actual SystemUI
+render latency requires separate device evidence. No steady timing log/poller.
+
+Target SDK/package/permission/boot/FGS/component/overlay and real visual behavior
+must be qualified on the exact clean-ROM candidate, not by a cache/install workaround.

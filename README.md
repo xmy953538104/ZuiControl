@@ -41,7 +41,6 @@ python tests/monitor/TestMonitor.py
 python tests/monitor/TestUiPolish.py
 python tests/monitor/TestProductR6.py
 python tests/monitor/TestProductR7.py
-python tests/monitor/TestNotificationTransform.py
 python tests/monitor/TestDropdownSelection.py
 bash tests/uperf/TestConfigurableAppPolicy.sh
 python tests/monitor/TestRecordSql.py
@@ -106,8 +105,8 @@ three-sample median; recordings retain raw watts. External power is unavailable.
 once per collector generation. No Monitor KGSL access is made.
 The compact notification controls Monitor, Refresh and per-app Uperf through the
 existing editable scene authority. Its presence does not enable sampling; Monitor
-defaults OFF and is enabled manually. The target SDK stays 35. The ROM permits
-undecorated custom content only for the system ZuiControl controller channel;
+defaults OFF and is enabled manually. Target SDK 30 deliberately selects the native
+legacy custom notification behavior, with compile SDK 35 and no framework exception;
 see `docs/NOTIFICATION_CONTROLLER.md`. Display-only never enumerates tasks or writes storage.
 A full two-second circle hold replaces the bound app's latest SQLite recording;
 recording-only Top15 thread deltas use one core=100% at approximately three seconds.

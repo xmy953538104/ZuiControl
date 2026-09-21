@@ -52,8 +52,12 @@ class MonitorCollector {
         }else{session.mode=MonitorSession.OFF;session.stop();store.abandon();}
     }
     synchronized void scene(String pkg,int user,boolean eligible){
-        boolean changed=!pkg.equals(session.foreground)||user!=session.user||eligible!=session.eligible;
-        session.scene(pkg,user,eligible);
+        scene(pkg,user,eligible,eligible);
+    }
+    synchronized void scene(String pkg,int user,boolean eligible,boolean recordEligible){
+        boolean changed=!pkg.equals(session.foreground)||user!=session.user||eligible!=session.eligible
+                ||recordEligible!=session.recordEligible;
+        session.scene(pkg,user,eligible,recordEligible);
         if(changed){clearThreadBaseline();stop();}
         schedule();
     }
@@ -96,7 +100,12 @@ class MonitorCollector {
         if(handler!=null)handler.removeCallbacksAndMessages(null);
         if(thread!=null)thread.quitSafely();
         handler=null;thread=null;
-        deliver("{\"active\":false,\"mode\":"+session.mode+",\"recordState\":\""+session.recordingState()+"\"}");
+        // A clock/generation restart is not a request to tear down the display window.
+        try {
+            deliver(new JSONObject(lastSnapshot).put("active",session.sampling())
+                    .put("mode",session.mode).put("package",session.foreground)
+                    .put("recordState",session.recordingState()).toString());
+        } catch (org.json.JSONException e) { throw new IllegalStateException(e); }
     }
     synchronized String snapshot(){return lastSnapshot;}
     synchronized String state(){

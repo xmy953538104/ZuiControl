@@ -90,7 +90,7 @@ class ProductR7(unittest.TestCase):
             self.assertIn('android:shape="oval"',read('app/src/main/res/drawable/'+name+'.xml'))
         for name in ('notify_rate_normal','notify_rate_selected'):
             self.assertNotIn('<stroke',read('app/src/main/res/drawable/'+name+'.xml'))
-        self.assertIn('targetSdk = 35',read('app/build.gradle.kts'))
+        self.assertIn('targetSdk = 30',read('app/build.gradle.kts'))
         # No application-icon slot in app layout. System wrapper is a separate real-device gate.
         self.assertNotIn('ic_stat',layout);self.assertNotIn('app_icon',layout)
 

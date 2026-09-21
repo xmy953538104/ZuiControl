@@ -878,6 +878,10 @@ class MainActivity : Activity() {
             val mode = fields.getOrNull(1)?.let(UperfMode::fromId)
             if (PackageNames.isValid(pkg) && mode != null) uperfRules[pkg] = mode
         }
+        val tracePackage = ZuiControlClient.stateValue(serviceState,"editableScenePackage").orEmpty()
+        QuickControlTrace.observed(tracePackage,
+            ZuiControlClient.stateValue(serviceState,"editableDisplayHz")?.toIntOrNull() ?: 0,
+            (uperfRules[tracePackage] ?: UperfMode.fromId(setting(ZuiControlContract.KEY_UPERF_MODE)))?.id.orEmpty(),"T4")
     }
 
     private fun runCommand(

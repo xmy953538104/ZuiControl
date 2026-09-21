@@ -10,6 +10,10 @@ public final class MonitorR4Test {
   s.scene("other",0,true);check(s.recordingState().equals("PAUSED"));
   s.scene("game",0,false);check(s.recording()&&!s.sampling());
   s.scene("game",0,true);check(s.recordingActive());s.stop();check(!s.recording());
+  s.scene("game",0,true,false);check(s.sampling()&&!s.arm(5000));
+  s.scene("game",0,true,true);check(s.arm(5000));s.started();
+  s.scene("game",0,true,false);check(s.sampling()&&s.recordingState().equals("PAUSED"));
+  s.scene("game",0,true,true);check(s.recordingActive());s.stop();
   s.arm(10000);s.scene("game",1,true);check(!s.canStart(12000));
   s.toggle(MonitorSession.FPS);check(s.mode==MonitorSession.FPS);s.toggle(MonitorSession.FPS);check(!s.sampling());
   check(MonitorSources.batteryWatts(0,3,4000,-2000000)==8.0);

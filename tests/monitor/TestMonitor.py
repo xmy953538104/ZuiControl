@@ -44,6 +44,8 @@ stubs.update({
  check(Handler.pending.isEmpty()&&c.scans==0&&MonitorStore.starts==0);
  c.command("full",0,"");check(Handler.pending.size()==1);for(int i=0;i<10;i++)Handler.next();
  check(c.scans==0&&c.state().contains("monitorDbWrites=0"));
+ c.scene("ownApp",0,true,true);check(client.last.contains("active=true"));
+ c.scene("game",0,true,true);check(client.last.contains("active=true"));
  c.command("fps",0,"");check(Handler.pending.size()==1);Handler.next();check(c.scans==0);
  c.command("full",0,"");c.command("arm",0,"");SystemClock.now+=1999;
  check(c.command("recordStart",0,"").startsWith("ok=0")&&MonitorStore.starts==0);
@@ -51,8 +53,11 @@ stubs.update({
  check(c.command("recordStart",0,"").startsWith("ok=0"));
  c.command("arm",0,"");SystemClock.now+=2000;
  check(c.command("recordStart",0,"").startsWith("ok=1")&&MonitorStore.starts==1);
+ check(client.last.contains("active=true"));
  check(c.command("recordStart",0,"").startsWith("ok=0")&&MonitorStore.starts==1);
  for(int i=0;i<7;i++)Handler.next();check(c.scans==3);
+ c.scene("game",0,true,false);check(client.last.contains("active=true"));
+ for(int i=0;i<4;i++)Handler.next();check(c.scans==3&&c.session.recordingState().equals("PAUSED"));
  c.scene("other",0,true);String before=c.state();for(int i=0;i<4;i++)Handler.next();
  check(c.scans==3&&c.session.recordingState().equals("PAUSED")&&MonitorStore.finishes==0);
  c.scene("game",0,true);Handler.next();check(c.scans==4&&c.session.recordingState().equals("RECORDING"));

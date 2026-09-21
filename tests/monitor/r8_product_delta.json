@@ -1,0 +1,56 @@
+{
+  "base_head": "a18305276ea0eb0fb12777831ecfa204cbb951bb",
+  "scope": "R8 target30 notification diagnostics, stable single-window Monitor and gesture/lifecycle only",
+  "tree": [
+    {
+      "path": "app/lint.xml",
+      "before": null,
+      "after": "100644 blob d33a268f1b877d00d6b486e857594521f781a3fc\tapp/lint.xml"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "before": "100644 blob a98596e9b62ea9a9372442f2f3805d3d4f22a407\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob 416870c6da3fb3d4bb9a88e7cc4590930769d094\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MonitorGesture.kt",
+      "before": "100644 blob 7f8335f1c244d049bfe5199b70bfe19e0bf6a172\tapp/src/main/java/com/zui/zuicontrol/MonitorGesture.kt",
+      "after": "100644 blob 9929005c337bbf793f65327184da864340412fab\tapp/src/main/java/com/zui/zuicontrol/MonitorGesture.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "before": "100644 blob 83833ae4def98d8ff60914602561c1694724dc2c\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "after": "100644 blob a85b3bb141a66a5b9f281ae74088c63a63b89510\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/QuickControlTrace.kt",
+      "before": null,
+      "after": "100644 blob fd6819f0d7871fbef30e5737b9e3dae70020491c\tapp/src/main/java/com/zui/zuicontrol/QuickControlTrace.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
+      "before": "100644 blob e9a287f882ee9b915dec1d24c570379ea682e57e\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
+      "after": "100644 blob 5b1b5ef7b43b695e8baca6000a5fb6df1587d28e\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt"
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/MonitorGestureTest.kt",
+      "before": "100644 blob 47280c72b8b71e952341f8128d6382edc6663b17\tapp/src/test/java/com/zui/zuicontrol/MonitorGestureTest.kt",
+      "after": "100644 blob 7429618c4992cf295a2e3aec2714dc848264fbbc\tapp/src/test/java/com/zui/zuicontrol/MonitorGestureTest.kt"
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/MonitorCollector.java",
+      "before": "100644 blob 54733bf3a88b486a3763e51ec0c06f5c3c13d5ee\tframework_patch/src/services/com/zui/server/control/MonitorCollector.java",
+      "after": "100644 blob f0b3d60fa2f3960a7d5adb87981aa3231e43c2a3\tframework_patch/src/services/com/zui/server/control/MonitorCollector.java"
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/MonitorSession.java",
+      "before": "100644 blob 469cdeeb3d190275e51756191fb22c29e4194b9d\tframework_patch/src/services/com/zui/server/control/MonitorSession.java",
+      "after": "100644 blob b26383296e4cc4f0c7101d4247278923d7e017f7\tframework_patch/src/services/com/zui/server/control/MonitorSession.java"
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "before": "100644 blob ff4137aea2178420b2893a35c3d9040ab3dfe3fe\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "after": "100644 blob 5086afd858689c370d0af778960860c5219a62c3\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java"
+    }
+  ]
+}

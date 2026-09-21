@@ -6,13 +6,16 @@ final class MonitorSession {
     int mode;
     String foreground = "", recordingPackage = "";
     int user, recordingUser;
-    boolean eligible, processAvailable = true;
+    boolean eligible, recordEligible, processAvailable = true;
     long armTime = -1;
     String armPackage = "";
 
     void scene(String pkg, int userId, boolean valid) {
-        if (!pkg.equals(foreground) || user != userId || !valid) cancelArm();
-        foreground = pkg; user = userId; eligible = valid;
+        scene(pkg,userId,valid,valid);
+    }
+    void scene(String pkg, int userId, boolean visible, boolean canRecord) {
+        if (!pkg.equals(foreground) || user != userId || !canRecord) cancelArm();
+        foreground = pkg; user = userId; eligible = visible; recordEligible = canRecord;
     }
     void toggle(int requested) {
         mode = mode == requested ? OFF : requested;
@@ -20,16 +23,16 @@ final class MonitorSession {
     }
     boolean recording() { return !recordingPackage.isEmpty(); }
     boolean recordingActive() {
-        return recording() && eligible && mode != OFF
+        return recording() && eligible && recordEligible && mode != OFF
                 && recordingUser == user && recordingPackage.equals(foreground);
     }
     boolean sampling() { return eligible && mode != OFF; }
     boolean arm(long now) {
-        if (mode != FULL || !eligible || recording()) return false;
+        if (mode != FULL || !eligible || !recordEligible || recording()) return false;
         armTime = now; armPackage = foreground; return true;
     }
     boolean canStart(long now) {
-        return armTime >= 0 && now - armTime >= 2000 && mode == FULL && eligible
+        return armTime >= 0 && now - armTime >= 2000 && mode == FULL && eligible && recordEligible
                 && !recording() && foreground.equals(armPackage);
     }
     void started() { recordingPackage = foreground; recordingUser = user; processAvailable = true; cancelArm(); }

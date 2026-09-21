@@ -1,6 +1,7 @@
 package com.zui.zuicontrol
 
 import android.content.Context
+import android.hardware.display.DisplayManager
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -24,12 +25,35 @@ import android.view.WindowInsets
 import android.zui.ZuiControlManager
 import org.json.JSONObject
 import java.util.Locale
+import java.io.PrintWriter
 
 /** Rendering and explicit gestures only. No independent scalar/task sampling. */
 class PerformanceMonitor(private val context: Context, private val onModeChanged: () -> Unit = {}) {
     private val handler = Handler(Looper.getMainLooper())
     private val windows = context.getSystemService(WindowManager::class.java)
+    private val displays = context.getSystemService(DisplayManager::class.java)
     private var view: MonitorView? = null
+    private var attached = false
+    private var started = false
+    private val generation = ++nextGeneration
+    private var adds = 0L
+    private var removes = 0L
+    private var updates = 0L
+    private var insetsCallbacks = 0L
+    private var transitions = 0L
+    private var measures = 0L
+    private var draws = 0L
+    private var visualState = "HIDDEN"
+    private var stableSafeTopInset = 0
+    private var traceUntil = 0L
+    private val events = ArrayDeque<String>()
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(id: Int) = Unit
+        override fun onDisplayRemoved(id: Int) = Unit
+        override fun onDisplayChanged(id: Int) {
+            if (attached && view?.display?.displayId == id) environmentChanged("display")
+        }
+    }
     private var closed = false
     private var circle = false
     private var snapshot = JSONObject()
@@ -46,11 +70,17 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
         }
     }
     fun start() {
-        if (Settings.canDrawOverlays(context)) runCatching { ZuiControlManager.get()?.monitor("register", "", false, false, callback) }
+        if (closed || !Settings.canDrawOverlays(context)) return
+        if (!started) {
+            displays.registerDisplayListener(displayListener, handler)
+            started = true
+        }
+        runCatching { ZuiControlManager.get()?.monitor("register", "", false, false, callback) }
     }
     fun close() {
         closed = true
         runCatching { ZuiControlManager.get()?.monitor("register", "", false, false, null) }
+        if (started) displays.unregisterDisplayListener(displayListener)
         hide(); handler.removeCallbacksAndMessages(null)
     }
     fun toggle(action: String): String {
@@ -60,19 +90,53 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
     private fun recording() = snapshot.optString("recordState") in listOf("RECORDING", "PAUSED")
     private fun hide() {
         view?.cancelGesture()
-        view?.let { runCatching { windows.removeViewImmediate(it) } }
-        view = null
+        if (attached) {
+            view?.let { windows.removeViewImmediate(it) }
+            attached = false; removes++; event("remove")
+        }
+        state("HIDDEN")
         livePower.clear(); displayPower = -1.0
     }
-    private fun safeTop(insets: WindowInsets?): Int {
-        val systemTop = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    private fun safeTop(insets: WindowInsets?): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             insets?.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars() or
                 WindowInsets.Type.displayCutout() or WindowInsets.Type.captionBar())?.top ?: 0
         } else {
             @Suppress("DEPRECATION")
             maxOf(insets?.systemWindowInsetTop ?: 0, insets?.displayCutout?.safeInsetTop ?: 0)
         }
-        return systemTop + context.resources.getDimensionPixelSize(R.dimen.monitor_top_inset)
+    private fun absoluteY() = stableSafeTopInset + context.resources.getDimensionPixelSize(R.dimen.monitor_top_inset)
+    fun environmentChanged(reason: String = "configuration") {
+        // Display metrics are independent of this overlay's relative View insets.
+        stableSafeTopInset = safeTop(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+            windows.maximumWindowMetrics.windowInsets else null)
+        val target = view ?: return
+        if (!attached) return
+        val layout = target.layoutParams as WindowManager.LayoutParams
+        val next = absoluteY()
+        if (layout.y == next) return
+        val old = layout.y; layout.y = next
+        windows.updateViewLayout(target, layout); updates++
+        event("layout reason=$reason oldY=$old newY=$next")
+    }
+    private fun state(next: String) {
+        if (next == visualState) return
+        event("state $visualState->$next"); visualState = next; transitions++
+    }
+    private fun event(text: String) {
+        if (SystemClock.elapsedRealtime() >= traceUntil) return
+        if (events.size == 96) events.removeFirst()
+        events.addLast("${SystemClock.elapsedRealtime()} $text")
+    }
+    fun trace(seconds: Int) { traceUntil = SystemClock.elapsedRealtime() + seconds.coerceIn(0,600)*1000L }
+    fun dump(out: PrintWriter) {
+        val root = view
+        val layout = root?.layoutParams as? WindowManager.LayoutParams
+        out.println("overlayGeneration=$generation rootIdentity=${root?.let(System::identityHashCode)} attached=$attached state=$visualState")
+        out.println("overlayAdds=$adds removes=$removes updates=$updates insetsCallbacks=$insetsCallbacks transitions=$transitions")
+        out.println("overlayMeasures=$measures draws=$draws")
+        out.println("overlaySafeTop=$stableSafeTopInset y=${layout?.y} token=${root?.windowToken} title=${layout?.title}")
+        events.forEach { out.println("overlayEvent=$it") }
     }
     private fun render(text: String) {
         val next = runCatching { JSONObject(text) }.getOrNull() ?: return
@@ -83,17 +147,17 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
         if (!next.optBoolean("active") || !Settings.canDrawOverlays(context)) { hide(); return }
         if (recording()) circle = true
         try {
-            if (view == null) {
-                val fresh = MonitorView(context)
-                fresh.setOnApplyWindowInsetsListener { target, insets ->
+            val fresh = view ?: MonitorView(context).also {
+                view = it
+                it.setOnApplyWindowInsetsListener { target, insets ->
+                    insetsCallbacks++
                     val layout = target.layoutParams as WindowManager.LayoutParams
-                    val top = safeTop(insets)
-                    if (layout.y != top && target.isAttachedToWindow) {
-                        layout.y = top
-                        windows.updateViewLayout(target, layout)
-                    }
+                    event("insets relativeTop=${safeTop(insets)} stableTop=$stableSafeTopInset oldY=${layout.y} newY=${layout.y} update=false")
                     insets
                 }
+            }
+            if (!attached) {
+                environmentChanged("attach")
                 val params = WindowManager.LayoutParams(-2, -2,
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -102,12 +166,11 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
                     gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
                     // Absolute display coordinates; account for each inset once, even in immersive apps.
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setFitInsetsTypes(0)
-                    y = safeTop(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
-                        windows.currentWindowMetrics.windowInsets else null)
+                    y = absoluteY()
                     layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
                     title = "ZuiControl 性能监视器"
                 }
-                windows.addView(fresh, params); view = fresh
+                windows.addView(fresh, params); attached = true; adds++; event("add y=${params.y}")
             }
             view?.update()
         } catch (_: RuntimeException) { hide(); command("off") }
@@ -151,12 +214,16 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
             gesture.cycle(now)
             val all = listOf(number(snapshot.optDouble("fps", -1.0)) to "FPS",
                 number(snapshot.optDouble("quietC", -1.0)) to "°C", number(displayPower) to "W")
+            val previous = metrics
             metrics = if (snapshot.optInt("mode") == 2) listOf(all[0])
                 else if (circle) listOf(all[metric]) else all
             contentDescription = if (snapshot.optInt("mode") == 2) "FPS ${number(snapshot.optDouble("fps", -1.0))}"
                 else "性能监视器 ${if (circle) "圆形" else "长条"} ${snapshot.optString("recordState")} " +
                     metrics.joinToString("   ") { "${it.first} ${it.second}" }
-            requestLayout(); invalidate()
+            val nextState = when { recording() -> "RECORDING"; circle && down >= 0 -> "ARMING"; circle -> "CIRCLE"; else -> "LONG_BAR" }
+            val shapeChanged = (visualState == "LONG_BAR") != (nextState == "LONG_BAR")
+            state(nextState)
+            if (previous != metrics || shapeChanged) { requestLayout(); invalidate() }
         }
         private fun metricWidth(metric: Pair<String, String>): Float {
             paint.textSize = valueSize
@@ -165,6 +232,7 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
             return value + dimen(R.dimen.monitor_unit_gap) + paint.measureText(metric.second)
         }
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            measures++
             val round = circle && snapshot.optInt("mode") != 2
             valueSize = dimen(if (round) R.dimen.monitor_circle_text else R.dimen.monitor_value_text)
             if (round && metrics.isNotEmpty()) {
@@ -179,6 +247,7 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
             setMeasuredDimension(kotlin.math.ceil(w).toInt(), kotlin.math.ceil(h).toInt())
         }
         override fun onDraw(canvas: Canvas) {
+            draws++
             super.onDraw(canvas)
             val fps = snapshot.optInt("mode") == 2
             val round = circle && !fps
@@ -218,6 +287,8 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
         fun cancelGesture() {
             if (down >= 0 && !completed) command("cancelArm")
             handler.removeCallbacks(commit); gesture.cancel()
+            if (attached) state(if (recording()) "RECORDING" else if (circle) "CIRCLE" else "LONG_BAR")
+            invalidate()
         }
         override fun onTouchEvent(event: MotionEvent): Boolean {
             if (snapshot.optInt("mode") == 2) return false
@@ -226,17 +297,21 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
                     x0=event.rawX;y0=event.rawY
                     gesture.press(SystemClock.elapsedRealtime())
                     if (circle && !recording() && command("arm").startsWith("ok=1")) handler.postDelayed(commit,2000)
+                    if (circle && !recording()) state("ARMING")
                     invalidate()
                 }
+                MotionEvent.ACTION_POINTER_DOWN -> cancelGesture()
                 MotionEvent.ACTION_MOVE -> if (kotlin.math.abs(event.rawX-x0)>slop || kotlin.math.abs(event.rawY-y0)>slop) cancelGesture()
                 MotionEvent.ACTION_CANCEL -> cancelGesture()
                 MotionEvent.ACTION_UP -> {
                     if (!moved && !completed && down >= 0 && circle && !recording()
                         && SystemClock.elapsedRealtime()-down >= 2000) commit.run()
-                    val short = gesture.shortRelease()
+                    val short = gesture.shortRelease(SystemClock.elapsedRealtime())
                     handler.removeCallbacks(commit)
+                    if (!short && !completed && !recording()) command("cancelArm")
                     if (short) performClick()
                     gesture.release(SystemClock.elapsedRealtime());update()
+                    invalidate()
                 }
             }
             return true
@@ -252,6 +327,7 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
         }
     }
     companion object {
+        private var nextGeneration = 0L
         fun command(action: String, pkg: String = "", enabled: Boolean = false, expanded: Boolean = false): String =
             runCatching { ZuiControlManager.get()?.monitor(action,pkg,enabled,expanded,null) ?: "ok=0\nerror=service_unavailable" }
                 .getOrElse { "ok=0\nerror=${it.javaClass.simpleName}" }

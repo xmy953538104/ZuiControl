@@ -719,11 +719,14 @@ public final class ZuiControlService extends Binder {
         String pkg = mTopResumedState.stablePackage();
         int user = mTopResumedState.stableUserId();
         android.app.KeyguardManager lock = mContext.getSystemService(android.app.KeyguardManager.class);
-        boolean eligible = user == mMonitorClientUser && !mGpuSystemUi && mScreenInteractive && lock != null && !lock.isKeyguardLocked()
-                && !pkg.isEmpty() && !isTransientPackage(pkg)
-                && !mRawFocusTransient && pkg.equals(mRawFocusedPackage) && user == mRawFocusedUserId
+        boolean eligible = user == mMonitorClientUser && mScreenInteractive && lock != null && !lock.isKeyguardLocked()
                 && !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false);
-        mMonitor.scene(pkg, user, eligible);
+        // Visibility follows screen lifecycle; recording still requires the actual target App.
+        // Keep editableScene, Refresh and Uperf transient-focus policy unchanged.
+        boolean recordEligible = eligible && !pkg.isEmpty() && !mGpuSystemUi && !mImeVisible
+                && (!isTransientPackage(pkg) || "com.zui.zuicontrol".equals(pkg))
+                && pkg.equals(mRawFocusedPackage) && user == mRawFocusedUserId;
+        mMonitor.scene(pkg, user, eligible, recordEligible);
     }
 
     private synchronized String setGpuRange(String pkg, int userId, int min, int max) {

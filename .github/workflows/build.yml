@@ -97,7 +97,6 @@ jobs:
           python3 tests/monitor/TestUiPolish.py
           python3 tests/monitor/TestProductR6.py
           python3 tests/monitor/TestProductR7.py
-          python3 tests/monitor/TestNotificationTransform.py
           bash tests/uperf/TestConfigurableAppPolicy.sh
           python3 tests/monitor/TestRecordSql.py
           python3 tests/monitor/TestPackageIdentity.py
@@ -359,9 +358,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV62
           rm -rf payload/system/priv-app/ZuiControlV63
           rm -rf payload/system/priv-app/ZuiControlV64
-          mkdir -p payload/system/priv-app/ZuiControlV65
+          rm -rf payload/system/priv-app/ZuiControlV65
+          mkdir -p payload/system/priv-app/ZuiControlV66
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV65/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV66/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -33,8 +33,10 @@ stubs = {
         public <T>T getSystemService(Class<T> c){try{return c.getDeclaredConstructor().newInstance();}catch(Exception e){throw new RuntimeException(e);}}
         public Intent registerReceiver(Object r,IntentFilter f){return new Intent();}}''',
     'org/json/JSONObject.java': '''package org.json;import java.util.*; public class JSONObject {
+        public JSONObject(){} public JSONObject(String text) throws JSONException {}
         Map<String,Object> data=new LinkedHashMap<>();public JSONObject put(String k,Object v){data.put(k,v);return this;}
         public String toString(){return data.toString();}}''',
+    'org/json/JSONException.java': 'package org.json;public class JSONException extends Exception {}',
     'org/json/JSONArray.java': 'package org.json;public class JSONArray {public JSONArray put(Object o){return this;}}',
     'com/zui/server/control/CollectorTest.java': '''package com.zui.server.control;
         import android.os.*; import android.app.*; import android.content.*;

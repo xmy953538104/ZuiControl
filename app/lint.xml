@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- This ROM-only product deliberately uses target30 legacy notification behavior.
+         Keep API/permission/export/security checks; only the Play target-age rule is waived. -->
+    <issue id="ExpiredTargetSdkVersion">
+        <ignore path="build.gradle.kts" />
+    </issue>
+</lint>
