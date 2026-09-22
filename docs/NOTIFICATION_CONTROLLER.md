@@ -14,6 +14,16 @@ ZuiControlRequest/daemon persistence and existing system-server/backend applicat
 Settings publication immediately refreshes the controller independently of the
 terminal-command waiter. Backend completion is separate from accepted UI state.
 
+All creation and observer/lifecycle updates converge on
+`ZuiControlQuickService.renderNotification(snapshot)`. Every call allocates fresh
+`notification_quick_control` RemoteViews and fully applies every control through
+`NotificationQuickControlHelper`; no remembered visual selection is authoritative.
+The fixed384×88dp native card has a48dp Monitor control and two30dp rows separated
+by12dp. Refresh uses blue selection; Uperf retains green, balanceblue, orange and
+pink semantic colors. The notification labels fast as“极速”; its existing mode ID
+and backend meaning remain unchanged. The yellow dot follows desired Monitor ON,
+including while its window is temporarily hidden.
+
 Opt-in diagnostics (`dumpsys activity service com.zui.zuicontrol/.ZuiControlQuickService
 --trace-seconds=600`) retain at most sixteen action timelines and ninety-six overlay
 events in memory for up to ten minutes. They never select product state or write a

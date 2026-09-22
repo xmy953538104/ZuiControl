@@ -38,6 +38,19 @@ load_request_claim || fail valid_claim
 printf 'extra' >> "$ACTIVE_REQUEST_CLAIM"
 if load_request_claim; then fail extra_claim; fi
 test "$(ack_text 'r|bad' done status ok)" = 'r bad|done|status|ok' || fail sanitize
+# Match the unchanged sanitizer for every field, including its control-character fallback.
+ack_controls="$(printf 'left\rright\nsecond\tend')"
+for ack_value in '' 'r._=:/-09' 'package=com.example.game;mode=fast' \
+    'pipe|inside' "$ack_controls" '中文;value' 'literal$`"'; do
+    sanitized="$(printf '%s' "$ack_value" | tr '|\r\n' '   ')"
+    test "$(ack_text "$ack_value" "$ack_value" "$ack_value" "$ack_value")" = \
+        "$sanitized|$sanitized|$sanitized|$sanitized" || fail ack_equivalence
+done
+(
+    tr() { fail unnecessary_ack_sanitizer; }
+    test "$(ack_text r done set_uperf_app 'package=com.example.game;mode=fast')" = \
+        'r|done|set_uperf_app|package=com.example.game;mode=fast' || fail fast_ack
+)
 printf 'r|set_uperf_app||com.example.game|fast
 r|done|set_uperf_app|ok
 ' > "$LAST_REQUEST_RECEIPT"

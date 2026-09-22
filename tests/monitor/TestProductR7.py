@@ -15,7 +15,7 @@ class ProductR7(unittest.TestCase):
         self.assertIn('UperfAppPolicy.isConfigurable(packageManager, it.info.packageName)',main)
         self.assertIn('check(UperfAppPolicy.isConfigurable(packageManager, pkg))',main)
         self.assertIn('check(UperfAppPolicy.isConfigurable(packageManager, pkg))',quick)
-        self.assertIn('setBoolean(id, "setEnabled", uperfEnabled)',quick)
+        self.assertIn('snapshot.uperfEnabled, modeIntent(value)',app('NotificationQuickControlHelper.kt'))
         self.assertIn('UperfAppPolicy.isConfigurable(packageManager, pkg)',quick)
 
     def test_shared_policy_and_bounded_queries(self):
@@ -46,7 +46,7 @@ class ProductR7(unittest.TestCase):
         overlay=app('PerformanceMonitor.kt')
         for token in ('WindowInsets.Type.statusBars()','WindowInsets.Type.displayCutout()',
                       'WindowInsets.Type.captionBar()','setFitInsetsTypes(0)','setOnApplyWindowInsetsListener',
-                      'Gravity.TOP or Gravity.CENTER_HORIZONTAL'):
+                      'Gravity.TOP or if (circle) Gravity.LEFT else Gravity.CENTER_HORIZONTAL'):
             self.assertIn(token,overlay)
         self.assertNotIn('com.zui.launcher',overlay+monitor)
         session=read('framework_patch/src/services/com/zui/server/control/MonitorSession.java')
@@ -74,22 +74,22 @@ class ProductR7(unittest.TestCase):
         self.assertIn('showMonitorHelp()',primary)
 
     def test_notification_visual_controls_not_a_sampler(self):
-        layout=read('app/src/main/res/layout/notification_zuicontrol.xml');quick=app('ZuiControlQuickService.kt')
-        self.assertEqual(layout.count('@+id/mode_track'),1)
-        self.assertEqual(layout.count('style="@style/NotificationMode"'),4)
-        self.assertEqual(layout.count('android:visibility="invisible"'),4)
-        self.assertEqual(layout.count('style="@style/NotificationModeDot"'),4)
+        # R10 Owner replaces the historical track/dot visuals; retained controller boundaries still apply.
+        layout=read('app/src/main/res/layout/notification_quick_control.xml');quick=app('ZuiControlQuickService.kt')
+        renderer=app('NotificationQuickControlHelper.kt')
+        self.assertNotIn('mode_track',layout)
+        self.assertEqual(layout.count('style="@style/NotificationControl"'),9)
         self.assertNotIn('<SeekBar',layout)
         for forbidden in ('●','○','value.title.first()', 'BigContentView','Timer','while (','/proc/','getRunningTasks','SharedPreferences'):
             self.assertNotIn(forbidden,quick)
-        self.assertIn('if (value == mode) View.VISIBLE else View.INVISIBLE',quick)
-        self.assertIn('getColor(value.color)',quick)
+        self.assertIn('value == snapshot.currentMode',renderer)
+        for mode in ('powersave','balance','performance','fast'):
+            self.assertIn('R.drawable.notify_mode_'+mode,renderer)
         self.assertIn('setSmallIcon(R.drawable.ic_stat_zuicontrol)',quick)
-        self.assertIn('notify_monitor_active else R.drawable.notify_monitor_off',quick)
+        self.assertIn('notify_monitor_active else R.drawable.notify_monitor_off',renderer)
         for name in ('notify_monitor_active','notify_monitor_off'):
             self.assertIn('android:shape="oval"',read('app/src/main/res/drawable/'+name+'.xml'))
-        for name in ('notify_rate_normal','notify_rate_selected'):
-            self.assertNotIn('<stroke',read('app/src/main/res/drawable/'+name+'.xml'))
+        self.assertIn('android:width="0.5dp"',read('app/src/main/res/drawable/notify_rate_normal.xml'))
         self.assertIn('targetSdk = 30',read('app/build.gradle.kts'))
         # No application-icon slot in app layout. System wrapper is a separate real-device gate.
         self.assertNotIn('ic_stat',layout);self.assertNotIn('app_icon',layout)

@@ -45,7 +45,10 @@ class ProductR6(unittest.TestCase):
         for name in ('powersave','balance','performance','fast'):
             self.assertIn('R.color.mode_'+name,source('UperfMode.kt'))
         self.assertIn('mode.color',source('UiControls.kt'))
-        self.assertIn('getColor(value.color)',source('ZuiControlQuickService.kt'))
+        for name in ('powersave','balance','performance','fast'):
+            self.assertIn('R.drawable.notify_mode_'+name,source('NotificationQuickControlHelper.kt'))
+            drawable=ET.parse(ROOT/('app/src/main/res/drawable/notify_mode_'+name+'.xml')).getroot()
+            self.assertEqual(drawable.find('solid').get('{http://schemas.android.com/apk/res/android}color'),'@color/mode_'+name)
         self.assertIn('ui_mode_group_width',source('MainActivity.kt'))
 
     def test_shared_authority_and_profile_paths(self):
@@ -80,10 +83,11 @@ class ProductR6(unittest.TestCase):
         self.assertNotIn('MONITOR_FPS',quick)
         self.assertNotIn('BigContentView',quick)
         self.assertNotIn('Gpu',quick)
-        layout=(ROOT/'app/src/main/res/layout/notification_zuicontrol.xml').read_text(encoding='utf8')
+        layout=(ROOT/'app/src/main/res/layout/notification_quick_control.xml').read_text(encoding='utf8')
+        renderer=source('NotificationQuickControlHelper.kt')
         self.assertNotIn('fps_toggle',layout)
         for name in ['monitor_toggle','refresh_60','refresh_90','refresh_120','refresh_144','refresh_165','mode_powersave','mode_balance','mode_performance','mode_fast']:
-            self.assertIn('@+id/'+name,layout);self.assertIn('R.id.'+name,quick)
+            self.assertIn('@+id/'+name,layout);self.assertIn('R.id.'+name,renderer)
         record=source('PerformanceRecordActivity.kt')
         for phrase in ('应用记录','最近一次记录','线程记录','最低','平均','最高','有效样本'):
             self.assertIn(phrase,record)

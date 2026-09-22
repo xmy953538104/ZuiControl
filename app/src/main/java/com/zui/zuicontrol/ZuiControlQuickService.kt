@@ -13,7 +13,6 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
-import android.view.View
 import android.widget.RemoteViews
 import android.widget.Toast
 import java.io.FileDescriptor
@@ -36,7 +35,7 @@ class ZuiControlQuickService : Service() {
                 description = "监视器、刷新率与性能快捷控制"
                 setSound(null, null); enableVibration(false); setShowBadge(false)
             })
-        startForeground(ID, notification())
+        startForeground(ID, renderNotification(snapshot()))
         listOf(ZuiControlContract.KEY_STATUS_TEXT, ZuiControlContract.KEY_UPERF_MODE,
             ZuiControlContract.KEY_UPERF_RULES_TEXT).forEach {
             contentResolver.registerContentObserver(Settings.System.getUriFor(it), false, observer)
@@ -109,8 +108,9 @@ class ZuiControlQuickService : Service() {
         handler.post(update)
     }
     private fun refreshNotification() {
-        var trace = 0L
-        val content = notification { pkg,rate,mode -> trace = QuickControlTrace.observed(pkg,rate,mode,"T2") }
+        val state = snapshot()
+        val trace = QuickControlTrace.observed(state.pkg, state.currentHz, state.currentMode.id, "T2")
+        val content = renderNotification(state)
         getSystemService(NotificationManager::class.java).notify(ID, content)
         QuickControlTrace.mark(trace,"T3","NotificationManager.notify_returned_logical_state")
     }
@@ -118,42 +118,23 @@ class ZuiControlQuickService : Service() {
     private fun pending(action: String, request: Int) = PendingIntent.getService(this, request,
         Intent(this, ZuiControlQuickService::class.java).setAction(action),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-    @Suppress("DEPRECATION")
-    private fun notification(onState: ((String, Int, String) -> Unit)? = null): Notification {
+    private fun snapshot(): NotificationQuickControlHelper.Snapshot {
         val scene = ZuiControlClient.currentSceneText()
         val pkg = ZuiControlClient.stateValue(scene, "editableScenePackage").orEmpty()
         val rate = ZuiControlClient.stateValue(scene, "editableDisplayHz")?.toIntOrNull() ?: 0
         val mode = UperfMode.resolve(setting(ZuiControlContract.KEY_UPERF_MODE),
             setting(ZuiControlContract.KEY_UPERF_RULES_TEXT), pkg)
-        onState?.invoke(pkg,rate,mode.id)
         val desired = ZuiControlClient.stateValue(PerformanceMonitor.command("state"), "monitorMode") == "1"
         val enabled = PackageNames.isValid(pkg)
         val uperfEnabled = UperfAppPolicy.isConfigurable(packageManager, pkg)
-        val content = RemoteViews(packageName, R.layout.notification_zuicontrol).apply {
-            setInt(R.id.monitor_toggle, "setBackgroundResource",
-                if (desired) R.drawable.notify_monitor_active else R.drawable.notify_monitor_off)
-            setInt(R.id.monitor_toggle, "setColorFilter", android.graphics.Color.WHITE)
-            setContentDescription(R.id.monitor_toggle, "监视器 ${if (desired) "开启" else "关闭"}")
-            setOnClickPendingIntent(R.id.monitor_toggle, pending(FULL, 1))
-            listOf(R.id.refresh_60, R.id.refresh_90, R.id.refresh_120, R.id.refresh_144, R.id.refresh_165)
-                .zip(ZuiControlContract.rates).forEach { (id, value) ->
-                    val selected = value == rate
-                    setInt(id, "setBackgroundResource", if (selected) R.drawable.notify_rate_selected else R.drawable.notify_rate_normal)
-                    setTextColor(id, getColor(if (selected) R.color.ui_accent else R.color.ui_text))
-                    setBoolean(id, "setEnabled", enabled)
-                    setContentDescription(id, "${value}Hz ${if (selected) "已选择" else "未选择"}")
-                    setOnClickPendingIntent(id, pending(REFRESH + value, value))
-                }
-            listOf(R.id.mode_powersave, R.id.mode_balance, R.id.mode_performance, R.id.mode_fast)
-                .zip(UperfMode.entries).forEach { (id, value) ->
-                    val dot = listOf(R.id.dot_powersave, R.id.dot_balance, R.id.dot_performance, R.id.dot_fast)[value.ordinal]
-                    setViewVisibility(dot, if (value == mode) View.VISIBLE else View.INVISIBLE)
-                    setInt(dot, "setColorFilter", getColor(value.color))
-                    setBoolean(id, "setEnabled", uperfEnabled)
-                    setContentDescription(id, "${value.title} ${if (value == mode) "已选择" else "未选择"}")
-                    setOnClickPendingIntent(id, pending(UPERF + value.id, 200 + value.ordinal))
-                }
-        }
+        return NotificationQuickControlHelper.Snapshot(pkg, rate, mode, desired, enabled, uperfEnabled)
+    }
+    @Suppress("DEPRECATION")
+    private fun renderNotification(snapshot: NotificationQuickControlHelper.Snapshot): Notification {
+        val content = RemoteViews(packageName, R.layout.notification_quick_control)
+        NotificationQuickControlHelper.updateRemoteViews(content, snapshot, pending(FULL, 1),
+            { value -> pending(REFRESH + value, value) },
+            { mode -> pending(UPERF + mode.id, 200 + mode.ordinal) })
         return Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_zuicontrol)
             .setContentTitle("ZuiControl").setContent(content).setOngoing(true)
             .setOnlyAlertOnce(true).setShowWhen(false).setLocalOnly(true)
@@ -163,6 +144,7 @@ class ZuiControlQuickService : Service() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         monitor?.environmentChanged()
+        requestRefresh()
     }
     override fun dump(fd: FileDescriptor, writer: PrintWriter, args: Array<out String>) {
         args.firstOrNull { it.startsWith("--trace-seconds=") }?.substringAfter('=')?.toIntOrNull()?.let {

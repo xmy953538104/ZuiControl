@@ -71,7 +71,7 @@ timing_mark() {
 }
 
 log_line() {
-    mkdir -p "$LOG_DIR"
+    [ -d "$LOG_DIR" ] || mkdir -p "$LOG_DIR"
     printf '%s %s\n' "$(ts)" "$*" >> "$LOG_FILE"
 }
 
@@ -156,10 +156,14 @@ publish_uperf_rules_state() {
         case "$rule_pkg" in ''|'#'*|'-'|'*') continue ;; esac
         valid_package_name "$rule_pkg" || continue
         valid_uperf_preset "$rule_mode" || continue
-        rules="${rules}${rule_pkg}|${rule_mode}
-"
+        if [ -n "$rules" ]; then
+            rules="$rules
+$rule_pkg|$rule_mode"
+        else
+            rules="$rule_pkg|$rule_mode"
+        fi
     done < "$UPERF_PERAPP" 2>/dev/null
-    settings_put_quiet "$UPERF_RULES_KEY" "$(printf '%s' "$rules" | sed '/^$/d')" || return 1
+    settings_put_quiet "$UPERF_RULES_KEY" "$rules" || return 1
     UPERF_RULES_DIRTY=0
 }
 
@@ -325,7 +329,7 @@ sanitize_ack_field() {
 ack_text() {
     # Normal validated fields need no four tr processes before each progress/terminal ACK.
     case "$1$2$3$4" in
-        *[!A-Za-z0-9._=:/-]*) ;;
+        *[!A-Za-z0-9._=:/\;-]*) ;;
         *) printf '%s|%s|%s|%s\n' "$1" "$2" "$3" "$4"; return ;;
     esac
     printf '%s|%s|%s|%s\n' \
@@ -599,7 +603,6 @@ process_settings_request() {
     handle_command "$cmd" "$pkg" "$mode"
     result=$?
     timing_mark "$id" T6 "$cmd"
-    trim_log
     finish_request "$request" "$id" "$cmd" "$result" "$REQUEST_RESULT_DETAIL"
 }
 

@@ -1,0 +1,118 @@
+{
+  "base_head": "1855a6e1ef33c0cafb5a0c231761eb1edc7ab58b",
+  "scope": "R10 explicit full notification renderer and circle drag/gesture; narrow equivalent oneshot overhead only; closed authorities unchanged",
+  "tree": [
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MonitorGesture.kt",
+      "before": "100644 blob 9929005c337bbf793f65327184da864340412fab\tapp/src/main/java/com/zui/zuicontrol/MonitorGesture.kt",
+      "after": "100644 blob e11cba7978e4c1e5bd7b03232672c73ef1a1c5e9\tapp/src/main/java/com/zui/zuicontrol/MonitorGesture.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",
+      "before": null,
+      "after": "100644 blob 11df1a5897875339366651e9fd45f84ea895473c\tapp/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "before": "100644 blob c776816a082c07cbbfc1e8cc8676bbd337571418\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "after": "100644 blob 82cd265dac8e8303611e91c5dab3175497f9973a\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
+      "before": "100644 blob 5b1b5ef7b43b695e8baca6000a5fb6df1587d28e\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
+      "after": "100644 blob 8bf1dd34307e5f1445fa1429e2bf56cced1be8d0\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_card.xml",
+      "before": null,
+      "after": "100644 blob 027c8ee17850de26c95653cbd99672addf7ebdf8\tapp/src/main/res/drawable/notify_card.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_balance.xml",
+      "before": null,
+      "after": "100644 blob 2ae0d602a7524d6a0b6c88019df3820d819c4a6f\tapp/src/main/res/drawable/notify_mode_balance.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_fast.xml",
+      "before": null,
+      "after": "100644 blob c2d4efff46a494146e50ac71d0185add30b6c20b\tapp/src/main/res/drawable/notify_mode_fast.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_performance.xml",
+      "before": null,
+      "after": "100644 blob 53fd93b42ecd7703275b76836f31c18520b26c81\tapp/src/main/res/drawable/notify_mode_performance.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_powersave.xml",
+      "before": null,
+      "after": "100644 blob 352e33323153ecd248fa55d822c1c64bc72bdaf7\tapp/src/main/res/drawable/notify_mode_powersave.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_monitor_active.xml",
+      "before": "100644 blob 8b3012be28e16de96c0e815ce0270f8795964d17\tapp/src/main/res/drawable/notify_monitor_active.xml",
+      "after": "100644 blob de8e52cb21222e7f426046681b0e816f1ece1de3\tapp/src/main/res/drawable/notify_monitor_active.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_monitor_indicator.xml",
+      "before": null,
+      "after": "100644 blob bd3c7c3327980abe016fe46ad39ae85a68827d63\tapp/src/main/res/drawable/notify_monitor_indicator.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_monitor_off.xml",
+      "before": "100644 blob 1777c50a002e87e2c953637f2f1e337e6bb7bcac\tapp/src/main/res/drawable/notify_monitor_off.xml",
+      "after": "100644 blob 64f8b34071235f29d99f2351b556532952dfa245\tapp/src/main/res/drawable/notify_monitor_off.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_rate_normal.xml",
+      "before": "100644 blob d49d0dfcce88d0b1da94250568a1e79ac1c9aa51\tapp/src/main/res/drawable/notify_rate_normal.xml",
+      "after": "100644 blob c72b5ac9ff98d41f65b23ce870fcd66a81f14564\tapp/src/main/res/drawable/notify_rate_normal.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_rate_selected.xml",
+      "before": "100644 blob c2570ee8b3ff5222068a1f589366a6b30cd122a0\tapp/src/main/res/drawable/notify_rate_selected.xml",
+      "after": "100644 blob c5234dee26b39aee3f2c66ca85e2a82bae731426\tapp/src/main/res/drawable/notify_rate_selected.xml"
+    },
+    {
+      "path": "app/src/main/res/layout/notification_quick_control.xml",
+      "before": null,
+      "after": "100644 blob c4f2ca802e79462db68700050803a805314922a2\tapp/src/main/res/layout/notification_quick_control.xml"
+    },
+    {
+      "path": "app/src/main/res/layout/notification_zuicontrol.xml",
+      "before": "100644 blob 6dda1807d883bc739cbcb6db6e2623027064d24f\tapp/src/main/res/layout/notification_zuicontrol.xml",
+      "after": null
+    },
+    {
+      "path": "app/src/main/res/values/styles.xml",
+      "before": "100644 blob da7a0951d556bd886ac64236333f9135847d6b89\tapp/src/main/res/values/styles.xml",
+      "after": "100644 blob 9a8688adfcc8cb05de96bdcb1c1f64da078ad58b\tapp/src/main/res/values/styles.xml"
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/MonitorGestureTest.kt",
+      "before": "100644 blob 7429618c4992cf295a2e3aec2714dc848264fbbc\tapp/src/test/java/com/zui/zuicontrol/MonitorGestureTest.kt",
+      "after": "100644 blob 9aa2707238ca8e59722bd8f0887277bed2d90e76\tapp/src/test/java/com/zui/zuicontrol/MonitorGestureTest.kt"
+    }
+  ],
+  "daemon": [
+    {
+      "function": "log_line",
+      "before": "log_line() {\n    mkdir -p \"$LOG_DIR\"\n    printf '%s %s\\n' \"$(ts)\" \"$*\" >> \"$LOG_FILE\"\n}",
+      "after": "log_line() {\n    [ -d \"$LOG_DIR\" ] || mkdir -p \"$LOG_DIR\"\n    printf '%s %s\\n' \"$(ts)\" \"$*\" >> \"$LOG_FILE\"\n}"
+    },
+    {
+      "function": "publish_uperf_rules_state",
+      "before": "publish_uperf_rules_state() {\n    rules=\n    while read -r rule_pkg rule_mode extra; do\n        [ -z \"$extra\" ] || continue\n        case \"$rule_pkg\" in ''|'#'*|'-'|'*') continue ;; esac\n        valid_package_name \"$rule_pkg\" || continue\n        valid_uperf_preset \"$rule_mode\" || continue\n        rules=\"${rules}${rule_pkg}|${rule_mode}\n\"\n    done < \"$UPERF_PERAPP\" 2>/dev/null\n    settings_put_quiet \"$UPERF_RULES_KEY\" \"$(printf '%s' \"$rules\" | sed '/^$/d')\" || return 1\n    UPERF_RULES_DIRTY=0\n}",
+      "after": "publish_uperf_rules_state() {\n    rules=\n    while read -r rule_pkg rule_mode extra; do\n        [ -z \"$extra\" ] || continue\n        case \"$rule_pkg\" in ''|'#'*|'-'|'*') continue ;; esac\n        valid_package_name \"$rule_pkg\" || continue\n        valid_uperf_preset \"$rule_mode\" || continue\n        if [ -n \"$rules\" ]; then\n            rules=\"$rules\n$rule_pkg|$rule_mode\"\n        else\n            rules=\"$rule_pkg|$rule_mode\"\n        fi\n    done < \"$UPERF_PERAPP\" 2>/dev/null\n    settings_put_quiet \"$UPERF_RULES_KEY\" \"$rules\" || return 1\n    UPERF_RULES_DIRTY=0\n}"
+    },
+    {
+      "function": "ack_text",
+      "before": "ack_text() {\n    # Normal validated fields need no four tr processes before each progress/terminal ACK.\n    case \"$1$2$3$4\" in\n        *[!A-Za-z0-9._=:/-]*) ;;\n        *) printf '%s|%s|%s|%s\\n' \"$1\" \"$2\" \"$3\" \"$4\"; return ;;\n    esac\n    printf '%s|%s|%s|%s\\n' \\\n        \"$(sanitize_ack_field \"$1\")\" \\\n        \"$(sanitize_ack_field \"$2\")\" \\\n        \"$(sanitize_ack_field \"$3\")\" \\\n        \"$(sanitize_ack_field \"$4\")\"\n}",
+      "after": "ack_text() {\n    # Normal validated fields need no four tr processes before each progress/terminal ACK.\n    case \"$1$2$3$4\" in\n        *[!A-Za-z0-9._=:/\\;-]*) ;;\n        *) printf '%s|%s|%s|%s\\n' \"$1\" \"$2\" \"$3\" \"$4\"; return ;;\n    esac\n    printf '%s|%s|%s|%s\\n' \\\n        \"$(sanitize_ack_field \"$1\")\" \\\n        \"$(sanitize_ack_field \"$2\")\" \\\n        \"$(sanitize_ack_field \"$3\")\" \\\n        \"$(sanitize_ack_field \"$4\")\"\n}"
+    },
+    {
+      "function": "process_settings_request",
+      "before": "process_settings_request() {\n    if [ \"$#\" -gt 0 ]; then\n        request=\"$1\"\n    else\n        request=\"$(settings_get_clean \"$REQ_TEXT_KEY\")\"\n    fi\n    [ -n \"$request\" ] || return 0\n    if [ \"$request\" = \"$LAST_SETTINGS_REQUEST\" ]; then\n        publish_pending_terminal_ack >/dev/null 2>&1 || true\n        return 0\n    fi\n    id=\"${request%%'|'*}\"\n    if [ -n \"$LAST_COMPLETED_REQUEST_ID\" ] && [ \"$id\" = \"$LAST_COMPLETED_REQUEST_ID\" ]; then\n        if [ \"$request\" = \"$replay_request\" ]; then\n            publish_pending_terminal_ack >/dev/null 2>&1 || true\n        else\n            TERMINAL_ACK_PENDING=0\n        fi\n        LAST_SETTINGS_REQUEST=\"$request\"\n        return 0\n    fi\n    request_tail=\"${request#*'|'}\"; cmd=\"${request_tail%%'|'*}\"\n    request_tail=\"${request_tail#*'|'}\"; request_tail=\"${request_tail#*'|'}\"\n    pkg=\"${request_tail%%'|'*}\"; mode=\"${request_tail#*'|'}\"\n    count_request_fields \"$request\"\n    if [ \"$field_count\" != \"5\" ] || [ -z \"$id\" ] || [ -z \"$cmd\" ]; then\n        finish_request \"$request\" \"${id:-invalid}\" \"${cmd:-invalid}\" 1 invalid_request\n        return $?\n    fi\n    CURRENT_REQUEST_ID=\"$id\"\n    CURRENT_REQUEST_CMD=\"$cmd\"\n    publish_request_progress validating\n    case \"$cmd\" in\n        zo_*) log_line \"request id=$id cmd=$cmd bounded_transport=1\" ;;\n        *) log_line \"request id=$id cmd=$cmd pkg=$pkg mode=$mode\" ;;\n    esac\n    if ! persist_request_claim \"$request\"; then\n        log_line \"request claim failed id=$id cmd=$cmd; action not started\"\n        return 1\n    fi\n    timing_mark \"$id\" T5 \"$cmd\"\n    handle_command \"$cmd\" \"$pkg\" \"$mode\"\n    result=$?\n    timing_mark \"$id\" T6 \"$cmd\"\n    trim_log\n    finish_request \"$request\" \"$id\" \"$cmd\" \"$result\" \"$REQUEST_RESULT_DETAIL\"\n}",
+      "after": "process_settings_request() {\n    if [ \"$#\" -gt 0 ]; then\n        request=\"$1\"\n    else\n        request=\"$(settings_get_clean \"$REQ_TEXT_KEY\")\"\n    fi\n    [ -n \"$request\" ] || return 0\n    if [ \"$request\" = \"$LAST_SETTINGS_REQUEST\" ]; then\n        publish_pending_terminal_ack >/dev/null 2>&1 || true\n        return 0\n    fi\n    id=\"${request%%'|'*}\"\n    if [ -n \"$LAST_COMPLETED_REQUEST_ID\" ] && [ \"$id\" = \"$LAST_COMPLETED_REQUEST_ID\" ]; then\n        if [ \"$request\" = \"$replay_request\" ]; then\n            publish_pending_terminal_ack >/dev/null 2>&1 || true\n        else\n            TERMINAL_ACK_PENDING=0\n        fi\n        LAST_SETTINGS_REQUEST=\"$request\"\n        return 0\n    fi\n    request_tail=\"${request#*'|'}\"; cmd=\"${request_tail%%'|'*}\"\n    request_tail=\"${request_tail#*'|'}\"; request_tail=\"${request_tail#*'|'}\"\n    pkg=\"${request_tail%%'|'*}\"; mode=\"${request_tail#*'|'}\"\n    count_request_fields \"$request\"\n    if [ \"$field_count\" != \"5\" ] || [ -z \"$id\" ] || [ -z \"$cmd\" ]; then\n        finish_request \"$request\" \"${id:-invalid}\" \"${cmd:-invalid}\" 1 invalid_request\n        return $?\n    fi\n    CURRENT_REQUEST_ID=\"$id\"\n    CURRENT_REQUEST_CMD=\"$cmd\"\n    publish_request_progress validating\n    case \"$cmd\" in\n        zo_*) log_line \"request id=$id cmd=$cmd bounded_transport=1\" ;;\n        *) log_line \"request id=$id cmd=$cmd pkg=$pkg mode=$mode\" ;;\n    esac\n    if ! persist_request_claim \"$request\"; then\n        log_line \"request claim failed id=$id cmd=$cmd; action not started\"\n        return 1\n    fi\n    timing_mark \"$id\" T5 \"$cmd\"\n    handle_command \"$cmd\" \"$pkg\" \"$mode\"\n    result=$?\n    timing_mark \"$id\" T6 \"$cmd\"\n    finish_request \"$request\" \"$id\" \"$cmd\" \"$result\" \"$REQUEST_RESULT_DETAIL\"\n}"
+    }
+  ]
+}

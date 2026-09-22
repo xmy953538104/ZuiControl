@@ -405,6 +405,59 @@ test_minimal_request_and_receipt() (
     fi
 )
 
+test_rules_publication_bytes_and_failure() (
+    ZUI_CONTROLD_TEST_MODE=1
+    export ZUI_CONTROLD_TEST_MODE
+    . "$DAEMON"
+    setup_state
+    trap 'rm -rf "$TEST_ROOT"' EXIT
+    : > "$UPERF_PERAPP"
+    publish_uperf_rules_state || fail 'empty rules publication failed'
+    [ -z "$TEST_RULES_STATE" ] || fail 'empty rules gained bytes'
+
+    printf '%s\n' '' '# comment' '- powersave' '* fast' '.bad fast' \
+        'com.example.bad auto' 'com.example.extra fast extra' \
+        'com.example.bad; fast' 'com.example.bad| fast' > "$UPERF_PERAPP"
+    printf 'com.example.cr fast\r\ncom.example.valid fast\n' >> "$UPERF_PERAPP"
+    publish_uperf_rules_state || fail 'one valid rule publication failed'
+    [ "$TEST_RULES_STATE" = 'com.example.valid|fast' ] || fail 'one rule bytes changed'
+
+    printf '%s\n' 'com.example.second balance' '' 'com.example.valid powersave' \
+        'com.example.third performance' >> "$UPERF_PERAPP"
+    # Preserve the existing read-loop behavior for an unterminated final input line.
+    printf 'com.example.unterminated fast' >> "$UPERF_PERAPP"
+    expected_rules='com.example.valid|fast
+com.example.second|balance
+com.example.valid|powersave
+com.example.third|performance'
+    TEST_CONFIG_PUT_FAILURES=1
+    UPERF_RULES_DIRTY=1
+    if publish_uperf_rules_state; then fail 'rules publication failure returned success'; fi
+    [ "$UPERF_RULES_DIRTY" = 1 ] || fail 'failed rules publication cleared dirty flag'
+    [ "$TEST_RULES_STATE" = 'com.example.valid|fast' ] || fail 'failed publication changed state'
+    publish_uperf_rules_state || fail 'rules publication retry failed'
+    [ "$TEST_RULES_STATE" = "$expected_rules" ] || fail 'multiple rule bytes/order changed'
+    [ "$UPERF_RULES_DIRTY" = 0 ] || fail 'successful rules publication remained dirty'
+)
+
+test_log_directory_reuse() (
+    ZUI_CONTROLD_TEST_MODE=1
+    export ZUI_CONTROLD_TEST_MODE
+    . "$DAEMON"
+    TEST_ROOT="$(mktemp -d)"
+    trap 'rm -rf "$TEST_ROOT"' EXIT
+    LOG_DIR="$TEST_ROOT/log"
+    LOG_FILE="$LOG_DIR/controld.log"
+    mkdir_calls=0
+    mkdir() { mkdir_calls=$((mkdir_calls + 1)); command mkdir "$@"; }
+    ts() { printf test; }
+    log_line first
+    log_line second
+    [ "$mkdir_calls" = 1 ] || fail 'existing log directory was recreated'
+    [ "$(cat "$LOG_FILE")" = 'test first
+test second' ] || fail 'log content changed'
+)
+
 test_config_publication_failure_is_terminal_and_recoverable() (
     ZUI_CONTROLD_TEST_MODE=1
     export ZUI_CONTROLD_TEST_MODE
@@ -441,9 +494,16 @@ test_timing_phase_sequence() (
     setup_state
     trap 'rm -rf "$TEST_ROOT"' EXIT
     ensure_request_dirs() { :; }
+    trim_calls=0
+    trim_log() {
+        [ "$TEST_TERMINAL_ACK_PUTS" = 1 ] || fail 'log trim delayed terminal ACK'
+        [ ! -e "$ACTIVE_REQUEST_CLAIM" ] || fail 'log trim preceded claim cleanup'
+        trim_calls=$((trim_calls + 1))
+    }
 
     TEST_REQUEST='timing-id|status|||'
     authenticated_oneshot || fail 'timing request failed'
+    [ "$trim_calls" = 1 ] || fail 'oneshot did not trim logs exactly once'
     phases="$(printf '%s' "$TEST_TIMING" | awk -F '|' '
         NF { if (out != "") out=out ","; out=out $2 }
         END { print out }
@@ -793,6 +853,8 @@ assert_oem_fence_ownership_policy
 test_noarg_entrypoint_is_closed
 test_control_plane_does_not_write_effective
 test_custom_app_lifecycle
+test_rules_publication_bytes_and_failure
+test_log_directory_reuse
 test_minimal_request_and_receipt
 test_config_publication_failure_is_terminal_and_recoverable
 test_timing_phase_sequence
