@@ -169,7 +169,7 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
                 contentDescription = page.title
                 if (page == Page.REFRESH) {
-                    addView(label("Hz", 21f, COLOR_SUBTLE, Typeface.BOLD).apply {
+                    addView(label("Hz", 17f, COLOR_SUBTLE, Typeface.NORMAL).apply {
                         gravity = Gravity.CENTER; includeFontPadding = false
                     }, LinearLayout.LayoutParams(dp(28), dp(26)))
                 } else {
@@ -604,7 +604,7 @@ class MainActivity : Activity() {
                 showGlobalGpuRanges()
             }, settingsActionMargins())
             addView(settingsAction(
-                R.drawable.ic_tool_export, "导出运行日志", "排查刷新率、Uperf 与 ZUIopt",
+                R.drawable.ic_action_logs, "导出运行日志", "排查刷新率、Uperf 与 ZUIopt",
             ) { exportLogs() }, settingsActionMargins())
             addView(settingsAction(
                 R.drawable.ic_action_refresh, "重启调度核心", "重新加载 Uperf 配置并检查 ZUIopt；不清除故障保护",
@@ -947,7 +947,7 @@ class MainActivity : Activity() {
     private fun AlertDialog.Builder.showStyled(): AlertDialog = createStyled().also { it.show() }
 
     private fun AlertDialog.Builder.createStyled(): AlertDialog = create().apply {
-        setOnShowListener { UiControls.styleDialog(this) }
+        UiControls.styleDialog(this)
     }
 
     private fun labelForPackage(pkg: String): String = labelCache.getOrPut(pkg) {
@@ -1123,6 +1123,8 @@ class MainActivity : Activity() {
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
             val row = (convertView as? LinearLayout) ?: horizontalRow().apply {
+                // One parent surface; rows must not form scalloped white edges.
+                background = null
                 setPadding(dp(12), dp(9), dp(12), dp(9))
                 addView(ImageView(this@MainActivity).apply {
                     scaleType = ImageView.ScaleType.CENTER_CROP

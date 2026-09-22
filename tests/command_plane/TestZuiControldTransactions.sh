@@ -766,6 +766,22 @@ test_oneshot_failure_windows() (
     [ "$TEST_ACK" = 'after-action-before-receipt|failed|status|indeterminate_after_claim' ] ||
         fail 'post-action crash did not receive indeterminate terminal ACK'
     [ ! -e "$ACTIVE_REQUEST_CLAIM" ] || fail 'failure recovery left an active claim'
+
+    # A corrupt completion file must never make a matching durable claim look completed.
+    for variant in one_line extra_line wrong_id nonterminal; do
+        TEST_REQUEST="malformed-$variant|status|||"
+        persist_request_claim "$TEST_REQUEST" || fail 'could not stage corrupt-receipt claim'
+        case "$variant" in
+            one_line) printf '%s\n' "$TEST_REQUEST" > "$LAST_REQUEST_RECEIPT" ;;
+            extra_line) printf '%s\n%s|done|status|ok\nextra\n' "$TEST_REQUEST" "malformed-$variant" > "$LAST_REQUEST_RECEIPT" ;;
+            wrong_id) printf '%s\nwrong|done|status|ok\n' "$TEST_REQUEST" > "$LAST_REQUEST_RECEIPT" ;;
+            nonterminal) printf '%s\n%s|processing|status|ok\n' "$TEST_REQUEST" "malformed-$variant" > "$LAST_REQUEST_RECEIPT" ;;
+        esac
+        authenticated_oneshot || true
+        [ "$TEST_ACTIONS" -eq 2 ] || fail "corrupt $variant completion replayed claimed action"
+        [ "$TEST_ACK" = "malformed-$variant|failed|status|indeterminate_after_claim" ] ||
+            fail "corrupt $variant completion bypassed indeterminate recovery"
+    done
 )
 
 assert_default_policy

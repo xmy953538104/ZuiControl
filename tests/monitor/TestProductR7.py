@@ -57,7 +57,7 @@ class ProductR7(unittest.TestCase):
         header=main.split('private fun headerStatusText()',1)[1].split('\n    private ',1)[0]
         self.assertNotIn('Hz',header);self.assertIn('v$version',header)
         self.assertIn('UPERF("性能"',main)
-        self.assertIn('label("Hz", 21f, COLOR_SUBTLE, Typeface.BOLD)',main)
+        self.assertIn('label("Hz", 17f, COLOR_SUBTLE, Typeface.NORMAL)',main)
         self.assertIn('R.color.ui_text',ui.split('fun modeChip',1)[1].split('fun ',1)[0])
         settings=main.split('private fun buildSystemPage()',1)[1].split('private fun exportLogs()',1)[0]
         icons=re.findall(r'settingsAction\(\s*R.drawable.(\w+)',settings)
@@ -77,7 +77,7 @@ class ProductR7(unittest.TestCase):
         layout=read('app/src/main/res/layout/notification_zuicontrol.xml');quick=app('ZuiControlQuickService.kt')
         self.assertEqual(layout.count('@+id/mode_track'),1)
         self.assertEqual(layout.count('style="@style/NotificationMode"'),4)
-        self.assertEqual(layout.count('android:visibility="invisible"'),3)
+        self.assertEqual(layout.count('android:visibility="invisible"'),4)
         self.assertEqual(layout.count('style="@style/NotificationModeDot"'),4)
         self.assertNotIn('<SeekBar',layout)
         for forbidden in ('●','○','value.title.first()', 'BigContentView','Timer','while (','/proc/','getRunningTasks','SharedPreferences'):

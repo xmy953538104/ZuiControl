@@ -3,14 +3,13 @@
     <style name="NotificationRefresh" parent="NotificationRateButton">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_weight">1</item>
-        <item name="android:layout_height">24dp</item>
-        <item name="android:textSize">11sp</item>
+        <item name="android:layout_height">32dp</item>
+        <item name="android:textSize">13sp</item>
         <item name="android:includeFontPadding">false</item>
     </style>
     <style name="NotificationMode">
-        <item name="android:layout_width">0dp</item>
-        <item name="android:layout_weight">1</item>
-        <item name="android:layout_height">24dp</item>
+        <item name="android:layout_width">48dp</item>
+        <item name="android:layout_height">32dp</item>
         <item name="android:background">@android:color/transparent</item>
     </style>
     <style name="NotificationModeDot">

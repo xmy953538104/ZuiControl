@@ -17,9 +17,12 @@ import android.widget.FrameLayout
 
 internal object UiControls {
     fun styleDialog(dialog: AlertDialog) = with(dialog) {
+        // Install panels and establish the final geometry before WindowManager sees the dialog.
+        create()
         val r = context.resources
         val margin = r.getDimensionPixelSize(R.dimen.ui_dialog_spacing)
         window?.apply {
+            setWindowAnimations(0)
             setBackgroundDrawable(shape(context, R.color.ui_surface, r.getDimension(R.dimen.ui_card_radius)))
             setLayout(minOf(r.getDimensionPixelSize(R.dimen.ui_dialog_max_width),
                 r.displayMetrics.widthPixels - 2 * margin), ViewGroup.LayoutParams.WRAP_CONTENT)

@@ -1,39 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="48dp"
-    android:paddingStart="4dp" android:paddingEnd="4dp"
+    android:layout_width="match_parent" android:layout_height="88dp"
+    android:paddingStart="16dp" android:paddingEnd="16dp"
     android:gravity="center_vertical" android:orientation="horizontal">
     <ImageView android:id="@+id/monitor_toggle"
-        android:layout_width="44dp" android:layout_height="44dp"
-        android:layout_marginEnd="16dp" android:padding="10dp"
+        android:layout_width="56dp" android:layout_height="56dp"
+        android:layout_marginEnd="40dp" android:padding="12dp"
         android:contentDescription="监视器" android:src="@drawable/ic_tool_monitor"
         android:tint="@android:color/white" android:background="@drawable/notify_monitor_off" />
-    <LinearLayout android:layout_width="224dp" android:layout_height="48dp"
+    <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="64dp"
         android:orientation="vertical">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="24dp" android:orientation="horizontal">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="32dp" android:orientation="horizontal">
             <TextView android:id="@+id/refresh_60" style="@style/NotificationRefresh" android:text="60" />
             <TextView android:id="@+id/refresh_90" style="@style/NotificationRefresh" android:text="90" />
             <TextView android:id="@+id/refresh_120" style="@style/NotificationRefresh" android:text="120" />
             <TextView android:id="@+id/refresh_144" style="@style/NotificationRefresh" android:text="144" />
             <TextView android:id="@+id/refresh_165" style="@style/NotificationRefresh" android:text="165" />
         </LinearLayout>
-        <FrameLayout android:layout_width="match_parent" android:layout_height="24dp">
+        <FrameLayout android:layout_width="match_parent" android:layout_height="32dp">
             <ImageView android:id="@+id/mode_track" android:layout_width="match_parent" android:layout_height="1dp"
-                android:layout_marginStart="28dp" android:layout_marginEnd="28dp" android:layout_gravity="center_vertical"
+                android:layout_marginStart="24dp" android:layout_marginEnd="24dp" android:layout_gravity="center_vertical"
                 android:background="@color/notification_track" android:importantForAccessibility="no" />
             <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal">
-                <FrameLayout android:id="@+id/mode_powersave" style="@style/NotificationMode">
-                    <ImageView android:id="@+id/dot_powersave" style="@style/NotificationModeDot" android:visibility="invisible" />
-                </FrameLayout>
-                <FrameLayout android:id="@+id/mode_balance" style="@style/NotificationMode">
-                    <ImageView android:id="@+id/dot_balance" style="@style/NotificationModeDot" />
-                </FrameLayout>
-                <FrameLayout android:id="@+id/mode_performance" style="@style/NotificationMode">
-                    <ImageView android:id="@+id/dot_performance" style="@style/NotificationModeDot" android:visibility="invisible" />
-                </FrameLayout>
-                <FrameLayout android:id="@+id/mode_fast" style="@style/NotificationMode">
-                    <ImageView android:id="@+id/dot_fast" style="@style/NotificationModeDot" android:visibility="invisible" />
-                </FrameLayout>
+            <FrameLayout android:id="@+id/mode_powersave" style="@style/NotificationMode">
+                <ImageView android:id="@+id/dot_powersave" style="@style/NotificationModeDot" android:visibility="invisible" />
+            </FrameLayout>
+            <FrameLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:importantForAccessibility="no" />
+            <FrameLayout android:id="@+id/mode_balance" style="@style/NotificationMode">
+                <ImageView android:id="@+id/dot_balance" style="@style/NotificationModeDot" android:visibility="invisible" />
+            </FrameLayout>
+            <FrameLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:importantForAccessibility="no" />
+            <FrameLayout android:id="@+id/mode_performance" style="@style/NotificationMode">
+                <ImageView android:id="@+id/dot_performance" style="@style/NotificationModeDot" android:visibility="invisible" />
+            </FrameLayout>
+            <FrameLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:importantForAccessibility="no" />
+            <FrameLayout android:id="@+id/mode_fast" style="@style/NotificationMode">
+                <ImageView android:id="@+id/dot_fast" style="@style/NotificationModeDot" android:visibility="invisible" />
+            </FrameLayout>
             </LinearLayout>
         </FrameLayout>
     </LinearLayout>

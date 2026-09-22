@@ -172,7 +172,7 @@ class PerformanceRecordActivity : Activity() {
                     }
                 }.start()
             }.create()
-        dialog.setOnShowListener { UiControls.styleDialog(dialog) }; dialog.show()
+        UiControls.styleDialog(dialog); dialog.show()
     }
     private fun number(value: Double) = if (!value.isFinite() || value < 0) "--" else String.format(Locale.ROOT, "%.1f", value)
     private inner class RecordChart(private val rows: JSONArray, private val column: Int, private val duration: Long) : View(this@PerformanceRecordActivity) {

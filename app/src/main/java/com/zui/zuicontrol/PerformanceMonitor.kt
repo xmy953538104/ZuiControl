@@ -105,11 +105,10 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
             @Suppress("DEPRECATION")
             maxOf(insets?.systemWindowInsetTop ?: 0, insets?.displayCutout?.safeInsetTop ?: 0)
         }
-    private fun absoluteY() = stableSafeTopInset + context.resources.getDimensionPixelSize(R.dimen.monitor_top_inset)
+    private fun absoluteY() = context.resources.getDimensionPixelSize(R.dimen.monitor_top_inset)
     fun environmentChanged(reason: String = "configuration") {
-        // Display metrics are independent of this overlay's relative View insets.
-        stableSafeTopInset = safeTop(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
-            windows.maximumWindowMetrics.windowInsets else null)
+        // Owner's original R5 top margin; optional caption clearance is not a product requirement.
+        stableSafeTopInset = 0
         val target = view ?: return
         if (!attached) return
         val layout = target.layoutParams as WindowManager.LayoutParams
@@ -164,7 +163,7 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
                         (if (next.optInt("mode") == 2) WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE else 0),
                     PixelFormat.TRANSLUCENT).apply {
                     gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                    // Absolute display coordinates; account for each inset once, even in immersive apps.
+                    // Absolute display coordinates, matching the original top-center placement.
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setFitInsetsTypes(0)
                     y = absoluteY()
                     layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
@@ -223,16 +222,26 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
             val nextState = when { recording() -> "RECORDING"; circle && down >= 0 -> "ARMING"; circle -> "CIRCLE"; else -> "LONG_BAR" }
             val shapeChanged = (visualState == "LONG_BAR") != (nextState == "LONG_BAR")
             state(nextState)
-            if (previous != metrics || shapeChanged) { requestLayout(); invalidate() }
+            if (previous != metrics || shapeChanged) {
+                val widthChanged = previous.sumOf { metricWidth(it).toDouble() } !=
+                    metrics.sumOf { metricWidth(it).toDouble() }
+                fitValueSize()
+                if (previous.isEmpty() || shapeChanged || (!circle && widthChanged)) requestLayout()
+                invalidate()
+            }
+        }
+        private fun numberWidth(metric: Pair<String, String>): Float {
+            paint.textSize = valueSize
+            // Reserve numeric space: changing digits must not resize the overlay and start OEM animations.
+            return if (circle && snapshot.optInt("mode") != 2) paint.measureText(metric.first)
+                else maxOf(paint.measureText(metric.first), paint.measureText(if (metric.second == "FPS") "888.8" else "88.8"))
         }
         private fun metricWidth(metric: Pair<String, String>): Float {
-            paint.textSize = valueSize
-            val value = paint.measureText(metric.first)
+            val value = numberWidth(metric)
             paint.textSize = unitSize
             return value + dimen(R.dimen.monitor_unit_gap) + paint.measureText(metric.second)
         }
-        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            measures++
+        private fun fitValueSize() {
             val round = circle && snapshot.optInt("mode") != 2
             valueSize = dimen(if (round) R.dimen.monitor_circle_text else R.dimen.monitor_value_text)
             if (round && metrics.isNotEmpty()) {
@@ -240,6 +249,11 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
                 val measured = metricWidth(metrics[0])
                 if (measured > available) valueSize *= available / measured
             }
+        }
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            measures++
+            fitValueSize()
+            val round = circle && snapshot.optInt("mode") != 2
             val content = metrics.sumOf { metricWidth(it).toDouble() }.toFloat() +
                 (metrics.size - 1).coerceAtLeast(0) * dimen(R.dimen.monitor_metric_gap)
             val w = if (round) dimen(R.dimen.monitor_touch_diameter) else content + 2 * barPadding
@@ -267,9 +281,10 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
             val baseline = height / 2f - (paint.ascent() + paint.descent()) / 2
             var x = if (round && metrics.isNotEmpty()) (width - metricWidth(metrics[0])) / 2 else barPadding
             metrics.forEach { (value, unit) ->
+                val slot = numberWidth(value to unit)
                 paint.textSize = valueSize; paint.color = context.getColor(R.color.monitor_value)
-                canvas.drawText(value, x, baseline, paint)
-                x += paint.measureText(value) + dimen(R.dimen.monitor_unit_gap)
+                canvas.drawText(value, x + slot - paint.measureText(value), baseline, paint)
+                x += slot + dimen(R.dimen.monitor_unit_gap)
                 paint.textSize = unitSize; paint.color = context.getColor(R.color.monitor_unit)
                 canvas.drawText(unit, x, baseline, paint)
                 x += paint.measureText(unit) + dimen(R.dimen.monitor_metric_gap)

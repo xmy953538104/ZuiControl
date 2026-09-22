@@ -323,6 +323,11 @@ sanitize_ack_field() {
 }
 
 ack_text() {
+    # Normal validated fields need no four tr processes before each progress/terminal ACK.
+    case "$1$2$3$4" in
+        *[!A-Za-z0-9._=:/-]*) ;;
+        *) printf '%s|%s|%s|%s\n' "$1" "$2" "$3" "$4"; return ;;
+    esac
     printf '%s|%s|%s|%s\n' \
         "$(sanitize_ack_field "$1")" \
         "$(sanitize_ack_field "$2")" \
@@ -336,15 +341,35 @@ publish_request_ack() {
 
 publish_request_progress() {
     [ -n "$CURRENT_REQUEST_ID" ] && [ -n "$CURRENT_REQUEST_CMD" ] || return 0
+    # Profile publication is the authoritative quick-control ACK. Avoid two earlier Settings writes.
+    case "$CURRENT_REQUEST_CMD" in set_uperf_app|set_uperf_mode|remove_uperf_app) return 0 ;; esac
     publish_request_ack "$CURRENT_REQUEST_ID" processing "$CURRENT_REQUEST_CMD" "$1"
 }
 
 request_field() {
-    printf '%s\n' "$1" | cut -d '|' -f "$2"
+    field_tail="$1"
+    field_index="$2"
+    case "$field_tail" in *'|'*) ;; *) printf '%s\n' "$field_tail"; return ;; esac
+    while [ "$field_index" -gt 1 ]; do
+        case "$field_tail" in *'|'*) field_tail="${field_tail#*'|'}" ;; *) printf '\n'; return ;; esac
+        field_index=$((field_index - 1))
+    done
+    printf '%s\n' "${field_tail%%'|'*}"
+}
+
+count_request_fields() {
+    count_tail="${1%%'
+'*}"
+    [ -n "$count_tail" ] || { field_count=0; return; }
+    field_count=1
+    while :; do
+        case "$count_tail" in *'|'*) field_count=$((field_count + 1)); count_tail="${count_tail#*'|'}" ;; *) break ;; esac
+    done
 }
 
 request_field_count() {
-    printf '%s\n' "$1" | awk -F '|' 'NR == 1 {print NF; exit}'
+    count_request_fields "$1"
+    printf '%s\n' "$field_count"
 }
 
 valid_request_id() {
@@ -366,22 +391,41 @@ request_sha256() {
 
 load_last_receipt() {
     [ -s "$LAST_REQUEST_RECEIPT" ] || return 1
-    [ "$(sed -n '$=' "$LAST_REQUEST_RECEIPT" 2>/dev/null)" = "2" ] || return 1
-    replay_request="$(sed -n '1p' "$LAST_REQUEST_RECEIPT" | tr -d '\r')"
-    replay_ack="$(sed -n '2p' "$LAST_REQUEST_RECEIPT" | tr -d '\r')"
-    [ -n "$replay_request" ] && [ -n "$replay_ack" ] || return 1
-    [ "$(request_field "$replay_request" 1)" = "$(request_field "$replay_ack" 1)" ] || return 1
-    [ "$(request_field "$replay_request" 2)" = "$(request_field "$replay_ack" 3)" ] || return 1
-    case "$(request_field "$replay_ack" 2)" in done|failed) ;; *) return 1 ;; esac
+    {
+        IFS= read -r receipt_request || [ -n "$receipt_request" ] || return 1
+        IFS= read -r receipt_ack || [ -n "$receipt_ack" ] || return 1
+        receipt_extra=
+        if IFS= read -r receipt_extra || [ -n "$receipt_extra" ]; then return 1; fi
+    } < "$LAST_REQUEST_RECEIPT"
+    receipt_cr="$(printf '\r')"
+    receipt_request="${receipt_request//$receipt_cr/}"
+    receipt_ack="${receipt_ack//$receipt_cr/}"
+    [ -n "$receipt_request" ] && [ -n "$receipt_ack" ] || return 1
+    [ "${receipt_request%%'|'*}" = "${receipt_ack%%'|'*}" ] || return 1
+    receipt_request_tail="${receipt_request#*'|'}"
+    receipt_ack_tail="${receipt_ack#*'|'}"
+    case "${receipt_ack_tail%%'|'*}" in done|failed) ;; *) return 1 ;; esac
+    receipt_ack_tail="${receipt_ack_tail#*'|'}"
+    [ "${receipt_request_tail%%'|'*}" = "${receipt_ack_tail%%'|'*}" ] || return 1
+    # Publish replay identity only after every line and terminal field is validated.
+    replay_request="$receipt_request"
+    replay_ack="$receipt_ack"
 }
 
 load_request_claim() {
     [ -s "$ACTIVE_REQUEST_CLAIM" ] || return 1
-    [ "$(sed -n '$=' "$ACTIVE_REQUEST_CLAIM" 2>/dev/null)" = "1" ] || return 1
-    claim_request="$(sed -n '1p' "$ACTIVE_REQUEST_CLAIM" | tr -d '\r')"
-    [ "$(request_field_count "$claim_request")" = "5" ] || return 1
-    [ -n "$(request_field "$claim_request" 1)" ] || return 1
-    [ -n "$(request_field "$claim_request" 2)" ] || return 1
+    {
+        IFS= read -r claim_request || [ -n "$claim_request" ] || return 1
+        claim_extra=
+        if IFS= read -r claim_extra || [ -n "$claim_extra" ]; then return 1; fi
+    } < "$ACTIVE_REQUEST_CLAIM"
+    claim_cr="$(printf '\r')"
+    claim_request="${claim_request//$claim_cr/}"
+    count_request_fields "$claim_request"
+    [ "$field_count" = "5" ] || return 1
+    [ -n "${claim_request%%'|'*}" ] || return 1
+    claim_tail="${claim_request#*'|'}"
+    [ -n "${claim_tail%%'|'*}" ] || return 1
 }
 
 persist_request_claim() {
@@ -414,10 +458,10 @@ $terminal_ack" 0600 || return 1
 publish_pending_terminal_ack() {
     [ "$TERMINAL_ACK_PENDING" = "1" ] || return 0
     if settings_put_quiet "$REQUEST_ACK_KEY" "$replay_ack"; then
-        timing_ack_id="${replay_ack%%|*}"
-        timing_ack_tail="${replay_ack#*|}"
-        timing_ack_tail="${timing_ack_tail#*|}"
-        timing_ack_cmd="${timing_ack_tail%%|*}"
+        timing_ack_id="${replay_ack%%'|'*}"
+        timing_ack_tail="${replay_ack#*'|'}"
+        timing_ack_tail="${timing_ack_tail#*'|'}"
+        timing_ack_cmd="${timing_ack_tail%%'|'*}"
         timing_mark "$timing_ack_id" T8 "$timing_ack_cmd"
         TERMINAL_ACK_PENDING=0
         return 0
@@ -522,7 +566,7 @@ process_settings_request() {
         publish_pending_terminal_ack >/dev/null 2>&1 || true
         return 0
     fi
-    id="$(request_field "$request" 1)"
+    id="${request%%'|'*}"
     if [ -n "$LAST_COMPLETED_REQUEST_ID" ] && [ "$id" = "$LAST_COMPLETED_REQUEST_ID" ]; then
         if [ "$request" = "$replay_request" ]; then
             publish_pending_terminal_ack >/dev/null 2>&1 || true
@@ -532,10 +576,11 @@ process_settings_request() {
         LAST_SETTINGS_REQUEST="$request"
         return 0
     fi
-    cmd="$(request_field "$request" 2)"
-    pkg="$(request_field "$request" 4)"
-    mode="$(request_field "$request" 5)"
-    if [ "$(request_field_count "$request")" != "5" ] || [ -z "$id" ] || [ -z "$cmd" ]; then
+    request_tail="${request#*'|'}"; cmd="${request_tail%%'|'*}"
+    request_tail="${request_tail#*'|'}"; request_tail="${request_tail#*'|'}"
+    pkg="${request_tail%%'|'*}"; mode="${request_tail#*'|'}"
+    count_request_fields "$request"
+    if [ "$field_count" != "5" ] || [ -z "$id" ] || [ -z "$cmd" ]; then
         finish_request "$request" "${id:-invalid}" "${cmd:-invalid}" 1 invalid_request
         return $?
     fi
@@ -584,7 +629,7 @@ init_request_state() {
         current_request="$(settings_get_clean "$REQ_TEXT_KEY")"
     fi
     if load_last_receipt; then
-        LAST_COMPLETED_REQUEST_ID="$(request_field "$replay_request" 1)"
+        LAST_COMPLETED_REQUEST_ID="${replay_request%%'|'*}"
         TERMINAL_ACK_PENDING=1
         if [ "$current_request" = "$replay_request" ]; then
             LAST_SETTINGS_REQUEST="$replay_request"
@@ -604,8 +649,8 @@ init_request_state() {
             clear_request_claim "$claim_request" >/dev/null 2>&1 || true
         else
             abandoned_request="$claim_request"
-            abandoned_id="$(request_field "$abandoned_request" 1)"
-            abandoned_cmd="$(request_field "$abandoned_request" 2)"
+            abandoned_id="${abandoned_request%%'|'*}"
+            abandoned_tail="${abandoned_request#*'|'}"; abandoned_cmd="${abandoned_tail%%'|'*}"
             abandoned_ack="$(ack_text "$abandoned_id" failed "$abandoned_cmd" indeterminate_after_claim)"
             if persist_completion "$abandoned_request" "$abandoned_ack"; then
                 clear_request_claim "$abandoned_request" >/dev/null 2>&1 || true
@@ -635,7 +680,7 @@ oneshot_request() {
     fi
     captured_request="$(settings_get_clean "$REQ_TEXT_KEY")"
     [ -n "$captured_request" ] || return 0
-    captured_id="$(request_field "$captured_request" 1)"
+    captured_id="${captured_request%%'|'*}"
     captured_sha256="$(request_sha256 "$captured_request")" || {
         log_line "request kick rejected: sha256 unavailable"
         return 1
