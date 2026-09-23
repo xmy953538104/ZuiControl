@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zui
 ui=(APP/'UiControls.kt').read_text(encoding='utf8');main=(APP/'MainActivity.kt').read_text(encoding='utf8')
 commit=ui[ui.index('    fun commitSelection('):ui.index('    private fun showChoices(')]
 listener=re.search(r'            setOnItemClickListener \{.*?\n            }',ui,re.S)[0]
-preview=re.search(r'        picker.onSelection = \{ position ->.*?\n        }',main,re.S)[0]
+preview=re.search(r'^([ \t]*)picker.onSelection = \{ position ->.*?\n\1}',main,re.S|re.M)[0]
 refresh='setRefreshProfile(pkg, ZuiControlContract.rates[picker.selectedItemPosition])'
 uperf='setUperfApp(pkg, modes[picker.selectedItemPosition])'
 assert refresh in main and uperf in main
