@@ -1,0 +1,86 @@
+{
+  "base_head": "e79abde7624645a51fee9c2b55d9e3430546f0f6",
+  "scope": "Owner final SVG notification-only UI and existing callback scalar forwarding; no sampler or backend delta",
+  "tree": [
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",
+      "before": "100644 blob f07e14ff7623ea2e53455810709f83b2a2244b1e\tapp/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",
+      "after": "100644 blob dff60876a008f0c6c93689907533506a2cf65c29\tapp/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "before": "100644 blob a5b8c4032de120a3b64b916f7e9b79d4a84a7b5b\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "after": "100644 blob 7ba7b9b42bf11c005275ce032df6a161a9b5a8b8\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
+      "before": "100644 blob 8bf1dd34307e5f1445fa1429e2bf56cced1be8d0\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
+      "after": "100644 blob ad97f096d08a997bff94a96f9bfeb2fa25713239\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_capsule_track.xml",
+      "before": null,
+      "after": "100644 blob c7c8a220b02069f38a8a70907981d2e408e2cd17\tapp/src/main/res/drawable/notify_capsule_track.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_card.xml",
+      "before": "100644 blob 027c8ee17850de26c95653cbd99672addf7ebdf8\tapp/src/main/res/drawable/notify_card.xml",
+      "after": "100644 blob 1ac0586b6a5bdd71e3cd17aa73ada0cf65d26c31\tapp/src/main/res/drawable/notify_card.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_balance.xml",
+      "before": "100644 blob 2ae0d602a7524d6a0b6c88019df3820d819c4a6f\tapp/src/main/res/drawable/notify_mode_balance.xml",
+      "after": "100644 blob 8e8f6b73ce5f3a538add9902bc5f3f46762da797\tapp/src/main/res/drawable/notify_mode_balance.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_fast.xml",
+      "before": "100644 blob c2d4efff46a494146e50ac71d0185add30b6c20b\tapp/src/main/res/drawable/notify_mode_fast.xml",
+      "after": "100644 blob 52271580f9ba9519909110581749d5c24225c1a9\tapp/src/main/res/drawable/notify_mode_fast.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_performance.xml",
+      "before": "100644 blob 53fd93b42ecd7703275b76836f31c18520b26c81\tapp/src/main/res/drawable/notify_mode_performance.xml",
+      "after": "100644 blob d96eca0991333796d57a67413563922a4fe27bc9\tapp/src/main/res/drawable/notify_mode_performance.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_powersave.xml",
+      "before": "100644 blob 352e33323153ecd248fa55d822c1c64bc72bdaf7\tapp/src/main/res/drawable/notify_mode_powersave.xml",
+      "after": "100644 blob f8275ce0c552b37f1ae2853b63a2f13f3f929013\tapp/src/main/res/drawable/notify_mode_powersave.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_monitor_active.xml",
+      "before": "100644 blob de8e52cb21222e7f426046681b0e816f1ece1de3\tapp/src/main/res/drawable/notify_monitor_active.xml",
+      "after": "100644 blob e97cadf67ad4d0a839c507369e7abd17ba1e222f\tapp/src/main/res/drawable/notify_monitor_active.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_monitor_ecg.xml",
+      "before": null,
+      "after": "100644 blob 8d40429c058915f9649457750060a7bd1339913b\tapp/src/main/res/drawable/notify_monitor_ecg.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_monitor_indicator.xml",
+      "before": "100644 blob bd3c7c3327980abe016fe46ad39ae85a68827d63\tapp/src/main/res/drawable/notify_monitor_indicator.xml",
+      "after": "100644 blob 1b2b8ee4adfad29dd7a35bcc8c227aa54995316d\tapp/src/main/res/drawable/notify_monitor_indicator.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_rate_normal.xml",
+      "before": "100644 blob c72b5ac9ff98d41f65b23ce870fcd66a81f14564\tapp/src/main/res/drawable/notify_rate_normal.xml",
+      "after": "100644 blob 218e5b7009e01fb76efa2e9625bf6501b04adaa2\tapp/src/main/res/drawable/notify_rate_normal.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_rate_selected.xml",
+      "before": "100644 blob c5234dee26b39aee3f2c66ca85e2a82bae731426\tapp/src/main/res/drawable/notify_rate_selected.xml",
+      "after": "100644 blob 8e8f6b73ce5f3a538add9902bc5f3f46762da797\tapp/src/main/res/drawable/notify_rate_selected.xml"
+    },
+    {
+      "path": "app/src/main/res/layout/notification_quick_control.xml",
+      "before": "100644 blob b226f9df61babbc9378f7b9029d4688017320ac7\tapp/src/main/res/layout/notification_quick_control.xml",
+      "after": "100644 blob 56675ece4be67812163f4fbefa1e996efcb74bda\tapp/src/main/res/layout/notification_quick_control.xml"
+    },
+    {
+      "path": "app/src/main/res/values/styles.xml",
+      "before": "100644 blob 5225832cc2aed23b178a33a534b6f76dd5f3db95\tapp/src/main/res/values/styles.xml",
+      "after": "100644 blob 1b716db829779cb024bb665d0f3dc0bf2a1f0c29\tapp/src/main/res/values/styles.xml"
+    }
+  ]
+}

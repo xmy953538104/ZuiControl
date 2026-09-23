@@ -92,7 +92,7 @@ class ProductR7(unittest.TestCase):
         self.assertNotIn('R.drawable.notify_monitor_off',renderer)
         for name in ('notify_monitor_active','notify_monitor_off'):
             self.assertIn('android:shape="oval"',read('app/src/main/res/drawable/'+name+'.xml'))
-        self.assertIn('android:width="0.5dp"',read('app/src/main/res/drawable/notify_rate_normal.xml'))
+        self.assertIn('android:color="#00000000"',read('app/src/main/res/drawable/notify_rate_normal.xml'))
         self.assertIn('targetSdk = 30',read('app/build.gradle.kts'))
         # No application-icon slot in app layout. System wrapper is a separate real-device gate.
         self.assertNotIn('ic_stat',layout);self.assertNotIn('app_icon',layout)

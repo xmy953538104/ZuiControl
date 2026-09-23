@@ -13,7 +13,7 @@ from datetime import datetime
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
-APP_APK_PATH = "system/priv-app/ZuiControlV70/ZuiControl.apk"
+APP_APK_PATH = "system/priv-app/ZuiControlV71/ZuiControl.apk"
 LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -189,7 +189,7 @@ def copy_payload(payload, unpack, dry_run, report):
     for base in (payload / "system/priv-app", unpack / "system_a/system/priv-app"):
         if base.is_dir():
             for path in base.iterdir():
-                if re.fullmatch(r"ZuiControlV\d+", path.name) and path.name != "ZuiControlV70":
+                if re.fullmatch(r"ZuiControlV\d+", path.name) and path.name != "ZuiControlV71":
                     raise SystemExit("Stale ZuiControl package directory: " + str(path))
     copied = []
     metadata = []

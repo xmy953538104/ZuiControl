@@ -1,4 +1,21 @@
-# R11 current notification and scene delta
+# R12 notification scalar capsules
+
+The 384×88dp card has 16dp padding, a 56dp permanent blue ECG button, a 12dp gap,
+52dp temperature/power capsules, a 10dp gap and 222dp control tracks. Rows are 26dp
+high with a 4dp gap. Notification-only colors and resources follow the final SVG;
+shared application mode tokens and all existing action IDs remain unchanged.
+
+The sole PerformanceMonitor callback forwards the existing quiet-therm and
+LivePower values. It never registers another collector or reads another sensor.
+Scalar notification updates coalesce to 2 seconds; invalidation is immediate and
+a one-shot 3.5-second freshness expiry prevents stale values. OFF/inactive/invalid
+values show --°C / -- W. Valid units are blue, missing values entirely muted gray.
+No database writes or thread scans are added. Full RemoteViews state is reapplied.
+
+The known R11 desired-ON process-reconnect failure is inherited, not repaired by
+this UI delta. Earlier design text below is historical, not a new recovery claim.
+
+## R11 notification and scene delta
 
 Single stateless384x88dp target30 notification. Padding14/14/11/11;44dp Monitor,22dp white ECG,6dp yellow dot/margin3; Monitor remains blue both ON/OFF, dot alone changes. Rightgroup gap14; rows28 with10gap; refresh5gap and Uperf8gap;12.5sp bold/no font padding. Rightedges align.
 

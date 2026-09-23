@@ -48,7 +48,7 @@ class ProductR6(unittest.TestCase):
         for name in ('powersave','balance','performance','fast'):
             self.assertIn('R.drawable.notify_mode_'+name,source('NotificationQuickControlHelper.kt'))
             drawable=ET.parse(ROOT/('app/src/main/res/drawable/notify_mode_'+name+'.xml')).getroot()
-            self.assertEqual(drawable.find('solid').get('{http://schemas.android.com/apk/res/android}color'),'@color/mode_'+name)
+            self.assertEqual(drawable.find('solid').get('{http://schemas.android.com/apk/res/android}color'),{'powersave':'#15A05C','balance':'#3B67C1','performance':'#EA580C','fast':'#D92424'}[name])
         self.assertIn('ui_mode_group_width',source('MainActivity.kt'))
 
     def test_shared_authority_and_profile_paths(self):

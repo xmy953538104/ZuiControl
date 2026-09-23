@@ -14,30 +14,31 @@ class NotificationRenderer(unittest.TestCase):
         root=ET.parse(RES/'layout/notification_quick_control.xml').getroot()
         ids={n.get(A+'id','').removeprefix('@+id/'):n for n in root.iter() if n.get(A+'id')}
         self.assertEqual((root.get(A+'layout_width'),root.get(A+'layout_height')),('384dp','88dp'))
-        self.assertEqual([root.get(A+'padding'+side) for side in ('Start','End','Top','Bottom')],['14dp','14dp','11dp','11dp'])
+        self.assertEqual([root.get(A+'padding'+side) for side in ('Start','End','Top','Bottom')],['16dp']*4)
         self.assertTrue(all(n.tag in ('LinearLayout','FrameLayout','TextView','ImageView') for n in root.iter()))
-        self.assertEqual((ids['monitor_toggle'].get(A+'layout_width'),ids['monitor_toggle'].get(A+'layout_height')),('44dp','44dp'))
-        self.assertEqual(ids['monitor_toggle'].get(A+'layout_gravity'),'center_vertical')
-        self.assertEqual(ids['monitor_icon'].get(A+'layout_width'),'22dp')
-        self.assertEqual(ids['monitor_indicator'].get(A+'layout_width'),'6dp')
-        self.assertEqual(ids['monitor_indicator'].get(A+'layout_margin'),'3dp')
-        self.assertEqual(ids['quick_controls'].get(A+'layout_marginStart'),'14dp')
-        self.assertEqual(ids['quick_controls'].get(A+'layout_weight'),'1')
-        self.assertEqual(ids['uperf_row'].get(A+'layout_marginTop'),'10dp')
+        self.assertEqual((ids['monitor_toggle'].get(A+'layout_width'),ids['monitor_toggle'].get(A+'layout_height')),('56dp','56dp'))
+        self.assertEqual(ids['monitor_icon'].get(A+'layout_width'),'56dp')
+        self.assertEqual(ids['monitor_indicator'].get(A+'layout_width'),'10dp')
+        self.assertEqual(ids['monitor_indicator'].get(A+'layout_marginEnd'),'3.5dp')
+        self.assertEqual(ids['quick_controls'].get(A+'layout_width'),'222dp')
+        self.assertEqual(ids['quick_controls'].get(A+'layout_marginStart'),'10dp')
+        self.assertEqual(ids['quick_metrics'].get(A+'layout_width'),'52dp')
+        self.assertEqual(ids['quick_metrics'].get(A+'layout_marginStart'),'12dp')
+        self.assertEqual(ids['notification_quiet'].get(A+'text'),'--°C')
+        self.assertEqual(ids['notification_power'].get(A+'text'),'-- W')
+        self.assertEqual(ids['notification_power'].get(A+'layout_marginTop'),'4dp')
         styles={s.get('name'): {i.get('name'):i.text for i in s} for s in ET.parse(RES/'values/styles.xml').getroot().findall('style')}
         style=styles['NotificationControl']
-        self.assertEqual({k:style[k] for k in ('android:layout_width','android:layout_height','android:layout_weight','android:fontFamily','android:textSize')},
-                         {'android:layout_width':'0dp','android:layout_height':'28dp','android:layout_weight':'1','android:fontFamily':'sans-serif','android:textSize':'12.5sp'})
-        for name,labels,gap,width in [('refresh_row',['60','90','120','144','165'],5,55.6),('uperf_row',['节能','均衡','性能','极速'],8,68.5)]:
-            row=ids[name]
-            self.assertEqual(row.get(A+'layout_height'),'28dp')
-            self.assertEqual([n.get(A+'text') for n in row],labels)
-            self.assertEqual([n.get(A+'layout_marginStart','0dp') for n in row],['0dp']+[str(gap)+'dp']*(len(labels)-1))
-            self.assertEqual((384-28-44-14-gap*(len(labels)-1))/len(labels),width)
-        self.assertEqual(11+28+10+28+11,88)
-        self.assertEqual(style['android:textStyle'],'bold')
+        self.assertEqual(style['android:layout_height'],'22dp')
+        self.assertEqual(style['android:textSize'],'11.5sp')
         self.assertEqual(style['android:includeFontPadding'],'false')
-        self.assertTrue(all(n.get(A+'layout_marginEnd','0dp')=='0dp' for n in (ids['refresh_165'],ids['mode_fast'])))
+        for name,labels in [('refresh_row',['60','90','120','144','165']),('uperf_row',['节能','均衡','性能','极速'])]:
+            self.assertEqual(ids[name].get(A+'layout_height'),'26dp')
+            self.assertEqual(ids[name].get(A+'padding'),'2dp')
+            self.assertEqual([n.get(A+'text') for n in ids[name]],labels)
+        self.assertEqual(ids['uperf_row'].get(A+'layout_marginTop'),'4dp')
+        self.assertEqual(16+56+12+52+10+222+16,384)
+        self.assertEqual(16+26+4+26+16,88)
         self.assertFalse((RES/'layout/notification_zuicontrol.xml').exists())
 
     def test_every_update_uses_one_fresh_renderer(self):
@@ -50,7 +51,7 @@ class NotificationRenderer(unittest.TestCase):
         self.assertIn('private fun renderNotification(snapshot:',quick)
         for action in ('setTextViewText','setTextColor','setBackgroundResource','setViewVisibility','setEnabled','setContentDescription','setOnClickPendingIntent'):
             self.assertIn(action,helper)
-        for marker in ('KEY_STATUS_TEXT','KEY_UPERF_MODE','KEY_UPERF_RULES_TEXT','PerformanceMonitor(this) { requestRefresh() }'):
+        for marker in ('KEY_STATUS_TEXT','KEY_UPERF_MODE','KEY_UPERF_RULES_TEXT','PerformanceMonitor(this, onReading = ::acceptReading) { requestRefresh() }'):
             self.assertIn(marker,quick)
         for forbidden in ('setCustomBigContentView','setCustomHeadsUpContentView','SharedPreferences','Timer(','Thread.sleep','SystemClock.sleep'):
             self.assertNotIn(forbidden,quick+helper)
@@ -62,17 +63,32 @@ class NotificationRenderer(unittest.TestCase):
         self.assertNotRegex(helper,r'private (?:var|val)\s+\w+.*RemoteViews')
 
     def test_colors_and_modes(self):
-        expected={'notify_card':'#F2F4F7','notify_monitor_off':'#FFFFFF',
-                  'notify_monitor_active':'#3C69C0','notify_monitor_indicator':'#FFB300',
-                  'notify_rate_normal':'#FFFFFF','notify_rate_selected':'#3C69C0'}
+        expected={'notify_card':'#F4F6FA','notify_monitor_off':'#FFFFFF',
+                  'notify_monitor_active':'#3B67C1','notify_monitor_indicator':'#F59E0B',
+                  'notify_rate_normal':'#00000000','notify_rate_selected':'#3B67C1',
+                  'notify_capsule_track':'#E2E7EE'}
         for name,color in expected.items():
             shape=ET.parse(RES/('drawable/'+name+'.xml')).getroot()
             self.assertEqual(shape.find('solid').get(A+'color'),color)
-        for mode,color in [('powersave','#538C35'),('balance','#4774CE'),('performance','#CA6B21'),('fast','#D64E70')]:
+        for mode,color in [('powersave','#15A05C'),('balance','#3B67C1'),('performance','#EA580C'),('fast','#D92424')]:
             shape=ET.parse(RES/('drawable/notify_mode_'+mode+'.xml')).getroot()
-            self.assertEqual(shape.find('solid').get(A+'color'),'@color/mode_'+mode)
-            self.assertEqual(shape.find('corners').get(A+'radius'),'8dp')
-            tokens={c.get('name'):c.text for c in ET.parse(RES/'values/ui_tokens.xml').getroot().findall('color')}
-            self.assertEqual(tokens['mode_'+mode],color)
+            self.assertEqual(shape.find('solid').get(A+'color'),color)
+            self.assertEqual(shape.find('corners').get(A+'radius'),'11dp')
+
+    def test_existing_single_callback_and_bounded_display_only_updates(self):
+        quick=(APP/'ZuiControlQuickService.kt').read_text('utf8')
+        monitor=(APP/'PerformanceMonitor.kt').read_text('utf8')
+        helper=(APP/'NotificationQuickControlHelper.kt').read_text('utf8')
+        self.assertEqual(monitor.count('false, false, callback)'),1)
+        self.assertNotIn('monitor("register"',quick)
+        for forbidden in ('BatteryManager','thermal_zone','readTasks','MonitorStore','Runtime.getRuntime'):
+            self.assertNotIn(forbidden,quick+helper)
+        for required in ('value.isFinite()', 'value > 0.0', '"--"', 'RelativeSizeSpan', 'ForegroundColorSpan', 'Locale.US'):
+            self.assertIn(required,helper)
+        self.assertIn('snapshot.isFloatActive',helper)
+        self.assertIn('0..3500L',quick)
+        self.assertIn('handler.removeCallbacks(readingExpiry)',quick)
+        self.assertIn('lastReadingPublish + 2000L',quick)
+        self.assertIn('handler.removeCallbacksAndMessages(null)',quick)
 
 if __name__=='__main__': unittest.main(verbosity=2)

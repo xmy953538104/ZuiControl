@@ -137,7 +137,7 @@ class OemTouchTimer(unittest.TestCase):
                 old_doc = identity['readme_text'].encode()
                 self.assertEqual(payload_tree_hash(old),tree)
                 self.assertEqual((ROOT/'payload/README.txt').read_bytes().replace(b'\r\n',b'\n'),
-                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV70').replace(b'App V60',b'App V70'))
+                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV71').replace(b'App V60',b'App V71'))
                 continue
             actual = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD:'+path], text=True).strip()
             self.assertEqual(actual, tree, path)
@@ -166,13 +166,20 @@ class OemTouchTimer(unittest.TestCase):
         identity_path = 'app/build.gradle.kts'
         old = identity['gradle_text'].encode()
         current = (ROOT/identity_path).read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 70')
-            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.33"')
+        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 71')
+            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.34"')
             .replace(b'targetSdk = 35', b'targetSdk = 30'))
         entry = next(line for line in entries if line.endswith(b'\tapp/build.gradle.kts'))
         entries.remove(entry)
         old_entry = identity['gradle_entry'].encode()
         entries.append(old_entry)
+        for delta in json.loads((ROOT/'tests/monitor/r12_product_delta.json').read_text())['tree']:
+            if delta['after'] is not None:
+                self.assertEqual(entries.count(delta['after'].encode()),1,delta['path'])
+                entries.remove(delta['after'].encode())
+            else:
+                self.assertFalse(any(e.endswith(('\t'+delta['path']).encode()) for e in entries),delta['path'])
+            if delta['before'] is not None:entries.append(delta['before'].encode())
         for delta in json.loads((ROOT/'tests/monitor/r11_product_delta.json').read_text())['tree']:
             if delta['after'] is not None:
                 self.assertEqual(entries.count(delta['after'].encode()),1,delta['path'])
@@ -235,7 +242,7 @@ class OemTouchTimer(unittest.TestCase):
         self.assertLessEqual(set(changed+untracked), allowed | {d['path'] for d in monitor['tree']}
                             | {d['path'] for d in polish['tree']} | {d['path'] for d in product['tree']}
                         | {d['path'] for d in stability['tree']} | {d['path'] for d in legacy['tree']}
-                        | {d['path'] for d in json.loads((ROOT/'tests/monitor/r10_product_delta.json').read_text())['tree']} | {d['path'] for d in json.loads((ROOT/'tests/monitor/r11_product_delta.json').read_text())['tree']} | {identity_path})
+                        | {d['path'] for d in json.loads((ROOT/'tests/monitor/r10_product_delta.json').read_text())['tree']} | {d['path'] for d in json.loads((ROOT/'tests/monitor/r11_product_delta.json').read_text())['tree']} | {d['path'] for d in json.loads((ROOT/'tests/monitor/r12_product_delta.json').read_text())['tree']} | {identity_path})
         source = (ROOT/'scripts/build/ApplyZuiControlPayload.py').read_text(encoding='utf-8')
         self.assertIn('patch_oem_touch_timer(unpack, args.dry_run, report)', source)
 

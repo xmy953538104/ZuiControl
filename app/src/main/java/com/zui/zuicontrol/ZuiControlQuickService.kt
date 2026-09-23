@@ -12,6 +12,7 @@ import android.database.ContentObserver
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.widget.RemoteViews
 import android.widget.Toast
@@ -25,6 +26,13 @@ class ZuiControlQuickService : Service() {
     private var commandInFlight = false
     private var refreshPosted = false
     private val update = Runnable { refreshPosted = false; refreshNotification() }
+    private var quietC = -1.0
+    private var powerW = -1.0
+    private var readingTime = 0L
+    private var lastReadingPublish = 0L
+    private val readingUpdate = Runnable { lastReadingPublish = SystemClock.elapsedRealtime(); requestRefresh() }
+    // A one-shot expiry only; it does not read a sensor or wake a sleeping device.
+    private val readingExpiry = Runnable { acceptReading(-1.0, -1.0, 0L) }
     private val observer = object : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean) { requestRefresh() }
     }
@@ -40,7 +48,7 @@ class ZuiControlQuickService : Service() {
             ZuiControlContract.KEY_UPERF_RULES_TEXT).forEach {
             contentResolver.registerContentObserver(Settings.System.getUriFor(it), false, observer)
         }
-        monitor = PerformanceMonitor(this) { requestRefresh() }.also { it.start() }
+        monitor = PerformanceMonitor(this, onReading = ::acceptReading) { requestRefresh() }.also { it.start() }
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action.orEmpty()
@@ -102,6 +110,23 @@ class ZuiControlQuickService : Service() {
         }.start()
     }
     private fun errorToast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    private fun acceptReading(quiet: Double, power: Double, elapsed: Long) {
+        val now = SystemClock.elapsedRealtime()
+        val fresh = elapsed > 0 && now - elapsed in 0..3500L
+        val nextQuiet = if (fresh && quiet.isFinite() && quiet > 0) quiet else -1.0
+        val nextPower = if (fresh && power.isFinite() && power > 0) power else -1.0
+        val invalidated = (quietC > 0 && nextQuiet < 0) || (powerW > 0 && nextPower < 0)
+        val changed = quietC != nextQuiet || powerW != nextPower
+        quietC = nextQuiet; powerW = nextPower; readingTime = if (fresh) elapsed else 0L
+        handler.removeCallbacks(readingExpiry)
+        if (fresh) handler.postDelayed(readingExpiry, (elapsed + 3501L - now).coerceAtLeast(1))
+        if (!changed) return
+        if (invalidated) {
+            handler.removeCallbacks(readingUpdate); requestRefresh()
+        } else if (!handler.hasCallbacks(readingUpdate)) {
+            handler.postDelayed(readingUpdate, (lastReadingPublish + 2000L - now).coerceAtLeast(0))
+        }
+    }
     private fun requestRefresh() {
         if (refreshPosted) return
         refreshPosted = true
@@ -127,7 +152,9 @@ class ZuiControlQuickService : Service() {
         val desired = ZuiControlClient.stateValue(PerformanceMonitor.command("state"), "monitorMode") == "1"
         val enabled = PackageNames.isValid(pkg)
         val uperfEnabled = UperfAppPolicy.isConfigurable(packageManager, pkg)
-        return NotificationQuickControlHelper.Snapshot(pkg, rate, mode, desired, enabled, uperfEnabled)
+        val fresh = readingTime > 0 && SystemClock.elapsedRealtime() - readingTime in 0..3500L
+        return NotificationQuickControlHelper.Snapshot(pkg, rate, mode, desired, enabled, uperfEnabled,
+            if (fresh) quietC else -1.0, if (fresh) powerW else -1.0)
     }
     @Suppress("DEPRECATION")
     private fun renderNotification(snapshot: NotificationQuickControlHelper.Snapshot): Notification {

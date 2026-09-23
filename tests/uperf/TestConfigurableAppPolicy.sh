@@ -33,7 +33,7 @@ $query" ;;
 done
 printf 'UPERF_CONFIGURABLE_APP_PARSER=PASS\n'
 
-for path in /system/app/Home/base.apk /system/priv-app/ZuiControlV70/ZuiControl.apk; do
+for path in /system/app/Home/base.apk /system/priv-app/ZuiControlV71/ZuiControl.apk; do
     if uperf_apk_path_allowed "$path" 0; then fail "unqualified system root"; fi
     uperf_apk_path_allowed "$path" 1 || fail "qualified system root"
 done

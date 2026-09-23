@@ -29,7 +29,9 @@ import java.util.Locale
 import java.io.PrintWriter
 
 /** Rendering and explicit gestures only. No independent scalar/task sampling. */
-class PerformanceMonitor(private val context: Context, private val onModeChanged: () -> Unit = {}) {
+class PerformanceMonitor(private val context: Context,
+    private val onReading: (Double, Double, Long) -> Unit = { _, _, _ -> },
+    private val onModeChanged: () -> Unit = {}) {
     private val handler = Handler(Looper.getMainLooper())
     private val windows = context.getSystemService(WindowManager::class.java)
     private val displays = context.getSystemService(DisplayManager::class.java)
@@ -95,6 +97,7 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
     }
     private fun recording() = snapshot.optString("recordState") in listOf("RECORDING", "PAUSED")
     private fun hide() {
+        onReading(-1.0, -1.0, 0L)
         view?.cancelGesture()
         if (attached) {
             view?.let { windows.removeViewImmediate(it) }
@@ -212,11 +215,17 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
     }
     private fun render(text: String) {
         val next = runCatching { JSONObject(text) }.getOrNull() ?: return
+        val newSample = next.optLong("sample") > snapshot.optLong("sample")
+        val contextChanged = next.optString("package") != snapshot.optString("package") ||
+            next.optInt("mode") != snapshot.optInt("mode")
         if (next.has("mode") && next.optInt("mode") != snapshot.optInt("mode")) onModeChanged()
         if (next.optString("package") != snapshot.optString("package")) livePower.clear()
         displayPower = livePower.add(next.optDouble("powerW", -1.0))
         snapshot = next
         if (!next.optBoolean("active") || !Settings.canDrawOverlays(context)) { hide(); return }
+        if (next.optInt("mode") == 1 && newSample) {
+            onReading(next.optDouble("quietC", -1.0), displayPower, next.optLong("elapsedMs"))
+        } else if (contextChanged || next.optInt("mode") != 1) onReading(-1.0, -1.0, 0L)
         if (recording()) circle = true
         try {
             val fresh = view ?: MonitorView(context).also {
