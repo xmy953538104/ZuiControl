@@ -2,29 +2,29 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/quick_root"
     android:layout_width="384dp" android:layout_height="88dp"
-    android:paddingStart="12dp" android:paddingEnd="12dp"
-    android:paddingTop="8dp" android:paddingBottom="8dp"
+    android:paddingStart="14dp" android:paddingEnd="14dp"
+    android:paddingTop="11dp" android:paddingBottom="11dp"
     android:background="@drawable/notify_card" android:orientation="horizontal">
     <FrameLayout android:id="@+id/monitor_toggle"
-        android:layout_width="48dp" android:layout_height="48dp"
+        android:layout_width="44dp" android:layout_height="44dp"
         android:layout_gravity="center_vertical"
         android:contentDescription="监视器 关闭"
-        android:background="@drawable/notify_monitor_off">
+        android:background="@drawable/notify_monitor_active">
         <ImageView android:id="@+id/monitor_icon"
-            android:layout_width="24dp" android:layout_height="24dp"
+            android:layout_width="22dp" android:layout_height="22dp"
             android:layout_gravity="center" android:src="@drawable/ic_tool_monitor"
-            android:tint="#758A99" android:importantForAccessibility="no" />
+            android:tint="#FFFFFF" android:importantForAccessibility="no" />
         <ImageView android:id="@+id/monitor_indicator"
-            android:layout_width="7dp" android:layout_height="7dp"
-            android:layout_gravity="bottom|end" android:layout_margin="4dp"
+            android:layout_width="6dp" android:layout_height="6dp"
+            android:layout_gravity="bottom|end" android:layout_margin="3dp"
             android:src="@drawable/notify_monitor_indicator"
             android:visibility="gone" android:importantForAccessibility="no" />
     </FrameLayout>
     <LinearLayout android:id="@+id/quick_controls"
-        android:layout_width="0dp" android:layout_weight="1" android:layout_height="72dp"
-        android:layout_marginStart="12dp" android:orientation="vertical">
+        android:layout_width="0dp" android:layout_weight="1" android:layout_height="66dp"
+        android:layout_marginStart="14dp" android:orientation="vertical">
         <LinearLayout android:id="@+id/refresh_row" android:layout_width="match_parent"
-            android:layout_height="30dp" android:orientation="horizontal">
+            android:layout_height="28dp" android:orientation="horizontal">
             <TextView android:id="@+id/refresh_60" style="@style/NotificationControl"
                 android:text="60" />
             <TextView android:id="@+id/refresh_90" style="@style/NotificationControl"
@@ -37,7 +37,7 @@
                 android:layout_marginStart="5dp" android:text="165" />
         </LinearLayout>
         <LinearLayout android:id="@+id/uperf_row" android:layout_width="match_parent"
-            android:layout_height="30dp" android:layout_marginTop="12dp" android:orientation="horizontal">
+            android:layout_height="28dp" android:layout_marginTop="10dp" android:orientation="horizontal">
             <TextView android:id="@+id/mode_powersave" style="@style/NotificationControl"
                 android:text="节能" />
             <TextView android:id="@+id/mode_balance" style="@style/NotificationControl"

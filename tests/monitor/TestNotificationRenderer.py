@@ -14,27 +14,30 @@ class NotificationRenderer(unittest.TestCase):
         root=ET.parse(RES/'layout/notification_quick_control.xml').getroot()
         ids={n.get(A+'id','').removeprefix('@+id/'):n for n in root.iter() if n.get(A+'id')}
         self.assertEqual((root.get(A+'layout_width'),root.get(A+'layout_height')),('384dp','88dp'))
-        self.assertEqual([root.get(A+'padding'+side) for side in ('Start','End','Top','Bottom')],['12dp','12dp','8dp','8dp'])
+        self.assertEqual([root.get(A+'padding'+side) for side in ('Start','End','Top','Bottom')],['14dp','14dp','11dp','11dp'])
         self.assertTrue(all(n.tag in ('LinearLayout','FrameLayout','TextView','ImageView') for n in root.iter()))
-        self.assertEqual((ids['monitor_toggle'].get(A+'layout_width'),ids['monitor_toggle'].get(A+'layout_height')),('48dp','48dp'))
+        self.assertEqual((ids['monitor_toggle'].get(A+'layout_width'),ids['monitor_toggle'].get(A+'layout_height')),('44dp','44dp'))
         self.assertEqual(ids['monitor_toggle'].get(A+'layout_gravity'),'center_vertical')
-        self.assertEqual(ids['monitor_icon'].get(A+'layout_width'),'24dp')
-        self.assertEqual(ids['monitor_indicator'].get(A+'layout_width'),'7dp')
-        self.assertEqual(ids['monitor_indicator'].get(A+'layout_margin'),'4dp')
-        self.assertEqual(ids['quick_controls'].get(A+'layout_marginStart'),'12dp')
+        self.assertEqual(ids['monitor_icon'].get(A+'layout_width'),'22dp')
+        self.assertEqual(ids['monitor_indicator'].get(A+'layout_width'),'6dp')
+        self.assertEqual(ids['monitor_indicator'].get(A+'layout_margin'),'3dp')
+        self.assertEqual(ids['quick_controls'].get(A+'layout_marginStart'),'14dp')
         self.assertEqual(ids['quick_controls'].get(A+'layout_weight'),'1')
-        self.assertEqual(ids['uperf_row'].get(A+'layout_marginTop'),'12dp')
+        self.assertEqual(ids['uperf_row'].get(A+'layout_marginTop'),'10dp')
         styles={s.get('name'): {i.get('name'):i.text for i in s} for s in ET.parse(RES/'values/styles.xml').getroot().findall('style')}
         style=styles['NotificationControl']
         self.assertEqual({k:style[k] for k in ('android:layout_width','android:layout_height','android:layout_weight','android:fontFamily','android:textSize')},
-                         {'android:layout_width':'0dp','android:layout_height':'30dp','android:layout_weight':'1','android:fontFamily':'sans-serif-medium','android:textSize':'13sp'})
-        for name,labels,gap,width in [('refresh_row',['60','90','120','144','165'],5,56),('uperf_row',['节能','均衡','性能','极速'],8,69)]:
+                         {'android:layout_width':'0dp','android:layout_height':'28dp','android:layout_weight':'1','android:fontFamily':'sans-serif','android:textSize':'12.5sp'})
+        for name,labels,gap,width in [('refresh_row',['60','90','120','144','165'],5,55.6),('uperf_row',['节能','均衡','性能','极速'],8,68.5)]:
             row=ids[name]
-            self.assertEqual(row.get(A+'layout_height'),'30dp')
+            self.assertEqual(row.get(A+'layout_height'),'28dp')
             self.assertEqual([n.get(A+'text') for n in row],labels)
             self.assertEqual([n.get(A+'layout_marginStart','0dp') for n in row],['0dp']+[str(gap)+'dp']*(len(labels)-1))
-            self.assertEqual((384-24-48-12-gap*(len(labels)-1))/len(labels),width)
-        self.assertEqual(8+30+12+30+8,88)
+            self.assertEqual((384-28-44-14-gap*(len(labels)-1))/len(labels),width)
+        self.assertEqual(11+28+10+28+11,88)
+        self.assertEqual(style['android:textStyle'],'bold')
+        self.assertEqual(style['android:includeFontPadding'],'false')
+        self.assertTrue(all(n.get(A+'layout_marginEnd','0dp')=='0dp' for n in (ids['refresh_165'],ids['mode_fast'])))
         self.assertFalse((RES/'layout/notification_zuicontrol.xml').exists())
 
     def test_every_update_uses_one_fresh_renderer(self):
@@ -54,6 +57,8 @@ class NotificationRenderer(unittest.TestCase):
         self.assertIn('editableScenePackage',quick)
         self.assertIn('editableDisplayHz',quick)
         self.assertIn('monitorMode',quick)
+        self.assertNotIn('R.drawable.notify_monitor_off',helper)
+        self.assertNotIn('else Color.rgb(117, 138, 153)',helper)
         self.assertNotRegex(helper,r'private (?:var|val)\s+\w+.*RemoteViews')
 
     def test_colors_and_modes(self):

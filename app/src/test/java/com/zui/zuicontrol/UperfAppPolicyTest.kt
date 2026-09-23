@@ -31,4 +31,19 @@ class UperfAppPolicyTest {
             assertFalse(pkg, accepts(paths, pkg = pkg))
         }
     }
+    @Test fun narrowSystemScenesStillRequireCanonicalLaunchableApks() {
+        for (pkg in listOf("com.zui.zuicontrol", "com.zui.launcher")) {
+            val paths = listOf("/system/priv-app/Qualified/base.apk")
+            assertFalse(UperfAppPolicy.accepts(pkg, paths, paths, true))
+            assertTrue(UperfAppPolicy.accepts(pkg, paths, paths, true, true))
+            assertFalse(UperfAppPolicy.accepts(pkg, paths, paths, false, true))
+            assertFalse(UperfAppPolicy.accepts(pkg, paths, listOf("/system/other.apk"), true, true))
+        }
+        for (pkg in listOf("android", "com.android.systemui")) {
+            val paths = listOf("/system/priv-app/Core/base.apk")
+            assertFalse(UperfAppPolicy.accepts(pkg, paths, paths, true, true))
+        }
+        val bad = listOf("/vendor/app/NotQualified/base.apk")
+        assertFalse(UperfAppPolicy.accepts("com.zui.zuicontrol", bad, bad, true, true))
+    }
 }

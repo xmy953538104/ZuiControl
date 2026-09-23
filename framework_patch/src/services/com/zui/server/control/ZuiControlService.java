@@ -731,7 +731,7 @@ public final class ZuiControlService extends Binder {
 
     private synchronized String setGpuRange(String pkg, int userId, int min, int max) {
         if (userId < 0 || userId != Binder.getCallingUid() / 100000
-                || !validPackage(pkg) || !packageExists(pkg) || isTransientPackage(pkg)) {
+                || !validPackage(pkg) || !packageExists(pkg) || isGpuTransientPackage(pkg)) {
             return "ok=0\nerror=invalid_gpu_target";
         }
         GpuRange value = min == 0 && max == 0 ? null : new GpuRange(min, max);
@@ -1493,7 +1493,7 @@ public final class ZuiControlService extends Binder {
                 if (parts.length == 5 && "gpu".equals(parts[0])) {
                     try {
                         int user = Integer.parseInt(parts[1]);
-                        if (user >= 0 && validPackage(parts[2]) && !isTransientPackage(parts[2])) {
+                        if (user >= 0 && validPackage(parts[2]) && !isGpuTransientPackage(parts[2])) {
                             mGpuOverrides.put(key(user, parts[2]), new GpuRange(
                                     Integer.parseInt(parts[3]), Integer.parseInt(parts[4])));
                         }
@@ -1942,7 +1942,6 @@ public final class ZuiControlService extends Binder {
         String p = safe(pkg).toLowerCase(Locale.US);
         return p.equals("com.android.systemui")
                 || p.equals(GAME_HELPER_PACKAGE)
-                || p.equals(APP_PACKAGE)
                 || p.equals(SCREEN_SPLIT_CONTROL_PACKAGE)
                 || p.equals(FREEFORM_SIDEBAR_PACKAGE)
                 || p.equals(IME_SCENE)
@@ -1954,6 +1953,10 @@ public final class ZuiControlService extends Binder {
                 || p.contains("inputmethod")
                 || p.contains("keyboard")
                 || p.contains("overlay");
+    }
+
+    private static boolean isGpuTransientPackage(String pkg) {
+        return APP_PACKAGE.equalsIgnoreCase(safe(pkg)) || isTransientPackage(pkg);
     }
 
     private static String normalizeMode(String mode) {
@@ -2218,7 +2221,7 @@ public final class ZuiControlService extends Binder {
         synchronized void refreshGpu() {
             // Window SystemUI and profile edits affect GPU only, never CPU mode.
             boolean gpuEligible = mStarted && !mGpuSystemUi && !mScenePackage.isEmpty()
-                    && !isTransientPackage(mScenePackage);
+                    && !isGpuTransientPackage(mScenePackage);
             long identity = Binder.clearCallingIdentity();
             try {
                 android.content.pm.ResolveInfo home = mPm.resolveActivity(

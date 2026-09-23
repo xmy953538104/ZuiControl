@@ -69,6 +69,9 @@ class ProductR6(unittest.TestCase):
         self.assertIn('override fun onResume()',main)
         self.assertIn('reloadState(); renderCurrentPage()',main)
         service=SERVICE.read_text(encoding='utf8')
+        for d in json.loads((Path(__file__).with_name('r11_product_delta.json')).read_text())['service']:
+            self.assertEqual(service.count(d['after']),1)
+            service=service.replace(d['after'],d['before'],1)
         expected=json.loads((Path(__file__).with_name('r6_authority_baseline.json')).read_text())
         for signature,sha in expected.items():
             self.assertEqual(hashlib.sha256(block(service,signature).encode()).hexdigest(),sha,signature)

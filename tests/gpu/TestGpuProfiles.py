@@ -37,6 +37,7 @@ public class ProfileFixture {
  static String key(int u,String p){return u+":"+p;}
  static boolean validPackage(String p){return p.matches("[a-zA-Z0-9_]+(\\.[a-zA-Z0-9_]+)+");}
  static boolean isTransientPackage(String p){return p.equals("com.android.systemui");}
+ static boolean isGpuTransientPackage(String p){return p.equals("com.zui.zuicontrol")||isTransientPackage(p);}
  static int parseInt(String s,int d){try{return Integer.parseInt(s);}catch(Exception e){return d;}}
  static Profile neutralProfile(int u){return defaultProfile(u);}
  static Profile defaultProfile(int u){return new Profile("default",u,120,0,"DISPLAY_ONLY");}

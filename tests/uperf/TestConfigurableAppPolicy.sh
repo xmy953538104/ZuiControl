@@ -32,3 +32,11 @@ $query" ;;
     if printf '%s\n' "$value" | uperf_launchable_query_allowed com.example.game; then fail "$mutation"; fi
 done
 printf 'UPERF_CONFIGURABLE_APP_PARSER=PASS\n'
+
+for path in /system/app/Home/base.apk /system/priv-app/ZuiControlV70/ZuiControl.apk; do
+    if uperf_apk_path_allowed "$path" 0; then fail "unqualified system root"; fi
+    uperf_apk_path_allowed "$path" 1 || fail "qualified system root"
+done
+for path in /vendor/app/core.apk /system/priv-app/../core.apk; do
+    if uperf_apk_path_allowed "$path" 1; then fail "special identity cannot waive path $path"; fi
+done

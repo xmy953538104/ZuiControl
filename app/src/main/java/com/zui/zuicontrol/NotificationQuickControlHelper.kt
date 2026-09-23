@@ -23,11 +23,11 @@ internal object NotificationQuickControlHelper {
             setViewVisibility(id, View.VISIBLE)
         }
         setInt(R.id.monitor_toggle, "setBackgroundResource",
-            if (snapshot.isFloatActive) R.drawable.notify_monitor_active else R.drawable.notify_monitor_off)
+            R.drawable.notify_monitor_active)
         setBoolean(R.id.monitor_toggle, "setEnabled", true)
         setImageViewResource(R.id.monitor_icon, R.drawable.ic_tool_monitor)
         setInt(R.id.monitor_icon, "setColorFilter",
-            if (snapshot.isFloatActive) Color.WHITE else Color.rgb(117, 138, 153))
+            Color.WHITE)
         setImageViewResource(R.id.monitor_indicator, R.drawable.notify_monitor_indicator)
         setViewVisibility(R.id.monitor_indicator, if (snapshot.isFloatActive) View.VISIBLE else View.GONE)
         setContentDescription(R.id.monitor_toggle, "监视器 ${if (snapshot.isFloatActive) "开启" else "关闭"}")

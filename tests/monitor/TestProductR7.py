@@ -26,7 +26,9 @@ class ProductR7(unittest.TestCase):
         self.assertEqual(roots_case,'/data/app/?*.apk|/system/preinstall/?*.apk')
         for name in ('android','com.android.systemui','com.zui.zuicontrol'):
             self.assertIn('"'+name+'"',policy)
-        self.assertIn('android|com.android.systemui|com.zui.zuicontrol',daemon)
+        self.assertIn('android|com.android.systemui) return 1',daemon)
+        self.assertIn('qualified_system_scene=1',daemon)
+        self.assertIn('android.intent.category.HOME',daemon)
         for flag in ('activity.enabled','activity.exported','activity.packageName == pkg','app.enabled','File(it).canonicalPath','File(it).isFile'):
             self.assertIn(flag,policy)
         self.assertIn('paths.isNotEmpty()',policy)
@@ -86,7 +88,8 @@ class ProductR7(unittest.TestCase):
         for mode in ('powersave','balance','performance','fast'):
             self.assertIn('R.drawable.notify_mode_'+mode,renderer)
         self.assertIn('setSmallIcon(R.drawable.ic_stat_zuicontrol)',quick)
-        self.assertIn('notify_monitor_active else R.drawable.notify_monitor_off',renderer)
+        self.assertIn('R.drawable.notify_monitor_active',renderer)
+        self.assertNotIn('R.drawable.notify_monitor_off',renderer)
         for name in ('notify_monitor_active','notify_monitor_off'):
             self.assertIn('android:shape="oval"',read('app/src/main/res/drawable/'+name+'.xml'))
         self.assertIn('android:width="0.5dp"',read('app/src/main/res/drawable/notify_rate_normal.xml'))

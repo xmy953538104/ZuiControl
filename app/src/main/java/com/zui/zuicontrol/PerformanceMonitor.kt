@@ -111,7 +111,16 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
             @Suppress("DEPRECATION")
             maxOf(insets?.systemWindowInsetTop ?: 0, insets?.displayCutout?.safeInsetTop ?: 0)
         }
-    private fun absoluteY() = context.resources.getDimensionPixelSize(R.dimen.monitor_top_inset)
+    private fun statusBarBottom(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Absolute display insets; relative overlay insets would feed our own y back into layout.
+            windows.currentWindowMetrics.windowInsets.getInsets(WindowInsets.Type.statusBars()).top
+        } else 0
+    private fun absoluteY(): Int {
+        val original = context.resources.getDimensionPixelSize(R.dimen.monitor_top_inset)
+        val bottom = statusBarBottom()
+        return if (bottom > 0) maxOf(original, bottom + (context.resources.displayMetrics.density + 0.5f).toInt()) else original
+    }
     private fun refreshCircleBounds() {
         val old = circleBounds
         val size = context.resources.getDimensionPixelSize(R.dimen.monitor_touch_diameter)
@@ -173,8 +182,8 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
         event("layout reason=$reason x=$x y=$y")
     }
     fun environmentChanged(reason: String = "configuration") {
-        // Owner's original R5 top margin; optional caption clearance is not a product requirement.
-        stableSafeTopInset = 0
+        // Only visible StatusBar ownership adds clearance; never caption avoidance.
+        stableSafeTopInset = statusBarBottom()
         val previous = Rect(circleBounds)
         refreshCircleBounds()
         if (circleBounds != previous) view?.cancelGesture()
@@ -214,6 +223,7 @@ class PerformanceMonitor(private val context: Context, private val onModeChanged
                 view = it
                 it.setOnApplyWindowInsetsListener { target, insets ->
                     insetsCallbacks++
+                    if (statusBarBottom() != stableSafeTopInset) handler.post { environmentChanged("statusBar") }
                     val layout = target.layoutParams as WindowManager.LayoutParams
                     event("insets relativeTop=${safeTop(insets)} stableTop=$stableSafeTopInset oldY=${layout.y} newY=${layout.y} update=false")
                     insets

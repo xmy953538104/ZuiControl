@@ -125,6 +125,10 @@ class TerminalContracts(unittest.TestCase):
 
     def test_refresh_and_macro_power_service_unchanged(self):
         text=read('framework_patch/src/services/com/zui/server/control/ZuiControlService.java')
+        # Reverse only the exact authorized R11 scene delta before historical hashes.
+        for delta in json.loads(read('tests/monitor/r11_product_delta.json'))['service']:
+            self.assertEqual(text.count(delta['after']),1)
+            text=text.replace(delta['after'],delta['before'],1)
         # R8 separates overlay visibility from recording eligibility only.
         for delta in json.loads(read('tests/monitor/r8_product_delta.json'))['service']:
             self.assertEqual(text.count(delta['after']),1)

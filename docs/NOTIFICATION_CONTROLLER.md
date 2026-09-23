@@ -1,3 +1,13 @@
+# R11 current notification and scene delta
+
+Single stateless384x88dp target30 notification. Padding14/14/11/11;44dp Monitor,22dp white ECG,6dp yellow dot/margin3; Monitor remains blue both ON/OFF, dot alone changes. Rightgroup gap14; rows28 with10gap; refresh5gap and Uperf8gap;12.5sp bold/no font padding. Rightedges align.
+
+Own Activity and actual HOME are real editable scenes; SystemUI/shade/IME remain transient. Existing global Uperf inheritance and per-app quick overrides share the existing store. No second state authority or sampling clock. Monitor desired mode survives client death; no sampling without client; reconnect resumes desiredON, desiredOFF staysOFF. Crash-interrupted recording is retained incomplete, not automatically resumed.
+
+Long-bar top uses max(originalTop, visible absolute StatusBar bottom+1dp); no caption offset or fixed70/90px. Native landscape/portrait input qualification remains required.
+
+## Earlier design context
+
 # ROM notification controller
 
 ZuiControl deliberately targets SDK 30 while compiling with SDK 35. One production

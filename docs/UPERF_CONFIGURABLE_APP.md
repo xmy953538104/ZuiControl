@@ -1,3 +1,11 @@
+# R11 narrow own-App and HOME qualification
+
+The existing canonical /data/app and /system/preinstall policy remains. The actual PackageManager default HOME and com.zui.zuicontrol additionally qualify for canonical /system/app or /system/priv-app APK paths, only with enabled/exported user-facing activity. HOME uses the resolved HOME activity; all other apps retain MAIN/LAUNCHER qualification. SystemUI and android remain rejected. UI, notification and real Android daemon parser agree; no blanket system-app permission.
+
+Quick Uperf writes the existing per-app store, never global mode. App delete returns to global inheritance. This CPU eligibility change does not qualify own-App/HOME for GPU overrides.
+
+## Earlier policy context
+
 # Uperf configurable application
 
 The picker, quick notification and authenticated daemon use this same contract.

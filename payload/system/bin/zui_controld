@@ -97,6 +97,9 @@ uperf_apk_path_allowed() {
         ""|*[!A-Za-z0-9_./+=~-]*|*//*|*/./*|*/../*) return 1 ;;
     esac
     case "$1" in /data/app/?*.apk|/system/preinstall/?*.apk) return 0 ;; esac
+    if [ "${2:-0}" = 1 ]; then
+        case "$1" in /system/app/?*.apk|/system/priv-app/?*.apk) return 0 ;; esac
+    fi
     return 1
 }
 
@@ -127,19 +130,29 @@ uperf_launchable_query_allowed() {
 
 package_is_user_app() (
     valid_package_name "$1" || return 1
-    case "$1" in android|com.android.systemui|com.zui.zuicontrol) return 1 ;; esac
+    case "$1" in android|com.android.systemui) return 1 ;; esac
     case "$1" in *.*) ;; *) return 1 ;; esac
+    # Only our launchable App and the actual resolved HOME may use system App roots.
+    qualified_system_scene=0
+    home="$(timeout 5 cmd package resolve-activity --user current -a android.intent.action.MAIN -c android.intent.category.HOME </dev/null 2>/dev/null)" || return 1
+    if printf '%s\n' "$home" | uperf_launchable_query_allowed "$1"; then
+        qualified_system_scene=1
+        launch="$home"
+    else
+        launch="$(timeout 5 cmd package resolve-activity --user current -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p "$1" </dev/null 2>/dev/null)" || return 1
+        [ "$1" != com.zui.zuicontrol ] || qualified_system_scene=1
+    fi
+    printf '%s\n' "$launch" | uperf_launchable_query_allowed "$1" || return 1
     paths="$(timeout 5 pm path --user current "$1" </dev/null 2>/dev/null)" || return 1
     [ -n "$paths" ] || return 1
     while IFS= read -r line; do
         case "$line" in package:*) apk="${line#package:}" ;; *) return 1 ;; esac
-        uperf_apk_path_allowed "$apk" || return 1
+        uperf_apk_path_allowed "$apk" "$qualified_system_scene" || return 1
         [ -f "$apk" ] && [ "$(readlink -f "$apk" 2>/dev/null)" = "$apk" ] || return 1
     done <<EOF_UPERF_PATHS
 $paths
 EOF_UPERF_PATHS
-    launch="$(timeout 5 cmd package resolve-activity --user current -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p "$1" </dev/null 2>/dev/null)" || return 1
-    printf '%s\n' "$launch" | uperf_launchable_query_allowed "$1"
+    return 0
 )
 
 valid_uperf_preset() {

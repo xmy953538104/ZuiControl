@@ -3,6 +3,7 @@ package com.zui.zuicontrol
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ApplicationInfo
 import android.content.res.ColorStateList
 import android.content.res.Configuration
@@ -346,13 +347,18 @@ class MainActivity : Activity() {
         val modes = UperfMode.entries
         val picker = traySpinner(modes.map { it.title })
         picker.commitSelection(modes.indexOf(current ?: UperfMode.PERFORMANCE).coerceAtLeast(0))
-        val gpuEditor = gpuRangeEditor(pkg) { modes[picker.selectedItemPosition] }
-        picker.onSelection = { position ->
-            (gpuEditor.tag as GpuRangeBar).range = gpuOverrides[pkg] ?: globalGpuRange(modes[position])
-        }
         val content = dialogContent(pkg, "性能模式", picker) as LinearLayout
-        content.addView(fieldTitle("GPU频率范围"), fieldMargins())
-        content.addView(gpuEditor)
+        val home = packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+            PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+        // R11 adds CPU profiles for these scenes; closed GPU eligibility remains unchanged.
+        if (pkg != packageName && pkg != home) {
+            val gpuEditor = gpuRangeEditor(pkg) { modes[picker.selectedItemPosition] }
+            picker.onSelection = { position ->
+                (gpuEditor.tag as GpuRangeBar).range = gpuOverrides[pkg] ?: globalGpuRange(modes[position])
+            }
+            content.addView(fieldTitle("GPU频率范围"), fieldMargins())
+            content.addView(gpuEditor)
+        }
         AlertDialog.Builder(this)
             .setTitle(if (current == null) "添加自定义应用" else "编辑自定义应用")
             .setView(content)
@@ -836,7 +842,6 @@ class MainActivity : Activity() {
             @Suppress("DEPRECATION")
             val entries = packageManager.getInstalledApplications(0)
                 .asSequence()
-                .filter { it.packageName != packageName }
                 .map(::PackageEntry)
                 .filter { !uperfOnly || UperfAppPolicy.isConfigurable(packageManager, it.info.packageName) }
                 .sortedBy { it.info.packageName.lowercase(Locale.ROOT) }

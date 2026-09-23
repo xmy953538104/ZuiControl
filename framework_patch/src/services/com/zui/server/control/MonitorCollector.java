@@ -45,11 +45,11 @@ class MonitorCollector {
         callback=binder;death=null;
         if(binder!=null){
             death=()->{synchronized(MonitorCollector.this){if(callback==binder){
-                stop();callback=null;death=null;session.mode=MonitorSession.OFF;
+                stop();callback=null;death=null;session.cancelArm();
                 session.stop();store.abandon();
             }}};
             binder.linkToDeath(death,0);
-        }else{session.mode=MonitorSession.OFF;session.stop();store.abandon();}
+        }else{session.cancelArm();session.stop();store.abandon();}
     }
     synchronized void scene(String pkg,int user,boolean eligible){
         scene(pkg,user,eligible,eligible);

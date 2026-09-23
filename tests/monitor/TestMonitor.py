@@ -75,7 +75,12 @@ stubs.update({
  stale.run();check(c.scans==scans&&MonitorStore.finishes==1);
  c.command("full",0,"");Handler.next();client.death.binderDied();
  check(Handler.pending.isEmpty()&&HandlerThread.active==0&&MonitorStore.finishes==1);
- c.register(new Client());c.scene("game",0,true);check(Handler.pending.isEmpty());
+ check(c.session.mode==MonitorSession.FULL);int scansAfterDeath=c.scans;
+ Client replacement=new Client();c.register(replacement);c.scene("game",0,true);
+ check(!Handler.pending.isEmpty());Handler.next();check(c.scans==scansAfterDeath);
+ c.command("off",0,"");replacement.death.binderDied();
+ c.register(new Client());c.scene("game",0,true);
+ check(c.session.mode==MonitorSession.OFF&&Handler.pending.isEmpty());
  for(int i=0;i<100;i++){c.command("full",0,"");Handler.next();c.command("off",0,"");}
  check(HandlerThread.active==0&&Handler.pending.isEmpty());
  System.out.println("R4_REAL_COLLECTOR_ZERO_DISPLAY_WRITES_SCANS_PAUSE_RESUME_HOLD_DEATH_DRAIN_100=PASS");}}
