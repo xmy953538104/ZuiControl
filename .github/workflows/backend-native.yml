@@ -1,0 +1,129 @@
+name: Backend native gates
+run-name: Backend native gates · ${{ github.sha }}
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/backend-native.yml'
+      - 'native/**'
+      - 'framework_patch/src/services/com/zui/server/control/*Policy*.java'
+      - 'framework_patch/src/services/com/zui/server/control/Uperf*.java'
+      - 'framework_patch/src/services/com/zui/server/control/GpuRange.java'
+      - 'payload/system/bin/zui_uperf*'
+      - 'payload/system/etc/zui_control/uperf*'
+      - 'payload/system/etc/zui_control/zui_uperf_crash_gate.sh'
+      - 'payload/system/etc/zuiopt/**'
+      - 'scripts/rules/**'
+      - 'scripts/build/ImportUperfUpstream.py'
+      - 'tests/**'
+      - 'host_retirement/**'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  zuiopt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host compiler
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Compile production-core fixture
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-gate"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/native-gate/tested-head.txt"
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-fixture"
+      - name: ZUIopt native migration CAS journal recovery rollback
+        run: sudo timeout --kill-after=10s 5m "$RUNNER_TEMP/zuiopt-fixture" payload/system/etc/zuiopt/factory_rules.conf 2>&1 | tee "$RUNNER_TEMP/native-gate/zuiopt.log"
+      - name: Native rule evaluator parity
+        if: ${{ !cancelled() }}
+        run: python3 tests/zuiopt/TestNativeRuleParity.py "$RUNNER_TEMP/zuiopt-fixture" 2>&1 | tee "$RUNNER_TEMP/native-gate/parity.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-zuiopt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-gate
+          if-no-files-found: error
+
+  uperf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Real Linux supervisor and config rollback
+        run: |
+          mkdir -p "$RUNNER_TEMP/uperf-native"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/uperf-native/tested-head.txt"
+          python3 tests/uperf/supervisor/TestUperfSupervisor.py --receipt-dir "$RUNNER_TEMP/uperf-native" 2>&1 | tee "$RUNNER_TEMP/uperf-native/process.log"
+      - name: Production policy and qualified selection regression
+        if: ${{ !cancelled() }}
+        run: |
+          python3 tests/uperf/architecture/TestUperfArchitecture.py 2>&1 | tee "$RUNNER_TEMP/uperf-native/config.log"
+          python3 tests/gpu/TestGpuProof.py 2>&1 | tee "$RUNNER_TEMP/uperf-native/policy.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-uperf-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/uperf-native
+          if-no-files-found: error
+
+  inherited:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host compiler
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Inherited native lifecycle Binder models and acquisition
+        run: |
+          receipt="$RUNNER_TEMP/inherited-native"
+          mkdir -p "$receipt"
+          git rev-parse HEAD | tee "$receipt/tested-head.txt"
+          # Linux fixtures only. Binder APIs are typed models, not Android integration.
+          failed=0
+          for name in Binder Scene Acquisition Background ReleaseReentry Authority Lease; do
+            options=()
+            case "$name" in
+              Scene) options=(-pthread -ldl -Wl,--export-dynamic) ;;
+              Acquisition|Background|ReleaseReentry|Authority|Lease)
+                options=(-Wl,--wrap=open,--wrap=close,--wrap=write,--wrap=stat,--wrap=lstat,--wrap=access
+                  -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity)
+                if [[ "$name" != Acquisition ]]; then options+=(-Wl,--wrap=unlinkat); fi ;;
+            esac
+            binary="$RUNNER_TEMP/zuiopt-$name"
+            if clang++ -std=c++17 -O1 -Wall -Wextra -Werror -I tests/zuiopt/fixtures/binder_ndk \
+                "tests/zuiopt/ZUIopt${name}Test.cpp" -lz "${options[@]}" -o "$binary" 2>&1 | tee "$receipt/$name-compile.log"; then
+              sudo timeout --kill-after=10s 5m "$binary" 2>&1 | tee "$receipt/$name.log" || failed=1
+            else
+              failed=1
+            fi
+          done
+          test "$failed" -eq 0
+      - name: Inherited parser observation and retirement fixtures
+        if: ${{ !cancelled() }}
+        run: |
+          receipt="$RUNNER_TEMP/inherited-native"
+          failed=0
+          python3 tests/zuiopt/TestStatParser.py --compiler clang++ --output "$receipt/parser" 2>&1 | tee "$receipt/parser.log" || failed=1
+          python3 tests/zuiopt/TestScanObservation.py --compiler clang++ --output "$receipt/scan" 2>&1 | tee "$receipt/scan.log" || failed=1
+          sudo python3 host_retirement/TestRetirement.py 2>&1 | tee "$receipt/retirement.log" || failed=1
+          test "$failed" -eq 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-inherited-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/inherited-native
+          if-no-files-found: error
