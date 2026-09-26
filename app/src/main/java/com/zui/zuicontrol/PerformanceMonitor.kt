@@ -73,9 +73,9 @@ class PerformanceMonitor(private val context: Context,
     private var displayPower = -1.0
     private var backend: ZuiControlManager? = null
     private var permissionAllowed = true
-    private val serviceDeath = IBinder.DeathRecipient { handler.post {
-        backend=null;snapshot=JSONObject();hide();onReading(-1.0,-1.0,0L,3500L)
-    } }
+    private var backendGeneration=0L
+    private var expectedProducer=""
+    private var serviceDeath: IBinder.DeathRecipient? = null
     private val expireReading = Runnable {
         render(JSONObject(snapshot.toString()).put("elapsedMs",0).put("fps",JSONObject.NULL)
             .put("quietC",-1).put("powerW",-1).toString())
@@ -98,9 +98,17 @@ class PerformanceMonitor(private val context: Context,
             started = true
         }
         runCatching {
-            backend?.unlinkMonitorDeath(serviceDeath)
-            backend=ZuiControlManager.get()?.also { it.linkMonitorDeath(serviceDeath) }
-            backend?.monitor("register", "", false, false, callback)
+            serviceDeath?.let { backend?.unlinkMonitorDeath(it) }
+            val client=++backendGeneration
+            expectedProducer=""
+            val death=IBinder.DeathRecipient { handler.post {
+                if(client==backendGeneration){backend=null;expectedProducer="";snapshot=JSONObject();hide();onReading(-1.0,-1.0,0L,3500L)}
+            } }
+            serviceDeath=death
+            backend=ZuiControlManager.get()?.also { it.linkMonitorDeath(death) }
+            val reply=backend?.monitor("register", "", false, false, callback).orEmpty()
+            check(reply.startsWith("ok=1")) { "monitor register failed" }
+            expectedProducer=JSONObject(reply.substringAfter("monitorSnapshot=")).getString("producerEpoch")
             permissionAllowed=Settings.canDrawOverlays(context)
             command(if(permissionAllowed) "permissionGranted" else "permissionLost")
         }.onFailure { hide();onReading(-1.0,-1.0,0L,3500L) }
@@ -108,7 +116,8 @@ class PerformanceMonitor(private val context: Context,
     fun close() {
         closed = true
         runCatching { ZuiControlManager.get()?.monitor("unregister", "", false, false, callback) }
-        runCatching { backend?.unlinkMonitorDeath(serviceDeath) };backend=null
+        backendGeneration++;expectedProducer=""
+        runCatching { serviceDeath?.let { backend?.unlinkMonitorDeath(it) } };backend=null
         if (started) displays.unregisterDisplayListener(displayListener)
         hide(); handler.removeCallbacksAndMessages(null)
     }
@@ -237,6 +246,7 @@ class PerformanceMonitor(private val context: Context,
     }
     private fun render(text: String) {
         val next = runCatching { JSONObject(text) }.getOrNull() ?: return
+        if(expectedProducer.isEmpty()||next.optString("producerEpoch")!=expectedProducer)return
         if(next.optString("producerEpoch")!=snapshot.optString("producerEpoch")) {view?.cancelGesture();snapshot=JSONObject()}
         val allowed=Settings.canDrawOverlays(context)
         if(allowed!=permissionAllowed){permissionAllowed=allowed;command(if(allowed) "permissionGranted" else "permissionLost")}
@@ -316,7 +326,11 @@ class PerformanceMonitor(private val context: Context,
         private var lastUpTime = -1L
         private var lastCircleDrawTime = -1L
         private var drawnState = ""
-        private val confirmTap = Runnable { applyGesture(gesture.confirm(SystemClock.elapsedRealtime())) }
+        private var clickAction: MonitorGesture.Release? = null
+        private val confirmTap = Runnable {
+            val action=gesture.confirm(SystemClock.elapsedRealtime())
+            if(action==MonitorGesture.Release.TO_BAR){clickAction=action;performClick()}
+        }
         private var previousTapX = Float.NaN
         private var previousTapY = Float.NaN
         private val doubleSlop = ViewConfiguration.get(context).scaledDoubleTapSlop
@@ -434,7 +448,7 @@ class PerformanceMonitor(private val context: Context,
                     val token = "${snapshot.optLong("connectionEpoch")}:${snapshot.optLong("targetEpoch")}:$touchSequence"
                     if (command("recordStart", token).startsWith("ok=1")) {
                         snapshot.put("recordState", "RECORDING")
-                        performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                     }
                 }
                 MonitorGesture.Release.STOP_RECORDING -> {
@@ -495,7 +509,10 @@ class PerformanceMonitor(private val context: Context,
                     cancelPendingTap()
                     this@PerformanceMonitor.event("touch UP sequence=$touchSequence action=$action uptime=$lastUpTime")
                     previousTapX = event.rawX; previousTapY = event.rawY
-                    applyGesture(action)
+                    if(action in listOf(MonitorGesture.Release.TO_CIRCLE,MonitorGesture.Release.TO_BAR,
+                            MonitorGesture.Release.START_RECORDING,MonitorGesture.Release.STOP_RECORDING)){
+                        clickAction=action;performClick()
+                    }else applyGesture(action)
                     update()
                 }
             }
@@ -505,9 +522,9 @@ class PerformanceMonitor(private val context: Context,
             super.performClick()
             if (snapshot.optInt("mode") == 2) return false
             // Accessibility activation also consumes any pending pointer before changing the shape.
-            cancelGesture()
-            applyGesture(if (recording()) MonitorGesture.Release.STOP_RECORDING
-                else if (circle) MonitorGesture.Release.TO_BAR else MonitorGesture.Release.TO_CIRCLE)
+            val action=clickAction ?: if (recording()) MonitorGesture.Release.STOP_RECORDING
+                else if (circle) MonitorGesture.Release.TO_BAR else MonitorGesture.Release.TO_CIRCLE
+            clickAction=null;cancelGesture();applyGesture(action)
             return true
         }
     }
