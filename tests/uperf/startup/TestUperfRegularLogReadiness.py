@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import shlex
 import stat
 import subprocess
 import sys
@@ -56,6 +57,7 @@ class SupervisedRun:
         mode: str,
         executable: Path = DUMMY,
         timeout_ms: int = 2000,
+        bad_config: bool = False,
     ) -> None:
         self.root = root
         self.state = root / "state"
@@ -67,6 +69,8 @@ class SupervisedRun:
         self.config.write_text(
             json.dumps({"mode": mode, "state_dir": str(self.state)}), encoding="utf-8"
         )
+        if bad_config:
+            self.config.write_text("{invalid", encoding="utf-8")
         env = os.environ.copy()
         env.update(
             {
@@ -314,7 +318,14 @@ class RegularLogReadinessTests(unittest.TestCase):
             log.parent.mkdir()
             ready.parent.mkdir()
             script = WRAPPER.read_text(encoding="utf-8")
+            # Android transport/cpuset boundaries only; the wrapper and native exec stay real.
+            helper = root / "app_process"
+            calls = root / "prepare.calls"
+            helper.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + shlex.quote(str(calls)) + "\n", encoding="utf-8")
+            helper.chmod(0o755)
             replacements = {
+                "/system/bin/app_process": shlex.quote(str(helper)),
+                "/dev/cpuset/background/tasks": str(root / "cpuset.tasks"),
                 "CONFIG=/data/vendor/zui_control/uperf/uperf.json": f"CONFIG={config}",
                 "LOG=/data/vendor/zui_control/log/uperf.log": f"LOG={log}",
                 "READY_UPTIME=/data/vendor/zui_control/uperf/.service_ready_uptime": f"READY_UPTIME={ready}",
@@ -348,13 +359,66 @@ class RegularLogReadinessTests(unittest.TestCase):
                 self.assertEqual(
                     Path(f"/proc/{process.pid}/exe").resolve(), self.binary.resolve()
                 )
+                self.assertEqual(calls.read_text().splitlines(), [
+                    "/system/bin com.zui.server.control.PolicyCommand bootstrap -",
+                    "/system/bin com.zui.server.control.PolicyCommand uperf-startup -",
+                ])
                 terminate_pid(daemon)
                 self.assertEqual(process.wait(timeout=5), 1)
+                self.assertFalse(Path(f"/proc/{daemon}").exists())
             finally:
                 terminate_pid(daemon)
                 if process.poll() is None:
                     process.terminate()
                     process.wait(timeout=2)
+
+    def test_m_bad_config_has_no_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run = SupervisedRun(self.binary, Path(temporary), "create_ready", bad_config=True)
+            try:
+                self.assertEqual(run.process.wait(timeout=3), 1)
+                self.assertFalse(run.ready.exists())
+                self.assertIsNone(run.daemon_pid)
+            finally:
+                run.cleanup()
+
+    def test_n_restart_budget_uses_actual_crash_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runtime = root / "gate"
+            runtime.mkdir()
+            # Deterministic clock/property I/O boundaries, production shell arithmetic unchanged.
+            uptime = root / "uptime"
+            uptime.write_text("100.00 0.00\n")
+            props = root / "properties"
+            script = (REPO / "payload/system/etc/zui_control/zui_uperf_crash_gate.sh").read_text()
+            script = script.replace("UPERF_DIR=/data/vendor/zui_control/uperf", "UPERF_DIR=" + shlex.quote(str(runtime)))
+            script = script.replace("/proc/uptime", shlex.quote(str(uptime)))
+            script = "setprop() { printf '%s %s\\n' \"$1\" \"$2\" >> " + shlex.quote(str(props)) + "; }\n" + script
+            for attempt in range(1, 4):
+                run = SupervisedRun(self.binary, root / str(attempt), "create_ready")
+                try:
+                    run.wait_ready()
+                    daemon = wait_for(lambda: run.daemon_pid, label="restart daemon")
+                    terminate_pid(daemon)
+                    self.assertEqual(run.process.wait(timeout=3), 1)
+                    self.assertFalse(Path(f"/proc/{daemon}").exists())
+                    (runtime / ".service_ready_uptime").write_text("100\n")
+                    subprocess.run(["bash", "-c", script], check=True)
+                    self.assertEqual((runtime / ".service_rapid_crashes").read_text(), f"{attempt}\n")
+                    self.assertEqual(props.exists(), attempt == 3)
+                finally:
+                    run.cleanup()
+            self.assertEqual(props.read_text(), "sys.zui_control.uperf_fail_safe 1\n")
+
+    def test_o_real_process_readiness_drives_production_config_rollback(self) -> None:
+        base = REPO / "framework_patch/src/services/com/zui/server/control"
+        classes = self.build_root / "classes"
+        subprocess.run(["javac", "-encoding", "UTF-8", "-d", str(classes),
+            *[str(base / name) for name in ("PolicyJson.java", "GpuRange.java", "AppPolicyStore.java", "UperfConfigStore.java")],
+            str(REPO / "tests/uperf/architecture/UperfConfigFixture.java")], check=True)
+        subprocess.run(["java", "-cp", str(classes), "com.zui.server.control.UperfConfigFixture",
+            str(REPO / "payload/system/etc/zui_control/uperf-sm8650.json"), str(self.binary), str(DUMMY)], check=True, timeout=20)
 
 
 def main() -> int:
@@ -382,7 +446,7 @@ def main() -> int:
         (receipt_dir / "host_fixture_results.json").write_text(
             json.dumps(summary, indent=2) + "\n", encoding="utf-8"
         )
-    return 0 if result.wasSuccessful() else 1
+    return 0 if result.wasSuccessful() and not result.skipped else 1
 
 
 if __name__ == "__main__":

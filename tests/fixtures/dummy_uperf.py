@@ -92,7 +92,7 @@ def write_startup_log(mode: str, output_path: Path, state: Path) -> None:
         replace_with_regular(output_path, STARTUP_PREFIX + "09:38:28 I still starting\n")
         return
 
-    if mode == "failed":
+    if mode in ("failed", "native_failed"):
         replace_with_regular(output_path, STARTUP_PREFIX + "09:38:28 I Failed to start uperf\n")
         return
 
@@ -103,8 +103,8 @@ def main() -> int:
     if len(sys.argv) != 4 or sys.argv[2] != "-o":
         return 64
     config = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-    mode = config["mode"]
-    state = Path(config["state_dir"])
+    mode = config.get("mode", config.get("meta", {}).get("name", "create_ready"))
+    state = Path(config.get("state_dir", str(Path(sys.argv[1]).parent / "state")))
     output_path = Path(sys.argv[3])
     state.mkdir(parents=True, exist_ok=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -127,7 +127,7 @@ def main() -> int:
 
     write_startup_log(mode, output_path, state)
     write_state(state / "startup_write_complete", "1\n")
-    if mode == "ready_short":
+    if mode in ("ready_short", "native_failed"):
         time.sleep(0.20)
         return 0
     pause_forever()

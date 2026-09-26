@@ -49,12 +49,57 @@ public final class UperfConfigFixture {
     }
     static byte[] named(String name) throws Exception { Map<String,Object> config = object(parse(factory)); object(config.get("meta")).put("name", name); return bytes(config); }
     static UperfConfigStore store(Disk disk) throws Exception { return new UperfConfigStore(disk, factory, UperfConfigStore.BINARY_HASH, bytes(trust)); }
+    static boolean launchSelected(UperfConfigStore store, String binary, String dummy) throws Exception {
+        Path root = Files.createTempDirectory("uperf-selection-process-");
+        Path config = root.resolve("uperf.json"), log = root.resolve("uperf.log"), ready = root.resolve("ready");
+        Files.write(config, store.startup());
+        ProcessBuilder builder = new ProcessBuilder(binary, config.toString(), log.toString(), ready.toString());
+        builder.environment().put("ZUI_UPERF_TEST_BINARY", dummy);
+        builder.environment().put("ZUI_UPERF_TEST_TIMEOUT_MS", "2000");
+        builder.environment().put("ZUI_UPERF_TEST_CADENCE_MS", "20");
+        builder.redirectError(root.resolve("stderr").toFile());
+        Process process = builder.start();
+        try {
+            check(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS), "finite native child exit");
+            check(process.exitValue() == 1, "real supervisor observes descendant termination");
+            boolean valid = Files.isRegularFile(ready);
+            store.complete(integer(store.selection().get("generation")), valid);
+            return valid;
+        } finally {
+            if (process.isAlive()) process.destroyForcibly().waitFor();
+            Path pid = root.resolve("state/daemon.pid");
+            if (Files.exists(pid)) {
+                long id = Long.parseLong(new String(Files.readAllBytes(pid)).trim());
+                long deadline = System.nanoTime() + 3_000_000_000L;
+                while (Files.exists(Paths.get("/proc/" + id)) && System.nanoTime() < deadline) Thread.sleep(10);
+                check(!Files.exists(Paths.get("/proc/" + id)), "child reaped; no surviving fixture daemon");
+            }
+        }
+    }
+    static void nativeLifecycle(String binary, String dummy) throws Exception {
+        Disk disk = new Disk();
+        byte[] good = named("ready_short"), bad = named("native_failed");
+        byte[] goodZip = zip(entries(good, factory, null, null));
+        byte[] badZip = zip(entries(bad, good, null, null));
+        UperfConfigStore store = store(disk);
+        store.stage(goodZip, 0);
+        check(launchSelected(store, binary, dummy), "accepted native readiness");
+        check(store.selection().get("state").equals("ACCEPTED"), "last-good established");
+        store.stage(badZip, 1);
+        check(!launchSelected(store, binary, dummy), "actual failed process has no ready ACK");
+        check(Arrays.equals(store.startup(), good) && store.selection().get("state").equals("ROLLED_BACK"), "native failure rolls back production selection");
+        check(launchSelected(store, binary, dummy), "restart from last-good succeeds");
+        check(integer(store.selection().get("generation")) == 3, "single rollback generation");
+        check(disk.data.containsKey("imports/" + hash(bad) + "/config.json"), "failed config evidence retained");
+        System.out.println("UPERF_NATIVE_PROCESS_SELECTION_ROLLBACK_PASS checks=" + checks);
+    }
     public static void main(String[] args) throws Exception {
         factory = new String(Files.readAllBytes(Paths.get(args[0])), java.nio.charset.StandardCharsets.UTF_8).replace("\r\n", "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
         check(hash(factory).equals(UperfConfigStore.FACTORY_HASH), "qualified immutable factory");
         profile = map("schema", 1, "binaryHash", UperfConfigStore.BINARY_HASH, "factoryHash", hash(factory), "targetSoC", "sm8650",
                 "fields", map("/meta/name", map("type", "string", "maxUtf8Bytes", 128)), "qualificationEvidenceHash", hash(evidence));
         trust = map("schema", 1, "targetSoC", "sm8650", "factoryHash", hash(factory), "binaryHash", UperfConfigStore.BINARY_HASH, "profiles", map("fixture", profile), "qualifications", map());
+        if (args.length == 3) { nativeLifecycle(args[1], args[2]); return; }
         Disk disk = new Disk(); check(Arrays.equals(factory, store(disk).startup()), "factory selection");
         byte[] first = named("qualified-one"); Map<String,byte[]> firstEntries = entries(first, factory, null, null);
         byte[] firstZip = zip(firstEntries); check(UperfConfigStore.unpack(firstZip).size() == 3, "strict archive");

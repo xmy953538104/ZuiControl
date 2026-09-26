@@ -17,4 +17,8 @@ REPEATED_RUNS = 20
 if __name__ == "__main__":
     for run in range(1, REPEATED_RUNS + 1):
         print(f"SUPERVISOR_FIXTURE_RUN={run}/{REPEATED_RUNS}", flush=True)
-        subprocess.run([sys.executable, str(TARGET), *sys.argv[1:]], check=True)
+        args = sys.argv[1:]
+        if "--receipt-dir" in args:
+            index = args.index("--receipt-dir") + 1
+            args[index] = str(Path(args[index]) / f"run-{run:02d}")
+        subprocess.run([sys.executable, str(TARGET), *args], check=True)
