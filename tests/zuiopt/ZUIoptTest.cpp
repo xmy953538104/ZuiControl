@@ -239,6 +239,25 @@ int main(int argc,char** argv){
             rejects([&]{store.apply("begin",randomId(),"user:1:"+sha256("x")+":-:0:"+stale);});
             rejects([&]{store.apply("rollback",stale,"");});
             require(store.current().canonical&&store.current().packs.empty(),"one canonical source");
+            auto tx=randomId(),original=store.current().user,next=dumpRules(rules(BASE));
+            auto generation=generationOf(store.current().effective);
+            rejects([&]{store.settings("settings_prepare",tx,generation+":"+base64("malformed"));});
+            require(store.current().user==original,"invalid restore rules unchanged");
+            store.settings("settings_prepare",tx,generation+":"+base64(next));
+            require(store.current().user==original,"prepare not visible");
+            rejects([&]{store.apply("rollback",generation,"");});
+            rejects([&]{store.settings("settings_finish",randomId(),"");});
+            store.settings("settings_apply",tx,sha256(next));require(store.current().user==next,"settings actual core apply");
+            auto applied=store.current().effective;store.settings("settings_apply",tx,sha256(next));
+            require(store.current().effective==applied,"settings idempotent apply");
+            store.settings("settings_revert",tx,sha256(original));require(store.current().user==original,"settings actual rollback");
+            store.settings("settings_finish",tx,"");store.settings("settings_finish",tx,"");
+            auto tx2=randomId();store.settings("settings_prepare",tx2,generationOf(store.current().effective)+":"+base64(next));
+            RuleStore::testAfterCommit=true;
+            rejects([&]{store.settings("settings_apply",tx2,sha256(next));});RuleStore::testAfterCommit=false;
+            store.settings("settings_apply",tx2,sha256(next));require(store.current().user==next,"settings uncertain commit readback");
+            store.settings("settings_revert",tx2,sha256(original));store.settings("settings_finish",tx2,"");
+            puts("ZUIOPT_SETTINGS_PREPARE_FREEZE_APPLY_ROLLBACK_UNCERTAIN_REPLAY=PASS");
         }
         // Only the exclusively created fixture directory, never a provided state path.
         require(root.filename().string().rfind("ZUIopt-fixture-",0)==0&&!fs::is_symlink(root),"fixture cleanup boundary");fs::remove_all(root);

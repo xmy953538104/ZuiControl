@@ -10,6 +10,7 @@ on:
       - 'framework_patch/src/services/com/zui/server/control/*Policy*.java'
       - 'framework_patch/src/services/com/zui/server/control/Uperf*.java'
       - 'framework_patch/src/services/com/zui/server/control/GpuRange.java'
+      - 'framework_patch/src/services/com/zui/server/control/SettingsBackup.java'
       - 'payload/system/bin/zui_uperf*'
       - 'payload/system/etc/zui_control/uperf*'
       - 'payload/system/etc/zui_control/zui_uperf_crash_gate.sh'

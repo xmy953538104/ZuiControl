@@ -107,6 +107,7 @@ public final class ZuiControlService extends Binder {
     private final MonitorCollector mMonitor;
     private final java.util.Set<String> mMonitorApps = new java.util.HashSet<>();
     private int mMonitorClientUser = -1;
+    private int mMonitorTaskId = -1;
     private final AtomicLong mTopResumedCallbackGeneration = new AtomicLong();
     private final TopResumedNullState mTopResumedState = new TopResumedNullState();
     private final ZuioptSceneAuthority mZuioptScene = new ZuioptSceneAuthority();
@@ -280,30 +281,39 @@ public final class ZuiControlService extends Binder {
         });
     }
 
+    private static int monitorTaskId(ActivityRecord record){
+        if(record==null)return -1;
+        try{Method method=record.getClass().getDeclaredMethod("getTask");method.setAccessible(true);
+            Object task=method.invoke(record);if(task==null)return -1;
+            java.lang.reflect.Field id=task.getClass().getDeclaredField("mTaskId");id.setAccessible(true);return id.getInt(task);
+        }catch(ReflectiveOperationException|RuntimeException e){return -1;}
+    }
     public void onTopResumedActivityChanged(
             ActivityTaskSupervisor authority, ActivityRecord record) {
         final long generation = mTopResumedCallbackGeneration.incrementAndGet();
         final long eventNanos = SystemClock.elapsedRealtimeNanos();
         final String pkg = record == null ? "" : safe(record.packageName);
         final int userId = record == null ? 0 : record.mUserId;
+        final int taskId = monitorTaskId(record);
         mWorker.post(new Runnable() {
             @Override
             public void run() {
                 handleTopResumedActivityChanged(
-                        authority, generation, pkg, userId, eventNanos);
+                        authority, generation, pkg, userId, taskId, eventNanos);
             }
         });
     }
 
     private synchronized void handleTopResumedActivityChanged(
             ActivityTaskSupervisor authority, long generation, String pkg,
-            int userId, long eventNanos) {
+            int userId, int taskId, long eventNanos) {
         mTopResumedAuthority = authority;
         if (!pkg.isEmpty()) {
             mWorker.removeCallbacks(mTopResumedNullRevalidation);
             if (!mTopResumedState.acceptValid(generation, pkg, userId)) {
                 return;
             }
+            mMonitorTaskId=taskId;
             Log.i(TAG, "uperf_top_resumed event=topResumedValid generation="
                     + generation + " package=" + pkg + " userId=" + userId);
             mUperfScenePolicy.onTopResumedChanged(
@@ -341,7 +351,7 @@ public final class ZuiControlService extends Binder {
         } catch (Throwable t) {
             mTopResumedState.authorityError(generation);
             mGpuPolicy.failSafe("top_resumed_authority_error");
-            mMonitor.scene("", 0, false);
+            mMonitor.scene("",0,false,false,"APP_BACKGROUND",-1);
             Log.w(TAG, "uperf_top_resumed event=topResumedRevalidateAuthorityError"
                     + " generation=" + generation + " trigger=" + trigger, t);
             return;
@@ -577,6 +587,13 @@ public final class ZuiControlService extends Binder {
     @Override
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
         try {
+            if(code==1011){
+                data.enforceInterface(DESCRIPTOR);
+                if(Binder.getCallingUid()!=0||flags!=0)throw new SecurityException("root settings owner required");
+                String action=data.readString(),argument=data.readString();IBinder owner=data.readStrongBinder();
+                if(data.dataAvail()!=0||owner==null)throw new IllegalArgumentException("settings payload");
+                String result=settingsCommand(action,argument,owner);reply.writeNoException();reply.writeString(result);return true;
+            }
             if (code == PolicyCommand.TRANSACTION) {
                 data.enforceInterface(DESCRIPTOR);
                 if (Binder.getCallingUid() != 0 || flags != 0) throw new SecurityException("root policy owner required");
@@ -699,6 +716,9 @@ public final class ZuiControlService extends Binder {
         return result;
     }
 
+    private String monitorHome(int user) {
+        try { return policyHome(user); } catch(Exception e) { return ""; }
+    }
     private String policyHome(int user) throws Exception {
         Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
         android.content.pm.ResolveInfo result = (android.content.pm.ResolveInfo) mPm.getClass()
@@ -758,6 +778,7 @@ public final class ZuiControlService extends Binder {
             PolicyJson.require(mAppPolicies != null, "policy store unavailable");
             AppPolicyStore.Owner owner = PolicyCommand.owner(remote, this::applyUnifiedPolicy);
             mAppPolicies.recover(owner);
+            new SettingsBackup(mAppPolicies).recover(owner,PolicyCommand.rules(remote));
             Map<Integer,Long> users = policyUsers(); java.util.Set<String> excluded = policyExcluded(users);
             if (mAppPolicies.current == null) {
                 Map<String,Object> raw = PolicyCommand.snapshot(remote);
@@ -832,6 +853,84 @@ public final class ZuiControlService extends Binder {
         } finally { Binder.restoreCallingIdentity(identity); }
     }
 
+    private synchronized String settingsCommand(String action,String argument,IBinder remote){
+        long identity=Binder.clearCallingIdentity();
+        try{
+            PolicyJson.require(mAppPolicies!=null&&mAppPolicies.current!=null,"policy not ready");
+            SettingsBackup backup=new SettingsBackup(mAppPolicies);
+            AppPolicyStore.Owner owner=PolicyCommand.owner(remote,this::applyUnifiedPolicy);
+            mAppPolicies.recover(owner);backup.recover(owner,PolicyCommand.rules(remote));
+            PolicyJson.require(mAppPolicies.current.users.equals(policyUsers()),"settings user inventory changed");
+            if("sb_export".equals(action)){
+                byte[] archive=backup.export(PolicyCommand.rules(remote),android.os.Build.FINGERPRINT,System.currentTimeMillis());
+                mAppPolicies.disk.write("settings-export.zip",archive);
+                return "ok=1\nbackupSize="+archive.length+"\nbackupHash="+PolicyJson.hash(archive);
+            }
+            if("sb_restore".equals(action)){
+                PolicyJson.require(argument!=null&&argument.matches("[0-9a-f]{24}"),"restore identity");
+                byte[] archive=mAppPolicies.disk.read("settings-upload-"+argument+".zip");
+                Map<String,Object> meta=PolicyJson.object(PolicyJson.parse(mAppPolicies.disk.read("settings-upload-"+argument+".json")));
+                PolicyJson.require(PolicyJson.integer(meta.get("size"))==archive.length&&PolicyJson.hash(archive).equals(meta.get("hash")),"restore upload identity");
+                Map<String,byte[]> entries=SettingsBackup.validate(archive,policyUsers());
+                AppPolicyStore.State target=AppPolicyStore.State.parse(entries.get("policy.json"));
+                java.util.Set<String> excluded=policyExcluded(target.users);
+                for(String key:target.apps.keySet()){
+                    String pkg=key.substring(key.indexOf(':')+1);
+                    PolicyJson.require(!excluded.contains(pkg)&&!isTransientPackage(pkg),"restore excluded policy target");
+                }
+                backup.restore(archive,argument,owner,PolicyCommand.rules(remote));
+            }else PolicyJson.require("sb_recover".equals(action),"settings action");
+            publishPolicySettings();mMonitor.invalidatePower();return "ok=1\nsettingsPhase="+
+                PolicyJson.string(PolicyJson.object(PolicyJson.parse(mAppPolicies.disk.read(SettingsBackup.JOURNAL))).get("phase"));
+        }catch(Exception e){return "ok=0\nerror=settings:"+e.getClass().getSimpleName()+":"+safe(e.getMessage());}
+        finally{Binder.restoreCallingIdentity(identity);}
+    }
+    private String settingsTransport(String action,String argument,int user)throws Exception{
+        PolicyJson.require(mAppPolicies!=null&&mAppPolicies.current!=null,"policy not ready");
+        SettingsBackup backup=new SettingsBackup(mAppPolicies);
+        if(action.equals("preferencesRead")||action.equals("preferencesWrite")){
+            PolicyJson.require(!backup.busy(),"settings recovery required");
+            Map<String,Object> prefs=PolicyJson.object(PolicyJson.parse(backup.prefs()));
+            for(Object item:PolicyJson.array(prefs.get("users"))){Map<String,Object> row=PolicyJson.object(item);
+                if(PolicyJson.integer(row.get("userId"))!=user)continue;
+                if(action.equals("preferencesWrite")){
+                    Map<String,Object> value=PolicyJson.object(PolicyJson.parse(argument.getBytes(StandardCharsets.UTF_8)));
+                    PolicyJson.keys(value,"circle_x","circle_y");row.putAll(value);
+                    mAppPolicies.disk.write(SettingsBackup.PREFS,SettingsBackup.preferences(PolicyJson.bytes(prefs),mAppPolicies.current.users));
+                }
+                return PolicyJson.encode(row);
+            }
+            throw new IllegalArgumentException("preference user unavailable");
+        }
+        PolicyJson.require(user==0,"settings backup primary user required");
+        if(action.equals("backupRead")){
+            String[] fields=argument.split(":",-1);PolicyJson.require(fields.length==2,"export identity");
+            byte[] archive=mAppPolicies.disk.read("settings-export.zip");PolicyJson.require(PolicyJson.hash(archive).equals(fields[0]),"export changed");
+            int offset=Integer.parseInt(fields[1]);PolicyJson.require(offset>=0&&offset<archive.length,"export offset");
+            return java.util.Base64.getEncoder().encodeToString(Arrays.copyOfRange(archive,offset,Math.min(offset+8192,archive.length)));
+        }
+        PolicyJson.require(!backup.busy(),"settings restore recovery required");
+        Map<String,Object> request=PolicyJson.object(PolicyJson.parse(argument.getBytes(StandardCharsets.UTF_8)));
+        String tx=PolicyJson.string(request.get("transaction"));PolicyJson.require(tx.matches("[0-9a-f]{24}"),"settings upload transaction");
+        String path="settings-upload-"+tx;
+        if(action.equals("backupBegin")){
+            PolicyJson.keys(request,"transaction","size","hash");long size=PolicyJson.integer(request.get("size"));
+            PolicyJson.require(size>0&&size<=SettingsBackup.LIMIT&&PolicyJson.string(request.get("hash")).matches("[0-9a-f]{64}"),"settings upload metadata");
+            byte[] old=mAppPolicies.disk.read(path+".json"),next=PolicyJson.bytes(request);
+            PolicyJson.require(old.length==0||Arrays.equals(old,next),"settings upload immutable identity");
+            if(old.length==0){mAppPolicies.disk.write(path+".zip",new byte[0]);mAppPolicies.disk.write(path+".json",next);}
+        }else{
+            PolicyJson.require(action.equals("backupChunk"),"settings transport action");PolicyJson.keys(request,"transaction","offset","data");
+            Map<String,Object> meta=PolicyJson.object(PolicyJson.parse(mAppPolicies.disk.read(path+".json")));
+            byte[] current=mAppPolicies.disk.read(path+".zip"),chunk=java.util.Base64.getDecoder().decode(PolicyJson.string(request.get("data")));
+            int offset=PolicyJson.intValue(request.get("offset"));PolicyJson.require(offset>=0&&offset<=current.length&&chunk.length>0&&chunk.length<=8192
+                &&offset+chunk.length<=PolicyJson.integer(meta.get("size")),"settings upload bound");
+            if(offset<current.length)PolicyJson.require(offset+chunk.length<=current.length&&Arrays.equals(chunk,Arrays.copyOfRange(current,offset,offset+chunk.length)),"conflicting upload replay");
+            else {byte[] next=Arrays.copyOf(current,current.length+chunk.length);System.arraycopy(chunk,0,next,current.length,chunk.length);mAppPolicies.disk.write(path+".zip",next);}
+        }
+        return "ok=1";
+    }
+
     private synchronized String setGlobalGpuRange(String mode, int userId, int min, int max) {
         if (userId < 0 || userId != Binder.getCallingUid() / 100000 || !isUperfMode(mode)) {
             return "ok=0\nerror=invalid_gpu_mode";
@@ -857,13 +956,17 @@ public final class ZuiControlService extends Binder {
     private synchronized String monitorCommand(Parcel data) throws RemoteException {
         String command = data.readString();
         int callerUser = Binder.getCallingUid() / 100000;
+        if ("unregister".equals(command)){mMonitor.unregister(data.readStrongBinder());return "ok=1";}
         if ("register".equals(command)) {
             mMonitor.register(data.readStrongBinder());
             mMonitorClientUser = callerUser;
         }
-        String argument = ("recordRead".equals(command) || "recordDelete".equals(command)) ? data.readString() : "";
+        String argument = ("recordRead".equals(command) || "recordDelete".equals(command) || "recordStart".equals(command) || command.startsWith("backup") || command.startsWith("preferences")) ? data.readString() : "";
         long identity = Binder.clearCallingIdentity();
         try {
+            if(command.startsWith("backup")||command.startsWith("preferences")){
+                try{return settingsTransport(command,argument,callerUser);}catch(Exception e){return "ok=0\nerror="+safe(e.getMessage());}
+            }
             refreshMonitor();
             String result = mMonitor.command("register".equals(command) ? "state" : command,
                     callerUser, argument == null ? "" : argument);
@@ -885,10 +988,10 @@ public final class ZuiControlService extends Binder {
                 && !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false);
         // Visibility follows screen lifecycle; recording still requires the actual target App.
         // Keep editableScene, Refresh and Uperf transient-focus policy unchanged.
-        boolean recordEligible = eligible && !pkg.isEmpty() && !mGpuSystemUi && !mImeVisible
-                && (!isTransientPackage(pkg) || "com.zui.zuicontrol".equals(pkg))
-                && pkg.equals(mRawFocusedPackage) && user == mRawFocusedUserId;
-        mMonitor.scene(pkg, user, eligible, recordEligible);
+        boolean recordEligible = eligible && !pkg.isEmpty() && !monitorHome(user).isEmpty() && !pkg.equals(monitorHome(user))
+                && (!isTransientPackage(pkg) || "com.zui.zuicontrol".equals(pkg));
+        mMonitor.scene(pkg, user, eligible, recordEligible && mMonitorTaskId>=0,
+                !mScreenInteractive?"SCREEN_OFF":lock!=null&&lock.isKeyguardLocked()?"LOCKED":"VISIBILITY_BLOCKED",mMonitorTaskId);
     }
 
     private synchronized String setGpuRange(String pkg, int userId, int min, int max) {
@@ -1063,6 +1166,7 @@ public final class ZuiControlService extends Binder {
     private synchronized String currentSceneState() {
         return "ok=1\ncurrentScenePackage=" + mCurrentScenePackage
                 + "\nlastNonTransientScenePackage=" + mLastNonTransientScenePackage
+                + "\neditableSceneIsHome=" + editableScenePackage().equals(monitorHome(mTopResumedState.stableUserId()))
                 + "\neditableScenePackage=" + editableScenePackage()
                 + "\neditableDisplayHz=" + editableDisplayHz() + policyStateLines();
     }
@@ -1090,7 +1194,9 @@ public final class ZuiControlService extends Binder {
                     || !fields[2].isEmpty() || !sha256(safe(requestText)).equals(sha256)) {
                 return "ok=0\nerror=request_payload_mismatch";
             }
+            if(fields[1].startsWith("sb_")&&policyCallerUser!=0)return "ok=0\nerror=settings_primary_user_required";
             if ("policy".equals(fields[1])) {
+                if(mAppPolicies!=null&&new SettingsBackup(mAppPolicies).busy())return "ok=0\nerror=settings_recovery_required";
                 if (mAppPolicies == null) return "ok=0\nerror=policy_store_unavailable";
                 java.util.Map<String,Object> policy = PolicyJson.object(PolicyJson.parse(java.util.Base64.getDecoder().decode(fields[4])));
                 if (PolicyJson.integer(policy.get("userId")) != policyCallerUser) return "ok=0\nerror=policy_user_mismatch";
@@ -1500,6 +1606,8 @@ public final class ZuiControlService extends Binder {
             filter.addAction(Intent.ACTION_SCREEN_ON);
             filter.addAction(Intent.ACTION_SCREEN_OFF);
             filter.addAction(Intent.ACTION_USER_PRESENT);
+            filter.addAction(Intent.ACTION_POWER_CONNECTED);
+            filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
             mContext.registerReceiver(new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, Intent intent) {
@@ -1508,6 +1616,8 @@ public final class ZuiControlService extends Binder {
                         onScreenInteractiveChanged(true);
                     } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                         onScreenInteractiveChanged(false);
+                    } else if (Intent.ACTION_POWER_CONNECTED.equals(action) || Intent.ACTION_POWER_DISCONNECTED.equals(action)) {
+                        mMonitor.invalidatePower();
                     } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
                         refreshMonitor();
                     }
@@ -1804,6 +1914,7 @@ public final class ZuiControlService extends Binder {
                 + "\nimeVisible=" + mImeVisible
                 + "\ncurrentScenePackage=" + mCurrentScenePackage
                 + "\nlastNonTransientScenePackage=" + mLastNonTransientScenePackage
+                + "\neditableSceneIsHome=" + editableScenePackage().equals(monitorHome(mTopResumedState.stableUserId()))
                 + "\neditableScenePackage=" + editableScenePackage()
                 + "\neditableDisplayHz=" + editableDisplayHz()
                 + "\ndesiredScenePackage=" + mDesiredScenePackage

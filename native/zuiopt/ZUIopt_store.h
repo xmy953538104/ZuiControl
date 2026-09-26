@@ -76,12 +76,12 @@ inline std::string base64(const std::string& s){
     const std::string alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";std::string out;
     for(size_t i=0;i<s.size();i+=3){uint32_t n=uint32_t(static_cast<unsigned char>(s[i]))<<16;if(i+1<s.size())n|=uint32_t(static_cast<unsigned char>(s[i+1]))<<8;if(i+2<s.size())n|=static_cast<unsigned char>(s[i+2]);out+=alphabet[n>>18];out+=alphabet[(n>>12)&63];out+=i+1<s.size()?alphabet[(n>>6)&63]:'=';out+=i+2<s.size()?alphabet[n&63]:'=';}return out;
 }
-inline std::string unbase64(const std::string& s){
-    require(!s.empty()&&s.size()<=10924&&s.size()%4==0,"chunk base64 size");const std::string alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";std::string out;
+inline std::string unbase64(const std::string& s,size_t limit=8192){
+    require(!s.empty()&&s.size()<=(limit+2)/3*4&&s.size()%4==0,"chunk base64 size");const std::string alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";std::string out;
     for(size_t i=0;i<s.size();i+=4){uint32_t n=0;int count=3;
         for(int j=0;j<4;j++){auto at=alphabet.find(s[i+j]);if(s[i+j]=='='){require(i+4==s.size()&&j>=2,"base64 padding");if(j==2)require(s[i+3]=='=',"base64 padding order");at=0;count--;}else require(at!=alphabet.npos,"base64 alphabet");n=(n<<6)|at;}
         out+=static_cast<char>(n>>16);if(count>=2)out+=static_cast<char>(n>>8);if(count==3)out+=static_cast<char>(n);
-    }require(out.size()<=8192&&base64(out)==s,"noncanonical base64");return out;
+    }require(out.size()<=limit&&base64(out)==s,"noncanonical base64");return out;
 }
 inline std::vector<std::string> fields(const std::string& text,char delimiter){std::vector<std::string> out;size_t start=0;for(;;){auto end=text.find(delimiter,start);out.push_back(text.substr(start,end-start));if(end==text.npos)break;start=end+1;}return out;}
 
@@ -176,7 +176,7 @@ public:
     }
     std::string state(){
         auto s=current();require(!s.effective.empty(),"store not initialized");std::ostringstream out;
-        out<<"store_schema=ZUIOPT_CANONICAL_STATE_V2\ncanonical_sha256="<<sha256(s.user)<<"\nloaded_generation="<<trim(root.get("loaded-generation.v2",256,true))<<"\ngeneration="<<generationOf(s.effective)<<"\ntransaction="<<s.transaction<<"\nfactory_sha256="<<factorySha<<"\nuser_size="<<s.user.size()<<"\nuser_sha256="<<sha256(s.user)<<"\neffective_sha256="<<sha256(s.effective)<<'\n';
+        out<<"settings_pending="<<trim(root.get("settings.pending",64,true))<<"\nstore_schema=ZUIOPT_CANONICAL_STATE_V2\ncanonical_sha256="<<sha256(s.user)<<"\nloaded_generation="<<trim(root.get("loaded-generation.v2",256,true))<<"\ngeneration="<<generationOf(s.effective)<<"\ntransaction="<<s.transaction<<"\nfactory_sha256="<<factorySha<<"\nuser_size="<<s.user.size()<<"\nuser_sha256="<<sha256(s.user)<<"\neffective_sha256="<<sha256(s.effective)<<'\n';
         for(const auto& [id,p]:s.packs)out<<"pack="<<id<<'|'<<p.manifest.at("pack_version").text<<'|'<<p.manifest.at("pack_priority").text<<'|'<<s.enabled.count(id)<<'|'<<p.manifest.at("source_type").text<<'\n';
         require(out.str().size()<=4096,"state response bound");return out.str();
     }
@@ -190,8 +190,39 @@ public:
         require(rx(offsetText,"[0-9]{1,6}"),"read offset");size_t offset=number(offsetText);auto s=current();require(generationOf(s.effective)==generation&&offset<=s.user.size(),"state changed/read offset");
         return generation+":"+offsetText+":"+base64(s.user.substr(offset,8192));
     }
+    std::string settings(const std::string& action,const std::string& tx,const std::string& value){
+        require(hex(tx,24),"settings transaction");auto s=current();require(s.canonical,"canonical required");
+        auto lease=trim(root.get("settings.pending",64,true));
+        const auto before="settings-"+tx+"-before.conf",target="settings-"+tx+"-target.conf";
+        if(action=="settings_prepare"){
+            auto colon=value.find(':');require(colon!=std::string::npos,"settings prepare metadata");
+            auto expected=value.substr(0,colon),data=unbase64(value.substr(colon+1),RULE_LIMIT);
+            require(data.size()<=RULE_LIMIT&&dumpRules(rules(data))==data,"settings canonical bytes");
+            require(lease.empty()||lease==tx,"settings busy");
+            if(lease==tx){require(root.get(target,RULE_LIMIT)==data,"settings prepare replay");}
+            else{
+                require(generationOf(s.effective)==expected,"settings generation CAS");
+                // Retained stage inputs precede the durable freeze; no visible rule changes here.
+                if(root.exists(before))require(root.get(before,RULE_LIMIT)==s.user&&root.get(target,RULE_LIMIT)==data,"settings immutable stage");
+                else {root.put(before,s.user,true);root.put(target,data,true);}
+                root.put("settings.pending",tx+"\n");
+            }
+            return "prepared="+sha256(data);
+        }
+        require(lease==tx|| (lease.empty()&&action=="settings_finish"),"settings lease");
+        if(action=="settings_finish"){root.remove("settings.pending");return "settings=finished";}
+        require(action=="settings_apply"||action=="settings_revert","settings action");
+        auto old=root.get(before,RULE_LIMIT),next=root.get(target,RULE_LIMIT);
+        require(s.user==old||s.user==next,"settings unknown active rules");
+        auto wanted=action=="settings_apply"?next:old;
+        require(value==sha256(wanted),"settings wanted digest");
+        if(s.user!=wanted){auto expected=generationOf(s.effective);s.user=wanted;s.source=wanted;
+            s.provenance="source=settings_restore\ntransaction="+tx+"\n";commit(s,randomId(),expected);}
+        return "canonical_sha256="+sha256(wanted);
+    }
     std::string apply(const std::string& action,const std::string& id,const std::string& value){
         auto s=current();require(s.canonical,"canonical migration required");
+        require(!root.exists("settings.pending"),"settings restore recovery required");
         if(action=="begin"){
             require(hex(id,24),"upload ID");auto f=fields(value,':');require(f.size()==6&&generationId(f[5])&&f[5]==generationOf(s.effective)&&(f[0]=="pack"||f[0]=="user"||f[0]=="appopt")&&rx(f[1],"[0-9]{1,6}")&&hex(f[2],64)&&(f[3]=="-"||packId(f[3]))&&rx(f[4],"-?[0-9]{1,7}"),"begin metadata");
             int size=number(f[1]),priority=number(f[4]);require(size>0&&size<=static_cast<int>(f[0]=="pack"?PACK_LIMIT:RULE_LIMIT)&&priority>=-1000000&&priority<=1000000&&(f[0]!="appopt"||packId(f[3])),"begin bounds");

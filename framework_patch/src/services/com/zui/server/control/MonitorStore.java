@@ -19,8 +19,9 @@ final class MonitorStore {
     // Migration is inside the explicit start/delete transaction. Failed replacement rolls
     // back migration too; the original R5 record remains readable until the first write.
     private static void schema(SQLiteDatabase next) {
-        if (next.getVersion() > 2) throw new IllegalStateException("record_schema_newer");
-        if (next.getVersion() == 2) return;
+        if (next.getVersion() > 3) throw new IllegalStateException("record_schema_newer");
+        if (next.getVersion() == 3) return;
+        if (next.getVersion() == 2) { upgrade(next); return; }
         boolean legacy;
         try (Cursor c=next.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='record_meta'",null)) {
             legacy=c.moveToFirst();
@@ -39,6 +40,20 @@ final class MonitorStore {
         next.execSQL("CREATE INDEX scalar_record_time ON scalar_samples(record_id,t)");
         next.execSQL("CREATE INDEX thread_record_identity_time ON thread_samples(record_id,identity,t)");
         next.setVersion(2);
+        upgrade(next);
+    }
+    private static void upgrade(SQLiteDatabase next) {
+        next.execSQL("ALTER TABLE record_meta ADD COLUMN terminal_reason TEXT NOT NULL DEFAULT ''");
+        next.execSQL("ALTER TABLE record_meta ADD COLUMN end_elapsed INTEGER NOT NULL DEFAULT 0");
+        next.execSQL("ALTER TABLE record_meta ADD COLUMN completion TEXT NOT NULL DEFAULT 'INCOMPLETE'");
+        next.execSQL("ALTER TABLE scalar_samples ADD COLUMN source_validity TEXT NOT NULL DEFAULT 'LEGACY_UNQUALIFIED_FPS'");
+        next.execSQL("UPDATE record_meta SET completion=CASE WHEN ended>0 THEN 'COMPLETE' ELSE 'INCOMPLETE' END, terminal_reason=CASE WHEN ended>0 THEN 'LEGACY_END' ELSE 'CRASH_RECOVERY' END, end_elapsed=elapsed+ended");
+        next.execSQL("ALTER TABLE record_meta ADD COLUMN task_id INTEGER NOT NULL DEFAULT -1");
+        next.execSQL("ALTER TABLE record_meta ADD COLUMN target_epoch INTEGER NOT NULL DEFAULT 0");
+        next.execSQL("ALTER TABLE thread_samples ADD COLUMN interval_start INTEGER NOT NULL DEFAULT -1");
+        next.execSQL("ALTER TABLE thread_samples ADD COLUMN interval_end INTEGER NOT NULL DEFAULT -1");
+        next.execSQL("ALTER TABLE thread_samples ADD COLUMN cpu_convention TEXT NOT NULL DEFAULT 'ONE_CORE_100_PERCENT'");
+        next.setVersion(3);
     }
     private static void remove(SQLiteDatabase next, int user, String pkg) {
         Object[] args={user,pkg};
@@ -46,7 +61,7 @@ final class MonitorStore {
         next.execSQL("DELETE FROM scalar_samples WHERE record_id IN (SELECT id FROM record_meta WHERE user=? AND package=?)",args);
         next.execSQL("DELETE FROM record_meta WHERE user=? AND package=?",args);
     }
-    void start(String pkg, String label, int user, int pid, long generation, long elapsed) {
+    void start(String pkg, String label, int user, int pid, long generation, long elapsed,int taskId,long targetEpoch) {
         if (active) throw new IllegalStateException("already_recording");
         if (!file.getParentFile().isDirectory() && !file.getParentFile().mkdirs())
             throw new IllegalStateException("record_directory");
@@ -57,8 +72,8 @@ final class MonitorStore {
             try {
                 schema(next);
                 remove(next,user,pkg);
-                next.execSQL("INSERT INTO record_meta(package,label,user,pid,generation,wall,elapsed) VALUES(?,?,?,?,?,?,?)",
-                        new Object[]{pkg,label,user,pid,generation,System.currentTimeMillis(),elapsed});
+                next.execSQL("INSERT INTO record_meta(package,label,user,pid,generation,wall,elapsed,terminal_reason,task_id,target_epoch) VALUES(?,?,?,?,?,?,?,'CRASH_RECOVERY',?,?)",
+                        new Object[]{pkg,label,user,pid,generation,System.currentTimeMillis(),elapsed,taskId,targetEpoch});
                 try(Cursor c=next.rawQuery("SELECT last_insert_rowid()",null)){c.moveToFirst();nextId=c.getLong(0);}
                 next.setTransactionSuccessful();
             } finally { next.endTransaction(); }
@@ -71,22 +86,24 @@ final class MonitorStore {
         int n=Math.min(15,threads.size());
         db.beginTransaction();
         try {
-            db.execSQL("INSERT INTO scalar_samples(t,fps,power,quiet,record_id) VALUES(?,?,?,?,?)",
-                    new Object[]{now-beginElapsed,valid(fps),valid(power),valid(quiet),recordId});
+            db.execSQL("INSERT INTO scalar_samples(t,fps,power,quiet,record_id,source_validity) VALUES(?,?,?,?,?,?)",
+                    new Object[]{now-beginElapsed,valid(fps),valid(power),valid(quiet),recordId,
+                        "fps="+(fps<0?"UNQUALIFIED":"VALID")+";consumption="+(power<0?"UNAVAILABLE":"VALID")+";quiet="+(quiet<0?"UNAVAILABLE":"VALID")});
             for(int i=0;i<n;i++) {
                 MonitorSnapshot.Row row=threads.get(i);
                 String key=pid+":"+generation+":"+row.task.tid+":"+row.task.start;
-                db.execSQL("INSERT INTO thread_samples(t,identity,name,cpu,record_id) VALUES(?,?,?,?,?)",
-                        new Object[]{now-beginElapsed,key,row.task.name,valid(row.cpu),recordId});
+                db.execSQL("INSERT INTO thread_samples(t,identity,name,cpu,record_id,interval_start,interval_end) VALUES(?,?,?,?,?,?,?)",
+                        new Object[]{now-beginElapsed,key,row.task.name,valid(row.cpu),recordId,Math.max(0,now-beginElapsed-row.intervalMs),now-beginElapsed});
             }
             db.setTransactionSuccessful();
         } finally { db.endTransaction(); }
         scalarRows++; threadRows+=n; writes+=1+n;
     }
     private static Object valid(double n) { return Double.isFinite(n) && n>=0 ? n : null; }
-    void finish(long now) {
+    void finish(long now,String reason,boolean incomplete) {
         if(!active)return;
-        db.execSQL("UPDATE record_meta SET ended=? WHERE id=?",new Object[]{now-beginElapsed,recordId});
+        db.execSQL("UPDATE record_meta SET ended=?,end_elapsed=?,terminal_reason=?,completion=? WHERE id=?",
+                new Object[]{Math.max(0,now-beginElapsed),now,reason,incomplete?"INCOMPLETE":"COMPLETE",recordId});
         writes++; abandon();
     }
     void abandon() { active=false; if(db!=null)db.close(); db=null; }
@@ -106,11 +123,13 @@ final class MonitorStore {
         JSONObject result=new JSONObject();JSONArray records=new JSONArray();result.put("records",records);
         if(!file.exists())return result.toString();
         try(SQLiteDatabase read=SQLiteDatabase.openDatabase(file.getPath(),null,SQLiteDatabase.OPEN_READONLY)) {
-            String filter=read.getVersion()==2 ? " WHERE record_id=m.id" : "";
-            try(Cursor c=read.rawQuery("SELECT package,label,wall,MAX(ended,COALESCE((SELECT MAX(t) FROM scalar_samples"+filter+"),0)),(SELECT AVG(fps) FROM scalar_samples"+filter+"),ended,id FROM record_meta m WHERE user=? ORDER BY wall DESC",new String[]{String.valueOf(user)})) {
+            String filter=read.getVersion()>=2 ? " WHERE record_id=m.id" : "";
+            try(Cursor c=read.rawQuery("SELECT package,label,wall,MAX(ended,COALESCE((SELECT MAX(t) FROM scalar_samples"+filter+"),0)),(SELECT AVG(fps) FROM scalar_samples"+filter+"),ended,id"+(read.getVersion()>=3?",completion,terminal_reason,end_elapsed":"")+" FROM record_meta m WHERE user=? ORDER BY wall DESC",new String[]{String.valueOf(user)})) {
                 while(c.moveToNext())records.put(new JSONObject().put("package",c.getString(0)).put("label",c.getString(1))
                     .put("wall",c.getLong(2)).put("duration",c.getLong(3)).put("avgFps",c.isNull(4)?JSONObject.NULL:c.getDouble(4))
-                    .put("complete",c.getLong(5)>0).put("active",active&&recordId==c.getLong(6)));
+                    .put("complete",read.getVersion()>=3?"COMPLETE".equals(c.getString(7)):c.getLong(5)>0)
+                    .put("terminalReason",read.getVersion()>=3?c.getString(8):"LEGACY")
+                    .put("endElapsed",read.getVersion()>=3?c.getLong(9):0).put("active",active&&recordId==c.getLong(6)));
             }
         }
         return result.toString();
@@ -124,14 +143,17 @@ final class MonitorStore {
         try(SQLiteDatabase read=SQLiteDatabase.openDatabase(file.getPath(),null,SQLiteDatabase.OPEN_READONLY)) {
             JSONObject result=new JSONObject();long duration,id;
             String[] args=pkg.isEmpty()?new String[]{String.valueOf(user)}:new String[]{String.valueOf(user),pkg};
-            try(Cursor c=read.rawQuery("SELECT package,label,pid,generation,wall,ended,id FROM record_meta WHERE user=?"+
+            try(Cursor c=read.rawQuery("SELECT package,label,pid,generation,wall,ended,id"+(read.getVersion()>=3?",completion,terminal_reason,end_elapsed":"")+" FROM record_meta WHERE user=?"+
                     (pkg.isEmpty()?"":" AND package=?")+" ORDER BY wall DESC LIMIT 1",args)) {
                 if(!c.moveToFirst())return "{}";
                 result.put("package",c.getString(0)).put("label",c.getString(1)).put("pid",c.getInt(2))
-                    .put("generation",c.getLong(3)).put("wall",c.getLong(4)).put("complete",c.getLong(5)>0);
+                    .put("generation",c.getLong(3)).put("wall",c.getLong(4))
+                    .put("complete",read.getVersion()>=3?"COMPLETE".equals(c.getString(7)):c.getLong(5)>0)
+                    .put("terminalReason",read.getVersion()>=3?c.getString(8):"LEGACY")
+                    .put("endElapsed",read.getVersion()>=3?c.getLong(9):0);
                 duration=c.getLong(5);id=c.getLong(6);
             }
-            String filter=read.getVersion()==2 ? "record_id="+id : "1=1";
+            String filter=read.getVersion()>=2 ? "record_id="+id : "1=1";
             try(Cursor c=read.rawQuery("SELECT COALESCE(MAX(t),0),COUNT(*) FROM scalar_samples WHERE "+filter,null)) {
                 c.moveToFirst();duration=Math.max(duration,c.getLong(0));result.put("samples",c.getLong(1));
             }

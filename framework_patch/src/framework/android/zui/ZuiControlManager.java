@@ -26,14 +26,16 @@ public final class ZuiControlManager {
 
     private final IBinder mRemote;
 
+    public void linkMonitorDeath(Object death) { try {mRemote.linkToDeath((IBinder.DeathRecipient)death,0);} catch(android.os.RemoteException e){throw new IllegalStateException(e);} }
+    public void unlinkMonitorDeath(Object death) { mRemote.unlinkToDeath((IBinder.DeathRecipient)death,0); }
     public String monitor(final String command, final String pkg, final boolean enabled,
             final boolean expanded, final Object callback) {
         if (callback != null && !(callback instanceof IBinder)) throw new IllegalArgumentException("callback binder required");
         return transact(15, new Writer() {
             public void write(Parcel data) {
                 data.writeString(command);
-                if ("register".equals(command)) data.writeStrongBinder((IBinder) callback);
-                else if ("recordRead".equals(command) || "recordDelete".equals(command)) data.writeString(pkg);
+                if ("register".equals(command) || "unregister".equals(command)) data.writeStrongBinder((IBinder) callback);
+                else if ("recordRead".equals(command) || "recordDelete".equals(command) || "recordStart".equals(command) || command.startsWith("backup") || command.startsWith("preferences")) data.writeString(pkg);
             }
         });
     }

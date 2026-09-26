@@ -105,7 +105,7 @@ class PerformanceRecordActivity : Activity() {
     }
     private fun showApps(content: LinearLayout, records: JSONArray) {
         if (records.length() == 0) {
-            content.addView(label("暂无性能记录\n开启监视器后，轻触长条切换圆形，长按圆形 2 秒开始。")); return
+            content.addView(label("暂无性能记录\n开启监视器后，轻触长条切换圆形，双击圆形开始。")); return
         }
         val columns = UiControls.gridColumns(minOf(resources.configuration.screenWidthDp, 880) - 48)
         for (start in 0 until records.length() step columns) {
@@ -124,12 +124,12 @@ class PerformanceRecordActivity : Activity() {
     }
     private fun showDetail(content: LinearLayout, data: JSONObject) {
         val duration = data.optLong("duration")
-        val state = if (data.optBoolean("active")) "录制中 / 暂停中" else if (data.optBoolean("complete")) "已手动结束" else "未完成（中断记录）"
+        val state = if (data.optBoolean("active")) "录制中" else if (data.optBoolean("complete")) "已结束" else "未完成（中断记录）"
         addCard(content, card().apply {
             addView(identity(data))
             addView(label("${whenRecorded(data)}\n时长 ${duration / 1000} 秒 · $state", 14f))
         })
-        content.addView(label("FPS 为屏幕测量；W 为设备电池侧功率，外接电源时不可用。曲线空白段表示暂停或来源不可用。", 12f))
+        content.addView(label("FPS 为合格应用呈现数据；W 为设备电池侧功率，外接电源时不可用。曲线空白表示来源不可用。", 12f))
         val scalars = data.optJSONArray("scalars") ?: JSONArray()
         val stats = data.optJSONArray("stats")?.optJSONArray(0) ?: JSONArray()
         listOf("FPS", "Power W", "quiet-therm °C").forEachIndexed { index, title ->

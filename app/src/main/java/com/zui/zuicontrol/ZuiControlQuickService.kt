@@ -29,10 +29,11 @@ class ZuiControlQuickService : Service() {
     private var quietC = -1.0
     private var powerW = -1.0
     private var readingTime = 0L
+    private var readingTtl = 3500L
     private var lastReadingPublish = 0L
     private val readingUpdate = Runnable { lastReadingPublish = SystemClock.elapsedRealtime(); requestRefresh() }
     // A one-shot expiry only; it does not read a sensor or wake a sleeping device.
-    private val readingExpiry = Runnable { acceptReading(-1.0, -1.0, 0L) }
+    private val readingExpiry = Runnable { acceptReading(-1.0, -1.0, 0L, 3500L) }
     private val observer = object : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean) { requestRefresh() }
     }
@@ -53,6 +54,7 @@ class ZuiControlQuickService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action.orEmpty()
         when {
+            action == "com.zui.zuicontrol.SETTINGS_RESTORED" -> monitor?.reloadPreferences()
             action == "com.zui.zuicontrol.MONITOR_CONNECT" -> monitor?.start()
             action == FULL -> {
                 if (!Settings.canDrawOverlays(this)) {
@@ -84,7 +86,7 @@ class ZuiControlQuickService : Service() {
                     val scene = ZuiControlClient.currentSceneText()
                     val pkg = ZuiControlClient.stateValue(scene, "editableScenePackage").orEmpty()
                     QuickControlTrace.target(trace,pkg)
-                    check(UperfAppPolicy.isConfigurable(packageManager, pkg)) { "当前应用不支持性能配置" }
+                    check(ZuiControlClient.stateValue(scene, "editableSceneIsHome") == "true" || UperfAppPolicy.isConfigurable(packageManager, pkg)) { "当前应用不支持性能配置" }
                     val request = ZuiControlClient.sendPolicy(this, "mode", pkg, "FOREGROUND", mode = mode.id, scene = scene)
                     QuickControlTrace.mark(trace,"dispatch",request)
                     val ack = ZuiControlRequest.awaitTerminalAck(this, request)
@@ -109,16 +111,17 @@ class ZuiControlQuickService : Service() {
         }.start()
     }
     private fun errorToast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-    private fun acceptReading(quiet: Double, power: Double, elapsed: Long) {
+    private fun acceptReading(quiet: Double, power: Double, elapsed: Long, ttl: Long) {
         val now = SystemClock.elapsedRealtime()
-        val fresh = elapsed > 0 && now - elapsed in 0..3500L
+        readingTtl = ttl.coerceIn(3500L, 7500L)
+        val fresh = elapsed > 0 && now - elapsed in 0..readingTtl
         val nextQuiet = if (fresh && quiet.isFinite() && quiet > 0) quiet else -1.0
         val nextPower = if (fresh && power.isFinite() && power > 0) power else -1.0
         val invalidated = (quietC > 0 && nextQuiet < 0) || (powerW > 0 && nextPower < 0)
         val changed = quietC != nextQuiet || powerW != nextPower
         quietC = nextQuiet; powerW = nextPower; readingTime = if (fresh) elapsed else 0L
         handler.removeCallbacks(readingExpiry)
-        if (fresh) handler.postDelayed(readingExpiry, (elapsed + 3501L - now).coerceAtLeast(1))
+        if (fresh) handler.postDelayed(readingExpiry, (elapsed + readingTtl + 1L - now).coerceAtLeast(1))
         if (!changed) return
         if (invalidated) {
             handler.removeCallbacks(readingUpdate); requestRefresh()
@@ -150,8 +153,8 @@ class ZuiControlQuickService : Service() {
             setting(ZuiControlContract.KEY_UPERF_RULES_TEXT), pkg)
         val desired = ZuiControlClient.stateValue(PerformanceMonitor.command("state"), "monitorMode") == "1"
         val enabled = PackageNames.isValid(pkg)
-        val uperfEnabled = UperfAppPolicy.isConfigurable(packageManager, pkg)
-        val fresh = readingTime > 0 && SystemClock.elapsedRealtime() - readingTime in 0..3500L
+        val uperfEnabled = ZuiControlClient.stateValue(scene, "editableSceneIsHome") == "true" || UperfAppPolicy.isConfigurable(packageManager, pkg)
+        val fresh = readingTime > 0 && SystemClock.elapsedRealtime() - readingTime in 0..readingTtl
         return NotificationQuickControlHelper.Snapshot(pkg, rate, mode, desired, enabled, uperfEnabled,
             if (fresh) quietC else -1.0, if (fresh) powerW else -1.0)
     }

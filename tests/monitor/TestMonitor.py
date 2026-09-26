@@ -5,12 +5,13 @@ from android_stubs import stubs
 
 root=Path(__file__).resolve().parents[2]
 src=root/'framework_patch/src/services/com/zui/server/control'
+stubs['org/json/JSONObject.java']=stubs['org/json/JSONObject.java'].replace('public JSONObject(){}','public static final Object NULL=new Object();public JSONObject(){}').replace('public JSONObject put(String k,Object v){','public JSONObject put(String k,Object v)throws JSONException{')
 stubs.update({
  'android/os/SystemClock.java':'package android.os;public class SystemClock {public static long now;public static long elapsedRealtime(){return now;}}',
  'android/os/Handler.java':'''package android.os;import java.util.*;public class Handler {
  public static final List<Runnable> pending=new ArrayList<>();public Handler(Object o){}
  public boolean post(Runnable r){pending.add(r);return true;}
- public boolean postDelayed(Runnable r,long delay){if(delay!=1000)throw new AssertionError();pending.add(r);return true;}
+ public boolean postDelayed(Runnable r,long delay){if(delay<1||delay>5000)throw new AssertionError();pending.add(r);return true;}
  public void removeCallbacksAndMessages(Object o){pending.clear();}
  public static void next(){SystemClock.now+=1000;pending.remove(0).run();}}''',
  'android/os/BatteryManager.java':'''package android.os;public class BatteryManager {
@@ -23,10 +24,10 @@ stubs.update({
  public Intent registerReceiver(Object r,IntentFilter f){return new Intent();}
  public android.content.pm.PackageManager getPackageManager(){return new android.content.pm.PackageManager();}}''',
  'com/zui/server/control/MonitorStore.java':'''package com.zui.server.control;import java.util.*;
- final class MonitorStore {long writes,scalarRows,threadRows;boolean active;static int starts,finishes;
- void start(String p,String l,int u,int pid,long g,long t){if(active)throw new AssertionError();active=true;starts++;writes++;scalarRows=threadRows=0;}
+ final class MonitorStore {long writes,scalarRows,threadRows;boolean active;static int starts,finishes;static String terminal;static boolean incomplete;
+ void start(String p,String l,int u,int pid,long g,long t,int task,long epoch){if(active)throw new AssertionError();active=true;starts++;writes++;scalarRows=threadRows=0;}
  void append(long t,double f,double p,double q,int pid,long g,List<MonitorSnapshot.Row> r){if(!active)throw new AssertionError();scalarRows++;threadRows+=r.size();writes+=1+r.size();}
- void finish(long n){if(active){finishes++;writes++;active=false;}}void abandon(){active=false;}
+ void finish(long n,String reason,boolean incomplete){if(active){finishes++;writes++;active=false;terminal=reason;MonitorStore.incomplete=incomplete;}}void abandon(){active=false;}
  String read(int u,String key){return "{}";}String list(int u){return "{}";}String delete(int u,String p){return "ok=1";}}''',
  'com/zui/server/control/CollectorTest.java':'''package com.zui.server.control;
  import android.os.*;import android.app.*;import android.content.*;import java.util.*;
@@ -39,51 +40,43 @@ stubs.update({
  Collector(){super(new Context());}int findPid(){return 42;}
  MonitorSnapshot.Task identity(int p){return missing?null:new MonitorSnapshot.Task(p,"GameThread",generation,SystemClock.now/10);}
  List<MonitorSnapshot.Task> readTasks(int p){scans++;return Arrays.asList(identity(p));}}
+ static String start(Collector c){c.command("circle",0,"");return c.command("recordStart",0,c.session.connectionEpoch+":"+c.session.targetEpoch+":"+(SystemClock.now+1));}
  public static void main(String[] args)throws Exception {
  Collector c=new Collector();Client client=new Client();c.register(client);c.scene("game",0,true);
- check(Handler.pending.isEmpty()&&c.scans==0&&MonitorStore.starts==0);
- c.command("full",0,"");check(Handler.pending.size()==1);for(int i=0;i<10;i++)Handler.next();
+ check(Handler.pending.size()==1&&c.session.interval()==5000);Handler.next();
+ check(c.scans==0&&MonitorStore.starts==0&&client.last.contains("active=false"));
+ c.command("full",0,"");check(c.session.interval()==1000);for(int i=0;i<10;i++)Handler.next();
  check(c.scans==0&&c.state().contains("monitorDbWrites=0"));
- c.scene("ownApp",0,true,true);check(client.last.contains("active=true"));
- c.scene("game",0,true,true);check(client.last.contains("active=true"));
- c.command("fps",0,"");check(Handler.pending.size()==1);Handler.next();check(c.scans==0);
- c.command("full",0,"");c.command("arm",0,"");SystemClock.now+=1999;
- check(c.command("recordStart",0,"").startsWith("ok=0")&&MonitorStore.starts==0);
- c.command("cancelArm",0,"");SystemClock.now+=100;
- check(c.command("recordStart",0,"").startsWith("ok=0"));
- c.command("arm",0,"");SystemClock.now+=2000;
- check(c.command("recordStart",0,"").startsWith("ok=1")&&MonitorStore.starts==1);
- check(client.last.contains("active=true"));
- check(c.command("recordStart",0,"").startsWith("ok=0")&&MonitorStore.starts==1);
- for(int i=0;i<7;i++)Handler.next();check(c.scans==3);
- c.scene("game",0,true,false);check(client.last.contains("active=true"));
- for(int i=0;i<4;i++)Handler.next();check(c.scans==3&&c.session.recordingState().equals("PAUSED"));
- c.scene("other",0,true);String before=c.state();for(int i=0;i<4;i++)Handler.next();
- check(c.scans==3&&c.session.recordingState().equals("PAUSED")&&MonitorStore.finishes==0);
- c.scene("game",0,true);Handler.next();check(c.scans==4&&c.session.recordingState().equals("RECORDING"));
- c.scene("game",0,false);check(Handler.pending.isEmpty()&&c.session.recordingState().equals("PAUSED"));
- c.generation++;c.scene("game",0,true);Handler.next();check(c.scans==5);
- c.missing=true;Handler.next();long stoppedRows=Long.parseLong(c.state().split("monitorScalarRows=")[1].split("\\n")[0]);
- check(c.session.recordingState().equals("PAUSED")&&MonitorStore.finishes==0);
- Handler.next();check(c.state().contains("monitorScalarRows="+stoppedRows+"\\n")&&c.scans==5);
- c.missing=false;c.generation++;Handler.next();check(c.scans==6&&c.session.recordingState().equals("RECORDING"));
- c.command("recordStop",0,"");check(MonitorStore.finishes==1&&!c.session.recording());
- int scans=c.scans;Handler.next();check(scans==c.scans);
- c.command("arm",0,"");SystemClock.now+=100;c.command("cancelArm",0,"");check(MonitorStore.starts==1);
- c.command("arm",0,"");SystemClock.now+=2000;c.command("recordStart",0,"");check(MonitorStore.starts==2);
- Runnable stale=Handler.pending.get(0);c.command("off",0,"");check(Handler.pending.isEmpty()&&HandlerThread.active==0);
- stale.run();check(c.scans==scans&&MonitorStore.finishes==1);
- c.command("full",0,"");Handler.next();client.death.binderDied();
- check(Handler.pending.isEmpty()&&HandlerThread.active==0&&MonitorStore.finishes==1);
- check(c.session.mode==MonitorSession.FULL);int scansAfterDeath=c.scans;
+ check(c.command("arm",0,"").startsWith("ok=0"));
+ check(start(c).startsWith("ok=1"));for(int i=0;i<7;i++)Handler.next();check(c.scans==3);
+ c.scene("other",0,true);check(!c.session.recording()&&MonitorStore.terminal.equals("FOREGROUND_CHANGED"));
+ int scans=c.scans;c.scene("game",0,true);Handler.next();check(scans==c.scans);
+ check(start(c).startsWith("ok=1"));c.generation++;Handler.next();
+ check(MonitorStore.incomplete&&MonitorStore.terminal.equals("PROCESS_GENERATION_LOST"));
+ check(start(c).startsWith("ok=1"));IBinder.DeathRecipient staleDeath=client.death;
+ Runnable staleSample=Handler.pending.get(0);staleDeath.binderDied();
+ check(c.session.mode==MonitorSession.FULL&&!c.session.recording()&&Handler.pending.isEmpty());
+ check(MonitorStore.incomplete&&MonitorStore.terminal.equals("CLIENT_DEATH"));
  Client replacement=new Client();c.register(replacement);c.scene("game",0,true);
- check(!Handler.pending.isEmpty());Handler.next();check(c.scans==scansAfterDeath);
- c.command("off",0,"");replacement.death.binderDied();
- c.register(new Client());c.scene("game",0,true);
- check(c.session.mode==MonitorSession.OFF&&Handler.pending.isEmpty());
- for(int i=0;i<100;i++){c.command("full",0,"");Handler.next();c.command("off",0,"");}
- check(HandlerThread.active==0&&Handler.pending.isEmpty());
- System.out.println("R4_REAL_COLLECTOR_ZERO_DISPLAY_WRITES_SCANS_PAUSE_RESUME_HOLD_DEATH_DRAIN_100=PASS");}}
+ staleDeath.binderDied();staleSample.run();check(!Handler.pending.isEmpty());Handler.next();
+ check(replacement.last.contains("active=true"));
+ check(start(c).startsWith("ok=1"));SystemClock.now=c.session.recordingStart+1800000;Handler.next();
+ check(!c.session.recording()&&MonitorStore.terminal.equals("DURATION_LIMIT")&&!MonitorStore.incomplete);
+ check(start(c).startsWith("ok=1"));c.command("recordStop",0,"");int finishes=MonitorStore.finishes;
+ c.command("recordStop",0,"");check(MonitorStore.finishes==finishes);
+ check(start(c).startsWith("ok=1"));c.scene("game",0,false);
+ check(!c.session.recording()&&Handler.pending.isEmpty()&&c.session.mode==MonitorSession.FULL);
+ c.scene("game",0,true);Handler.next();check(!c.session.recording());
+ for(int i=0;i<100;i++){c.command("off",0,"");Handler.next();c.command("full",0,"");Handler.next();}
+ c.command("off",0,"");check(c.session.interval()==5000&&HandlerThread.active==1);
+ c.register(null);check(Handler.pending.isEmpty()&&HandlerThread.active==0);
+ check(new Collector().session.mode==MonitorSession.OFF);
+ c.register(new Client());c.scene("game",0,true);c.command("full",0,"");
+ check(start(c).startsWith("ok=1"));c.command("permissionLost",0,"");
+ check(!c.session.recording()&&c.session.mode==MonitorSession.FULL&&!c.session.visible()&&c.session.interval()==5000);
+ c.command("permissionGranted",0,"");check(c.session.visible()&&!c.session.recording());
+ c.register(null);
+ System.out.println("MONITOR_SHARED_DEMAND_EPOCH_RECONNECT_TERMINALS_NO_RESUME_ZERO_IDLE_WRITES_SCANS=PASS");}}
 '''
 })
 with tempfile.TemporaryDirectory(prefix='zui-monitor-r4-') as tmp:
@@ -98,5 +91,5 @@ sources=(src/'MonitorSources.java').read_text(encoding='utf8')
 for forbidden in ('kgsl','gpu_busy','/proc/stat','ProcessBuilder','Runtime.getRuntime','setAffinity','renice'):
  assert forbidden not in collector+sources,forbidden
 assert collector.count('postDelayed(')==1 and 'if(capture)' in collector
-assert 'mode==MonitorSession.FULL||capture' in collector
+assert 'measured_fps' not in sources and 'session.interval()' in collector
 print('MONITOR_R4_STATIC_SINGLE_PIPELINE=PASS')

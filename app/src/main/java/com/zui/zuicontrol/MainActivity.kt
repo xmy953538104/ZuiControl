@@ -598,6 +598,18 @@ class MainActivity : Activity() {
             addView(settingsAction(R.drawable.ic_tool_range, "GPU频率范围", "节能 · 均衡 · 性能 · 快速") {
                 showGlobalGpuRanges()
             }, settingsActionMargins())
+            addView(settingsAction(R.drawable.ic_action_logs,"备份设置","导出完整配置，不含记录和运行状态") {
+                settingsWork { pendingSettingsBackup=SettingsBackup.export(this@MainActivity);handler.post {
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE);type="application/zip";putExtra(Intent.EXTRA_TITLE,"ZuiControl_settings.zip")
+                    },9101)
+                } }
+            },settingsActionMargins())
+            addView(settingsAction(R.drawable.ic_action_logs,"恢复设置","完整校验后替换配置，失败整体回滚") {
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE);type="application/zip"
+                },9102)
+            },settingsActionMargins())
             addView(settingsAction(
                 R.drawable.ic_action_logs, "导出运行日志", "排查刷新率、Uperf 与 ZUIopt",
             ) { exportLogs() }, settingsActionMargins())
@@ -685,8 +697,17 @@ class MainActivity : Activity() {
 
     private fun showMonitorHelp() {
         AlertDialog.Builder(this).setTitle("监视器帮助")
-            .setMessage("默认关闭，手动点击通知或设置中的开关开启；在桌面和正常应用中显示 FPS、quiet、W。日常显示不写记录、不扫描线程。\n\n轻触长条切换圆形；轻触或不足 2 秒的短按返回长条，不录制。长按圆形满 2 秒开始录制，轻触录制圆形结束。切换应用/锁屏仅暂停，返回目标应用继续。成功开始新录制才替换该应用的上一条。\n\nFPS 是屏幕实测帧率，非游戏逐帧统计。W 为设备电池侧瞬时功率，非应用独占功率；充电时显示 --。quiet 为按类型识别的独立 quiet-therm 温度传感器。")
+            .setMessage("默认关闭，手动点击通知或设置中的开关开启；在桌面和正常应用中显示 FPS、quiet、W。日常显示不写记录、不扫描线程。\n\n轻触长条切换圆形；圆形单击确认后返回长条，双击开始录制；拖动取消点击，长按不录制。录制中轻触结束；切换业务应用、锁屏或满 30 分钟自动结束，不会恢复。成功开始新录制才替换该应用的上一条。\n\nFPS 仅接受经过资格验证的应用呈现帧来源，当前未取得合格来源时显示 --。W 为设备电池侧瞬时功率，非应用独占功率；充电时显示 --。quiet 为按类型识别的独立 quiet-therm 温度传感器。")
             .setPositiveButton("完成", null).showStyled()
+    }
+
+    private var pendingSettingsBackup=byteArrayOf()
+    private var settingsWorking=false
+    private fun settingsWork(work:()->Unit){
+        if(settingsWorking){toast("设置事务处理中");return};settingsWorking=true
+        Thread {val result=runCatching(work);handler.post {settingsWorking=false
+            result.onFailure {toast("设置操作失败：${it.message}")}
+        }}.start()
     }
 
     private fun openExportDocument() {
@@ -703,6 +724,8 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
         val uri: Uri = data?.data ?: return
+        if(requestCode==9101){settingsWork {SettingsBackup.save(this,uri,pendingSettingsBackup);handler.post {toast("设置备份已完整保存")}};return}
+        if(requestCode==9102){settingsWork {SettingsBackup.restore(this,uri);handler.post {toast("设置已恢复")}};return}
         if (requestCode == REQUEST_IMPORT_ZUIOPT || requestCode == REQUEST_IMPORT_APPOPT) {
             importZuioptDocument(uri, requestCode == REQUEST_IMPORT_APPOPT)
             return

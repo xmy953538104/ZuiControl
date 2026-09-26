@@ -4,18 +4,15 @@ public final class MonitorR4Test {
  static void check(boolean v){if(!v)throw new AssertionError();}
  public static void main(String[] args)throws Exception{
   MonitorSession s=new MonitorSession();s.scene("game",0,true);
-  check(!s.sampling()&&!s.arm(0));s.toggle(MonitorSession.FULL);check(s.sampling());
-  check(s.arm(100));check(!s.canStart(2099));check(s.canStart(2100));s.started();
-  check(!s.canStart(9999)&&s.recordingActive());
-  s.scene("other",0,true);check(s.recordingState().equals("PAUSED"));
-  s.scene("game",0,false);check(s.recording()&&!s.sampling());
-  s.scene("game",0,true);check(s.recordingActive());s.stop();check(!s.recording());
-  s.scene("game",0,true,false);check(s.sampling()&&!s.arm(5000));
-  s.scene("game",0,true,true);check(s.arm(5000));s.started();
-  s.scene("game",0,true,false);check(s.sampling()&&s.recordingState().equals("PAUSED"));
-  s.scene("game",0,true,true);check(s.recordingActive());s.stop();
-  s.arm(10000);s.scene("game",1,true);check(!s.canStart(12000));
-  s.toggle(MonitorSession.FPS);check(s.mode==MonitorSession.FPS);s.toggle(MonitorSession.FPS);check(!s.sampling());
+  check(s.sampling()&&!s.visible()&&s.interval()==5000);s.toggle(MonitorSession.FULL);
+  check(s.visible()&&s.interval()==1000&&!s.canStart());s.circle=true;check(s.canStart());
+  s.started(100,42,9);check(!s.canStart()&&s.sameProcess(42,9)&&!s.sameProcess(42,10));
+  check(s.terminal(1800099).isEmpty());check(s.terminal(1800100).equals("DURATION_LIMIT"));
+  s.scene("other",0,true);check(s.terminal(200).equals("FOREGROUND_CHANGED"));s.stop();
+  s.scene("game",0,true);check(!s.recording());
+  s.started(100,42,9);s.scene("game",0,false);check(s.terminal(200).equals("SCREEN_OR_LOCK"));s.stop();
+  s.scene("game",0,true,false);check(!s.canStart());
+  check(new MonitorSources().fps()==-1);
   check(MonitorSources.batteryWatts(0,3,4000,-2000000)==8.0);
   check(MonitorSources.batteryWatts(1,3,4000,-2000000)==-1);
   check(MonitorSources.batteryWatts(0,5,4000,0)==-1);
@@ -40,6 +37,6 @@ public final class MonitorR4Test {
     check(expected.getMessage().equals("quiet_sensor_ambiguous"));}
    Files.delete(two.resolve("type"));Files.delete(two);Files.delete(one.resolve("type"));Files.delete(one);
   }finally{Files.delete(root);}
-  System.out.println("R4_SESSION_HOLD_PAUSE_MANUAL_STOP_POWER_UNITS_QUIET_TYPE=PASS");
+  System.out.println("MONITOR_SESSION_DEADLINE_TERMINALS_POWER_UNITS_QUIET_TYPE=PASS");
  }
 }

@@ -37,7 +37,8 @@ final class MonitorSnapshot {
     static final class Row {
         final Task task;
         final double cpu;
-        Row(Task task, double cpu) { this.task = task; this.cpu = cpu; }
+        final long intervalMs;
+        Row(Task task, double cpu,long intervalMs) { this.task = task; this.cpu = cpu;this.intervalMs=intervalMs; }
     }
 
     static List<Row> delta(List<Task> previous, List<Task> current, long elapsedMs,
@@ -52,7 +53,7 @@ final class MonitorSnapshot {
                     && elapsedMs > 0 && ticksPerSecond > 0) {
                 cpu = (task.ticks - before.ticks) * 100000.0 / ticksPerSecond / elapsedMs;
             }
-            rows.add(new Row(task, cpu));
+            rows.add(new Row(task, cpu,elapsedMs));
         }
         rows.sort(Comparator.comparingDouble((Row r) -> r.cpu).reversed()
                 .thenComparingInt(r -> r.task.tid));

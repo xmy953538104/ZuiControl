@@ -64,7 +64,7 @@ public final class PolicyCommand {
         require(OsConstants.S_ISREG(st.st_mode) && st.st_uid == 0 && st.st_nlink == 1 && st.st_size <= 65536, "legacy native identity");
         return Files.readAllBytes(file.toPath());
     }
-    private static String callback(IBinder remote, String action, String argument) throws Exception {
+    static String callback(IBinder remote, String action, String argument) throws Exception {
         Parcel data = Parcel.obtain(), reply = Parcel.obtain();
         try { data.writeInterfaceToken(CALLBACK); data.writeString(action); data.writeString(argument);
             require(remote.transact(1, data, reply, 0), "policy owner unavailable"); reply.readException(); return reply.readString();
@@ -84,6 +84,44 @@ public final class PolicyCommand {
     static Map<String,Object> snapshot(IBinder remote) throws Exception {
         return object(parse(callback(remote, "legacy", "").getBytes(StandardCharsets.UTF_8)));
     }
+    static SettingsBackup.Rules rules(IBinder remote){
+        return new SettingsBackup.Rules(){
+            public Map<String,Object> snapshot()throws Exception{return object(parse(callback(remote,"settings_snapshot","").getBytes(StandardCharsets.UTF_8)));}
+            public void prepare(String tx,String generation,byte[] rules)throws Exception{
+                require(callback(remote,"settings_prepare",encode(map("tx",tx,"generation",generation,"data",Base64.getEncoder().encodeToString(rules)))).trim().equals("prepared="+hash(rules)),"rules prepared ACK");
+            }
+            public void apply(String tx,byte[] rules,boolean rollback)throws Exception{
+                require(callback(remote,rollback?"settings_revert":"settings_apply",encode(map("tx",tx,"hash",hash(rules)))).trim().equals("canonical_sha256="+hash(rules)),"rules loaded ACK");
+            }
+            public void finish(String tx)throws Exception{require(callback(remote,"settings_finish",tx).trim().equals("settings=finished"),"rules release ACK");}
+        };
+    }
+    private static String nativeRules(String action,String key,String value)throws Exception{
+        Process process=new ProcessBuilder("/system/bin/ZUIopt","--control",action,key,value).redirectErrorStream(true).start();
+        java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();
+        Thread reader=new Thread(()->{try(java.io.InputStream in=process.getInputStream()){
+            byte[] buffer=new byte[4096];int n;while((n=in.read(buffer))>=0){if(out.size()+n>100000){process.destroyForcibly();return;}out.write(buffer,0,n);}
+        }catch(java.io.IOException ignored){}},"SettingsRuleReply");reader.start();
+        if(!process.waitFor(8,java.util.concurrent.TimeUnit.SECONDS)){process.destroyForcibly();throw new IllegalStateException("rules timeout; query recovery");}
+        reader.join(1000);require(!reader.isAlive()&&process.exitValue()==0,"native rules rejected: "+out.toString("UTF-8"));return out.toString("UTF-8").trim();
+    }
+    private static String field(String text,String key){for(String line:text.split("\n"))if(line.startsWith(key+"="))return line.substring(key.length()+1);return "";}
+    private static String settingsProjection(String action,String text)throws Exception{
+        if(action.equals("settings_snapshot")){
+            String state=nativeRules("state","","");String generation=field(state,"generation");int size=Integer.parseInt(field(state,"user_size"));
+            require(size>0&&size<=65536,"canonical size");java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+            while(bytes.size()<size){String reply=nativeRules("read",generation,String.valueOf(bytes.size()));String[] parts=reply.split(":",3);
+                require(parts.length==3&&parts[0].equals(generation)&&Integer.parseInt(parts[1])==bytes.size(),"canonical read generation");
+                byte[] chunk=Base64.getDecoder().decode(parts[2]);require(chunk.length>0&&bytes.size()+chunk.length<=size,"canonical chunk");bytes.write(chunk);}
+            require(hash(bytes.toByteArray()).equals(field(state,"user_sha256")),"canonical read hash");
+            require(nativeRules("state","","").equals(state),"canonical export changed");
+            return encode(map("generation",generation,"pending",field(state,"settings_pending"),"data",Base64.getEncoder().encodeToString(bytes.toByteArray())));
+        }
+        if(action.equals("settings_finish"))return nativeRules(action,text,"");
+        Map<String,Object> r=object(parse(text.getBytes(StandardCharsets.UTF_8)));
+        String tx=string(r.get("tx"));
+        return nativeRules(action,tx,action.equals("settings_prepare")?string(r.get("generation"))+":"+string(r.get("data")):string(r.get("hash")));
+    }
     private static final class Projection extends Binder {
         final Disk disk;
         Projection() throws Exception { disk = new Disk(new File(UPERF, "policy-projection")); }
@@ -92,7 +130,8 @@ public final class PolicyCommand {
                 require(Binder.getCallingUid() == 1000 && code == 1 && flags == 0, "system policy authority required");
                 data.enforceInterface(CALLBACK); String action = data.readString(), text = data.readString(); require(data.dataAvail() == 0, "projection trailing data");
                 String result;
-                if (action.equals("legacy")) {
+                if(action.startsWith("settings_")){result=settingsProjection(action,text);}
+                else if (action.equals("legacy")) {
                     result = encode(map("saved", Base64.getEncoder().encodeToString(legacy("cur_powermode.txt")), "perapp", Base64.getEncoder().encodeToString(legacy("perapp_powermode.txt"))));
                 } else {
                     Map<String,Object> request = object(parse(text.getBytes(StandardCharsets.UTF_8)));
@@ -141,7 +180,7 @@ public final class PolicyCommand {
             IBinder remote = ServiceManager.getService("zui_control"); require(remote != null, "policy service unavailable");
             Parcel data = Parcel.obtain(), reply = Parcel.obtain();
             try { data.writeInterfaceToken(DESCRIPTOR); data.writeString(args[0]); data.writeString(args[1]); data.writeStrongBinder(new Projection());
-                require(remote.transact(TRANSACTION, data, reply, 0), "policy service transaction"); reply.readException();
+                require(remote.transact(args[0].startsWith("sb_")?1011:TRANSACTION, data, reply, 0), "policy service transaction"); reply.readException();
                 String result = reply.readString(); System.out.println(result); require(result.startsWith("ok=1"), "policy transaction failed; query state");
             } finally { data.recycle(); reply.recycle(); }
         } catch (Exception e) { System.err.println("policy rejected: " + e.getClass().getSimpleName() + ":" + e.getMessage()); System.exit(1); }

@@ -1,42 +1,37 @@
 package com.zui.server.control;
 
-/** Recording is a user-owned lease, independent from visibility and process lifetime. */
+/** Boot-local desired state. Recording is a bounded, non-resumable foreground lease. */
 final class MonitorSession {
-    static final int OFF = 0, FULL = 1, FPS = 2;
-    int mode;
-    String foreground = "", recordingPackage = "";
-    int user, recordingUser;
-    boolean eligible, recordEligible, processAvailable = true;
-    long armTime = -1;
-    String armPackage = "";
-
-    void scene(String pkg, int userId, boolean valid) {
-        scene(pkg,userId,valid,valid);
+    static final int OFF=0, FULL=1, FPS=2;
+    static final long MAX_RECORD_MS=1800000;
+    int mode, user, recordingUser, recordingPid, taskId=-1;
+    String foreground="", recordingPackage="";
+    boolean eligible, recordEligible, circle, overlayAllowed=true;
+    long targetEpoch, connectionEpoch, recordingStart, processStart;
+    void scene(String pkg,int userId,boolean valid){scene(pkg,userId,valid,valid);}
+    void scene(String pkg,int userId,boolean visible,boolean canRecord){
+        if(!pkg.equals(foreground)||user!=userId)targetEpoch++;
+        foreground=pkg;user=userId;eligible=visible;recordEligible=canRecord;
     }
-    void scene(String pkg, int userId, boolean visible, boolean canRecord) {
-        if (!pkg.equals(foreground) || user != userId || !canRecord) cancelArm();
-        foreground = pkg; user = userId; eligible = visible; recordEligible = canRecord;
+    void toggle(int requested){mode=mode==requested?OFF:requested;circle=false;}
+    boolean recording(){return !recordingPackage.isEmpty();}
+    boolean sampling(){return eligible;}
+    boolean visible(){return eligible&&overlayAllowed&&mode!=OFF;}
+    long interval(){return (mode==OFF||!overlayAllowed)&&!recording()?5000:1000;}
+    boolean canStart(){return mode==FULL&&overlayAllowed&&circle&&eligible&&recordEligible&&!recording();}
+    void started(long now,int pid,long generation){
+        recordingPackage=foreground;recordingUser=user;recordingStart=now;
+        recordingPid=pid;processStart=generation;
     }
-    void toggle(int requested) {
-        mode = mode == requested ? OFF : requested;
-        cancelArm();
+    String terminal(long now){
+        if(!recording())return "";
+        if(now-recordingStart>=MAX_RECORD_MS)return "DURATION_LIMIT";
+        if(!eligible)return "SCREEN_OR_LOCK";
+        if(user!=recordingUser||!foreground.equals(recordingPackage))return "FOREGROUND_CHANGED";
+        if(!recordEligible)return "APP_BACKGROUND";
+        return "";
     }
-    boolean recording() { return !recordingPackage.isEmpty(); }
-    boolean recordingActive() {
-        return recording() && eligible && recordEligible && mode != OFF
-                && recordingUser == user && recordingPackage.equals(foreground);
-    }
-    boolean sampling() { return eligible && mode != OFF; }
-    boolean arm(long now) {
-        if (mode != FULL || !eligible || !recordEligible || recording()) return false;
-        armTime = now; armPackage = foreground; return true;
-    }
-    boolean canStart(long now) {
-        return armTime >= 0 && now - armTime >= 2000 && mode == FULL && eligible && recordEligible
-                && !recording() && foreground.equals(armPackage);
-    }
-    void started() { recordingPackage = foreground; recordingUser = user; processAvailable = true; cancelArm(); }
-    void stop() { recordingPackage = ""; cancelArm(); }
-    void cancelArm() { armTime = -1; armPackage = ""; }
-    String recordingState() { return !recording() ? "IDLE" : recordingActive() && processAvailable ? "RECORDING" : "PAUSED"; }
+    boolean sameProcess(int pid,long generation){return recordingPid==pid&&processStart==generation;}
+    void stop(){recordingPackage="";}
+    String recordingState(){return recording()?"RECORDING":"IDLE";}
 }

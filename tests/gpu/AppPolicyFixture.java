@@ -16,11 +16,12 @@ public final class AppPolicyFixture {
     static byte[] b(String text) { return text.getBytes(StandardCharsets.UTF_8); }
     static final class Crash extends Error { private static final long serialVersionUID = 1; }
     static final class Disk implements AppPolicyStore.Storage {
-        final Map<String,byte[]> data = new TreeMap<>(); String crash = ""; boolean after;
+        final Map<String,byte[]> data = new TreeMap<>(); String crash = ""; boolean after;int writes,crashAt=-1;
         public byte[] read(String name) { return data.getOrDefault(name, new byte[0]).clone(); }
         public void write(String name, byte[] bytes) {
+            writes++;if(writes==crashAt&&!after)throw new Crash();
             if (crash.equals(name) && !after) { crash = ""; throw new Crash(); }
-            data.put(name, bytes.clone()); if (crash.equals(name)) { crash = ""; throw new Crash(); }
+            data.put(name, bytes.clone());if(writes==crashAt&&after)throw new Crash(); if (crash.equals(name)) { crash = ""; throw new Crash(); }
         }
     }
     static final class Owner implements AppPolicyStore.Owner {
@@ -29,6 +30,68 @@ public final class AppPolicyFixture {
         public void apply(AppPolicyStore.State next, String tx) throws IOException {
             if (unavailable || failOnce) { failOnce = false; throw new IOException("apply"); } applies++; generation = next.generation;
         }
+    }
+    static final class Rules implements SettingsBackup.Rules {
+        byte[] data=b("schema=2\n");String pending="",generation="g000000000000000000000001";byte[] before,target;boolean fail,prepareFail;
+        public Map<String,Object> snapshot(){return map("data",Base64.getEncoder().encodeToString(data),"generation",generation,"pending",pending);}
+        public void prepare(String tx,String expected,byte[] next){if(prepareFail){prepareFail=false;throw new IllegalStateException("native prepare failed before lease");}require(pending.isEmpty()&&generation.equals(expected),"rule CAS");pending=tx;before=data.clone();target=next.clone();}
+        public void apply(String tx,byte[] wanted,boolean rollback)throws IOException {
+            require(tx.equals(pending)&&Arrays.equals(wanted,rollback?before:target),"rule stage binding");
+            data=wanted.clone();if(fail){fail=false;throw new IOException("rule ACK");}
+        }
+        public void finish(String tx){require(pending.isEmpty()||pending.equals(tx),"rule release identity");pending="";}
+    }
+    static void backupTests(AppPolicyStore.State initial)throws Exception{
+        Disk disk=new Disk();disk.write(AppPolicyStore.ACTIVE,initial.bytes());Owner owner=new Owner();Rules rules=new Rules();
+        AppPolicyStore store=new AppPolicyStore(disk);SettingsBackup backup=new SettingsBackup(store);
+        byte[] archive=backup.export(rules,"host-fixture",0),again=backup.export(rules,"host-fixture",0);
+        check(Arrays.equals(archive,again),"deterministic settings ZIP");
+        Map<String,byte[]> entries=SettingsBackup.validate(archive,initial.users);
+        check(entries.keySet().equals(new HashSet<>(Arrays.asList(SettingsBackup.NAMES))),"allowlisted entries only");
+        Map<Integer,Long> other=new TreeMap<>(initial.users);other.put(0,999L);rejects(()->SettingsBackup.validate(archive,other));
+        byte[] damaged=archive.clone();damaged[50]^=1;rejects(()->SettingsBackup.validate(damaged,initial.users));
+        rejects(()->SettingsBackup.validate(Arrays.copyOf(archive,archive.length-1),initial.users));
+        byte[] trailing=Arrays.copyOf(archive,archive.length+1);rejects(()->SettingsBackup.validate(trailing,initial.users));
+        Map<String,Object> prefs=object(parse(backup.prefs()));object(array(prefs.get("users")).get(0)).put("circle_x",1.1);
+        rejects(()->SettingsBackup.preferences(bytes(prefs),initial.users));
+        object(array(prefs.get("users")).get(0)).put("circle_x",0.25);object(array(prefs.get("users")).get(0)).put("desiredON",true);
+        rejects(()->SettingsBackup.preferences(bytes(prefs),initial.users));
+        AppPolicyStore.State next=initial.copy();next.globals.put(0,new AppPolicyStore.Row(60,"fast",629,903));
+        Map<String,Object> nextPrefs=object(parse(backup.prefs()));object(array(nextPrefs.get("users")).get(0)).put("circle_x",0.25);
+        byte[] wanted=SettingsBackup.archive(next,map("data",Base64.getEncoder().encodeToString(b("schema=2\n# next\n")),"generation",rules.generation),bytes(nextPrefs),"fixture",0);
+        String tx="000000000000000000000001";backup.restore(wanted,tx,owner,rules);
+        check(store.current.global(0).refreshHz==60&&!backup.busy()&&rules.pending.isEmpty(),"whole settings applied");
+        long gen=store.current.generation;backup.restore(wanted,tx,owner,rules);check(store.current.generation==gen,"restore replay no double commit");
+        rejects(()->backup.restore(archive,tx,owner,rules));
+        byte[] before=store.current.bytes(),priorRules=rules.data.clone(),priorPrefs=backup.prefs();
+        rules.prepareFail=true;rejects(()->backup.restore(archive,"000000000000000000000004",owner,rules));
+        check(Arrays.equals(store.current.bytes(),before)&&Arrays.equals(rules.data,priorRules)&&!backup.busy(),"pre-commit failure preserves all configuration");
+        rules.fail=true;rejects(()->backup.restore(archive,"000000000000000000000002",owner,rules));
+        check(store.current.global(0).refreshHz==60&&Arrays.equals(rules.data,priorRules)&&Arrays.equals(backup.prefs(),priorPrefs)&&!backup.busy(),"failed rule ACK restores complete previous configuration");
+        // Crash after authoritative policy rename, before complete settings ACK; restart uses the durable decision.
+        disk.crash=AppPolicyStore.ACTIVE;disk.after=true;
+        try{backup.restore(archive,"000000000000000000000003",owner,rules);throw new AssertionError("crash not injected");}catch(Crash expected){}
+        AppPolicyStore reopened=new AppPolicyStore(disk);SettingsBackup recovery=new SettingsBackup(reopened);check(recovery.busy(),"crash blocks mutations");
+        recovery.recover(owner,rules);
+        check(reopened.current.global(0).refreshHz==60&&Arrays.equals(rules.data,priorRules)&&Arrays.equals(recovery.prefs(),priorPrefs)&&!recovery.busy(),"crash whole rollback");
+        check(!disk.data.containsKey("monitor.db")&&!disk.data.containsKey("desiredON"),"backup never touches records or desired state");
+        // Every coordinator/storage write boundary, both before and after durability.
+        Disk probe=new Disk();probe.write(AppPolicyStore.ACTIVE,initial.bytes());int begin=probe.writes;
+        new SettingsBackup(new AppPolicyStore(probe)).restore(wanted,"000000000000000000000010",new Owner(),new Rules());
+        int boundaries=probe.writes-begin;
+        for(int boundary=1;boundary<=boundaries;boundary++)for(boolean afterWrite:new boolean[]{false,true}){
+            Disk broken=new Disk();broken.write(AppPolicyStore.ACTIVE,initial.bytes());
+            broken.crashAt=broken.writes+boundary;broken.after=afterWrite;Rules nativeOwner=new Rules();
+            SettingsBackup attempt=new SettingsBackup(new AppPolicyStore(broken));
+            try{attempt.restore(wanted,"000000000000000000000010",new Owner(),nativeOwner);throw new AssertionError("missing crash "+boundary);}catch(Crash expected){}
+            broken.crashAt=-1;
+            SettingsBackup restarted=new SettingsBackup(new AppPolicyStore(broken));restarted.recover(new Owner(),nativeOwner);
+            boolean applied=restarted.policy.current.global(0).refreshHz==60;
+            check(!restarted.busy()&&nativeOwner.pending.isEmpty(),"resolved crash boundary "+boundary);
+            check(Arrays.equals(nativeOwner.data,applied?b("schema=2\n# next\n"):b("schema=2\n")),"whole rule generation after crash "+boundary);
+            check(Arrays.equals(restarted.prefs(),applied?bytes(nextPrefs):bytes(SettingsBackup.defaultPreferences(initial.users))),"whole prefs after crash "+boundary);
+        }
+        System.out.println("SETTINGS_BACKUP_ROUNDTRIP_REJECTION_ACK_FAILURE_CRASH_ROLLBACK=PASS");
     }
     public static void main(String[] args) throws Exception {
         Map<Integer,Long> users = new TreeMap<>(); users.put(0, 0L); users.put(10, 42L);
@@ -45,6 +108,7 @@ public final class AppPolicyFixture {
         byte[] raw = b(profiles.toString()), saved = b("balance\n"), rules = b(perapp.toString());
         AppPolicyStore.Migration m = AppPolicyStore.migrate(raw, saved, rules, "balance", settings.toString(), users, quarantine);
         AppPolicyStore.State state = m.state;
+        backupTests(state);
         for (int bits = 1; bits <= 7; bits++) {
             AppPolicyStore.Row r = state.apps.get("0:org.example.a" + bits);
             check(r != null && r.refreshHz == 120, "complete refresh/equal global");

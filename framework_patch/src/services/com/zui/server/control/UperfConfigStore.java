@@ -115,21 +115,24 @@ final class UperfConfigStore {
         return result;
     }
     static Map<String,byte[]> unpack(byte[] archive) throws Exception {
-        require(archive.length > 22 && archive.length <= LIMIT, "Uperf archive size");
+        return unpack(archive,new String[]{"manifest.json","config.json","evidence.json"},new int[]{32768,131072,32768},LIMIT);
+    }
+    static Map<String,byte[]> unpack(byte[] archive,String[] names,int[] limits,int maximum) throws Exception {
+        require(archive.length > 22 && archive.length <= maximum, "archive size");
         // Inspect central attributes too: ZipInputStream intentionally does not expose Unix symlink/executable bits.
         int end = archive.length - 22; require(le(archive, end, 4) == 0x06054b50L && le(archive, end + 20, 2) == 0, "ZIP end");
-        require(le(archive, end + 4, 2) == 0 && le(archive, end + 6, 2) == 0 && le(archive, end + 8, 2) == 3 && le(archive, end + 10, 2) == 3, "ZIP disks/members");
+        require(le(archive, end + 4, 2) == 0 && le(archive, end + 6, 2) == 0 && le(archive, end + 8, 2) == names.length && le(archive, end + 10, 2) == names.length, "ZIP disks/members");
         int at = (int) le(archive, end + 16, 4); require(at + le(archive, end + 12, 4) == end, "ZIP central bound");
         int central = at, local = 0; Map<String,byte[]> result = new HashMap<>();
-        String[] names = {"manifest.json", "config.json", "evidence.json"};
-        for (String name : names) {
+        for (int index=0;index<names.length;index++) {
+            String name=names[index];
             require(le(archive, at, 4) == 0x02014b50L && le(archive, local, 4) == 0x04034b50L, "ZIP entry");
             int flags = (int) le(archive, at + 8, 2), mode = (int) (le(archive, at + 38, 4) >>> 16);
             require((flags & ~0x800) == 0 && le(archive, at + 10, 2) == 0 && (mode & 0170000) == 0100000 && (mode & 0111) == 0, "ZIP nonregular/executable/encrypted/compressed");
             require(le(archive, at + 30, 2) == 0 && le(archive, at + 32, 2) == 0 && le(archive, at + 34, 2) == 0
                     && le(archive, local + 28, 2) == 0 && le(archive, at + 42, 4) == local, "ZIP metadata/offset");
             int size = (int) le(archive, at + 24, 4), length = name.length();
-            require(size > 0 && size <= (name.equals("config.json") ? 131072 : 32768)
+            require(size > 0 && size <= limits[index]
                     && le(archive, at + 20, 4) == size && le(archive, at + 28, 2) == length && le(archive, local + 26, 2) == length, "ZIP member bound");
             require(local + 30 + length + size <= central && at + 46 + length <= end, "ZIP span");
             require(Arrays.equals(name.getBytes(StandardCharsets.US_ASCII), Arrays.copyOfRange(archive, at + 46, at + 46 + length))

@@ -38,11 +38,11 @@ int main(int argc,char** argv){
             throw std::runtime_error("unknown production command");
         }
         std::string command=argv[2],key=argv[3],value=argv[4],result;
-        ZUIopt::require(command.size()<=16&&key.size()<=128&&value.size()<=10924,"command bound");
+        ZUIopt::require(command.size()<=16&&key.size()<=128&&value.size()<=(command=="settings_prepare"?90000u:10924u),"command bound");
         if(command=="state")result=store.state()+store.failureState();
         else if(command=="read")result=store.userChunk(key,value);
         else if(command=="reset"){ZUIopt::require(key.empty()&&value.empty(),"reset arguments");store.resetFailure();result="NEXT_REBOOT_RETRIES_ZUIOPT";}
-        else{result=store.apply(command,key,value);if(command=="commit"||command=="rollback"){
+        else{result=command.rfind("settings_",0)==0?store.settings(command,key,value):store.apply(command,key,value);if(command=="commit"||command=="rollback"||command=="settings_apply"||command=="settings_revert"){
             reload();const auto deadline=ZUIopt::now()+3000;
             while(selected()&&!store.loaded()&&ZUIopt::now()<deadline)usleep(20000);
             ZUIopt::require(selected()&&store.loaded(),"COMMITTED_PENDING_OWNER_ACK_query_state");

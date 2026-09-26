@@ -42,7 +42,7 @@ class UiPolish(unittest.TestCase):
         self.assertIn('(contentWidthDp / 260).coerceIn(2, 4)', ui)
         self.assertEqual(main.count('addAppGrid('), 3)  # definition + both callers
         settings = main.split('private fun buildSystemPage()', 1)[1].split('private fun exportLogs()', 1)[0]
-        self.assertEqual(settings.count('settingsActionMargins()'), 5)
+        self.assertEqual(settings.count('settingsActionMargins()'), 7)
         self.assertNotIn('spaced =', main)
         self.assertIn('addView(reset, LinearLayout.LayoutParams(-2, dimen(R.dimen.ui_chip_height))', main)
         self.assertEqual(main.count('gravity = Gravity.TOP; topMargin = bar.chipTopMargin'), 2)
@@ -59,7 +59,7 @@ class UiPolish(unittest.TestCase):
         self.assertEqual(tokens['monitor_unit_scale'], '60%')
         self.assertTrue(0.26 <= int(tokens['monitor_glass'][1:3], 16)/255 <= 0.30)
         overlay = source('PerformanceMonitor.kt')
-        self.assertIn('metricWidth(it)', overlay); self.assertIn('livePower.add(', overlay)
+        self.assertIn('metricWidth(it)', overlay); self.assertNotIn('livePower.add(', overlay); self.assertIn('next.optDouble("powerW", -1.0)', overlay)
         self.assertNotRegex(overlay, r'\b276\b'); self.assertNotIn('circleText', overlay)
         for forbidden in ('MediaProjection', 'PixelCopy', 'SurfaceControl', 'kgsl', '/proc/', 'SQLite'):
             self.assertNotIn(forbidden, overlay)

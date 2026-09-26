@@ -14,7 +14,8 @@ class ProductR7(unittest.TestCase):
         self.assertNotIn('picker.setSelection(',main)
         self.assertIn('UperfAppPolicy.isConfigurable(packageManager, it.info.packageName)',main)
         self.assertIn('check(UperfAppPolicy.isConfigurable(packageManager, pkg))',main)
-        self.assertIn('check(UperfAppPolicy.isConfigurable(packageManager, pkg))',quick)
+        self.assertIn('editableSceneIsHome',quick)
+        self.assertIn('|| UperfAppPolicy.isConfigurable(packageManager, pkg)',quick)
         self.assertIn('snapshot.uperfEnabled, modeIntent(value)',app('NotificationQuickControlHelper.kt'))
         self.assertIn('UperfAppPolicy.isConfigurable(packageManager, pkg)',quick)
 
@@ -63,7 +64,8 @@ class ProductR7(unittest.TestCase):
         self.assertIn('R.color.ui_text',ui.split('fun modeChip',1)[1].split('fun ',1)[0])
         settings=main.split('private fun buildSystemPage()',1)[1].split('private fun exportLogs()',1)[0]
         icons=re.findall(r'settingsAction\(\s*R.drawable.(\w+)',settings)
-        self.assertEqual(len(icons),5);self.assertEqual(len(set(icons)),5)
+        self.assertEqual(len(icons),7);self.assertEqual(len(set(icons)),5)
+        self.assertIn("备份设置",settings);self.assertIn("恢复设置",settings)
         self.assertNotIn('"刷新率" to',settings);self.assertNotIn('chunked(',settings)
         self.assertIn('if (schedulerError != "ok")',settings)
         record=app('PerformanceRecordActivity.kt')

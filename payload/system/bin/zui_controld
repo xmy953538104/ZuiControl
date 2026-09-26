@@ -433,6 +433,14 @@ handle_command() {
             REQUEST_RESULT_DETAIL=unified_policy_generation_required
             return 1
             ;;
+        sb_export|sb_restore|sb_recover)
+            [ "${#pkg}" -le 64 ] && [ -z "$mode" ] || return 1
+            sb_reply="$(policy_command "$cmd" "$pkg" 2>>"$LOG_FILE")" || {
+                REQUEST_RESULT_DETAIL=settings_failed_query_recovery
+                return 1
+            }
+            REQUEST_RESULT_DETAIL="$(printf '%s' "$sb_reply" | tr '\n' ';')"
+            ;;
         ui_begin|ui_chunk|ui_commit|ui_state|ui_reset)
             [ "${#pkg}" -le 128 ] && [ "${#mode}" -le 10924 ] || return 1
             ui_argument="$pkg:$mode"

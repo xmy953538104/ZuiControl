@@ -2,9 +2,16 @@
 from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
+INTEGRATION=json.loads((ROOT/'tests/backend_monitor_settings_delta.json').read_text(encoding='utf-8'))
 MANIFEST=json.loads((ROOT/'tests/backend_abc_delta.json').read_text(encoding='utf-8'))
 
 def reverse_text(path,text):
+    current=next((r for r in INTEGRATION['files'] if r['path']==path),None)
+    if current:
+        for h in reversed(current['hunks']):
+            assert text.count(h['after'])==1,('integration unauthorized delta',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==current['beforeSha256'],('integration frozen base',path)
     row=next(r for r in MANIFEST['files'] if r['path']==path)
     for h in reversed(row['hunks']):
         assert text.count(h['after'])==1,('R1 unauthorized delta',path,h['after'][:80])
@@ -26,7 +33,7 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
-    for row in MANIFEST['files']:
+    for row in INTEGRATION['files']+MANIFEST['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         after=row['after'].encode();assert result.count(after)==1,('R1 exact source bytes',row['path'])
         result.remove(after)

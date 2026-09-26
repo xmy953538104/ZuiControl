@@ -30,7 +30,7 @@ import java.io.PrintWriter
 
 /** Rendering and explicit gestures only. No independent scalar/task sampling. */
 class PerformanceMonitor(private val context: Context,
-    private val onReading: (Double, Double, Long) -> Unit = { _, _, _ -> },
+    private val onReading: (Double, Double, Long, Long) -> Unit = { _, _, _, _ -> },
     private val onModeChanged: () -> Unit = {}) {
     private val handler = Handler(Looper.getMainLooper())
     private val windows = context.getSystemService(WindowManager::class.java)
@@ -63,10 +63,23 @@ class PerformanceMonitor(private val context: Context,
     private var circleY: Int? = null
     private var circleBounds = Rect()
     private var positionWrites = 0L
-    private val positions by lazy { context.getSharedPreferences("monitor_position", Context.MODE_PRIVATE) }
+    private var positions = JSONObject()
+    fun reloadPreferences() {
+        positions = runCatching { JSONObject(command("preferencesRead")) }.getOrDefault(JSONObject())
+        circleX=null;circleY=null
+        if(attached) { ensureCirclePosition();positionWindow("preferences") }
+    }
     private var snapshot = JSONObject()
-    private val livePower = LivePower()
     private var displayPower = -1.0
+    private var backend: ZuiControlManager? = null
+    private var permissionAllowed = true
+    private val serviceDeath = IBinder.DeathRecipient { handler.post {
+        backend=null;snapshot=JSONObject();hide();onReading(-1.0,-1.0,0L,3500L)
+    } }
+    private val expireReading = Runnable {
+        render(JSONObject(snapshot.toString()).put("elapsedMs",0).put("fps",JSONObject.NULL)
+            .put("quietC",-1).put("powerW",-1).toString())
+    }
     private val callback = object : Binder() {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             if (code != 1 || flags and IBinder.FLAG_ONEWAY == 0 || getCallingUid() != 1000) return false
@@ -78,16 +91,24 @@ class PerformanceMonitor(private val context: Context,
         }
     }
     fun start() {
-        if (closed || !Settings.canDrawOverlays(context)) return
+        if (closed) return
         if (!started) {
+            reloadPreferences()
             displays.registerDisplayListener(displayListener, handler)
             started = true
         }
-        runCatching { ZuiControlManager.get()?.monitor("register", "", false, false, callback) }
+        runCatching {
+            backend?.unlinkMonitorDeath(serviceDeath)
+            backend=ZuiControlManager.get()?.also { it.linkMonitorDeath(serviceDeath) }
+            backend?.monitor("register", "", false, false, callback)
+            permissionAllowed=Settings.canDrawOverlays(context)
+            command(if(permissionAllowed) "permissionGranted" else "permissionLost")
+        }.onFailure { hide();onReading(-1.0,-1.0,0L,3500L) }
     }
     fun close() {
         closed = true
-        runCatching { ZuiControlManager.get()?.monitor("register", "", false, false, null) }
+        runCatching { ZuiControlManager.get()?.monitor("unregister", "", false, false, callback) }
+        runCatching { backend?.unlinkMonitorDeath(serviceDeath) };backend=null
         if (started) displays.unregisterDisplayListener(displayListener)
         hide(); handler.removeCallbacksAndMessages(null)
     }
@@ -95,16 +116,15 @@ class PerformanceMonitor(private val context: Context,
         if (action == "full") circle = recording()
         return command(action)
     }
-    private fun recording() = snapshot.optString("recordState") in listOf("RECORDING", "PAUSED")
+    private fun recording() = snapshot.optString("recordState") == "RECORDING"
     private fun hide() {
-        onReading(-1.0, -1.0, 0L)
         view?.cancelGesture()
         if (attached) {
             view?.let { windows.removeViewImmediate(it) }
             attached = false; removes++; event("remove")
         }
         state("HIDDEN")
-        livePower.clear(); displayPower = -1.0
+        displayPower = -1.0
     }
     private fun safeTop(insets: WindowInsets?): Int =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -155,8 +175,8 @@ class PerformanceMonitor(private val context: Context,
     private fun ensureCirclePosition() {
         refreshCircleBounds()
         if (circleX != null && circleY != null) return
-        val x = positions.getFloat("circle_x", Float.NaN)
-        val y = positions.getFloat("circle_y", Float.NaN)
+        val x = positions.optDouble("circle_x", Double.NaN).toFloat()
+        val y = positions.optDouble("circle_y", Double.NaN).toFloat()
         if (x.isFinite() && y.isFinite() && x in 0f..1f && y in 0f..1f) {
             circleX = circleBounds.left + (x * circleBounds.width()).toInt()
             circleY = circleBounds.top + (y * circleBounds.height()).toInt()
@@ -168,7 +188,9 @@ class PerformanceMonitor(private val context: Context,
     private fun persistCirclePosition() {
         val x = (circleX!! - circleBounds.left).toFloat() / maxOf(1, circleBounds.width())
         val y = (circleY!! - circleBounds.top).toFloat() / maxOf(1, circleBounds.height())
-        positions.edit().putFloat("circle_x", x).putFloat("circle_y", y).apply()
+        val result=command("preferencesWrite",JSONObject().put("circle_x",x).put("circle_y",y).toString())
+        if(result.startsWith("ok=0"))return
+        positions=JSONObject(result)
         positionWrites++; event("drag persisted x=$circleX y=$circleY writes=$positionWrites")
     }
     private fun positionWindow(reason: String) {
@@ -215,17 +237,28 @@ class PerformanceMonitor(private val context: Context,
     }
     private fun render(text: String) {
         val next = runCatching { JSONObject(text) }.getOrNull() ?: return
-        val newSample = next.optLong("sample") > snapshot.optLong("sample")
-        val contextChanged = next.optString("package") != snapshot.optString("package") ||
-            next.optInt("mode") != snapshot.optInt("mode")
-        if (next.has("mode") && next.optInt("mode") != snapshot.optInt("mode")) onModeChanged()
-        if (next.optString("package") != snapshot.optString("package")) livePower.clear()
-        displayPower = livePower.add(next.optDouble("powerW", -1.0))
+        if(next.optString("producerEpoch")!=snapshot.optString("producerEpoch")) {view?.cancelGesture();snapshot=JSONObject()}
+        val allowed=Settings.canDrawOverlays(context)
+        if(allowed!=permissionAllowed){permissionAllowed=allowed;command(if(allowed) "permissionGranted" else "permissionLost")}
+        val oldConnection = snapshot.optLong("connectionEpoch")
+        val newConnection = next.optLong("connectionEpoch")
+        if (newConnection < oldConnection) return
+        if (newConnection == oldConnection && next.optLong("sample") < snapshot.optLong("sample")) return
+        if (next.optInt("mode") != snapshot.optInt("mode")) onModeChanged()
+        if (newConnection != oldConnection || next.optLong("targetEpoch") != snapshot.optLong("targetEpoch")) view?.cancelGesture()
+        handler.removeCallbacks(expireReading)
+        val elapsed=next.optLong("elapsedMs")
+        if(elapsed>0){
+            val left=elapsed+next.optLong("ttlMs",3500)-SystemClock.elapsedRealtime()
+            if(left<0){next.put("elapsedMs",0).put("fps",JSONObject.NULL).put("quietC",-1).put("powerW",-1)}
+            else handler.postDelayed(expireReading,left+1)
+        }
+        // Both consumers receive the exact same scalar sample, including OFF notifications.
+        displayPower = if(positions.optString("powerPresentation")=="INPUT") -1.0 else next.optDouble("powerW", -1.0)
         snapshot = next
+        circle = next.optBoolean("circle", circle)
+        onReading(next.optDouble("quietC", -1.0), displayPower, next.optLong("elapsedMs"), next.optLong("ttlMs", 3500))
         if (!next.optBoolean("active") || !Settings.canDrawOverlays(context)) { hide(); return }
-        if (next.optInt("mode") == 1 && newSample) {
-            onReading(next.optDouble("quietC", -1.0), displayPower, next.optLong("elapsedMs"))
-        } else if (contextChanged || next.optInt("mode") != 1) onReading(-1.0, -1.0, 0L)
         if (recording()) circle = true
         try {
             val fresh = view ?: MonitorView(context).also {
@@ -257,7 +290,7 @@ class PerformanceMonitor(private val context: Context,
                 windows.addView(fresh, params); attached = true; adds++; event("add y=${params.y}")
             }
             view?.update()
-        } catch (_: RuntimeException) { hide(); command("off") }
+        } catch (_: RuntimeException) { hide(); command("permissionLost") }
     }
     private inner class MonitorView(context: Context) : View(context) {
         private val density = resources.displayMetrics.density
@@ -271,33 +304,22 @@ class PerformanceMonitor(private val context: Context,
         private val unitSize get() = if (circle && snapshot.optInt("mode") != 2) valueSize * unitScale else dimen(R.dimen.monitor_unit_text)
         private var metrics = emptyList<Pair<String, String>>()
         private var valueSize = dimen(R.dimen.monitor_value_text)
-        private val gesture = MonitorGesture()
+        private val gesture = MonitorGesture(ViewConfiguration.getDoubleTapTimeout().toLong())
         private val down get() = gesture.down
         private var x0 = 0f
         private var y0 = 0f
         private var dragX = 0
         private var dragY = 0
-        private var armed = false
         private val metric get() = gesture.metric
         private val slop = ViewConfiguration.get(context).scaledTouchSlop
         private var touchSequence = 0L
         private var lastUpTime = -1L
         private var lastCircleDrawTime = -1L
         private var drawnState = ""
-        private val showArm = Runnable { if (armed && gesture.arming(SystemClock.elapsedRealtime())) update() }
-        private val commit = Runnable {
-            if (armed && circle && !recording() && gesture.complete(SystemClock.elapsedRealtime())) {
-                val reply = command("recordStart")
-                event("recordStart sequence=$touchSequence ok=${reply.startsWith("ok=1")}")
-                if (!reply.startsWith("ok=1")) command("cancelArm")
-                armed = false
-                if (reply.startsWith("ok=1")) {
-                    snapshot.put("recordState", "RECORDING")
-                    performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                }
-                update()
-            }
-        }
+        private val confirmTap = Runnable { applyGesture(gesture.confirm(SystemClock.elapsedRealtime())) }
+        private var previousTapX = Float.NaN
+        private var previousTapY = Float.NaN
+        private val doubleSlop = ViewConfiguration.get(context).scaledDoubleTapSlop
         init {
             isClickable = true; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
             gesture.release(SystemClock.elapsedRealtime())
@@ -313,7 +335,7 @@ class PerformanceMonitor(private val context: Context,
             contentDescription = if (snapshot.optInt("mode") == 2) "FPS ${number(snapshot.optDouble("fps", -1.0))}"
                 else "性能监视器 ${if (circle) "圆形" else "长条"} ${snapshot.optString("recordState")} " +
                     metrics.joinToString("   ") { "${it.first} ${it.second}" }
-            val nextState = when { recording() -> "RECORDING"; circle && armed && gesture.arming(now) -> "ARMING"; circle -> "CIRCLE"; else -> "LONG_BAR" }
+            val nextState = when { recording() -> "RECORDING"; circle -> "CIRCLE"; else -> "LONG_BAR" }
             val stateChanged = nextState != visualState
             val shapeChanged = (visualState == "LONG_BAR") != (nextState == "LONG_BAR")
             state(nextState)
@@ -391,29 +413,48 @@ class PerformanceMonitor(private val context: Context,
                 canvas.drawText(unit, x, baseline, paint)
                 x += paint.measureText(unit) + dimen(R.dimen.monitor_metric_gap)
             }
-            if (!fps && circle && ((armed && gesture.arming(SystemClock.elapsedRealtime())) || recording())) {
+            if (!fps && circle && recording()) {
                 paint.clearShadowLayer(); paint.style = Paint.Style.STROKE
                 paint.strokeWidth = dimen(R.dimen.monitor_ring_width)
-                paint.color = if (snapshot.optString("recordState") == "PAUSED") 0xFFE6BC67.toInt() else context.getColor(R.color.ui_accent)
-                val progress = if (recording()) 1f else ((SystemClock.elapsedRealtime() - down) / 2000f).coerceIn(0f, 1f)
+                paint.color = context.getColor(R.color.ui_accent)
+                val progress = 1f
                 val ringInset = inset - dimen(R.dimen.monitor_ring_gap)
                 canvas.drawArc(RectF(ringInset,ringInset,width-ringInset,height-ringInset),-90f,360f*progress,false,paint)
-                if (armed && gesture.phase == MonitorGesture.Phase.PENDING) postInvalidateOnAnimation()
             }
         }
         fun dumpGesture(out: PrintWriter) {
-            out.println("overlayGesture=${gesture.phase} touchSlop=$slop touchSequence=$touchSequence lastUpUptime=$lastUpTime lastCircleDrawUptime=$lastCircleDrawTime armed=$armed")
+            out.println("overlayGesture=${gesture.phase} touchSlop=$slop touchSequence=$touchSequence lastUpUptime=$lastUpTime lastCircleDrawUptime=$lastCircleDrawTime")
         }
-        private fun cancelArming() {
-            this@PerformanceMonitor.handler.removeCallbacks(showArm)
-            this@PerformanceMonitor.handler.removeCallbacks(commit)
-            if (armed) { command("cancelArm"); armed = false }
+        private fun cancelPendingTap() {
+            this@PerformanceMonitor.handler.removeCallbacks(confirmTap)
+        }
+        private fun applyGesture(action: MonitorGesture.Release) {
+            when (action) {
+                MonitorGesture.Release.START_RECORDING -> {
+                    val token = "${snapshot.optLong("connectionEpoch")}:${snapshot.optLong("targetEpoch")}:$touchSequence"
+                    if (command("recordStart", token).startsWith("ok=1")) {
+                        snapshot.put("recordState", "RECORDING")
+                        performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                    }
+                }
+                MonitorGesture.Release.STOP_RECORDING -> {
+                    if (command("recordStop").startsWith("ok=1")) snapshot.put("recordState", "IDLE")
+                }
+                MonitorGesture.Release.TO_CIRCLE, MonitorGesture.Release.TO_BAR -> {
+                    val nextCircle = action == MonitorGesture.Release.TO_CIRCLE
+                    if (command(if (nextCircle) "circle" else "bar").startsWith("ok=1")) circle = nextCircle
+                }
+                MonitorGesture.Release.DRAG_END -> persistCirclePosition()
+                MonitorGesture.Release.WAIT_TAP -> this@PerformanceMonitor.handler.postDelayed(confirmTap, ViewConfiguration.getDoubleTapTimeout().toLong())
+                MonitorGesture.Release.NONE -> Unit
+            }
+            update()
         }
         private fun movePointer(event: MotionEvent) {
             val dx = event.rawX - x0; val dy = event.rawY - y0
             if (gesture.phase != MonitorGesture.Phase.DRAGGING && dx * dx + dy * dy <= slop * slop) return
             if (gesture.drag()) {
-                cancelArming()
+                cancelPendingTap()
                 circleX = (dragX + dx.toInt()).coerceIn(circleBounds.left, circleBounds.right)
                 circleY = (dragY + dy.toInt()).coerceIn(circleBounds.top, circleBounds.bottom)
                 positionWindow("drag")
@@ -423,7 +464,7 @@ class PerformanceMonitor(private val context: Context,
         }
         fun cancelGesture() {
             // View.handler is null after detach; the controller owns this timer.
-            cancelArming(); gesture.cancel()
+            cancelPendingTap(); gesture.cancel()
             if (attached) state(if (recording()) "RECORDING" else if (circle) "CIRCLE" else "LONG_BAR")
             invalidate()
         }
@@ -431,18 +472,15 @@ class PerformanceMonitor(private val context: Context,
             if (snapshot.optInt("mode") == 2) return false
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    cancelArming()
+                    cancelPendingTap()
                     x0=event.rawX;y0=event.rawY
                     touchSequence++
+                    val dx = x0 - previousTapX; val dy = y0 - previousTapY
+                    if (dx * dx + dy * dy > doubleSlop * doubleSlop) gesture.cancel()
                     gesture.press(SystemClock.elapsedRealtime(), circle, recording())
                     if (circle) {
                         ensureCirclePosition(); dragX = circleX!!; dragY = circleY!!
-                        // The server independently enforces 2 seconds; only the visible ring waits 250 ms.
-                        if (!recording()) armed = command("arm").startsWith("ok=1")
-                        if (armed) {
-                            this@PerformanceMonitor.handler.postDelayed(showArm, 251)
-                            this@PerformanceMonitor.handler.postDelayed(commit, 2000)
-                        }
+
                     }
                     this@PerformanceMonitor.event("touch DOWN sequence=$touchSequence circle=$circle x=$x0 y=$y0 uptime=${event.eventTime}")
                     update()
@@ -453,16 +491,11 @@ class PerformanceMonitor(private val context: Context,
                 MotionEvent.ACTION_UP -> {
                     lastUpTime = event.eventTime
                     movePointer(event)
-                    if (armed && SystemClock.elapsedRealtime() - down >= 2000) commit.run()
                     val action = gesture.release(SystemClock.elapsedRealtime())
-                    cancelArming()
+                    cancelPendingTap()
                     this@PerformanceMonitor.event("touch UP sequence=$touchSequence action=$action uptime=$lastUpTime")
-                    when (action) {
-                        MonitorGesture.Release.DRAG_END -> persistCirclePosition()
-                        MonitorGesture.Release.TO_CIRCLE, MonitorGesture.Release.TO_BAR,
-                        MonitorGesture.Release.STOP_RECORDING -> performClick()
-                        MonitorGesture.Release.NONE -> Unit
-                    }
+                    previousTapX = event.rawX; previousTapY = event.rawY
+                    applyGesture(action)
                     update()
                 }
             }
@@ -472,11 +505,9 @@ class PerformanceMonitor(private val context: Context,
             super.performClick()
             if (snapshot.optInt("mode") == 2) return false
             // Accessibility activation also consumes any pending pointer before changing the shape.
-            gesture.release(SystemClock.elapsedRealtime()); cancelArming()
-            if (recording()) {
-                if (command("recordStop").startsWith("ok=1")) snapshot.put("recordState","IDLE")
-            } else circle=!circle
-            update()
+            cancelGesture()
+            applyGesture(if (recording()) MonitorGesture.Release.STOP_RECORDING
+                else if (circle) MonitorGesture.Release.TO_BAR else MonitorGesture.Release.TO_CIRCLE)
             return true
         }
     }

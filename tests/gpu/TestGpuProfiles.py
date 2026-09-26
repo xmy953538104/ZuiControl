@@ -10,7 +10,7 @@ class GpuProfiles(unittest.TestCase):
         base=ROOT/'framework_patch/src/services/com/zui/server/control'
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run(['javac','-encoding','UTF-8','-d',tmp,
-                *[str(base/name) for name in ('PolicyJson.java','GpuRange.java','AppPolicyStore.java')],
+                *[str(base/name) for name in ('PolicyJson.java','GpuRange.java','AppPolicyStore.java','UperfConfigStore.java','SettingsBackup.java')],
                 str(ROOT/'tests/gpu/AppPolicyFixture.java')],check=True)
             subprocess.run(['java','-cp',tmp,'com.zui.server.control.AppPolicyFixture'],check=True)
 

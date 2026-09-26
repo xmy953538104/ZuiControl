@@ -46,11 +46,8 @@ final class MonitorSources {
             quietUnavailable = true; quietError = "quiet_read_unavailable"; return -1;
         }
     }
-    double fps() {
-        scalarReads++;
-        try { return MonitorSnapshot.displayFps(line("/sys/class/drm/sde-crtc-0/measured_fps")); }
-        catch (IOException e) { return -1; }
-    }
+    // EV1: no qualified OEM raw completed-window counter. Never use display rate.
+    double fps() { return -1; }
     static double batteryWatts(int plugged, int status, int milliVolts, long microAmps) {
         // TB321FU broadcast voltage is mV; CURRENT_NOW is uA, positive on proven discharge.
         // Status + absence of external power determine direction; vendor sign does not.
