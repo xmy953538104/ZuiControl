@@ -19,8 +19,39 @@ class Rules(unittest.TestCase):
                 with path.open('w',newline='') as f: w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
             save();text=convert(path,expected_counts=None,require_selectors=True)[0]
             self.assertEqual(parse_rules(text)['profiles']['F01']['rules'][0][3],2)
+            self.assertEqual(normalize_source(path.read_bytes(),'recovered-csv'),dump_rules(parse_rules(text)))
+            self.assertEqual(normalize_source(path.read_bytes(),'recovered-csv'),normalize_source(path.read_bytes(),'recovered-csv'))
             rows[1]['selector']='';save()
             with self.assertRaises(AssertionError): convert(path,expected_counts=None,require_selectors=True)
+    def test_canonical_workflow_choices_and_union(self):
+        new=OPEN+b'profile X 0-1\npackage exact org.new.game X 99\n'
+        with self.assertRaises(ValueError): canonical_workflow(BASE,new,'canonical','Clean','repo/commit/run','a'*64)
+        old,diff=canonical_workflow(BASE,new,'canonical','Old','repo/commit/run','a'*64)
+        modern,_=canonical_workflow(BASE,new,'canonical','New','repo/commit/run','a'*64)
+        self.assertTrue(diff['conflicts'])
+        def config(data):
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                m=strict_json(z.read('manifest.json'));r=z.read('rules.conf')
+            self.assertEqual(m['oldCanonicalHash'],digest(normalize_source(BASE,'canonical')))
+            return parse_rules(r)
+        for data,mask_expected in ((old,mask('2-6')),(modern,mask('2-7'))):
+            c=config(data);self.assertEqual(len(c['packages']),2)
+            match=next(p for p in c['packages'] if p[1]=='org.example.game')
+            self.assertEqual(c['profiles'][match[2]]['mask'],mask_expected)
+        self.assertEqual(old,canonical_workflow(BASE,new,'canonical','Old','repo/commit/run','a'*64)[0])
+        self.assertIsNone(canonical_workflow(BASE,new,'canonical','Compare','repo/commit/run','a'*64)[0])
+        distinct=b'schema 2\nenabled true\nprofile X 0-1\npackage exact org.new.game X 99\n'
+        clean,_=canonical_workflow(BASE,distinct,'canonical','Clean','repo/commit/run','a'*64)
+        self.assertEqual(len(config(clean)['packages']),2)
+        prefix=BASE.replace(b'package exact org.example.game',b'package prefix org.example.')
+        self.assertTrue(compare_canonical(prefix,BASE,'canonical')[1]['conflicts'])
+
+    def test_normalized_appopt_semantics(self):
+        text=b'org.example.game=0-6\norg.example.game{Render*}=7'
+        normalized=normalize_source(text,'appopt')
+        self.assertEqual(parse_rules(normalized),parse_rules(unpack(appopt(text.decode(),'normalized'))[1]))
+        with self.assertRaises(ValueError): normalize_source(b'#!/bin/sh\nrm -rf /','unqualified-binary')
+
     def test_roundtrip(self): self.assertEqual(parse_rules(OPEN),parse_rules(dump_rules(parse_rules(OPEN))))
     def test_source_parity(self):
         for source in ('recovered_binary','appopt','zuiopt_native','user_export'):

@@ -2,7 +2,7 @@
 from pathlib import Path
 import io,json,subprocess,sys,tempfile,zipfile
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/rules'))
-from ZUIOPT_rule_pack import parse_rules,dump_rules,manifest_for,pack_bytes,unpack,appopt,merge
+from ZUIOPT_rule_pack import parse_rules,dump_rules,manifest_for,pack_bytes,unpack,appopt,merge,canonical_workflow,normalize_source
 
 ROOT=Path(__file__).resolve().parents[2]
 BASE=b'schema 2\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n'
@@ -55,6 +55,17 @@ def main(binary):
         for factory,user,packs in ((BASE,b'',[]),(BASE,b'',[a]),(BASE,OPEN,[a,b]),(factory,BASE,[b,a])):
             actual=call('merge',factory,user,*[pack_bytes(*pack) for pack in packs])
             assert actual==merge(factory,packs,user)
+        for choice in ('Old','New'):
+            source=OPEN+b'profile X 0-1\npackage exact org.new.game X 99\n'
+            archive,comparison=canonical_workflow(BASE,source,'canonical',choice,'fixture/commit/run','a'*64)
+            with zipfile.ZipFile(io.BytesIO(archive)) as z: expected=z.read('rules.conf')
+            assert call('canonical',archive,BASE)==expected
+            call('canonical',archive,OPEN,ok=False) # exact oldCanonicalHash CAS
+        distinct=b'schema 2\nenabled true\nprofile X 0-1\npackage exact org.new.game X 99\n'
+        archive,_=canonical_workflow(BASE,distinct,'canonical','Clean','fixture/commit/run','a'*64)
+        with zipfile.ZipFile(io.BytesIO(archive)) as z: assert call('canonical',archive,BASE)==z.read('rules.conf')
+        recovered=b'package,group,affinity_mask,static_confidence,thread_pattern,thread_priority,thread_match_type,declaration_status,selector\norg.example.future,F01,0x7c,STATIC_CONFIRMED,<NO_THREAD_MATCH>,0,SUBSTRING_STRSTR,ACTIVE_FOR_EXACT_INPUT,all\norg.example.future,F01,0x80,STATIC_CONFIRMED,Runner,1,SUBSTRING_STRSTR,ACTIVE_FOR_EXACT_INPUT,rank:2\n'
+        normalized=normalize_source(recovered,'recovered-csv');assert call('rules',normalized)==normalized
         b[0]['pack_priority']=1
         call('merge',BASE,b'',pack_bytes(*a),pack_bytes(*b),ok=False)
     print(json.dumps(dict(status='PASS',native_reference_checks=checked,factory_profiles=27,factory_mappings=316)))

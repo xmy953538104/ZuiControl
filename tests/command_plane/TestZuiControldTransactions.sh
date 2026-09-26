@@ -327,23 +327,15 @@ test_noarg_entrypoint_is_closed() {
 test_control_plane_does_not_write_effective() (
     ZUI_CONTROLD_TEST_MODE=1
     export ZUI_CONTROLD_TEST_MODE
-    # shellcheck source=/dev/null
     . "$DAEMON"
     setup_state
     trap 'rm -rf "$TEST_ROOT"' EXIT
-
-    before_inode="$(stat -c %i "$UPERF_EFFECTIVE_MODE")"
-    before_sum="$(cksum "$UPERF_EFFECTIVE_MODE")"
-    set_uperf_mode fast || fail 'valid global mode rejected'
-    [ "$(tr -d '\r\n ' < "$UPERF_MODE")" = fast ] || fail 'global mode not persisted'
-    [ "$TEST_MODE_STATE" = fast ] || fail 'global mode event was not published'
-    [ "$(stat -c %i "$UPERF_EFFECTIVE_MODE")" = "$before_inode" ] ||
-        fail 'daemon replaced the effective-mode inode'
-    [ "$(cksum "$UPERF_EFFECTIVE_MODE")" = "$before_sum" ] ||
-        fail 'daemon wrote the effective-mode file'
-    if set_uperf_mode auto; then fail 'retired auto mode accepted'; fi
-    [ "$(tr -d '\r\n ' < "$UPERF_MODE")" = fast ] ||
-        fail 'invalid mode changed the global mode'
+    before="$(cksum "$UPERF_MODE" "$UPERF_PERAPP" "$UPERF_EFFECTIVE_MODE")"
+    for retired in set_uperf_mode set_uperf_app remove_uperf_app; do
+        if handle_command "$retired" com.example.game fast; then fail 'legacy policy writer accepted'; fi
+        [ "$REQUEST_RESULT_DETAIL" = unified_policy_generation_required ] || fail 'missing CAS rejection'
+    done
+    [ "$before" = "$(cksum "$UPERF_MODE" "$UPERF_PERAPP" "$UPERF_EFFECTIVE_MODE")" ] || fail 'retired command mutated policy'
 )
 
 test_custom_app_lifecycle() (
@@ -352,28 +344,18 @@ test_custom_app_lifecycle() (
     . "$DAEMON"
     setup_state
     trap 'rm -rf "$TEST_ROOT"' EXIT
-    before_inode="$(stat -c %i "$UPERF_EFFECTIVE_MODE")"
-    before_sum="$(cksum "$UPERF_EFFECTIVE_MODE")"
-
-    set_uperf_app_mode com.example.game fast || fail 'custom app rejected'
-    grep -qx 'com.example.game fast' "$UPERF_PERAPP" || fail 'custom app not persisted'
-    printf '%s\n' "$TEST_RULES_STATE" | grep -qx 'com.example.game|fast' ||
-        fail 'custom app event was not published'
-    [ "$(stat -c %i "$UPERF_EFFECTIVE_MODE")" = "$before_inode" ] ||
-        fail 'custom app update replaced the effective-mode inode'
-    [ "$(cksum "$UPERF_EFFECTIVE_MODE")" = "$before_sum" ] ||
-        fail 'custom app update wrote the effective-mode file'
-    if set_uperf_app_mode com.android.systemui fast; then fail 'system app accepted'; fi
-
-    remove_uperf_app_mode com.example.game || fail 'custom app removal failed'
-    if grep -q '^com.example.game ' "$UPERF_PERAPP"; then fail 'custom app survived removal'; fi
-    if printf '%s\n' "$TEST_RULES_STATE" | grep -q '^com.example.game|'; then
-        fail 'removed custom app survived the published event'
-    fi
-    [ "$(stat -c %i "$UPERF_EFFECTIVE_MODE")" = "$before_inode" ] ||
-        fail 'custom app removal replaced the effective-mode inode'
-    [ "$(cksum "$UPERF_EFFECTIVE_MODE")" = "$before_sum" ] ||
-        fail 'custom app removal wrote the effective-mode file'
+    CURRENT_REQUEST_ID=policy-1
+    trusted_sha256=fixture-hash
+    policy_command() {
+        [ "$1" = policy-1 ] && [ "$2" = fixture-hash ] || fail 'lost authenticated identity'
+        printf 'ok=1\npolicyGeneration=8\n'
+    }
+    handle_command policy '' payload || fail 'unified policy forwarding'
+    [ "$REQUEST_RESULT_DETAIL" = 'ok=1;policyGeneration=8' ] || fail 'applied ACK identity'
+    # Exact row semantics run in AppPolicyFixture against production Java.
+    policy_command() { return 1; }
+    if handle_command policy '' payload; then fail 'owner failure acknowledged success'; fi
+    [ "$REQUEST_RESULT_DETAIL" = policy_failed_query_generation ] || fail 'missing recovery hint'
 )
 
 test_minimal_request_and_receipt() (
@@ -382,13 +364,13 @@ test_minimal_request_and_receipt() (
     . "$DAEMON"
     setup_state
     trap 'rm -rf "$TEST_ROOT"' EXIT
-    TEST_REQUEST='id-1|set_uperf_mode|||performance'
+    TEST_REQUEST='id-1|status|||'
     LAST_SETTINGS_REQUEST=
     LAST_COMPLETED_REQUEST_ID=
     TERMINAL_ACK_PENDING=0
 
     process_settings_request || fail 'settings request failed'
-    [ "$TEST_ACK" = 'id-1|done|set_uperf_mode|global=performance' ] ||
+    [ "$TEST_ACK" = 'id-1|done|status|state=binder' ] ||
         fail 'terminal ACK mismatch'
     [ "$(tr -d '\r\n ' < "$UPERF_EFFECTIVE_MODE")" = balance ] ||
         fail 'request path wrote the effective-mode file'
@@ -406,38 +388,11 @@ test_minimal_request_and_receipt() (
 )
 
 test_rules_publication_bytes_and_failure() (
-    ZUI_CONTROLD_TEST_MODE=1
-    export ZUI_CONTROLD_TEST_MODE
-    . "$DAEMON"
-    setup_state
-    trap 'rm -rf "$TEST_ROOT"' EXIT
-    : > "$UPERF_PERAPP"
-    publish_uperf_rules_state || fail 'empty rules publication failed'
-    [ -z "$TEST_RULES_STATE" ] || fail 'empty rules gained bytes'
-
-    printf '%s\n' '' '# comment' '- powersave' '* fast' '.bad fast' \
-        'com.example.bad auto' 'com.example.extra fast extra' \
-        'com.example.bad; fast' 'com.example.bad| fast' > "$UPERF_PERAPP"
-    printf 'com.example.cr fast\r\ncom.example.valid fast\n' >> "$UPERF_PERAPP"
-    publish_uperf_rules_state || fail 'one valid rule publication failed'
-    [ "$TEST_RULES_STATE" = 'com.example.valid|fast' ] || fail 'one rule bytes changed'
-
-    printf '%s\n' 'com.example.second balance' '' 'com.example.valid powersave' \
-        'com.example.third performance' >> "$UPERF_PERAPP"
-    # Preserve the existing read-loop behavior for an unterminated final input line.
-    printf 'com.example.unterminated fast' >> "$UPERF_PERAPP"
-    expected_rules='com.example.valid|fast
-com.example.second|balance
-com.example.valid|powersave
-com.example.third|performance'
-    TEST_CONFIG_PUT_FAILURES=1
-    UPERF_RULES_DIRTY=1
-    if publish_uperf_rules_state; then fail 'rules publication failure returned success'; fi
-    [ "$UPERF_RULES_DIRTY" = 1 ] || fail 'failed rules publication cleared dirty flag'
-    [ "$TEST_RULES_STATE" = 'com.example.valid|fast' ] || fail 'failed publication changed state'
-    publish_uperf_rules_state || fail 'rules publication retry failed'
-    [ "$TEST_RULES_STATE" = "$expected_rules" ] || fail 'multiple rule bytes/order changed'
-    [ "$UPERF_RULES_DIRTY" = 0 ] || fail 'successful rules publication remained dirty'
+    # No old native writer or publisher can compete after cutover.
+    if grep -Eq '^(publish_uperf_(rules|mode)_state|set_uperf_(app_)?mode|remove_uperf_app_mode|write_perapp_without_package)\(\)' "$DAEMON"; then
+        fail 'retired independent policy writer remains'
+    fi
+    grep -Fq 'class AppPolicyStore' "${ROOT}/framework_patch/src/services/com/zui/server/control/AppPolicyStore.java" || fail 'unified owner missing'
 )
 
 test_log_directory_reuse() (
@@ -464,27 +419,37 @@ test_config_publication_failure_is_terminal_and_recoverable() (
     . "$DAEMON"
     setup_state
     trap 'rm -rf "$TEST_ROOT"' EXIT
-
     TEST_REQUEST='publish-fail|set_uperf_mode|||performance'
-    TEST_CONFIG_PUT_FAILURES=1
     LAST_SETTINGS_REQUEST=
     LAST_COMPLETED_REQUEST_ID=
     TERMINAL_ACK_PENDING=0
+    if process_settings_request; then fail 'legacy request returned success'; fi
+    [ "$TEST_ACK" = 'publish-fail|failed|set_uperf_mode|unified_policy_generation_required' ] || fail 'rejection ACK mismatch'
+    [ "$(tr -d '\r\n ' < "$UPERF_MODE")" = balance ] || fail 'legacy saved mode mutated'
+    process_settings_request || fail 'failed receipt did not deduplicate'
+    [ "$TEST_CONFIG_PUTS" -eq 0 ] || fail 'rejected writer published configuration'
+)
 
-    if process_settings_request; then fail 'Settings publication failure returned success'; fi
-    [ "$TEST_ACK" = 'publish-fail|failed|set_uperf_mode|settings_publish_failed' ] ||
-        fail 'Settings publication failure ACK mismatch'
-    [ "$(tr -d '\r\n ' < "$UPERF_MODE")" = performance ] ||
-        fail 'durable mode was lost after publication failure'
-    [ "$UPERF_MODE_DIRTY" -eq 1 ] || fail 'failed publication was not left pending'
-
-    process_settings_request || fail 'terminal failed receipt did not deduplicate'
-    [ "$TEST_CONFIG_PUTS" -eq 1 ] || fail 'duplicate failed request retried its action'
-
-    publish_uperf_mode_state || fail 'pending mode publication did not recover'
-    [ "$UPERF_MODE_DIRTY" -eq 0 ] || fail 'recovered publication remained dirty'
-    [ "$TEST_MODE_STATE" = performance ] || fail 'recovered publication used the wrong mode'
-    publish_uperf_rules_state || fail 'startup rules publication did not succeed'
+test_qualified_import_routing() (
+    ZUI_CONTROLD_TEST_MODE=1
+    export ZUI_CONTROLD_TEST_MODE
+    . "$DAEMON"
+    setup_state
+    trap 'rm -rf "$TEST_ROOT"' EXIT
+    policy_command() { printf '%s|%s\n' "$1" "$2"; }
+    handle_command ui_begin tx '100:hash:7' || fail import_begin
+    [ "$REQUEST_RESULT_DETAIL" = 'ui_begin|tx:100:hash:7' ] || fail import_CAS_forwarding
+    handle_command ui_chunk 'tx:0' 'YQ==' || fail import_chunk
+    [ "$REQUEST_RESULT_DETAIL" = 'ui_chunk|tx:0:YQ==' ] || fail chunk_forwarding
+    handle_command ui_commit tx '' || fail import_commit
+    [ "$REQUEST_RESULT_DETAIL" = 'ui_commit|tx:' ] || fail commit_identity
+    handle_command ui_reset '' 7 || fail factory_reset
+    [ "$REQUEST_RESULT_DETAIL" = 'ui_reset|7' ] || fail reset_CAS
+    handle_command ui_state '' '' || fail import_state
+    [ "$REQUEST_RESULT_DETAIL" = 'ui_state|-' ] || fail state_read_only
+    policy_command() { return 1; }
+    if handle_command ui_commit tx ''; then fail failed_import_ACK; fi
+    [ "$REQUEST_RESULT_DETAIL" = uperf_import_failed_query_selection ] || fail import_recovery_hint
 )
 
 test_timing_phase_sequence() (
@@ -844,12 +809,60 @@ test_oneshot_failure_windows() (
     done
 )
 
+test_prepare_retains_legacy_and_resumes_virgin_seed() (
+    ZUI_CONTROLD_TEST_MODE=1
+    export ZUI_CONTROLD_TEST_MODE
+    . "$DAEMON"
+    setup_state
+    trap 'rm -rf "$TEST_ROOT"' EXIT
+    export TEST_ROOT
+    settings() {
+        case "$1" in
+            get) if [ -f "$TEST_ROOT/setting-$3" ]; then cat "$TEST_ROOT/setting-$3"; else printf 'null\n'; fi ;;
+            put) printf '%s\n' "$4" > "$TEST_ROOT/setting-$3" ;;
+            *) return 2 ;;
+        esac
+    }
+    restorecon_recursive() { :; }
+    sync() { :; } # Filesystem durability is a separate production AtomicFile/native gate.
+    fake_app_process() { printf '%s\n' "$*" >> "$TEST_ROOT/calls"; }
+    export -f settings restorecon_recursive sync fake_app_process
+    sed -e "s|^DATA_ROOT=.*|DATA_ROOT=\"$DATA_ROOT\"|" \
+        -e "s|^SYSTEM_PERAPP=.*|SYSTEM_PERAPP=\"$DEFAULT_PERAPP\"|" \
+        -e 's|/system/bin/app_process|fake_app_process|g' "$SCHEDULER_PREPARE" > "$TEST_ROOT/prepare.sh"
+    printf 'fast\n' > "$TEST_ROOT/setting-zui_control_uperf_mode"
+    printf 'unexplained|balance\n' > "$TEST_ROOT/setting-zui_control_uperf_rules_text"
+    before="$(cksum "$UPERF_MODE" "$UPERF_PERAPP")"
+    bash "$TEST_ROOT/prepare.sh" powersave || fail prepare_existing
+    [ "$(cat "$TEST_ROOT/setting-zui_control_uperf_mode")" = fast ] || fail legacy_Settings_overwritten
+    [ "$(cat "$TEST_ROOT/setting-zui_control_uperf_rules_text")" = 'unexplained|balance' ] || fail legacy_rules_overwritten
+    [ "$before" = "$(cksum "$UPERF_MODE" "$UPERF_PERAPP")" ] || fail legacy_bytes_rewritten
+    # Separate virgin store; the durable seed marker authorizes only exact factory seeds.
+    virgin="$TEST_ROOT/virgin"
+    sed "s|^DATA_ROOT=.*|DATA_ROOT=\"$virgin\"|" "$TEST_ROOT/prepare.sh" > "$TEST_ROOT/virgin.sh"
+    printf 'null\n' > "$TEST_ROOT/setting-zui_control_uperf_mode"
+    printf 'null\n' > "$TEST_ROOT/setting-zui_control_uperf_rules_text"
+    bash "$TEST_ROOT/virgin.sh" || fail virgin_seed
+    [ "$(cat "$TEST_ROOT/setting-zui_control_uperf_mode")" = balance ] || fail initial_projection
+    [ -s "$virgin/uperf/.policy_factory_seed" ] || fail missing_seed_receipt
+    # Model interruption after seed files but before either Settings publication.
+    printf 'null\n' > "$TEST_ROOT/setting-zui_control_uperf_mode"
+    printf 'null\n' > "$TEST_ROOT/setting-zui_control_uperf_rules_text"
+    bash "$TEST_ROOT/virgin.sh" || fail interrupted_seed_recovery
+    [ "$(cat "$TEST_ROOT/setting-zui_control_uperf_mode")" = balance ] || fail recovered_projection
+    cmp "$virgin/uperf/perapp_powermode.txt" "$DEFAULT_PERAPP" || fail recovered_seed_bytes
+    printf '\n' > "$virgin/uperf/cur_powermode.txt"
+    if bash "$TEST_ROOT/virgin.sh"; then fail malformed_global_silently_repaired; fi
+    [ "$(wc -c < "$virgin/uperf/cur_powermode.txt")" -eq 1 ] || fail malformed_evidence_changed
+)
+
 assert_default_policy
 assert_event_transport_policy
 assert_command_wakeup_policy
 assert_receipt_dac_policy
 assert_timing_policy
 assert_oem_fence_ownership_policy
+test_prepare_retains_legacy_and_resumes_virgin_seed
 test_noarg_entrypoint_is_closed
 test_control_plane_does_not_write_effective
 test_custom_app_lifecycle
@@ -857,6 +870,7 @@ test_rules_publication_bytes_and_failure
 test_log_directory_reuse
 test_minimal_request_and_receipt
 test_config_publication_failure_is_terminal_and_recoverable
+test_qualified_import_routing
 test_timing_phase_sequence
 test_terminal_request_dedup_and_recovery
 test_new_request_survives_old_receipt_on_restart

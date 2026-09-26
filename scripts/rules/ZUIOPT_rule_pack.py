@@ -314,12 +314,97 @@ class Store:
             if GEN.fullmatch(p.name) and p.name not in keep:
                 need(not p.is_symlink() and p.resolve().parent==root,'unsafe generation cleanup');shutil.rmtree(p)
 
+
+NORMALIZER_VERSION = 'schema2-1'
+RECOGNIZED_RECOVERED_SHA = 'c83f951ae67e9ec2ae64dbc0c7c07c03b83d8b163ca6378d09be4787c128a24b'
+
+def normalize_source(data, kind):
+    """Static parsers only. Neither scripts nor imported binaries are executed."""
+    need(0 < len(data) <= MAX_PACK, 'source bound')
+    if kind == 'canonical': result = data
+    elif kind == 'appopt': result = unpack(appopt(data.decode('ascii'), 'normalized'))[1]
+    elif kind == 'recovered-csv':
+        from ZUIOPT_convert_legacy_rules import convert
+        # Reuse the qualified recovered CSV grammar; later recoveries must declare selectors.
+        if digest(data) != RECOGNIZED_RECOVERED_SHA:
+            columns=next(csv.reader(io.StringIO(data.decode('utf-8'))),[])
+            need(len(columns)==len(set(columns)) and set(columns)=={'package','group','affinity_mask','static_confidence','thread_pattern','thread_priority','thread_match_type','declaration_status','selector'},'recovered CSV schema')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'recovered.csv'; path.write_bytes(data)
+            result = convert(path, expected_counts=(27,316) if digest(data)==RECOGNIZED_RECOVERED_SHA else None,
+                             require_selectors=digest(data)!=RECOGNIZED_RECOVERED_SHA)[0].encode('ascii')
+    else: raise ValueError('unknown source format')
+    return dump_rules(parse_rules(result))
+
+def semantic_rows(config):
+    # Profile/group aliases do not grant precedence. Order, rank, masks and selectors do.
+    result = {}
+    for kind, pattern, alias, priority in config['packages']:
+        p=config['profiles'][alias]
+        semantic=(p['mask'],tuple(tuple(r[1:]) for r in p['rules']),priority)
+        result[(kind,pattern)]=(semantic,(kind,pattern,alias,priority))
+    return result
+
+def compare_canonical(old, source, kind):
+    new=normalize_source(source,kind);a=parse_rules(old);b=parse_rules(new)
+    left,right=semantic_rows(a),semantic_rows(b);conflicts=[]
+    if a['enabled']!=b['enabled']: conflicts.append(dict(type='enabled',old=a['enabled'],new=b['enabled']))
+    for ka,(sa,ra) in left.items():
+        for kb,(sb,rb) in right.items():
+            if ka==kb:
+                if sa!=sb: conflicts.append(dict(type='definition',old=ra,new=rb,oldSemantics=sa,newSemantics=sb))
+            elif overlaps(ra,rb):
+                conflicts.append(dict(type='overlap',old=ra,new=rb,oldSemantics=sa,newSemantics=sb))
+            elif ra[3]==rb[3]:
+                # Schema 2 forbids duplicate priorities. Never silently recompute matching ranks.
+                conflicts.append(dict(type='priority',old=ra,new=rb,oldSemantics=sa,newSemantics=sb))
+    return new,dict(conflicts=conflicts,added=[list(k) for k in right if k not in left],
+                    removed=[list(k) for k in left if k not in right],oldEnabled=a['enabled'],newEnabled=b['enabled'])
+
+def canonical_workflow(old,source,kind,choice,workflow,evidence_hash):
+    need(choice in ('Clean','Old','New','Compare'),'output choice')
+    need(isinstance(workflow,str) and 0<len(workflow)<=128,'workflow repo/commit/run')
+    need(re.fullmatch('[0-9a-f]{64}',evidence_hash),'qualification evidence hash')
+    old=normalize_source(old,'canonical');new,comparison=compare_canonical(old,source,kind)
+    if choice=='Compare': return None,comparison
+    need(choice!='Clean' or not comparison['conflicts'],'Clean has conflicts: choose Old/New')
+    a,b=parse_rules(old),parse_rules(new);left,right=semantic_rows(a),semantic_rows(b)
+    drop_left=set();drop_right=set()
+    for conflict in comparison['conflicts']:
+        if conflict['type']=='enabled': continue
+        (drop_left if choice=='New' else drop_right).add(tuple(conflict['old' if choice=='New' else 'new'][:2]))
+    result=dict(enabled=b['enabled'] if choice=='New' else a['enabled'],debug=False,profiles={},packages=[])
+    seen=set()
+    for side,config,excluded in (('O',a,drop_left),('N',b,drop_right)):
+        for row in config['packages']:
+            key=tuple(row[:2])
+            if key in excluded or key in seen: continue
+            seen.add(key);alias=side+str(list(config['profiles']).index(row[2]))
+            result['profiles'][alias]=config['profiles'][row[2]]
+            result['packages'].append((row[0],row[1],alias,row[3]))
+    output=dump_rules(result)
+    manifest=dict(schemaVersion=2,oldCanonicalHash=digest(old),newSourceHash=digest(source),
+        normalizerVersion=NORMALIZER_VERSION,outputChoice=choice,outputCanonicalHash=digest(output),
+        conflictListHash=digest(json.dumps(comparison,sort_keys=True,separators=(',',':')).encode()),
+        engineSchema=2,targetSoC='sm8650',workflowRepoCommitRun=workflow,qualificationEvidenceHash=evidence_hash)
+    out=io.BytesIO()
+    with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_STORED) as z:
+        for name,data in [('manifest.json',json.dumps(manifest,sort_keys=True,separators=(',',':')).encode('ascii')),('rules.conf',output)]:
+            info=zipfile.ZipInfo(name,(1980,1,1,0,0,0));info.external_attr=(stat.S_IFREG|0o600)<<16;z.writestr(info,data)
+    need(len(out.getvalue())<=MAX_PACK,'workflow package bound')
+    return out.getvalue(),comparison
+
 def main():
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='command',required=True)
     a=sub.add_parser('appopt');a.add_argument('input',type=Path);a.add_argument('output',type=Path);a.add_argument('--pack-id',required=True);a.add_argument('--priority',type=int,default=0)
     a=sub.add_parser('check');a.add_argument('input',type=Path)
     a=sub.add_parser('store');a.add_argument('root',type=Path);a.add_argument('factory',type=Path);a.add_argument('action',choices=['init','import','enable','disable','user','rollback']);a.add_argument('--input',type=Path);a.add_argument('--pack-id')
+    a=sub.add_parser('canonical');a.add_argument('old',type=Path);a.add_argument('input',type=Path);a.add_argument('output',type=Path);a.add_argument('--format',choices=['canonical','appopt','recovered-csv'],required=True);a.add_argument('--choice',choices=['Clean','Old','New','Compare'],required=True);a.add_argument('--workflow',required=True);a.add_argument('--evidence-hash',required=True)
     args=p.parse_args()
+    if args.command=='canonical':
+        result,diff=canonical_workflow(read_bounded(args.old,MAX_RULES),read_bounded(args.input,MAX_PACK),args.format,args.choice,args.workflow,args.evidence_hash)
+        args.output.write_bytes(result if result is not None else (json.dumps(diff,indent=2)+'\n').encode())
+        return
     if args.command=='appopt': args.output.write_bytes(appopt(read_bounded(args.input,MAX_RULES).decode('ascii'),args.pack_id,args.priority))
     elif args.command=='check': print(json.dumps(unpack(read_bounded(args.input,MAX_PACK))[0],sort_keys=True))
     else:

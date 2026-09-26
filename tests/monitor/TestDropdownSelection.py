@@ -68,7 +68,7 @@ fun main() {
     }
     gpuOverrides[pkg]=GpuRanges.Range(422,903)
     picker.choices().click(0)
-    check((gpuEditor.tag as GpuRangeBar).range==GpuRanges.Range(422,903))
+    check((gpuEditor.tag as GpuRangeBar).range==globalGpuRange(UperfMode.POWERSAVE))
     println("DROPDOWN_BEHAVIOR=PASS; REFRESH_SAVE=NEW_SELECTION; UPERF_SAVE=NEW_SELECTION; GPU_PREVIEW=PASS; PLATFORM_SELECTION_CALLS=0")
 }
 '''.replace('@REFRESH_SAVE@',refresh).replace('@UPERF_SAVE@',uperf).replace('@PREVIEW@',preview)

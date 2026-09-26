@@ -37,6 +37,31 @@ def selected_mode(interactive: bool, scene: str, global_mode: str,
     return rules.get(scene, global_mode)
 
 
+class QualifiedConfigTests(unittest.TestCase):
+    def test_production_validator_and_selection(self):
+        base=REPO/'framework_patch/src/services/com/zui/server/control'
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(['javac','-encoding','UTF-8','-d',tmp,
+                *[str(base/name) for name in ('PolicyJson.java','GpuRange.java','AppPolicyStore.java','UperfConfigStore.java')],
+                str(REPO/'tests/uperf/architecture/UperfConfigFixture.java')],check=True)
+            subprocess.run(['java','-cp',tmp,'com.zui.server.control.UperfConfigFixture',str(CONFIG)],check=True)
+
+    def test_deterministic_qualified_container(self):
+        sys.path.insert(0,str(REPO/'scripts/build'))
+        from ImportUperfUpstream import config_only_package,sha256_bytes
+        config=b'{"meta":{"name":"test"}}\n';evidence=b'{"test":true}\n'
+        manifest=dict(payloadHash=sha256_bytes(config),workflow=dict(qualificationEvidenceHash=sha256_bytes(evidence)))
+        first=config_only_package(manifest,config,evidence)
+        self.assertEqual(first,config_only_package(manifest,config,evidence))
+        import io
+        with zipfile.ZipFile(io.BytesIO(first)) as archive:
+            self.assertEqual(archive.namelist(),['manifest.json','config.json','evidence.json'])
+            for entry in archive.infolist():
+                self.assertEqual(entry.date_time,(1980,1,1,0,0,0));self.assertEqual(entry.external_attr>>16,0o100600)
+        for bad in (b'{"a":1,"a":2}',b'{"a":NaN}'):
+            with self.assertRaises(ValueError): config_only_package(manifest,bad,evidence)
+
+
 class ScenePolicyTests(unittest.TestCase):
     RULES = {"game.fast": "fast", "game.perf": "performance"}
 
@@ -64,8 +89,10 @@ class ScenePolicyTests(unittest.TestCase):
     def test_08_qs_does_not_replace_top_resumed(self):
         self.assertEqual(selected_mode(True, "game.fast", "balance", self.RULES), "fast")
 
-    def test_09_zuicontrol_top_resumed_is_global(self):
+    def test_09_zuicontrol_uses_explicit_row_or_inherits_global(self):
         self.assertEqual(selected_mode(True, "com.zui.zuicontrol", "balance", self.RULES), "balance")
+        explicit = {**self.RULES, "com.zui.zuicontrol": "performance"}
+        self.assertEqual(selected_mode(True, "com.zui.zuicontrol", "balance", explicit), "performance")
 
     def test_10_freeform_active_game(self):
         self.assertEqual(selected_mode(True, "game.fast", "balance", self.RULES), "fast")

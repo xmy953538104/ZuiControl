@@ -17,39 +17,27 @@ valid_preset() {
 }
 
 mkdir -p "$UPERF_DIR" || exit 1
-cp "$SYSTEM_UPERF" "$UPERF_DIR/uperf.json.tmp" || exit 1
-chmod 0644 "$UPERF_DIR/uperf.json.tmp"
-mv -f "$UPERF_DIR/uperf.json.tmp" "$UPERF_DIR/uperf.json" || exit 1
-
-if [ ! -s "$GLOBAL_MODE" ]; then
+# Persist the virgin-store seed intent before either legacy-compatible seed write.
+# A power loss between those writes and Settings publication must be resumable.
+SEED_INTENT=$UPERF_DIR/.policy_factory_seed
+if [ ! -e "$GLOBAL_MODE" ] && [ ! -e "$PERAPP" ] && [ ! -e "$SEED_INTENT" ]; then
+    (umask 077; sha256sum "$SYSTEM_PERAPP" > "$SEED_INTENT.tmp") || exit 1
+    sync "$SEED_INTENT.tmp" || exit 1
+    mv "$SEED_INTENT.tmp" "$SEED_INTENT" || exit 1
+    sync "$UPERF_DIR" || exit 1
+fi
+if [ ! -e "$GLOBAL_MODE" ]; then
     printf 'balance\n' > "$GLOBAL_MODE" || exit 1
 fi
 global_mode="$(tr -d '\r\n ' < "$GLOBAL_MODE")"
 if ! valid_preset "$global_mode"; then
-    global_mode=balance
-    printf 'balance\n' > "$GLOBAL_MODE" || exit 1
+    echo "legacy saved Uperf invalid; preserve for recovery" >&2
+    exit 1
 fi
 
-if [ ! -s "$PERAPP" ]; then
+if [ ! -e "$PERAPP" ]; then
     cp "$SYSTEM_PERAPP" "$PERAPP" || exit 1
 fi
-awk '
-    function valid(mode) {
-        return mode == "powersave" || mode == "balance" ||
-            mode == "performance" || mode == "fast"
-    }
-    NF == 2 && $1 == "-" && valid($2) {
-        if (!screen) print "- " $2
-        screen=1
-        next
-    }
-    NF == 2 && $1 != "*" && $1 ~ /^[A-Za-z0-9_.]+$/ && valid($2) {
-        print $1 " " $2
-    }
-    END { if (!screen) print "- powersave" }
-' "$PERAPP" > "$PERAPP.tmp" || exit 1
-mv -f "$PERAPP.tmp" "$PERAPP" || exit 1
-
 property_mode="${1:-}"
 if valid_preset "$property_mode"; then
     effective_mode="$property_mode"
@@ -60,32 +48,26 @@ printf '%s\n' "$effective_mode" > "$EFFECTIVE_MODE.tmp" || exit 1
 chmod 0644 "$EFFECTIVE_MODE.tmp"
 mv -f "$EFFECTIVE_MODE.tmp" "$EFFECTIVE_MODE" || exit 1
 
-chmod 0644 "$UPERF_DIR/uperf.json" "$GLOBAL_MODE" "$EFFECTIVE_MODE" \
-    "$PERAPP"
+chmod 0644 "$EFFECTIVE_MODE"
 restorecon_recursive "$DATA_ROOT" >/dev/null 2>&1 || true
 
-# system_server consumes these Settings values through its existing observers.
-# Publish once during boot/restart preparation; no resident health publisher exists.
-settings put system zui_control_uperf_mode "$global_mode" >/dev/null 2>&1 || true
-rules_text="$(awk '
-    NF == 2 && $1 != "-" && $1 != "*" {
-        if (length(out)) out=out "\n"
-        out=out $1 "|" $2
-    }
-    END {print out}
-' "$PERAPP")"
-settings put system zui_control_uperf_rules_text "$rules_text" >/dev/null 2>&1 || true
-
-# One-release migration cleanup: no retired scheduler remains active or visible.
-rm -rf "$DATA_ROOT/appopt" "$DATA_ROOT/zuipp" \
-    "$DATA_ROOT/performance" "$DATA_ROOT/refresh"
-rm -f "$DATA_ROOT/safecenter_keepalive_backup.flag" \
-    "$DATA_ROOT/safecenter_keepalive_done.flag" \
-    "$LOG_DIR/safecenter_keepalive.log" \
-    "$UPERF_DIR/.auto_mode_v46" \
-    "$UPERF_DIR/.rom_frontend_v47"
-for key in zui_control_performance_profiles_text zui_control_performance_summary \
-    zui_control_zuipp_reload_state zui_control_appopt_rules_text zui_control_xml_state; do
-    settings delete system "$key" >/dev/null 2>&1 || true
-done
+seed_recovery=0
+if [ -f "$SEED_INTENT" ] && [ "$global_mode" = balance ] && cmp -s "$PERAPP" "$SYSTEM_PERAPP"; then
+    if [ "$(cat "$SEED_INTENT")" = "$(sha256sum "$SYSTEM_PERAPP")" ]; then seed_recovery=1; fi
+fi
+# Legacy Settings are bootstrap projections only. Cutover freezes legacy persistent files.
+if [ ! -f "$UPERF_DIR/policy-projection/active.json" ]; then
+    # Seed projections only with newly created factory stores. Existing Settings
+    # must reach the strict migration comparison unchanged, including disagreements.
+    if [ "$seed_recovery" = 1 ] && [ "$(settings get system zui_control_uperf_mode)" = null ]; then
+        settings put system zui_control_uperf_mode "$global_mode" >/dev/null 2>&1 || exit 1
+    fi
+    rules_text="$(awk 'NF == 2 && $1 != "-" && $1 != "*" {if(length(out))out=out "\n";out=out $1 "|" $2} END {print out}' "$PERAPP")"
+    if [ "$seed_recovery" = 1 ] && [ "$(settings get system zui_control_uperf_rules_text)" = null ]; then
+        settings put system zui_control_uperf_rules_text "$rules_text" >/dev/null 2>&1 || exit 1
+    fi
+fi
+CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand bootstrap - || exit 1
+CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand uperf-startup - || exit 1
+# No legacy store, failed receipt or imported artifact is retired in this migration.
 exit 0

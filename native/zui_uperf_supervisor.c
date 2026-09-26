@@ -482,6 +482,42 @@ static int wait_for_tree(void) {
     }
 }
 
+/* Finite selection receipt on startup only; no additional watchdog or poller. */
+static bool import_startup_result(bool ready) {
+#ifdef __ANDROID__
+    pid_t helper = fork();
+    if (helper == 0) {
+        (void)setenv("CLASSPATH", "/system/framework/services.jar", 1);
+        execl("/system/bin/app_process", "app_process", "/system/bin",
+              "com.zui.server.control.PolicyCommand", ready ? "uperf-ready" : "uperf-failed",
+              "-", (char *)NULL);
+        _exit(127);
+    }
+    if (helper < 0) return false;
+    long long now, deadline;
+    if (monotonic_millis(&now) < 0) now = 0;
+    deadline = now + 5000;
+    for (;;) {
+        int status;
+        pid_t result = waitpid(helper, &status, WNOHANG);
+        if (result == helper) return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+        if (result < 0 && errno != EINTR) return false;
+        if (monotonic_millis(&now) < 0 || now >= deadline || sleep_until_millis(now + 50) < 0) break;
+    }
+    (void)kill(helper, SIGKILL);
+    while (waitpid(helper, NULL, 0) < 0 && errno == EINTR) { }
+    return false;
+#else
+    (void)ready;
+    return true;
+#endif
+}
+
+static int startup_failure(int status) {
+    (void)import_startup_result(false);
+    return status;
+}
+
 int main(int argc, char **argv) {
     const char *binary;
     const char *config;
@@ -506,27 +542,27 @@ int main(int argc, char **argv) {
     sigemptyset(&action.sa_mask);
     if (sigaction(SIGUSR1, &action, NULL) < 0) {
         log_error("sigaction(SIGUSR1) failed: %s", strerror(errno));
-        return 70;
+        return startup_failure(70);
     }
     if (prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) < 0) {
         log_error("PR_SET_CHILD_SUBREAPER failed: %s", strerror(errno));
-        return 70;
+        return startup_failure(70);
     }
     if ((unlink(log_path) < 0 && errno != ENOENT) ||
             (unlink(ready_marker) < 0 && errno != ENOENT)) {
         log_error("stale runtime cleanup failed: %s", strerror(errno));
-        return 70;
+        return startup_failure(70);
     }
     if (pipe(exec_status) < 0 || set_cloexec(exec_status[0]) < 0 ||
             set_cloexec(exec_status[1]) < 0) {
         log_error("exec status pipe failed: %s", strerror(errno));
-        return 70;
+        return startup_failure(70);
     }
 
     child = fork();
     if (child < 0) {
         log_error("fork failed: %s", strerror(errno));
-        return 70;
+        return startup_failure(70);
     }
     if (child == 0) {
         int saved_errno;
@@ -545,26 +581,27 @@ int main(int argc, char **argv) {
     (void)close(exec_status[0]);
     if (exec_read < 0) {
         log_error("exec status read failed: %s", strerror(errno));
-        return 70;
+        return startup_failure(70);
     }
     if (exec_read == (ssize_t)sizeof(exec_errno)) {
         log_error("ZUI_UPERF_SUPERVISOR_EXEC_FAILED detail=%d: exec %s failed: %s",
                 exec_errno, binary, strerror(exec_errno));
         while (waitpid(-1, NULL, 0) < 0 && errno == EINTR) {
         }
-        return 127;
+        return startup_failure(127);
     }
     if (exec_read != 0) {
         log_error("exec status protocol failed");
-        return 70;
+        return startup_failure(70);
     }
 
     if (wait_for_startup(log_path) < 0) {
-        return 1;
+        return startup_failure(1);
     }
     if (publish_ready_marker(ready_marker) < 0) {
         log_error("ready marker publish failed for %s: %s", ready_marker, strerror(errno));
-        return 1;
+        return startup_failure(1);
     }
+    if (!import_startup_result(true)) return startup_failure(70);
     return wait_for_tree();
 }

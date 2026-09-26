@@ -14,9 +14,9 @@ final class GpuRange {
         throw new IllegalArgumentException("Unsupported GPU OPP: " + mhz);
     }
     static GpuRange defaults(String mode) {
-        if ("powersave".equals(mode)) return new GpuRange(231,422);
-        if ("balance".equals(mode)) return new GpuRange(231,629);
-        if ("performance".equals(mode)) return new GpuRange(231,903);
+        if ("powersave".equals(mode)) return new GpuRange(231,366);
+        if ("balance".equals(mode)) return new GpuRange(231,578);
+        if ("performance".equals(mode)) return new GpuRange(422,903);
         if ("fast".equals(mode)) return new GpuRange(629,903);
         throw new IllegalArgumentException("Unknown performance mode");
     }

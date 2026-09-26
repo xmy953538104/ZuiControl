@@ -64,7 +64,14 @@ public:
         closedir(dir);require(error==0,"directory enumeration read");return result;
     }
 };
-struct RuleState {std::map<std::string,Pack> packs;std::set<std::string> enabled;std::string user="schema 2\nenabled true\n",effective,transaction;};
+// This receipt is emitted only after the existing engine has accepted and reconciled a config.
+// It adds no timer, process scan, scheduling decision or new runtime owner.
+inline void recordLoadedGeneration(const std::string& root,const std::string& bytes) noexcept {
+    try{PrivateDir d(root);d.put("loaded-generation.v2",generationOf(bytes)+":"+
+        trim(read("/proc/sys/kernel/random/boot_id"))+":"+std::to_string(getpid())+":"+
+        std::to_string(identity(getpid()).start)+":"+sha256(bytes)+"\n");}catch(...){}
+}
+struct RuleState {std::map<std::string,Pack> packs;std::set<std::string> enabled;std::string user="schema 2\nenabled true\n",effective,transaction,provenance,source;bool canonical=false;};
 inline std::string base64(const std::string& s){
     const std::string alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";std::string out;
     for(size_t i=0;i<s.size();i+=3){uint32_t n=uint32_t(static_cast<unsigned char>(s[i]))<<16;if(i+1<s.size())n|=uint32_t(static_cast<unsigned char>(s[i+1]))<<8;if(i+2<s.size())n|=static_cast<unsigned char>(s[i+2]);out+=alphabet[n>>18];out+=alphabet[(n>>12)&63];out+=i+1<s.size()?alphabet[(n>>6)&63]:'=';out+=i+2<s.size()?alphabet[n&63]:'=';}return out;
@@ -80,53 +87,67 @@ inline std::vector<std::string> fields(const std::string& text,char delimiter){s
 
 class RuleStore {
     PrivateDir root,generations;int lockFd=-1;std::string factory,factorySha;
-    void dropGeneration(const std::string& id){
-        require(generationId(id),"cleanup generation ID");PrivateDir d(generations,id);
-        for(const auto& name:d.names()){
-            if(name=="imported_packs"){PrivateDir packs(d,name);for(const auto& p:packs.names()){require((p.size()>4&&packId(p.substr(0,p.size()-4))&&p.substr(p.size()-4)==".zip")||rx(p,"tmp-[0-9a-f]{24}"),"pack cleanup name");packs.remove(p);}require(unlinkat(d.fd,name.c_str(),AT_REMOVEDIR)==0,"pack directory cleanup");}
-            else {require(name=="user_rules.conf"||name=="pack_state.conf"||name=="last_good.conf"||name=="effective.conf"||rx(name,"tmp-[0-9a-f]{24}"),"generation cleanup name");d.remove(name);}
-        }require(unlinkat(generations.fd,id.c_str(),AT_REMOVEDIR)==0,"generation cleanup");generations.sync();
-    }
-    void prune(const RuleState& current){
-        std::set<std::string> keep;
-        if(!current.effective.empty()){auto id=generationOf(current.effective);keep.insert(id);PrivateDir d(generations,id);auto old=d.get("last_good.conf",RULE_LIMIT);if(!old.empty())keep.insert(generationOf(old));}
-        for(const auto& id:generations.names()){require(generationId(id),"unknown generation entry");if(!keep.count(id))dropGeneration(id);}
-        for(const auto& name:root.names())if(rx(name,"tmp-[0-9a-f]{24}"))root.remove(name);
-    }
     RuleState load(const std::string& effective){
         RuleState state;if(effective.empty())return state;rules(effective);auto id=generationOf(effective);PrivateDir d(generations,id);
         require(d.get("effective.conf",RULE_LIMIT)==effective,"generation commit content");state.effective=effective;
+        if(d.exists("canonical_state.v2")){
+            auto meta=fields(d.get("canonical_state.v2",2048),'\n');
+            require(meta.size()==9&&meta[0]=="ZUIOPT_CANONICAL_STATE_V2"&&meta[1]==id
+                &&hex(meta[2],24)&&hex(meta[3],64)&&meta[4]=="schema2-1"
+                &&hex(meta[5],64)&&(meta[6]=="none"||generationId(meta[6]))&&hex(meta[7],64)&&meta[8].empty(),"canonical metadata");
+            state.user=dumpRules(rules(effective));state.canonical=true;state.transaction=meta[2];
+            state.provenance=d.get("provenance.txt",16384);state.source=d.get("source.bin",PACK_LIMIT);require(sha256(state.source)==meta[7],"canonical source digest");
+            require(sha256(state.user)==meta[3]&&sha256(state.provenance)==meta[5],"canonical digest");
+            auto previous=d.get("last_good.conf",RULE_LIMIT);
+            require((previous.empty()?"none":generationOf(previous))==meta[6],"canonical previous generation");
+            return state;
+        }
         auto metadata=d.get("pack_state.conf",8192);auto rows=fields(metadata,'\n');require(rows.size()>=5&&rows[0]=="ZUIOPT_RULE_STATE_V1"&&rows.back().empty(),"state header");
-        require(rows[1]=="factory "+factorySha,"factory migration required");
+        auto legacyFactory=root.get("migration_factory.conf",RULE_LIMIT,true);if(legacyFactory.empty())legacyFactory=factory;
+        require(rows[1]=="factory "+sha256(legacyFactory),"factory migration required");
         auto tx=fields(rows[2],' '),user=fields(rows[3],' ');require(tx.size()==2&&hex(tx[1],24)&&user.size()==2&&hex(user[1],64),"state identity");state.transaction=tx[1];
         state.user=d.get("user_rules.conf",RULE_LIMIT);require(sha256(state.user)==user[1],"stored user digest");rules(state.user);PrivateDir packs(d,"imported_packs");
         for(size_t i=4;i+1<rows.size();i++){auto p=fields(rows[i],' ');require(p.size()==4&&p[0]=="pack"&&packId(p[1])&&(p[2]=="0"||p[2]=="1")&&hex(p[3],64)&&!state.packs.count(p[1])&&state.packs.size()<PACK_COUNT,"stored pack state");
             auto data=packs.get(p[1]+".zip",PACK_LIMIT);require(sha256(data)==p[3],"stored archive digest");auto pack=unpackPack(data);require(pack.manifest.at("pack_id").text==p[1],"stored pack ID");state.packs.emplace(p[1],std::move(pack));if(p[2]=="1")state.enabled.insert(p[1]);}
         std::vector<Pack> selected;for(const auto& p:state.enabled)selected.push_back(state.packs.at(p));
-        require(effective=="# ZUIOPT_GENERATION "+id+"\n"+mergeRules(factory,selected,state.user),"stored effective derivation");return state;
+        require(effective=="# ZUIOPT_GENERATION "+id+"\n"+mergeRules(legacyFactory,selected,state.user),"stored effective derivation");return state;
     }
-    std::string commit(RuleState state,const std::string& transaction){
-        require(hex(transaction,24)&&state.packs.size()<=PACK_COUNT,"commit bounds");std::vector<Pack> selected;for(const auto& id:state.enabled)selected.push_back(state.packs.at(id));
-        auto merged=mergeRules(factory,selected,state.user);std::string id='g'+randomId();auto effective="# ZUIOPT_GENERATION "+id+"\n"+merged;rules(effective);
-        prune(current());require(!generations.exists(id),"generation collision");PrivateDir d(generations,id,true);PrivateDir packs(d,"imported_packs",true);
-        std::ostringstream meta;meta<<"ZUIOPT_RULE_STATE_V1\nfactory "<<factorySha<<"\ntransaction "<<transaction<<"\nuser "<<sha256(state.user)<<'\n';
-        for(const auto& [name,pack]:state.packs){packs.put(name+".zip",pack.archive,true);meta<<"pack "<<name<<' '<<state.enabled.count(name)<<' '<<sha256(pack.archive)<<'\n';}
-        packs.sync();d.put("user_rules.conf",state.user,true);d.put("last_good.conf",state.effective,true);d.put("pack_state.conf",meta.str(),true);d.put("effective.conf",effective,true);d.sync();generations.sync();
+    std::string commit(RuleState state,const std::string& transaction,const std::string& expected){
+        require(hex(transaction,24),"commit transaction");
+        const auto active=root.get("effective.conf",RULE_LIMIT,true);
+        require((active.empty()?"none":generationOf(active))==expected&&active==state.effective,"generation conflict");
+        auto canonical=dumpRules(rules(state.user));std::string id='g'+randomId();
+        auto effective="# ZUIOPT_GENERATION "+id+"\n"+canonical;rules(effective);
+        require(!generations.exists(id),"generation collision");PrivateDir d(generations,id,true);
+        // Retain every legacy generation and failed prepared generation. Retention is a separate owner action.
+        std::string provenance=state.provenance;
+        if(provenance.empty())provenance="source=canonical\n";
+        if(state.source.empty())state.source=state.user;
+        const auto metadata="ZUIOPT_CANONICAL_STATE_V2\n"+id+"\n"+transaction+"\n"+sha256(canonical)
+            +"\nschema2-1\n"+sha256(provenance)+"\n"+expected+"\n"+sha256(state.source)+"\n";
+        d.put("source.bin",state.source,true);d.put("last_good.conf",active,true);d.put("provenance.txt",provenance,true);
+        d.put("canonical_state.v2",metadata,true);d.put("effective.conf",effective,true);d.sync();generations.sync();
 #ifdef ZUIOPT_TEST
         if(testBeforeCommit)throw std::runtime_error("injected before commit");
 #endif
-        root.put("effective.conf",effective); // Rename linearizes; a following fsync failure is indeterminate, not rollback.
+        // Rename is the sole commit point. A following fsync error is indeterminate; query exact bytes.
+        root.put("effective.conf",effective);
 #ifdef ZUIOPT_TEST
         if(testAfterCommit)throw std::runtime_error("injected after commit");
 #endif
-        try{prune(load(effective));}catch(...){ZUIOPT_NOTE("CLEANUP_DEFERRED","generation cleanup will retry before the next commit");}
-        return id;
+        require(root.get("effective.conf",RULE_LIMIT)==effective,"committed readback");return id;
     }
-    void clearUpload(){root.remove("upload.meta");root.remove("upload.bin");}
+    void clearUpload(){
+        // Preserve successful and failed input receipts; only the active transport slots are cleared.
+        auto meta=root.get("upload.meta",512,true);
+        if(!meta.empty()){auto f=fields(trim(meta),':');require(!f.empty()&&hex(f[0],24),"upload receipt identity");
+            PrivateDir receipts(root,"uploads",true);receipts.put(f[0]+".meta",meta);receipts.put(f[0]+".bin",root.get("upload.bin",PACK_LIMIT,true));}
+        root.remove("upload.meta");root.remove("upload.bin");
+    }
     std::vector<std::string> upload(const std::string& id){
         require(hex(id,24),"transaction ID");auto f=fields(trim(root.get("upload.meta",512)),':');
-        require(f.size()==8&&f[0]==id&&(f[1]=="pack"||f[1]=="user"||f[1]=="appopt")&&rx(f[2],"[0-9]{1,6}")&&number(f[2])>0&&number(f[2])<=static_cast<int>(f[1]=="pack"?PACK_LIMIT:RULE_LIMIT)&&hex(f[3],64)&&(f[4]=="-"||packId(f[4]))&&rx(f[5],"-?[0-9]{1,7}"),"upload metadata");
-        auto boot=trim(read("/proc/sys/kernel/random/boot_id"));require(f[6]==boot&&rx(f[7],"[0-9]{1,16}"),"expired upload boot");auto begun=std::stoll(f[7]);require(begun<=now()&&now()-begun<=600000,"expired upload window");return f;
+        require(f.size()==9&&f[0]==id&&(f[1]=="pack"||f[1]=="user"||f[1]=="appopt")&&rx(f[2],"[0-9]{1,6}")&&number(f[2])>0&&number(f[2])<=static_cast<int>(f[1]=="pack"?PACK_LIMIT:RULE_LIMIT)&&hex(f[3],64)&&(f[4]=="-"||packId(f[4]))&&rx(f[5],"-?[0-9]{1,7}"),"upload metadata");
+        auto boot=trim(read("/proc/sys/kernel/random/boot_id"));require(generationId(f[6])&&f[7]==boot&&rx(f[8],"[0-9]{1,16}"),"expired upload boot");auto begun=std::stoll(f[8]);require(begun<=now()&&now()-begun<=600000,"expired upload window");return f;
     }
 public:
 #ifdef ZUIOPT_TEST
@@ -139,21 +160,40 @@ public:
     }
     ~RuleStore(){if(lockFd>=0)close(lockFd);}
     RuleState current(){return load(root.get("effective.conf",RULE_LIMIT,true));}
-    void initialize(){if(!root.exists("effective.conf"))commit(RuleState{},randomId());else current();}
+    void initialize(){
+        auto s=current();if(s.canonical)return;
+        // load() above verifies exact V1 merge once. Its immutable inputs remain untouched.
+        s.provenance="migration=V1_to_V2\nfactory_sha256="+factorySha+"\nold_effective_sha256="+sha256(s.effective)+"\n";
+        if(s.effective.empty()){s.user=dumpRules(rules(factory));s.provenance+="source=factory_seed\n";}
+        else{
+            s.provenance+="legacy_generation="+generationOf(s.effective)+"\nuser_sha256="+sha256(s.user)+"\n";
+            for(const auto& [name,p]:s.packs)s.provenance+="pack="+name+"|"+sha256(p.archive)+"\n";
+            s.user=dumpRules(rules(s.effective));
+        }
+        // Snapshot factory bytes as well as its digest, even after a future ROM replacement.
+        if(!root.exists("migration_factory.conf"))root.put("migration_factory.conf",factory,true);
+        commit(s,randomId(),s.effective.empty()?"none":generationOf(s.effective));
+    }
     std::string state(){
         auto s=current();require(!s.effective.empty(),"store not initialized");std::ostringstream out;
-        out<<"generation="<<generationOf(s.effective)<<"\ntransaction="<<s.transaction<<"\nfactory_sha256="<<factorySha<<"\nuser_size="<<s.user.size()<<"\nuser_sha256="<<sha256(s.user)<<"\neffective_sha256="<<sha256(s.effective)<<'\n';
+        out<<"store_schema=ZUIOPT_CANONICAL_STATE_V2\ncanonical_sha256="<<sha256(s.user)<<"\nloaded_generation="<<trim(root.get("loaded-generation.v2",256,true))<<"\ngeneration="<<generationOf(s.effective)<<"\ntransaction="<<s.transaction<<"\nfactory_sha256="<<factorySha<<"\nuser_size="<<s.user.size()<<"\nuser_sha256="<<sha256(s.user)<<"\neffective_sha256="<<sha256(s.effective)<<'\n';
         for(const auto& [id,p]:s.packs)out<<"pack="<<id<<'|'<<p.manifest.at("pack_version").text<<'|'<<p.manifest.at("pack_priority").text<<'|'<<s.enabled.count(id)<<'|'<<p.manifest.at("source_type").text<<'\n';
         require(out.str().size()<=4096,"state response bound");return out.str();
+    }
+    bool loaded(){
+        auto effective=current().effective;auto receipt=fields(trim(root.get("loaded-generation.v2",256,true)),':');
+        if(receipt.size()!=5||receipt[0]!=generationOf(effective)||receipt[1]!=trim(read("/proc/sys/kernel/random/boot_id"))
+            ||!rx(receipt[2],"[0-9]{1,10}")||!rx(receipt[3],"[0-9]{1,20}")||receipt[4]!=sha256(effective))return false;
+        return identity(number(receipt[2])).start!=0&&std::to_string(identity(number(receipt[2])).start)==receipt[3];
     }
     std::string userChunk(const std::string& generation,const std::string& offsetText){
         require(rx(offsetText,"[0-9]{1,6}"),"read offset");size_t offset=number(offsetText);auto s=current();require(generationOf(s.effective)==generation&&offset<=s.user.size(),"state changed/read offset");
         return generation+":"+offsetText+":"+base64(s.user.substr(offset,8192));
     }
     std::string apply(const std::string& action,const std::string& id,const std::string& value){
-        auto s=current();require(!s.effective.empty(),"store not initialized");
+        auto s=current();require(s.canonical,"canonical migration required");
         if(action=="begin"){
-            require(hex(id,24),"upload ID");auto f=fields(value,':');require(f.size()==5&&(f[0]=="pack"||f[0]=="user"||f[0]=="appopt")&&rx(f[1],"[0-9]{1,6}")&&hex(f[2],64)&&(f[3]=="-"||packId(f[3]))&&rx(f[4],"-?[0-9]{1,7}"),"begin metadata");
+            require(hex(id,24),"upload ID");auto f=fields(value,':');require(f.size()==6&&generationId(f[5])&&f[5]==generationOf(s.effective)&&(f[0]=="pack"||f[0]=="user"||f[0]=="appopt")&&rx(f[1],"[0-9]{1,6}")&&hex(f[2],64)&&(f[3]=="-"||packId(f[3]))&&rx(f[4],"-?[0-9]{1,7}"),"begin metadata");
             int size=number(f[1]),priority=number(f[4]);require(size>0&&size<=static_cast<int>(f[0]=="pack"?PACK_LIMIT:RULE_LIMIT)&&priority>=-1000000&&priority<=1000000&&(f[0]!="appopt"||packId(f[3])),"begin bounds");
             if(root.exists("upload.meta")){auto old=fields(trim(root.get("upload.meta",512)),':');bool active=false;try{if(!old.empty()){upload(old[0]);active=true;}}catch(...){}
                 if(active){require(old[0]==id&&trim(root.get("upload.meta",512)).rfind(id+":"+value+":",0)==0,"upload busy");return "upload=resumed";}clearUpload();}
@@ -168,21 +208,21 @@ public:
         }
         if(action=="commit"){
             auto f=upload(id);std::string result;
-            try{auto data=root.get("upload.bin",PACK_LIMIT);require(data.size()==static_cast<size_t>(number(f[2]))&&sha256(data)==f[3],"upload length/SHA256");
-                if(f[1]=="user"){rules(data);s.user=data;}
-                else{auto pack=f[1]=="pack"?unpackPack(data):importAppOpt(data,f[4],number(f[5]));auto name=pack.manifest.at("pack_id").text;s.packs[name]=std::move(pack);}
-                result=commit(s,id);
+            try{require(f[6]==generationOf(s.effective),"generation conflict");auto data=root.get("upload.bin",PACK_LIMIT);require(data.size()==static_cast<size_t>(number(f[2]))&&sha256(data)==f[3],"upload length/SHA256");
+                if(f[1]=="user")s.user=dumpRules(rules(data));
+                else{auto pack=f[1]=="pack"?unpackPack(data,s.user):importAppOpt(data,f[4],number(f[5]));s.user=dumpRules(pack.config);}
+                s.source=data;s.provenance="source="+f[1]+"\nsource_sha256="+sha256(data)+"\nbase_generation="+f[6]+"\n";
+                result=commit(s,id,f[6]);
             }catch(...){try{clearUpload();}catch(...){}throw;}
             try{clearUpload();}catch(...){}return "generation="+result;
         }
-        if(action=="enable"||action=="disable"){
-            require(packId(id)&&s.packs.count(id),"unknown pack");if(action=="enable")s.enabled.insert(id);else s.enabled.erase(id);
-            return "generation="+commit(s,randomId());
-        }
+        if(action=="enable"||action=="disable")throw std::runtime_error("canonical store has no live pack layers");
         if(action=="rollback"){
-            PrivateDir d(generations,generationOf(s.effective));auto old=d.get("last_good.conf",RULE_LIMIT);require(!old.empty(),"no last good generation");auto restored=load(old);
-            // Recommit the selected state so subsequent rollback remains valid after pruning.
-            restored.effective=s.effective;return "generation="+commit(restored,randomId());
+            require(generationId(id)&&id==generationOf(s.effective),"generation conflict");
+            PrivateDir d(generations,id);auto old=d.get("last_good.conf",RULE_LIMIT);require(!old.empty(),"no last good generation");
+            auto restored=load(old);restored.user=dumpRules(rules(old));restored.effective=s.effective;
+            restored.provenance="source=rollback\nselected="+generationOf(old)+"\n";
+            return "generation="+commit(restored,randomId(),id);
         }
         throw std::runtime_error("unknown rule manager action");
     }

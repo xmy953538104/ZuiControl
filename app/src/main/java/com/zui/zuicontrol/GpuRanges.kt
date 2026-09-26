@@ -8,9 +8,9 @@ object GpuRanges {
         init { require(min in opps && max in opps && min <= max) }
     }
     fun default(mode: String): Range = when (mode) {
-        "powersave" -> Range(231, 422)
-        "balance" -> Range(231, 629)
-        "performance" -> Range(231, 903)
+        "powersave" -> Range(231, 366)
+        "balance" -> Range(231, 578)
+        "performance" -> Range(422, 903)
         "fast" -> Range(629, 903)
         else -> error("Unknown performance mode")
     }

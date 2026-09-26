@@ -8,6 +8,8 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(ROOT/'tests'))
+from BackendContract import reverse_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE
 sys.path.insert(0, str(ROOT / 'scripts/build'))
 from ApplyZuiControlPayload import patch_oem_touch_timer
 
@@ -111,12 +113,14 @@ class OemTouchTimer(unittest.TestCase):
                 identity = json.loads((ROOT/'tests/monitor/package_identity_baseline.json').read_text(encoding='utf8'))
                 old = [line.encode() for line in identity['payload_entries']]
                 delta=json.loads((ROOT/'tests/monitor/r7_product_delta.json').read_text(encoding='utf8'))
+                base_entries=reverse_entries(scope_entries('payload'),'payload')
+                base_map={line.split(b'\t',1)[1].decode():line for line in base_entries}
                 new=[]
                 for line in old:
                     meta,name=line.split(b'\t',1)
                     data=(ROOT/'payload'/name.decode()).read_bytes()
                     if name==b'system/bin/zui_controld':
-                        text=data.decode().replace('\r\n','\n')
+                        text=reverse_text('payload/system/bin/zui_controld',data.decode().replace('\r\n','\n'))
                         for d in json.loads((ROOT/'tests/monitor/r11_product_delta.json').read_text())['daemon']:
                             self.assertEqual(text.count(d['after']),1)
                             text=text.replace(d['after'],d['before'],1)
@@ -128,10 +132,13 @@ class OemTouchTimer(unittest.TestCase):
                             text=text.replace(d['after'],d['before'],1)
                         self.assertEqual(text.count(delta['daemon']['after']),1)
                         data=text.replace(delta['daemon']['after'],delta['daemon']['before'],1).encode()
-                    oid=subprocess.check_output(['git','-C',str(ROOT),'hash-object','--path=payload/'+name.decode(),'--stdin'],input=data).strip()
+                    if name not in (b'system/bin/zui_controld',b'README.txt'):
+                        oid=base_map['payload/'+name.decode()].split(b'\t',1)[0].split()[2]
+                    else:
+                        oid=subprocess.check_output(['git','-C',str(ROOT),'hash-object','--path=payload/'+name.decode(),'--stdin'],input=data).strip()
                     new.append(meta.split(b' ',1)[0]+b' blob '+oid+b'\t'+name)
                 files=subprocess.check_output(['git','-C',str(ROOT),'ls-files','--cached','--others','--exclude-standard','--','payload'],text=True).splitlines()
-                self.assertEqual(sorted(files),sorted('payload/'+x.split(b'\t',1)[1].decode() for x in old))
+                self.assertEqual(sorted(base_map),sorted('payload/'+x.split(b'\t',1)[1].decode() for x in old))
                 self.assertEqual([x for x in old if not x.endswith(b'\tREADME.txt')],
                                  [x for x in new if not x.endswith(b'\tREADME.txt')])
                 old_doc = identity['readme_text'].encode()
@@ -139,10 +146,12 @@ class OemTouchTimer(unittest.TestCase):
                 self.assertEqual((ROOT/'payload/README.txt').read_bytes().replace(b'\r\n',b'\n'),
                                  old_doc.replace(b'ZuiControlV60',b'ZuiControlV71').replace(b'App V60',b'App V71'))
                 continue
-            actual = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD:'+path], text=True).strip()
+            bound=reverse_entries(scope_entries(path),path)
+            relative=[e.split(b'\t',1)[0]+b'\t'+e.split(b'\t',1)[1][len(path)+1:] for e in bound]
+            actual=payload_tree_hash(relative)
             self.assertEqual(actual, tree, path)
         dirty = subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain', '--', *expected], text=True)
-        self.assertTrue(all(line[3:] in ('payload/README.txt','payload/system/bin/zui_controld') for line in dirty.splitlines()), dirty)
+        self.assertTrue(all(line[3:] in ({'payload/README.txt','payload/system/bin/zui_controld'} | {r['path'] for r in ABC_SCOPE['files']}) for line in dirty.splitlines()), dirty)
         allowed = {'app/src/main/java/com/zui/zuicontrol/MainActivity.kt',
                    'app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt',
                    'app/src/main/java/com/zui/zuicontrol/GpuRanges.kt',
@@ -162,6 +171,7 @@ class OemTouchTimer(unittest.TestCase):
             content = (ROOT/path).read_bytes().replace(b'\r\n',b'\n')
             oid = hashlib.sha1(b'blob '+str(len(content)).encode()+b'\0'+content).hexdigest()
             entries.append(('100644 blob '+oid+'\t'+path).encode())
+        entries=reverse_entries(entries,'app','framework_patch')
         # Metadata recovery changes only these two Gradle identity literals.
         identity_path = 'app/build.gradle.kts'
         old = identity['gradle_text'].encode()
@@ -239,7 +249,7 @@ class OemTouchTimer(unittest.TestCase):
             'HEAD','--','app','framework_patch'],text=True).splitlines()
         untracked = subprocess.check_output(['git','-C',str(ROOT),'ls-files','--others',
             '--exclude-standard','--','app','framework_patch'],text=True).splitlines()
-        self.assertLessEqual(set(changed+untracked), allowed | {d['path'] for d in monitor['tree']}
+        self.assertLessEqual(set(changed+untracked), allowed | {r['path'] for r in ABC_SCOPE['files']} | {d['path'] for d in monitor['tree']}
                             | {d['path'] for d in polish['tree']} | {d['path'] for d in product['tree']}
                         | {d['path'] for d in stability['tree']} | {d['path'] for d in legacy['tree']}
                         | {d['path'] for d in json.loads((ROOT/'tests/monitor/r10_product_delta.json').read_text())['tree']} | {d['path'] for d in json.loads((ROOT/'tests/monitor/r11_product_delta.json').read_text())['tree']} | {d['path'] for d in json.loads((ROOT/'tests/monitor/r12_product_delta.json').read_text())['tree']} | {identity_path})

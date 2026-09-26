@@ -31,6 +31,12 @@ object ZuiControlRequest {
         pkg: String? = null,
         mode: String? = null,
     ): String {
+        if (cmd == ZuiControlContract.CMD_SET_UPERF_MODE)
+            return ZuiControlClient.sendPolicy(context, "mode", "", "GLOBAL", mode = mode.orEmpty())
+        if (cmd == ZuiControlContract.CMD_SET_UPERF_APP)
+            return ZuiControlClient.sendPolicy(context, "mode", pkg.orEmpty(), "APP", mode = mode.orEmpty())
+        if (cmd == ZuiControlContract.CMD_REMOVE_UPERF_APP)
+            return ZuiControlClient.sendPolicy(context, "delete", pkg.orEmpty(), "APP")
         val resolver = context.contentResolver
         val currentAck = Settings.System.getString(
             resolver, ZuiControlContract.KEY_REQUEST_ACK,
@@ -61,7 +67,17 @@ object ZuiControlRequest {
             clearPending(context, requestId)
             throw t
         }
-        ZuiControlClient.notifyControlRequest(requestId, pending.sha256)
+        val dispatch = ZuiControlClient.notifyControlRequest(requestId, pending.sha256)
+        if (!dispatch.ok) {
+            // Only explicit pre-dispatch refusals are safe to clear. Transport or
+            // property-write uncertainty retains the durable pending identity.
+            val refusal = ZuiControlClient.stateValue(dispatch.text, "error")
+            if (refusal in setOf("policy_store_unavailable", "policy_user_mismatch", "policy_request_busy",
+                    "policy_request_conflict", "unified_policy_generation_required")) {
+                clearPending(context, requestId)
+                error("系统拒绝策略命令：${dispatch.text}")
+            }
+        }
         return requestId
     }
 

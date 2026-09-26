@@ -20,7 +20,7 @@ class ZuiControlTileService : TileService() {
         val next = nextRate(current)
         updateTile(next)
         Thread {
-            val reply = ZuiControlClient.setCurrentSceneDisplayHz(next)
+            val reply = ZuiControlClient.setCurrentSceneDisplayHz(this, next)
             val refreshed = if (reply.ok) {
                 ZuiControlClient.editableDisplayHz() ?: next
             } else {

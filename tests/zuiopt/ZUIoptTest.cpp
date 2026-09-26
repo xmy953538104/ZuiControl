@@ -15,7 +15,7 @@ const std::string OPEN="schema 2\nenabled true\nprofile G 2-7\nthread G ALL glob
 void rejects(const std::function<void()>& action){bool rejected=false;try{action();}catch(const std::exception&){rejected=true;}require(rejected,"expected rejection");}
 std::string readPack(const char* path){std::ifstream input(path,std::ios::binary);require(input.good(),"fixture input open");std::string data(PACK_LIMIT+1,'\0');input.read(data.data(),data.size());data.resize(input.gcount());require(data.size()<=PACK_LIMIT&&input.eof(),"fixture input bound");return data;}
 void uploadData(RuleStore& store,const std::string& kind,const std::string& data,const std::string& id,const std::string& pack="-"){
-    store.apply("begin",id,kind+":"+std::to_string(data.size())+":"+sha256(data)+":"+pack+":0");
+    store.apply("begin",id,kind+":"+std::to_string(data.size())+":"+sha256(data)+":"+pack+":0:"+generationOf(store.current().effective));
     for(size_t offset=0;offset<data.size();offset+=8192)store.apply("chunk",id+":"+std::to_string(offset),base64(data.substr(offset,8192)));
     store.apply("commit",id,"");
 }
@@ -111,11 +111,43 @@ void journalTests(const fs::path& parent){
     fs::remove(path/"owner_state.v1");fs::create_symlink(path/"owner.lock",path/"owner_state.v1");rejects([&]{journal.load();});fs::remove(path/"owner_state.v1");
     puts("ZUIOPT_CRASH_JOURNAL_FORMAT_LOCK_BOOT_GUARDS=PASS");
 }
+void canonicalMigrationTests(const fs::path& parent){
+    auto path=parent/"migration";require(mkdir(path.c_str(),0700)==0,"migration fixture directory");
+    PrivateDir root(path.string()),generations(root,"generations",true);
+    auto legacy='g'+randomId();PrivateDir old(generations,legacy,true),packs(old,"imported_packs",true);
+    auto pack=importAppOpt("org.example.other=0-6\norg.example.other{Render*}=7","prior",10);
+    const auto effective="# ZUIOPT_GENERATION "+legacy+"\n"+mergeRules(BASE,{pack},OPEN);
+    const auto metadata="ZUIOPT_RULE_STATE_V1\nfactory "+sha256(BASE)+"\ntransaction "+randomId()+"\nuser "+sha256(OPEN)+"\npack prior 1 "+sha256(pack.archive)+"\n";
+    old.put("pack_state.conf",metadata);old.put("user_rules.conf",OPEN);old.put("last_good.conf","");
+    packs.put("prior.zip",pack.archive);old.put("effective.conf",effective);root.put("effective.conf",effective);
+    {
+        RuleStore store(path.string(),BASE);require(!store.current().canonical,"real V1 accepted");
+        store.initialize();auto migrated=store.current();
+        require(migrated.canonical&&migrated.packs.empty()&&dumpRules(rules(migrated.effective))==dumpRules(rules(effective)),"V1 effective semantic parity");
+        auto before=rules(effective),after=rules(migrated.effective);
+        for(auto pkg:{"org.example.game","org.example.other","org.unknown"}){
+            auto* a=before.find(pkg);auto* b=after.find(pkg);require(bool(a)==bool(b),"package coverage parity");if(!a)continue;
+            require(a->general==b->general,"general CPU mask parity");
+            for(auto thread:{"Job.workerAB","Top","AnyRunner","RenderThread","unknown"}){
+                auto* x=classify(*a,thread);auto* y=classify(*b,thread);require(bool(x)==bool(y),"thread coverage parity");
+                if(x)require(x->rank==y->rank&&x->mask==y->mask,"thread rank/mask parity");
+            }
+        }
+        require(old.get("pack_state.conf",8192)==metadata&&old.get("user_rules.conf",RULE_LIMIT)==OPEN&&packs.get("prior.zip",PACK_LIMIT)==pack.archive&&old.get("effective.conf",RULE_LIMIT)==effective,"legacy exact files retained");
+        auto stable=migrated.effective;store.initialize();require(store.current().effective==stable,"migration idempotence");
+        require(!store.loaded(),"no owner ACK before actual engine receipt");recordLoadedGeneration(path.string(),stable);require(store.loaded(),"generation/hash/boot/PID ACK");
+        uploadData(store,"user",BASE,randomId());require(!store.loaded(),"old engine receipt not new generation ACK");
+        store.apply("rollback",generationOf(store.current().effective),"");require(dumpRules(rules(store.current().effective))==dumpRules(rules(stable)),"canonical rollback semantics");
+        rejects([&]{store.apply("rollback",generationOf(stable),"");});
+    }
+    puts("ZUIOPT_V1_CANONICAL_PARITY_AND_ACK=PASS");
+}
 int main(int argc,char** argv){
     signal(SIGPIPE,SIG_IGN);
     try{
         if(argc>=3){
             std::string command=argv[1];
+            if(command=="canonical"&&argc==4){auto pack=unpackPack(readPack(argv[2]),dumpRules(rules(read(argv[3]))));std::cout<<dumpRules(pack.config);return 0;}
             if(command=="pack"){std::cout<<jsonText(unpackPack(readPack(argv[2])).manifest);return 0;}
             if(command=="rules"){std::cout<<dumpRules(rules(read(argv[2])));return 0;}
             if(command=="merge"&&argc>=4){std::vector<Pack> packs;for(int i=4;i<argc;i++)packs.push_back(unpackPack(readPack(argv[i])));std::cout<<mergeRules(read(argv[2]),packs,read(argv[3]));return 0;}
@@ -161,26 +193,27 @@ int main(int argc,char** argv){
         std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);require(mkdtemp(path.data()),"fixture directory");auto root=fs::path(path.data());
         lifecycleTests(root);
         journalTests(root);
+        canonicalMigrationTests(root);
         {
             RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;
-            uploadData(store,"pack",pack.archive,randomId());require(store.current().enabled.empty(),"new pack disabled");
-            store.apply("enable","appopt-test","");auto enabled=store.current().effective;
+            rejects([&]{store.apply("enable","appopt-test","");});
+            uploadData(store,"user",pack.ruleText,randomId());auto enabled=store.current().effective;
             require(rules(enabled).find("org.example.game")->general==cpus("0-6"),"pack enabled");
             rejects([&]{uploadData(store,"pack","broken",randomId());});require(store.current().effective==enabled,"invalid archive preserves LKG");
             uploadData(store,"user",OPEN,randomId());require(rules(store.current().effective).find("org.example.game")->general==cpus("2-7"),"user commit");
-            store.apply("rollback","","");require(rules(store.current().effective).find("org.example.game")->general==cpus("0-6"),"rollback");
-            store.apply("rollback","","");require(rules(store.current().effective).find("org.example.game")->general==cpus("2-7"),"repeat rollback valid");
-            auto before=store.current().effective;RuleStore::testBeforeCommit=true;rejects([&]{store.apply("disable","appopt-test","");});RuleStore::testBeforeCommit=false;
-            require(store.current().effective==before,"interrupted generation does not publish");store.apply("disable","appopt-test","");
-            require(std::distance(fs::directory_iterator(root/"generations"),fs::directory_iterator())==2,"bounded generation cleanup");
-            before=store.current().effective;RuleStore::testAfterCommit=true;rejects([&]{store.apply("enable","appopt-test","");});RuleStore::testAfterCommit=false;
-            require(store.current().effective!=before&&store.current().enabled.count("appopt-test"),"post-commit failure is not a rollback; refresh truth");
-            auto id=randomId();store.apply("begin",id,"user:"+std::to_string(BASE.size())+":"+sha256(BASE)+":-:0");
-            rejects([&]{store.apply("begin",randomId(),"user:1:"+sha256("x")+":-:0");});
+            store.apply("rollback",generationOf(store.current().effective),"");require(rules(store.current().effective).find("org.example.game")->general==cpus("0-6"),"rollback");
+            store.apply("rollback",generationOf(store.current().effective),"");require(rules(store.current().effective).find("org.example.game")->general==cpus("2-7"),"repeat rollback valid");
+            auto before=store.current().effective;RuleStore::testBeforeCommit=true;rejects([&]{uploadData(store,"user",BASE,randomId());});RuleStore::testBeforeCommit=false;
+            require(store.current().effective==before,"interrupted generation does not publish");uploadData(store,"user",BASE,randomId());
+            require(std::distance(fs::directory_iterator(root/"generations"),fs::directory_iterator())>=5,"retained prior/failed generations");
+            before=store.current().effective;RuleStore::testAfterCommit=true;rejects([&]{uploadData(store,"user",OPEN,randomId());});RuleStore::testAfterCommit=false;
+            require(store.current().effective!=before&&dumpRules(rules(store.current().effective))==dumpRules(rules(OPEN)),"post-commit failure is not a rollback; refresh truth");
+            auto id=randomId();store.apply("begin",id,"user:"+std::to_string(BASE.size())+":"+sha256(BASE)+":-:0:"+generationOf(store.current().effective));
+            rejects([&]{store.apply("begin",randomId(),"user:1:"+sha256("x")+":-:0:"+generationOf(store.current().effective));});
             store.apply("chunk",id+":0",base64(BASE));store.apply("chunk",id+":0",base64(BASE));
             rejects([&]{store.apply("chunk",id+":0",base64("x"));});rejects([&]{store.apply("abort",randomId(),"");});store.apply("commit",id,"");
             require(!fs::exists(root/"upload.meta")&&!fs::exists(root/"upload.bin"),"upload commit cleanup");
-            id=randomId();before=store.current().effective;store.apply("begin",id,"user:1:"+std::string(64,'0')+":-:0");store.apply("chunk",id+":0",base64("x"));
+            id=randomId();before=store.current().effective;store.apply("begin",id,"user:1:"+std::string(64,'0')+":-:0:"+generationOf(store.current().effective));store.apply("chunk",id+":0",base64("x"));
             rejects([&]{store.apply("commit",id,"");});require(store.current().effective==before&&!fs::exists(root/"upload.meta"),"digest failure rollback/cleanup");
             PrivateDir dir(root.string());
             require(store.bootState()=="READY_TO_START","normal single owner boot");
@@ -198,10 +231,14 @@ int main(int argc,char** argv){
             require(snapshot()==oldRules&&store.state()==oldState,"reset preserves rules and LKG bytes");
             rejects([&]{store.resetFailure();});
             puts("ZUIOPT_SINGLE_OWNER_FAILSAFE_RESET=PASS");
-            fs::create_symlink(root/"effective.conf",root/"upload.bin");rejects([&]{store.apply("begin",randomId(),"user:1:"+sha256("x")+":-:0");});
+            fs::create_symlink(root/"effective.conf",root/"upload.bin");rejects([&]{store.apply("begin",randomId(),"user:1:"+sha256("x")+":-:0:"+generationOf(store.current().effective));});
             require(store.current().effective==before,"symlink target unchanged");fs::remove(root/"upload.bin");
             fs::create_hard_link(root/"effective.conf",root/"upload.bin");rejects([&]{dir.get("upload.bin",RULE_LIMIT);});fs::remove(root/"upload.bin");
             require(!initial.empty()&&!store.state().empty(),"state response");
+            auto stale=generationOf(store.current().effective);uploadData(store,"user",OPEN,randomId());
+            rejects([&]{store.apply("begin",randomId(),"user:1:"+sha256("x")+":-:0:"+stale);});
+            rejects([&]{store.apply("rollback",stale,"");});
+            require(store.current().canonical&&store.current().packs.empty(),"one canonical source");
         }
         // Only the exclusively created fixture directory, never a provided state path.
         require(root.filename().string().rfind("ZUIopt-fixture-",0)==0&&!fs::is_symlink(root),"fixture cleanup boundary");fs::remove_all(root);

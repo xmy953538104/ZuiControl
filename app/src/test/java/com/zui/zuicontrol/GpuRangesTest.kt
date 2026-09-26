@@ -25,9 +25,9 @@ class GpuRangesTest {
         assertFalse(track.labelsCollide(GpuRanges.Range(231,903),48f,48f,4f))
     }
     @Test fun defaultsAndOverrideModel() {
-        assertEquals(GpuRanges.Range(231,422), GpuRanges.default("powersave"))
-        assertEquals(GpuRanges.Range(231,629), GpuRanges.default("balance"))
-        assertEquals(GpuRanges.Range(231,903), GpuRanges.default("performance"))
+        assertEquals(GpuRanges.Range(231,366), GpuRanges.default("powersave"))
+        assertEquals(GpuRanges.Range(231,578), GpuRanges.default("balance"))
+        assertEquals(GpuRanges.Range(422,903), GpuRanges.default("performance"))
         assertEquals(GpuRanges.Range(629,903), GpuRanges.default("fast"))
         assertNull(GpuRanges.profile("profile=0|com.test.app|120|0|DISPLAY_ONLY",0))
         assertEquals("com.test.app" to GpuRanges.Range(366,720),

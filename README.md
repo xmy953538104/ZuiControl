@@ -118,9 +118,11 @@ The native per-app latest-record page
 shows scalar charts and generation-qualified thread details. GPU/Uperf/ZUIopt/
 thermal ownership is unchanged.
 
-Uperf's picker, notification and daemon accept only enabled, launchable apps whose
-canonical APK paths all lie under the qualified `/data/app/` or `/system/preinstall/`
-roots. See `docs/UPERF_CONFIGURABLE_APP.md` for the shared contract and parser gate.
+The inherited Uperf picker filters enabled, launchable apps under the qualified
+`/data/app/` or `/system/preinstall/` roots. Unified AppPolicy additionally treats
+ZuiControl itself as an ordinary editable app and routes HOME quick actions to
+Global. Native unversioned policy writers reject after this cutover; the older
+`docs/UPERF_CONFIGURABLE_APP.md` retains the picker/parser compatibility contract.
 
 The terminal candidate rebuilds the services extension from exact current source.
 Unmodified services DEX members remain byte-identical. The GPU lane additionally
@@ -137,34 +139,53 @@ Build outputs, ROM images, device evidence, review packages, and local project
 history do not belong in this repository. Runtime ownership and payload details
 are summarized in `payload/README.txt`.
 
-GPU follows the same four performance levels as Uperf: powersave231–422,
-balance231–629, performance231–903 and fast629–903MHz. The inline per-app range
-bar snaps to the twelve SM8650 OPPs. Settings `GPU频率范围` configures these
-four global ranges; the custom-app editor uses the same full-width track with
-two persistent labels below their own thumbs. Close labels stagger vertically.
-Optional `gpu|user|package|minMHz|maxMHz` and `gpuGlobal|user|mode|minMHz|maxMHz`
-records share the existing AtomicFile. Resolution is app override, then current
-mode's global range, then factory default. Legacy records remain compatible.
-Authenticated Binder transaction13 sets an app range or clears it with0/0
-(`默认`); transaction14 persists a global mode range. Neither alters Uperf rules.
-HOME/SystemUI/screen-off/disable release the single handle.
-The KGSL governor and OEM hard thermal remain authoritative; no SoftThermal,
-GPU daemon or sysfs writer is added.
+Refresh, Uperf and GPU app settings share `policy-v2.json`, owned by
+system_server. Each `(userId, packageName)` row contains refresh Hz, Uperf mode
+and both GPU endpoints. Explicit rows remain snapshots when Global changes.
+Selecting or reselecting a mode resets that app GPU range to the configured mode
+default. HOME quick actions change Global; ZuiControl remains editable. Requests
+carry policy generation and accepted scene identity. Screen-off powersave remains
+runtime-only. Old native policy writers and unversioned Binder mutations reject.
+Strict migration retains original stores and hashes, stages owner projections,
+commits an AtomicFile generation and waits for owner ACKs. Recovery reconciles
+actual file hashes; owner failure rolls back the whole previous generation or
+holds new mutations until recovery.
 
-ZUIopt is the sole per-task/per-thread owner and starts automatically while the
-scheduler is active and no persistent failure exists. Rule imports use the existing authenticated command plane;
-new packs are disabled. `/data/vendor/zui_control/zuiopt/effective.conf` atomically
-selects a private generation containing packs, user rules and last-good state.
-The manager keeps two generations; validation/pre-commit failures preserve the
-current generation. After a commit/ACK I/O uncertainty, refresh the reported state
-instead of assuming rollback or automatically repeating the mutation.
-`owner_state.v1` remains exclusively the accepted crash-recovery journal.
-Three crashes in 60 seconds stop ZUIopt and recover Android default scheduling.
-The failure persists across boots. The authenticated App reset clears only failure
-and crash history, enabling a retry at the next reboot, never the current boot.
-Device upgrade preparation and rollback are separate host-only utilities.
-The ROM performs no predecessor migration. Device runtime/AVC validation
-requires a separately authorized post-flash gate.
+New absent/reset GPU defaults are powersave231–366, balance231–578,
+performance422–903 and fast629–903MHz. Migration first snapshots app rows using
+OLD fallbacks and preserves every explicit global default. The same twelve OPPs,
+QTI/system_server owner, release rules and OEM hard thermal protection apply.
+
+Uperf keeps the immutable `/system/etc/zui_control/uperf-sm8650.json` and unchanged
+binary. The existing authenticated command owner accepts `ui_begin`, `ui_chunk`,
+`ui_commit`, `ui_state` and `ui_reset` for bounded config-only imports. Exact
+binary/factory/current-base/SoC hashes, strict ZIP/JSON, ROM qualification and
+field-specific envelopes must pass before activation. `uperf-compatibility.json`
+is deliberately empty of qualified profiles/payloads: no new CPU package is
+currently authorized. A controlled existing-supervisor restart must become ready;
+failure selects last-good or factory once. Startup revalidates the selection.
+Accepted and rejected imports remain retained. No additional runtime owner exists.
+
+ZUIopt retains its accepted task engine, lifecycle and failsafe. Its one runtime
+ruleset remains `/data/vendor/zui_control/zuiopt/effective.conf`. Store metadata
+`ZUIOPT_CANONICAL_STATE_V2` binds generation, source evidence, rules hash and prior
+generation. Migration validates the V1 merge once and canonicalizes its effective
+semantics; factory/packs/user files are thereafter retained provenance, not live
+layers. Manual edits and rollback require current generation CAS. Success after a
+reload requires a boot/PID-generation/hash-bound receipt from the existing daemon.
+An uncertain commit is queried, never blindly repeated. Legacy generations and
+failed uploads are retained; old pack enable/disable commands reject.
+
+Host `scripts/rules/ZUIOPT_rule_pack.py canonical` normalizes canonical, APPopt or
+the qualified recovered CSV format (`--format recovered-csv`). It reuses the
+retained static converter and never executes uploaded scripts/binaries. Clean,
+Old and New produce the same canonical import format; Compare produces evidence
+only. Manifests bind exact old canonical hash and source/normalizer identity.
+
+`owner_state.v1` remains the unchanged crash-recovery journal. Three crashes in
+60 seconds stop ZUIopt and recover Android scheduling. The authenticated reset
+clears only crash/failure state for the next boot. Device runtime and Android
+shell parser gates remain separate from these host implementation checks.
 
 Init creates the root-owned 0755 `/dev/cpuset/ZUIopt` scaffold at post-fs-data.
 ZUIopt fails closed if it is absent/unsafe, recovers the existing journal before

@@ -288,7 +288,7 @@ class MainActivity : Activity() {
 
     private fun setRefreshProfile(pkg: String, rate: Int) {
         runCommand("正在设置 ${rate}Hz", refreshNotification = true) {
-            val reply = ZuiControlClient.setPackageDisplayHz(pkg, rate)
+            val reply = ZuiControlClient.setPackageDisplayHz(this@MainActivity, pkg, rate)
             check(reply.ok) { reply.text }
             null
         }
@@ -296,7 +296,7 @@ class MainActivity : Activity() {
 
     private fun removeRefreshProfile(pkg: String) {
         runCommand("正在移除规则", refreshNotification = true) {
-            val reply = ZuiControlClient.removePackageProfile(pkg)
+            val reply = ZuiControlClient.removePackageProfile(this@MainActivity, pkg)
             check(reply.ok) { reply.text }
             null
         }
@@ -350,11 +350,11 @@ class MainActivity : Activity() {
         val content = dialogContent(pkg, "性能模式", picker) as LinearLayout
         val home = packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
             PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
-        // R11 adds CPU profiles for these scenes; closed GPU eligibility remains unchanged.
-        if (pkg != packageName && pkg != home) {
+        // HOME edits Global; this app is an ordinary GPU policy target.
+        if (pkg != home) {
             val gpuEditor = gpuRangeEditor(pkg) { modes[picker.selectedItemPosition] }
             picker.onSelection = { position ->
-                (gpuEditor.tag as GpuRangeBar).range = gpuOverrides[pkg] ?: globalGpuRange(modes[position])
+                (gpuEditor.tag as GpuRangeBar).range = globalGpuRange(modes[position])
             }
             content.addView(fieldTitle("GPU频率范围"), fieldMargins())
             content.addView(gpuEditor)
@@ -376,16 +376,15 @@ class MainActivity : Activity() {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         val bar = GpuRangeBar(this@MainActivity, gpuOverrides[pkg] ?: globalGpuRange(mode()))
         tag = bar
-        val reset = chip("默认")
+        val reset = chip("重置范围")
         fun update() { reset.isEnabled = gpuOverrides.containsKey(pkg); reset.alpha = if (reset.isEnabled) 1f else 0.5f }
         fun save(value: GpuRanges.Range?) {
             bar.isEnabled = false; reset.isEnabled = false
             Thread {
-                val reply = ZuiControlClient.setGpuRange(pkg, value)
+                val reply = ZuiControlClient.setGpuRange(this@MainActivity, pkg, value)
                 handler.post {
-                    if (reply.ok) {
-                        if (value == null) gpuOverrides.remove(pkg) else gpuOverrides[pkg] = value
-                    } else toast("GPU 范围保存失败：${reply.text}")
+                    if (!reply.ok) toast("GPU 范围保存失败：${reply.text}")
+                    reloadState() // Reset preserves the complete explicit policy row.
                     bar.range = gpuOverrides[pkg] ?: globalGpuRange(mode())
                     bar.isEnabled = true; reset.isEnabled = true; update()
                 }
@@ -408,7 +407,7 @@ class MainActivity : Activity() {
             bar.onCommit = { value ->
                 bar.isEnabled = false
                 Thread {
-                    val reply = ZuiControlClient.setGlobalGpuRange(mode.id, value)
+                    val reply = ZuiControlClient.setGlobalGpuRange(this@MainActivity, mode.id, value)
                     handler.post {
                         if (reply.ok) gpuGlobals[mode.id] = value else toast("GPU 范围保存失败：${reply.text}")
                         bar.range = globalGpuRange(mode); bar.isEnabled = true
@@ -478,34 +477,23 @@ class MainActivity : Activity() {
             } else if (ZuioptRules.field(zuioptState, "fail_safe") == "1") {
                 addView(compactNote("下次重启重新启用 ZUIopt。本次开机继续使用 Android 默认调度。"), fieldMargins())
             }
-            addView(sectionTitle("Rule Packs"), sectionMargins())
-            addView(settingsAction(R.drawable.ic_action_import, "导入 ZUIopt 规则包", "最多 128 KiB；新包默认禁用；同 ID 替换") {
+            addView(sectionTitle("规范规则导入"), sectionMargins())
+            addView(settingsAction(R.drawable.ic_action_import, "导入 ZUIopt 规则包", "最多 128 KiB；完整规范规则；版本冲突时拒绝") {
                 openZuioptImport(REQUEST_IMPORT_ZUIOPT)
             }, settingsActionMargins())
             addView(settingsAction(R.drawable.ic_action_import, "导入 AppOpt 文本", "最多 64 KiB；必须有明确的应用默认 CPU") {
                 openZuioptImport(REQUEST_IMPORT_APPOPT)
             }, settingsActionMargins())
-            zuioptState.lineSequence().filter { it.startsWith("pack=") }.forEach { line ->
-                val pack = line.substringAfter('=').split('|')
-                if (pack.size == 5) addView(settingsAction(
-                    R.drawable.ic_nav_threads, "${pack[0]} · ${if (pack[3] == "1") "已启用" else "已禁用"}",
-                    "v${pack[1]} · 优先级 ${pack[2]} · 点击${if (pack[3] == "1") "禁用" else "启用"}",
-                ) {
-                    zuioptAction("正在修改规则包状态") {
-                        ZuioptRules.command(this@MainActivity, if (pack[3] == "1") "disable" else "enable", pack[0])
-                    }
-                }, settingsActionMargins())
-            }
-            addView(sectionTitle("User Rules"), sectionMargins())
-            addView(compactNote("用户规则 > 已启用规则包 > 工厂规则。工厂库：27 个 profile / 316 条应用映射；这是静态兼容库，不代表全部应用已实机测试。"))
+            addView(sectionTitle("当前完整规则"), sectionMargins())
+            addView(compactNote("运行时只读取一份完整规则；旧工厂、规则包和用户层仅保留为迁移与回退来源。"))
             addView(settingsAction(R.drawable.ic_nav_threads, "编辑用户规则", "Schema 2；保存前校验，失败保留原配置") {
-                var text = ""
-                runCommand("正在读取用户规则", success = null, onSuccess = { editZuioptRules(text) }) {
-                    text = ZuioptRules.userRules(this@MainActivity); null
+                var snapshot: ZuioptRules.Snapshot? = null
+                runCommand("正在读取完整规则", success = null, onSuccess = { snapshot?.let { editZuioptRules(it) } }) {
+                    snapshot = ZuioptRules.userRules(this@MainActivity); null
                 }
             }, settingsActionMargins())
             addView(settingsAction(R.drawable.ic_action_refresh, "回退上一份规则", "仅回退规则，不改变故障保护") {
-                zuioptAction("正在回退规则") { ZuioptRules.command(this@MainActivity, "rollback") }
+                zuioptAction("正在回退规则") { ZuioptRules.command(this@MainActivity, "rollback", ZuioptRules.field(zuioptState, "generation")) }
             }, settingsActionMargins())
         })
     }
@@ -517,9 +505,9 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun editZuioptRules(text: String) {
+    private fun editZuioptRules(snapshot: ZuioptRules.Snapshot) {
         val editor = EditText(this).apply {
-            setText(text)
+            setText(snapshot.text)
             typeface = Typeface.MONOSPACE
             textSize = 12f
             gravity = Gravity.TOP
@@ -531,7 +519,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this).setTitle("用户规则 · Schema 2")
             .setView(editor).setPositiveButton("保存") { _, _ ->
                 val bytes = editor.text.toString().toByteArray(Charsets.UTF_8)
-                zuioptAction("正在校验并保存用户规则") { ZuioptRules.upload(this, "user", bytes) }
+                zuioptAction("正在校验并保存用户规则") { ZuioptRules.upload(this, "user", bytes, expectedGeneration = snapshot.generation) }
             }.setNegativeButton("取消", null).showStyled()
     }
 
@@ -544,10 +532,11 @@ class MainActivity : Activity() {
     }
 
     private fun importZuioptDocument(uri: Uri, appopt: Boolean) {
+        val expectedGeneration = ZuioptRules.field(zuioptState, "generation")
         fun doImport(packId: String = "-", priority: Int = 0) {
             zuioptAction("正在分段传输并校验规则") {
                 val kind = if (appopt) "appopt" else "pack"
-                ZuioptRules.upload(this, kind, ZuioptRules.readDocument(this, uri, kind), packId, priority)
+                ZuioptRules.upload(this, kind, ZuioptRules.readDocument(this, uri, kind), packId, priority, expectedGeneration)
             }
         }
         if (!appopt) { doImport(); return }

@@ -620,8 +620,9 @@ try {
     Assert-Contains $SchedulerPrepare 'effective_mode="$property_mode"' 'Uperf property recovery preference'
     Assert-Contains $SchedulerPrepare 'effective_mode="$global_mode"' 'durable global recovery fallback'
     Assert-Contains $SchedulerPrepare '$1 != "*"' 'retired per-app global fallback removal'
-    Assert-Contains $SchedulerPrepare 'safecenter_keepalive_backup.flag' 'retired SafeCenter data cleanup'
-    Assert-Contains $SchedulerPrepare '.rom_frontend_v47' 'retired Uperf frontend marker cleanup'
+    Assert-NotContains $SchedulerPrepare 'rm -rf' 'R1 retains legacy rollback stores'
+    Assert-Contains $SchedulerPrepare 'PolicyCommand bootstrap - || exit 1' 'generation-bound policy bootstrap'
+    Assert-Contains $SchedulerPrepare 'PolicyCommand uperf-startup - || exit 1' 'qualified factory/overlay selection'
     $schedulerPrepareText = Get-Content -Raw -LiteralPath $SchedulerPrepare
     foreach ($publication in @(
         'settings put system zui_control_uperf_mode "$global_mode"',
@@ -642,12 +643,13 @@ try {
         Assert-NotContains $SchedulerPrepare $forbidden 'copied third-party unsafe setup logic'
     }
 
-    Assert-Contains $Daemon 'set_uperf_mode)' 'Uperf global mode command'
-    Assert-Contains $Daemon 'set_uperf_app)' 'Uperf per-app command'
+    Assert-Contains $Daemon 'set_uperf_mode|set_uperf_app|remove_uperf_app)' 'retired unversioned policy commands reject'
+    Assert-Contains $Daemon 'unified_policy_generation_required' 'policy CAS required'
     Assert-Contains $Daemon 'restart_scheduler)' 'scheduler restart command'
     Assert-Contains $Daemon 'powersave|balance|performance|fast' 'four Uperf modes'
     Assert-NotContains $Daemon 'auto|powersave|balance|performance|fast' 'retired automatic frontend mode'
-    Assert-Contains $Daemon 'valid_uperf_preset "$requested_mode"' 'per-app preset validation'
+    Assert-Contains $Daemon 'policy_command "$CURRENT_REQUEST_ID" "$trusted_sha256"' 'authenticated unified policy owner'
+    Assert-Contains $Daemon 'ui_begin|ui_chunk|ui_commit|ui_state|ui_reset)' 'bounded qualified config transport'
     Assert-NotContains $Daemon 'UPERF_SCENE_KEY=zui_control_top_package' 'retired daemon scene polling source'
     Assert-NotContains $Daemon 'UPERF_SCREEN_KEY=zui_control_screen_on' 'retired daemon screen polling source'
     Assert-NotContains $Daemon 'sync_uperf_frontend()' 'retired daemon Uperf frontend'

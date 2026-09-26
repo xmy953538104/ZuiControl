@@ -5,6 +5,11 @@ LOG=/data/vendor/zui_control/log/uperf.log
 READY_UPTIME=/data/vendor/zui_control/uperf/.service_ready_uptime
 SUPERVISOR=/system/bin/zui_uperf_supervisor
 
+# Every launch (including init automatic restart) revalidates policy and config.
+# A failed prepare must not execute a stale runtime file left by an older ROM.
+CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand bootstrap - || exit 1
+CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand uperf-startup - || exit 1
+
 # The exec keeps init's service PID/cgroup while removing the shell from the
 # steady process chain. The native supervisor owns readiness and tree lifetime.
 echo $$ > /dev/cpuset/background/tasks 2>/dev/null || true

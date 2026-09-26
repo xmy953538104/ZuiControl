@@ -55,7 +55,7 @@ public final class GpuProofTest {
         int[] saved = mixed.clone();
         check(Arrays.equals(GpuRequestFilter.filter(mixed), cpu));
         check(Arrays.equals(saved, mixed));
-        check(GpuRequestFilter.filter(new int[] {MIN, 11, MAX, 8}).length == 0);
+        check(GpuRequestFilter.filter(new int[] {MIN, 11, MAX, 9}).length == 0);
         check(GpuRequestFilter.filter(new int[0]).length == 0);
         check(GpuRequestFilter.filter(null) == null);
         check(GpuRequestFilter.filter(new int[] {CPU}) == null);
@@ -71,14 +71,14 @@ public final class GpuProofTest {
             catch (IllegalArgumentException expected) { }
         }
         String[] modes = {"powersave","balance","performance","fast"};
-        int[][] expectedLevels = {{11,8},{11,5},{11,0},{5,0}};
+        int[][] expectedLevels = {{11,9},{11,6},{8,0},{5,0}};
         for (int i=0;i<modes.length;i++) {
             c.resolve(game,modes[i],null,true,true,true);
             check(f.last[1] == expectedLevels[i][0] && f.last[3] == expectedLevels[i][1]);
         }
         f = new Fake(); c = new GpuPolicyController(f);
         c.resolve(game,"powersave",null,true,true,true);
-        check(Arrays.equals(f.last, new int[] {MIN, 11, MAX, 8}));
+        check(Arrays.equals(f.last, new int[] {MIN, 11, MAX, 9}));
         for (int i = 0; i < 100; i++) c.resolve(game,"powersave",null,true,true,true);
         check(f.count == 1 && f.releases == 0);
         c.resolve(game,"performance",null,true,true,true);
@@ -95,7 +95,7 @@ public final class GpuProofTest {
         c.resolve(game,"performance",new GpuRange(366,720),true,true,true);
         check(f.last[1] == 9 && f.last[3] == 3);
         c.resolve(game,"performance",null,true,true,true); // follow reset
-        check(f.last[1] == 11 && f.last[3] == 0);
+        check(f.last[1] == 8 && f.last[3] == 0);
         c.resolve(game,"performance",null,true,true,false);
         check(f.active == 0);
         c.resolve(game,"powersave",null,true,true,true);
@@ -116,11 +116,11 @@ public final class GpuProofTest {
         f.releaseResult = 1; c.resolve(game,"performance",null,true,true,false);
         check(f.active == 0);
         GpuRange global = new GpuRange(231,500), override = new GpuRange(422,500);
-        check(GpuRange.resolve(null,null,"performance").same(new GpuRange(231,903)));
+        check(GpuRange.resolve(null,null,"performance").same(new GpuRange(422,903)));
         check(GpuRange.resolve(null,global,"performance").same(global));
         check(GpuRange.resolve(override,global,"performance").same(override));
         check(GpuRange.resolve(override,null,"powersave").same(override));
-        check(GpuRange.resolve(null,null,"powersave").same(new GpuRange(231,422)));
+        check(GpuRange.resolve(null,null,"powersave").same(new GpuRange(231,366)));
         try { GpuRange.defaults("FAST"); throw new AssertionError(); }
         catch (IllegalArgumentException expected) { }
         System.out.println("GPU_FILTER_POSITIVE=PASS; NEGATIVE_OTHER_UID1000=34; SYSTEM_SERVER=PASS; GPU_CONTROLLER_LIFECYCLE=PASS; IDLE_POLLING=0");

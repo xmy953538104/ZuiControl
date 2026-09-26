@@ -71,7 +71,7 @@ class ZuiControlQuickService : Service() {
                     val scene = ZuiControlClient.currentSceneText()
                     QuickControlTrace.target(trace,ZuiControlClient.stateValue(scene,"editableScenePackage").orEmpty())
                     // Same transaction as the accepted current-scene Refresh control.
-                    val reply = ZuiControlClient.setCurrentSceneDisplayHz(rate!!)
+                    val reply = ZuiControlClient.setCurrentSceneDisplayHz(this, rate!!, scene)
                     check(reply.ok) { reply.text }
                     QuickControlTrace.mark(trace,"T2","profile_transaction_committed")
                 }
@@ -85,8 +85,7 @@ class ZuiControlQuickService : Service() {
                     val pkg = ZuiControlClient.stateValue(scene, "editableScenePackage").orEmpty()
                     QuickControlTrace.target(trace,pkg)
                     check(UperfAppPolicy.isConfigurable(packageManager, pkg)) { "当前应用不支持性能配置" }
-                    val request = ZuiControlRequest.send(this, ZuiControlContract.CMD_SET_UPERF_APP,
-                        pkg = pkg, mode = mode.id)
+                    val request = ZuiControlClient.sendPolicy(this, "mode", pkg, "FOREGROUND", mode = mode.id, scene = scene)
                     QuickControlTrace.mark(trace,"dispatch",request)
                     val ack = ZuiControlRequest.awaitTerminalAck(this, request)
                     check(ack.succeeded) { ack.detail }

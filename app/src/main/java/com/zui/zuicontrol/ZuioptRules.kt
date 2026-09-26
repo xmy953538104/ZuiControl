@@ -58,7 +58,9 @@ object ZuioptRules {
     internal fun field(state: String, key: String): String = state.lineSequence()
         .firstOrNull { it.startsWith("$key=") }?.substringAfter('=').orEmpty()
 
-    fun userRules(context: Context): String {
+    data class Snapshot(val generation: String, val text: String)
+
+    fun userRules(context: Context): Snapshot {
         val state = state(context)
         val generation = field(state, "generation")
         require(generation.matches(Regex("g[0-9a-f]{24}")))
@@ -77,18 +79,19 @@ object ZuioptRules {
         }
         val data = out.toByteArray()
         check(digest(data) == field(state, "user_sha256")) { "规则响应哈希不一致" }
-        return Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(data)).toString()
+        return Snapshot(generation, Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(data)).toString())
     }
 
-    fun upload(context: Context, kind: String, data: ByteArray, packId: String = "-", priority: Int = 0) {
+    fun upload(context: Context, kind: String, data: ByteArray, packId: String = "-", priority: Int = 0, expectedGeneration: String) {
         require(kind in setOf("pack", "user", "appopt"))
         require(data.isNotEmpty() && data.size <= if (kind == "pack") PACK_LIMIT else RULE_LIMIT)
         require(priority in -1000000..1000000)
         require(packId == "-" || packId.matches(Regex("[a-z][a-z0-9_.-]{0,63}")))
         require(kind != "appopt" || packId != "-")
         val tx = ByteArray(12).also(random::nextBytes).joinToString("") { "%02x".format(it.toInt() and 255) }
-        command(context, "begin", tx, "$kind:${data.size}:${digest(data)}:$packId:$priority")
+        require(expectedGeneration.matches(Regex("g[0-9a-f]{24}")))
+        command(context, "begin", tx, "$kind:${data.size}:${digest(data)}:$packId:$priority:$expectedGeneration")
         try {
             var offset = 0
             while (offset < data.size) {

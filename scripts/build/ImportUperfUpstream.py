@@ -136,6 +136,51 @@ def write_text(path: pathlib.Path, text: str) -> None:
         stream.write(text)
 
 
+def config_only_package(manifest: dict, config: bytes, evidence: bytes) -> bytes:
+    """Serialize workflow output; only the ROM-pinned registry can authorize it."""
+    import tempfile
+    from PatchZuiControlFramework import rewrite_zip
+
+    def strict(data):
+        def pairs(items):
+            result = {}
+            for key, value in items:
+                if key in result:
+                    raise ValueError("duplicate JSON key")
+                result[key] = value
+            return result
+        def invalid(value):
+            raise ValueError("non-finite JSON " + value)
+        return json.loads(data.decode("utf-8"), object_pairs_hook=pairs, parse_constant=invalid)
+
+    if not 0 < len(config) <= 131072 or not 0 < len(evidence) <= 32768:
+        raise ValueError("config/evidence bound")
+    strict(config); strict(evidence)
+    if manifest.get("payloadHash") != sha256_bytes(config):
+        raise ValueError("payload hash")
+    if manifest.get("workflow", {}).get("qualificationEvidenceHash") != sha256_bytes(evidence):
+        raise ValueError("evidence hash")
+    manifest_data = (json.dumps(manifest, ensure_ascii=False, sort_keys=True,
+                                separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+    if len(manifest_data) > 32768:
+        raise ValueError("manifest bound")
+    with tempfile.TemporaryDirectory(prefix="uperf-package-") as tmp:
+        original = pathlib.Path(tmp) / "input.zip"
+        result = pathlib.Path(tmp) / "output.zip"
+        with zipfile.ZipFile(original, "w", compression=zipfile.ZIP_STORED) as archive:
+            for name, data in (("manifest.json", manifest_data), ("config.json", config), ("evidence.json", evidence)):
+                info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+                info.create_system = 3
+                info.external_attr = 0o100600 << 16
+                archive.writestr(info, data)
+        # Keep the qualified deterministic JAR/ZIP metadata helper in the path.
+        rewrite_zip(original, result, {})
+        data = result.read_bytes()
+        if len(data) > 262144:
+            raise ValueError("archive bound")
+        return data
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Generate a read-only Uperf upstream audit report.")

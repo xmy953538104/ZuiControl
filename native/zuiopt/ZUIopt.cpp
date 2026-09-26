@@ -42,7 +42,11 @@ int main(int argc,char** argv){
         if(command=="state")result=store.state()+store.failureState();
         else if(command=="read")result=store.userChunk(key,value);
         else if(command=="reset"){ZUIopt::require(key.empty()&&value.empty(),"reset arguments");store.resetFailure();result="NEXT_REBOOT_RETRIES_ZUIOPT";}
-        else{result=store.apply(command,key,value);if(command=="commit"||command=="enable"||command=="disable"||command=="rollback")reload();}
+        else{result=store.apply(command,key,value);if(command=="commit"||command=="rollback"){
+            reload();const auto deadline=ZUIopt::now()+3000;
+            while(selected()&&!store.loaded()&&ZUIopt::now()<deadline)usleep(20000);
+            ZUIopt::require(selected()&&store.loaded(),"COMMITTED_PENDING_OWNER_ACK_query_state");
+        }}
         printf("%s\n",result.c_str());return 0;
     }catch(const std::exception& e){fprintf(stderr,"ZUIopt rejected: %.96s\n",e.what());return 1;}
 }

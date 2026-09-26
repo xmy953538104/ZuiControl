@@ -110,7 +110,7 @@ inline uint32_t le(const std::string& s,size_t at,size_t bytes){
     for(size_t i=0;i<bytes;i++)n|=uint32_t(static_cast<unsigned char>(s[at+i]))<<(8*i);return n;
 }
 inline uint32_t crc(const std::string& s){return crc32(0,reinterpret_cast<const Bytef*>(s.data()),static_cast<uInt>(s.size()));}
-inline Pack unpackPack(const std::string& data){
+inline Pack unpackPack(const std::string& data,const std::string& canonicalBase={}){
     require(data.size()>=22&&data.size()<=PACK_LIMIT,"archive size");size_t end=data.size()-22;
     while(le(data,end,4)!=0x06054b50||end+22+le(data,end+20,2)!=data.size()){require(end>0&&data.size()-end<65557,"ZIP end record");end--;}
     require(le(data,end+4,2)==0&&le(data,end+6,2)==0&&le(data,end+8,2)==2&&le(data,end+10,2)==2,"ZIP disk/member count");
@@ -141,7 +141,21 @@ inline Pack unpackPack(const std::string& data){
         require(crc(out)==expectedCrc,"ZIP CRC mismatch");files.emplace(name,std::move(out));spans.emplace_back(local,localEnd);at+=46+names+extras+comments;
     }
     std::sort(spans.begin(),spans.end());require(at==centralEnd&&spans[0].first==0&&spans[0].second==spans[1].first&&spans[1].second==central,"ZIP overlapping/extra content");
-    return validatePack(ManifestJson(files.at("manifest.json")).parse(),files.at("rules.conf"),data);
+    auto manifest=ManifestJson(files.at("manifest.json")).parse();auto text=files.at("rules.conf");
+    if(!canonicalBase.empty()){
+        const std::set<std::string> required={"schemaVersion","oldCanonicalHash","newSourceHash","normalizerVersion","outputChoice","outputCanonicalHash","conflictListHash","engineSchema","targetSoC","workflowRepoCommitRun","qualificationEvidenceHash"};
+        require(manifest.size()==required.size(),"canonical manifest fields");
+        for(const auto& k:required)require(manifest.count(k)&&manifest.at(k).integer==(k=="schemaVersion"||k=="engineSchema"),"canonical manifest type");
+        auto get=[&](const char* k){return manifest.at(k).text;};
+        require(get("schemaVersion")=="2"&&get("engineSchema")=="2"&&get("targetSoC")=="sm8650"&&get("normalizerVersion")=="schema2-1","canonical compatibility");
+        for(const auto* k:{"oldCanonicalHash","newSourceHash","outputCanonicalHash","conflictListHash","qualificationEvidenceHash"})require(hex(get(k),64),"canonical digest format");
+        require(get("oldCanonicalHash")==sha256(dumpRules(rules(canonicalBase))),"canonical stale base");
+        require(get("outputCanonicalHash")==sha256(text)&&get("workflowRepoCommitRun").size()>0,"canonical output/evidence");
+        require(get("outputChoice")=="Clean"||get("outputChoice")=="Old"||get("outputChoice")=="New","canonical output choice");
+        auto config=rules(text);require(dumpRules(config)==text,"canonical normalization");
+        return {std::move(manifest),text,std::move(config),data};
+    }
+    return validatePack(std::move(manifest),text,data);
 }
 inline void appendLe(std::string& s,uint32_t n,size_t bytes){for(size_t i=0;i<bytes;i++)s+=static_cast<char>(n>>(i*8));}
 inline std::string packBytes(const Manifest& manifest,const std::string& rulesText){

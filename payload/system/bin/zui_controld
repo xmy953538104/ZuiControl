@@ -28,8 +28,6 @@ TERMINAL_ACK_PENDING=0
 CURRENT_REQUEST_ID=
 CURRENT_REQUEST_CMD=
 REQUEST_RESULT_DETAIL=
-UPERF_MODE_DIRTY=1
-UPERF_RULES_DIRTY=1
 
 ts() {
     date '+%Y-%m-%d %H:%M:%S'
@@ -162,106 +160,10 @@ valid_uperf_preset() {
     esac
 }
 
-publish_uperf_rules_state() {
-    rules=
-    while read -r rule_pkg rule_mode extra; do
-        [ -z "$extra" ] || continue
-        case "$rule_pkg" in ''|'#'*|'-'|'*') continue ;; esac
-        valid_package_name "$rule_pkg" || continue
-        valid_uperf_preset "$rule_mode" || continue
-        if [ -n "$rules" ]; then
-            rules="$rules
-$rule_pkg|$rule_mode"
-        else
-            rules="$rule_pkg|$rule_mode"
-        fi
-    done < "$UPERF_PERAPP" 2>/dev/null
-    settings_put_quiet "$UPERF_RULES_KEY" "$rules" || return 1
-    UPERF_RULES_DIRTY=0
-}
-
-publish_uperf_mode_state() {
-    published_mode="$(tr -d '\r\n ' < "$UPERF_MODE" 2>/dev/null)"
-    valid_uperf_preset "$published_mode" || return 1
-    settings_put_quiet "$UPERF_MODE_KEY" "$published_mode" || return 1
-    UPERF_MODE_DIRTY=0
-}
-
-set_uperf_mode() {
-    requested="$1"
-    valid_uperf_preset "$requested" || return 1
-    atomic_write_text "$UPERF_MODE" "$requested" || return 1
-    UPERF_MODE_DIRTY=1
-    if ! publish_uperf_mode_state; then
-        REQUEST_RESULT_DETAIL=settings_publish_failed
-        log_line "Uperf global mode persisted but Settings publication failed: $requested"
-        return 1
-    fi
-    REQUEST_RESULT_DETAIL="global=$requested"
-    log_line "Uperf global mode=$requested; effective mode delegated to system_server"
-}
-
-write_perapp_without_package() {
-    remove_pkg="$1"
-    tmp="$UPERF_PERAPP.tmp"
-    awk -v pkg="$remove_pkg" '$1 != pkg {print}' "$UPERF_PERAPP" > "$tmp" || {
-        rm -f "$tmp"
-        return 1
-    }
-    cat "$tmp" > "$UPERF_PERAPP" || {
-        rm -f "$tmp"
-        return 1
-    }
-    rm -f "$tmp"
-    chmod 0644 "$UPERF_PERAPP"
-    sync "$UPERF_PERAPP" 2>/dev/null || sync
-}
-
-set_uperf_app_mode() {
-    requested_pkg="$1"
-    requested_mode="$2"
-    valid_package_name "$requested_pkg" || return 1
-    package_is_user_app "$requested_pkg" || return 1
-    valid_uperf_preset "$requested_mode" || return 1
-    tmp="$UPERF_PERAPP.tmp"
-    awk -v pkg="$requested_pkg" -v mode="$requested_mode" '
-        $1 == pkg {next}
-        !inserted && $1 == "-" {print pkg " " mode; inserted=1}
-        {print}
-        END {if (!inserted) print pkg " " mode}
-    ' "$UPERF_PERAPP" > "$tmp" || {
-        rm -f "$tmp"
-        return 1
-    }
-    cat "$tmp" > "$UPERF_PERAPP" || {
-        rm -f "$tmp"
-        return 1
-    }
-    rm -f "$tmp"
-    chmod 0644 "$UPERF_PERAPP"
-    sync "$UPERF_PERAPP" 2>/dev/null || sync
-    UPERF_RULES_DIRTY=1
-    if ! publish_uperf_rules_state; then
-        REQUEST_RESULT_DETAIL=settings_publish_failed
-        log_line "Uperf app rule persisted but Settings publication failed: $requested_pkg"
-        return 1
-    fi
-    REQUEST_RESULT_DETAIL="package=$requested_pkg;mode=$requested_mode"
-    log_line "Uperf app package=$requested_pkg mode=$requested_mode"
-}
-
-remove_uperf_app_mode() {
-    requested_pkg="$1"
-    valid_package_name "$requested_pkg" || return 1
-    write_perapp_without_package "$requested_pkg" || return 1
-    UPERF_RULES_DIRTY=1
-    if ! publish_uperf_rules_state; then
-        REQUEST_RESULT_DETAIL=settings_publish_failed
-        log_line "Uperf app removal persisted but Settings publication failed: $requested_pkg"
-        return 1
-    fi
-    REQUEST_RESULT_DETAIL="package=$requested_pkg;mode=global"
-    log_line "Uperf app removed package=$requested_pkg"
+# One finite adapter on the authenticated command plane. Persistent policy is
+# system_server-owned; the retired native cur/perapp writers are absent.
+policy_command() {
+    CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand "$1" "$2"
 }
 
 trigger_init_action() {
@@ -519,12 +421,28 @@ handle_command() {
         status)
             REQUEST_RESULT_DETAIL="state=binder"
             ;;
-        set_uperf_mode) set_uperf_mode "$mode" ;;
-        set_uperf_app)
-            publish_request_progress validating_target
-            set_uperf_app_mode "$pkg" "$mode"
+        policy)
+            REQUEST_RESULT_DETAIL=policy_pending
+            policy_reply="$(policy_command "$CURRENT_REQUEST_ID" "$trusted_sha256" 2>>"$LOG_FILE")" || {
+                REQUEST_RESULT_DETAIL=policy_failed_query_generation
+                return 1
+            }
+            REQUEST_RESULT_DETAIL="$(printf '%s' "$policy_reply" | tr '\n' ';')"
             ;;
-        remove_uperf_app) remove_uperf_app_mode "$pkg" ;;
+        set_uperf_mode|set_uperf_app|remove_uperf_app)
+            REQUEST_RESULT_DETAIL=unified_policy_generation_required
+            return 1
+            ;;
+        ui_begin|ui_chunk|ui_commit|ui_state|ui_reset)
+            [ "${#pkg}" -le 128 ] && [ "${#mode}" -le 10924 ] || return 1
+            ui_argument="$pkg:$mode"
+            case "$cmd" in ui_state) ui_argument=- ;; ui_reset) ui_argument="$mode" ;; esac
+            ui_reply="$(policy_command "$cmd" "$ui_argument" 2>>"$LOG_FILE")" || {
+                REQUEST_RESULT_DETAIL=uperf_import_failed_query_selection
+                return 1
+            }
+            REQUEST_RESULT_DETAIL="$ui_reply"
+            ;;
         restart_scheduler) restart_scheduler ;;
         export_logs) export_logs ;;
         zo_state|zo_reset|zo_read|zo_begin|zo_chunk|zo_commit|zo_abort|zo_enable|zo_disable|zo_rollback)

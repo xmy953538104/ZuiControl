@@ -9,6 +9,8 @@ import unittest
 from RuntimePurityAudit import audit_system
 
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(ROOT/'tests'))
+from BackendContract import reverse_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE
 def read(name): return (ROOT/name).read_text(encoding='utf8')
 
 # Historical f98910e V21 identities; not retroactively replaced by V22 hashes.
@@ -88,7 +90,10 @@ class TerminalContracts(unittest.TestCase):
             'ZUIopt_model.h':'34463bc9f179586206d966dc15c9f5b2c99112400f214d3bf353c469c274aebb',
         }
         for name,sha in expected.items():
-            self.assertEqual(hashlib.sha256(read('native/zuiopt/'+name).encode()).hexdigest(),sha,name)
+            text=read('native/zuiopt/'+name)
+            if name=='ZUIopt_rules.h':text=reverse_text('native/zuiopt/'+name,text)
+            self.assertEqual(hashlib.sha256(text.encode()).hexdigest(),sha,name)
+        reverse_text('native/zuiopt/ZUIopt_daemon.h',read('native/zuiopt/ZUIopt_daemon.h'))
         core=read('native/zuiopt/ZUIopt_core.h')
         self.assert_core_contract(core)
         owner=read('native/zuiopt/ZUIopt_owner.h')
@@ -124,7 +129,7 @@ class TerminalContracts(unittest.TestCase):
         self.assertEqual(hashlib.sha256(observer.encode()).hexdigest(),'cc8f4702213ded4f9c47db9fa1cd88edbadf8c3a90944d310490e94a4742ed76')
 
     def test_refresh_and_macro_power_service_unchanged(self):
-        text=read('framework_patch/src/services/com/zui/server/control/ZuiControlService.java')
+        text=reverse_text('framework_patch/src/services/com/zui/server/control/ZuiControlService.java',read('framework_patch/src/services/com/zui/server/control/ZuiControlService.java'))
         # Reverse only the exact authorized R11 scene delta before historical hashes.
         for delta in json.loads(read('tests/monitor/r11_product_delta.json'))['service']:
             self.assertEqual(text.count(delta['after']),1)

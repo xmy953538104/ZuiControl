@@ -18,7 +18,7 @@ class Core {
 #ifdef ZUIOPT_RESEARCH
     friend struct Research;
 #endif
-    Config config;std::string configPath,stateRoot;Mask available;
+    Config config;std::string configPath,stateRoot,loadedConfig;Mask available;
     Counters counters;std::map<int,ProcessState> states;
     std::unique_ptr<Journal> journal;std::unique_ptr<Placement> placement;std::unique_ptr<Observer> observer;
     RawEvents events;RuntimeBlocker runtimeBlocker;
@@ -29,7 +29,7 @@ class Core {
     SceneAuthority currentScene;
 public:
     Core(std::string path,const std::string& statePath):configPath(std::move(path)),stateRoot(statePath){
-        available=cpus(read("/sys/devices/system/cpu/online"));config=parseConfig(read(configPath),available);ZUIOPT_debug=config.debug;
+        available=cpus(read("/sys/devices/system/cpu/online"));loadedConfig=read(configPath);config=parseConfig(loadedConfig,available);ZUIOPT_debug=config.debug;
         journal=std::make_unique<Journal>(statePath);
         sigset_t signals;sigemptyset(&signals);for(int s:{SIGTERM,SIGINT,SIGHUP,SIGUSR1})sigaddset(&signals,s);
         require(pthread_sigmask(SIG_BLOCK,&signals,nullptr)==0,"signal mask");
@@ -180,7 +180,7 @@ public:
         phase=StartupStage::RECONCILE;reconcile(initial);
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::RECONCILE_OK);
         phase=StartupStage::READY;prctl(PR_SET_NAME,"ZUIopt",0,0,0);ZUIOPT_NOTE("READY","pid="+std::to_string(getpid()));
-        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::READY);bool stop=false;
+        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::READY);recordLoadedGeneration(stateRoot,loadedConfig);bool stop=false;
         while(!stop){
             phase=StartupStage::EVENT_LOOP; // In-memory only; there are no steady-state receipt writes.
             auto epoch=events.authorityEpoch();
@@ -208,8 +208,8 @@ public:
             if(fds[1].revents&POLLIN){signalfd_siginfo s{};while(::read(signalFd,&s,sizeof(s))==sizeof(s)){
                 if(s.ssi_signo==SIGTERM||s.ssi_signo==SIGINT){stop=true;break;}if(s.ssi_signo==SIGUSR1)stats();
                 if(s.ssi_signo==SIGHUP){
-                    Config next;bool valid=false;try{next=parseConfig(read(configPath),available);valid=true;}catch(const std::exception& e){ZUIOPT_NOTE("RELOAD_REJECTED",e.what());}
-                    if(valid){phase=StartupStage::RELOAD;substage=EventSubstage::RELOAD_RELEASE;for(auto& [_,p]:states)placement->release(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP);config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;reconcile(observer->snapshot());ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
+                    Config next;std::string nextBytes;bool valid=false;try{nextBytes=read(configPath);next=parseConfig(nextBytes,available);valid=true;}catch(const std::exception& e){ZUIOPT_NOTE("RELOAD_REJECTED",e.what());}
+                    if(valid){phase=StartupStage::RELOAD;substage=EventSubstage::RELOAD_RELEASE;for(auto& [_,p]:states)placement->release(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP);config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;reconcile(observer->snapshot());loadedConfig=std::move(nextBytes);recordLoadedGeneration(stateRoot,loadedConfig);ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
                 }
             }}
         }

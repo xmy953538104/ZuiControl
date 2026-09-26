@@ -40,3 +40,11 @@ done
 for path in /vendor/app/core.apk /system/priv-app/../core.apk; do
     if uperf_apk_path_allowed "$path" 1; then fail "special identity cannot waive path $path"; fi
 done
+
+# Both qualified special roots still use the shared parser; HOME/global and
+# complete-row semantics now execute in the production AppPolicy JVM fixture.
+for action in set_uperf_mode set_uperf_app remove_uperf_app; do
+    if handle_command "$action" com.zui.zuicontrol fast; then fail legacy_writer; fi
+    [ "$REQUEST_RESULT_DETAIL" = unified_policy_generation_required ] || fail CAS_required
+done
+printf 'UPERF_UNIFIED_POLICY_LEGACY_BYPASS_REJECTED=PASS\n'

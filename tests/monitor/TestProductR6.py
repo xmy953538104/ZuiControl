@@ -1,7 +1,10 @@
 """Owner R6 reachability and source boundaries; rendering/runtime remain device gates."""
+import sys
 from pathlib import Path
 import hashlib,json,re,unittest,xml.etree.ElementTree as ET
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(ROOT/'tests'))
+from BackendContract import reverse_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE
 APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
 SERVICE=ROOT/'framework_patch/src/services/com/zui/server/control/ZuiControlService.java'
 def source(name):return (APP/name).read_text(encoding='utf8')
@@ -56,9 +59,11 @@ class ProductR6(unittest.TestCase):
         self.assertIn('it.getCurrentScene()',client)
         self.assertIn('"editableScenePackage"',quick)
         self.assertIn('ZuiControlClient.setCurrentSceneDisplayHz',quick)
+        self.assertIn('ZuiControlClient.sendPolicy(this, "mode", pkg, "FOREGROUND"',quick)
+        self.assertIn('ZuiControlRequest.send(',client)
+        self.assertIn('ZuiControlContract.CMD_SET_UPERF_APP',main)
+        self.assertIn('scene = scene',quick)
         for surface in (quick,main):
-            self.assertIn('ZuiControlRequest.send(',surface)
-            self.assertIn('ZuiControlContract.CMD_SET_UPERF_APP',surface)
             self.assertIn('KEY_STATUS_TEXT',surface)
             self.assertIn('KEY_UPERF_RULES_TEXT',surface)
             self.assertIn('registerContentObserver',surface)
@@ -68,7 +73,7 @@ class ProductR6(unittest.TestCase):
             self.assertNotIn(prohibited,quick)
         self.assertIn('override fun onResume()',main)
         self.assertIn('reloadState(); renderCurrentPage()',main)
-        service=SERVICE.read_text(encoding='utf8')
+        service=reverse_text('framework_patch/src/services/com/zui/server/control/ZuiControlService.java',SERVICE.read_text(encoding='utf8'))
         for d in json.loads((Path(__file__).with_name('r11_product_delta.json')).read_text())['service']:
             self.assertEqual(service.count(d['after']),1)
             service=service.replace(d['after'],d['before'],1)
