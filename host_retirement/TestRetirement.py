@@ -16,6 +16,15 @@ import zlib
 import retirement as R
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tests/zuiopt'))
 from RuntimePurityAudit import inspect,patterns
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tests'))
+from BackendContract import reverse_text
+
+
+def proven_source(repo, name):
+    # Reverse only the exact authorized backend additions, then check the unchanged
+    # historical parser hash below. Never bless a new hash as old engine proof.
+    text=reverse_text(name,(repo/name).read_text(encoding='utf-8'))
+    return text.replace('recovered_binary','asoul_binary').replace('recovered provenance','asoul provenance')
 
 CONFIG=b'# Shiroko A-SOUL: hard affinity + WALT per-task boost, no real-time policy.\nmode=0\nrt=0\nopt=0xDEADBEEF\n'
 
@@ -27,14 +36,14 @@ class PurePolicy(unittest.TestCase):
         from TestTerminalContracts import TerminalContracts
         TerminalContracts().test_proven_algorithms_are_byte_identical()
         for name,expected in [('native/zuiopt/ZUIopt_rules.h','b3ce2f0737bfb948fa81cb80ec8bf7552a45ce7a751908b727e8b277bc790973'),('scripts/rules/ZUIOPT_rule_pack.py','68893bee028ddb0c2115b1877576528ac64fb1e810acbe70f9a6ff0b2ab591f1')]:
-            text=(repo/name).read_text().replace('recovered_binary','asoul_binary').replace('recovered provenance','asoul provenance')
+            text=proven_source(repo,name)
             self.assertEqual(R.digest(text.encode()),expected,name)
     def test_provenance_only_repack_preserves_execution(self):
         import types
         repo=Path(__file__).resolve().parents[1];sys.path.insert(0,str(repo/'scripts/rules'))
         import ZUIOPT_rule_pack as current
         old=types.ModuleType('proven_reference_parser')
-        source=(repo/'scripts/rules/ZUIOPT_rule_pack.py').read_text().replace('recovered_binary','asoul_binary').replace('recovered provenance','asoul provenance')
+        source=proven_source(repo,'scripts/rules/ZUIOPT_rule_pack.py')
         self.assertEqual(R.digest(source.encode()),'68893bee028ddb0c2115b1877576528ac64fb1e810acbe70f9a6ff0b2ab591f1')
         exec(compile(source,'<hash-bound-reference-parser>','exec'),old.__dict__)
         rules=(repo/'payload/system/etc/zuiopt/factory_rules.conf').read_bytes()

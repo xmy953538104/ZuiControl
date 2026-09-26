@@ -13,8 +13,11 @@ from pathlib import Path
 import re
 import statistics
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT/'tests'))
+from BackendContract import reverse_text
 
 
 def digest(text):
@@ -35,7 +38,7 @@ def sources():
     # including Journal, prepare, apply, release/recovery and pre-write live checks.
     assert digest(owner.replace(candidate, baseline, 1)) == '35f42c416f50c8c6f5a7d3fdd6966b81dc36cb947d2d80299a9f11600e05dac0'
     assert digest(core) == 'bf977859edad2520fc0a8ac2f308b90becadd2c70bf99ee0525bbfde0344e21d'
-    assert digest(daemon) == '0af1ac4ee1d4a7d1752cc213e96c33a7352900137abd0c8303277c6d75cc09b4'
+    assert digest(reverse_text('native/zuiopt/ZUIopt_daemon.h', daemon)) == '0af1ac4ee1d4a7d1752cc213e96c33a7352900137abd0c8303277c6d75cc09b4'
     prefix = '        if(!p.writable())return p.revoked();\n        if(!t.owned||!t.appliedMask||!same(p,tid,t))return false;\n'
     assert prefix in candidate
     assert candidate[candidate.index('        auto g=group(tid);'):] == baseline[baseline.index('        auto g=group(tid);'):]
