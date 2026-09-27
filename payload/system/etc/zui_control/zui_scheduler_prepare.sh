@@ -17,6 +17,12 @@ valid_preset() {
 }
 
 mkdir -p "$UPERF_DIR" || exit 1
+AUTH=$UPERF_DIR/.validated_runtime.sha256
+rm -f "$AUTH" "$AUTH.tmp" || exit 1
+# Preserve finite bootstrap diagnostics; failure must never start stale config.
+mkdir -p "$LOG_DIR" || exit 1
+exec >> "$LOG_DIR/bootstrap.log" 2>&1
+trap 'setprop sys.zui_control.uperf_fail_safe 1' EXIT
 # Persist the virgin-store seed intent before either legacy-compatible seed write.
 # A power loss between those writes and Settings publication must be resumable.
 SEED_INTENT=$UPERF_DIR/.policy_factory_seed
@@ -69,5 +75,11 @@ if [ ! -f "$UPERF_DIR/policy-projection/active.json" ]; then
 fi
 CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand bootstrap - || exit 1
 CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand uperf-startup - || exit 1
+(umask 077; sha256sum "$UPERF_DIR/uperf.json" > "$AUTH.tmp") || exit 1
+sync "$AUTH.tmp" || exit 1
+mv "$AUTH.tmp" "$AUTH" || exit 1
+sync "$UPERF_DIR" || exit 1
+setprop zui_control.scheduler prepared || exit 1
+trap - EXIT
 # No legacy store, failed receipt or imported artifact is retired in this migration.
 exit 0

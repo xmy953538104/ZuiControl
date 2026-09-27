@@ -1,0 +1,65 @@
+{
+  "baseHead": "6cc8e678c6c5c3ba48d562d769a2687c5352d1f9",
+  "files": [
+    {
+      "path": "payload/system/bin/zui_uperf_service",
+      "before": "100644 blob 5dd1c8a98ab469ccc81b8f236980a2835865e77e\tpayload/system/bin/zui_uperf_service",
+      "after": "100644 blob af730309bc55e6170755b704b72fe034bb257f1b\tpayload/system/bin/zui_uperf_service",
+      "beforeSha256": "f7b3f7bd9dba21ec81a67b388ad6ec621731a016529abfdeddd614b94ca7075f",
+      "hunks": [
+        {
+          "before": "READY_UPTIME=/data/vendor/zui_control/uperf/.service_ready_uptime\nSUPERVISOR=/system/bin/zui_uperf_supervisor\n\n# Every launch (including init automatic restart) revalidates policy and config.\n# A failed prepare must not execute a stale runtime file left by an older ROM.\nCLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand bootstrap - || exit 1\nCLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand uperf-startup - || exit 1\n\n# The exec keeps init's service PID/cgroup while removing the shell from the\n# steady process chain. The native supervisor owns readiness and tree lifetime.\n",
+          "after": "READY_UPTIME=/data/vendor/zui_control/uperf/.service_ready_uptime\nSUPERVISOR=/system/bin/zui_uperf_supervisor\n\n# The shell-domain control plane validates/migrates policy and selects config.\n# Init clears this authorization at boot and before every explicit preparation.\n# Automatic supervisor restarts reuse only the exact authorized bytes; they never\n# launch ART/Binder or redo migration in the performanced execution domain.\nAUTH=/data/vendor/zui_control/uperf/.validated_runtime.sha256\n[ -f \"$AUTH\" ] && [ ! -L \"$AUTH\" ] && [ -f \"$CONFIG\" ] && [ ! -L \"$CONFIG\" ] || exit 1\nexpected=\"$(cat \"$AUTH\")\" || exit 1\nactual=\"$(sha256sum \"$CONFIG\")\" || exit 1\n[ \"$expected\" = \"$actual\" ] || exit 1\n\n# The exec keeps init's service PID/cgroup while removing the shell from the\n# steady process chain. The native supervisor owns readiness and tree lifetime.\n"
+        }
+      ]
+    },
+    {
+      "path": "payload/system/etc/init/zui_scheduler.rc",
+      "before": "100644 blob 91d269804b57d92cca72562b65777f500d5010a2\tpayload/system/etc/init/zui_scheduler.rc",
+      "after": "100644 blob c1b61b4438ecac50cf2bb6c8d665783688a7c838\tpayload/system/etc/init/zui_scheduler.rc",
+      "beforeSha256": "17299190f6b0698263fdf8478e2eccf12f3457e92e55edb366fd526a5460e600",
+      "hunks": [
+        {
+          "before": "    setprop sys.zui_control.uperf_fail_safe 0\n    rm /data/vendor/zui_control/uperf/.service_ready_uptime\n    rm /data/vendor/zui_control/uperf/.service_rapid_crashes\n    stop vendor.perfservice\n\non zuiopt-boot-state\n    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zuiopt/zuiopt_boot_state.sh\n\non property:sys.boot_completed=1\n    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh ${sys.zui_control.uperf_mode:-unset}\n    trigger zui-scheduler-start\n\non property:sys.zui_control.uperf_mode=powersave\n    write /data/vendor/zui_control/uperf/effective_powermode.txt powersave\n",
+          "after": "    setprop sys.zui_control.uperf_fail_safe 0\n    rm /data/vendor/zui_control/uperf/.service_ready_uptime\n    rm /data/vendor/zui_control/uperf/.service_rapid_crashes\n    rm /data/vendor/zui_control/uperf/.validated_runtime.sha256\n    stop vendor.perfservice\n\non zuiopt-boot-state\n    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zuiopt/zuiopt_boot_state.sh\n\non property:sys.boot_completed=1\n    start zui_scheduler_prepare\n\n# The finite control-plane service has the same UID/domain/groups as the\n# authenticated command owner. Only its successful ACK starts the schedulers.\non property:zui_control.scheduler=prepared\n    trigger zui-scheduler-start\n    setprop zui_control.scheduler restarted\n\non property:sys.zui_control.uperf_mode=powersave\n    write /data/vendor/zui_control/uperf/effective_powermode.txt powersave\n"
+        },
+        {
+          "before": "    start zui_uperf\n\non property:zui_control.scheduler=restart\n    setprop sys.zui_control.scheduler_active 1\n    stop vendor.perfservice\n    stop zui_uperf\n    stop zui_zuiopt\n    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh ${sys.zui_control.uperf_mode:-unset}\n    trigger zui-scheduler-start\n    setprop zui_control.scheduler restarted\n\non property:zui_control.scheduler=fence && property:sys.zui_control.scheduler_active=1\n    stop vendor.perfservice\n",
+          "after": "    start zui_uperf\n\non property:zui_control.scheduler=restart\n    stop zui_scheduler_prepare\n    setprop sys.zui_control.scheduler_active 1\n    stop vendor.perfservice\n    stop zui_uperf\n    stop zui_zuiopt\n    rm /data/vendor/zui_control/uperf/.validated_runtime.sha256\n    start zui_scheduler_prepare\n\non property:zui_control.scheduler=fence && property:sys.zui_control.scheduler_active=1\n    stop vendor.perfservice\n"
+        },
+        {
+          "before": "    stop vendor.perfservice\n\non property:zui_control.scheduler=stop\n    setprop sys.zui_control.scheduler_active 0\n    setprop sys.zui_control.uperf_fail_safe 0\n    rm /data/vendor/zui_control/uperf/.service_ready_uptime\n",
+          "after": "    stop vendor.perfservice\n\non property:zui_control.scheduler=stop\n    stop zui_scheduler_prepare\n    rm /data/vendor/zui_control/uperf/.validated_runtime.sha256\n    setprop sys.zui_control.scheduler_active 0\n    setprop sys.zui_control.uperf_fail_safe 0\n    rm /data/vendor/zui_control/uperf/.service_ready_uptime\n"
+        }
+      ]
+    },
+    {
+      "path": "payload/system/etc/init/zui_controld.rc",
+      "before": "100644 blob a3eb570e740c91d178c812d25f60bb778e8ef8c4\tpayload/system/etc/init/zui_controld.rc",
+      "after": "100644 blob 24640c48f0d5818afbb93791bf41bdcd9e2adc6f\tpayload/system/etc/init/zui_controld.rc",
+      "beforeSha256": "b63583fc92ba2cac8c816acff7acea353d5e316ecaa9a895eb741dd559312950",
+      "hunks": [
+        {
+          "before": "    user root\n    group root system shell readproc\n    seclabel u:r:shell:s0\n",
+          "after": "    user root\n    group root system shell readproc\n    seclabel u:r:shell:s0\n\n# Finite startup adapter on the existing authenticated control-plane domain.\nservice zui_scheduler_prepare /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh ${sys.zui_control.uperf_mode:-unset}\n    class late_start\n    disabled\n    oneshot\n    user root\n    group root system shell readproc\n    seclabel u:r:shell:s0\n"
+        }
+      ]
+    },
+    {
+      "path": "payload/system/etc/zui_control/zui_scheduler_prepare.sh",
+      "before": "100644 blob d4841fcd8e2f48f7fe8f76478ac4fe64d4fc0fe9\tpayload/system/etc/zui_control/zui_scheduler_prepare.sh",
+      "after": "100644 blob ccd752825cde4555b48e9e53a44e7bedf998b3e6\tpayload/system/etc/zui_control/zui_scheduler_prepare.sh",
+      "beforeSha256": "4969784d55cb025d88219d5b60d80876512ee94fc3280e7294795da965ead536",
+      "hunks": [
+        {
+          "before": "}\n\nmkdir -p \"$UPERF_DIR\" || exit 1\n# Persist the virgin-store seed intent before either legacy-compatible seed write.\n# A power loss between those writes and Settings publication must be resumable.\nSEED_INTENT=$UPERF_DIR/.policy_factory_seed\n",
+          "after": "}\n\nmkdir -p \"$UPERF_DIR\" || exit 1\nAUTH=$UPERF_DIR/.validated_runtime.sha256\nrm -f \"$AUTH\" \"$AUTH.tmp\" || exit 1\n# Preserve finite bootstrap diagnostics; failure must never start stale config.\nmkdir -p \"$LOG_DIR\" || exit 1\nexec >> \"$LOG_DIR/bootstrap.log\" 2>&1\ntrap 'setprop sys.zui_control.uperf_fail_safe 1' EXIT\n# Persist the virgin-store seed intent before either legacy-compatible seed write.\n# A power loss between those writes and Settings publication must be resumable.\nSEED_INTENT=$UPERF_DIR/.policy_factory_seed\n"
+        },
+        {
+          "before": "fi\nCLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand bootstrap - || exit 1\nCLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand uperf-startup - || exit 1\n# No legacy store, failed receipt or imported artifact is retired in this migration.\nexit 0\n",
+          "after": "fi\nCLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand bootstrap - || exit 1\nCLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand uperf-startup - || exit 1\n(umask 077; sha256sum \"$UPERF_DIR/uperf.json\" > \"$AUTH.tmp\") || exit 1\nsync \"$AUTH.tmp\" || exit 1\nmv \"$AUTH.tmp\" \"$AUTH\" || exit 1\nsync \"$UPERF_DIR\" || exit 1\nsetprop zui_control.scheduler prepared || exit 1\ntrap - EXIT\n# No legacy store, failed receipt or imported artifact is retired in this migration.\nexit 0\n"
+        }
+      ]
+    }
+  ]
+}

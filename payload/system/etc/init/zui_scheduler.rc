@@ -10,14 +10,20 @@ on post-fs-data
     setprop sys.zui_control.uperf_fail_safe 0
     rm /data/vendor/zui_control/uperf/.service_ready_uptime
     rm /data/vendor/zui_control/uperf/.service_rapid_crashes
+    rm /data/vendor/zui_control/uperf/.validated_runtime.sha256
     stop vendor.perfservice
 
 on zuiopt-boot-state
     exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zuiopt/zuiopt_boot_state.sh
 
 on property:sys.boot_completed=1
-    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh ${sys.zui_control.uperf_mode:-unset}
+    start zui_scheduler_prepare
+
+# The finite control-plane service has the same UID/domain/groups as the
+# authenticated command owner. Only its successful ACK starts the schedulers.
+on property:zui_control.scheduler=prepared
     trigger zui-scheduler-start
+    setprop zui_control.scheduler restarted
 
 on property:sys.zui_control.uperf_mode=powersave
     write /data/vendor/zui_control/uperf/effective_powermode.txt powersave
@@ -41,13 +47,13 @@ on zui-scheduler-start
     start zui_uperf
 
 on property:zui_control.scheduler=restart
+    stop zui_scheduler_prepare
     setprop sys.zui_control.scheduler_active 1
     stop vendor.perfservice
     stop zui_uperf
     stop zui_zuiopt
-    exec u:r:shell:s0 root shell -- /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh ${sys.zui_control.uperf_mode:-unset}
-    trigger zui-scheduler-start
-    setprop zui_control.scheduler restarted
+    rm /data/vendor/zui_control/uperf/.validated_runtime.sha256
+    start zui_scheduler_prepare
 
 on property:zui_control.scheduler=fence && property:sys.zui_control.scheduler_active=1
     stop vendor.perfservice
@@ -57,6 +63,8 @@ on property:init.svc.vendor.perfservice=running && property:sys.zui_control.sche
     stop vendor.perfservice
 
 on property:zui_control.scheduler=stop
+    stop zui_scheduler_prepare
+    rm /data/vendor/zui_control/uperf/.validated_runtime.sha256
     setprop sys.zui_control.scheduler_active 0
     setprop sys.zui_control.uperf_fail_safe 0
     rm /data/vendor/zui_control/uperf/.service_ready_uptime

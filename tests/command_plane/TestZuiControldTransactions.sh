@@ -156,8 +156,10 @@ assert_event_transport_policy() {
         fail 'prepare does not prefer a valid property mode'
     grep -Fq 'effective_mode="$global_mode"' "$SCHEDULER_PREPARE" ||
         fail 'prepare does not recover from the durable global mode'
-    [ "$(grep -Fc '${sys.zui_control.uperf_mode:-unset}' "$SCHEDULER_RC")" -eq 2 ] ||
-        fail 'boot and restart do not both pass the property mode to prepare'
+    [ "$(grep -Fxc '    start zui_scheduler_prepare' "$SCHEDULER_RC")" -eq 2 ] ||
+        fail 'boot and restart must use the same control-plane preparation service'
+    grep -Fqx 'service zui_scheduler_prepare /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh ${sys.zui_control.uperf_mode:-unset}' "$ROOT/payload/system/etc/init/zui_controld.rc" ||
+        fail 'prepare service must receive the current init-expanded property mode'
     if grep -Eq 'UPERF_(SCENE|SCREEN)_KEY|UPERF_FRONTEND|sync_uperf_frontend|write_uperf_effective_mode|uperf_rule_for_scene' "$DAEMON"; then
         fail 'daemon still contains the retired scene/screen frontend'
     fi
@@ -825,8 +827,12 @@ test_prepare_retains_legacy_and_resumes_virgin_seed() (
     }
     restorecon_recursive() { :; }
     sync() { :; } # Filesystem durability is a separate production AtomicFile/native gate.
-    fake_app_process() { printf '%s\n' "$*" >> "$TEST_ROOT/calls"; }
-    export -f settings restorecon_recursive sync fake_app_process
+    fake_app_process() {
+        printf '%s\n' "$*" >> "$TEST_ROOT/calls"
+        [ "$3" != uperf-startup ] || printf 'qualified-fixture\n' > "$UPERF_DIR/uperf.json"
+    }
+    setprop() { printf '%s\n' "$*" >> "$TEST_ROOT/properties"; }
+    export -f settings restorecon_recursive sync fake_app_process setprop
     sed -e "s|^DATA_ROOT=.*|DATA_ROOT=\"$DATA_ROOT\"|" \
         -e "s|^SYSTEM_PERAPP=.*|SYSTEM_PERAPP=\"$DEFAULT_PERAPP\"|" \
         -e 's|/system/bin/app_process|fake_app_process|g' "$SCHEDULER_PREPARE" > "$TEST_ROOT/prepare.sh"

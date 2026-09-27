@@ -20,3 +20,12 @@ service zui_control_request /system/bin/sh /system/bin/zui_controld --oneshot-re
     user root
     group root system shell readproc
     seclabel u:r:shell:s0
+
+# Finite startup adapter on the existing authenticated control-plane domain.
+service zui_scheduler_prepare /system/bin/sh /system/etc/zui_control/zui_scheduler_prepare.sh ${sys.zui_control.uperf_mode:-unset}
+    class late_start
+    disabled
+    oneshot
+    user root
+    group root system shell readproc
+    seclabel u:r:shell:s0

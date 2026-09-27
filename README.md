@@ -50,6 +50,7 @@ bash tests/command_plane/TestZuiControldTransactions.sh
 python tests/refresh/TestRefreshStateMachine.py
 python tests/uperf/architecture/TestUperfArchitecture.py
 python tests/uperf/startup/TestUperfStartupPolicy.py
+python tests/uperf/startup/TestUperfBootstrap.py
 python tests/uperf/startup/TestUperfStartupBoundaries.py
 python tests/uperf/supervisor/TestUperfSupervisor.py
 python tests/uperf/top_resumed/TestUperfTopResumedStateMachine.py

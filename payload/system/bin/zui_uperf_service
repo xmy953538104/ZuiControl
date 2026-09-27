@@ -5,10 +5,15 @@ LOG=/data/vendor/zui_control/log/uperf.log
 READY_UPTIME=/data/vendor/zui_control/uperf/.service_ready_uptime
 SUPERVISOR=/system/bin/zui_uperf_supervisor
 
-# Every launch (including init automatic restart) revalidates policy and config.
-# A failed prepare must not execute a stale runtime file left by an older ROM.
-CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand bootstrap - || exit 1
-CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand uperf-startup - || exit 1
+# The shell-domain control plane validates/migrates policy and selects config.
+# Init clears this authorization at boot and before every explicit preparation.
+# Automatic supervisor restarts reuse only the exact authorized bytes; they never
+# launch ART/Binder or redo migration in the performanced execution domain.
+AUTH=/data/vendor/zui_control/uperf/.validated_runtime.sha256
+[ -f "$AUTH" ] && [ ! -L "$AUTH" ] && [ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || exit 1
+expected="$(cat "$AUTH")" || exit 1
+actual="$(sha256sum "$CONFIG")" || exit 1
+[ "$expected" = "$actual" ] || exit 1
 
 # The exec keeps init's service PID/cgroup while removing the shell from the
 # steady process chain. The native supervisor owns readiness and tree lifetime.
