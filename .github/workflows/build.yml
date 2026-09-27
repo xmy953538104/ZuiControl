@@ -366,6 +366,7 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV68
           rm -rf payload/system/priv-app/ZuiControlV69
           rm -rf payload/system/priv-app/ZuiControlV70
+          rm -rf payload/system/priv-app/ZuiControlV71
           mkdir -p payload/system/priv-app/ZuiControlV72
           cp app/build/outputs/apk/release/app-release.apk \
             payload/system/priv-app/ZuiControlV72/ZuiControl.apk
