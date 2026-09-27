@@ -81,14 +81,14 @@ final class MonitorStore {
         db=next; recordId=nextId; active=true; beginElapsed=elapsed; writes++; scalarRows=threadRows=0;
     }
     void append(long now, double fps, double power, double quiet, int pid, long generation,
-            List<MonitorSnapshot.Row> threads) {
+            List<MonitorSnapshot.Row> threads, String fpsValidity) {
         if (!active || db == null) throw new IllegalStateException("not_recording");
         int n=Math.min(15,threads.size());
         db.beginTransaction();
         try {
             db.execSQL("INSERT INTO scalar_samples(t,fps,power,quiet,record_id,source_validity) VALUES(?,?,?,?,?,?)",
                     new Object[]{now-beginElapsed,valid(fps),valid(power),valid(quiet),recordId,
-                        "fps="+(fps<0?"UNQUALIFIED":"VALID")+";consumption="+(power<0?"UNAVAILABLE":"VALID")+";quiet="+(quiet<0?"UNAVAILABLE":"VALID")});
+                        "fps="+fpsValidity+";fpsSource=DISPLAY_MEASURED_FPS"+";consumption="+(power<0?"UNAVAILABLE":"VALID")+";quiet="+(quiet<0?"UNAVAILABLE":"VALID")});
             for(int i=0;i<n;i++) {
                 MonitorSnapshot.Row row=threads.get(i);
                 String key=pid+":"+generation+":"+row.task.tid+":"+row.task.start;

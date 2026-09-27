@@ -56,8 +56,9 @@ with tempfile.TemporaryDirectory(prefix='zui-r6-record-') as tmp:
     assert stats==(40,60,80,4,5,6,38,39,40)
     with db:
         b=start(db,'app.b',200)
-        db.execute(statement('INSERT INTO scalar_samples'),(1000,None,None,41,b,'fps=UNQUALIFIED;consumption=UNAVAILABLE;quiet=VALID'))
+        db.execute(statement('INSERT INTO scalar_samples'),(1000,None,None,41,b,'fps=UNAVAILABLE_SCENE_OWNERSHIP;fpsSource=DISPLAY_MEASURED_FPS;consumption=UNAVAILABLE;quiet=VALID'))
     assert db.execute('select count(*) from record_meta').fetchone()==(2,)
+    assert db.execute('select fps,source_validity from scalar_samples where record_id=?',(b,)).fetchone()==(None,'fps=UNAVAILABLE_SCENE_OWNERSHIP;fpsSource=DISPLAY_MEASURED_FPS;consumption=UNAVAILABLE;quiet=VALID')
     before_interrupt=rows(db)
     crash=subprocess.run([sys.executable,__file__,'--interrupt',str(path)])
     assert crash.returncode==17

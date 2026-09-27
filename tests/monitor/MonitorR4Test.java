@@ -12,7 +12,18 @@ public final class MonitorR4Test {
   s.scene("game",0,true);check(!s.recording());
   s.started(100,42,9);s.scene("game",0,false);check(s.terminal(200).equals("SCREEN_OR_LOCK"));s.stop();
   s.scene("game",0,true,false);check(!s.canStart());
-  check(new MonitorSources().fps()==-1);
+  Path fps=Files.createTempFile("fps-source-",".txt");
+  try{
+   MonitorSources source=new MonitorSources(fps.toString());
+   MonitorSources unreadable=new MonitorSources(fps.getParent().toString());check(unreadable.fps()==-1&&unreadable.fpsError.equals("UNAVAILABLE_SOURCE_READ"));
+   for(String valid:new String[]{"fps: 59.9", "fps: 59.9 duration:1000000 frame_count:60"}){
+    Files.write(fps,valid.getBytes("UTF-8"));check(source.fps()==59.9);}
+   for(String bad:new String[]{"", "60", "fps: NaN", "fps: Infinity", "fps: -1", "fps: 60junk", "fps: 60 duration:0 frame_count:60", "fps: 60 extra"}){
+    Files.write(fps,bad.getBytes("UTF-8"));check(source.fps()==-1&&source.fpsError.equals("UNAVAILABLE_MALFORMED_SOURCE"));}
+   Files.delete(fps);check(source.fps()==-1&&source.fpsError.equals("UNAVAILABLE_SOURCE_READ"));
+   long reads=source.fpsReads;check(source.fps()==-1&&source.fpsReads==reads);
+   Files.write(fps,"fps: 0.0 duration:1000000 frame_count:0".getBytes("UTF-8"));source.resetFps();check(source.fps()==0);
+  }finally{Files.deleteIfExists(fps);}
   check(MonitorSources.batteryWatts(0,3,4000,-2000000)==8.0);
   check(MonitorSources.batteryWatts(1,3,4000,-2000000)==-1);
   check(MonitorSources.batteryWatts(0,5,4000,0)==-1);

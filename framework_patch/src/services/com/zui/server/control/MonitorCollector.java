@@ -24,7 +24,8 @@ class MonitorCollector {
     static final String CALLBACK="android.zui.IMonitorSnapshot";
     private final Context context;
     final MonitorSession session=new MonitorSession();
-    private final MonitorSources sources=new MonitorSources();
+    private final MonitorSources sources;
+    private boolean fpsSceneEligible;
     private final MonitorStore store=new MonitorStore();
     private IBinder callback;
     private IBinder.DeathRecipient death;
@@ -39,13 +40,14 @@ class MonitorCollector {
 
     private long lastGesture=-1;
     private final String producerEpoch=java.util.UUID.randomUUID().toString();
-    MonitorCollector(Context context){this.context=context;}
+    MonitorCollector(Context context){this(context,new MonitorSources());}
+    MonitorCollector(Context context,MonitorSources sources){this.context=context;this.sources=sources;}
     synchronized void register(IBinder binder)throws android.os.RemoteException{
         if(callback==binder)return;
         if(callback!=null)terminate("CLIENT_REPLACED",true);
         drain();
         if(callback!=null&&death!=null)callback.unlinkToDeath(death,0);
-        callback=binder;death=null;session.connectionEpoch++;lastGesture=-1;
+        callback=binder;death=null;session.connectionEpoch++;lastGesture=-1;sources.resetFps();
         if(binder!=null){
             final long connection=session.connectionEpoch;
             death=()->{synchronized(MonitorCollector.this){
@@ -75,9 +77,14 @@ class MonitorCollector {
     }
     synchronized void scene(String pkg,int user,boolean eligible,boolean recordEligible){scene(pkg,user,eligible,recordEligible,"SCREEN_OR_LOCK",session.taskId);}
     synchronized void scene(String pkg,int user,boolean eligible,boolean recordEligible,String blockedReason,int taskId){
+        scene(pkg,user,eligible,recordEligible,blockedReason,taskId,eligible&&!pkg.isEmpty());
+    }
+    synchronized void scene(String pkg,int user,boolean eligible,boolean recordEligible,String blockedReason,int taskId,boolean fpsEligible){
+        boolean fpsChanged=fpsSceneEligible!=fpsEligible;
+        fpsSceneEligible=fpsEligible;
         boolean taskChanged=taskId!=session.taskId;
         if(taskChanged){session.taskId=taskId;session.targetEpoch++;}
-        boolean changed=taskChanged||!pkg.equals(session.foreground)||user!=session.user||eligible!=session.eligible
+        boolean changed=fpsChanged||taskChanged||!pkg.equals(session.foreground)||user!=session.user||eligible!=session.eligible
                 ||recordEligible!=session.recordEligible;
         session.scene(pkg,user,eligible,recordEligible);
         String terminal=session.terminal(SystemClock.elapsedRealtime());
@@ -122,6 +129,7 @@ class MonitorCollector {
                 if(session.recordingUser!=user)return "ok=0\nerror=wrong_user";
                 terminate("EXPLICIT_STOP",false);
             }else if(!"state".equals(action))return "ok=0\nerror=unknown_monitor_action";
+            if(("full".equals(action)||"fps".equals(action))&&session.mode!=MonitorSession.OFF)sources.resetFps();
             if(session.mode!=MonitorSession.FULL)terminate("USER_DISABLE",false);
             if(!"state".equals(action)){stop();schedule();}
             return "ok=1"+state()+"\nmonitorSnapshot="+lastSnapshot;
@@ -154,12 +162,18 @@ class MonitorCollector {
             .put("package",session.foreground).put("user",session.user).put("targetEpoch",session.targetEpoch)
             .put("taskId",session.taskId).put("connectionEpoch",session.connectionEpoch).put("sample",samples)
             .put("intervalMs",session.interval()).put("ttlMs",session.interval()==5000?7500:3500)
-            .put("recordState",session.recordingState()).put("fpsValidity","UNAVAILABLE_SOURCE_UNQUALIFIED")
-            .put("fpsSource","RAW_TASK_PRESENT_COUNTER_NOT_IMPLEMENTED")
+            .put("recordState",session.recordingState()).put("fpsValidity",fpsBlockedReason().isEmpty()?"UNAVAILABLE_NOT_SAMPLED":fpsBlockedReason())
+            .put("fpsSource","DISPLAY_MEASURED_FPS").put("fpsSourcePath",MonitorSources.FPS_PATH)
             .put("sourceGeneration",0).put("sourceHealthy",false)
             .put("windowStart",JSONObject.NULL).put("windowEnd",JSONObject.NULL)
             .put("newPresents",JSONObject.NULL).put("lastPresent",JSONObject.NULL)
             .put("sourceMeasurementTime",JSONObject.NULL).put("inputPowerW",JSONObject.NULL);
+    }
+    private String fpsBlockedReason(){
+        if(!session.eligible)return "UNAVAILABLE_SCREEN_OR_TARGET";
+        if(!fpsSceneEligible)return "UNAVAILABLE_SCENE_OWNERSHIP";
+        if(!session.visible()&&!session.recording())return "UNAVAILABLE_NO_FPS_DEMAND";
+        return "";
     }
     synchronized void invalidatePower(){stop();schedule();}
     synchronized String snapshot(){return lastSnapshot;}
@@ -172,6 +186,7 @@ class MonitorCollector {
             +"\nmonitorRecordState="+session.recordingState()+"\nmonitorRecordTarget="+session.recordingPackage
             +"\nmonitorIntervalMs="+session.interval()+"\nmonitorConnectionEpoch="+session.connectionEpoch+"\nmonitorTargetEpoch="+session.targetEpoch+"\nmonitorThreadIntervalMs=3000\nmonitorTimer="+(handler!=null)
             +"\nmonitorQuietPath="+sources.quietPath+"\nmonitorQuietUnit=millidegree_C\nmonitorQuietDiscovery="+sources.discoveryReads
+            +"\nmonitorFpsReads="+sources.fpsReads+"\nmonitorFpsError="+sources.fpsError
             +"\nmonitorQuietError="+sources.quietError+"\nmonitorError="+error;
     }
     private void sample(long ticket){synchronized(this){
@@ -182,7 +197,9 @@ class MonitorCollector {
                 terminate("LOCKED",false);session.scene(session.foreground,session.user,false);clearThreadBaseline();stop();return;
             }
             long now=SystemClock.elapsedRealtime();
-            double fps=sources.fps(),quiet=-1,power=-1;
+            String fpsValidity=fpsBlockedReason();
+            double fps=fpsValidity.isEmpty()?sources.fps():-1,quiet=-1,power=-1;
+            if(fpsValidity.isEmpty())fpsValidity=sources.fpsError;
             int plugged=-1,batteryStatus=-1,milliVolts=-1;
             long microAmps=Long.MIN_VALUE;
             String terminal=session.terminal(now);
@@ -214,13 +231,13 @@ class MonitorCollector {
                             previous=tasks;previousPid=process.tid;previousStart=process.start;lastThreadTime=now;
                         }
                     }
-                    if(process!=null)store.append(now,fps,power,quiet,process.tid,process.start,rows);
+                    if(process!=null)store.append(now,fps,power,quiet,process.tid,process.start,rows,fpsValidity);
                 }else process=null;
                 if(process==null)terminate("PROCESS_GENERATION_LOST",true);
             }else clearThreadBaseline();
             samples++;
             JSONObject data=metadata(new JSONObject()).put("elapsedMs",now)
-                .put("fps",fps<0?JSONObject.NULL:fps)
+                .put("fps",fps<0?JSONObject.NULL:fps).put("fpsValidity",fpsValidity).put("sourceHealthy",fps>=0)
                 .put("consumptionPowerW",power<0?JSONObject.NULL:power).put("powerValidity",power<0?"UNAVAILABLE":"VALID")
                 .put("quietValidity",quiet<0?"UNAVAILABLE":"VALID").put("powerW",power).put("powerSource","DEVICE_POWER_W_BATTERY_DISCHARGE_MV_UA")
                 // Same-sample diagnostics in the existing in-memory snapshot; no extra sampler/storage.

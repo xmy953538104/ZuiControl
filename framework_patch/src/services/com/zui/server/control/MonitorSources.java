@@ -46,8 +46,27 @@ final class MonitorSources {
             quietUnavailable = true; quietError = "quiet_read_unavailable"; return -1;
         }
     }
-    // EV1: no qualified OEM raw completed-window counter. Never use display rate.
-    double fps() { return -1; }
+    static final String FPS_PATH = "/sys/class/drm/sde-crtc-0/measured_fps";
+    private final String fpsPath;
+    private boolean fpsUnavailable;
+    long fpsReads;
+    String fpsError = "UNAVAILABLE_NOT_SAMPLED";
+    MonitorSources() { this(FPS_PATH); }
+    // Host fixtures exercise the same reader; production always uses FPS_PATH.
+    MonitorSources(String fpsPath) { this.fpsPath = fpsPath; }
+    void resetFps() { fpsUnavailable = false; fpsError = "UNAVAILABLE_NOT_SAMPLED"; }
+    double fps() {
+        if (fpsUnavailable) return -1;
+        try {
+            fpsReads++; scalarReads++;
+            double value = MonitorSnapshot.displayFps(line(fpsPath));
+            fpsError = value < 0 ? "UNAVAILABLE_MALFORMED_SOURCE" : "VALID";
+            return value;
+        } catch (IOException | SecurityException e) {
+            // Do not repeatedly poll a denied/missing source. Retry on explicit rebind/enable.
+            fpsUnavailable = true; fpsError = "UNAVAILABLE_SOURCE_READ"; return -1;
+        }
+    }
     static double batteryWatts(int plugged, int status, int milliVolts, long microAmps) {
         // TB321FU broadcast voltage is mV; CURRENT_NOW is uA, positive on proven discharge.
         // Status + absence of external power determine direction; vendor sign does not.

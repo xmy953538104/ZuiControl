@@ -81,11 +81,15 @@ final class MonitorSnapshot {
         return idle > total ? -1 : 100.0 * (total - idle) / total;
     }
 
+    private static final java.util.regex.Pattern FPS_FORMAT = java.util.regex.Pattern.compile(
+            "fps:\\s+([0-9]+(?:\\.[0-9]+)?)(?:\\s+duration:[1-9][0-9]*\\s+frame_count:[0-9]+)?");
     static double displayFps(String line) {
         try {
-            String[] fields = line.trim().split("\\s+");
-            if (fields.length < 2 || !"fps:".equals(fields[0])) return -1;
-            double value = Double.parseDouble(fields[1]);
+            // TB321FU: fps: 59.9 duration:1000000 frame_count:60.
+            // The driver owns the measurement window; read time is not presentation time.
+            java.util.regex.Matcher match = FPS_FORMAT.matcher(line.trim());
+            if (!match.matches()) return -1;
+            double value = Double.parseDouble(match.group(1));
             return Double.isFinite(value) && value >= 0 ? value : -1;
         } catch (RuntimeException malformed) { return -1; }
     }

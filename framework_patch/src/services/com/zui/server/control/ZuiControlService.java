@@ -991,7 +991,10 @@ public final class ZuiControlService extends Binder {
         boolean recordEligible = eligible && !pkg.isEmpty() && !monitorHome(user).isEmpty() && !pkg.equals(monitorHome(user))
                 && (!isTransientPackage(pkg) || "com.zui.zuicontrol".equals(pkg));
         mMonitor.scene(pkg, user, eligible, recordEligible && mMonitorTaskId>=0,
-                !mScreenInteractive?"SCREEN_OFF":lock!=null&&lock.isKeyguardLocked()?"LOCKED":"VISIBILITY_BLOCKED",mMonitorTaskId);
+                !mScreenInteractive?"SCREEN_OFF":lock!=null&&lock.isKeyguardLocked()?"LOCKED":"VISIBILITY_BLOCKED",mMonitorTaskId,
+                eligible && mMonitorTaskId>=0 && !pkg.isEmpty() && !mRawFocusTransient && !mImeVisible
+                        && pkg.equals(mRawFocusedPackage) && user==mRawFocusedUserId
+                        && mRawFocusedDisplayId==Display.DEFAULT_DISPLAY);
     }
 
     private synchronized String setGpuRange(String pkg, int userId, int min, int max) {

@@ -24,31 +24,50 @@ stubs.update({
  public Intent registerReceiver(Object r,IntentFilter f){return new Intent();}
  public android.content.pm.PackageManager getPackageManager(){return new android.content.pm.PackageManager();}}''',
  'com/zui/server/control/MonitorStore.java':'''package com.zui.server.control;import java.util.*;
- final class MonitorStore {long writes,scalarRows,threadRows;boolean active;static int starts,finishes;static String terminal;static boolean incomplete;
+ final class MonitorStore {long writes,scalarRows,threadRows;boolean active;static int starts,finishes;static String terminal;static boolean incomplete;static double lastFps;static String fpsValidity;
  void start(String p,String l,int u,int pid,long g,long t,int task,long epoch){if(active)throw new AssertionError();active=true;starts++;writes++;scalarRows=threadRows=0;}
- void append(long t,double f,double p,double q,int pid,long g,List<MonitorSnapshot.Row> r){if(!active)throw new AssertionError();scalarRows++;threadRows+=r.size();writes+=1+r.size();}
+ void append(long t,double f,double p,double q,int pid,long g,List<MonitorSnapshot.Row> r,String validity){lastFps=f;fpsValidity=validity;if(!active)throw new AssertionError();scalarRows++;threadRows+=r.size();writes+=1+r.size();}
  void finish(long n,String reason,boolean incomplete){if(active){finishes++;writes++;active=false;terminal=reason;MonitorStore.incomplete=incomplete;}}void abandon(){active=false;}
  String read(int u,String key){return "{}";}String list(int u){return "{}";}String delete(int u,String p){return "ok=1";}}''',
  'com/zui/server/control/CollectorTest.java':'''package com.zui.server.control;
  import android.os.*;import android.app.*;import android.content.*;import java.util.*;
  public class CollectorTest {
+ static java.nio.file.Path fpsFile;
+ static MonitorSources source;
  static void check(boolean v){if(!v)throw new AssertionError();}
  static class Client implements IBinder {DeathRecipient death;String last;int calls;
  public void linkToDeath(DeathRecipient d,int f){death=d;}public boolean unlinkToDeath(DeathRecipient d,int f){death=null;return true;}
  public boolean transact(int c,Parcel p,Parcel r,int f){check(f==FLAG_ONEWAY);last=p.text;calls++;return true;}}
  static class Collector extends MonitorCollector {int scans;long generation=9;boolean missing;
- Collector(){super(new Context());}int findPid(){return 42;}
+ Collector(){super(new Context(),source);}int findPid(){return 42;}
  MonitorSnapshot.Task identity(int p){return missing?null:new MonitorSnapshot.Task(p,"GameThread",generation,SystemClock.now/10);}
  List<MonitorSnapshot.Task> readTasks(int p){scans++;return Arrays.asList(identity(p));}}
  static String start(Collector c){c.command("circle",0,"");return c.command("recordStart",0,c.session.connectionEpoch+":"+c.session.targetEpoch+":"+(SystemClock.now+1));}
  public static void main(String[] args)throws Exception {
+ fpsFile=java.nio.file.Files.createTempFile("measured-fps-",".txt");
+ java.nio.file.Files.write(fpsFile,"fps: 59.9 duration:1000000 frame_count:60".getBytes());source=new MonitorSources(fpsFile.toString());
  Collector c=new Collector();Client client=new Client();c.register(client);c.scene("game",0,true);
  check(Handler.pending.size()==1&&c.session.interval()==5000);Handler.next();
- check(c.scans==0&&MonitorStore.starts==0&&client.last.contains("active=false"));
+ check(c.scans==0&&MonitorStore.starts==0&&client.last.contains("active=false")&&source.fpsReads==0);
  c.command("full",0,"");check(c.session.interval()==1000);for(int i=0;i<10;i++)Handler.next();
- check(c.scans==0&&c.state().contains("monitorDbWrites=0"));
+ check(c.scans==0&&c.state().contains("monitorDbWrites=0")&&client.last.contains("fps=59.9"));
+ long reads=source.fpsReads,oldEpoch=c.session.targetEpoch;
+ c.scene("other",0,true,true,"",12,true);check(c.session.targetEpoch>oldEpoch&&client.last.contains("fps=-1"));
+ Handler.next();check(client.last.contains("fps=59.9"));
+ for(String transientOwner:new String[]{"SystemUI","IME"}){
+ c.scene("other",0,true,true,"",12,false);check(client.last.contains("UNAVAILABLE_SCENE_OWNERSHIP"));
+ reads=source.fpsReads;Handler.next();check(source.fpsReads==reads&&!client.last.contains("fps=59.9"));
+ c.scene("other",0,true,true,"",12,true);check(client.last.contains("fps=-1"));Handler.next();check(client.last.contains("fps=59.9"));}
+ c.scene("game",0,true);
  check(c.command("arm",0,"").startsWith("ok=0"));
- check(start(c).startsWith("ok=1"));for(int i=0;i<7;i++)Handler.next();check(c.scans==3);
+ check(start(c).startsWith("ok=1"));for(int i=0;i<7;i++)Handler.next();check(c.scans==3&&MonitorStore.lastFps==59.9&&MonitorStore.fpsValidity.equals("VALID"));
+ c.scene("game",0,true,true,"",c.session.taskId,false);Handler.next();
+ check(c.session.recording()&&MonitorStore.lastFps<0&&MonitorStore.fpsValidity.equals("UNAVAILABLE_SCENE_OWNERSHIP"));
+ c.scene("game",0,true,true,"",c.session.taskId,true);
+ java.nio.file.Files.write(fpsFile,"malformed".getBytes());Handler.next();
+ check(MonitorStore.lastFps<0&&MonitorStore.fpsValidity.equals("UNAVAILABLE_MALFORMED_SOURCE"));
+ java.nio.file.Files.write(fpsFile,"fps: 0.0 duration:1000000 frame_count:0".getBytes());Handler.next();
+ check(MonitorStore.lastFps==0&&MonitorStore.fpsValidity.equals("VALID"));
  c.scene("other",0,true);check(!c.session.recording()&&MonitorStore.terminal.equals("FOREGROUND_CHANGED"));
  int scans=c.scans;c.scene("game",0,true);Handler.next();check(scans==c.scans);
  check(start(c).startsWith("ok=1"));c.generation++;Handler.next();
@@ -65,17 +84,17 @@ stubs.update({
  check(start(c).startsWith("ok=1"));c.command("recordStop",0,"");int finishes=MonitorStore.finishes;
  c.command("recordStop",0,"");check(MonitorStore.finishes==finishes);
  check(start(c).startsWith("ok=1"));c.scene("game",0,false);
- check(!c.session.recording()&&Handler.pending.isEmpty()&&c.session.mode==MonitorSession.FULL);
+ check(!c.session.recording()&&Handler.pending.isEmpty()&&c.session.mode==MonitorSession.FULL&&replacement.last.contains("fps=-1"));
  c.scene("game",0,true);Handler.next();check(!c.session.recording());
  for(int i=0;i<100;i++){c.command("off",0,"");Handler.next();c.command("full",0,"");Handler.next();}
- c.command("off",0,"");check(c.session.interval()==5000&&HandlerThread.active==1);
+ c.command("off",0,"");check(c.session.interval()==5000&&HandlerThread.active==1);reads=source.fpsReads;Handler.next();check(source.fpsReads==reads);
  c.register(null);check(Handler.pending.isEmpty()&&HandlerThread.active==0);
  check(new Collector().session.mode==MonitorSession.OFF);
  c.register(new Client());c.scene("game",0,true);c.command("full",0,"");
  check(start(c).startsWith("ok=1"));c.command("permissionLost",0,"");
  check(!c.session.recording()&&c.session.mode==MonitorSession.FULL&&!c.session.visible()&&c.session.interval()==5000);
  c.command("permissionGranted",0,"");check(c.session.visible()&&!c.session.recording());
- c.register(null);
+ c.register(null);java.nio.file.Files.delete(fpsFile);
  System.out.println("MONITOR_SHARED_DEMAND_EPOCH_RECONNECT_TERMINALS_NO_RESUME_ZERO_IDLE_WRITES_SCANS=PASS");}}
 '''
 })
@@ -91,5 +110,13 @@ sources=(src/'MonitorSources.java').read_text(encoding='utf8')
 for forbidden in ('kgsl','gpu_busy','/proc/stat','ProcessBuilder','Runtime.getRuntime','setAffinity','renice'):
  assert forbidden not in collector+sources,forbidden
 assert collector.count('postDelayed(')==1 and 'if(capture)' in collector
-assert 'measured_fps' not in sources and 'session.interval()' in collector
+assert 'FPS_PATH = "/sys/class/drm/sde-crtc-0/measured_fps"' in sources and 'session.interval()' in collector
+service=(src/'ZuiControlService.java').read_text(encoding='utf8')
+assert '!mRawFocusTransient && !mImeVisible' in service and 'pkg.equals(mRawFocusedPackage)' in service
+for forbidden in ('TaskFpsCallback','registerTaskFps','1013','getRefreshRate','displayHz'):
+ assert forbidden not in collector+sources,forbidden
+store=(src/'MonitorStore.java').read_text(encoding='utf8')
+assert 'valid(fps)' in store and '"fps="+fpsValidity+";fpsSource=DISPLAY_MEASURED_FPS"' in store
+ui=(root/'app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt').read_text(encoding='utf8')
+assert 'if (previous != metrics || shapeChanged)' in ui and 'if (stateChanged) invalidate()' in ui
 print('MONITOR_R4_STATIC_SINGLE_PIPELINE=PASS')
