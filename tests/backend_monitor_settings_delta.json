@@ -133,6 +133,18 @@
       "beforeSha256": "0747672401635f60d35606751b19257d8257424d0714046f7bec123079dd957a"
     },
     {
+      "path": "app/src/test/java/com/zui/zuicontrol/MonitorGestureTest.kt",
+      "before": "100644 blob 9aa2707238ca8e59722bd8f0887277bed2d90e76\tapp/src/test/java/com/zui/zuicontrol/MonitorGestureTest.kt",
+      "after": "100644 blob 61005b2663908f56b248e1458faab5b19c7edb24\tapp/src/test/java/com/zui/zuicontrol/MonitorGestureTest.kt",
+      "hunks": [
+        {
+          "before": "package com.zui.zuicontrol\nimport org.junit.Assert.*\nimport org.junit.Test\n\nclass MonitorGestureTest {\n    @Test fun tapHoldAndSuccessfulStartMatrix() {\n        for (duration in listOf(100L, 200, 250, 500, 900, 1500, 1900, 1999, 2000, 2100, 2600)) {\n            val g = MonitorGesture(); g.press(10)\n            assertEquals(duration > 250, g.arming(10 + duration))\n            assertEquals(duration >= 2000, g.complete(10 + duration))\n            assertFalse(g.complete(10 + duration))\n            assertEquals(if (duration <= 250) MonitorGesture.Release.TO_BAR else MonitorGesture.Release.NONE,\n                g.release(10 + duration))\n            assertFalse(g.arming(9000)); assertFalse(g.complete(9000))\n        }\n    }\n    @Test fun barGestureIsConsumedBeforeCircleCanArm() {\n        for (duration in listOf(100L, 200, 500, 2600)) {\n            val g = MonitorGesture(); g.press(10, circle = false)\n            assertFalse(g.complete(5000)); assertFalse(g.arming(5000)); assertFalse(g.drag())\n            assertEquals(MonitorGesture.Release.TO_CIRCLE, g.release(10 + duration))\n            assertEquals(-1L, g.down); assertFalse(g.complete(9000)); assertFalse(g.arming(9000))\n            assertEquals(MonitorGesture.Release.NONE, g.release(9010))\n            g.press(9020); assertTrue(g.complete(11020))\n        }\n    }\n    @Test fun dragAndCancellationCannotStartOrClick() {\n        for (recording in listOf(false, true)) {\n            val g = MonitorGesture(); g.press(10, recording = recording)\n            assertTrue(g.drag()); assertTrue(g.drag())\n            assertFalse(g.complete(9010)); assertFalse(g.arming(9010))\n            assertEquals(MonitorGesture.Release.DRAG_END, g.release(9010))\n            g.press(10000, recording = recording); g.cancel()\n            assertFalse(g.drag()); assertFalse(g.complete(13000))\n            assertEquals(MonitorGesture.Release.NONE, g.release(13000))\n        }\n    }\n    @Test fun recordingTapStopsButHoldOrDragNeverStops() {\n        val g = MonitorGesture(); g.press(10, recording = true)\n        assertFalse(g.arming(510)); assertFalse(g.complete(2010))\n        assertEquals(MonitorGesture.Release.NONE, g.release(2010))\n        g.press(3000, recording = true)\n        assertEquals(MonitorGesture.Release.STOP_RECORDING, g.release(3200))\n        g.press(4000); assertTrue(g.complete(6000)); assertTrue(g.drag())\n        assertEquals(MonitorGesture.Release.DRAG_END, g.release(6100))\n    }\n    @Test fun cyclePausesForTheWholeGesture() {\n        val g = MonitorGesture(); g.release(0); g.cycle(2999); assertEquals(0, g.metric)\n        g.cycle(3000); assertEquals(1, g.metric)\n        g.press(3500); g.drag(); g.cycle(7000); assertEquals(1, g.metric)\n        g.release(7100); g.cycle(10100); assertEquals(2, g.metric)\n        g.cycle(13100); assertEquals(0, g.metric)\n    }\n}\n",
+          "after": "package com.zui.zuicontrol\nimport org.junit.Assert.*\nimport org.junit.Test\n\nclass MonitorGestureTest {\n    @Test fun confirmedSingleDoubleAndDeadline() {\n        val g=MonitorGesture(300)\n        g.press(0,false); assertEquals(MonitorGesture.Release.TO_CIRCLE,g.release(100))\n        g.press(200); assertEquals(MonitorGesture.Release.WAIT_TAP,g.release(300))\n        assertEquals(MonitorGesture.Release.NONE,g.confirm(599))\n        g.press(599); assertEquals(MonitorGesture.Release.NONE,g.confirm(600))\n        assertEquals(MonitorGesture.Release.START_RECORDING,g.release(650))\n        assertEquals(MonitorGesture.Release.NONE,g.release(650))\n        assertEquals(MonitorGesture.Release.NONE,g.confirm(999))\n        g.press(1000); g.release(1100)\n        assertEquals(MonitorGesture.Release.TO_BAR,g.confirm(1400))\n        assertEquals(MonitorGesture.Release.NONE,g.confirm(1500))\n    }\n    @Test fun longHoldCannotStartOrReplace() {\n        for (duration in listOf(251L,500,1999,2000,10000)) {\n            val g=MonitorGesture();g.press(0);g.release(100);g.press(200)\n            assertEquals(MonitorGesture.Release.NONE,g.release(200+duration))\n            assertEquals(MonitorGesture.Release.NONE,g.confirm(20000))\n        }\n    }\n    @Test fun dragAndCancelCancelBothTaps() {\n        for (recording in listOf(false,true)) {\n            val g=MonitorGesture();g.press(0);g.release(100);g.press(200,recording=recording)\n            assertTrue(g.drag());assertEquals(MonitorGesture.Release.DRAG_END,g.release(250))\n            assertEquals(MonitorGesture.Release.NONE,g.confirm(1000))\n            g.press(1100);g.release(1150);g.cancel()\n            assertEquals(MonitorGesture.Release.NONE,g.confirm(2000))\n            assertFalse(g.drag())\n        }\n    }\n    @Test fun recordingTapStopsAndBarCannotDrag() {\n        val g=MonitorGesture();g.press(0,recording=true)\n        assertEquals(MonitorGesture.Release.STOP_RECORDING,g.release(100))\n        g.press(200,false);assertFalse(g.drag())\n        g.cancel();assertEquals(MonitorGesture.Release.NONE,g.release(300))\n    }\n    @Test fun cycleDoesNotSampleOrInterruptPointer() {\n        val g=MonitorGesture();g.cycle(3000);assertEquals(1,g.metric)\n        g.press(3500);g.drag();g.cycle(7000);assertEquals(1,g.metric)\n        g.release(7100);g.cycle(10100);assertEquals(2,g.metric)\n    }\n}\n"
+        }
+      ],
+      "beforeSha256": "a5705890ce53958a5548cdce669e4627bb00ac57f0ef9b00b70b7f3dba0463d8"
+    },
+    {
       "path": "framework_patch/src/framework/android/zui/ZuiControlManager.java",
       "before": "100644 blob bc6c610dd0d00ae7d67a1a04d35d7abac7d6ddcd\tframework_patch/src/framework/android/zui/ZuiControlManager.java",
       "after": "100644 blob a0be978b0db76c86fab5f2c99f75288938ae13e6\tframework_patch/src/framework/android/zui/ZuiControlManager.java",
@@ -369,6 +381,18 @@
         }
       ],
       "beforeSha256": "1e25b22d0f2d3d93504448d75e8d98465572ae171fa0a4615d5f0e48673d4244"
+    },
+    {
+      "path": "payload/README.txt",
+      "before": "100644 blob 7827e77b97b1357bb7e5ac99d1f9bd324d27371b\tpayload/README.txt",
+      "after": "100644 blob 656b9b550ebfa10315ddce13764de817847ff55a\tpayload/README.txt",
+      "hunks": [
+        {
+          "before": "ZuiControl production payload — App V71 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV71/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n",
+          "after": "ZuiControl production payload — App V72 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV72/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n"
+        }
+      ],
+      "beforeSha256": "cf0099433ad863736238ea01bf59caabe7f585c1d86dfc5ecf2d7f71ca8e0771"
     },
     {
       "path": "payload/system/bin/zui_controld",
