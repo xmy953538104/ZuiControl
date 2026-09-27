@@ -12,6 +12,9 @@ on:
       - 'framework_patch/src/services/com/zui/server/control/GpuRange.java'
       - 'framework_patch/src/services/com/zui/server/control/SettingsBackup.java'
       - 'payload/system/bin/zui_uperf*'
+      - 'payload/system/etc/zui_control/zui_scheduler_prepare.sh'
+      - 'payload/system/etc/init/zui_scheduler.rc'
+      - 'payload/system/etc/init/zui_controld.rc'
       - 'payload/system/etc/zui_control/uperf*'
       - 'payload/system/etc/zui_control/zui_uperf_crash_gate.sh'
       - 'payload/system/etc/zuiopt/**'
@@ -68,6 +71,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/uperf-native"
           git rev-parse HEAD | tee "$RUNNER_TEMP/uperf-native/tested-head.txt"
+          python3 tests/uperf/startup/TestUperfBootstrap.py 2>&1 | tee "$RUNNER_TEMP/uperf-native/bootstrap.log"
           python3 tests/uperf/supervisor/TestUperfSupervisor.py --receipt-dir "$RUNNER_TEMP/uperf-native" 2>&1 | tee "$RUNNER_TEMP/uperf-native/process.log"
       - name: Production policy and qualified selection regression
         if: ${{ !cancelled() }}

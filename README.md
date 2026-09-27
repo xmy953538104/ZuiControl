@@ -94,6 +94,13 @@ complete native integration step to ten minutes, failing rather than skipping.
 The Binder fixture executes the production reply parser with typed mock Parcel
 calls; it is not proof of device wire bytes or SELinux permissions.
 
+Linux Uperf integration inheritance requires every hash in the successful
+`integration-dependencies.json` receipt to match. Wrapper, prepare, relevant init,
+AUTH/config selection and fixture changes require the full 20-run Linux gate even
+when supervisor C/ELF is unchanged. Both permanent workflows execute that gate;
+`backend-native.yml` also triggers on startup script/init changes. No Linux PASS
+is inherited from native C/ELF identity alone.
+
 ## ROM integration
 
 The performance monitor uses one 1000ms system-server scalar collector and

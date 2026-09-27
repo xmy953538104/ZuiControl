@@ -319,14 +319,13 @@ class RegularLogReadinessTests(unittest.TestCase):
             ready.parent.mkdir()
             script = WRAPPER.read_text(encoding="utf-8")
             # Android transport/cpuset boundaries only; the wrapper and native exec stay real.
-            helper = root / "app_process"
-            calls = root / "prepare.calls"
-            helper.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + shlex.quote(str(calls)) + "\n", encoding="utf-8")
-            helper.chmod(0o755)
+            auth = root / ".validated_runtime.sha256"
+            self.assertNotIn("app_process", script)
+            self.assertNotIn("PolicyCommand", script)
             replacements = {
-                "/system/bin/app_process": shlex.quote(str(helper)),
                 "/dev/cpuset/background/tasks": str(root / "cpuset.tasks"),
                 "CONFIG=/data/vendor/zui_control/uperf/uperf.json": f"CONFIG={config}",
+                "AUTH=/data/vendor/zui_control/uperf/.validated_runtime.sha256": f"AUTH={auth}",
                 "LOG=/data/vendor/zui_control/log/uperf.log": f"LOG={log}",
                 "READY_UPTIME=/data/vendor/zui_control/uperf/.service_ready_uptime": f"READY_UPTIME={ready}",
                 "SUPERVISOR=/system/bin/zui_uperf_supervisor": f"SUPERVISOR={self.binary}",
@@ -345,6 +344,26 @@ class RegularLogReadinessTests(unittest.TestCase):
                     "ZUI_UPERF_TEST_CADENCE_MS": "20",
                 }
             )
+            def rejected():
+                result = subprocess.run(["bash", str(wrapper)], env=env,
+                    capture_output=True, timeout=5)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(ready.exists())
+                self.assertFalse(state.exists(), "supervisor/child must not start")
+                self.assertFalse((root / "cpuset.tasks").exists())
+
+            rejected()  # Missing authorization.
+            for invalid in ("malformed\n", "0" * 64 + "  " + str(config) + "\n"):
+                auth.write_text(invalid, encoding="utf-8")
+                rejected()
+            # Exactly the production prepare command, including the path and newline.
+            authorized = subprocess.check_output(["sha256sum", str(config)])
+            auth.write_bytes(authorized)
+            original_config = config.read_bytes()
+            config.write_bytes(original_config + b"\n")
+            rejected()
+            config.write_bytes(original_config)
+            self.assertEqual(subprocess.check_output(["sha256sum", str(config)]), authorized)
             process = subprocess.Popen(
                 ["bash", str(wrapper)],
                 env=env,
@@ -359,10 +378,7 @@ class RegularLogReadinessTests(unittest.TestCase):
                 self.assertEqual(
                     Path(f"/proc/{process.pid}/exe").resolve(), self.binary.resolve()
                 )
-                self.assertEqual(calls.read_text().splitlines(), [
-                    "/system/bin com.zui.server.control.PolicyCommand bootstrap -",
-                    "/system/bin com.zui.server.control.PolicyCommand uperf-startup -",
-                ])
+                self.assertEqual((root / "cpuset.tasks").read_text().strip(), str(process.pid))
                 terminate_pid(daemon)
                 self.assertEqual(process.wait(timeout=5), 1)
                 self.assertFalse(Path(f"/proc/{daemon}").exists())
