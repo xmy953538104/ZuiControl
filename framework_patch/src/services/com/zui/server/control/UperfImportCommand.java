@@ -34,8 +34,13 @@ final class UperfImportCommand {
         byte[] result = Files.readAllBytes(file.toPath()); require(result.length > 0 && result.length <= max, "immutable source read bound"); return result;
     }
     private static UperfConfigStore store(Fileset files) throws Exception {
+        byte[] profile = fixed(SYSTEM + "uperf-compatibility.json", 131072);
+        String binaryHash = string(object(parse(profile)).get("binaryHash"));
+        require(binaryHash.matches("[0-9a-f]{64}"), "ROM binary identity");
+        // The verified ROM pins the binary identity. performanced compares the
+        // actual executable before every launch; shell cannot read its exec type.
         return new UperfConfigStore(files, fixed(SYSTEM + "uperf-sm8650.json", 131072),
-                hash(fixed("/system/bin/uperf", 4194304)), fixed(SYSTEM + "uperf-compatibility.json", 131072));
+                binaryHash, profile);
     }
     private static String boot() throws Exception { return new String(fixed("/proc/sys/kernel/random/boot_id", 128), java.nio.charset.StandardCharsets.US_ASCII).trim(); }
     private static Map<String,Object> upload(Fileset files, String tx) throws Exception {
@@ -59,7 +64,10 @@ final class UperfImportCommand {
             require(lock != null, "Uperf import busy");
             if (action.equals("uperf-startup")) {
                 // Materialization is a projection of validated selection; old imports survive prepare/reboot.
-                files.root.write("uperf.json", store.startup()); return "selection=" + encode(store.selection());
+                byte[] runtime = store.startup(); files.root.write("uperf.json", runtime);
+                files.root.write(".validated_runtime.sha256", (hash(runtime) + "  " + PolicyCommand.UPERF + "/uperf.json\n"
+                        + store.binaryHash + "  /system/bin/uperf\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                return "selection=" + encode(store.selection());
             }
             if (observing) {
                 Map<String,Object> selection = store.selection();

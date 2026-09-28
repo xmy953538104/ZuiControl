@@ -40,14 +40,16 @@ class BootstrapTests(unittest.TestCase):
                 "setprop": 'echo "$*" >> "$FIXTURE/events"',
                 "sync": 'exit 0', "restorecon_recursive": 'exit 0',
                 "settings": 'echo balance',
-                "app_process": 'echo "$3" >> "$FIXTURE/calls"; [ "$3" != "$FAIL_ACTION" ] || exit 9; if [ "$3" = uperf-startup ]; then echo qualified > "$FIXTURE/data/uperf/uperf.json"; fi',
+                "app_process": 'echo "$3" >> "$FIXTURE/calls"; [ "$3" != "$FAIL_ACTION" ] || exit 9; if [ "$3" = uperf-startup ]; then echo qualified > "$FIXTURE/data/uperf/uperf.json"; sha256sum "$FIXTURE/data/uperf/uperf.json" "$FIXTURE/binary" > "$FIXTURE/data/uperf/.validated_runtime.sha256"; fi',
                 "supervisor": 'echo launched >> "$FIXTURE/launches"',
             }
             for name, body in fixtures.items():
                 f = commands / name; f.write_text("#!/bin/sh\n" + body + "\n"); f.chmod(0o755)
+            (root/'binary').write_text('pinned executable')
             env = dict(os.environ, FIXTURE=root.as_posix(), PATH=commands.as_posix()+os.pathsep+os.environ['PATH'])
             prep = PREP.read_text().replace('/data/vendor/zui_control', data.as_posix()).replace('/system/bin/app_process', 'app_process')
             wrapper = WRAPPER.read_text().replace('/data/vendor/zui_control', data.as_posix()).replace('/system/bin/zui_uperf_supervisor', (commands/'supervisor').as_posix()).replace('/dev/cpuset/background/tasks', (root/'tasks').as_posix())
+            wrapper = wrapper.replace('BINARY=/system/bin/uperf', 'BINARY="'+(root/'binary').as_posix()+'"')
             hostbin = subprocess.check_output([BASH, '-c', 'cd "$1" && pwd', 'fixture', str(commands)], text=True).strip()
             prefix = 'export PATH="' + hostbin + ':$PATH"\n'
             script = root / 'prepare.sh'; script.write_text(prefix + prep); service = root / 'service.sh'; service.write_text(prefix + wrapper)
@@ -61,6 +63,9 @@ class BootstrapTests(unittest.TestCase):
             before=(root/'calls').read_bytes()
             for _ in range(2): self.assertEqual(run(service).returncode,0)
             self.assertEqual((root/'calls').read_bytes(),before)
+            (root/'binary').write_text('tampered executable')
+            self.assertNotEqual(run(service).returncode,0)
+            (root/'binary').write_text('pinned executable')
             (u/'uperf.json').write_text('stale')
             self.assertNotEqual(run(service).returncode,0)
             self.assertNotEqual(run(script,FAIL_ACTION='bootstrap').returncode,0)

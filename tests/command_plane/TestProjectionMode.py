@@ -5,6 +5,8 @@ bytes stay outside Git. CI independently constructs the same interrupted phase.
 """
 from pathlib import Path
 import os
+import hashlib
+import json
 import subprocess
 import tempfile
 import unittest
@@ -163,6 +165,14 @@ public final class ProjectionModeFixture {
         native = (ROOT / 'native/zui_uperf_supervisor.c').read_text()
         self.assertNotIn('app_process', native)
         self.assertNotIn('PolicyCommand', native)
+        imports = (BASE / 'UperfImportCommand.java').read_text()
+        self.assertNotIn('fixed("/system/bin/uperf"', imports)
+        self.assertIn('binaryHash.matches("[0-9a-f]{64}")', imports)
+        self.assertIn('files.root.write(".validated_runtime.sha256"', imports)
+        trust = json.loads((ROOT / 'payload/system/etc/zui_control/uperf-compatibility.json').read_text())
+        self.assertEqual(trust['binaryHash'], hashlib.sha256((ROOT / 'payload/system/bin/uperf').read_bytes()).hexdigest())
+        wrapper = (ROOT / 'payload/system/bin/zui_uperf_service').read_text()
+        self.assertLess(wrapper.index('sha256sum "$CONFIG" "$BINARY"'), wrapper.index('exec "$SUPERVISOR"'))
 
 
 if __name__ == '__main__':

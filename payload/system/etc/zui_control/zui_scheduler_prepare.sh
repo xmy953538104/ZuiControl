@@ -75,10 +75,9 @@ if [ ! -f "$UPERF_DIR/policy-projection/active.json" ]; then
 fi
 CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand bootstrap - || exit 1
 CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand uperf-startup - || exit 1
-(umask 077; sha256sum "$UPERF_DIR/uperf.json" > "$AUTH.tmp") || exit 1
-sync "$AUTH.tmp" || exit 1
-mv "$AUTH.tmp" "$AUTH" || exit 1
-sync "$UPERF_DIR" || exit 1
+# uperf-startup durably publishes config + binary authorization using AtomicFile,
+# file/directory fsync and exact readback, after successful policy bootstrap.
+[ -f "$AUTH" ] && [ ! -L "$AUTH" ] || exit 1
 rm -f "$UPERF_DIR/.service_ready_uptime" || exit 1
 setprop zui_control.scheduler prepared || exit 1
 CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand uperf-observe-startup - || exit 1

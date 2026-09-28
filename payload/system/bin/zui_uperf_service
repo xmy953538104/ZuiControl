@@ -4,6 +4,7 @@ CONFIG=/data/vendor/zui_control/uperf/uperf.json
 LOG=/data/vendor/zui_control/log/uperf.log
 READY_UPTIME=/data/vendor/zui_control/uperf/.service_ready_uptime
 SUPERVISOR=/system/bin/zui_uperf_supervisor
+BINARY=/system/bin/uperf
 
 # The shell-domain control plane validates/migrates policy and selects config.
 # Init clears this authorization at boot and before every explicit preparation.
@@ -12,7 +13,9 @@ SUPERVISOR=/system/bin/zui_uperf_supervisor
 AUTH=/data/vendor/zui_control/uperf/.validated_runtime.sha256
 [ -f "$AUTH" ] && [ ! -L "$AUTH" ] && [ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || exit 1
 expected="$(cat "$AUTH")" || exit 1
-actual="$(sha256sum "$CONFIG")" || exit 1
+# This domain owns executable reads. Validate both selected config and pinned
+# ROM binary before any Uperf code executes, including automatic restarts.
+actual="$(sha256sum "$CONFIG" "$BINARY")" || exit 1
 [ "$expected" = "$actual" ] || exit 1
 
 # The exec keeps init's service PID/cgroup while removing the shell from the
