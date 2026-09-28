@@ -26,17 +26,18 @@ class ProjectionModeTests(unittest.TestCase):
           static int scenario;
           static class SystemProperties {static String get(String key,String fallback){
             if(key.equals("zui_control.scheduler"))return SystemClock.now<200?"prepared":"restarted";
-            if(key.equals("sys.zui_control.uperf_fail_safe"))return scenario==1||SystemClock.now<200?"1":"0";
+            if(key.equals("sys.zui_control.uperf_fail_safe"))return scenario==1||SystemClock.now<200||(scenario==4&&SystemClock.now<1000)?"1":"0";
             if(key.equals("init.svc.zui_uperf"))return scenario==2?"stopped":"running";
             throw new AssertionError(key);
           }}
           static class Fileset {Fileset root=this;byte[] read(String n){return scenario==3?new byte[0]:new byte[]{1};}}
           METHOD
           public static void main(String[] args)throws Exception{
-            for(scenario=0;scenario<4;scenario++){
+            for(scenario=0;scenario<5;scenario++){
               SystemClock.now=0;boolean ready=awaitStartup(new Fileset());
-              if(ready!=(scenario==0)||SystemClock.now>35000)throw new AssertionError("startup "+scenario);
+              if(ready!=(scenario==0||scenario==4)||SystemClock.now>35000)throw new AssertionError("startup "+scenario);
               if(scenario==0&&SystemClock.now!=200)throw new AssertionError("stale failsafe before init start");
+              if(scenario==4&&SystemClock.now!=1000)throw new AssertionError("queued init start must clear stale failsafe");
             }
             System.out.println("FINITE_STARTUP_OBSERVER_PASS");
           }

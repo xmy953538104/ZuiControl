@@ -137,8 +137,8 @@ final class UperfImportCommand {
             Thread.sleep(100);
             // prepare cleared the marker before asking init to start this generation.
             if (SystemProperties.get("zui_control.scheduler", "").equals("restarted")) {
-                if (SystemProperties.get("sys.zui_control.uperf_fail_safe", "0").equals("1")) return false;
-                if (files.root.read(".service_ready_uptime").length != 0
+                if (SystemProperties.get("sys.zui_control.uperf_fail_safe", "0").equals("0")
+                        && files.root.read(".service_ready_uptime").length != 0
                         && SystemProperties.get("init.svc.zui_uperf", "").equals("running")) return true;
             }
         } while (SystemClock.elapsedRealtime() < deadline);
