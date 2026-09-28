@@ -62,6 +62,20 @@ class NotificationRenderer(unittest.TestCase):
         self.assertNotIn('else Color.rgb(117, 138, 153)',helper)
         self.assertNotRegex(helper,r'private (?:var|val)\s+\w+.*RemoteViews')
 
+    def test_off_scalar_independence_and_cost_guards(self):
+        helper=(APP/'NotificationQuickControlHelper.kt').read_text('utf8')
+        quick=(APP/'ZuiControlQuickService.kt').read_text('utf8')
+        monitor=(APP/'PerformanceMonitor.kt').read_text('utf8')
+        self.assertIn('metric(views, R.id.notification_quiet, snapshot.quietC,',helper)
+        self.assertIn('metric(views, R.id.notification_power, snapshot.powerW,',helper)
+        self.assertNotIn('PerformanceMonitor.command("state")',quick)
+        self.assertIn('monitor?.desiredFull()',quick)
+        self.assertIn('if (controlsDirty || controls == null)',quick)
+        self.assertIn('if (displayed == lastRendered) return',quick)
+        self.assertIn('if (shapeChanged) positionWindow("shape")',monitor)
+        render=monitor[monitor.index('private fun render('):monitor.index('private inner class MonitorView')]
+        self.assertEqual(render.count('Settings.canDrawOverlays(context)'),1)
+
     def test_colors_and_modes(self):
         expected={'notify_card':'#F4F6FA','notify_monitor_off':'#FFFFFF',
                   'notify_monitor_active':'#3B67C1','notify_monitor_indicator':'#F59E0B',

@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
+CLOSURE=json.loads((ROOT/'tests/backend_monitor_closure_delta.json').read_text(encoding='utf-8'))
 BOUNDARY=json.loads((ROOT/'tests/backend_property_boundary_delta.json').read_text(encoding='utf-8'))
 BINDER=json.loads((ROOT/'tests/backend_binder_delta.json').read_text(encoding='utf-8'))
 BOOTSTRAP=json.loads((ROOT/'tests/backend_bootstrap_delta.json').read_text(encoding='utf-8'))
@@ -9,6 +10,12 @@ INTEGRATION=json.loads((ROOT/'tests/backend_monitor_settings_delta.json').read_t
 MANIFEST=json.loads((ROOT/'tests/backend_abc_delta.json').read_text(encoding='utf-8'))
 
 def reverse_text(path,text):
+    change=next((r for r in CLOSURE['files'] if r['path']==path),None)
+    if change:
+        for h in reversed(change['hunks']):
+            assert text.count(h['after'])==1,('monitor closure unauthorized delta',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==change['beforeSha256'],('monitor closure frozen base',path)
     change=next((r for r in BOUNDARY['files'] if r['path']==path),None)
     if change:
         for h in reversed(change['hunks']):
@@ -54,7 +61,7 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
-    for row in BOUNDARY['files']+BINDER['files']+BOOTSTRAP['files']+INTEGRATION['files']+MANIFEST['files']:
+    for row in CLOSURE['files']+BOUNDARY['files']+BINDER['files']+BOOTSTRAP['files']+INTEGRATION['files']+MANIFEST['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         after=row['after'].encode();assert result.count(after)==1,('R1 exact source bytes',row['path'])
         result.remove(after)

@@ -7,6 +7,7 @@ root=Path(__file__).resolve().parents[2]
 src=root/'framework_patch/src/services/com/zui/server/control'
 stubs['org/json/JSONObject.java']=stubs['org/json/JSONObject.java'].replace('public JSONObject(){}','public static final Object NULL=new Object();public JSONObject(){}').replace('public JSONObject put(String k,Object v){','public JSONObject put(String k,Object v)throws JSONException{')
 stubs.update({
+ 'android/os/PowerManager.java':'package android.os;public class PowerManager {public static boolean interactive=true;public boolean isInteractive(){return interactive;}}',
  'android/os/SystemClock.java':'package android.os;public class SystemClock {public static long now;public static long elapsedRealtime(){return now;}}',
  'android/os/Handler.java':'''package android.os;import java.util.*;public class Handler {
  public static final List<Runnable> pending=new ArrayList<>();public Handler(Object o){}
@@ -42,7 +43,7 @@ stubs.update({
  Collector(){super(new Context(),source);}int findPid(){return 42;}
  MonitorSnapshot.Task identity(int p){return missing?null:new MonitorSnapshot.Task(p,"GameThread",generation,SystemClock.now/10);}
  List<MonitorSnapshot.Task> readTasks(int p){scans++;return Arrays.asList(identity(p));}}
- static String start(Collector c){c.command("circle",0,"");return c.command("recordStart",0,c.session.connectionEpoch+":"+c.session.targetEpoch+":"+(SystemClock.now+1));}
+ static long gesture; static String start(Collector c){c.command("circle",0,"");return c.command("recordStart",0,c.session.connectionEpoch+":"+c.session.targetEpoch+":"+(gesture=Math.max(gesture+1,SystemClock.now+1)));}
  public static void main(String[] args)throws Exception {
  fpsFile=java.nio.file.Files.createTempFile("measured-fps-",".txt");
  java.nio.file.Files.write(fpsFile,"fps: 59.9 duration:1000000 frame_count:60".getBytes());source=new MonitorSources(fpsFile.toString());
@@ -72,6 +73,27 @@ stubs.update({
  int scans=c.scans;c.scene("game",0,true);Handler.next();check(scans==c.scans);
  check(start(c).startsWith("ok=1"));c.generation++;Handler.next();
  check(MonitorStore.incomplete&&MonitorStore.terminal.equals("PROCESS_GENERATION_LOST"));
+ // Both competing process-loss event orders use the exact recording generation.
+ for(boolean sceneFirst:new boolean[]{true,false}){
+  c.scene("game",0,true);check(start(c).startsWith("ok=1"));int beforeFinish=MonitorStore.finishes;
+  c.missing=true;
+  if(sceneFirst){c.scene("other",0,true);Handler.next();}
+  else {Handler.next();c.scene("other",0,true);}
+  check(MonitorStore.finishes==beforeFinish+1&&MonitorStore.incomplete&&MonitorStore.terminal.equals("PROCESS_GENERATION_LOST"));
+  c.missing=false;c.scene("game",0,true);check(!c.session.recording());
+ }
+ check(start(c).startsWith("ok=1"));c.generation++;c.scene("other",0,true);
+ check(MonitorStore.incomplete&&MonitorStore.terminal.equals("PROCESS_GENERATION_LOST"));c.scene("game",0,true);
+ check(start(c).startsWith("ok=1"));c.missing=true;c.command("recordStop",0,"");
+ check(!MonitorStore.incomplete&&MonitorStore.terminal.equals("EXPLICIT_STOP"));c.missing=false;
+ for(boolean sceneFirst:new boolean[]{true,false}){
+  check(start(c).startsWith("ok=1"));PowerManager.interactive=false;c.missing=true;
+  if(sceneFirst)c.scene("other",0,true);else Handler.next();
+  check(!MonitorStore.incomplete&&MonitorStore.terminal.equals("SCREEN_OFF"));
+  c.missing=false;PowerManager.interactive=true;c.scene("game",0,true);
+ }
+ check(start(c).startsWith("ok=1"));KeyguardManager.locked=true;c.scene("other",0,true);
+ check(!MonitorStore.incomplete&&MonitorStore.terminal.equals("LOCKED"));KeyguardManager.locked=false;c.scene("game",0,true);
  check(start(c).startsWith("ok=1"));IBinder.DeathRecipient staleDeath=client.death;
  Runnable staleSample=Handler.pending.get(0);staleDeath.binderDied();
  check(c.session.mode==MonitorSession.FULL&&!c.session.recording()&&Handler.pending.isEmpty());

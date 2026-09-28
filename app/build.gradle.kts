@@ -11,8 +11,8 @@ android {
         applicationId = "com.zui.zuicontrol"
         minSdk = 29
         targetSdk = 30
-        versionCode = 75
-        versionName = "0.21.38"
+        versionCode = 76
+        versionName = "0.21.39"
     }
 
     signingConfigs {

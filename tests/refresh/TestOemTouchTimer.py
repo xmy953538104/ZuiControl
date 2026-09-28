@@ -9,7 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests'))
-from BackendContract import reverse_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE
+from BackendContract import reverse_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE, CLOSURE as CLOSURE_SCOPE
 sys.path.insert(0, str(ROOT / 'scripts/build'))
 from ApplyZuiControlPayload import patch_oem_touch_timer
 
@@ -144,7 +144,7 @@ class OemTouchTimer(unittest.TestCase):
                 old_doc = identity['readme_text'].encode()
                 self.assertEqual(payload_tree_hash(old),tree)
                 self.assertEqual((ROOT/'payload/README.txt').read_bytes().replace(b'\r\n',b'\n'),
-                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV75').replace(b'App V60',b'App V75'))
+                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV76').replace(b'App V60',b'App V76'))
                 continue
             bound=reverse_entries(scope_entries(path),path)
             relative=[e.split(b'\t',1)[0]+b'\t'+e.split(b'\t',1)[1][len(path)+1:] for e in bound]
@@ -176,8 +176,8 @@ class OemTouchTimer(unittest.TestCase):
         identity_path = 'app/build.gradle.kts'
         old = identity['gradle_text'].encode()
         current = (ROOT/identity_path).read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 75')
-            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.38"')
+        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 76')
+            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.39"')
             .replace(b'targetSdk = 35', b'targetSdk = 30'))
         entry = next(line for line in entries if line.endswith(b'\tapp/build.gradle.kts'))
         entries.remove(entry)
@@ -249,7 +249,7 @@ class OemTouchTimer(unittest.TestCase):
             'HEAD','--','app','framework_patch'],text=True).splitlines()
         untracked = subprocess.check_output(['git','-C',str(ROOT),'ls-files','--others',
             '--exclude-standard','--','app','framework_patch'],text=True).splitlines()
-        self.assertLessEqual(set(changed+untracked), allowed | {r['path'] for r in ABC_SCOPE['files']} | {d['path'] for d in monitor['tree']}
+        self.assertLessEqual(set(changed+untracked), allowed | {r['path'] for r in CLOSURE_SCOPE['files']} | {r['path'] for r in ABC_SCOPE['files']} | {d['path'] for d in monitor['tree']}
                             | {d['path'] for d in polish['tree']} | {d['path'] for d in product['tree']}
                         | {d['path'] for d in stability['tree']} | {d['path'] for d in legacy['tree']}
                         | {d['path'] for d in json.loads((ROOT/'tests/monitor/r10_product_delta.json').read_text())['tree']} | {d['path'] for d in json.loads((ROOT/'tests/monitor/r11_product_delta.json').read_text())['tree']} | {d['path'] for d in json.loads((ROOT/'tests/monitor/r12_product_delta.json').read_text())['tree']} | {identity_path})

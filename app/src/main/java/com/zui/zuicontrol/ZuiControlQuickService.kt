@@ -25,13 +25,17 @@ class ZuiControlQuickService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var commandInFlight = false
     private var refreshPosted = false
+    private var controlsDirty = true
+    private var controls: NotificationQuickControlHelper.Snapshot? = null
+    private var lastRendered: NotificationQuickControlHelper.Snapshot? = null
+    private var notificationPublishes = 0L
     private val update = Runnable { refreshPosted = false; refreshNotification() }
     private var quietC = -1.0
     private var powerW = -1.0
     private var readingTime = 0L
     private var readingTtl = 3500L
     private var lastReadingPublish = 0L
-    private val readingUpdate = Runnable { lastReadingPublish = SystemClock.elapsedRealtime(); requestRefresh() }
+    private val readingUpdate = Runnable { lastReadingPublish = SystemClock.elapsedRealtime(); requestRefresh(false) }
     // A one-shot expiry only; it does not read a sensor or wake a sleeping device.
     private val readingExpiry = Runnable { acceptReading(-1.0, -1.0, 0L, 3500L) }
     private val observer = object : ContentObserver(handler) {
@@ -118,27 +122,35 @@ class ZuiControlQuickService : Service() {
         val nextQuiet = if (fresh && quiet.isFinite() && quiet > 0) quiet else -1.0
         val nextPower = if (fresh && power.isFinite() && power > 0) power else -1.0
         val invalidated = (quietC > 0 && nextQuiet < 0) || (powerW > 0 && nextPower < 0)
-        val changed = quietC != nextQuiet || powerW != nextPower
+        val changed = NotificationQuickControlHelper.metricNumber(quietC) != NotificationQuickControlHelper.metricNumber(nextQuiet) ||
+            NotificationQuickControlHelper.metricNumber(powerW) != NotificationQuickControlHelper.metricNumber(nextPower)
         quietC = nextQuiet; powerW = nextPower; readingTime = if (fresh) elapsed else 0L
         handler.removeCallbacks(readingExpiry)
         if (fresh) handler.postDelayed(readingExpiry, (elapsed + readingTtl + 1L - now).coerceAtLeast(1))
         if (!changed) return
         if (invalidated) {
-            handler.removeCallbacks(readingUpdate); requestRefresh()
+            handler.removeCallbacks(readingUpdate); requestRefresh(false)
         } else if (!handler.hasCallbacks(readingUpdate)) {
             handler.postDelayed(readingUpdate, (lastReadingPublish + 2000L - now).coerceAtLeast(0))
         }
     }
-    private fun requestRefresh() {
+    private fun requestRefresh(controlsChanged: Boolean = true) {
+        controlsDirty = controlsDirty || controlsChanged
         if (refreshPosted) return
         refreshPosted = true
         handler.post(update)
     }
     private fun refreshNotification() {
         val state = snapshot()
+        val displayed = state.copy(
+            quietC = NotificationQuickControlHelper.metricNumber(state.quietC).toDoubleOrNull() ?: -1.0,
+            powerW = NotificationQuickControlHelper.metricNumber(state.powerW).toDoubleOrNull() ?: -1.0)
+        if (displayed == lastRendered) return
+        lastRendered = displayed
         val trace = QuickControlTrace.observed(state.pkg, state.currentHz, state.currentMode.id, "T2")
         val content = renderNotification(state)
         getSystemService(NotificationManager::class.java).notify(ID, content)
+        notificationPublishes++
         QuickControlTrace.mark(trace,"T3","NotificationManager.notify_returned_logical_state")
     }
     private fun setting(key: String) = Settings.System.getString(contentResolver, key).orEmpty()
@@ -146,17 +158,21 @@ class ZuiControlQuickService : Service() {
         Intent(this, ZuiControlQuickService::class.java).setAction(action),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     private fun snapshot(): NotificationQuickControlHelper.Snapshot {
-        val scene = ZuiControlClient.currentSceneText()
-        val pkg = ZuiControlClient.stateValue(scene, "editableScenePackage").orEmpty()
-        val rate = ZuiControlClient.stateValue(scene, "editableDisplayHz")?.toIntOrNull() ?: 0
-        val mode = UperfMode.resolve(setting(ZuiControlContract.KEY_UPERF_MODE),
-            setting(ZuiControlContract.KEY_UPERF_RULES_TEXT), pkg)
-        val desired = ZuiControlClient.stateValue(PerformanceMonitor.command("state"), "monitorMode") == "1"
-        val enabled = PackageNames.isValid(pkg)
-        val uperfEnabled = ZuiControlClient.stateValue(scene, "editableSceneIsHome") == "true" || UperfAppPolicy.isConfigurable(packageManager, pkg)
+        if (controlsDirty || controls == null) {
+            val scene = ZuiControlClient.currentSceneText()
+            val pkg = ZuiControlClient.stateValue(scene, "editableScenePackage").orEmpty()
+            val rate = ZuiControlClient.stateValue(scene, "editableDisplayHz")?.toIntOrNull() ?: 0
+            val mode = UperfMode.resolve(setting(ZuiControlContract.KEY_UPERF_MODE),
+                setting(ZuiControlContract.KEY_UPERF_RULES_TEXT), pkg)
+            val enabled = PackageNames.isValid(pkg)
+            val uperfEnabled = ZuiControlClient.stateValue(scene, "editableSceneIsHome") == "true" || UperfAppPolicy.isConfigurable(packageManager, pkg)
+            controls = NotificationQuickControlHelper.Snapshot(pkg, rate, mode, false, enabled, uperfEnabled)
+            controlsDirty = false
+        }
         val fresh = readingTime > 0 && SystemClock.elapsedRealtime() - readingTime in 0..readingTtl
-        return NotificationQuickControlHelper.Snapshot(pkg, rate, mode, desired, enabled, uperfEnabled,
-            if (fresh) quietC else -1.0, if (fresh) powerW else -1.0)
+        // monitorMode comes from the existing authenticated producer snapshot, never a second state query.
+        return controls!!.copy(isFloatActive = monitor?.desiredFull() == true,
+            quietC = if (fresh) quietC else -1.0, powerW = if (fresh) powerW else -1.0)
     }
     @Suppress("DEPRECATION")
     private fun renderNotification(snapshot: NotificationQuickControlHelper.Snapshot): Notification {
@@ -179,7 +195,7 @@ class ZuiControlQuickService : Service() {
         args.firstOrNull { it.startsWith("--trace-seconds=") }?.substringAfter('=')?.toIntOrNull()?.let {
             QuickControlTrace.enable(it); monitor?.trace(it)
         }
-        writer.println("quickCommandInFlight=$commandInFlight refreshPosted=$refreshPosted")
+        writer.println("quickCommandInFlight=$commandInFlight refreshPosted=$refreshPosted notificationPublishes=$notificationPublishes")
         monitor?.dump(writer); QuickControlTrace.dump(writer)
     }
     override fun onDestroy() {

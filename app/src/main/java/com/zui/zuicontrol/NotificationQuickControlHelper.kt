@@ -39,9 +39,9 @@ internal object NotificationQuickControlHelper {
         setViewVisibility(R.id.monitor_indicator, if (snapshot.isFloatActive) View.VISIBLE else View.GONE)
         setContentDescription(R.id.monitor_toggle, "监视器 ${if (snapshot.isFloatActive) "开启" else "关闭"}")
         setOnClickPendingIntent(R.id.monitor_toggle, monitorIntent)
-        metric(views, R.id.notification_quiet, if (snapshot.isFloatActive) snapshot.quietC else -1.0,
+        metric(views, R.id.notification_quiet, snapshot.quietC,
             "°C", "quiet-therm 温度")
-        metric(views, R.id.notification_power, if (snapshot.isFloatActive) snapshot.powerW else -1.0,
+        metric(views, R.id.notification_power, snapshot.powerW,
             " W", "设备电池侧功率")
 
         listOf(R.id.refresh_60, R.id.refresh_90, R.id.refresh_120, R.id.refresh_144, R.id.refresh_165)
@@ -60,9 +60,12 @@ internal object NotificationQuickControlHelper {
             }
     }
 
+    fun metricNumber(value: Double): String =
+        if (value.isFinite() && value > 0.0) String.format(Locale.US, "%.1f", value) else "--"
+
     private fun metric(views: RemoteViews, id: Int, value: Double, unit: String, description: String) {
         val valid = value.isFinite() && value > 0.0
-        val number = if (valid) String.format(Locale.US, "%.1f", value) else "--"
+        val number = metricNumber(value)
         val text = SpannableString(number + unit)
         val flags = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
         views.setTextColor(id, if (valid) Color.rgb(30, 41, 59) else Color.rgb(148, 163, 184))

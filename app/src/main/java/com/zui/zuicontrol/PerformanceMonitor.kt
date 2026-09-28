@@ -46,6 +46,8 @@ class PerformanceMonitor(private val context: Context,
     private var transitions = 0L
     private var measures = 0L
     private var draws = 0L
+    private var snapshotCallbacks = 0L
+    fun desiredFull() = snapshot.optInt("mode") == 1
     private var visualState = "HIDDEN"
     private var stableSafeTopInset = 0
     private var traceUntil = 0L
@@ -86,7 +88,7 @@ class PerformanceMonitor(private val context: Context,
             data.enforceInterface("android.zui.IMonitorSnapshot")
             val text = data.readString() ?: return false
             if (text.length > 32768) return false
-            handler.post { if (!closed) render(text) }
+            handler.post { if (!closed) { snapshotCallbacks++; render(text) } }
             return true
         }
     }
@@ -238,7 +240,7 @@ class PerformanceMonitor(private val context: Context,
         val layout = root?.layoutParams as? WindowManager.LayoutParams
         out.println("overlayGeneration=$generation rootIdentity=${root?.let(System::identityHashCode)} attached=$attached state=$visualState")
         out.println("overlayAdds=$adds removes=$removes updates=$updates insetsCallbacks=$insetsCallbacks transitions=$transitions")
-        out.println("overlayMeasures=$measures draws=$draws")
+        out.println("overlayMeasures=$measures draws=$draws snapshotCallbacks=$snapshotCallbacks")
         out.println("overlaySafeTop=$stableSafeTopInset y=${layout?.y} token=${root?.windowToken} title=${layout?.title}")
         out.println("overlayX=${layout?.x} width=${root?.width} height=${root?.height} gravity=${layout?.gravity} circleX=$circleX circleY=$circleY positionWrites=$positionWrites")
         root?.dumpGesture(out)
@@ -254,7 +256,7 @@ class PerformanceMonitor(private val context: Context,
         val newConnection = next.optLong("connectionEpoch")
         if (newConnection < oldConnection) return
         if (newConnection == oldConnection && next.optLong("sample") < snapshot.optLong("sample")) return
-        if (next.optInt("mode") != snapshot.optInt("mode")) onModeChanged()
+        val modeChanged = next.optInt("mode") != snapshot.optInt("mode")
         if (newConnection != oldConnection || next.optLong("targetEpoch") != snapshot.optLong("targetEpoch")) view?.cancelGesture()
         handler.removeCallbacks(expireReading)
         val elapsed=next.optLong("elapsedMs")
@@ -266,9 +268,10 @@ class PerformanceMonitor(private val context: Context,
         // Both consumers receive the exact same scalar sample, including OFF notifications.
         displayPower = if(positions.optString("powerPresentation")=="INPUT") -1.0 else next.optDouble("powerW", -1.0)
         snapshot = next
+        if (modeChanged) onModeChanged()
         circle = next.optBoolean("circle", circle)
         onReading(next.optDouble("quietC", -1.0), displayPower, next.optLong("elapsedMs"), next.optLong("ttlMs", 3500))
-        if (!next.optBoolean("active") || !Settings.canDrawOverlays(context)) { hide(); return }
+        if (!next.optBoolean("active") || !allowed) { hide(); return }
         if (recording()) circle = true
         try {
             val fresh = view ?: MonitorView(context).also {
@@ -361,7 +364,7 @@ class PerformanceMonitor(private val context: Context,
                 invalidate()
             }
             if (stateChanged) invalidate()
-            positionWindow("shape")
+            if (shapeChanged) positionWindow("shape")
         }
         private fun numberWidth(metric: Pair<String, String>): Float {
             paint.textSize = valueSize

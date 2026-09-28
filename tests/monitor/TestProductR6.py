@@ -86,7 +86,8 @@ class ProductR6(unittest.TestCase):
 
     def test_notification_actions_desired_mode_and_record_pages(self):
         quick=source('ZuiControlQuickService.kt')
-        self.assertIn('"monitorMode") == "1"',quick)
+        self.assertIn("monitor?.desiredFull() == true",quick)
+        self.assertIn('snapshot.optInt("mode") == 1',source("PerformanceMonitor.kt"))
         self.assertNotIn('monitorActive',quick)
         self.assertNotIn('MONITOR_FPS',quick)
         self.assertNotIn('BigContentView',quick)

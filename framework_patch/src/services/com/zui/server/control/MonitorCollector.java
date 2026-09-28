@@ -10,6 +10,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Parcel;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.system.Os;
 import android.system.OsConstants;
@@ -66,6 +67,22 @@ class MonitorCollector {
         catch(RuntimeException e){store.abandon();throw e;}
         finally { session.stop();clearThreadBaseline(); }
     }
+    private String screenTerminal(){
+        PowerManager power=context.getSystemService(PowerManager.class);
+        if(power!=null&&!power.isInteractive())return "SCREEN_OFF";
+        KeyguardManager keyguard=context.getSystemService(KeyguardManager.class);
+        return keyguard==null||keyguard.isKeyguardLocked()?"LOCKED":"";
+    }
+    private void checkTerminal(String terminal){
+        if(!session.recording())return;
+        String screen=screenTerminal();
+        if(!screen.isEmpty()){terminate(screen,false);return;}
+        MonitorSnapshot.Task bound=identity(session.recordingPid);
+        if(bound==null||!session.sameProcess(bound.tid,bound.start)){
+            terminate("PROCESS_GENERATION_LOST",true);return;
+        }
+        if(!terminal.isEmpty())terminate(terminal,false);
+    }
     private void disconnect(String reason){
         // A failed old connection never owns the new listener or desired mode.
         try { terminate(reason,true); } catch(RuntimeException e){error="record_finalize:"+e.getMessage();}
@@ -89,7 +106,7 @@ class MonitorCollector {
         session.scene(pkg,user,eligible,recordEligible);
         String terminal=session.terminal(SystemClock.elapsedRealtime());
         if(terminal.isEmpty()&&taskChanged&&session.recording())terminal="TASK_CHANGED";
-        if(!terminal.isEmpty())terminate(!eligible&&terminal.equals("SCREEN_OR_LOCK")?blockedReason:terminal,false);
+        checkTerminal(!eligible&&terminal.equals("SCREEN_OR_LOCK")?blockedReason:terminal);
         if(changed){clearThreadBaseline();stop();}
         schedule();
     }
@@ -192,9 +209,9 @@ class MonitorCollector {
     private void sample(long ticket){synchronized(this){
         if(ticket!=epoch||handler==null||!session.sampling())return;
         try{
-            KeyguardManager keyguard=context.getSystemService(KeyguardManager.class);
-            if(keyguard==null||keyguard.isKeyguardLocked()){
-                terminate("LOCKED",false);session.scene(session.foreground,session.user,false);clearThreadBaseline();stop();return;
+            String screen=screenTerminal();
+            if(!screen.isEmpty()){
+                terminate(screen,false);session.scene(session.foreground,session.user,false);clearThreadBaseline();stop();return;
             }
             long now=SystemClock.elapsedRealtime();
             String fpsValidity=fpsBlockedReason();
@@ -203,7 +220,7 @@ class MonitorCollector {
             int plugged=-1,batteryStatus=-1,milliVolts=-1;
             long microAmps=Long.MIN_VALUE;
             String terminal=session.terminal(now);
-            if(!terminal.isEmpty())terminate(terminal,false);
+            checkTerminal(terminal);
             boolean capture=session.recording();
             { // All visible controller modes consume the same quiet/consumption sample.
                 quiet=sources.quiet();sources.scalarReads++;
@@ -218,7 +235,7 @@ class MonitorCollector {
                 }
             }
             if(capture){
-                MonitorSnapshot.Task process=identity(findPid());
+                MonitorSnapshot.Task process=identity(session.recordingPid);
                 if(process!=null&&session.sameProcess(process.tid,process.start)){
                     List<MonitorSnapshot.Row> rows=Collections.emptyList();
                     if(lastThreadTime==0||now-lastThreadTime>=3000){
