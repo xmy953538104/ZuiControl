@@ -320,6 +320,9 @@ class RegularLogReadinessTests(unittest.TestCase):
             script = WRAPPER.read_text(encoding="utf-8")
             # Android transport/cpuset boundaries only; the wrapper and native exec stay real.
             auth = root / ".validated_runtime.sha256"
+            executable = root / "dummy_uperf"
+            executable.write_bytes(DUMMY.read_bytes())
+            executable.chmod(0o755)
             self.assertNotIn("app_process", script)
             self.assertNotIn("PolicyCommand", script)
             replacements = {
@@ -329,6 +332,7 @@ class RegularLogReadinessTests(unittest.TestCase):
                 "LOG=/data/vendor/zui_control/log/uperf.log": f"LOG={log}",
                 "READY_UPTIME=/data/vendor/zui_control/uperf/.service_ready_uptime": f"READY_UPTIME={ready}",
                 "SUPERVISOR=/system/bin/zui_uperf_supervisor": f"SUPERVISOR={self.binary}",
+                "BINARY=/system/bin/uperf": f"BINARY={executable}",
             }
             for old, new in replacements.items():
                 self.assertIn(old, script)
@@ -339,7 +343,7 @@ class RegularLogReadinessTests(unittest.TestCase):
             env = os.environ.copy()
             env.update(
                 {
-                    "ZUI_UPERF_TEST_BINARY": str(DUMMY),
+                    "ZUI_UPERF_TEST_BINARY": str(executable),
                     "ZUI_UPERF_TEST_TIMEOUT_MS": "2000",
                     "ZUI_UPERF_TEST_CADENCE_MS": "20",
                 }
@@ -356,14 +360,17 @@ class RegularLogReadinessTests(unittest.TestCase):
             for invalid in ("malformed\n", "0" * 64 + "  " + str(config) + "\n"):
                 auth.write_text(invalid, encoding="utf-8")
                 rejected()
-            # Exactly the production prepare command, including the path and newline.
-            authorized = subprocess.check_output(["sha256sum", str(config)])
+            # Both identities match production authorization, including paths/newlines.
+            authorized = subprocess.check_output(["sha256sum", str(config), str(executable)])
             auth.write_bytes(authorized)
             original_config = config.read_bytes()
             config.write_bytes(original_config + b"\n")
             rejected()
             config.write_bytes(original_config)
-            self.assertEqual(subprocess.check_output(["sha256sum", str(config)]), authorized)
+            executable.write_bytes(DUMMY.read_bytes() + b"\n")
+            rejected()
+            executable.write_bytes(DUMMY.read_bytes())
+            self.assertEqual(subprocess.check_output(["sha256sum", str(config), str(executable)]), authorized)
             process = subprocess.Popen(
                 ["bash", str(wrapper)],
                 env=env,
