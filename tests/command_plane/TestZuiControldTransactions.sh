@@ -829,7 +829,11 @@ test_prepare_retains_legacy_and_resumes_virgin_seed() (
     sync() { :; } # Filesystem durability is a separate production AtomicFile/native gate.
     fake_app_process() {
         printf '%s\n' "$*" >> "$TEST_ROOT/calls"
-        [ "$3" != uperf-startup ] || printf 'qualified-fixture\n' > "$UPERF_DIR/uperf.json"
+        if [ "$3" = uperf-startup ]; then
+            printf 'qualified-fixture\n' > "$UPERF_DIR/uperf.json"
+            printf 'fixture-binary\n' > "$TEST_ROOT/uperf"
+            sha256sum "$UPERF_DIR/uperf.json" "$TEST_ROOT/uperf" > "$UPERF_DIR/.validated_runtime.sha256"
+        fi
     }
     setprop() { printf '%s\n' "$*" >> "$TEST_ROOT/properties"; }
     export -f settings restorecon_recursive sync fake_app_process setprop
