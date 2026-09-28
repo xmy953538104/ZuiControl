@@ -46,6 +46,11 @@ final class UperfImportCommand {
     }
     static String run(String action, String argument) throws Exception {
         Fileset files = new Fileset(); UperfConfigStore store = store(files); long restartGeneration = -1;
+        // init's finite shell-domain prepare owns selection completion. The native
+        // supervisor publishes readiness but must never launch ART from performanced.
+        boolean observing = action.equals("uperf-observe-startup");
+        long observedGeneration = observing ? integer(store.selection().get("generation")) : -1;
+        boolean startupReady = observing && awaitStartup(files);
         File lockFile = new File(files.root.directory, "import-manager.lock");
         if (!lockFile.exists()) files.root.write("import-manager.lock", new byte[0]);
         files.root.read("import-manager.lock"); // Validate owner/type/link count before locking.
@@ -56,13 +61,15 @@ final class UperfImportCommand {
                 // Materialization is a projection of validated selection; old imports survive prepare/reboot.
                 files.root.write("uperf.json", store.startup()); return "selection=" + encode(store.selection());
             }
-            if (action.equals("uperf-ready") || action.equals("uperf-failed")) {
+            if (observing) {
                 Map<String,Object> selection = store.selection();
+                require(integer(selection.get("generation")) == observedGeneration, "startup selection changed");
                 if (selection.get("state").equals("PENDING")) {
                     byte[] runtime = files.root.read("uperf.json"); require(hash(runtime).equals(selection.get("hash")), "startup selection generation");
-                    store.complete(integer(selection.get("generation")), action.equals("uperf-ready"));
-                    if (action.equals("uperf-failed")) files.root.write("uperf.json", store.startup());
+                    store.complete(observedGeneration, startupReady);
+                    if (!startupReady) files.root.write("uperf.json", store.startup());
                 }
+                require(startupReady, "Uperf startup not ready; last-good/factory retained");
                 return "selection=" + encode(store.selection());
             }
             if (action.equals("ui_state")) return "selection=" + encode(store.selection());
@@ -115,6 +122,19 @@ final class UperfImportCommand {
         }
         if (!ready) { restartReady(files); throw new IllegalStateException("import rejected; last-good/factory selected; query state"); }
         return "generation=" + restartGeneration + ";state=ACCEPTED";
+    }
+    private static boolean awaitStartup(Fileset files) throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + 35000;
+        do {
+            Thread.sleep(100);
+            // prepare cleared the marker before asking init to start this generation.
+            if (SystemProperties.get("zui_control.scheduler", "").equals("restarted")) {
+                if (SystemProperties.get("sys.zui_control.uperf_fail_safe", "0").equals("1")) return false;
+                if (files.root.read(".service_ready_uptime").length != 0
+                        && SystemProperties.get("init.svc.zui_uperf", "").equals("running")) return true;
+            }
+        } while (SystemClock.elapsedRealtime() < deadline);
+        return false;
     }
     private static boolean restartReady(Fileset files) throws Exception {
         byte[] before = files.root.read(".service_ready_uptime");

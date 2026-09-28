@@ -37,6 +37,7 @@ Run from the repository root:
 ```text
 python tests/command_plane/TestCommandPlaneArchitecture.py
 python tests/command_plane/TestBinderOwnerContract.py
+python tests/command_plane/TestProjectionMode.py
 python tests/gpu/TestGpuProof.py
 python tests/monitor/TestMonitor.py
 python tests/monitor/TestUiPolish.py

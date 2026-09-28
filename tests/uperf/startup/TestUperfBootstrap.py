@@ -57,7 +57,7 @@ class BootstrapTests(unittest.TestCase):
             result=run(script); self.assertEqual(result.returncode,0, result.stderr.decode()+((data/"log/bootstrap.log").read_text() if (data/"log/bootstrap.log").exists() else ""))
             self.assertEqual((u/'cur_powermode.txt').read_text(),'balance\n')
             self.assertEqual((u/'effective_powermode.txt').read_text(),'powersave\n')
-            self.assertEqual((root/'calls').read_text().splitlines(),['bootstrap','uperf-startup'])
+            self.assertEqual((root/'calls').read_text().splitlines(),['bootstrap','uperf-startup','uperf-observe-startup'])
             before=(root/'calls').read_bytes()
             for _ in range(2): self.assertEqual(run(service).returncode,0)
             self.assertEqual((root/'calls').read_bytes(),before)

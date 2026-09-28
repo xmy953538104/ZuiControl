@@ -749,7 +749,7 @@ public final class ZuiControlService extends Binder {
         mGpuGlobalRanges.putAll(state.defaults);
     }
 
-    private void applyUnifiedPolicy(AppPolicyStore.State state) {
+    private String applyUnifiedPolicy(AppPolicyStore.State state) {
         mPolicyReady = true; // Only a validated committed/recovered generation reaches owner apply.
         projectPolicy(state);
         String applied = reconcileFocusedProfile("unifiedPolicy", true);
@@ -758,6 +758,8 @@ public final class ZuiControlService extends Binder {
             throw new IllegalStateException("policy runtime owner apply failed");
         if (!SystemProperties.get(PROP_UPERF_MODE, "").equals(mUperfScenePolicy.mDesiredMode))
             throw new IllegalStateException("Uperf runtime property ACK");
+        PolicyJson.require(AppPolicyStore.mode(mUperfScenePolicy.mDesiredMode), "Uperf desired runtime mode");
+        return mUperfScenePolicy.mDesiredMode;
     }
 
     private void publishPolicySettings() throws Exception {

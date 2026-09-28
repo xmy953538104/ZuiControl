@@ -7,13 +7,13 @@ from ApplyZuiControlPayload import APP_APK_PATH,copy_payload
 
 class PackageIdentity(unittest.TestCase):
     def test_identity_bindings(self):
-        self.assertEqual(APP_APK_PATH,'system/priv-app/ZuiControlV74/ZuiControl.apk')
+        self.assertEqual(APP_APK_PATH,'system/priv-app/ZuiControlV75/ZuiControl.apk')
         gradle=(ROOT/'app/build.gradle.kts').read_text(encoding='utf8')
-        self.assertIn('versionCode = 74',gradle)
-        self.assertIn('versionName = "0.21.37"',gradle)
+        self.assertIn('versionCode = 75',gradle)
+        self.assertIn('versionName = "0.21.38"',gradle)
         for name in ('.github/workflows/build.yml','scripts/build/BuildZuiControl.ps1',
                      'scripts/build/VerifyZuiControlFlashPackage.ps1','tests/zuiopt/VerifyZUIoptPayload.py'):
-            self.assertIn('ZuiControlV74',(ROOT/name).read_text(encoding='utf8'))
+            self.assertIn('ZuiControlV75',(ROOT/name).read_text(encoding='utf8'))
         self.assertIn('android.permission.SYSTEM_ALERT_WINDOW',
                       (ROOT/'app/src/main/AndroidManifest.xml').read_text(encoding='utf8'))
     def test_single_identity_and_stale_rejection_before_copy(self):

@@ -79,7 +79,9 @@ CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com
 sync "$AUTH.tmp" || exit 1
 mv "$AUTH.tmp" "$AUTH" || exit 1
 sync "$UPERF_DIR" || exit 1
+rm -f "$UPERF_DIR/.service_ready_uptime" || exit 1
 setprop zui_control.scheduler prepared || exit 1
+CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand uperf-observe-startup - || exit 1
 trap - EXIT
 # No legacy store, failed receipt or imported artifact is retired in this migration.
 exit 0

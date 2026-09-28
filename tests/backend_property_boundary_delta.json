@@ -1,0 +1,125 @@
+{
+  "base": "be146a28c65a6d9d31b700c2babd2121c2a2dd6c",
+  "scope": "System owner desired mode callback; finite shell startup confirmation; V75",
+  "files": [
+    {
+      "path": "app/build.gradle.kts",
+      "before": "100644 blob efbc479325dacfaf4f112d000535e865fa19a767\tapp/build.gradle.kts",
+      "after": "100644 blob beff489d3cb98ba27964a31f00682d43f37b9e4c\tapp/build.gradle.kts",
+      "beforeSha256": "54e1fe6583e5310ebb186c9850a7aebfcfcabc23222725085472330f66231ebc",
+      "hunks": [
+        {
+          "before": "        applicationId = \"com.zui.zuicontrol\"\n        minSdk = 29\n        targetSdk = 30\n        versionCode = 74\n        versionName = \"0.21.37\"\n    }\n\n    signingConfigs {\n",
+          "after": "        applicationId = \"com.zui.zuicontrol\"\n        minSdk = 29\n        targetSdk = 30\n        versionCode = 75\n        versionName = \"0.21.38\"\n    }\n\n    signingConfigs {\n"
+        }
+      ]
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/PolicyCommand.java",
+      "before": "100644 blob bec720a749a2ae5faf4ac8a89146eca72a6ea5aa\tframework_patch/src/services/com/zui/server/control/PolicyCommand.java",
+      "after": "100644 blob 6b5168badcd60c17206e5472c134ad9a623c9e79\tframework_patch/src/services/com/zui/server/control/PolicyCommand.java",
+      "beforeSha256": "5749a5e364e472845973ca9fc6c2d154ae5eea70119f7be6760caff969cc87b2",
+      "hunks": [
+        {
+          "before": "            require(remote.transact(1, data, reply, 0), \"policy owner unavailable\"); reply.readException(); return reply.readString();\n        } finally { data.recycle(); reply.recycle(); }\n    }\n    static AppPolicyStore.Owner owner(IBinder remote, java.util.function.Consumer<AppPolicyStore.State> runtime) {\n        return new AppPolicyStore.Owner() {\n            public void prepare(AppPolicyStore.State next, String tx) throws Exception {\n                require(callback(remote, \"prepare\", encode(map(\"transaction\", tx, \"policy\", object(parse(next.bytes()))))).equals(hash(next.bytes())), \"native prepare ACK\");\n            }\n            public void apply(AppPolicyStore.State next, String tx) throws Exception {\n                runtime.accept(next);\n                require(callback(remote, \"apply\", encode(map(\"transaction\", tx, \"hash\", hash(next.bytes()), \"generation\", next.generation))).equals(hash(next.bytes())), \"native applied ACK\");\n            }\n        };\n    }\n",
+          "after": "            require(remote.transact(1, data, reply, 0), \"policy owner unavailable\"); reply.readException(); return reply.readString();\n        } finally { data.recycle(); reply.recycle(); }\n    }\n    static AppPolicyStore.Owner owner(IBinder remote, java.util.function.Function<AppPolicyStore.State, String> runtime) {\n        return new AppPolicyStore.Owner() {\n            public void prepare(AppPolicyStore.State next, String tx) throws Exception {\n                require(callback(remote, \"prepare\", encode(map(\"transaction\", tx, \"policy\", object(parse(next.bytes()))))).equals(hash(next.bytes())), \"native prepare ACK\");\n            }\n            public void apply(AppPolicyStore.State next, String tx) throws Exception {\n                String desiredMode = runtime.apply(next);\n                require(AppPolicyStore.mode(desiredMode), \"Uperf desired runtime mode\");\n                require(callback(remote, \"apply\", encode(map(\"transaction\", tx, \"hash\", hash(next.bytes()), \"generation\", next.generation, \"desiredMode\", desiredMode))).equals(hash(next.bytes())), \"native applied ACK\");\n            }\n        };\n    }\n"
+        },
+        {
+          "before": "        String tx=string(r.get(\"tx\"));\n        return nativeRules(action,tx,action.equals(\"settings_prepare\")?string(r.get(\"generation\"))+\":\"+string(r.get(\"data\")):string(r.get(\"hash\")));\n    }\n    private static final class Projection extends Binder {\n        final Disk disk;\n        Projection() throws Exception { disk = new Disk(new File(UPERF, \"policy-projection\")); }\n",
+          "after": "        String tx=string(r.get(\"tx\"));\n        return nativeRules(action,tx,action.equals(\"settings_prepare\")?string(r.get(\"generation\"))+\":\"+string(r.get(\"data\")):string(r.get(\"hash\")));\n    }\n    static String projectionMode(Map<String,Object> request, byte[] prepared) throws Exception {\n        keys(request, \"transaction\", \"hash\", \"generation\", \"desiredMode\");\n        require(string(request.get(\"transaction\")).matches(\"[0-9a-f-]{36}\"), \"projection transaction\");\n        AppPolicyStore.State state = AppPolicyStore.State.parse(prepared);\n        require(hash(prepared).equals(string(request.get(\"hash\"))) && state.generation == integer(request.get(\"generation\")), \"projection identity\");\n        String desired = string(request.get(\"desiredMode\"));\n        require(AppPolicyStore.mode(desired), \"Uperf desired runtime mode\");\n        return desired;\n    }\n    private static final class Projection extends Binder {\n        final Disk disk;\n        Projection() throws Exception { disk = new Disk(new File(UPERF, \"policy-projection\")); }\n"
+        },
+        {
+          "before": "                        if (prior.length == 0) disk.write(tx + \".json\", policy);\n                        result = hash(policy); // Nothing visible changes before authoritative config commit.\n                    } else {\n                        require(action.equals(\"apply\"), \"projection action\"); keys(request, \"transaction\", \"hash\", \"generation\");\n                        byte[] prepared = disk.read(tx + \".json\"); AppPolicyStore.State state = AppPolicyStore.State.parse(prepared);\n                        require(hash(prepared).equals(string(request.get(\"hash\"))) && state.generation == integer(request.get(\"generation\")), \"projection identity\");\n                        // Native data is a tagged compatibility projection, never independently edited policy.\n                        byte[] active = disk.read(\"active.json\");\n                        if (active.length != 0) {\n                            AppPolicyStore.State before = AppPolicyStore.State.parse(active);\n                            require(before.generation < state.generation || (before.generation == state.generation && Arrays.equals(active, prepared)), \"projection generation CAS\");\n                        }\n                        String desired = android.os.SystemProperties.get(\"sys.zui_control.uperf_mode\", \"\");\n                        require(AppPolicyStore.mode(desired), \"Uperf desired runtime mode\");\n                        File mode = new File(UPERF, \"effective_powermode.txt\");\n                        java.io.FileDescriptor fd = Os.open(mode.getPath(), OsConstants.O_WRONLY | OsConstants.O_NOFOLLOW, 0);\n                        try { StructStat st = Os.fstat(fd);\n",
+          "after": "                        if (prior.length == 0) disk.write(tx + \".json\", policy);\n                        result = hash(policy); // Nothing visible changes before authoritative config commit.\n                    } else {\n                        require(action.equals(\"apply\"), \"projection action\");\n                        byte[] prepared = disk.read(tx + \".json\"); AppPolicyStore.State state = AppPolicyStore.State.parse(prepared);\n                        String desired = projectionMode(request, prepared);\n                        // Native data is a tagged compatibility projection, never independently edited policy.\n                        byte[] active = disk.read(\"active.json\");\n                        if (active.length != 0) {\n                            AppPolicyStore.State before = AppPolicyStore.State.parse(active);\n                            require(before.generation < state.generation || (before.generation == state.generation && Arrays.equals(active, prepared)), \"projection generation CAS\");\n                        }\n                        File mode = new File(UPERF, \"effective_powermode.txt\");\n                        java.io.FileDescriptor fd = Os.open(mode.getPath(), OsConstants.O_WRONLY | OsConstants.O_NOFOLLOW, 0);\n                        try { StructStat st = Os.fstat(fd);\n"
+        }
+      ]
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/UperfImportCommand.java",
+      "before": "100644 blob 6d607449356ae1935b36a8f8e5f981a43df2e0d3\tframework_patch/src/services/com/zui/server/control/UperfImportCommand.java",
+      "after": "100644 blob 1787bab2667e83facdf6e371ea6207dd51225bba\tframework_patch/src/services/com/zui/server/control/UperfImportCommand.java",
+      "beforeSha256": "387fd3c0ced96ee80545b4cef6a9fc9912b3a579d88dbc1e7c598a0abbe19f27",
+      "hunks": [
+        {
+          "before": "    }\n    static String run(String action, String argument) throws Exception {\n        Fileset files = new Fileset(); UperfConfigStore store = store(files); long restartGeneration = -1;\n        File lockFile = new File(files.root.directory, \"import-manager.lock\");\n        if (!lockFile.exists()) files.root.write(\"import-manager.lock\", new byte[0]);\n        files.root.read(\"import-manager.lock\"); // Validate owner/type/link count before locking.\n",
+          "after": "    }\n    static String run(String action, String argument) throws Exception {\n        Fileset files = new Fileset(); UperfConfigStore store = store(files); long restartGeneration = -1;\n        // init's finite shell-domain prepare owns selection completion. The native\n        // supervisor publishes readiness but must never launch ART from performanced.\n        boolean observing = action.equals(\"uperf-observe-startup\");\n        long observedGeneration = observing ? integer(store.selection().get(\"generation\")) : -1;\n        boolean startupReady = observing && awaitStartup(files);\n        File lockFile = new File(files.root.directory, \"import-manager.lock\");\n        if (!lockFile.exists()) files.root.write(\"import-manager.lock\", new byte[0]);\n        files.root.read(\"import-manager.lock\"); // Validate owner/type/link count before locking.\n"
+        },
+        {
+          "before": "                // Materialization is a projection of validated selection; old imports survive prepare/reboot.\n                files.root.write(\"uperf.json\", store.startup()); return \"selection=\" + encode(store.selection());\n            }\n            if (action.equals(\"uperf-ready\") || action.equals(\"uperf-failed\")) {\n                Map<String,Object> selection = store.selection();\n                if (selection.get(\"state\").equals(\"PENDING\")) {\n                    byte[] runtime = files.root.read(\"uperf.json\"); require(hash(runtime).equals(selection.get(\"hash\")), \"startup selection generation\");\n                    store.complete(integer(selection.get(\"generation\")), action.equals(\"uperf-ready\"));\n                    if (action.equals(\"uperf-failed\")) files.root.write(\"uperf.json\", store.startup());\n                }\n                return \"selection=\" + encode(store.selection());\n            }\n            if (action.equals(\"ui_state\")) return \"selection=\" + encode(store.selection());\n",
+          "after": "                // Materialization is a projection of validated selection; old imports survive prepare/reboot.\n                files.root.write(\"uperf.json\", store.startup()); return \"selection=\" + encode(store.selection());\n            }\n            if (observing) {\n                Map<String,Object> selection = store.selection();\n                require(integer(selection.get(\"generation\")) == observedGeneration, \"startup selection changed\");\n                if (selection.get(\"state\").equals(\"PENDING\")) {\n                    byte[] runtime = files.root.read(\"uperf.json\"); require(hash(runtime).equals(selection.get(\"hash\")), \"startup selection generation\");\n                    store.complete(observedGeneration, startupReady);\n                    if (!startupReady) files.root.write(\"uperf.json\", store.startup());\n                }\n                require(startupReady, \"Uperf startup not ready; last-good/factory retained\");\n                return \"selection=\" + encode(store.selection());\n            }\n            if (action.equals(\"ui_state\")) return \"selection=\" + encode(store.selection());\n"
+        },
+        {
+          "before": "        if (!ready) { restartReady(files); throw new IllegalStateException(\"import rejected; last-good/factory selected; query state\"); }\n        return \"generation=\" + restartGeneration + \";state=ACCEPTED\";\n    }\n    private static boolean restartReady(Fileset files) throws Exception {\n        byte[] before = files.root.read(\".service_ready_uptime\");\n        SystemProperties.set(\"zui_control.scheduler\", \"restart\"); long deadline = SystemClock.elapsedRealtime() + 35000;\n",
+          "after": "        if (!ready) { restartReady(files); throw new IllegalStateException(\"import rejected; last-good/factory selected; query state\"); }\n        return \"generation=\" + restartGeneration + \";state=ACCEPTED\";\n    }\n    private static boolean awaitStartup(Fileset files) throws Exception {\n        long deadline = SystemClock.elapsedRealtime() + 35000;\n        do {\n            Thread.sleep(100);\n            // prepare cleared the marker before asking init to start this generation.\n            if (SystemProperties.get(\"zui_control.scheduler\", \"\").equals(\"restarted\")) {\n                if (SystemProperties.get(\"sys.zui_control.uperf_fail_safe\", \"0\").equals(\"1\")) return false;\n                if (files.root.read(\".service_ready_uptime\").length != 0\n                        && SystemProperties.get(\"init.svc.zui_uperf\", \"\").equals(\"running\")) return true;\n            }\n        } while (SystemClock.elapsedRealtime() < deadline);\n        return false;\n    }\n    private static boolean restartReady(Fileset files) throws Exception {\n        byte[] before = files.root.read(\".service_ready_uptime\");\n        SystemProperties.set(\"zui_control.scheduler\", \"restart\"); long deadline = SystemClock.elapsedRealtime() + 35000;\n"
+        }
+      ]
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "before": "100644 blob e09ad7b08873f359d0fb4269ac4f7c1987883162\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "after": "100644 blob d00011e551c1544250cd72e4a676ee2a629afe68\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "beforeSha256": "9f79d179518c73cbd65a23052dd66fbebdcb036addc05560eb18e8dc73f77d17",
+      "hunks": [
+        {
+          "before": "        mGpuGlobalRanges.putAll(state.defaults);\n    }\n\n    private void applyUnifiedPolicy(AppPolicyStore.State state) {\n        mPolicyReady = true; // Only a validated committed/recovered generation reaches owner apply.\n        projectPolicy(state);\n        String applied = reconcileFocusedProfile(\"unifiedPolicy\", true);\n",
+          "after": "        mGpuGlobalRanges.putAll(state.defaults);\n    }\n\n    private String applyUnifiedPolicy(AppPolicyStore.State state) {\n        mPolicyReady = true; // Only a validated committed/recovered generation reaches owner apply.\n        projectPolicy(state);\n        String applied = reconcileFocusedProfile(\"unifiedPolicy\", true);\n"
+        },
+        {
+          "before": "            throw new IllegalStateException(\"policy runtime owner apply failed\");\n        if (!SystemProperties.get(PROP_UPERF_MODE, \"\").equals(mUperfScenePolicy.mDesiredMode))\n            throw new IllegalStateException(\"Uperf runtime property ACK\");\n    }\n\n    private void publishPolicySettings() throws Exception {\n",
+          "after": "            throw new IllegalStateException(\"policy runtime owner apply failed\");\n        if (!SystemProperties.get(PROP_UPERF_MODE, \"\").equals(mUperfScenePolicy.mDesiredMode))\n            throw new IllegalStateException(\"Uperf runtime property ACK\");\n        PolicyJson.require(AppPolicyStore.mode(mUperfScenePolicy.mDesiredMode), \"Uperf desired runtime mode\");\n        return mUperfScenePolicy.mDesiredMode;\n    }\n\n    private void publishPolicySettings() throws Exception {\n"
+        }
+      ]
+    },
+    {
+      "path": "native/zui_uperf_supervisor.c",
+      "before": "100644 blob caf6dd8c5b70bf85e339f444aa1dd2e7223c1e02\tnative/zui_uperf_supervisor.c",
+      "after": "100644 blob 36fd56284f3631681d3bab90d008491b8c1882e8\tnative/zui_uperf_supervisor.c",
+      "beforeSha256": "01439837b85b1b2e50904560d0eb343cdf7d9651bc7c444757d6b5da86f3addf",
+      "hunks": [
+        {
+          "before": "    }\n}\n\n/* Finite selection receipt on startup only; no additional watchdog or poller. */\nstatic bool import_startup_result(bool ready) {\n#ifdef __ANDROID__\n    pid_t helper = fork();\n    if (helper == 0) {\n        (void)setenv(\"CLASSPATH\", \"/system/framework/services.jar\", 1);\n        execl(\"/system/bin/app_process\", \"app_process\", \"/system/bin\",\n              \"com.zui.server.control.PolicyCommand\", ready ? \"uperf-ready\" : \"uperf-failed\",\n              \"-\", (char *)NULL);\n        _exit(127);\n    }\n    if (helper < 0) return false;\n    long long now, deadline;\n    if (monotonic_millis(&now) < 0) now = 0;\n    deadline = now + 5000;\n    for (;;) {\n        int status;\n        pid_t result = waitpid(helper, &status, WNOHANG);\n        if (result == helper) return WIFEXITED(status) && WEXITSTATUS(status) == 0;\n        if (result < 0 && errno != EINTR) return false;\n        if (monotonic_millis(&now) < 0 || now >= deadline || sleep_until_millis(now + 50) < 0) break;\n    }\n    (void)kill(helper, SIGKILL);\n    while (waitpid(helper, NULL, 0) < 0 && errno == EINTR) { }\n    return false;\n#else\n    (void)ready;\n    return true;\n#endif\n}\n\nstatic int startup_failure(int status) {\n    (void)import_startup_result(false);\n    return status;\n}\n\nint main(int argc, char **argv) {\n    const char *binary;\n    const char *config;\n",
+          "after": "    }\n}\n\nint main(int argc, char **argv) {\n    const char *binary;\n    const char *config;\n"
+        },
+        {
+          "before": "    sigemptyset(&action.sa_mask);\n    if (sigaction(SIGUSR1, &action, NULL) < 0) {\n        log_error(\"sigaction(SIGUSR1) failed: %s\", strerror(errno));\n        return startup_failure(70);\n    }\n    if (prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) < 0) {\n        log_error(\"PR_SET_CHILD_SUBREAPER failed: %s\", strerror(errno));\n        return startup_failure(70);\n    }\n    if ((unlink(log_path) < 0 && errno != ENOENT) ||\n            (unlink(ready_marker) < 0 && errno != ENOENT)) {\n        log_error(\"stale runtime cleanup failed: %s\", strerror(errno));\n        return startup_failure(70);\n    }\n    if (pipe(exec_status) < 0 || set_cloexec(exec_status[0]) < 0 ||\n            set_cloexec(exec_status[1]) < 0) {\n        log_error(\"exec status pipe failed: %s\", strerror(errno));\n        return startup_failure(70);\n    }\n\n    child = fork();\n    if (child < 0) {\n        log_error(\"fork failed: %s\", strerror(errno));\n        return startup_failure(70);\n    }\n    if (child == 0) {\n        int saved_errno;\n",
+          "after": "    sigemptyset(&action.sa_mask);\n    if (sigaction(SIGUSR1, &action, NULL) < 0) {\n        log_error(\"sigaction(SIGUSR1) failed: %s\", strerror(errno));\n        return 70;\n    }\n    if (prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) < 0) {\n        log_error(\"PR_SET_CHILD_SUBREAPER failed: %s\", strerror(errno));\n        return 70;\n    }\n    if ((unlink(log_path) < 0 && errno != ENOENT) ||\n            (unlink(ready_marker) < 0 && errno != ENOENT)) {\n        log_error(\"stale runtime cleanup failed: %s\", strerror(errno));\n        return 70;\n    }\n    if (pipe(exec_status) < 0 || set_cloexec(exec_status[0]) < 0 ||\n            set_cloexec(exec_status[1]) < 0) {\n        log_error(\"exec status pipe failed: %s\", strerror(errno));\n        return 70;\n    }\n\n    child = fork();\n    if (child < 0) {\n        log_error(\"fork failed: %s\", strerror(errno));\n        return 70;\n    }\n    if (child == 0) {\n        int saved_errno;\n"
+        },
+        {
+          "before": "    (void)close(exec_status[0]);\n    if (exec_read < 0) {\n        log_error(\"exec status read failed: %s\", strerror(errno));\n        return startup_failure(70);\n    }\n    if (exec_read == (ssize_t)sizeof(exec_errno)) {\n        log_error(\"ZUI_UPERF_SUPERVISOR_EXEC_FAILED detail=%d: exec %s failed: %s\",\n                exec_errno, binary, strerror(exec_errno));\n        while (waitpid(-1, NULL, 0) < 0 && errno == EINTR) {\n        }\n        return startup_failure(127);\n    }\n    if (exec_read != 0) {\n        log_error(\"exec status protocol failed\");\n        return startup_failure(70);\n    }\n\n    if (wait_for_startup(log_path) < 0) {\n        return startup_failure(1);\n    }\n    if (publish_ready_marker(ready_marker) < 0) {\n        log_error(\"ready marker publish failed for %s: %s\", ready_marker, strerror(errno));\n        return startup_failure(1);\n    }\n    if (!import_startup_result(true)) return startup_failure(70);\n    return wait_for_tree();\n}\n",
+          "after": "    (void)close(exec_status[0]);\n    if (exec_read < 0) {\n        log_error(\"exec status read failed: %s\", strerror(errno));\n        return 70;\n    }\n    if (exec_read == (ssize_t)sizeof(exec_errno)) {\n        log_error(\"ZUI_UPERF_SUPERVISOR_EXEC_FAILED detail=%d: exec %s failed: %s\",\n                exec_errno, binary, strerror(exec_errno));\n        while (waitpid(-1, NULL, 0) < 0 && errno == EINTR) {\n        }\n        return 127;\n    }\n    if (exec_read != 0) {\n        log_error(\"exec status protocol failed\");\n        return 70;\n    }\n\n    if (wait_for_startup(log_path) < 0) {\n        return 1;\n    }\n    if (publish_ready_marker(ready_marker) < 0) {\n        log_error(\"ready marker publish failed for %s: %s\", ready_marker, strerror(errno));\n        return 1;\n    }\n    return wait_for_tree();\n}\n"
+        }
+      ]
+    },
+    {
+      "path": "payload/README.txt",
+      "before": "100644 blob 4817e6be786fa5bb49faeae7fa653061d6b704f7\tpayload/README.txt",
+      "after": "100644 blob 55173bedaa844e8ed4e51b80516a517af7ae5309\tpayload/README.txt",
+      "beforeSha256": "95a0cfff22924009ed6d121977430d16034e5c32c4c8f3521f5aaef5dbabd2a2",
+      "hunks": [
+        {
+          "before": "ZuiControl production payload \u2014 App V74 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV74/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n",
+          "after": "ZuiControl production payload \u2014 App V75 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV75/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n"
+        }
+      ]
+    },
+    {
+      "path": "payload/system/etc/zui_control/zui_scheduler_prepare.sh",
+      "before": "100644 blob ccd752825cde4555b48e9e53a44e7bedf998b3e6\tpayload/system/etc/zui_control/zui_scheduler_prepare.sh",
+      "after": "100644 blob 4820ae81d12a17897a4733fc0ba987aeb83646f4\tpayload/system/etc/zui_control/zui_scheduler_prepare.sh",
+      "beforeSha256": "5396ccd7329390deecc7f22cbed689aec9100b3c29c6fb9fe869e544cb37a087",
+      "hunks": [
+        {
+          "before": "sync \"$AUTH.tmp\" || exit 1\nmv \"$AUTH.tmp\" \"$AUTH\" || exit 1\nsync \"$UPERF_DIR\" || exit 1\nsetprop zui_control.scheduler prepared || exit 1\ntrap - EXIT\n# No legacy store, failed receipt or imported artifact is retired in this migration.\nexit 0\n",
+          "after": "sync \"$AUTH.tmp\" || exit 1\nmv \"$AUTH.tmp\" \"$AUTH\" || exit 1\nsync \"$UPERF_DIR\" || exit 1\nrm -f \"$UPERF_DIR/.service_ready_uptime\" || exit 1\nsetprop zui_control.scheduler prepared || exit 1\nCLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand uperf-observe-startup - || exit 1\ntrap - EXIT\n# No legacy store, failed receipt or imported artifact is retired in this migration.\nexit 0\n"
+        }
+      ]
+    },
+    {
+      "path": "payload/system/bin/zui_uperf_supervisor",
+      "before": "100644 blob a926091f7cd55ac980659aa58b1cea8bc04ddec8\tpayload/system/bin/zui_uperf_supervisor",
+      "after": "100644 blob 10d25c3f8ad48debf010cd42bb85ac2f3e3a8df5\tpayload/system/bin/zui_uperf_supervisor",
+      "beforeSha256": "e71212992ed1b1ab4e506e72eab54eeec8eb547ecf53911a7695eaacb1cbcd7d",
+      "hunks": []
+    }
+  ]
+}

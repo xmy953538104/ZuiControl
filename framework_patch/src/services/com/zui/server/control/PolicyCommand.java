@@ -70,14 +70,15 @@ public final class PolicyCommand {
             require(remote.transact(1, data, reply, 0), "policy owner unavailable"); reply.readException(); return reply.readString();
         } finally { data.recycle(); reply.recycle(); }
     }
-    static AppPolicyStore.Owner owner(IBinder remote, java.util.function.Consumer<AppPolicyStore.State> runtime) {
+    static AppPolicyStore.Owner owner(IBinder remote, java.util.function.Function<AppPolicyStore.State, String> runtime) {
         return new AppPolicyStore.Owner() {
             public void prepare(AppPolicyStore.State next, String tx) throws Exception {
                 require(callback(remote, "prepare", encode(map("transaction", tx, "policy", object(parse(next.bytes()))))).equals(hash(next.bytes())), "native prepare ACK");
             }
             public void apply(AppPolicyStore.State next, String tx) throws Exception {
-                runtime.accept(next);
-                require(callback(remote, "apply", encode(map("transaction", tx, "hash", hash(next.bytes()), "generation", next.generation))).equals(hash(next.bytes())), "native applied ACK");
+                String desiredMode = runtime.apply(next);
+                require(AppPolicyStore.mode(desiredMode), "Uperf desired runtime mode");
+                require(callback(remote, "apply", encode(map("transaction", tx, "hash", hash(next.bytes()), "generation", next.generation, "desiredMode", desiredMode))).equals(hash(next.bytes())), "native applied ACK");
             }
         };
     }
@@ -122,6 +123,15 @@ public final class PolicyCommand {
         String tx=string(r.get("tx"));
         return nativeRules(action,tx,action.equals("settings_prepare")?string(r.get("generation"))+":"+string(r.get("data")):string(r.get("hash")));
     }
+    static String projectionMode(Map<String,Object> request, byte[] prepared) throws Exception {
+        keys(request, "transaction", "hash", "generation", "desiredMode");
+        require(string(request.get("transaction")).matches("[0-9a-f-]{36}"), "projection transaction");
+        AppPolicyStore.State state = AppPolicyStore.State.parse(prepared);
+        require(hash(prepared).equals(string(request.get("hash"))) && state.generation == integer(request.get("generation")), "projection identity");
+        String desired = string(request.get("desiredMode"));
+        require(AppPolicyStore.mode(desired), "Uperf desired runtime mode");
+        return desired;
+    }
     private static final class Projection extends Binder {
         final Disk disk;
         Projection() throws Exception { disk = new Disk(new File(UPERF, "policy-projection")); }
@@ -142,17 +152,15 @@ public final class PolicyCommand {
                         if (prior.length == 0) disk.write(tx + ".json", policy);
                         result = hash(policy); // Nothing visible changes before authoritative config commit.
                     } else {
-                        require(action.equals("apply"), "projection action"); keys(request, "transaction", "hash", "generation");
+                        require(action.equals("apply"), "projection action");
                         byte[] prepared = disk.read(tx + ".json"); AppPolicyStore.State state = AppPolicyStore.State.parse(prepared);
-                        require(hash(prepared).equals(string(request.get("hash"))) && state.generation == integer(request.get("generation")), "projection identity");
+                        String desired = projectionMode(request, prepared);
                         // Native data is a tagged compatibility projection, never independently edited policy.
                         byte[] active = disk.read("active.json");
                         if (active.length != 0) {
                             AppPolicyStore.State before = AppPolicyStore.State.parse(active);
                             require(before.generation < state.generation || (before.generation == state.generation && Arrays.equals(active, prepared)), "projection generation CAS");
                         }
-                        String desired = android.os.SystemProperties.get("sys.zui_control.uperf_mode", "");
-                        require(AppPolicyStore.mode(desired), "Uperf desired runtime mode");
                         File mode = new File(UPERF, "effective_powermode.txt");
                         java.io.FileDescriptor fd = Os.open(mode.getPath(), OsConstants.O_WRONLY | OsConstants.O_NOFOLLOW, 0);
                         try { StructStat st = Os.fstat(fd);
