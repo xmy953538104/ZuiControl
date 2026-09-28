@@ -1,0 +1,58 @@
+{
+  "base": "1d130cedfabcb51e5c70f3f3711158406f5b2dee",
+  "scope": "Proven V73 0x12 synchronous Binder metadata; preserve UID/token/payload/CAS, V74 monotonic identity",
+  "files": [
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "before": "100644 blob 1f7d479e1f80a1edf03d4cc923ce4fa3def1a70c\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "after": "100644 blob e09ad7b08873f359d0fb4269ac4f7c1987883162\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "beforeSha256": "157e672128dcbdf543919f8cee98905cb036fcef62b94cac6cda954c1f01f1be",
+      "hunks": [
+        {
+          "before": "import android.os.IBinder;\nimport android.os.Parcel;\nimport android.os.PowerManager;\nimport android.os.RemoteException;\nimport android.os.ServiceManager;\nimport android.os.SystemClock;\n",
+          "after": "import android.os.IBinder;\nimport android.os.Parcel;\nimport android.os.PowerManager;\nimport android.os.Process;\nimport android.os.RemoteException;\nimport android.os.ServiceManager;\nimport android.os.SystemClock;\n"
+        },
+        {
+          "before": "        try {\n            if(code==1011){\n                data.enforceInterface(DESCRIPTOR);\n                if(Binder.getCallingUid()!=0||flags!=0)throw new SecurityException(\"root settings owner required\");\n                String action=data.readString(),argument=data.readString();IBinder owner=data.readStrongBinder();\n                if(data.dataAvail()!=0||owner==null)throw new IllegalArgumentException(\"settings payload\");\n                String result=settingsCommand(action,argument,owner);reply.writeNoException();reply.writeString(result);return true;\n            }\n            if (code == PolicyCommand.TRANSACTION) {\n                data.enforceInterface(DESCRIPTOR);\n                if (Binder.getCallingUid() != 0 || flags != 0) throw new SecurityException(\"root policy owner required\");\n                String id = data.readString(), hash = data.readString(); IBinder owner = data.readStrongBinder();\n                if (data.dataAvail() != 0 || owner == null) throw new IllegalArgumentException(\"policy owner payload\");\n                String result = policyCommand(id, hash, owner); reply.writeNoException(); reply.writeString(result); return true;\n",
+          "after": "        try {\n            if(code==1011){\n                data.enforceInterface(DESCRIPTOR);\n                if(Binder.getCallingUid()!=Process.ROOT_UID||(flags & IBinder.FLAG_ONEWAY)!=0)throw new SecurityException(\"root settings owner required\");\n                String action=data.readString(),argument=data.readString();IBinder owner=data.readStrongBinder();\n                if(data.dataAvail()!=0||owner==null)throw new IllegalArgumentException(\"settings payload\");\n                String result=settingsCommand(action,argument,owner);reply.writeNoException();reply.writeString(result);return true;\n            }\n            if (code == PolicyCommand.TRANSACTION) {\n                data.enforceInterface(DESCRIPTOR);\n                if (Binder.getCallingUid() != Process.ROOT_UID || (flags & IBinder.FLAG_ONEWAY) != 0) throw new SecurityException(\"root policy owner required\");\n                String id = data.readString(), hash = data.readString(); IBinder owner = data.readStrongBinder();\n                if (data.dataAvail() != 0 || owner == null) throw new IllegalArgumentException(\"policy owner payload\");\n                String result = policyCommand(id, hash, owner); reply.writeNoException(); reply.writeString(result); return true;\n"
+        }
+      ]
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/PolicyCommand.java",
+      "before": "100644 blob 75f7353c1c2e60adc4ee8005c2a11ad3b5fb823e\tframework_patch/src/services/com/zui/server/control/PolicyCommand.java",
+      "after": "100644 blob bec720a749a2ae5faf4ac8a89146eca72a6ea5aa\tframework_patch/src/services/com/zui/server/control/PolicyCommand.java",
+      "beforeSha256": "ef0233cbce06752fc726d0a16487150934b18a559db49636a912e7ae25ddbac3",
+      "hunks": [
+        {
+          "before": "        Projection() throws Exception { disk = new Disk(new File(UPERF, \"policy-projection\")); }\n        @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) {\n            try {\n                require(Binder.getCallingUid() == 1000 && code == 1 && flags == 0, \"system policy authority required\");\n                data.enforceInterface(CALLBACK); String action = data.readString(), text = data.readString(); require(data.dataAvail() == 0, \"projection trailing data\");\n                String result;\n                if(action.startsWith(\"settings_\")){result=settingsProjection(action,text);}\n",
+          "after": "        Projection() throws Exception { disk = new Disk(new File(UPERF, \"policy-projection\")); }\n        @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) {\n            try {\n                require(Binder.getCallingUid() == android.os.Process.SYSTEM_UID && code == 1 && (flags & IBinder.FLAG_ONEWAY) == 0, \"system policy authority required\");\n                data.enforceInterface(CALLBACK); String action = data.readString(), text = data.readString(); require(data.dataAvail() == 0, \"projection trailing data\");\n                String result;\n                if(action.startsWith(\"settings_\")){result=settingsProjection(action,text);}\n"
+        }
+      ]
+    },
+    {
+      "path": "app/build.gradle.kts",
+      "before": "100644 blob e3aac0cf3b3dbc033bbad8217b75dd4c7c1b27e6\tapp/build.gradle.kts",
+      "after": "100644 blob efbc479325dacfaf4f112d000535e865fa19a767\tapp/build.gradle.kts",
+      "beforeSha256": "920ae7547f8431126fe581ea22345ba03ba8fcf5f215010c8de995c5a1368aa3",
+      "hunks": [
+        {
+          "before": "        applicationId = \"com.zui.zuicontrol\"\n        minSdk = 29\n        targetSdk = 30\n        versionCode = 73\n        versionName = \"0.21.36\"\n    }\n\n    signingConfigs {\n",
+          "after": "        applicationId = \"com.zui.zuicontrol\"\n        minSdk = 29\n        targetSdk = 30\n        versionCode = 74\n        versionName = \"0.21.37\"\n    }\n\n    signingConfigs {\n"
+        }
+      ]
+    },
+    {
+      "path": "payload/README.txt",
+      "before": "100644 blob 7a878578ce00b674744cf39018cf5dbaf8a66eea\tpayload/README.txt",
+      "after": "100644 blob 4817e6be786fa5bb49faeae7fa653061d6b704f7\tpayload/README.txt",
+      "beforeSha256": "3d375e3b503f1e6c6416ffc06fa32da88ff7d42a2199ab8d5297b19b9e752d35",
+      "hunks": [
+        {
+          "before": "ZuiControl production payload \u2014 App V73 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV73/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n",
+          "after": "ZuiControl production payload \u2014 App V74 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV74/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n"
+        }
+      ]
+    }
+  ]
+}

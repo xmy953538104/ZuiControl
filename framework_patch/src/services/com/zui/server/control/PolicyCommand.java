@@ -127,7 +127,7 @@ public final class PolicyCommand {
         Projection() throws Exception { disk = new Disk(new File(UPERF, "policy-projection")); }
         @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) {
             try {
-                require(Binder.getCallingUid() == 1000 && code == 1 && flags == 0, "system policy authority required");
+                require(Binder.getCallingUid() == android.os.Process.SYSTEM_UID && code == 1 && (flags & IBinder.FLAG_ONEWAY) == 0, "system policy authority required");
                 data.enforceInterface(CALLBACK); String action = data.readString(), text = data.readString(); require(data.dataAvail() == 0, "projection trailing data");
                 String result;
                 if(action.startsWith("settings_")){result=settingsProjection(action,text);}

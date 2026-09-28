@@ -15,6 +15,7 @@ import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Parcel;
 import android.os.PowerManager;
+import android.os.Process;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemClock;
@@ -589,14 +590,14 @@ public final class ZuiControlService extends Binder {
         try {
             if(code==1011){
                 data.enforceInterface(DESCRIPTOR);
-                if(Binder.getCallingUid()!=0||flags!=0)throw new SecurityException("root settings owner required");
+                if(Binder.getCallingUid()!=Process.ROOT_UID||(flags & IBinder.FLAG_ONEWAY)!=0)throw new SecurityException("root settings owner required");
                 String action=data.readString(),argument=data.readString();IBinder owner=data.readStrongBinder();
                 if(data.dataAvail()!=0||owner==null)throw new IllegalArgumentException("settings payload");
                 String result=settingsCommand(action,argument,owner);reply.writeNoException();reply.writeString(result);return true;
             }
             if (code == PolicyCommand.TRANSACTION) {
                 data.enforceInterface(DESCRIPTOR);
-                if (Binder.getCallingUid() != 0 || flags != 0) throw new SecurityException("root policy owner required");
+                if (Binder.getCallingUid() != Process.ROOT_UID || (flags & IBinder.FLAG_ONEWAY) != 0) throw new SecurityException("root policy owner required");
                 String id = data.readString(), hash = data.readString(); IBinder owner = data.readStrongBinder();
                 if (data.dataAvail() != 0 || owner == null) throw new IllegalArgumentException("policy owner payload");
                 String result = policyCommand(id, hash, owner); reply.writeNoException(); reply.writeString(result); return true;
