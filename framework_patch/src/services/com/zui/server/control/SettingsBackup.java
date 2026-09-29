@@ -135,16 +135,21 @@ final class SettingsBackup {
             j.put("rulesAppliedHash",hash(entries.get("zuiopt.canonical.conf")));j.put("phase","RULES_APPLIED");policy.disk.write(JOURNAL,bytes(j));
             policy.disk.write(PREFS,entries.get("preferences.json"));
             require(Arrays.equals(policy.current.bytes(),policy.disk.read(AppPolicyStore.ACTIVE))&&Arrays.equals(prefs(),entries.get("preferences.json")),"settings applied readback");
-            j.put("phase","APPLIED");policy.disk.write(JOURNAL,bytes(j));rules.finish(transaction);
+            j.put("phase","APPLIED");policy.disk.write(JOURNAL,bytes(j));finish(j,rules);
         }catch(Exception failure){try{recover(owner,rules);
                 if("APPLIED".equals(object(parse(policy.disk.read(JOURNAL))).get("phase")))return;
             }catch(Exception recovery){failure.addSuppressed(recovery);}throw failure;}
+    }
+    private void finish(Map<String,Object> journal,Rules rules)throws Exception{
+        if(Boolean.TRUE.equals(journal.get("nativeFinished")))return;
+        rules.finish(string(journal.get("transaction")));
+        journal.put("nativeFinished",true);policy.disk.write(JOURNAL,bytes(journal));
     }
     void recover(AppPolicyStore.Owner owner,Rules rules)throws Exception{
         byte[] raw=policy.disk.read(JOURNAL);if(raw.length==0)return;Map<String,Object> j=object(parse(raw));
         String tx=string(j.get("transaction")),prefix=string(j.get("prefix")),phase=string(j.get("phase"));
         require(tx.matches("[0-9a-f]{24}")&&prefix.equals("settings-"+tx),"settings journal identity");
-        if(phase.equals("APPLIED")||phase.equals("ROLLED_BACK")){rules.finish(tx);return;}
+        if(phase.equals("APPLIED")||phase.equals("ROLLED_BACK")){finish(j,rules);return;}
         byte[] old=policy.disk.read(prefix+"-policy.json"),prefs=policy.disk.read(prefix+"-prefs.json"),canonical=policy.disk.read(prefix+"-rules.conf");
         require(hash(old).equals(j.get("policyHash"))&&hash(prefs).equals(j.get("prefsHash"))&&hash(canonical).equals(j.get("rulesHash")),"settings rollback hashes");
         policy.recover(owner);
@@ -160,6 +165,6 @@ final class SettingsBackup {
         if(!Arrays.equals(policy.current.bytes(),old)){prior.generation=Math.addExact(policy.current.generation,1);policy.commit(prior,owner);}
         else {String apply=UUID.randomUUID().toString();owner.prepare(prior,apply);owner.apply(prior,apply);}
         policy.disk.write(PREFS,prefs);require(Arrays.equals(prefs(),prefs),"settings rollback readback");
-        j.put("phase","ROLLED_BACK");policy.disk.write(JOURNAL,bytes(j));rules.finish(tx);
+        j.put("phase","ROLLED_BACK");policy.disk.write(JOURNAL,bytes(j));finish(j,rules);
     }
 }

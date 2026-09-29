@@ -21,6 +21,10 @@ AUTH=$UPERF_DIR/.validated_runtime.sha256
 rm -f "$AUTH" "$AUTH.tmp" || exit 1
 # Preserve finite bootstrap diagnostics; failure must never start stale config.
 mkdir -p "$LOG_DIR" || exit 1
+# Bounded completed bootstrap diagnostics; never truncate the current invocation.
+if [ -f "$LOG_DIR/bootstrap.log" ] && [ "$(stat -c %s "$LOG_DIR/bootstrap.log")" -gt 262144 ]; then
+    mv -f "$LOG_DIR/bootstrap.log" "$LOG_DIR/bootstrap.log.1" || exit 1
+fi
 exec >> "$LOG_DIR/bootstrap.log" 2>&1
 trap 'setprop sys.zui_control.uperf_fail_safe 1' EXIT
 # Persist the virgin-store seed intent before either legacy-compatible seed write.

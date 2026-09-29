@@ -64,10 +64,10 @@ class ProductR6(unittest.TestCase):
         self.assertIn('ZuiControlContract.CMD_SET_UPERF_APP',main)
         self.assertIn('scene = scene',quick)
         for surface in (quick,main):
-            self.assertIn('KEY_STATUS_TEXT',surface)
-            self.assertIn('KEY_UPERF_RULES_TEXT',surface)
-            self.assertIn('registerContentObserver',surface)
-            self.assertIn('unregisterContentObserver',surface)
+            self.assertIn('ControlsState.observe(controlsChanged)',surface)
+            self.assertIn('ControlsState.remove(controlsChanged)',surface)
+            self.assertNotIn('registerContentObserver',surface)
+            self.assertNotIn('unregisterContentObserver',surface)
         for prohibited in ('SharedPreferences','SQLite','getRunningTasks','Accessibility','/proc/',
                            'lastPackage','targetGeneration','stateVersion','cachedTarget','Timer','while('):
             self.assertNotIn(prohibited,quick)

@@ -71,8 +71,8 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/uperf-native"
           git rev-parse HEAD | tee "$RUNNER_TEMP/uperf-native/tested-head.txt"
-          python3 tests/uperf/startup/TestUperfBootstrap.py 2>&1 | tee "$RUNNER_TEMP/uperf-native/bootstrap.log"
-          python3 tests/uperf/supervisor/TestUperfSupervisor.py --receipt-dir "$RUNNER_TEMP/uperf-native" 2>&1 | tee "$RUNNER_TEMP/uperf-native/process.log"
+          sudo python3 tests/uperf/startup/TestUperfBootstrap.py 2>&1 | tee "$RUNNER_TEMP/uperf-native/bootstrap.log"
+          sudo python3 tests/uperf/supervisor/TestUperfSupervisor.py --receipt-dir "$RUNNER_TEMP/uperf-native" 2>&1 | tee "$RUNNER_TEMP/uperf-native/process.log"
       - name: Production policy and qualified selection regression
         if: ${{ !cancelled() }}
         run: |

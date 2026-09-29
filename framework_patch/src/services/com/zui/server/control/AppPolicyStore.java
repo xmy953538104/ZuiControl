@@ -19,6 +19,8 @@ final class AppPolicyStore {
     interface Storage {
         byte[] read(String name) throws Exception; // absent => empty; never silently discard corrupt bytes
         void write(String name, byte[] bytes) throws Exception;
+        default String[] names() throws Exception { return new String[0]; }
+        default void remove(String name) throws Exception { throw new UnsupportedOperationException("retention storage"); }
     }
     interface Owner {
         void prepare(State next, String transaction) throws Exception;
@@ -260,7 +262,7 @@ final class AppPolicyStore {
         if (phase.equals("APPLIED") || phase.equals("ABORTED")) {
             String expected = string(journal.get(phase.equals("APPLIED") ? "targetHash" : "previousHash"));
             require(hash(disk.read(ACTIVE)).equals(expected), "RECOVERY_REQUIRED_terminal_hash_mismatch");
-            recoveryRequired = false; return;
+            recoveryRequired = false; pruneCompleted(); return;
         }
         require(phase.equals("PREPARED") || phase.equals("COMMIT_INTENT"), "policy journal phase");
         recoveryRequired = true;
@@ -273,6 +275,39 @@ final class AppPolicyStore {
         require(Arrays.equals(active, target), "RECOVERY_REQUIRED_unknown_policy_commit");
         current = State.parse(target); owner.prepare(current, string(journal.get("transaction"))); owner.apply(current, string(journal.get("transaction")));
         journal.put("phase", "APPLIED"); disk.write(JOURNAL, bytes(journal)); recoveryRequired = false;
+    }
+    String retentionError="";
+    static void prune(Storage storage,String pattern,Set<String> protectedNames,int history)throws Exception{
+        List<String> candidates=new ArrayList<>();
+        for(String name:storage.names())if(name.matches(pattern)&&!protectedNames.contains(name))candidates.add(name);
+        for(int i=0;i<candidates.size()-history;i++)storage.remove(candidates.get(i));
+    }
+    synchronized void pruneCompleted(){
+        if(recoveryRequired)return;
+        try{
+            byte[] raw=disk.read(JOURNAL);if(raw.length==0)return;
+            Map<String,Object> journal=object(parse(raw));String phase=string(journal.get("phase"));
+            if(!phase.equals("APPLIED")&&!phase.equals("ABORTED"))return;
+            Set<String> keep=new HashSet<>(Arrays.asList(string(journal.get("previousFile")),string(journal.get("targetFile"))));
+            prune(disk,"policy-[0-9a-f-]{36}-(previous|target)\\.json",keep,16);
+            prune(disk,"policy-request-[A-Za-z0-9_-]+\\.json",java.util.Collections.emptySet(),16);
+            raw=disk.read("settings-transaction.json");
+            if(raw.length!=0){
+                Map<String,Object> settings=object(parse(raw));String prefix=string(settings.get("prefix"));
+                Set<String> settingsKeep=new HashSet<>(Arrays.asList(prefix+"-policy.json",prefix+"-prefs.json",prefix+"-rules.conf"));
+                prune(disk,"settings-[0-9a-f]{24}-(policy\\.json|prefs\\.json|rules\\.conf)",settingsKeep,24);
+                // Never prune an unfinished upload. Completed uploads preserve the current restore replay.
+                List<String> completed=new ArrayList<>();String current=string(settings.get("transaction"));
+                for(String name:disk.names())if(name.matches("settings-upload-[0-9a-f]{24}\\.json")){
+                    Map<String,Object> meta=object(parse(disk.read(name)));
+                    if(Boolean.TRUE.equals(meta.get("completed"))&&!name.equals("settings-upload-"+current+".json"))completed.add(name);
+                }
+                for(int i=0;i<completed.size()-8;i++){
+                    String name=completed.get(i);disk.remove(name.substring(0,name.length()-5)+".zip");disk.remove(name);
+                }
+            }
+            retentionError="";
+        }catch(Exception e){retentionError=e.getClass().getSimpleName()+":"+e.getMessage();}
     }
     synchronized void commit(State next, Owner owner) throws Exception { commit(next, owner, true); }
     private void commit(State next, Owner owner, boolean rollbackAllowed) throws Exception {
@@ -301,5 +336,6 @@ final class AppPolicyStore {
             }
             throw failed;
         }
+        pruneCompleted();
     }
 }

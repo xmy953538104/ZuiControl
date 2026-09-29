@@ -11,7 +11,15 @@ BINARY=/system/bin/uperf
 # Automatic supervisor restarts reuse only the exact authorized bytes; they never
 # launch ART/Binder or redo migration in the performanced execution domain.
 AUTH=/data/vendor/zui_control/uperf/.validated_runtime.sha256
-[ -f "$AUTH" ] && [ ! -L "$AUTH" ] && [ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || exit 1
+secure_file() {
+    [ -f "$1" ] && [ ! -L "$1" ] || return 1
+    file_identity="$(stat -c '%u:%h:%a' "$1")" || return 1
+    case "$file_identity" in 0:1:*) ;; *) return 1 ;; esac
+    file_mode="${file_identity##*:}"
+    case "$file_mode" in ''|*[!0-7]*) return 1 ;; esac
+    [ "$((8#$file_mode & 8#22))" -eq 0 ]
+}
+secure_file "$AUTH" && secure_file "$CONFIG" || exit 1
 expected="$(cat "$AUTH")" || exit 1
 # This domain owns executable reads. Validate both selected config and pinned
 # ROM binary before any Uperf code executes, including automatic restarts.

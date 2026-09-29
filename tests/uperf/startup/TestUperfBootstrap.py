@@ -60,6 +60,14 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual((u/'cur_powermode.txt').read_text(),'balance\n')
             self.assertEqual((u/'effective_powermode.txt').read_text(),'powersave\n')
             self.assertEqual((root/'calls').read_text().splitlines(),['bootstrap','uperf-startup','uperf-observe-startup'])
+            # Execute exact production DAC checks, not a mocked stat result.
+            self.assertEqual(os.geteuid(),0,"wrapper models UID0 Android runtime; run this Linux fixture with sudo")
+            config=u/'uperf.json'
+            config.chmod(0o664); self.assertNotEqual(run(service).returncode,0); config.chmod(0o600)
+            os.chown(config,1000,1000); self.assertNotEqual(run(service).returncode,0); os.chown(config,0,0)
+            hard=u/'config-hardlink'; os.link(config,hard); self.assertNotEqual(run(service).returncode,0); hard.unlink()
+            saved=u/'config-original'; config.rename(saved); config.symlink_to(saved)
+            self.assertNotEqual(run(service).returncode,0); config.unlink(); saved.rename(config)
             before=(root/'calls').read_bytes()
             for _ in range(2): self.assertEqual(run(service).returncode,0)
             self.assertEqual((root/'calls').read_bytes(),before)

@@ -17,6 +17,8 @@ public final class AppPolicyFixture {
     static final class Crash extends Error { private static final long serialVersionUID = 1; }
     static final class Disk implements AppPolicyStore.Storage {
         final Map<String,byte[]> data = new TreeMap<>(); String crash = ""; boolean after;int writes,crashAt=-1;
+        public String[] names(){return data.keySet().toArray(new String[0]);}
+        public void remove(String name){data.remove(name);}
         public byte[] read(String name) { return data.getOrDefault(name, new byte[0]).clone(); }
         public void write(String name, byte[] bytes) {
             writes++;if(writes==crashAt&&!after)throw new Crash();
@@ -32,14 +34,14 @@ public final class AppPolicyFixture {
         }
     }
     static final class Rules implements SettingsBackup.Rules {
-        byte[] data=b("schema=2\n");String pending="",generation="g000000000000000000000001";byte[] before,target;boolean fail,prepareFail;
+        byte[] data=b("schema=2\n");String pending="",generation="g000000000000000000000001";byte[] before,target;boolean fail,prepareFail;int finishes;
         public Map<String,Object> snapshot(){return map("data",Base64.getEncoder().encodeToString(data),"generation",generation,"pending",pending);}
         public void prepare(String tx,String expected,byte[] next){if(prepareFail){prepareFail=false;throw new IllegalStateException("native prepare failed before lease");}require(pending.isEmpty()&&generation.equals(expected),"rule CAS");pending=tx;before=data.clone();target=next.clone();}
         public void apply(String tx,byte[] wanted,boolean rollback)throws IOException {
             require(tx.equals(pending)&&Arrays.equals(wanted,rollback?before:target),"rule stage binding");
             data=wanted.clone();if(fail){fail=false;throw new IOException("rule ACK");}
         }
-        public void finish(String tx){require(pending.isEmpty()||pending.equals(tx),"rule release identity");pending="";}
+        public void finish(String tx){finishes++;require(pending.isEmpty()||pending.equals(tx),"rule release identity");pending="";}
     }
     static void backupTests(AppPolicyStore.State initial)throws Exception{
         Disk disk=new Disk();disk.write(AppPolicyStore.ACTIVE,initial.bytes());Owner owner=new Owner();Rules rules=new Rules();
@@ -61,7 +63,10 @@ public final class AppPolicyFixture {
         byte[] wanted=SettingsBackup.archive(next,map("data",Base64.getEncoder().encodeToString(b("schema=2\n# next\n")),"generation",rules.generation),bytes(nextPrefs),"fixture",0);
         String tx="000000000000000000000001";backup.restore(wanted,tx,owner,rules);
         check(store.current.global(0).refreshHz==60&&!backup.busy()&&rules.pending.isEmpty(),"whole settings applied");
-        long gen=store.current.generation;backup.restore(wanted,tx,owner,rules);check(store.current.generation==gen,"restore replay no double commit");
+        long gen=store.current.generation;int finishCount=rules.finishes;
+        for(int i=0;i<20;i++)backup.recover(owner,rules);
+        backup.restore(wanted,tx,owner,rules);check(store.current.generation==gen,"restore replay no double commit");
+        check(rules.finishes==finishCount,"native settings finish once");
         rejects(()->backup.restore(archive,tx,owner,rules));
         byte[] before=store.current.bytes(),priorRules=rules.data.clone(),priorPrefs=backup.prefs();
         rules.prepareFail=true;rejects(()->backup.restore(archive,"000000000000000000000004",owner,rules));
@@ -185,6 +190,16 @@ public final class AppPolicyFixture {
         check(heldStore.recoveryRequired, "unreachable rollback holds mutations");
         rejects(() -> heldStore.commit(heldNext, owner)); heldStore.recover(owner);
         check(!heldStore.recoveryRequired && heldStore.current.generation == 5, "recover whole rollback after owner returns");
+        Disk bounded=new Disk();bounded.data.put(AppPolicyStore.ACTIVE,heldStore.current.bytes());
+        AppPolicyStore repeated=new AppPolicyStore(bounded);
+        for(int i=0;i<1000;i++){
+            AppPolicyStore.State target=repeated.current.copy();target.generation++;
+            repeated.commit(target,owner);check(repeated.retentionError.isEmpty(),"retention error");
+            long stages=bounded.data.keySet().stream().filter(n->n.matches("policy-[0-9a-f-]{36}-(previous|target)\\.json")).count();
+            check(stages<=18,"bounded 1000 commit stages");
+            AppPolicyStore reopened=new AppPolicyStore(bounded);reopened.recover(owner);
+            check(reopened.current.generation==repeated.current.generation&&!reopened.recoveryRequired,"retained recovery references");
+        }
         System.out.println("UNIFIED_POLICY_PRODUCTION_FIXTURE_PASS checks=" + checks);
     }
 }

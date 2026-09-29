@@ -20,15 +20,15 @@ stubs.update({
  public static final int BATTERY_PROPERTY_CURRENT_NOW=2;public long getLongProperty(int n){return -2000000;}}''',
  'android/content/pm/PackageManager.java':'''package android.content.pm;public class PackageManager {
  public Object getApplicationInfo(String p,int f){return p;}public CharSequence getApplicationLabel(Object o){return o.toString();}}''',
- 'android/content/Context.java':'''package android.content;public class Context {
+ 'android/content/Context.java':'''package android.content;public class Context {public static boolean failBattery;
  public <T>T getSystemService(Class<T> c){try{return c.getDeclaredConstructor().newInstance();}catch(Exception e){throw new RuntimeException(e);}}
- public Intent registerReceiver(Object r,IntentFilter f){return new Intent();}
+ public Intent registerReceiver(Object r,IntentFilter f){if(failBattery)throw new IllegalStateException("battery fixture");return new Intent();}
  public android.content.pm.PackageManager getPackageManager(){return new android.content.pm.PackageManager();}}''',
  'com/zui/server/control/MonitorStore.java':'''package com.zui.server.control;import java.util.*;
- final class MonitorStore {long writes,scalarRows,threadRows;boolean active;static int starts,finishes;static String terminal;static boolean incomplete;static double lastFps;static String fpsValidity;
+ final class MonitorStore {long writes,scalarRows,threadRows;boolean active;static int starts,finishes;static String terminal;static boolean incomplete;static double lastFps;static String fpsValidity;static boolean failFinish,failClose;
  void start(String p,String l,int u,int pid,long g,long t,int task,long epoch){if(active)throw new AssertionError();active=true;starts++;writes++;scalarRows=threadRows=0;}
  void append(long t,double f,double p,double q,int pid,long g,List<MonitorSnapshot.Row> r,String validity){lastFps=f;fpsValidity=validity;if(!active)throw new AssertionError();scalarRows++;threadRows+=r.size();writes+=1+r.size();}
- void finish(long n,String reason,boolean incomplete){if(active){finishes++;writes++;active=false;terminal=reason;MonitorStore.incomplete=incomplete;}}void abandon(){active=false;}
+ void finish(long n,String reason,boolean incomplete){if(failFinish)throw new IllegalStateException("SQLite finish fixture");if(active){finishes++;writes++;active=false;terminal=reason;MonitorStore.incomplete=incomplete;}}void abandon(){active=false;if(failClose)throw new IllegalStateException("close fixture");}
  String read(int u,String key){return "{}";}String list(int u){return "{}";}String delete(int u,String p){return "ok=1";}}''',
  'com/zui/server/control/CollectorTest.java':'''package com.zui.server.control;
  import android.os.*;import android.app.*;import android.content.*;import java.util.*;
@@ -110,16 +110,52 @@ stubs.update({
  c.scene("game",0,true);Handler.next();check(!c.session.recording());
  for(int i=0;i<100;i++){c.command("off",0,"");Handler.next();c.command("full",0,"");Handler.next();}
  c.command("off",0,"");check(c.session.interval()==5000&&HandlerThread.active==1);reads=source.fpsReads;Handler.next();check(source.fpsReads==reads);
+ int workerCount=HandlerThread.created,callbacksBefore=replacement.calls;
+ for(int i=0;i<50;i++){c.scene("off"+i,0,true,false,"",i,i%2==0);}
+ check(HandlerThread.created==workerCount&&replacement.calls==callbacksBefore&&Handler.pending.size()==1);
+ c.command("full",0,"");workerCount=HandlerThread.created;
+ for(int i=0;i<50;i++){c.scene("on"+i,0,true,true,"",i,i%2==0);Handler.next();}
+ check(HandlerThread.created==workerCount&&Handler.pending.size()==1);c.command("off",0,"");
  c.register(null);check(Handler.pending.isEmpty()&&HandlerThread.active==0);
  check(new Collector().session.mode==MonitorSession.OFF);
  c.register(new Client());c.scene("game",0,true);c.command("full",0,"");
  check(start(c).startsWith("ok=1"));c.command("permissionLost",0,"");
  check(!c.session.recording()&&c.session.mode==MonitorSession.FULL&&!c.session.visible()&&c.session.interval()==5000);
  c.command("permissionGranted",0,"");check(c.session.visible()&&!c.session.recording());
- c.register(null);java.nio.file.Files.delete(fpsFile);
+ c.register(null);
+ // Every terminal caller must contain SQLite/close failure and recover scalar service.
+ for(String terminal:new String[]{"scene","stop","source","screen","lock","replace","death","permission","disable","deadline"}){
+  Client faultClient=new Client();c.register(faultClient);c.scene("game",0,true);
+  c.command("permissionGranted",0,"");c.command("off",0,"");c.command("full",0,"");check(start(c).startsWith("ok=1"));
+  MonitorStore.failFinish=true;MonitorStore.failClose=true;
+  if(terminal.equals("scene"))c.scene("other",0,true);
+  if(terminal.equals("stop"))c.command("recordStop",0,"");
+  if(terminal.equals("source")){Context.failBattery=true;Handler.next();Context.failBattery=false;}
+  if(terminal.equals("screen")){PowerManager.interactive=false;Handler.next();PowerManager.interactive=true;}
+  if(terminal.equals("lock")){KeyguardManager.locked=true;c.scene("other",0,true);KeyguardManager.locked=false;}
+  if(terminal.equals("replace"))c.register(new Client());
+  if(terminal.equals("death"))faultClient.death.binderDied();
+  if(terminal.equals("permission"))c.command("permissionLost",0,"");
+  if(terminal.equals("disable"))c.command("off",0,"");
+  if(terminal.equals("deadline")){SystemClock.now=c.session.recordingStart+1800000;Handler.next();}
+  check(!c.session.recording()&&c.state().contains("monitorFinalizeError=record_finalize:"));
+  MonitorStore.failFinish=MonitorStore.failClose=false;c.register(new Client());c.scene("game",0,true);Handler.next();
+  check(c.state().contains("monitorFinalizeError=record_finalize:"));c.register(null);
+ }
+ java.nio.file.Path thermal=java.nio.file.Files.createTempDirectory("quiet-host-");
+ java.nio.file.Path zone=java.nio.file.Files.createDirectory(thermal.resolve("thermal_zone987"));
+ java.nio.file.Files.write(zone.resolve("type"),"quiet-therm".getBytes());
+ java.nio.file.Files.write(zone.resolve("temp"),"42000".getBytes());
+ MonitorSources quiet=new MonitorSources(fpsFile.toString(),thermal.toFile());check(quiet.quiet()==42);
+ java.nio.file.Files.delete(zone.resolve("temp"));check(quiet.quiet()<0);long attempts=quiet.scalarReads;
+ java.nio.file.Files.write(zone.resolve("temp"),"41000".getBytes());for(int i=0;i<20;i++)check(quiet.quiet()<0);
+ check(quiet.scalarReads==attempts);quiet.resetQuiet();check(quiet.quiet()==41&&quiet.discoveryReads==1);
+ java.nio.file.Files.delete(zone.resolve("temp"));java.nio.file.Files.delete(zone.resolve("type"));java.nio.file.Files.delete(zone);java.nio.file.Files.delete(thermal);
+ java.nio.file.Files.delete(fpsFile);
  System.out.println("MONITOR_SHARED_DEMAND_EPOCH_RECONNECT_TERMINALS_NO_RESUME_ZERO_IDLE_WRITES_SCANS=PASS");}}
 '''
 })
+stubs['android/os/HandlerThread.java']=stubs['android/os/HandlerThread.java'].replace('public static int active;', 'public static int active,created;').replace('public void start(){active++;','public void start(){created++;active++;')
 with tempfile.TemporaryDirectory(prefix='zui-monitor-r4-') as tmp:
  out=Path(tmp);files=[]
  for name,text in stubs.items():

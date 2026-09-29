@@ -106,7 +106,7 @@ final class MonitorStore {
                 new Object[]{Math.max(0,now-beginElapsed),now,reason,incomplete?"INCOMPLETE":"COMPLETE",recordId});
         writes++; abandon();
     }
-    void abandon() { active=false; if(db!=null)db.close(); db=null; }
+    void abandon() { active=false; SQLiteDatabase closing=db; db=null; if(closing!=null)closing.close(); }
 
     String delete(int user,String pkg) {
         if(active)throw new IllegalStateException("stop_recording_before_delete");

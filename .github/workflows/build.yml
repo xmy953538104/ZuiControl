@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/uperf-supervisor-gate"
-          python3 tests/uperf/supervisor/TestUperfSupervisor.py \
+          sudo python3 tests/uperf/supervisor/TestUperfSupervisor.py \
             --receipt-dir "$RUNNER_TEMP/uperf-supervisor-gate" 2>&1 | \
             tee "$RUNNER_TEMP/uperf-supervisor-gate/host_fixture_transcript.txt"
 
@@ -95,6 +95,8 @@ jobs:
           bash tests/command_plane/TestParserBuiltins.sh
           python3 tests/command_plane/TestCommandPlaneArchitecture.py
           python3 tests/command_plane/TestBinderOwnerContract.py
+          python3 tests/command_plane/TestControlsCallbacks.py
+          python3 tests/gpu/TestGpuFailureIsolation.py
           python3 tests/command_plane/TestProjectionMode.py
           python3 tests/monitor/TestMonitor.py
           python3 tests/monitor/TestUiPolish.py
@@ -111,7 +113,7 @@ jobs:
           python3 tests/uperf/architecture/TestUperfArchitecture.py
           python3 tests/uperf/top_resumed/TestUperfTopResumedStateMachine.py
           python3 tests/uperf/startup/TestUperfStartupPolicy.py
-          python3 tests/uperf/startup/TestUperfBootstrap.py
+          sudo python3 tests/uperf/startup/TestUperfBootstrap.py
           python3 tests/uperf/startup/TestUperfStartupBoundaries.py
           python3 tests/selinux/TestUperfRuntimeAccess.py \
             --mode source \
@@ -303,6 +305,7 @@ jobs:
           gradle -p . :app:testDebugUnitTest :app:lintDebug
           python3 tests/gpu/TestGpuTouch.py
           python3 tests/monitor/TestDropdownSelection.py
+          python3 tests/monitor/TestPendingIntentCache.py
 
       - name: Compile exact services extension and test scheduler health
         shell: bash
@@ -373,9 +376,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV72
           rm -rf payload/system/priv-app/ZuiControlV74
           rm -rf payload/system/priv-app/ZuiControlV75
-          mkdir -p payload/system/priv-app/ZuiControlV76
+          rm -rf payload/system/priv-app/ZuiControlV76
+          mkdir -p payload/system/priv-app/ZuiControlV77
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV76/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV77/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

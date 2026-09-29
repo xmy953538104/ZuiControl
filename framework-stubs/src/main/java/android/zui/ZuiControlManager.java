@@ -1,6 +1,7 @@
 package android.zui;
 
 public final class ZuiControlManager {
+    public String controls(boolean register,Object callback) { throw new UnsupportedOperationException(); }
     public void linkMonitorDeath(Object death) { throw new UnsupportedOperationException("framework stub"); }
     public void unlinkMonitorDeath(Object death) { throw new UnsupportedOperationException("framework stub"); }
     public String monitor(String command, String pkg, boolean enabled, boolean expanded, Object callback) {

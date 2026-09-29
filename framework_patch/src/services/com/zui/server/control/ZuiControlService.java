@@ -91,6 +91,9 @@ public final class ZuiControlService extends Binder {
     private static final int TX_SET_GPU_RANGE = 13;
     private static final int TX_SET_GLOBAL_GPU_RANGE = 14;
     private static final int TX_MONITOR = 15;
+    private static final int TX_CONTROLS = 16;
+    private final ControlsCallbacks mControls = new ControlsCallbacks();
+    private final java.util.Set<Integer> mRetiredStatusUsers = new java.util.HashSet<>();
     private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;
     private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;
     private static final int[] DISPLAY_HZ = new int[] {60, 90, 120, 144, 165};
@@ -98,6 +101,7 @@ public final class ZuiControlService extends Binder {
 
     private final Context mContext;
     private final PackageManager mPm;
+    private volatile Method mResolveHomeMethod;
     private final DisplayManager mDisplayManager;
     private final AtomicFile mProfileFile;
     private AppPolicyStore mAppPolicies;
@@ -620,11 +624,18 @@ public final class ZuiControlService extends Binder {
                 if (code == ZuioptSceneAuthority.CURRENT) mZuioptScene.writeCurrent(callback, pid, reply);
                 return true;
             }
-            if (code >= 1 && code <= TX_MONITOR) {
+            if (code >= 1 && code <= TX_CONTROLS) {
                 data.enforceInterface(DESCRIPTOR);
             }
             String result;
             switch (code) {
+                case TX_CONTROLS:
+                    enforceCommandCallerAllowed();
+                    if((flags & IBinder.FLAG_ONEWAY)!=0)throw new IllegalArgumentException("controls reply required");
+                    String action=data.readString();IBinder client=data.readStrongBinder();
+                    if(data.dataAvail()!=0)throw new IllegalArgumentException("controls trailing data");
+                    result=controlsCommand(action,client,Binder.getCallingUid()/100000);
+                    break;
                 case TX_MONITOR:
                     enforceCommandCallerAllowed();
                     result = monitorCommand(data);
@@ -700,7 +711,7 @@ public final class ZuiControlService extends Binder {
     private String policyStateLines() {
         return "\npolicySchema=2\npolicyGeneration=" + (mAppPolicies == null || mAppPolicies.current == null ? 0 : mAppPolicies.current.generation)
                 + "\npolicyRecoveryRequired=" + (!mPolicyReady || mAppPolicies == null || mAppPolicies.recoveryRequired)
-                + "\npolicyError=" + mPolicyError + "\npolicySceneGeneration=" + mTopResumedState.generation()
+                + "\npolicyRetentionError=" + (mAppPolicies==null?"":mAppPolicies.retentionError) + "\npolicyError=" + mPolicyError + "\npolicySceneGeneration=" + mTopResumedState.generation()
                 + "\npolicyScenePackage=" + mTopResumedState.stablePackage()
                 + "\npolicySceneUser=" + mTopResumedState.stableUserId();
     }
@@ -722,9 +733,9 @@ public final class ZuiControlService extends Binder {
     }
     private String policyHome(int user) throws Exception {
         Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
-        android.content.pm.ResolveInfo result = (android.content.pm.ResolveInfo) mPm.getClass()
-                .getMethod("resolveActivityAsUser", Intent.class, int.class, int.class)
-                .invoke(mPm, intent, PackageManager.MATCH_DEFAULT_ONLY, user);
+        Method resolve=mResolveHomeMethod;
+        if(resolve==null){resolve=mPm.getClass().getMethod("resolveActivityAsUser",Intent.class,int.class,int.class);mResolveHomeMethod=resolve;}
+        android.content.pm.ResolveInfo result = (android.content.pm.ResolveInfo) resolve.invoke(mPm,intent,PackageManager.MATCH_DEFAULT_ONLY,user);
         return result == null || result.activityInfo == null ? "" : result.activityInfo.packageName;
     }
 
@@ -754,7 +765,7 @@ public final class ZuiControlService extends Binder {
         projectPolicy(state);
         String applied = reconcileFocusedProfile("unifiedPolicy", true);
         mUperfScenePolicy.reconcile("unifiedPolicy", SystemClock.elapsedRealtimeNanos());
-        if ("failed".equals(applied) || mGpuPolicy.stateLines().contains("\ngpuFailSafe=true"))
+        if ("failed".equals(applied))
             throw new IllegalStateException("policy runtime owner apply failed");
         if (!SystemProperties.get(PROP_UPERF_MODE, "").equals(mUperfScenePolicy.mDesiredMode))
             throw new IllegalStateException("Uperf runtime property ACK");
@@ -828,7 +839,7 @@ public final class ZuiControlService extends Binder {
                     mAppPolicies.commit(next, owner);
                 }
                 publishPolicySettings();
-                String result = "ok=1\npolicyGeneration=" + mAppPolicies.current.generation;
+                String result = "ok=1\ngpuRuntime=" + mGpuPolicy.runtimeStatus() + "\npolicyGeneration=" + mAppPolicies.current.generation;
                 request.put("result", result); mAppPolicies.disk.write("policy-request.json", PolicyJson.bytes(request));
             }
             if ("bootstrap".equals(requestId)) {
@@ -844,7 +855,7 @@ public final class ZuiControlService extends Binder {
                     }
                 }
             }
-            mPolicyError = ""; publishState(); return "ok=1\npolicyGeneration=" + mAppPolicies.current.generation;
+            mPolicyError = ""; publishState(); return "ok=1\ngpuRuntime=" + mGpuPolicy.runtimeStatus() + "\npolicyGeneration=" + mAppPolicies.current.generation;
         } catch (Exception e) {
             mPolicyError = e.getClass().getSimpleName() + ":" + safe(e.getMessage());
             if (mAppPolicies == null || mAppPolicies.recoveryRequired) mPolicyReady = false;
@@ -882,6 +893,8 @@ public final class ZuiControlService extends Binder {
                     PolicyJson.require(!excluded.contains(pkg)&&!isTransientPackage(pkg),"restore excluded policy target");
                 }
                 backup.restore(archive,argument,owner,PolicyCommand.rules(remote));
+                meta.put("completed",true);mAppPolicies.disk.write("settings-upload-"+argument+".json",PolicyJson.bytes(meta));
+                mAppPolicies.pruneCompleted();
             }else PolicyJson.require("sb_recover".equals(action),"settings action");
             publishPolicySettings();mMonitor.invalidatePower();return "ok=1\nsettingsPhase="+
                 PolicyJson.string(PolicyJson.object(PolicyJson.parse(mAppPolicies.disk.read(SettingsBackup.JOURNAL))).get("phase"));
@@ -987,14 +1000,16 @@ public final class ZuiControlService extends Binder {
         String pkg = mTopResumedState.stablePackage();
         int user = mTopResumedState.stableUserId();
         android.app.KeyguardManager lock = mContext.getSystemService(android.app.KeyguardManager.class);
-        boolean eligible = user == mMonitorClientUser && mScreenInteractive && lock != null && !lock.isKeyguardLocked()
+        boolean locked=lock==null||lock.isKeyguardLocked();
+        boolean eligible = user == mMonitorClientUser && mScreenInteractive && !locked
                 && !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false);
         // Visibility follows screen lifecycle; recording still requires the actual target App.
         // Keep editableScene, Refresh and Uperf transient-focus policy unchanged.
-        boolean recordEligible = eligible && !pkg.isEmpty() && !monitorHome(user).isEmpty() && !pkg.equals(monitorHome(user))
+        String home=eligible?monitorHome(user):"";
+        boolean recordEligible = eligible && !pkg.isEmpty() && !home.isEmpty() && !pkg.equals(home)
                 && (!isTransientPackage(pkg) || "com.zui.zuicontrol".equals(pkg));
         mMonitor.scene(pkg, user, eligible, recordEligible && mMonitorTaskId>=0,
-                !mScreenInteractive?"SCREEN_OFF":lock!=null&&lock.isKeyguardLocked()?"LOCKED":"VISIBILITY_BLOCKED",mMonitorTaskId,
+                !mScreenInteractive?"SCREEN_OFF":locked?"LOCKED":"VISIBILITY_BLOCKED",mMonitorTaskId,
                 eligible && mMonitorTaskId>=0 && !pkg.isEmpty() && !mRawFocusTransient && !mImeVisible
                         && pkg.equals(mRawFocusedPackage) && user==mRawFocusedUserId
                         && mRawFocusedDisplayId==Display.DEFAULT_DISPLAY);
@@ -2050,24 +2065,35 @@ public final class ZuiControlService extends Binder {
                 + "\nfpsCapPhase=not_delivered";
     }
 
+    private synchronized String controlsSnapshot() {
+        String pkg=editableScenePackage();
+        AppPolicyStore.State authority=mAppPolicies==null?null:mAppPolicies.current;
+        AppPolicyStore.Row row=authority==null?null:authority.apps.get(key(mCurrentUserId,pkg));
+        String global=authority==null?"balance":authority.global(mCurrentUserId).uperfMode;
+        return currentSceneState()+"\ncontrolsUser="+mCurrentUserId
+                +"\nsavedGlobalUperf="+global+"\neditableUperfMode="+(row==null?global:row.uperfMode)
+                +"\neffectiveUperfMode="+mUperfScenePolicy.mDesiredMode
+                +"\nscreenInteractive="+mScreenInteractive;
+    }
+    private synchronized String controlsCommand(String action,IBinder client,int user)throws RemoteException{
+        if("unregister".equals(action)){mControls.unregister(client);return "ok=1";}
+        if(!"register".equals(action))throw new IllegalArgumentException("controls action");
+        String snapshot=user==mCurrentUserId?controlsSnapshot():"ok=0\nerror=inactive_user";
+        mControls.register(client,user,snapshot);return snapshot;
+    }
     private void publishState() {
-        long token = Binder.clearCallingIdentity();
+        long token=Binder.clearCallingIdentity();
         try {
-            Settings.System.putString(mContext.getContentResolver(),
-                    "zui_control_top_package", mCurrentScenePackage);
-            Settings.System.putString(mContext.getContentResolver(),
-                    "zui_control_active_refresh", String.valueOf(mTargetDisplayHz));
-            Settings.System.putString(mContext.getContentResolver(),
-                    "zui_control_scene_event_text",
-                    android.os.SystemClock.elapsedRealtimeNanos() + "|" + mCurrentScenePackage);
-            Settings.System.putString(mContext.getContentResolver(),
-                    "zui_control_screen_on", mScreenInteractive ? "1" : "0");
-            Settings.System.putString(mContext.getContentResolver(),
-                    "zui_control_status_text", state(false));
-        } catch (Throwable ignored) {
-        } finally {
-            Binder.restoreCallingIdentity(token);
-        }
+            // Retire stale V76 values once per active user. No transient Settings doorbell.
+            if(!mRetiredStatusUsers.contains(mCurrentUserId)){
+                Method put=Settings.System.class.getMethod("putStringForUser",android.content.ContentResolver.class,String.class,String.class,int.class);
+                for(String key:new String[]{"zui_control_top_package","zui_control_active_refresh","zui_control_scene_event_text","zui_control_screen_on","zui_control_status_text"})
+                    PolicyJson.require(Boolean.TRUE.equals(put.invoke(null,mContext.getContentResolver(),key,null,mCurrentUserId)),"retire status key");
+                mRetiredStatusUsers.add(mCurrentUserId);
+            }
+            mControls.publish(mCurrentUserId,controlsSnapshot());
+        }catch(Exception e){Log.w(TAG,"controls snapshot unavailable",e);}
+        finally{Binder.restoreCallingIdentity(token);}
     }
 
     private void enforceCallerAllowed() {
@@ -2089,6 +2115,7 @@ public final class ZuiControlService extends Binder {
         }
         boolean releaseCert = mPm.hasSigningCertificate(uid, hex(RELEASE_CERT),
                 PackageManager.CERT_INPUT_SHA256);
+        if(releaseCert)return;
         boolean debugCert = false;
         try {
             ApplicationInfo app = mPm.getApplicationInfo(APP_PACKAGE, 0);
@@ -2188,13 +2215,10 @@ public final class ZuiControlService extends Binder {
 
     private String supportedDisplayHz() {
         StringBuilder sb = new StringBuilder();
-        for (int hz : DISPLAY_HZ) {
-            if (isDisplayHzSupported(hz)) {
-                if (sb.length() > 0) {
-                    sb.append(',');
-                }
-                sb.append(hz);
-            }
+        Display display=mDisplayManager==null?null:mDisplayManager.getDisplay(resolveDisplayId(mRawFocusedDisplayId));
+        Display.Mode[] modes=display==null?new Display.Mode[0]:display.getSupportedModes();
+        for(int hz:DISPLAY_HZ)for(Display.Mode mode:modes)if(Math.abs(mode.getRefreshRate()-hz)<=0.5f){
+            if(sb.length()>0)sb.append(',');sb.append(hz);break;
         }
         return sb.toString();
     }
@@ -2324,21 +2348,6 @@ public final class ZuiControlService extends Binder {
     }
 
     private final class UperfScenePolicy {
-        private final Map<String, String> mRules = new HashMap<>();
-        private final Runnable mReloadRunnable = new Runnable() {
-            @Override
-            public void run() {
-                reloadSettings("settings");
-            }
-        };
-        private final ContentObserver mSettingsObserver = new ContentObserver(mWorker) {
-            @Override
-            public void onChange(boolean selfChange) {
-                mWorker.removeCallbacks(mReloadRunnable);
-                mWorker.post(mReloadRunnable);
-            }
-        };
-
         private String mScenePackage = "";
         private int mSceneUserId;
         private boolean mInteractive = true;
@@ -2372,18 +2381,7 @@ public final class ZuiControlService extends Binder {
                 return;
             }
             mStarted = true;
-            long token = Binder.clearCallingIdentity();
-            try {
-                mContext.getContentResolver().registerContentObserver(
-                        Settings.System.getUriFor(SETTING_UPERF_MODE), false, mSettingsObserver);
-                mContext.getContentResolver().registerContentObserver(
-                        Settings.System.getUriFor(SETTING_UPERF_RULES), false, mSettingsObserver);
-            } catch (Throwable t) {
-                Log.w(TAG, "Uperf settings observer unavailable", t);
-            } finally {
-                Binder.restoreCallingIdentity(token);
-            }
-            reloadSettings("startup");
+            reconcile("startup:unifiedPolicy", SystemClock.elapsedRealtimeNanos());
         }
 
         synchronized void onTopResumedChanged(
@@ -2404,36 +2402,12 @@ public final class ZuiControlService extends Binder {
             }
         }
 
-        private synchronized void reloadSettings(String reason) {
-            // Settings is now a compatibility projection, never an independent writer.
-            if (mAppPolicies == null || mAppPolicies.current == null) return;
-            reconcile(reason + ":unifiedPolicy", SystemClock.elapsedRealtimeNanos());
-        }
-
-        private Map<String, String> parseUperfRules(String rulesText) {
-            Map<String, String> parsed = new HashMap<>();
-            for (String line : safe(rulesText).split("\\r?\\n")) {
-                String text = line.trim();
-                int separator = text.indexOf('|');
-                if (separator <= 0 || separator != text.lastIndexOf('|')) {
-                    continue;
-                }
-                String packageName = text.substring(0, separator).trim();
-                String mode = text.substring(separator + 1).trim();
-                if (validPackage(packageName) && validUperfMode(mode)
-                        && !parsed.containsKey(packageName)) {
-                    parsed.put(packageName, mode);
-                }
-            }
-            return parsed;
-        }
-
         private void reconcile(String reason, long eventNanos) {
             AppPolicyStore.State authority = mAppPolicies == null ? null : mAppPolicies.current;
-            if (!mPolicyReady || authority == null) { mLastReason = reason + ":policyRecoveryRequired"; mGpuPolicy.resolve("", "balance", null, false, false, false); return; }
+            if (mInteractive && (!mPolicyReady || authority == null)) { mLastReason = reason + ":policyRecoveryRequired"; mGpuPolicy.resolve("", "balance", null, false, false, false); return; }
             if (authority != null) mGlobalMode = authority.global(mSceneUserId).uperfMode;
             AppPolicyStore.Row row = authority == null ? null : authority.apps.get(key(mSceneUserId, mScenePackage));
-            String exact = authority == null ? mRules.get(mScenePackage) : (row == null ? null : row.uperfMode);
+            String exact = row == null ? null : row.uperfMode;
             boolean hasExact = validUperfMode(exact);
             mSceneMode = hasExact ? exact : mGlobalMode;
             String source;

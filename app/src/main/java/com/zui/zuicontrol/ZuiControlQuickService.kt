@@ -8,7 +8,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
-import android.database.ContentObserver
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -38,9 +37,7 @@ class ZuiControlQuickService : Service() {
     private val readingUpdate = Runnable { lastReadingPublish = SystemClock.elapsedRealtime(); requestRefresh(false) }
     // A one-shot expiry only; it does not read a sensor or wake a sleeping device.
     private val readingExpiry = Runnable { acceptReading(-1.0, -1.0, 0L, 3500L) }
-    private val observer = object : ContentObserver(handler) {
-        override fun onChange(selfChange: Boolean) { requestRefresh() }
-    }
+    private val controlsChanged: () -> Unit = { requestRefresh() }
     override fun onCreate() {
         super.onCreate()
         getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -49,10 +46,7 @@ class ZuiControlQuickService : Service() {
                 setSound(null, null); enableVibration(false); setShowBadge(false)
             })
         startForeground(ID, renderNotification(snapshot()))
-        listOf(ZuiControlContract.KEY_STATUS_TEXT, ZuiControlContract.KEY_UPERF_MODE,
-            ZuiControlContract.KEY_UPERF_RULES_TEXT).forEach {
-            contentResolver.registerContentObserver(Settings.System.getUriFor(it), false, observer)
-        }
+        ControlsState.observe(controlsChanged)
         monitor = PerformanceMonitor(this, onReading = ::acceptReading) { requestRefresh() }.also { it.start() }
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -153,17 +147,20 @@ class ZuiControlQuickService : Service() {
         notificationPublishes++
         QuickControlTrace.mark(trace,"T3","NotificationManager.notify_returned_logical_state")
     }
-    private fun setting(key: String) = Settings.System.getString(contentResolver, key).orEmpty()
-    private fun pending(action: String, request: Int) = PendingIntent.getService(this, request,
-        Intent(this, ZuiControlQuickService::class.java).setAction(action),
-        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    private var pendingIntentCreations = 0L
+    private val actionIntents = mutableMapOf<Pair<String, Int>, PendingIntent>()
+    private fun pending(action: String, request: Int) = actionIntents.getOrPut(action to request) {
+        pendingIntentCreations++
+        PendingIntent.getService(this, request,
+            Intent(this, ZuiControlQuickService::class.java).setAction(action),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
     private fun snapshot(): NotificationQuickControlHelper.Snapshot {
         if (controlsDirty || controls == null) {
-            val scene = ZuiControlClient.currentSceneText()
+            val scene = ControlsState.snapshot
             val pkg = ZuiControlClient.stateValue(scene, "editableScenePackage").orEmpty()
             val rate = ZuiControlClient.stateValue(scene, "editableDisplayHz")?.toIntOrNull() ?: 0
-            val mode = UperfMode.resolve(setting(ZuiControlContract.KEY_UPERF_MODE),
-                setting(ZuiControlContract.KEY_UPERF_RULES_TEXT), pkg)
+            val mode = UperfMode.fromId(ZuiControlClient.stateValue(scene, "editableUperfMode").orEmpty()) ?: UperfMode.BALANCE
             val enabled = PackageNames.isValid(pkg)
             val uperfEnabled = ZuiControlClient.stateValue(scene, "editableSceneIsHome") == "true" || UperfAppPolicy.isConfigurable(packageManager, pkg)
             controls = NotificationQuickControlHelper.Snapshot(pkg, rate, mode, false, enabled, uperfEnabled)
@@ -195,11 +192,11 @@ class ZuiControlQuickService : Service() {
         args.firstOrNull { it.startsWith("--trace-seconds=") }?.substringAfter('=')?.toIntOrNull()?.let {
             QuickControlTrace.enable(it); monitor?.trace(it)
         }
-        writer.println("quickCommandInFlight=$commandInFlight refreshPosted=$refreshPosted notificationPublishes=$notificationPublishes")
+        writer.println("quickCommandInFlight=$commandInFlight refreshPosted=$refreshPosted notificationPublishes=$notificationPublishes pendingIntentCreations=$pendingIntentCreations")
         monitor?.dump(writer); QuickControlTrace.dump(writer)
     }
     override fun onDestroy() {
-        contentResolver.unregisterContentObserver(observer)
+        ControlsState.remove(controlsChanged)
         monitor?.close(); monitor = null
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()

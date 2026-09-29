@@ -57,10 +57,10 @@ public:
         name(entry);if(!exists(entry))return;int input=openat(fd,entry.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW|O_NONBLOCK);
         try{file(input);}catch(...){if(input>=0)close(input);throw;}close(input);require(unlinkat(fd,entry.c_str(),0)==0,"private unlink");sync();
     }
-    std::vector<std::string> names() const {
+    std::vector<std::string> names(size_t limit=64) const {
         int copy=openat(fd,".",O_RDONLY|O_DIRECTORY|O_CLOEXEC);require(copy>=0,"directory duplicate");DIR* dir=fdopendir(copy);if(!dir){close(copy);throw std::runtime_error("directory enumeration");}
         std::vector<std::string> result;int error=0;
-        for(;;){errno=0;auto* entry=readdir(dir);if(!entry){error=errno;break;}std::string n=entry->d_name;if(n!="."&&n!="..")result.push_back(n);if(result.size()>64){closedir(dir);throw std::runtime_error("directory entry bound");}}
+        for(;;){errno=0;auto* entry=readdir(dir);if(!entry){error=errno;break;}std::string n=entry->d_name;if(n!="."&&n!="..")result.push_back(n);if(result.size()>limit){closedir(dir);throw std::runtime_error("directory entry bound");}}
         closedir(dir);require(error==0,"directory enumeration read");return result;
     }
 };
@@ -119,7 +119,7 @@ class RuleStore {
         auto canonical=dumpRules(rules(state.user));std::string id='g'+randomId();
         auto effective="# ZUIOPT_GENERATION "+id+"\n"+canonical;rules(effective);
         require(!generations.exists(id),"generation collision");PrivateDir d(generations,id,true);
-        // Retain every legacy generation and failed prepared generation. Retention is a separate owner action.
+        // Prepared/failed generations remain unmarked; only completed unreferenced history may be retired.
         std::string provenance=state.provenance;
         if(provenance.empty())provenance="source=canonical\n";
         if(state.source.empty())state.source=state.user;
@@ -135,7 +135,49 @@ class RuleStore {
 #ifdef ZUIOPT_TEST
         if(testAfterCommit)throw std::runtime_error("injected after commit");
 #endif
-        require(root.get("effective.conf",RULE_LIMIT)==effective,"committed readback");return id;
+        require(root.get("effective.conf",RULE_LIMIT)==effective,"committed readback");
+        try{d.put("committed.v2",id+"\n");pruneCompleted();}catch(...){}
+        return id;
+    }
+    void removeRetired(const std::string& name) {
+        require(name.rfind("retired-",0)==0&&generationId(name.substr(8)),"retired generation name");
+        PrivateDir retired(generations,name);
+        const std::set<std::string> allowed{"source.bin","last_good.conf","provenance.txt","canonical_state.v2","effective.conf","committed.v2"};
+        auto entries=retired.names();for(const auto& entry:entries)require(allowed.count(entry),"unknown retired entry");
+        for(const auto& entry:entries)retired.remove(entry);
+        require(unlinkat(generations.fd,name.c_str(),AT_REMOVEDIR)==0,"generation retirement");generations.sync();
+    }
+    void pruneCompleted() noexcept {
+        try {
+            // A pending cross-owner restore is never a GC boundary.
+            if(root.exists("settings.pending"))return;
+            auto active=root.get("effective.conf",RULE_LIMIT);auto id=generationOf(active);
+            std::set<std::string> keep{id};PrivateDir currentDir(generations,id);
+            auto previous=currentDir.get("last_good.conf",RULE_LIMIT,true);
+            if(!previous.empty())keep.insert(generationOf(previous));
+            auto loaded=fields(trim(root.get("loaded-generation.v2",256,true)),':');
+            if(!loaded.empty()&&generationId(loaded[0]))keep.insert(loaded[0]);
+            std::vector<std::string> completed;
+            for(const auto& name:generations.names(4096)){
+                if(name.rfind("retired-",0)==0&&generationId(name.substr(8))){removeRetired(name);continue;}
+                if(!generationId(name)||keep.count(name))continue;
+                PrivateDir candidate(generations,name);
+                // Legacy and failed/prepared evidence is not guessed to be completed.
+                if(candidate.get("committed.v2",64,true)==name+"\n")completed.push_back(name);
+            }
+            std::sort(completed.begin(),completed.end());
+            const std::set<std::string> allowed{"source.bin","last_good.conf","provenance.txt","canonical_state.v2","effective.conf","committed.v2"};
+            for(size_t i=8;i<completed.size();++i){
+                PrivateDir candidate(generations,completed[i]);auto entries=candidate.names();
+                for(const auto& name:entries)require(allowed.count(name),"unknown generation retention entry");
+                // load validates the canonical payload and embedded previous bytes before deleting.
+                load(candidate.get("effective.conf",RULE_LIMIT));
+                // A durable tombstone makes interrupted deletion resumable without reloading partial payloads.
+                auto retired="retired-"+completed[i];
+                require(renameat(generations.fd,completed[i].c_str(),generations.fd,retired.c_str())==0,"retire rename");generations.sync();
+                removeRetired(retired);
+            }
+        }catch(...){} // Retention cannot turn a durable successful commit into a failed transaction.
     }
     void clearUpload(){
         // Preserve successful and failed input receipts; only the active transport slots are cleared.
@@ -143,6 +185,12 @@ class RuleStore {
         if(!meta.empty()){auto f=fields(trim(meta),':');require(!f.empty()&&hex(f[0],24),"upload receipt identity");
             PrivateDir receipts(root,"uploads",true);receipts.put(f[0]+".meta",meta);receipts.put(f[0]+".bin",root.get("upload.bin",PACK_LIMIT,true));}
         root.remove("upload.meta");root.remove("upload.bin");
+        if(root.exists("uploads")){
+            PrivateDir receipts(root,"uploads");std::vector<std::string> completed;
+            for(const auto& name:receipts.names(4096))if(name.size()==29&&name.substr(24)==".meta"&&hex(name.substr(0,24),24))completed.push_back(name.substr(0,24));
+            std::sort(completed.begin(),completed.end());
+            for(size_t i=16;i<completed.size();++i){receipts.remove(completed[i]+".bin");receipts.remove(completed[i]+".meta");}
+        }
     }
     std::vector<std::string> upload(const std::string& id){
         require(hex(id,24),"transaction ID");auto f=fields(trim(root.get("upload.meta",512)),':');
@@ -210,7 +258,14 @@ public:
             return "prepared="+sha256(data);
         }
         require(lease==tx|| (lease.empty()&&action=="settings_finish"),"settings lease");
-        if(action=="settings_finish"){root.remove("settings.pending");return "settings=finished";}
+        if(action=="settings_finish"){
+            root.remove("settings.pending");
+            // Release is idempotent; the current pair remains available for diagnostic replay.
+            std::vector<std::string> stages;
+            for(const auto& name:root.names(4096))if(rx(name,"settings-[0-9a-f]{24}-(before|target)\\.conf")&&name!=before&&name!=target)stages.push_back(name);
+            std::sort(stages.begin(),stages.end());for(size_t i=16;i<stages.size();++i)root.remove(stages[i]);
+            pruneCompleted();return "settings=finished";
+        }
         require(action=="settings_apply"||action=="settings_revert","settings action");
         auto old=root.get(before,RULE_LIMIT),next=root.get(target,RULE_LIMIT);
         require(s.user==old||s.user==next,"settings unknown active rules");

@@ -44,8 +44,9 @@ class ProductR7(unittest.TestCase):
         service=read('framework_patch/src/services/com/zui/server/control/ZuiControlService.java')
         monitor=service.split('private synchronized void refreshMonitor(',1)[1].split('\n    private ',1)[0]
         self.assertNotIn('CATEGORY_HOME',monitor)
-        for token in ('mScreenInteractive','!lock.isKeyguardLocked()','eligible'):
+        for token in ('mScreenInteractive','!locked','eligible'):
             self.assertIn(token,monitor)
+        self.assertEqual(monitor.count('lock.isKeyguardLocked()'),1)
         overlay=app('PerformanceMonitor.kt')
         for token in ('WindowInsets.Type.statusBars()','WindowInsets.Type.displayCutout()',
                       'WindowInsets.Type.captionBar()','setFitInsetsTypes(0)','setOnApplyWindowInsetsListener',

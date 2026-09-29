@@ -51,7 +51,7 @@ class NotificationRenderer(unittest.TestCase):
         self.assertIn('private fun renderNotification(snapshot:',quick)
         for action in ('setTextViewText','setTextColor','setBackgroundResource','setViewVisibility','setEnabled','setContentDescription','setOnClickPendingIntent'):
             self.assertIn(action,helper)
-        for marker in ('KEY_STATUS_TEXT','KEY_UPERF_MODE','KEY_UPERF_RULES_TEXT','PerformanceMonitor(this, onReading = ::acceptReading) { requestRefresh() }'):
+        for marker in ('ControlsState.observe(controlsChanged)','ControlsState.snapshot','ControlsState.remove(controlsChanged)','PerformanceMonitor(this, onReading = ::acceptReading) { requestRefresh() }'):
             self.assertIn(marker,quick)
         for forbidden in ('setCustomBigContentView','setCustomHeadsUpContentView','SharedPreferences','Timer(','Thread.sleep','SystemClock.sleep'):
             self.assertNotIn(forbidden,quick+helper)

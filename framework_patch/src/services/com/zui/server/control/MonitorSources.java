@@ -34,26 +34,32 @@ final class MonitorSources {
         if (result.isEmpty()) throw new IOException("quiet_sensor_missing");
         return result;
     }
+    void resetQuiet() {
+        quietUnavailable=false;quietError="";
+        if(quietPath.isEmpty())discovered=false;
+    }
     double quiet() {
         if (!discovered) {
             discovered = true; discoveryReads++;
-            try { quietPath = discoverQuiet(new File("/sys/class/thermal")); }
-            catch (IOException e) { quietUnavailable = true; quietError = e.getMessage(); }
+            try { quietPath = discoverQuiet(thermalRoot); }
+            catch (IOException | SecurityException e) { quietUnavailable = true; quietError = e.getMessage(); }
         }
         if (quietUnavailable) return -1;
         try { scalarReads++; return Double.parseDouble(line(quietPath)) / 1000.0; }
-        catch (IOException | NumberFormatException e) {
+        catch (IOException | NumberFormatException | SecurityException e) {
             quietUnavailable = true; quietError = "quiet_read_unavailable"; return -1;
         }
     }
     static final String FPS_PATH = "/sys/class/drm/sde-crtc-0/measured_fps";
     private final String fpsPath;
+    private final File thermalRoot;
     private boolean fpsUnavailable;
     long fpsReads;
     String fpsError = "UNAVAILABLE_NOT_SAMPLED";
     MonitorSources() { this(FPS_PATH); }
     // Host fixtures exercise the same reader; production always uses FPS_PATH.
-    MonitorSources(String fpsPath) { this.fpsPath = fpsPath; }
+    MonitorSources(String fpsPath) { this(fpsPath,new File("/sys/class/thermal")); }
+    MonitorSources(String fpsPath,File thermalRoot) { this.fpsPath=fpsPath;this.thermalRoot=thermalRoot; }
     void resetFps() { fpsUnavailable = false; fpsError = "UNAVAILABLE_NOT_SAMPLED"; }
     double fps() {
         if (fpsUnavailable) return -1;

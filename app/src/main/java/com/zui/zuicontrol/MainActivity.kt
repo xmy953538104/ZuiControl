@@ -59,10 +59,8 @@ class MainActivity : Activity() {
             reloadState(); renderCurrentPage()
         }
     }
-    private val profileObserver = object : android.database.ContentObserver(handler) {
-        override fun onChange(selfChange: Boolean) {
-            handler.removeCallbacks(refreshUi); handler.postDelayed(refreshUi, 100)
-        }
+    private val controlsChanged: () -> Unit = {
+        handler.removeCallbacks(refreshUi); handler.postDelayed(refreshUi, 100)
     }
 
     @Suppress("DEPRECATION")
@@ -92,10 +90,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        listOf(ZuiControlContract.KEY_STATUS_TEXT, ZuiControlContract.KEY_UPERF_MODE,
-            ZuiControlContract.KEY_UPERF_RULES_TEXT).forEach {
-            contentResolver.registerContentObserver(Settings.System.getUriFor(it), false, profileObserver)
-        }
+        ControlsState.observe(controlsChanged)
         if (::contentHost.isInitialized) {
             reloadState()
             renderCurrentPage()
@@ -103,7 +98,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
-        contentResolver.unregisterContentObserver(profileObserver)
+        ControlsState.remove(controlsChanged)
         handler.removeCallbacks(refreshUi)
         super.onPause()
     }

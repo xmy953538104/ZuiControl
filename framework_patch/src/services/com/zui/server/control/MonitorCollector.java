@@ -32,6 +32,8 @@ class MonitorCollector {
     private IBinder.DeathRecipient death;
     private HandlerThread thread;
     private Handler handler;
+    private boolean scheduled;
+    private String finalizeError="";
     private long epoch,samples,threadReads,enumerations,lastThreadTime;
     private String lastSnapshot="{}",error="";
     private List<MonitorSnapshot.Task> previous=Collections.emptyList();
@@ -48,7 +50,7 @@ class MonitorCollector {
         if(callback!=null)terminate("CLIENT_REPLACED",true);
         drain();
         if(callback!=null&&death!=null)callback.unlinkToDeath(death,0);
-        callback=binder;death=null;session.connectionEpoch++;lastGesture=-1;sources.resetFps();
+        callback=binder;death=null;session.connectionEpoch++;lastGesture=-1;sources.resetFps();sources.resetQuiet();
         if(binder!=null){
             final long connection=session.connectionEpoch;
             death=()->{synchronized(MonitorCollector.this){
@@ -64,7 +66,12 @@ class MonitorCollector {
         if(!session.recording())return;
         long end=Math.min(SystemClock.elapsedRealtime(),session.recordingStart+MonitorSession.MAX_RECORD_MS);
         try { store.finish(end,reason,incomplete); }
-        catch(RuntimeException e){store.abandon();throw e;}
+        catch(RuntimeException e){
+            finalizeError="record_finalize:"+e.getClass().getSimpleName()+":"+e.getMessage();
+            // A failed write leaves the existing INCOMPLETE row. Best-effort mark it explicitly.
+            try { store.finish(end,"FINALIZE_ERROR",true); } catch(RuntimeException ignored) { }
+            try { store.abandon(); } catch(RuntimeException close) { finalizeError+=";close:"+close.getMessage(); }
+        }
         finally { session.stop();clearThreadBaseline(); }
     }
     private String screenTerminal(){
@@ -101,8 +108,9 @@ class MonitorCollector {
         fpsSceneEligible=fpsEligible;
         boolean taskChanged=taskId!=session.taskId;
         if(taskChanged){session.taskId=taskId;session.targetEpoch++;}
-        boolean changed=fpsChanged||taskChanged||!pkg.equals(session.foreground)||user!=session.user||eligible!=session.eligible
-                ||recordEligible!=session.recordEligible;
+        boolean changed=eligible!=session.eligible||((session.visible()||session.recording())
+                &&(fpsChanged||taskChanged||!pkg.equals(session.foreground)||user!=session.user
+                ||recordEligible!=session.recordEligible));
         session.scene(pkg,user,eligible,recordEligible);
         String terminal=session.terminal(SystemClock.elapsedRealtime());
         if(terminal.isEmpty()&&taskChanged&&session.recording())terminal="TASK_CHANGED";
@@ -141,12 +149,12 @@ class MonitorCollector {
                 String label=context.getPackageManager().getApplicationLabel(
                         context.getPackageManager().getApplicationInfo(session.foreground,0)).toString();
                 store.start(session.foreground,label,user,task.tid,task.start,now,session.taskId,session.targetEpoch);
-                session.started(now,task.tid,task.start);lastGesture=gesture;clearThreadBaseline();
+                session.started(now,task.tid,task.start);finalizeError="";lastGesture=gesture;clearThreadBaseline();
             }else if("recordStop".equals(action)){
                 if(session.recordingUser!=user)return "ok=0\nerror=wrong_user";
                 terminate("EXPLICIT_STOP",false);
             }else if(!"state".equals(action))return "ok=0\nerror=unknown_monitor_action";
-            if(("full".equals(action)||"fps".equals(action))&&session.mode!=MonitorSession.OFF)sources.resetFps();
+            if(("full".equals(action)||"fps".equals(action))&&session.mode!=MonitorSession.OFF){sources.resetFps();sources.resetQuiet();}
             if(session.mode!=MonitorSession.FULL)terminate("USER_DISABLE",false);
             if(!"state".equals(action)){stop();schedule();}
             return "ok=1"+state()+"\nmonitorSnapshot="+lastSnapshot;
@@ -155,23 +163,25 @@ class MonitorCollector {
     private void clearThreadBaseline(){previous=Collections.emptyList();previousPid=0;previousStart=0;lastThreadTime=0;}
     private void schedule(){
         if(callback==null||!session.sampling()){stop();return;}
-        if(handler!=null)return;
-        thread=new HandlerThread("ZuiMonitor");thread.start();handler=new Handler(thread.getLooper());
-        long ticket=epoch;handler.post(()->sample(ticket));
+        if(handler==null){thread=new HandlerThread("ZuiMonitor");thread.start();handler=new Handler(thread.getLooper());}
+        if(scheduled)return;
+        scheduled=true;long ticket=epoch;handler.post(()->sample(ticket));
     }
     private void drain(){
         epoch++;
         if(handler!=null)handler.removeCallbacksAndMessages(null);
         if(thread!=null)thread.quitSafely();
-        handler=null;thread=null;
+        handler=null;thread=null;scheduled=false;
     }
     synchronized void stop(){
-        drain();
+        // Keep the one worker while the client has an active sampling lifetime.
+        if(callback==null||!session.sampling())drain();
+        else {epoch++;scheduled=false;if(handler!=null)handler.removeCallbacksAndMessages(null);}
         // Invalidate all cached values, never relabel old target readings as a fresh sample.
         try {
-            lastSnapshot=metadata(new JSONObject()).put("elapsedMs",0).put("fps",-1)
+            String invalid=metadata(new JSONObject()).put("elapsedMs",0).put("fps",-1)
                     .put("quietC",-1).put("powerW",-1).toString();
-            deliver(lastSnapshot);
+            if(!invalid.equals(lastSnapshot)){lastSnapshot=invalid;deliver(lastSnapshot);}
         }catch(org.json.JSONException e){throw new IllegalStateException(e);}
     }
     private JSONObject metadata(JSONObject value)throws org.json.JSONException{
@@ -204,10 +214,11 @@ class MonitorCollector {
             +"\nmonitorIntervalMs="+session.interval()+"\nmonitorConnectionEpoch="+session.connectionEpoch+"\nmonitorTargetEpoch="+session.targetEpoch+"\nmonitorThreadIntervalMs=3000\nmonitorTimer="+(handler!=null)
             +"\nmonitorQuietPath="+sources.quietPath+"\nmonitorQuietUnit=millidegree_C\nmonitorQuietDiscovery="+sources.discoveryReads
             +"\nmonitorFpsReads="+sources.fpsReads+"\nmonitorFpsError="+sources.fpsError
-            +"\nmonitorQuietError="+sources.quietError+"\nmonitorError="+error;
+            +"\nmonitorQuietError="+sources.quietError+"\nmonitorError="+error+"\nmonitorFinalizeError="+finalizeError;
     }
     private void sample(long ticket){synchronized(this){
         if(ticket!=epoch||handler==null||!session.sampling())return;
+        scheduled=false;
         try{
             String screen=screenTerminal();
             if(!screen.isEmpty()){
@@ -265,7 +276,10 @@ class MonitorCollector {
             lastSnapshot=data.toString();deliver(lastSnapshot);
         }catch(Exception e){error=e.getClass().getSimpleName()+":"+e.getMessage();
             terminate("SOURCE_PIPELINE_FAILURE",true);stop();}
-        if(ticket==epoch&&handler!=null)handler.postDelayed(()->sample(ticket),session.recording()?Math.min(session.interval(),Math.max(1,session.recordingStart+MonitorSession.MAX_RECORD_MS-SystemClock.elapsedRealtime())):session.interval());
+        if(handler!=null&&session.sampling()&&!scheduled){
+            scheduled=true;long next=epoch;
+            handler.postDelayed(()->sample(next),session.recording()?Math.min(session.interval(),Math.max(1,session.recordingStart+MonitorSession.MAX_RECORD_MS-SystemClock.elapsedRealtime())):session.interval());
+        }
     }}
     private MonitorSnapshot.Task parse(String path){
         try{return MonitorSnapshot.Task.parse(MonitorSources.line(path));}catch(java.io.IOException e){return null;}

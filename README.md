@@ -37,6 +37,8 @@ Run from the repository root:
 ```text
 python tests/command_plane/TestCommandPlaneArchitecture.py
 python tests/command_plane/TestBinderOwnerContract.py
+python tests/command_plane/TestControlsCallbacks.py
+python tests/gpu/TestGpuFailureIsolation.py
 python tests/command_plane/TestProjectionMode.py
 python tests/gpu/TestGpuProof.py
 python tests/monitor/TestMonitor.py
@@ -45,6 +47,7 @@ python tests/monitor/TestProductR6.py
 python tests/monitor/TestProductR7.py
 python tests/monitor/TestNotificationRenderer.py
 python tests/monitor/TestDropdownSelection.py
+python tests/monitor/TestPendingIntentCache.py
 bash tests/uperf/TestConfigurableAppPolicy.sh
 python tests/monitor/TestRecordSql.py
 python tests/monitor/TestPackageIdentity.py
@@ -52,9 +55,9 @@ bash tests/command_plane/TestZuiControldTransactions.sh
 python tests/refresh/TestRefreshStateMachine.py
 python tests/uperf/architecture/TestUperfArchitecture.py
 python tests/uperf/startup/TestUperfStartupPolicy.py
-python tests/uperf/startup/TestUperfBootstrap.py
+sudo python tests/uperf/startup/TestUperfBootstrap.py
 python tests/uperf/startup/TestUperfStartupBoundaries.py
-python tests/uperf/supervisor/TestUperfSupervisor.py
+sudo python tests/uperf/supervisor/TestUperfSupervisor.py
 python tests/uperf/top_resumed/TestUperfTopResumedStateMachine.py
 python tests/cache/TestVerifiedContentCache.py
 python tests/zuiopt/test_rule_pack.py

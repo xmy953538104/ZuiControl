@@ -44,6 +44,12 @@ public final class PolicyCommand {
             }
             return file;
         }
+        public String[] names() throws Exception {
+            File[] files=directory.listFiles();require(files!=null,"retention directory");
+            Arrays.sort(files,java.util.Comparator.comparingLong(File::lastModified).thenComparing(File::getName));
+            String[] names=new String[files.length];for(int i=0;i<files.length;i++)names[i]=files[i].getName();return names;
+        }
+        public void remove(String name)throws Exception{File target=file(name);new AtomicFile(target).delete();require(!target.exists(),"retention delete");}
         public byte[] read(String name) throws Exception {
             File file = file(name); AtomicFile atomic = new AtomicFile(file);
             if (!file.exists() && !new File(directory, name + ".bak").exists()) return new byte[0];
@@ -172,6 +178,9 @@ public final class PolicyCommand {
                         } finally { Os.close(fd); }
                         require(new String(Files.readAllBytes(mode.toPath()), StandardCharsets.US_ASCII).trim().equals(desired), "Uperf runtime file ACK");
                         disk.write("active.json", prepared); disk.write("applied.json", bytes(request)); result = hash(prepared);
+                        // Current applied transaction is the only projection recovery reference.
+                        try{AppPolicyStore.prune(disk,"[0-9a-f-]{36}\\.json",java.util.Collections.singleton(tx+".json"),8);}
+                        catch(Exception cleanup){android.util.Log.w("ZuiControl","projection retention unavailable",cleanup);}
                     }
                 }
                 reply.writeNoException(); reply.writeString(result);

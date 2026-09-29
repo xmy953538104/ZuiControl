@@ -258,6 +258,31 @@ int main(int argc,char** argv){
             store.settings("settings_apply",tx2,sha256(next));require(store.current().user==next,"settings uncertain commit readback");
             store.settings("settings_revert",tx2,sha256(original));store.settings("settings_finish",tx2,"");
             puts("ZUIOPT_SETTINGS_PREPARE_FREEZE_APPLY_ROLLBACK_UNCERTAIN_REPLAY=PASS");
+            // Exercise actual durable commits/GC, keeping the loaded ACK and rollback source live.
+            auto loadedId=generationOf(store.current().effective);
+            dir.put("loaded-generation.v2",loadedId+":fixture\n");
+            for(int i=0;i<1000;i++){
+                uploadData(store,"user",i%2?BASE:OPEN,randomId());
+                require(fs::exists(root/"generations"/loadedId),"loaded generation retained");
+                size_t completed=0;
+                for(const auto& entry:fs::directory_iterator(root/"generations"))
+                    if(fs::exists(entry.path()/"committed.v2"))completed++;
+                require(completed<=11,"bounded completed generations");
+                require(std::distance(fs::directory_iterator(root/"uploads"),fs::directory_iterator())<=32,"bounded upload receipts");
+            }
+            auto beforeRollback=store.current().user;
+            store.apply("rollback",generationOf(store.current().effective),"");
+            require(store.current().user!=beforeRollback,"retained last good usable");
+            store.apply("rollback",generationOf(store.current().effective),"");
+            require(store.current().user==beforeRollback,"repeated rollback after pruning");
+            // Simulate a crash after retirement rename and partial unlink, never touching active files.
+            auto tombstone="retired-g"+randomId();
+            PrivateDir generations(dir,"generations"),partial(generations,tombstone,true);
+            partial.put("source.bin","partial retirement");
+            uploadData(store,"user",OPEN,randomId());
+            require(!fs::exists(root/"generations"/tombstone),"interrupted retirement resumed");
+            puts("ZUIOPT_1000_COMMITS_BOUNDED_RETENTION_LOADED_ROLLBACK_PARTIAL_GC=PASS");
+
         }
         // Only the exclusively created fixture directory, never a provided state path.
         require(root.filename().string().rfind("ZUIopt-fixture-",0)==0&&!fs::is_symlink(root),"fixture cleanup boundary");fs::remove_all(root);

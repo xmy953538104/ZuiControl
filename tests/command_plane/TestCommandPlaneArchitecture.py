@@ -71,7 +71,8 @@ class CommandPlaneArchitectureTest(unittest.TestCase):
             '(observeSchedulerHealth ? schedulerHealthStateLines() : "")',
             self.service,
         )
-        self.assertIn('"zui_control_status_text", state(false)', self.service)
+        self.assertNotIn('"zui_control_status_text", state(false)', self.service)
+        self.assertIn("mControls.publish(mCurrentUserId,controlsSnapshot())", self.service)
         self.assertNotIn("PROP_VENDOR_PERFSERVICE", self.service)
         self.assertNotIn("vendorPerfserviceState", self.service)
         self.assertNotIn("main_loop()", self.daemon)

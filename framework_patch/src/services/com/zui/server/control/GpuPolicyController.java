@@ -99,6 +99,8 @@ final class GpuPolicyController {
         }
     }
 
+    synchronized String runtimeStatus() { return failed ? "DEGRADED_FAIL_SAFE" : "READY"; }
+
     synchronized String stateLines() {
         return "\ngpuMode=" + mode + "\ngpuHandle=" + handle
                 + "\ngpuRequestedMinLevel=" + (requested == null ? -1 : GpuRange.level(requested.minMHz))
@@ -106,7 +108,7 @@ final class GpuPolicyController {
                 + "\ngpuOwnedMinLevel=" + (owned == null ? -1 : GpuRange.level(owned.minMHz))
                 + "\ngpuOwnedMaxLevel=" + (owned == null ? -1 : GpuRange.level(owned.maxMHz))
                 + "\ngpuScene=" + scene
-                + "\ngpuFailSafe=" + failed + "\ngpuLastError=" + error
+                + "\ngpuFailSafe=" + failed + "\ngpuRuntime=" + runtimeStatus() + "\ngpuLastError=" + error
                 + "\ngpuAcquireCount=" + acquireCount + "\ngpuReleaseCount=" + releaseCount
                 + "\ngpuLastRelease=" + lastRelease + "\ngpuTransport=QTI_PerfLock"
                 + "\ngpuPeriodicWork=0";
