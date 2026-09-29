@@ -275,12 +275,16 @@ int main(int argc,char** argv){
             require(store.current().user!=beforeRollback,"retained last good usable");
             store.apply("rollback",generationOf(store.current().effective),"");
             require(store.current().user==beforeRollback,"repeated rollback after pruning");
-            // Simulate a crash after retirement rename and partial unlink, never touching active files.
+            // Simulate crashes after the durable file marker and after directory removal.
             auto tombstone="retired-g"+randomId();
-            PrivateDir generations(dir,"generations"),partial(generations,tombstone,true);
+            PrivateDir generations(dir,"generations"),partial(generations,tombstone.substr(8),true);
+            generations.put(tombstone,tombstone.substr(8)+"\n");
             partial.put("source.bin","partial retirement");
             uploadData(store,"user",OPEN,randomId());
-            require(!fs::exists(root/"generations"/tombstone),"interrupted retirement resumed");
+            require(!fs::exists(root/"generations"/tombstone)&&!fs::exists(root/"generations"/tombstone.substr(8)),"interrupted retirement resumed");
+            auto removed="retired-g"+randomId();generations.put(removed,removed.substr(8)+"\n");
+            uploadData(store,"user",BASE,randomId());
+            require(!fs::exists(root/"generations"/removed),"post-rmdir marker recovery");
             puts("ZUIOPT_1000_COMMITS_BOUNDED_RETENTION_LOADED_ROLLBACK_PARTIAL_GC=PASS");
 
         }

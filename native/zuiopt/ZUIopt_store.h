@@ -139,13 +139,18 @@ class RuleStore {
         try{d.put("committed.v2",id+"\n");pruneCompleted();}catch(...){}
         return id;
     }
-    void removeRetired(const std::string& name) {
-        require(name.rfind("retired-",0)==0&&generationId(name.substr(8)),"retired generation name");
-        PrivateDir retired(generations,name);
-        const std::set<std::string> allowed{"source.bin","last_good.conf","provenance.txt","canonical_state.v2","effective.conf","committed.v2"};
-        auto entries=retired.names();for(const auto& entry:entries)require(allowed.count(entry),"unknown retired entry");
-        for(const auto& entry:entries)retired.remove(entry);
-        require(unlinkat(generations.fd,name.c_str(),AT_REMOVEDIR)==0,"generation retirement");generations.sync();
+    void removeRetired(const std::string& marker) {
+        require(marker.rfind("retired-",0)==0&&generationId(marker.substr(8)),"retired generation name");
+        auto id=marker.substr(8);
+        require(generations.get(marker,64)==id+"\n","retirement marker identity");
+        if(generations.exists(id)){
+            PrivateDir retired(generations,id);
+            const std::set<std::string> allowed{"source.bin","last_good.conf","provenance.txt","canonical_state.v2","effective.conf","committed.v2"};
+            auto entries=retired.names();for(const auto& entry:entries)require(allowed.count(entry),"unknown retired entry");
+            for(const auto& entry:entries)retired.remove(entry);
+            require(unlinkat(generations.fd,id.c_str(),AT_REMOVEDIR)==0,"generation retirement");generations.sync();
+        }
+        generations.remove(marker);
     }
     void pruneCompleted() noexcept {
         try {
@@ -158,8 +163,9 @@ class RuleStore {
             auto loaded=fields(trim(root.get("loaded-generation.v2",256,true)),':');
             if(!loaded.empty()&&generationId(loaded[0]))keep.insert(loaded[0]);
             std::vector<std::string> completed;
+            for(const auto& name:generations.names(4096))
+                if(name.rfind("retired-",0)==0&&generationId(name.substr(8)))removeRetired(name);
             for(const auto& name:generations.names(4096)){
-                if(name.rfind("retired-",0)==0&&generationId(name.substr(8))){removeRetired(name);continue;}
                 if(!generationId(name)||keep.count(name))continue;
                 PrivateDir candidate(generations,name);
                 // Legacy and failed/prepared evidence is not guessed to be completed.
@@ -172,9 +178,9 @@ class RuleStore {
                 for(const auto& name:entries)require(allowed.count(name),"unknown generation retention entry");
                 // load validates the canonical payload and embedded previous bytes before deleting.
                 load(candidate.get("effective.conf",RULE_LIMIT));
-                // A durable tombstone makes interrupted deletion resumable without reloading partial payloads.
+                // A durable sibling FILE marker resumes partial deletion using existing file-rename/rmdir grants.
                 auto retired="retired-"+completed[i];
-                require(renameat(generations.fd,completed[i].c_str(),generations.fd,retired.c_str())==0,"retire rename");generations.sync();
+                generations.put(retired,completed[i]+"\n",true);
                 removeRetired(retired);
             }
         }catch(...){} // Retention cannot turn a durable successful commit into a failed transaction.
