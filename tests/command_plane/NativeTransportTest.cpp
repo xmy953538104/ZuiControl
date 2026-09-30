@@ -74,6 +74,23 @@ void projections(){
     check(p.call("apply",apply(7))==sha256(policy(7)));rejects([&]{p.call("apply",apply(8));});rejects([&]{p.call("apply",apply(7,"invalid"));});
     p.stages.put("active.json",policy(8));rejects([&]{p.call("apply",apply(7));});check(p.stages.read("active.json")==policy(8));
 }
+void concurrentModeReadback(){
+    Temp t;Disk runtime(t.path);runtime.put("effective_powermode.txt","");
+    Fd fd(openat(runtime.fd.value,"effective_powermode.txt",O_WRONLY|O_NOFOLLOW));
+    Disk::identity(fd.value,false);
+    pid_t child=fork();require(child>=0,"mode fixture fork");
+    if(child==0){usleep(15000);writeAll(fd.value,"balance");_exit(fsync(fd.value)==0?0:75);}
+    acknowledgeModeReadback(runtime,fd.value,"balance");
+    int status=0;require(waitpid(child,&status,0)==child,"mode fixture wait");
+    check(WIFEXITED(status)&&WEXITSTATUS(status)==0);check(runtime.read("effective_powermode.txt")=="balance");
+    auto start=std::chrono::steady_clock::now();
+    rejects([&]{acknowledgeModeReadback(runtime,fd.value,"fast");});
+    check(std::chrono::steady_clock::now()-start<std::chrono::seconds(5));
+    check(runtime.read("effective_powermode.txt")=="balance");
+    require(ftruncate(fd.value,0)==0,"fixture empty mode");
+    rejects([&]{acknowledgeModeReadback(runtime,fd.value,"balance");});
+    check(runtime.read("effective_powermode.txt").empty());
+}
 void replay(){
     Temp t;Disk d(t.path);Request r("test|policy|||e30=");unsigned calls=0;std::string last;
     Receipts receipts{d,[&](const std::string& a){last=a;}};
@@ -114,5 +131,5 @@ int main(int argc,char** argv){try{
             if(fields[0]=="apply"){auto request=Json::parse(argument);check(sha256(p.stages.read("active.json"))==fields[2]);check(d.read("effective_powermode.txt")==request.get("desiredMode").string()+"\n");}}
         check(messages==30);std::cout<<"JAVA_NATIVE_PROJECTION_PARITY_PASS messages="<<messages<<"\n";return 0;
     }
-    parsers();security();searchOnlyAncestor();projections();replay();crashes();std::cout<<"NATIVE_TRANSPORT_PASS checks="<<checks<<"\n";return 0;
+    parsers();security();searchOnlyAncestor();projections();concurrentModeReadback();replay();crashes();std::cout<<"NATIVE_TRANSPORT_PASS checks="<<checks<<"\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<" checks="<<checks<<"\n";return 1;}}

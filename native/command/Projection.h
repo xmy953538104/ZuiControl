@@ -2,6 +2,7 @@
 #include "Transport.h"
 #include <limits>
 #include <dirent.h>
+#include <chrono>
 
 namespace command {
 // Match PolicyCommand's US-ASCII String.trim() readback: init writes no newline.
@@ -10,6 +11,19 @@ inline bool modeReadbackMatches(const std::string& actual,const std::string& des
     while(first<last&&static_cast<unsigned char>(actual[first])<=0x20)++first;
     while(last>first&&static_cast<unsigned char>(actual[last-1])<=0x20)--last;
     return actual.substr(first,last-first)==desired;
+}
+inline void acknowledgeModeReadback(const Disk& runtime,int fd,const std::string& desired){
+    // init also writes this inode after the existing mode property changes. Observe
+    // its truncate/write window; never repeat a policy mutation or accept empty data.
+    auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(100);
+    for(;;){
+        if(modeReadbackMatches(runtime.read("effective_powermode.txt"),desired)){
+            require(fsync(fd)==0,"mode readback sync");
+            if(modeReadbackMatches(runtime.read("effective_powermode.txt"),desired))return;
+        }
+        require(std::chrono::steady_clock::now()<deadline,"mode durable readback");
+        usleep(5000);
+    }
 }
 // Accept the canonical JSON subset emitted by PolicyJson for projection messages.
 // Preserve exact policy bytes; do not interpret rows, modes' GPU defaults or actions.
@@ -112,7 +126,7 @@ struct Projection {
         point("during_projection_apply");
         Fd file(openat(runtime.fd.value,"effective_powermode.txt",O_WRONLY|O_NOFOLLOW|O_CLOEXEC));Disk::identity(file.value,false);
         require(ftruncate(file.value,0)==0,"mode truncate");writeAll(file.value,desired+"\n");require(fsync(file.value)==0,"mode sync");
-        require(modeReadbackMatches(runtime.read("effective_powermode.txt"),desired),"mode durable readback");
+        acknowledgeModeReadback(runtime,file.value,desired);
         stages.put("active.json",prepared);stages.put("applied.json",request.raw+"\n");point("after_projection_applied");
         try{prune(tx+".json");}catch(const std::exception&){point("projection_retention_unavailable");}return hash;
     }
