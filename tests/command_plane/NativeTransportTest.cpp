@@ -45,6 +45,21 @@ void security(){
     check(symlink(t.path.c_str(),(t.path+"/directory-link").c_str())==0);rejects([&]{Disk bad(t.path+"/directory-link");});
     check(d.read("valid")=="abc");
 }
+void searchOnlyAncestor(){
+    Temp t;fs::create_directory(t.path+"/ancestor");fs::create_directory(t.path+"/ancestor/private");
+    uid_t uid=geteuid()==0?10001:geteuid();gid_t gid=getegid()==0?10001:getegid();
+    if(geteuid()==0)for(auto suffix:{"","/ancestor","/ancestor/private"})check(chown((t.path+suffix).c_str(),uid,gid)==0);
+    check(chmod((t.path+"/ancestor").c_str(),0111)==0);check(chmod((t.path+"/ancestor/private").c_str(),0700)==0);
+    pid_t child=fork();require(child>=0,"fork");if(child==0){
+        try{
+            if(geteuid()==0)require(setgid(gid)==0&&setuid(uid)==0,"fixture uid");
+            int denied=open((t.path+"/ancestor").c_str(),O_RDONLY|O_DIRECTORY);require(denied<0&&errno==EACCES,"ancestor read must be denied");
+            Disk directory(t.path+"/ancestor/private");directory.put("durable","ok");require(directory.read("durable")=="ok","search-only traversal");_exit(0);
+        }catch(...){_exit(75);}
+    }
+    int status=0;waitpid(child,&status,0);check(chmod((t.path+"/ancestor").c_str(),0700)==0);
+    check(WIFEXITED(status)&&WEXITSTATUS(status)==0);
+}
 void projections(){
     Temp t;Disk runtime(t.path);runtime.put("effective_powermode.txt","fast\n");Projection p(t.path);
     check(p.call("prepare",prepare(7))==sha256(policy(7)));check(runtime.read("effective_powermode.txt")=="fast\n");
@@ -93,5 +108,5 @@ int main(int argc,char** argv){try{
             if(fields[0]=="apply"){auto request=Json::parse(argument);check(sha256(p.stages.read("active.json"))==fields[2]);check(d.read("effective_powermode.txt")==request.get("desiredMode").string()+"\n");}}
         check(messages==30);std::cout<<"JAVA_NATIVE_PROJECTION_PARITY_PASS messages="<<messages<<"\n";return 0;
     }
-    parsers();security();projections();replay();crashes();std::cout<<"NATIVE_TRANSPORT_PASS checks="<<checks<<"\n";return 0;
+    parsers();security();searchOnlyAncestor();projections();replay();crashes();std::cout<<"NATIVE_TRANSPORT_PASS checks="<<checks<<"\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<" checks="<<checks<<"\n";return 1;}}

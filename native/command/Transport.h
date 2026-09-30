@@ -83,10 +83,13 @@ struct Disk {
         require(st.st_uid==geteuid()&&(st.st_mode&0022)==0,"file owner/mode");
         require(directory?S_ISDIR(st.st_mode):(S_ISREG(st.st_mode)&&st.st_nlink==1&&st.st_size>=0&&uint64_t(st.st_size)<=LIMIT),"file identity");}
     static int openDirectory(const std::string& path){
-        require(!path.empty()&&path.front()=='/',"absolute directory");int current=open("/",O_RDONLY|O_DIRECTORY|O_CLOEXEC);
+        require(!path.empty()&&path.front()=='/',"absolute directory");int current=open("/",O_PATH|O_DIRECTORY|O_CLOEXEC);
         require(current>=0,"root directory");
-        try{for(const auto& part:split(path.substr(1),'/')){require(!part.empty()&&part!="."&&part!="..","directory component");
-            int next=openat(current,part.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);require(next>=0,"directory open");close(current);current=next;
+        auto parts=split(path.substr(1),'/');size_t index=0;
+        try{for(const auto& part:parts){require(!part.empty()&&part!="."&&part!="..","directory component");
+            // Ancestors need search, not directory read permission (Android /data).
+            int access=++index==parts.size()?O_RDONLY:O_PATH;
+            int next=openat(current,part.c_str(),access|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);require(next>=0,"directory open");close(current);current=next;
             struct stat st{};require(fstat(current,&st)==0&&S_ISDIR(st.st_mode),"directory identity");}
             identity(current,true);return current;
         }catch(...){close(current);throw;}
