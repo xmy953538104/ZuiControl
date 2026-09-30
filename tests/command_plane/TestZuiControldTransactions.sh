@@ -170,7 +170,7 @@ assert_command_wakeup_policy() {
         fail 'command wakeup does not have exactly one wildcard property trigger'
     [ "$(grep -Fxc '    start zui_control_request' "$CONTROL_RC")" -eq 1 ] ||
         fail 'only the command property may start the oneshot request service'
-    grep -Fqx 'service zui_control_request /system/bin/sh /system/bin/zui_controld --oneshot-request ${sys.zui_control.command_id:-unset} ${sys.zui_control.command_sha256:-unset}' "$CONTROL_RC" ||
+    grep -Fqx 'service zui_control_request /system/bin/zui_control_request ${sys.zui_control.command_id:-unset} ${sys.zui_control.command_sha256:-unset} ${sys.zui_control.command_seq:-unset}' "$CONTROL_RC" ||
         fail 'oneshot request service command mismatch'
     grep -Fqx '    oneshot' "$CONTROL_RC" || fail 'request service is not oneshot'
     grep -Fqx 'sys.zui_control.command_seq u:object_r:zui_control_command_seq_prop:s0 exact string' "$PROPERTY_CONTEXTS" ||
