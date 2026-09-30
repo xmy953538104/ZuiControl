@@ -11,7 +11,7 @@ void check(bool b){++checks;require(b,"test assertion");}
 template<class F> void rejects(F fn){bool threw=false;try{fn();}catch(const std::exception&){threw=true;}check(threw);}
 struct Temp {
     std::string path;
-    Temp(){char name[]="/tmp/zui-command-XXXXXX";auto* p=mkdtemp(name);require(p,"temporary fixture");path=p;}
+    Temp(){std::string name=std::string(getenv("TMPDIR")?getenv("TMPDIR"):"/tmp")+"/zui-command-XXXXXX";auto* p=mkdtemp(name.data());require(p,"temporary fixture");path=p;}
     ~Temp(){fs::remove_all(path);}
 };
 std::string policy(int gen){return "{\"apps\":[],\"defaults\":[],\"generation\":"+std::to_string(gen)+",\"globals\":[],\"migration\":\"00000000-0000-0000-0000-000000000001\",\"schema\":2,\"users\":[]}\n";}
@@ -94,12 +94,13 @@ void concurrentModeReadback(){
 void replay(){
     Temp t;Disk d(t.path);Request r("test|policy|||e30=");unsigned calls=0;std::string last;
     Receipts receipts{d,[&](const std::string& a){last=a;}};
+    receipts.reconcile=[](const Request&){return "ok=0\nrecoveryOutcome=NOT_APPLIED";};
     auto execute=[&]{++calls;return "ok=1\ngpuRuntime=DEGRADED_FAIL_SAFE\npolicyGeneration=2\n";};
     receipts.run(r,execute);check(calls==1&&last=="test|done|policy|ok=1;gpuRuntime=DEGRADED_FAIL_SAFE;policyGeneration=2");
     std::string terminal=last;last="lost";receipts.run(r,execute);check(calls==1&&last==terminal);
     receipts.run(Request("test|policy|||changed"),execute);check(calls==1&&last==terminal);
     d.put("active_request_claim","other|policy|||x\n");receipts.run(Request("other|policy|||x"),execute);
-    check(calls==1&&last=="other|failed|policy|indeterminate_after_claim");
+    check(calls==1&&last=="other|failed|policy|ok=0;recoveryOutcome=NOT_APPLIED");
     d.put("active_request_claim","corrupt");rejects([&]{receipts.run(Request("next|policy|||x"),execute);});check(calls==1);
 }
 void crashes(){
@@ -111,9 +112,10 @@ void crashes(){
             receipts.run(r,[&]{require(d.read("mutated").empty(),"duplicate mutation");d.put("mutated","generation=2");return "ok=1\npolicyGeneration=2";});_exit(0);}
         int status;require(waitpid(child,&status,0)==child,"wait");check(WIFEXITED(status)&&WEXITSTATUS(status)==73);
         unsigned replayCalls=0;Receipts recovered{d,[&](const std::string& a){d.put("observed-ack",a);}};
+        recovered.reconcile=[&](const Request&){return d.read("mutated").empty()?"ok=0\nrecoveryOutcome=NOT_APPLIED":"ok=1\nrecoveryOutcome=APPLIED_RECOVERED";};
         recovered.run(r,[&]{++replayCalls;require(d.read("mutated").empty(),"duplicate generation");d.put("mutated","generation=2");return "ok=1\npolicyGeneration=2";});
         check(replayCalls==(std::string(phase)=="before_claim"?1U:0U));check(d.read("active_request_claim").empty());
-        auto outcome=d.read("observed-ack");check(outcome.find("|done|")!=std::string::npos||outcome=="crash|failed|policy|indeterminate_after_claim");
+        auto outcome=d.read("observed-ack");check(outcome.find("|done|")!=std::string::npos||outcome=="crash|failed|policy|ok=0;recoveryOutcome=NOT_APPLIED");
         recovered.run(r,[&]()->std::string{throw std::runtime_error("replay executed");});check(d.read("observed-ack")==outcome);
     }
     for(auto phase:{"before_projection_prepare","after_projection_prepare","during_projection_apply","after_projection_applied"}){
@@ -123,7 +125,28 @@ void crashes(){
         p.call("prepare",prepare(2));p.call("apply",apply(2));check(d.read("effective_powermode.txt")=="balance\n");check(p.stages.read("active.json")==policy(2));
     }
 }
+void reconciliation(){
+    Temp t;Disk d(t.path);Request r("recover|policy|||x");std::string observed;unsigned mutations=0;
+    Receipts receipts{d,[&](const std::string& a){observed=a;}};
+    d.put("active_request_claim",r.text+"\n");
+    for(auto result:{"pending=1", "ok=10", "", "ok=1garbage"}) {
+        receipts.reconcile=[&](const Request& same){check(same.text==r.text);return result;};
+        rejects([&]{receipts.run(r,[&]{++mutations;return "ok=1";});});
+        check(d.read("active_request_claim")==r.text+"\n"&&d.read("last_request_receipt").empty()&&observed.empty());
+    }
+    receipts.reconcile=[](const Request&){return "ok=1\nrecoveryOutcome=APPLIED_RECOVERED";};
+    receipts.run(r,[&]{++mutations;return "ok=1";});check(mutations==0&&observed.find("|done|")!=std::string::npos);
+    check(d.read("active_request_claim").empty());
+    Request lost("lost|policy|||x");
+    receipts.run(lost,[&]()->std::string{++mutations;throw std::runtime_error("reply lost after apply");});
+    check(mutations==1&&observed=="lost|done|policy|ok=1;recoveryOutcome=APPLIED_RECOVERED");
+    receipts.run(lost,[&]{++mutations;return "ok=1";});check(mutations==1);
+}
 int main(int argc,char** argv){try{
+    if(argc==2&&std::string(argv[1])=="--portable-core"){
+        parsers();projections();concurrentModeReadback();replay();crashes();reconciliation();
+        std::cout<<"NATIVE_PORTABLE_CORE_PASS checks="<<checks<<" LINUX_DAC_SECURITY_NOT_RUN\n";return 0;
+    }
     if(argc==2&&std::string(argv[1])=="--parity"){
         Temp t;Disk d(t.path);d.put("effective_powermode.txt","balance\n");Projection p(t.path);std::string line;unsigned messages=0;
         while(std::getline(std::cin,line)){auto fields=split(line,'\t');require(fields.size()==3,"fixture columns");
@@ -131,5 +154,5 @@ int main(int argc,char** argv){try{
             if(fields[0]=="apply"){auto request=Json::parse(argument);check(sha256(p.stages.read("active.json"))==fields[2]);check(d.read("effective_powermode.txt")==request.get("desiredMode").string()+"\n");}}
         check(messages==30);std::cout<<"JAVA_NATIVE_PROJECTION_PARITY_PASS messages="<<messages<<"\n";return 0;
     }
-    parsers();security();searchOnlyAncestor();projections();concurrentModeReadback();replay();crashes();std::cout<<"NATIVE_TRANSPORT_PASS checks="<<checks<<"\n";return 0;
+    parsers();security();searchOnlyAncestor();projections();concurrentModeReadback();replay();crashes();reconciliation();std::cout<<"NATIVE_TRANSPORT_PASS checks="<<checks<<"\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<" checks="<<checks<<"\n";return 1;}}

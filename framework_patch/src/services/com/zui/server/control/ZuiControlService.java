@@ -609,12 +609,13 @@ public final class ZuiControlService extends Binder {
                 if(data.dataAvail()!=0||owner==null)throw new IllegalArgumentException("settings payload");
                 String result=settingsCommand(action,argument,owner);reply.writeNoException();reply.writeString(result);return true;
             }
-            if (code == PolicyCommand.TRANSACTION) {
+            if (code == PolicyCommand.TRANSACTION || code == 1013) {
                 data.enforceInterface(DESCRIPTOR);
                 if (Binder.getCallingUid() != Process.ROOT_UID || (flags & IBinder.FLAG_ONEWAY) != 0) throw new SecurityException("root policy owner required");
                 String id = data.readString(), hash = data.readString(); IBinder owner = data.readStrongBinder();
                 if (data.dataAvail() != 0 || owner == null) throw new IllegalArgumentException("policy owner payload");
-                String result = policyCommand(id, hash, owner); reply.writeNoException(); reply.writeString(result); return true;
+                String result = code == 1013 ? reconcilePolicyRequest(id, hash, owner) : policyCommand(id, hash, owner);
+                reply.writeNoException(); reply.writeString(result); return true;
             }
             if (code >= ZuioptSceneAuthority.REGISTER && code <= ZuioptSceneAuthority.CURRENT) {
                 if ((flags & IBinder.FLAG_ONEWAY) != 0) return false;
@@ -846,6 +847,7 @@ public final class ZuiControlService extends Binder {
                     AppPolicyStore.State next = AppPolicyStore.change(current, expected, user, pkg, action,
                             PolicyJson.intValue(p.get("value")), PolicyJson.string(p.get("mode")),
                             PolicyJson.intValue(p.get("min")), PolicyJson.intValue(p.get("max")), global);
+                    request.put("previousHash", PolicyJson.hash(current.bytes()));
                     request.put("targetHash", PolicyJson.hash(next.bytes())); mAppPolicies.disk.write("policy-request.json", PolicyJson.bytes(request));
                     mAppPolicies.commit(next, owner);
                 }
@@ -859,10 +861,8 @@ public final class ZuiControlService extends Binder {
                 if (pending.length != 0) {
                     Map<String,Object> request = PolicyJson.object(PolicyJson.parse(pending));
                     if (!request.containsKey("result")) {
-                        boolean applied = PolicyJson.hash(mAppPolicies.current.bytes()).equals(request.get("targetHash"));
-                        request.put("result", (applied ? "ok=1" : "ok=0\nerror=recovered_not_applied_query_generation")
-                                + "\npolicyGeneration=" + mAppPolicies.current.generation);
-                        mAppPolicies.disk.write("policy-request.json", PolicyJson.bytes(request));
+                        mAppPolicies.reconcileRequest(PolicyJson.string(request.get("id")),
+                                PolicyJson.string(request.get("sha")), owner, () -> { publishPolicySettings(); return null; });
                     }
                 }
             }
@@ -870,13 +870,23 @@ public final class ZuiControlService extends Binder {
         } catch (Exception e) {
             mPolicyError = e.getClass().getSimpleName() + ":" + safe(e.getMessage());
             if (mAppPolicies == null || mAppPolicies.recoveryRequired) mPolicyReady = false;
-            if (!"bootstrap".equals(requestId) && mAppPolicies != null && !mAppPolicies.recoveryRequired) try {
-                Map<String,Object> failed = PolicyJson.object(PolicyJson.parse(mAppPolicies.disk.read("policy-request.json")));
-                if (requestId.equals(failed.get("id"))) { failed.put("result", "ok=0\nerror=" + mPolicyError); mAppPolicies.disk.write("policy-request.json", PolicyJson.bytes(failed)); }
-            } catch (Exception receiptFailure) { mPolicyError += ";receipt_unavailable"; }
+            if (!"bootstrap".equals(requestId)) return reconcilePolicyRequest(requestId, requestHash, remote);
             return "ok=0\nerror=" + mPolicyError;
         } finally { Binder.restoreCallingIdentity(identity);
             Log.i(TIMING_TAG,"id="+requestId+" phase=policy_server_end ns="+SystemClock.elapsedRealtimeNanos()); }
+    }
+
+    private synchronized String reconcilePolicyRequest(String id, String hash, IBinder remote) {
+        long identity = Binder.clearCallingIdentity();
+        try {
+            PolicyJson.require(mAppPolicies != null, "policy store unavailable");
+            PolicyJson.require(!new SettingsBackup(mAppPolicies).busy(), "settings recovery required");
+            return mAppPolicies.reconcileRequest(id, hash, PolicyCommand.owner(remote, this::applyUnifiedPolicy),
+                    () -> { publishPolicySettings(); return null; });
+        } catch (Exception e) {
+            // Not a terminal failure: native retains claim, client retains pending.
+            return "pending=1\nrecoveryOutcome=STILL_RECOVERY_REQUIRED";
+        } finally { Binder.restoreCallingIdentity(identity); }
     }
 
     private synchronized String settingsCommand(String action,String argument,IBinder remote){

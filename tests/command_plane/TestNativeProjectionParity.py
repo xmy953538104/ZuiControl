@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BASE = ROOT / 'framework_patch/src/services/com/zui/server/control'
 
 
-def main(binary):
+def main(prefix):
     source = (BASE / 'PolicyCommand.java').read_text(encoding='utf8')
     owner = source[source.index('    static AppPolicyStore.Owner owner('):source.index('    static Map<String,Object> snapshot(')]
     validation = source[source.index('    static String projectionMode('):source.index('    private static final class Projection')]
@@ -69,8 +69,8 @@ public class NativeProjectionParity {
         subprocess.run(['javac', '-encoding', 'UTF-8', '-d', str(tmp),
                         *[str(BASE / n) for n in ('PolicyJson.java', 'GpuRange.java', 'AppPolicyStore.java')], str(java)], check=True)
         messages = subprocess.check_output(['java', '-cp', str(tmp), 'com.zui.server.control.NativeProjectionParity'])
-        subprocess.run([binary, '--parity'], input=messages, check=True)
+        subprocess.run([*prefix, '--parity'], input=messages, check=True)
 
 
 if __name__ == '__main__':
-    main(sys.argv[1])
+    main(sys.argv[1:])

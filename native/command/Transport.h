@@ -128,6 +128,19 @@ struct Receipts {
     Disk& disk;
     std::function<void(const std::string&)> publish;
     std::function<void(const char*)> point=[](const char*){};
+    std::function<std::string(const Request&)> reconcile={};
+    std::string terminal(const Request& r, std::string result) {
+        auto lines=split(result,'\n');
+        require(result.size()<=4096&&!lines.empty()&&(lines[0]=="ok=1"||lines[0]=="ok=0"),"authority recovery pending");
+        bool ok=lines[0]=="ok=1";
+        while(!result.empty()&&result.back()=='\n')result.pop_back();
+        std::replace(result.begin(),result.end(),'\n',';');
+        return ack(r,ok?"done":"failed",result);
+    }
+    std::string resolved(const Request& r) {
+        require(bool(reconcile),"authority reconciliation unavailable");
+        return terminal(r,reconcile(r));
+    }
     void complete(const Request& r,const std::string& terminal){
         point("before_root_receipt");disk.put("last_request_receipt",r.text+"\n"+terminal+"\n");point("after_root_receipt");
         if(disk.read("active_request_claim")==r.text+"\n")disk.remove("active_request_claim");
@@ -146,11 +159,17 @@ struct Receipts {
             require(claimed.back()=='\n',"claim newline");Request abandoned(claimed.substr(0,claimed.size()-1));
             if(abandoned.text==previous)disk.remove("active_request_claim");
             else{
-                previous=abandoned.text;terminal=ack(abandoned,"failed","indeterminate_after_claim");
+                previous=abandoned.text;terminal=resolved(abandoned);
                 disk.put("last_request_receipt",previous+"\n"+terminal+"\n");disk.remove("active_request_claim");
             }
         }
-        if(previous==current.text){publish(terminal);return true;}
+        if(previous==current.text){
+            // Upgrade a retained V78 indeterminate receipt before exposing it again.
+            if(terminal==ack(current,"failed","indeterminate_after_claim")) {
+                terminal=resolved(current);disk.put("last_request_receipt",previous+"\n"+terminal+"\n");
+            }
+            publish(terminal);return true;
+        }
         if(!previous.empty()&&Request(previous).requestId==current.requestId)return true; // Conflicting replay never executes or overwrites ACK.
         return false;
     }
@@ -159,11 +178,10 @@ struct Receipts {
         publish(ack(r,"processing","validating"));point("before_claim");
         require(!disk.exists("active_request_claim"),"claim busy");disk.put("active_request_claim",r.text+"\n");point("after_claim");
         point("before_binder");std::string result;
-        try{result=execute();}catch(const std::exception&){result="ok=0";}
+        try{result=execute();}catch(const std::exception&){result.clear();}
         point("after_binder");
-        bool ok=result.rfind("ok=1",0)==0;
-        while(!result.empty()&&result.back()=='\n')result.pop_back();std::replace(result.begin(),result.end(),'\n',';');
-        complete(r,ack(r,ok?"done":"failed",ok?result:"policy_failed_query_generation"));
+        // A lost reply is not proof of failed mutation. Query the sole authority.
+        complete(r,split(result,'\n')[0]=="ok=1"?terminal(r,result):resolved(r));
     }
 };
 }

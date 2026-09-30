@@ -83,6 +83,7 @@ int run(int argc,char** argv){
     Disk disk("/data/vendor/zui_control/zuicontrol");
     Receipts receipts{disk,[&](const std::string& ack){require(binder.call(1012,{requestId,hash,sequence,"ack",ack})=="ok=1","ACK reply");}};
     receipts.point=mark;
+    receipts.reconcile=[&](const Request& prior){return binder.call(1013,{prior.requestId,sha256(prior.text)},true);};
     receipts.run(request,[&]{mark("T5");auto result=binder.call(1010,{requestId,hash},true);mark("T6");return result;});
     return 0;
 }

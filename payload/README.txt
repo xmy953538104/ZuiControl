@@ -1,7 +1,7 @@
-ZuiControl production payload — App V78 target
+ZuiControl production payload — App V79 target
 
 Build/package target:
-- /system/priv-app/ZuiControlV78/ZuiControl.apk
+- /system/priv-app/ZuiControlV79/ZuiControl.apk
 - /system/bin/zui_controld
 - /system/bin/uperf
 - /system/bin/zui_uperf_service

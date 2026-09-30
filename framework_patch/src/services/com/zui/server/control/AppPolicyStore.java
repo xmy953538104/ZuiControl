@@ -269,7 +269,13 @@ final class AppPolicyStore {
         byte[] target = disk.read(string(journal.get("targetFile"))), previous = disk.read(string(journal.get("previousFile"))), active = disk.read(ACTIVE);
         require(hash(target).equals(string(journal.get("targetHash"))) && hash(previous).equals(string(journal.get("previousHash"))), "policy recovery hashes");
         if (Arrays.equals(active, previous)) {
-            if (previous.length != 0) { State state = State.parse(previous); owner.prepare(state, string(journal.get("transaction"))); owner.apply(state, string(journal.get("transaction"))); current = state; }
+            if (previous.length != 0) {
+                State state = State.parse(previous);
+                // The journal transaction may already have staged target bytes.
+                // Restoring previous bytes must not overwrite that immutable stage.
+                String restore = UUID.randomUUID().toString();
+                owner.prepare(state, restore); owner.apply(state, restore); current = state;
+            }
             journal.put("phase", "ABORTED"); disk.write(JOURNAL, bytes(journal)); recoveryRequired = false; return;
         }
         require(Arrays.equals(active, target), "RECOVERY_REQUIRED_unknown_policy_commit");
@@ -277,6 +283,47 @@ final class AppPolicyStore {
         journal.put("phase", "APPLIED"); disk.write(JOURNAL, bytes(journal)); recoveryRequired = false;
     }
     String retentionError="";
+    // Query/recover only: never re-run change(), reconcileUsers(), or commit().
+    // The request is terminal only after authority recovery and owner/projection ACK.
+    synchronized String reconcileRequest(String id, String sha, Owner owner,
+            java.util.concurrent.Callable<Void> publish) throws Exception {
+        require(id != null && id.matches("[A-Za-z0-9._-]{1,64}")
+                && sha != null && sha.matches("[0-9a-f]{64}"), "recovery identity bounds");
+        Map<String,Object> request = object(parse(disk.read("policy-request.json")));
+        require(id.equals(request.get("id")) && sha.equals(request.get("sha")), "authenticated recovery request");
+        if (request.containsKey("result")) {
+            // A prior write may have lost only its durability acknowledgement.
+            disk.write("policy-request.json", bytes(request));
+            return string(request.get("result"));
+        }
+        recover(owner);
+        require(current != null && !recoveryRequired, "STILL_RECOVERY_REQUIRED");
+        String outcome;
+        boolean applied = false;
+        if (!request.containsKey("targetHash")) outcome = "NOT_APPLIED";
+        else {
+            long expected = integer(object(request.get("payload")).get("generation"));
+            String activeHash = hash(current.bytes());
+            if (current.generation == Math.addExact(expected, 1)
+                    && activeHash.equals(request.get("targetHash"))) {
+                applied = true; outcome = "APPLIED_RECOVERED";
+            } else if (current.generation == expected && activeHash.equals(request.get("previousHash"))) {
+                outcome = "NOT_APPLIED";
+            } else {
+                State prior = current.copy(); prior.generation = expected;
+                require(current.generation == Math.addExact(expected, 2)
+                        && hash(prior.bytes()).equals(request.get("previousHash")), "STILL_RECOVERY_REQUIRED");
+                outcome = "FAILED_ROLLED_BACK";
+            }
+        }
+        // Also covers server restart after a durable APPLIED journal but before reply.
+        String tx = UUID.randomUUID().toString(); owner.prepare(current, tx); owner.apply(current, tx);
+        publish.call();
+        String result = (applied ? "ok=1" : "ok=0") + "\nrecoveryOutcome=" + outcome
+                + "\npolicyGeneration=" + current.generation;
+        request.put("result", result); disk.write("policy-request.json", bytes(request));
+        return result;
+    }
     static void prune(Storage storage,String pattern,Set<String> protectedNames,int history)throws Exception{
         List<String> candidates=new ArrayList<>();
         for(String name:storage.names())if(name.matches(pattern)&&!protectedNames.contains(name))candidates.add(name);

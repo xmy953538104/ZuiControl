@@ -50,7 +50,16 @@ clang++ -std=c++17 -O1 -Wall -Wextra -Werror -fsanitize=address,undefined tests/
 sudo /tmp/command-test
 python tests/command_plane/TestNativeProjectionParity.py /tmp/command-test
 python tests/command_plane/TestNativeTransportContract.py
+clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/command_plane/RecoveryPeer.cpp -o /tmp/recovery-peer
+mkdir -m 700 /tmp/policy-recovery-fixture
+python tests/command_plane/TestPolicyRecovery.py /tmp/recovery-peer /tmp/policy-recovery-fixture
 ```
+
+The recovery suite composes exact service admission/transaction slices,
+AppPolicyStore journal recovery, native Receipts and native Projection through a
+fixture-only stdio channel. It checks terminal truth and the next request after
+crash/reply loss; unresolved authority keeps the claim and blocks admission.
+Use a fresh fixture directory on each run. This does not prove remote Android Binder.
 
 These are host proofs, not Android Binder/SELinux or device latency evidence.
 The native timing markers use CLOCK_BOOTTIME nanoseconds, matching the existing
