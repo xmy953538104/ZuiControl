@@ -1248,6 +1248,8 @@ public final class ZuiControlService extends Binder {
         try {
             String requestText = Settings.System.getString(
                     mContext.getContentResolver(), SETTING_REQUEST_TEXT);
+            if (requestText == null || requestText.getBytes(StandardCharsets.UTF_8).length > 131072)
+                return "ok=0\nerror=request_transport_bound";
             String[] fields = safe(requestText).split("\\|", -1);
             if (fields.length != 5 || !id.equals(fields[0]) || fields[1].isEmpty()
                     || !fields[2].isEmpty() || !sha256(safe(requestText)).equals(sha256)) {

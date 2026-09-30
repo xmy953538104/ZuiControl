@@ -17,6 +17,7 @@
 namespace command {
 inline void require(bool value, const char* why) { if (!value) throw std::runtime_error(why); }
 constexpr size_t LIMIT = 262144;
+constexpr size_t REQUEST_LIMIT = 131072; // Leaves room for the terminal receipt in LIMIT.
 inline bool alphabet(const std::string& s, const std::string& allowed, size_t min, size_t max) {
     return s.size() >= min && s.size() <= max && s.find_first_not_of(allowed) == std::string::npos;
 }
@@ -58,7 +59,7 @@ inline std::string sha256(const std::string& input) {
 struct Request {
     std::string text, requestId, command;
     explicit Request(const std::string& value):text(value){
-        require(!value.empty()&&value.size()<=LIMIT&&value.find_first_of("\r\n")==std::string::npos&&value.find('\0')==std::string::npos,"request bounds");
+        require(!value.empty()&&value.size()<=REQUEST_LIMIT&&value.find_first_of("\r\n")==std::string::npos&&value.find('\0')==std::string::npos,"request bounds");
         auto f=split(value,'|');require(f.size()==5&&id(f[0])&&!f[1].empty()&&f[2].empty(),"request format");requestId=f[0];command=f[1];
     }
     void authenticate(const std::string& expectedId,const std::string& hash) const {

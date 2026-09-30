@@ -25,7 +25,8 @@ void parsers(){
     Request r("request.1|policy|||e30=");r.authenticate(r.requestId,sha256(r.text));
     rejects([&]{r.authenticate("wrong",sha256(r.text));});rejects([&]{r.authenticate(r.requestId,std::string(64,'0'));});
     for(auto s:{"a|policy||", "../a|policy|||x", "a|policy|unexpected||x", "a|policy|||x\n", "a|policy|||x|extra"})rejects([&]{Request bad(s);});
-    rejects([]{Request bad(std::string(LIMIT+1,'a'));});
+    Request maximum(std::string("a|policy|||")+std::string(REQUEST_LIMIT-11,'a'));check(maximum.text.size()==REQUEST_LIMIT);
+    rejects([]{Request bad(std::string("a|policy|||")+std::string(REQUEST_LIMIT-10,'a'));});
     for(auto s:{"{\"a\":1,\"a\":2}","{\"b\":1,\"a\":2}","{\"a\":01}","{\"a\":1e3}","{\"a\":1}x","{\"a\":\"\\ud800\"}","{\"a\":\"\\n\"}","[1,]"})rejects([&]{Json::parse(s);});
     check(Json::parse("{\"a\":\"\\u000a\"}").get("a").string()=="\n");
     check(Json::parse("{\"a\":9223372036854775807}").get("a").integer()==INT64_MAX);
