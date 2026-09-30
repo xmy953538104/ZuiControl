@@ -61,6 +61,12 @@ void searchOnlyAncestor(){
     check(WIFEXITED(status)&&WEXITSTATUS(status)==0);
 }
 void projections(){
+    for(auto mode:{"powersave","balance","performance","fast"}){
+        check(modeReadbackMatches(mode,mode));check(modeReadbackMatches(std::string(mode)+"\n",mode));
+        check(modeReadbackMatches(std::string(" \t")+mode+"\r\n",mode));
+        check(!modeReadbackMatches("",mode));check(!modeReadbackMatches(std::string(mode)+"x",mode));
+        check(!modeReadbackMatches(std::string(mode).substr(1),mode));
+    }
     Temp t;Disk runtime(t.path);runtime.put("effective_powermode.txt","fast\n");Projection p(t.path);
     check(p.call("prepare",prepare(7))==sha256(policy(7)));check(runtime.read("effective_powermode.txt")=="fast\n");
     check(p.call("prepare",prepare(7))==sha256(policy(7)));rejects([&]{p.call("prepare",prepare(8));});

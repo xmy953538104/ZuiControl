@@ -51,7 +51,7 @@
     {
       "path": "native/command/Projection.h",
       "before": null,
-      "after": "100644 blob 0c41b75f7dd6bd665d8875f93af309d03f520bc7\tnative/command/Projection.h",
+      "after": "100644 blob 3d03019c158a0f10e9e6d100d8de6f5197b1ec36\tnative/command/Projection.h",
       "hunks": []
     },
     {
@@ -72,8 +72,8 @@
       "after": "100644 blob f611cc84dbcaa93b12d8812d8254650259727972\tpayload/README.txt",
       "hunks": [
         {
-          "before": "ZuiControl production payload \u2014 App V77 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV77/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n",
-          "after": "ZuiControl production payload \u2014 App V78 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV78/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n"
+          "before": "ZuiControl production payload — App V77 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV77/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n",
+          "after": "ZuiControl production payload — App V78 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV78/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n"
         }
       ],
       "beforeSha256": "ab7dc45bf36d9c46f02040fd67cdf338a10f712c7db66782baceb7b5b50366c0"
@@ -93,7 +93,7 @@
     {
       "path": "payload/system/bin/zui_control_request",
       "before": null,
-      "after": "100644 blob 96224c938c2b976cab1b250183e01debbdba51b2\tpayload/system/bin/zui_control_request",
+      "after": "100644 blob 4fcd295979db01cb64e5df70b62a6c4b7a94c416\tpayload/system/bin/zui_control_request",
       "hunks": []
     },
     {
