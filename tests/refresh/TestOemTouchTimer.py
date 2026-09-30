@@ -9,7 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests'))
-from BackendContract import reverse_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE, CLOSURE as CLOSURE_SCOPE
+from BackendContract import reverse_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE, CLOSURE as CLOSURE_SCOPE, OPTION_B
 sys.path.insert(0, str(ROOT / 'scripts/build'))
 from ApplyZuiControlPayload import patch_oem_touch_timer
 
@@ -144,14 +144,14 @@ class OemTouchTimer(unittest.TestCase):
                 old_doc = identity['readme_text'].encode()
                 self.assertEqual(payload_tree_hash(old),tree)
                 self.assertEqual((ROOT/'payload/README.txt').read_bytes().replace(b'\r\n',b'\n'),
-                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV77').replace(b'App V60',b'App V77'))
+                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV78').replace(b'App V60',b'App V78'))
                 continue
             bound=reverse_entries(scope_entries(path),path)
             relative=[e.split(b'\t',1)[0]+b'\t'+e.split(b'\t',1)[1][len(path)+1:] for e in bound]
             actual=payload_tree_hash(relative)
             self.assertEqual(actual, tree, path)
-        dirty = subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain', '--', *expected], text=True)
-        self.assertTrue(all(line[3:] in ({'payload/README.txt','payload/system/bin/zui_controld'} | {r['path'] for r in ABC_SCOPE['files']}) for line in dirty.splitlines()), dirty)
+        dirty = subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain', '--untracked-files=all', '--', *expected], text=True)
+        self.assertTrue(all(line[3:] in ({'payload/README.txt','payload/system/bin/zui_controld'} | {r['path'] for r in ABC_SCOPE['files']+OPTION_B['files']}) for line in dirty.splitlines()), dirty)
         allowed = {'app/src/main/java/com/zui/zuicontrol/MainActivity.kt',
                    'app/src/main/java/com/zui/zuicontrol/ZuiControlClient.kt',
                    'app/src/main/java/com/zui/zuicontrol/GpuRanges.kt',
@@ -176,8 +176,8 @@ class OemTouchTimer(unittest.TestCase):
         identity_path = 'app/build.gradle.kts'
         old = identity['gradle_text'].encode()
         current = (ROOT/identity_path).read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 77')
-            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.40"')
+        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 78')
+            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.41"')
             .replace(b'targetSdk = 35', b'targetSdk = 30'))
         entry = next(line for line in entries if line.endswith(b'\tapp/build.gradle.kts'))
         entries.remove(entry)

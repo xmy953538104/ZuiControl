@@ -34,6 +34,31 @@ env:
   PYTHONUNBUFFERED: '1'
 
 jobs:
+  command:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Native finite transport security, projection and crash replay
+        run: |
+          mkdir -p "$RUNNER_TEMP/command-native"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/command-native/tested-head.txt"
+          clang++ -std=c++17 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/command_plane/NativeTransportTest.cpp -o "$RUNNER_TEMP/command-native/test"
+          sudo env ASAN_OPTIONS=detect_leaks=1 timeout 120s "$RUNNER_TEMP/command-native/test" 2>&1 | tee "$RUNNER_TEMP/command-native/result.txt"
+          python3 tests/command_plane/TestNativeProjectionParity.py "$RUNNER_TEMP/command-native/test" 2>&1 | tee "$RUNNER_TEMP/command-native/parity.txt"
+          python3 tests/command_plane/TestNativeTransportContract.py 2>&1 | tee "$RUNNER_TEMP/command-native/transport.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-command-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/command-native
+          if-no-files-found: error
+
   zuiopt:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

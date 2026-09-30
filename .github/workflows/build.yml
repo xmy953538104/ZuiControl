@@ -52,6 +52,20 @@ jobs:
             --receipt-dir "$RUNNER_TEMP/uperf-supervisor-gate" 2>&1 | \
             tee "$RUNNER_TEMP/uperf-supervisor-gate/host_fixture_transcript.txt"
 
+      - name: Verify finite native command adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/command_plane/NativeTransportTest.cpp -o "$RUNNER_TEMP/command-test"
+          sudo "$RUNNER_TEMP/command-test"
+          python3 tests/command_plane/TestNativeProjectionParity.py "$RUNNER_TEMP/command-test"
+          toolchain="$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          "$toolchain/aarch64-linux-android34-clang++" -std=c++17 -O2 -Wall -Wextra -Werror \
+            -fPIE -pie -static-libstdc++ -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
+            -Wl,-z,relro,-z,now,--build-id=none native/command/Adapter.cpp -lbinder_ndk -llog -ldl -o "$RUNNER_TEMP/zui_control_request"
+          "$toolchain/llvm-strip" --strip-all "$RUNNER_TEMP/zui_control_request"
+          cmp "$RUNNER_TEMP/zui_control_request" payload/system/bin/zui_control_request
+
       - name: Rebuild and verify Android Uperf supervisor
         shell: bash
         run: |
@@ -98,6 +112,7 @@ jobs:
           python3 tests/command_plane/TestControlsCallbacks.py
           python3 tests/gpu/TestGpuFailureIsolation.py
           python3 tests/command_plane/TestProjectionMode.py
+          python3 tests/command_plane/TestNativeTransportContract.py
           python3 tests/monitor/TestMonitor.py
           python3 tests/monitor/TestUiPolish.py
           python3 tests/monitor/TestProductR6.py
@@ -377,9 +392,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV74
           rm -rf payload/system/priv-app/ZuiControlV75
           rm -rf payload/system/priv-app/ZuiControlV76
-          mkdir -p payload/system/priv-app/ZuiControlV77
+          rm -rf payload/system/priv-app/ZuiControlV77
+          mkdir -p payload/system/priv-app/ZuiControlV78
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV77/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV78/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

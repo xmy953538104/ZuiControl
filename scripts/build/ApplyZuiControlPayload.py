@@ -13,7 +13,7 @@ from datetime import datetime
 
 APP_PACKAGE = "com.zui.zuicontrol"
 LEGACY_APP_PACKAGE = "com.zui.zuiperfctl"
-APP_APK_PATH = "system/priv-app/ZuiControlV77/ZuiControl.apk"
+APP_APK_PATH = "system/priv-app/ZuiControlV78/ZuiControl.apk"
 LEGACY_APP_PAYLOAD_PATH = "system/priv-app/ZuiControl"
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -105,6 +105,7 @@ def mode_for(rel, is_dir):
         return "0755"
     if rel in [
         "system_a/system/bin/zui_controld",
+        "system_a/system/bin/zui_control_request",
         "system_a/system/bin/zui_uperf_service",
         "system_a/system/bin/zui_uperf_supervisor",
         "system_a/system/bin/uperf",
@@ -125,6 +126,8 @@ def owner_group_for(rel):
 
 
 def context_for(rel):
+    if rel == "system_a/system/bin/zui_control_request":
+        return "u:object_r:shell_exec:s0"
     if rel == "system_a/system/bin/ZUIopt":
         return "u:object_r:zuiopt_exec:s0"
     if rel == "system_a/system/etc/zuiopt" or rel.startswith("system_a/system/etc/zuiopt/"):
@@ -189,7 +192,7 @@ def copy_payload(payload, unpack, dry_run, report):
     for base in (payload / "system/priv-app", unpack / "system_a/system/priv-app"):
         if base.is_dir():
             for path in base.iterdir():
-                if re.fullmatch(r"ZuiControlV\d+", path.name) and path.name != "ZuiControlV77":
+                if re.fullmatch(r"ZuiControlV\d+", path.name) and path.name != "ZuiControlV78":
                     raise SystemExit("Stale ZuiControl package directory: " + str(path))
     copied = []
     metadata = []

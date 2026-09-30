@@ -13,7 +13,7 @@ on post-fs-data
 on property:sys.zui_control.command_seq=*
     start zui_control_request
 
-service zui_control_request /system/bin/sh /system/bin/zui_controld --oneshot-request ${sys.zui_control.command_id:-unset} ${sys.zui_control.command_sha256:-unset}
+service zui_control_request /system/bin/zui_control_request ${sys.zui_control.command_id:-unset} ${sys.zui_control.command_sha256:-unset} ${sys.zui_control.command_seq:-unset}
     class late_start
     disabled
     oneshot

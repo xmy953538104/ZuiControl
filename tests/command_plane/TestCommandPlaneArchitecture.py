@@ -158,9 +158,9 @@ class CommandPlaneArchitectureTest(unittest.TestCase):
 
     def test_only_authenticated_oneshot_request_service_remains(self) -> None:
         service = (
-            "service zui_control_request /system/bin/sh /system/bin/zui_controld "
-            "--oneshot-request ${sys.zui_control.command_id:-unset} "
-            "${sys.zui_control.command_sha256:-unset}"
+            "service zui_control_request /system/bin/zui_control_request "
+            "${sys.zui_control.command_id:-unset} "
+            "${sys.zui_control.command_sha256:-unset} ${sys.zui_control.command_seq:-unset}"
         )
         self.assertIn(service, self.control_rc.splitlines())
         self.assertEqual(1, self.control_rc.count("    start zui_control_request"))

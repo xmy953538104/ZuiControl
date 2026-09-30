@@ -1,0 +1,113 @@
+{
+  "base": "0db63d909f8cc28638eaa8c411368ad71e1d6c3c",
+  "scope": "Owner COMMAND_PLANE_OPTION_B_IMPLEMENTATION_R1: finite authenticated native transport and monotonic package identity; GPU controller and UperfScenePolicy remain byte-identical.",
+  "files": [
+    {
+      "path": "app/build.gradle.kts",
+      "before": "100644 blob a2bc3f0a346501662c54f5609929a511f3b9e144\tapp/build.gradle.kts",
+      "after": "100644 blob 876221b5727c9d4c679a54ebfac15a96d4503e4c\tapp/build.gradle.kts",
+      "beforeSha256": "725436a1310b2f9ab05481ceffcf1306ffaf0bd24093ef42208464e4cfb3636c",
+      "hunks": [
+        {
+          "before": "\n    defaultConfig {\n        applicationId = \"com.zui.zuicontrol\"\n        minSdk = 29\n        targetSdk = 30\n        versionCode = 77\n        versionName = \"0.21.40\"\n    }\n\n    signingConfigs {\n        create(\"release\") {\n            val storeFilePath = providers.gradleProperty(\"zuicontrol.storeFile\").orNull\n",
+          "after": "\n    defaultConfig {\n        applicationId = \"com.zui.zuicontrol\"\n        minSdk = 29\n        targetSdk = 30\n        versionCode = 78\n        versionName = \"0.21.41\"\n    }\n\n    signingConfigs {\n        create(\"release\") {\n            val storeFilePath = providers.gradleProperty(\"zuicontrol.storeFile\").orNull\n"
+        }
+      ]
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "before": "100644 blob 0fa72ad37dbcbafcbd13a9ba3219d266b592bf3e\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "after": "100644 blob 58009d9539d31fdbdc6fbc35f453d66a9adbfb39\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "beforeSha256": "9b35aaf41eca5ebb32d682c66e18dba72b6ba6146a2ca230ed34c75801778fde",
+      "hunks": [
+        {
+          "before": "    }\n\n    @Override\n    protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {\n        try {\n            if(code==1011){\n                data.enforceInterface(DESCRIPTOR);\n                if(Binder.getCallingUid()!=Process.ROOT_UID||(flags & IBinder.FLAG_ONEWAY)!=0)throw new SecurityException(\"root settings owner required\");\n                String action=data.readString(),argument=data.readString();IBinder owner=data.readStrongBinder();\n                if(data.dataAvail()!=0||owner==null)throw new IllegalArgumentException(\"settings payload\");\n",
+          "after": "    }\n\n    @Override\n    protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {\n        try {\n            if (code == 1012) {\n                data.enforceInterface(DESCRIPTOR);\n                if (Binder.getCallingUid() != Process.ROOT_UID || (flags & IBinder.FLAG_ONEWAY) != 0)\n                    throw new SecurityException(\"root finite transport required\");\n                String id=data.readString(), hash=data.readString(), sequence=data.readString();\n                String action=data.readString(), value=data.readString();\n                if (data.dataAvail()!=0) throw new IllegalArgumentException(\"transport trailing data\");\n                String result=commandTransport(id,hash,sequence,action,value);\n                reply.writeNoException(); reply.writeString(result); return true;\n            }\n            if(code==1011){\n                data.enforceInterface(DESCRIPTOR);\n                if(Binder.getCallingUid()!=Process.ROOT_UID||(flags & IBinder.FLAG_ONEWAY)!=0)throw new SecurityException(\"root settings owner required\");\n                String action=data.readString(),argument=data.readString();IBinder owner=data.readStrongBinder();\n                if(data.dataAvail()!=0||owner==null)throw new IllegalArgumentException(\"settings payload\");\n"
+        },
+        {
+          "before": "            PolicyJson.require(Boolean.TRUE.equals(put.invoke(null, mContext.getContentResolver(), SETTING_UPERF_RULES, rules.toString(), user)), \"Uperf app projection\");\n        }\n    }\n\n    private synchronized String policyCommand(String requestId, String requestHash, IBinder remote) {\n        long identity = Binder.clearCallingIdentity();\n        try {\n            PolicyJson.require(mAppPolicies != null, \"policy store unavailable\");\n            AppPolicyStore.Owner owner = PolicyCommand.owner(remote, this::applyUnifiedPolicy);\n            mAppPolicies.recover(owner);\n",
+          "after": "            PolicyJson.require(Boolean.TRUE.equals(put.invoke(null, mContext.getContentResolver(), SETTING_UPERF_RULES, rules.toString(), user)), \"Uperf app projection\");\n        }\n    }\n\n    private synchronized String policyCommand(String requestId, String requestHash, IBinder remote) {\n        Log.i(TIMING_TAG,\"id=\"+requestId+\" phase=policy_server_start ns=\"+SystemClock.elapsedRealtimeNanos());\n        long identity = Binder.clearCallingIdentity();\n        try {\n            PolicyJson.require(mAppPolicies != null, \"policy store unavailable\");\n            AppPolicyStore.Owner owner = PolicyCommand.owner(remote, this::applyUnifiedPolicy);\n            mAppPolicies.recover(owner);\n"
+        },
+        {
+          "before": "            if (!\"bootstrap\".equals(requestId) && mAppPolicies != null && !mAppPolicies.recoveryRequired) try {\n                Map<String,Object> failed = PolicyJson.object(PolicyJson.parse(mAppPolicies.disk.read(\"policy-request.json\")));\n                if (requestId.equals(failed.get(\"id\"))) { failed.put(\"result\", \"ok=0\\nerror=\" + mPolicyError); mAppPolicies.disk.write(\"policy-request.json\", PolicyJson.bytes(failed)); }\n            } catch (Exception receiptFailure) { mPolicyError += \";receipt_unavailable\"; }\n            return \"ok=0\\nerror=\" + mPolicyError;\n        } finally { Binder.restoreCallingIdentity(identity); }\n    }\n\n    private synchronized String settingsCommand(String action,String argument,IBinder remote){\n        long identity=Binder.clearCallingIdentity();\n        try{\n",
+          "after": "            if (!\"bootstrap\".equals(requestId) && mAppPolicies != null && !mAppPolicies.recoveryRequired) try {\n                Map<String,Object> failed = PolicyJson.object(PolicyJson.parse(mAppPolicies.disk.read(\"policy-request.json\")));\n                if (requestId.equals(failed.get(\"id\"))) { failed.put(\"result\", \"ok=0\\nerror=\" + mPolicyError); mAppPolicies.disk.write(\"policy-request.json\", PolicyJson.bytes(failed)); }\n            } catch (Exception receiptFailure) { mPolicyError += \";receipt_unavailable\"; }\n            return \"ok=0\\nerror=\" + mPolicyError;\n        } finally { Binder.restoreCallingIdentity(identity);\n            Log.i(TIMING_TAG,\"id=\"+requestId+\" phase=policy_server_end ns=\"+SystemClock.elapsedRealtimeNanos()); }\n    }\n\n    private synchronized String settingsCommand(String action,String argument,IBinder remote){\n        long identity=Binder.clearCallingIdentity();\n        try{\n"
+        },
+        {
+          "before": "        return \"ok=1\\ncurrentScenePackage=\" + mCurrentScenePackage\n                + \"\\nlastNonTransientScenePackage=\" + mLastNonTransientScenePackage\n                + \"\\neditableSceneIsHome=\" + editableScenePackage().equals(monitorHome(mTopResumedState.stableUserId()))\n                + \"\\neditableScenePackage=\" + editableScenePackage()\n                + \"\\neditableDisplayHz=\" + editableDisplayHz() + policyStateLines();\n    }\n\n    private synchronized String notifyControlRequest(String requestId, String requestSha256) {\n        final int policyCallerUser = Binder.getCallingUid() / 100000;\n        long binderEnterNanos = SystemClock.elapsedRealtimeNanos();\n",
+          "after": "        return \"ok=1\\ncurrentScenePackage=\" + mCurrentScenePackage\n                + \"\\nlastNonTransientScenePackage=\" + mLastNonTransientScenePackage\n                + \"\\neditableSceneIsHome=\" + editableScenePackage().equals(monitorHome(mTopResumedState.stableUserId()))\n                + \"\\neditableScenePackage=\" + editableScenePackage()\n                + \"\\neditableDisplayHz=\" + editableDisplayHz() + policyStateLines();\n    }\n\n    // Settings is only the existing request/ACK transport. This root-only bridge\n    // does not admit a request, choose a target, or mutate policy authority.\n    private synchronized String commandTransport(String id, String hash, String sequence,\n            String action, String value) {\n        PolicyJson.require(validRequestId(id) && validSha256(hash)\n                && sequence != null && sequence.length() <= 64\n                && id.equals(SystemProperties.get(PROP_COMMAND_ID, \"\"))\n                && hash.equals(SystemProperties.get(PROP_COMMAND_SHA256, \"\"))\n                && sequence.equals(SystemProperties.get(PROP_COMMAND_SEQ, \"\")), \"admitted transport identity\");\n        long identity=Binder.clearCallingIdentity();\n        try {\n            String request=safe(Settings.System.getString(mContext.getContentResolver(),SETTING_REQUEST_TEXT));\n            PolicyJson.require(request.length()<=262144 && sha256(request).equals(hash), \"transport request hash\");\n            String[] fields=request.split(\"\\\\|\",-1);\n            PolicyJson.require(fields.length==5 && id.equals(fields[0]) && fields[2].isEmpty(), \"transport request\");\n            if (\"read\".equals(action)) { PolicyJson.require(\"\".equals(value),\"read argument\"); return request; }\n            PolicyJson.require(\"ack\".equals(action) && value!=null && value.length()<=8192\n                    && value.indexOf('\\n')<0 && value.indexOf('\\r')<0, \"transport ACK\");\n            String[] ack=value.split(\"\\\\|\",-1);\n            PolicyJson.require(ack.length==4 && id.equals(ack[0]) && fields[1].equals(ack[2])\n                    && (\"processing\".equals(ack[1])||\"done\".equals(ack[1])||\"failed\".equals(ack[1])), \"ACK identity/state\");\n            PolicyJson.require(Settings.System.putString(mContext.getContentResolver(),\"zui_control_request_ack\",value),\"ACK publication\");\n            return \"ok=1\";\n        } finally { Binder.restoreCallingIdentity(identity); }\n    }\n\n    private synchronized String notifyControlRequest(String requestId, String requestSha256) {\n        final int policyCallerUser = Binder.getCallingUid() / 100000;\n        long binderEnterNanos = SystemClock.elapsedRealtimeNanos();\n"
+        }
+      ]
+    },
+    {
+      "path": "native/command/Adapter.cpp",
+      "before": null,
+      "after": "100644 blob eb58ce4e315add01559e22db8a5b6b9ab6e53a15\tnative/command/Adapter.cpp",
+      "beforeSha256": null,
+      "hunks": []
+    },
+    {
+      "path": "native/command/Projection.h",
+      "before": null,
+      "after": "100644 blob 0c41b75f7dd6bd665d8875f93af309d03f520bc7\tnative/command/Projection.h",
+      "beforeSha256": null,
+      "hunks": []
+    },
+    {
+      "path": "native/command/Rules.h",
+      "before": null,
+      "after": "100644 blob c86397ddcfadaf983a581a9a660026edc9856739\tnative/command/Rules.h",
+      "beforeSha256": null,
+      "hunks": []
+    },
+    {
+      "path": "native/command/Transport.h",
+      "before": null,
+      "after": "100644 blob d0a2aa66715a8d3aebf3f509997751bc276e5c53\tnative/command/Transport.h",
+      "beforeSha256": null,
+      "hunks": []
+    },
+    {
+      "path": "payload/README.txt",
+      "before": "100644 blob 44ccf2e3c227143dbf3ddb64b5c46e7935e30eb4\tpayload/README.txt",
+      "after": "100644 blob f611cc84dbcaa93b12d8812d8254650259727972\tpayload/README.txt",
+      "beforeSha256": "ab7dc45bf36d9c46f02040fd67cdf338a10f712c7db66782baceb7b5b50366c0",
+      "hunks": [
+        {
+          "before": "ZuiControl production payload \u2014 App V77 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV77/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n",
+          "after": "ZuiControl production payload \u2014 App V78 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV78/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n"
+        }
+      ]
+    },
+    {
+      "path": "payload/patches/plat_file_contexts_add.txt",
+      "before": "100644 blob e35d520f8acc748c9c577b06b788420e8b864434\tpayload/patches/plat_file_contexts_add.txt",
+      "after": "100644 blob 243c455b4db340a976a710a078d0238118bf07b5\tpayload/patches/plat_file_contexts_add.txt",
+      "beforeSha256": "0e01c4367ccd8c6c25a72c6fb4b679a01188e39371d4326b0852e0ae4c9536ed",
+      "hunks": [
+        {
+          "before": "/data/system/zui_control(/.*)? u:object_r:system_data_file:s0\n/data/vendor/zui_control(/.*)? u:object_r:zui_control_data_file:s0\n/system/bin/ZUIopt u:object_r:zuiopt_exec:s0\n/system/etc/zuiopt(/.*)? u:object_r:zuiopt_config_file:s0\n/data/vendor/zui_control/zuiopt(/.*)? u:object_r:zuiopt_data_file:s0\n",
+          "after": "/data/system/zui_control(/.*)? u:object_r:system_data_file:s0\n/data/vendor/zui_control(/.*)? u:object_r:zui_control_data_file:s0\n/system/bin/ZUIopt u:object_r:zuiopt_exec:s0\n/system/etc/zuiopt(/.*)? u:object_r:zuiopt_config_file:s0\n/data/vendor/zui_control/zuiopt(/.*)? u:object_r:zuiopt_data_file:s0\n/system/bin/zui_control_request u:object_r:shell_exec:s0\n"
+        }
+      ]
+    },
+    {
+      "path": "payload/system/bin/zui_control_request",
+      "before": null,
+      "after": "100644 blob 101b6648e9c0442ae453e342acbfea36dce7fc20\tpayload/system/bin/zui_control_request",
+      "beforeSha256": null,
+      "hunks": []
+    },
+    {
+      "path": "payload/system/etc/init/zui_controld.rc",
+      "before": "100644 blob 5f05f15035652adfefb4893abd12173c6478f8ac\tpayload/system/etc/init/zui_controld.rc",
+      "after": "100644 blob edbb6ffa44348520f2356b854a18af98723bc88b\tpayload/system/etc/init/zui_controld.rc",
+      "beforeSha256": "1bf23e5b8f142e6dce2e910ca522b3708bae862fafc4d05419c1829af0ba8ec3",
+      "hunks": [
+        {
+          "before": "    restorecon /data/vendor/zui_control/zuicontrol/active_request_claim\n\non property:sys.zui_control.command_seq=*\n    start zui_control_request\n\nservice zui_control_request /system/bin/sh /system/bin/zui_controld --oneshot-request ${sys.zui_control.command_id:-unset} ${sys.zui_control.command_sha256:-unset}\n    class late_start\n    disabled\n    oneshot\n    user root\n    group root system shell readproc\n",
+          "after": "    restorecon /data/vendor/zui_control/zuicontrol/active_request_claim\n\non property:sys.zui_control.command_seq=*\n    start zui_control_request\n\nservice zui_control_request /system/bin/zui_control_request ${sys.zui_control.command_id:-unset} ${sys.zui_control.command_sha256:-unset} ${sys.zui_control.command_seq:-unset}\n    class late_start\n    disabled\n    oneshot\n    user root\n    group root system shell readproc\n"
+        }
+      ]
+    }
+  ]
+}

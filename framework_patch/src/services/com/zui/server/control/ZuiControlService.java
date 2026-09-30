@@ -592,6 +592,16 @@ public final class ZuiControlService extends Binder {
     @Override
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
         try {
+            if (code == 1012) {
+                data.enforceInterface(DESCRIPTOR);
+                if (Binder.getCallingUid() != Process.ROOT_UID || (flags & IBinder.FLAG_ONEWAY) != 0)
+                    throw new SecurityException("root finite transport required");
+                String id=data.readString(), hash=data.readString(), sequence=data.readString();
+                String action=data.readString(), value=data.readString();
+                if (data.dataAvail()!=0) throw new IllegalArgumentException("transport trailing data");
+                String result=commandTransport(id,hash,sequence,action,value);
+                reply.writeNoException(); reply.writeString(result); return true;
+            }
             if(code==1011){
                 data.enforceInterface(DESCRIPTOR);
                 if(Binder.getCallingUid()!=Process.ROOT_UID||(flags & IBinder.FLAG_ONEWAY)!=0)throw new SecurityException("root settings owner required");
@@ -787,6 +797,7 @@ public final class ZuiControlService extends Binder {
     }
 
     private synchronized String policyCommand(String requestId, String requestHash, IBinder remote) {
+        Log.i(TIMING_TAG,"id="+requestId+" phase=policy_server_start ns="+SystemClock.elapsedRealtimeNanos());
         long identity = Binder.clearCallingIdentity();
         try {
             PolicyJson.require(mAppPolicies != null, "policy store unavailable");
@@ -864,7 +875,8 @@ public final class ZuiControlService extends Binder {
                 if (requestId.equals(failed.get("id"))) { failed.put("result", "ok=0\nerror=" + mPolicyError); mAppPolicies.disk.write("policy-request.json", PolicyJson.bytes(failed)); }
             } catch (Exception receiptFailure) { mPolicyError += ";receipt_unavailable"; }
             return "ok=0\nerror=" + mPolicyError;
-        } finally { Binder.restoreCallingIdentity(identity); }
+        } finally { Binder.restoreCallingIdentity(identity);
+            Log.i(TIMING_TAG,"id="+requestId+" phase=policy_server_end ns="+SystemClock.elapsedRealtimeNanos()); }
     }
 
     private synchronized String settingsCommand(String action,String argument,IBinder remote){
@@ -1190,6 +1202,32 @@ public final class ZuiControlService extends Binder {
                 + "\neditableSceneIsHome=" + editableScenePackage().equals(monitorHome(mTopResumedState.stableUserId()))
                 + "\neditableScenePackage=" + editableScenePackage()
                 + "\neditableDisplayHz=" + editableDisplayHz() + policyStateLines();
+    }
+
+    // Settings is only the existing request/ACK transport. This root-only bridge
+    // does not admit a request, choose a target, or mutate policy authority.
+    private synchronized String commandTransport(String id, String hash, String sequence,
+            String action, String value) {
+        PolicyJson.require(validRequestId(id) && validSha256(hash)
+                && sequence != null && sequence.length() <= 64
+                && id.equals(SystemProperties.get(PROP_COMMAND_ID, ""))
+                && hash.equals(SystemProperties.get(PROP_COMMAND_SHA256, ""))
+                && sequence.equals(SystemProperties.get(PROP_COMMAND_SEQ, "")), "admitted transport identity");
+        long identity=Binder.clearCallingIdentity();
+        try {
+            String request=safe(Settings.System.getString(mContext.getContentResolver(),SETTING_REQUEST_TEXT));
+            PolicyJson.require(request.length()<=262144 && sha256(request).equals(hash), "transport request hash");
+            String[] fields=request.split("\\|",-1);
+            PolicyJson.require(fields.length==5 && id.equals(fields[0]) && fields[2].isEmpty(), "transport request");
+            if ("read".equals(action)) { PolicyJson.require("".equals(value),"read argument"); return request; }
+            PolicyJson.require("ack".equals(action) && value!=null && value.length()<=8192
+                    && value.indexOf('\n')<0 && value.indexOf('\r')<0, "transport ACK");
+            String[] ack=value.split("\\|",-1);
+            PolicyJson.require(ack.length==4 && id.equals(ack[0]) && fields[1].equals(ack[2])
+                    && ("processing".equals(ack[1])||"done".equals(ack[1])||"failed".equals(ack[1])), "ACK identity/state");
+            PolicyJson.require(Settings.System.putString(mContext.getContentResolver(),"zui_control_request_ack",value),"ACK publication");
+            return "ok=1";
+        } finally { Binder.restoreCallingIdentity(identity); }
     }
 
     private synchronized String notifyControlRequest(String requestId, String requestSha256) {

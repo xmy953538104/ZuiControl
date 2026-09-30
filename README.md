@@ -32,6 +32,31 @@ Release signing values are supplied through the parameters documented by
 
 ## Host regression tests
 
+Ordinary policy requests use the finite `native/command/Adapter.cpp` transport.
+The existing authenticated admission and property/init trigger are unchanged;
+root-only Binder transaction 1012 reads the bound request and publishes its ACK.
+Transaction 1010 and `AppPolicyStore` remain the policy authority. The adapter
+retains the root claim/receipt and the existing projection callback wire format,
+including durable mode readback, stage hash and generation checks. It runs in
+the existing init-selected `shell` domain using `shell_exec`, with no SELinux
+permission additions. Non-policy commands exec the existing finite shell path.
+The `settings_*` callbacks only transport existing backup recovery operations to
+ZUIopt; the ordinary policy path does not launch subprocesses.
+
+Linux-native transport gates (also in the permanent backend-native workflow):
+
+```text
+clang++ -std=c++17 -O1 -Wall -Wextra -Werror -fsanitize=address,undefined tests/command_plane/NativeTransportTest.cpp -o /tmp/command-test
+sudo /tmp/command-test
+python tests/command_plane/TestNativeProjectionParity.py /tmp/command-test
+python tests/command_plane/TestNativeTransportContract.py
+```
+
+These are host proofs, not Android Binder/SELinux or device latency evidence.
+The native timing markers use CLOCK_BOOTTIME nanoseconds, matching the existing
+elapsed-realtime admission/client markers; T4–T8 and named projection/receipt
+stages do not launch diagnostic subprocesses.
+
 Run from the repository root:
 
 ```text
