@@ -16,6 +16,22 @@ final class MonitorStore {
     long beginElapsed, recordId;
     boolean active;
 
+    void removeUser(int user) {
+        if(user<=0)throw new IllegalArgumentException("cannot retire primary records");
+        if(!file.exists())return;
+        try(SQLiteDatabase next=SQLiteDatabase.openDatabase(file.getPath(),null,SQLiteDatabase.OPEN_READWRITE)){
+            next.beginTransaction();
+            try{
+                schema(next);
+                Object[] args={user};
+                next.execSQL("DELETE FROM thread_samples WHERE record_id IN (SELECT id FROM record_meta WHERE user=?)",args);
+                next.execSQL("DELETE FROM scalar_samples WHERE record_id IN (SELECT id FROM record_meta WHERE user=?)",args);
+                next.execSQL("DELETE FROM record_meta WHERE user=?",args);
+                next.setTransactionSuccessful();
+            }finally{next.endTransaction();}
+        }
+    }
+
     // Migration is inside the explicit start/delete transaction. Failed replacement rolls
     // back migration too; the original R5 record remains readable until the first write.
     private static void schema(SQLiteDatabase next) {

@@ -169,7 +169,7 @@ class CommandPlaneArchitectureTest(unittest.TestCase):
         self.assertIsNone(re.search(r"^service\s+zui_controld(?:\s|$)", self.control_rc, re.M))
         self.assertIsNone(re.search(r"^\s+start\s+zui_controld(?:\s|$)", self.control_rc, re.M))
         self.assertIn(
-            '--oneshot-request) shift; oneshot_request "${1:-}" "${2:-}" ;;',
+            '--oneshot-request) shift; oneshot_request "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;',
             self.daemon,
         )
         self.assertIn('") exit 2 ;;', self.daemon)

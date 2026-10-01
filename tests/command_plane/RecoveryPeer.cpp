@@ -5,7 +5,7 @@
 using namespace command;
 int main(int argc,char** argv) {
     try {
-        require(argc==5,"fixture arguments");
+        require(argc==7,"fixture arguments");
         Disk root(argv[1]); Disk disk(root,argv[2]);
         Disk runtime(disk,"runtime");
         if(!runtime.exists("effective_powermode.txt"))runtime.put("effective_powermode.txt","balance\n");
@@ -22,6 +22,7 @@ int main(int argc,char** argv) {
             throw std::runtime_error("fixture disconnected");
         };
         Request request(std::string(argv[4])+"|policy|||e30=");
+        request.bind(argv[5],argv[6]);
         Receipts receipts{disk,[&](const std::string& value){
             disk.put("observed_ack",value);std::cout<<"PUBLISH\t"<<base64(value)<<std::endl;
         }};
@@ -30,7 +31,7 @@ int main(int argc,char** argv) {
                      <<base64(disk.read("last_request_receipt"))<<"\t"<<base64(projection.stage("active.json"))<<std::endl;
             if(std::string(argv[3])==point)_exit(73);
         };
-        receipts.reconcile=[&](const Request& prior){require(prior.text==request.text,"fixture exact identity");return rpc("RECONCILE");};
+        receipts.reconcile=[&](const Request& prior){require(prior.stored()==request.stored(),"fixture exact identity");return rpc("RECONCILE");};
         receipts.run(request,[&]{return rpc("EXECUTE");});
         std::cout<<"FINAL\t"<<base64(disk.read("active_request_claim"))<<"\t"
                  <<base64(disk.read("last_request_receipt"))<<std::endl;

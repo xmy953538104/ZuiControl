@@ -12,6 +12,7 @@ public class RecoveryFixture {
     String fault="", ack="", phase="", currentId="X";
     boolean armed, ownerUnavailable, failApply, failResultOnce, blockAfterCrash;
     int mutations;
+    int callerUser;
     long projectionGeneration;
     BufferedReader reader; PrintWriter writer;
     final AppPolicyStore.Storage storage=new AppPolicyStore.Storage(){
@@ -44,7 +45,7 @@ public class RecoveryFixture {
             if(ownerUnavailable)throw new IOException("owner unavailable");
             if(failApply){failApply=false;throw new IOException("qualified owner refusal");}
             hit("projection_apply_before");
-            require(project("apply",encode(map("transaction",tx,"hash",hash(next.bytes()),"generation",next.generation,"desiredMode",next.global(0).uperfMode))).equals(hash(next.bytes())),"apply ACK");
+            require(project("apply",encode(map("transaction",tx,"hash",hash(next.bytes()),"generation",next.generation,"desiredMode",next.global(callerUser).uperfMode))).equals(hash(next.bytes())),"apply ACK");
             projectionGeneration=next.generation; hit("projection_apply_after");
         }
     };
@@ -57,17 +58,22 @@ public class RecoveryFixture {
     static String b64(String v){return Base64.getEncoder().encodeToString(v.getBytes(StandardCharsets.UTF_8));}
     static String unb64(String v){return new String(Base64.getDecoder().decode(v),StandardCharsets.UTF_8);}
     static final String SHA=hash("X|policy|||e30=".getBytes(StandardCharsets.UTF_8));
-    static final class Top {
-        int stableUserId(){return 0;} long generation(){return 1;} String stablePackage(){return "org.example.probe";}
+    final class Top {
+        int stableUserId(){return callerUser;} long generation(){return 1;} String stablePackage(){return "org.example.probe";}
     }
     final Top mTopResumedState=new Top(); final boolean mScreenInteractive=true;
     String policyHome(int user){return "org.example.home";}
+    static String key(int user,String pkg){return AppPolicyStore.key(user,pkg);}
     boolean isTransientPackage(String pkg){return false;}
     static final class Gpu {String runtimeStatus(){return "READY";}}
     final Gpu mGpuPolicy=new Gpu();
+    static final class Monitor {void removeUser(int user){throw new AssertionError("fixture inventory unchanged");}}
+    final Monitor mMonitor=new Monitor();
     void publishPolicySettings(){hit("settings_projection");}
     String admit(String id,String sha256)throws Exception {
-        Map<String,Object> policy=map("action","refresh","userId",0,"packageName","org.example.probe",
+        int policyCallerUser=callerUser;Map<Integer,Long> inventory=mAppPolicies.current.users;
+        RequestIdentity admitted=new RequestIdentity(callerUser,inventory.get(callerUser),id,sha256,UUID.randomUUID().toString().replace("-",""));
+        Map<String,Object> policy=map("action","refresh","userId",callerUser,"packageName","org.example.probe",
             "generation",mAppPolicies.current.generation,"sceneGeneration",1,"scenePackage","org.example.probe",
             "scope","APP","value",90,"mode","","min",0,"max",0);
         /* ADMISSION */
@@ -85,13 +91,20 @@ public class RecoveryFixture {
         return mAppPolicies.reconcileRequest(currentId,hash((currentId+"|policy|||e30=").getBytes(StandardCharsets.UTF_8)),owner,()->{publishPolicySettings();return null;});
     }
     RecoveryFixture()throws Exception {
-        Map<Integer,Long> users=new TreeMap<>();users.put(0,0L);
+        this(0);
+    }
+    RecoveryFixture(int user)throws Exception {
+        callerUser=user;
+        Map<Integer,Long> users=new TreeMap<>();users.put(0,0L);users.put(10,42L);
         AppPolicyStore.State initial=AppPolicyStore.migrate("version=1\n".getBytes(),"balance\n".getBytes(),new byte[0],"balance","",users,Collections.emptySet()).state;
         files.put(AppPolicyStore.ACTIVE,initial.bytes());mAppPolicies=new AppPolicyStore(storage);
         require(admit("X",SHA).equals("ok=1"),"admit X");
     }
     int peer(List<String> prefix,String name,String crash)throws Exception {
         List<String> command=new ArrayList<>(prefix);command.add(name);command.add(crash);command.add(currentId);
+        RequestIdentity identity=RequestIdentity.read(object(parse(storage.read("policy-request.json"))).get("identity"));
+        identity.verify(callerUser,currentId,hash((currentId+"|policy|||e30=").getBytes(StandardCharsets.UTF_8)),identity.sequence,mAppPolicies.current.users);
+        command.add(String.valueOf(callerUser));command.add(identity.sequence);
         Process p=new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.INHERIT).start();
         reader=new BufferedReader(new InputStreamReader(p.getInputStream(),StandardCharsets.UTF_8));
         writer=new PrintWriter(new OutputStreamWriter(p.getOutputStream(),StandardCharsets.UTF_8),true);
@@ -119,7 +132,7 @@ public class RecoveryFixture {
             "before_root_receipt","after_root_receipt","before_terminal_ack","after_terminal_ack","lost_client"};
         int n=0;
         for(String point:points){
-            RecoveryFixture f=new RecoveryFixture();f.fault=point;f.armed=true;
+            RecoveryFixture f=new RecoveryFixture(n%2==0?0:10);f.fault=point;f.armed=true;
             String name="case"+(++n);int rc=f.peer(prefix,name,point);
             require(rc==0||rc==73,"unexpected native exit "+rc+" at "+point);
             f.armed=false;require(f.peer(prefix,name,"none")==0,"replay");
@@ -134,10 +147,12 @@ public class RecoveryFixture {
             if(applied)require(f.projectionGeneration==2,"owner ACK");
             for(String key:f.files.keySet())if(key.endsWith("-previous.json"))require(f.files.get(key).length>0,"last good retained");
             System.out.println("PASS "+point+" generation="+f.mAppPolicies.current.generation+" mutations="+f.mutations+" ack="+f.ack);
+            f.callerUser=n%2==0?10:0;
             require(f.admit("Y",hash("Y|policy|||e30=".getBytes(StandardCharsets.UTF_8))).equals("ok=1"),"new Y available");
             long beforeY=f.mAppPolicies.current.generation;f.currentId="Y";
             require(f.peer(prefix,name,"none")==0&&f.ack.startsWith("Y|done|policy|"),"Y succeeds automatically");
             require(f.mAppPolicies.current.generation==beforeY+1&&f.mutations==mutations+1,"Y mutates exactly once");
+            require(f.mAppPolicies.current.apps.containsKey(f.callerUser+":org.example.probe"),"Y targets admitted user");
             Map<String,Object> snapshot=new TreeMap<>();for(Map.Entry<String,byte[]> entry:f.files.entrySet())snapshot.put(entry.getKey(),Base64.getEncoder().encodeToString(entry.getValue()));
             System.out.println("EVIDENCE "+point+" "+encode(snapshot));
         }

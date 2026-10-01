@@ -69,12 +69,12 @@ fi
 if [ ! -f "$UPERF_DIR/policy-projection/active.json" ]; then
     # Seed projections only with newly created factory stores. Existing Settings
     # must reach the strict migration comparison unchanged, including disagreements.
-    if [ "$seed_recovery" = 1 ] && [ "$(settings get system zui_control_uperf_mode)" = null ]; then
-        settings put system zui_control_uperf_mode "$global_mode" >/dev/null 2>&1 || exit 1
+    if [ "$seed_recovery" = 1 ] && [ "$(settings --user 0 get system zui_control_uperf_mode)" = null ]; then
+        settings --user 0 put system zui_control_uperf_mode "$global_mode" >/dev/null 2>&1 || exit 1
     fi
     rules_text="$(awk 'NF == 2 && $1 != "-" && $1 != "*" {if(length(out))out=out "\n";out=out $1 "|" $2} END {print out}' "$PERAPP")"
-    if [ "$seed_recovery" = 1 ] && [ "$(settings get system zui_control_uperf_rules_text)" = null ]; then
-        settings put system zui_control_uperf_rules_text "$rules_text" >/dev/null 2>&1 || exit 1
+    if [ "$seed_recovery" = 1 ] && [ "$(settings --user 0 get system zui_control_uperf_rules_text)" = null ]; then
+        settings --user 0 put system zui_control_uperf_rules_text "$rules_text" >/dev/null 2>&1 || exit 1
     fi
 fi
 CLASSPATH=/system/framework/services.jar /system/bin/app_process /system/bin com.zui.server.control.PolicyCommand bootstrap - || exit 1

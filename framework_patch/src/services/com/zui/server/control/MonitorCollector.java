@@ -30,6 +30,8 @@ class MonitorCollector {
     private final MonitorStore store=new MonitorStore();
     private IBinder callback;
     private IBinder.DeathRecipient death;
+    private final java.util.Map<Integer,IBinder> clients=new java.util.HashMap<>();
+    private final java.util.Map<Integer,int[]> userModes=new java.util.HashMap<>();
     private HandlerThread thread;
     private Handler handler;
     private boolean scheduled;
@@ -45,6 +47,11 @@ class MonitorCollector {
     private final String producerEpoch=java.util.UUID.randomUUID().toString();
     MonitorCollector(Context context){this(context,new MonitorSources());}
     MonitorCollector(Context context,MonitorSources sources){this.context=context;this.sources=sources;}
+    synchronized void register(IBinder binder,int user)throws android.os.RemoteException{
+        if(binder==null)throw new IllegalArgumentException("monitor callback required");
+        clients.put(user,binder);
+        if(user==session.user)register(binder);
+    }
     synchronized void register(IBinder binder)throws android.os.RemoteException{
         if(callback==binder)return;
         if(callback!=null)terminate("CLIENT_REPLACED",true);
@@ -61,7 +68,11 @@ class MonitorCollector {
         }
         stop();schedule();
     }
-    synchronized void unregister(IBinder binder){if(callback==binder)disconnect("CLIENT_CLOSED");}
+    synchronized void unregister(IBinder binder){clients.values().removeIf(value->value==binder);if(callback==binder)disconnect("CLIENT_CLOSED");}
+    synchronized void removeUser(int user){
+        if(user==session.user){terminate("USER_REMOVED",false);disconnect("USER_REMOVED");}
+        clients.remove(user);userModes.remove(user);store.removeUser(user);
+    }
     private void terminate(String reason,boolean incomplete){
         if(!session.recording())return;
         long end=Math.min(SystemClock.elapsedRealtime(),session.recordingStart+MonitorSession.MAX_RECORD_MS);
@@ -104,6 +115,17 @@ class MonitorCollector {
         scene(pkg,user,eligible,recordEligible,blockedReason,taskId,eligible&&!pkg.isEmpty());
     }
     synchronized void scene(String pkg,int user,boolean eligible,boolean recordEligible,String blockedReason,int taskId,boolean fpsEligible){
+        if(user!=session.user){
+            userModes.put(session.user,new int[]{session.mode,session.circle?1:0,session.overlayAllowed?1:0});
+            terminate("FOREGROUND_CHANGED",false);
+            session.eligible=false;stop(); // Hide the old user's overlay before retiring its callback.
+            if(callback!=null&&death!=null)callback.unlinkToDeath(death,0);
+            disconnect("USER_CHANGED");
+            int[] saved=userModes.getOrDefault(user,new int[]{MonitorSession.OFF,0,1});
+            session.mode=saved[0];session.circle=saved[1]!=0;session.overlayAllowed=saved[2]!=0;
+            session.scene("",user,false,false);session.taskId=-1;fpsSceneEligible=false;
+            try{register(clients.get(user));}catch(android.os.RemoteException unavailable){clients.remove(user);}
+        }
         boolean fpsChanged=fpsSceneEligible!=fpsEligible;
         fpsSceneEligible=fpsEligible;
         boolean taskChanged=taskId!=session.taskId;
@@ -124,6 +146,16 @@ class MonitorCollector {
             if("recordRead".equals(action))return store.read(user,arg);
             if("recordList".equals(action))return store.list(user);
             if("recordDelete".equals(action))return store.delete(user,arg);
+            if(user!=session.user){
+                if("state".equals(action))return "ok=1\nmonitorSnapshot="+new JSONObject()
+                        .put("producerEpoch",producerEpoch).put("user",user).put("package","")
+                        .put("active",false).put("mode",MonitorSession.OFF).put("recordState","IDLE");
+                if("permissionGranted".equals(action)||"permissionLost".equals(action)){
+                    int[] saved=userModes.computeIfAbsent(user,u->new int[]{MonitorSession.OFF,0,1});
+                    saved[2]="permissionGranted".equals(action)?1:0;return "ok=1";
+                }
+                return "ok=0\nerror=inactive_user";
+            }
             if("permissionGranted".equals(action)||"permissionLost".equals(action)){
                 boolean allowed="permissionGranted".equals(action);
                 if(!allowed)terminate("PERMISSION_LOST",false);
@@ -146,8 +178,9 @@ class MonitorCollector {
                 if(gesture<lastGesture||!session.canStart()||session.user!=user)return "ok=0\nerror=scene_changed";
                 MonitorSnapshot.Task task=identity(findPid());
                 if(task==null)return "ok=0\nerror=process_unavailable";
-                String label=context.getPackageManager().getApplicationLabel(
-                        context.getPackageManager().getApplicationInfo(session.foreground,0)).toString();
+                android.content.pm.PackageManager packages=((Context)Context.class.getMethod("createContextAsUser",android.os.UserHandle.class,int.class)
+                        .invoke(context,android.os.UserHandle.getUserHandleForUid(user*100000),0)).getPackageManager();
+                String label=packages.getApplicationLabel(packages.getApplicationInfo(session.foreground,0)).toString();
                 store.start(session.foreground,label,user,task.tid,task.start,now,session.taskId,session.targetEpoch);
                 session.started(now,task.tid,task.start);finalizeError="";lastGesture=gesture;clearThreadBaseline();
             }else if("recordStop".equals(action)){

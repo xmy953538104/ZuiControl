@@ -35,6 +35,12 @@ Release signing values are supplied through the parameters documented by
 Ordinary policy requests use the finite `native/command/Adapter.cpp` transport.
 The existing authenticated admission and property/init trigger are unchanged;
 root-only Binder transaction 1012 reads the bound request and publishes its ACK.
+Admission captures the caller's Android user and inventory serial before clearing
+Binder identity. Durable request identity binds that user, ID, SHA-256 and stable
+operation sequence; 1010/1012/1013 verify root-supplied claims against this record.
+Settings reads and ACK writes explicitly use the admitted user. A kick adds an
+attempt nonce without changing the operation identity. Native recovery retains
+the user and sequence in its claim/receipt; legacy V79 receipts remain separate.
 Transaction 1010 and `AppPolicyStore` remain the policy authority. The adapter
 retains the root claim/receipt and the existing projection callback wire format,
 including durable mode readback, stage hash and generation checks. It runs in

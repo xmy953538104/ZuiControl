@@ -51,7 +51,12 @@ final class AppPolicyStore {
             State s = new State(); s.generation = generation; s.users.putAll(users); s.globals.putAll(globals);
             s.apps.putAll(apps); s.defaults.putAll(defaults); s.migration = migration; return s;
         }
-        Row global(int user) { return globals.containsKey(user) ? globals.get(user) : globals.get(0); }
+        Row global(int user) {
+            Row row=globals.get(user);
+            // A not-yet-admitted Android user must never inherit live Owner settings.
+            GpuRange range=factory("balance",false);
+            return row!=null?row:new Row(120,"balance",range.minMHz,range.maxMHz);
+        }
         GpuRange range(int user, String mode) {
             GpuRange result = defaults.get(key(user, mode)); return result == null ? factory(mode, false) : result;
         }
@@ -149,7 +154,7 @@ final class AppPolicyStore {
             } else {
                 require(p[0].equals("gpu") && p.length == 5, "unknown legacy row"); unique(gpu, k, new GpuRange(Integer.parseInt(p[3]), Integer.parseInt(p[4])), raw);
             }
-            if (quarantined.contains(p[2])) quarantine.add(raw);
+            if (quarantined.contains(p[2])||quarantined.contains(k)) quarantine.add(raw);
         }
         require(version, "legacy version missing");
         for (String raw : utf8(perapp).split("\\r?\\n")) {
@@ -168,7 +173,7 @@ final class AppPolicyStore {
         for (String pkg : uperf.keySet()) for (int user : users.keySet()) all.add(key(user, pkg));
         for (String k : all) {
             int colon = k.indexOf(':'); int user = Integer.parseInt(k.substring(0, colon)); String pkg = k.substring(colon + 1);
-            if (quarantined.contains(pkg)) { quarantine.add(k); continue; }
+            if (quarantined.contains(pkg)||quarantined.contains(k)) { quarantine.add(k); continue; }
             String mode = uperf.containsKey(pkg) ? uperf.get(pkg) : globalMode;
             GpuRange range = gpu.get(k);
             if (range == null) range = s.defaults.get(key(user, mode));
@@ -188,6 +193,12 @@ final class AppPolicyStore {
     }
     static State reconcileUsers(State old, Map<Integer,Long> inventory) {
         State next = old.copy(); boolean changed = false;
+        require(inventory.containsKey(0)&&java.util.Objects.equals(inventory.get(0),old.users.get(0)),"primary user identity");
+        for(int user:old.users.keySet())if(!inventory.containsKey(user)){
+            next.users.remove(user);next.globals.remove(user);
+            next.apps.keySet().removeIf(k->k.startsWith(user+":"));
+            next.defaults.keySet().removeIf(k->k.startsWith(user+":"));changed=true;
+        }
         for (Map.Entry<Integer,Long> e : inventory.entrySet()) {
             require(!old.users.containsKey(e.getKey()) || old.users.get(e.getKey()).equals(e.getValue()), "reused user serial");
             if (old.users.containsKey(e.getKey())) continue;
@@ -290,6 +301,11 @@ final class AppPolicyStore {
         require(id != null && id.matches("[A-Za-z0-9._-]{1,64}")
                 && sha != null && sha.matches("[0-9a-f]{64}"), "recovery identity bounds");
         Map<String,Object> request = object(parse(disk.read("policy-request.json")));
+        if(!id.equals(request.get("id"))){
+            Map<String,Object> retained=object(parse(disk.read("policy-request-"+id+".json")));
+            require(id.equals(retained.get("id"))&&sha.equals(retained.get("sha"))&&retained.containsKey("result"),"retained terminal recovery identity");
+            return string(retained.get("result"));
+        }
         require(id.equals(request.get("id")) && sha.equals(request.get("sha")), "authenticated recovery request");
         if (request.containsKey("result")) {
             // A prior write may have lost only its durability acknowledgement.

@@ -24,6 +24,7 @@ setup_state() {
     TEST_ROOT="$(mktemp -d)"
     DATA_ROOT="$TEST_ROOT/data"
     CONTROL_DIR="$DATA_ROOT/control"
+    REQUEST_CONTROL_ROOT="$CONTROL_DIR"
     UPERF_DIR="$DATA_ROOT/uperf"
     LOG_DIR="$DATA_ROOT/log"
     LOG_FILE="$LOG_DIR/controld.log"
@@ -53,6 +54,14 @@ setup_state() {
     TEST_CONFIG_PUTS=0
     TEST_CONFIG_PUT_FAILURES=0
     TEST_TIMING=
+    request_transport() {
+        case "$1" in
+            read) printf '%s' "$TEST_REQUEST" ;;
+            namespace) printf 'user-shell-0-0' ;;
+            ack) settings_put_quiet "$REQUEST_ACK_KEY" "$2" ;;
+            *) return 1 ;;
+        esac
+    }
 
     settings_get_clean() {
         case "$1" in
@@ -819,6 +828,8 @@ test_prepare_retains_legacy_and_resumes_virgin_seed() (
     trap 'rm -rf "$TEST_ROOT"' EXIT
     export TEST_ROOT
     settings() {
+        [ "$1" = --user ] && [ "$2" = 0 ] || fail legacy_settings_namespace
+        shift 2
         case "$1" in
             get) if [ -f "$TEST_ROOT/setting-$3" ]; then cat "$TEST_ROOT/setting-$3"; else printf 'null\n'; fi ;;
             put) printf '%s\n' "$4" > "$TEST_ROOT/setting-$3" ;;

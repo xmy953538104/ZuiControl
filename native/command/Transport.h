@@ -58,12 +58,24 @@ inline std::string sha256(const std::string& input) {
 
 struct Request {
     std::string text, requestId, command;
+    std::string user, sequence;
     explicit Request(const std::string& value):text(value){
         require(!value.empty()&&value.size()<=REQUEST_LIMIT&&value.find_first_of("\r\n")==std::string::npos&&value.find('\0')==std::string::npos,"request bounds");
         auto f=split(value,'|');require(f.size()==5&&id(f[0])&&!f[1].empty()&&f[2].empty(),"request format");requestId=f[0];command=f[1];
     }
     void authenticate(const std::string& expectedId,const std::string& hash) const {
         require(id(expectedId)&&digest(hash)&&requestId==expectedId&&sha256(text)==hash,"admitted identity/hash");
+    }
+    void bind(const std::string& u,const std::string& seq){
+        require(alphabet(u,"0123456789",1,5)&&(u=="0"||u.front()!='0')&&std::stoul(u)<=21474
+                &&alphabet(seq,"0123456789abcdef",32,32),"request user/sequence");user=u;sequence=seq;
+    }
+    std::string stored()const{return user.empty()?text:"@"+user+":"+sequence+"@"+text;}
+    static Request restore(const std::string& value){
+        if(value.empty()||value.front()!='@')return Request(value);
+        size_t end=value.find('@',1);require(end!=std::string::npos,"receipt identity envelope");
+        auto identity=split(value.substr(1,end-1),':');require(identity.size()==2,"receipt identity fields");
+        Request r(value.substr(end+1));r.bind(identity[0],identity[1]);return r;
     }
 };
 
@@ -142,41 +154,41 @@ struct Receipts {
         return terminal(r,reconcile(r));
     }
     void complete(const Request& r,const std::string& terminal){
-        point("before_root_receipt");disk.put("last_request_receipt",r.text+"\n"+terminal+"\n");point("after_root_receipt");
-        if(disk.read("active_request_claim")==r.text+"\n")disk.remove("active_request_claim");
+        point("before_root_receipt");disk.put("last_request_receipt",r.stored()+"\n"+terminal+"\n");point("after_root_receipt");
+        if(disk.read("active_request_claim")==r.stored()+"\n")disk.remove("active_request_claim");
         point("before_terminal_ack");publish(terminal);point("after_terminal_ack");
     }
     bool recover(const Request& current){
         std::string raw=disk.read("last_request_receipt"), previous, terminal;
         if(!raw.empty()){
-            auto lines=split(raw,'\n');require(lines.size()==3&&lines[2].empty(),"receipt lines");Request old(lines[0]);
+            auto lines=split(raw,'\n');require(lines.size()==3&&lines[2].empty(),"receipt lines");Request old=Request::restore(lines[0]);
             auto f=split(lines[1],'|');require(f.size()==4&&f[0]==old.requestId&&f[2]==old.command&&(f[1]=="done"||f[1]=="failed"),"receipt identity");
             previous=lines[0];terminal=lines[1];
         }
         auto claimed=disk.read("active_request_claim");
         require(!claimed.empty()||!disk.exists("active_request_claim"),"empty invalid claim retained");
         if(!claimed.empty()){
-            require(claimed.back()=='\n',"claim newline");Request abandoned(claimed.substr(0,claimed.size()-1));
-            if(abandoned.text==previous)disk.remove("active_request_claim");
+            require(claimed.back()=='\n',"claim newline");Request abandoned=Request::restore(claimed.substr(0,claimed.size()-1));
+            if(abandoned.stored()==previous)disk.remove("active_request_claim");
             else{
-                previous=abandoned.text;terminal=resolved(abandoned);
+                previous=abandoned.stored();terminal=resolved(abandoned);
                 disk.put("last_request_receipt",previous+"\n"+terminal+"\n");disk.remove("active_request_claim");
             }
         }
-        if(previous==current.text){
+        if(previous==current.stored()){
             // Upgrade a retained V78 indeterminate receipt before exposing it again.
             if(terminal==ack(current,"failed","indeterminate_after_claim")) {
                 terminal=resolved(current);disk.put("last_request_receipt",previous+"\n"+terminal+"\n");
             }
             publish(terminal);return true;
         }
-        if(!previous.empty()&&Request(previous).requestId==current.requestId)return true; // Conflicting replay never executes or overwrites ACK.
+        if(!previous.empty()&&Request::restore(previous).requestId==current.requestId)return true; // Conflicting replay never executes or overwrites ACK.
         return false;
     }
     void run(const Request& r,const std::function<std::string()>& execute){
         if(recover(r))return;
         publish(ack(r,"processing","validating"));point("before_claim");
-        require(!disk.exists("active_request_claim"),"claim busy");disk.put("active_request_claim",r.text+"\n");point("after_claim");
+        require(!disk.exists("active_request_claim"),"claim busy");disk.put("active_request_claim",r.stored()+"\n");point("after_claim");
         point("before_binder");std::string result;
         try{result=execute();}catch(const std::exception&){result.clear();}
         point("after_binder");

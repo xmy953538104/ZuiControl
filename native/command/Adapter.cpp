@@ -8,6 +8,7 @@
 #include <mutex>
 #include <memory>
 #include <time.h>
+#include <cstdio>
 
 using namespace command;
 namespace {
@@ -71,20 +72,28 @@ struct Binder {
     // Process exit retires the callback and its Binder threads together.
 };
 int run(int argc,char** argv){
+    if(argc==9&&std::string(argv[1])=="--transport"){
+        require(geteuid()==0,"root transport arguments");Binder& b=*new Binder;
+        auto result=b.call(1012,{argv[2],argv[3],argv[4],argv[5],argv[6],argv[7],argv[8]});
+        require(std::fwrite(result.data(),1,result.size(),stdout)==result.size()&&std::fflush(stdout)==0,"transport output");return 0;
+    }
     require(geteuid()==0&&argc==4,"root adapter arguments");requestId=argv[1];mark("T4");
-    std::string hash=argv[2],sequence=argv[3];require(id(requestId)&&digest(hash)&&id(sequence),"kick metadata");
+    std::string hash=argv[2],kick=argv[3];require(id(requestId)&&digest(hash)&&id(kick),"kick metadata");
+    auto parts=split(kick,'_');require(parts.size()==3&&!parts[0].empty()&&parts[0].front()=='u',"kick user envelope");
+    std::string user=parts[0].substr(1),sequence=parts[1];
     // Process-owned: a lost Binder reply may leave an in-flight callback until exit.
-    Binder& binder=*new Binder;Request request(binder.call(1012,{requestId,hash,sequence,"read",""}));request.authenticate(requestId,hash);mark("request_validated");
+    Binder& binder=*new Binder;Request request(binder.call(1012,{requestId,hash,sequence,user,kick,"read",""}));
+    request.bind(user,sequence);request.authenticate(requestId,hash);mark("request_validated");
     if(request.command!="policy"){
         // Other commands keep their existing finite implementation and contracts.
-        execl("/system/bin/sh","sh","/system/bin/zui_controld","--oneshot-request",argv[1],argv[2],static_cast<char*>(nullptr));
+        execl("/system/bin/sh","sh","/system/bin/zui_controld","--oneshot-request",argv[1],argv[2],sequence.c_str(),user.c_str(),kick.c_str(),static_cast<char*>(nullptr));
         throw std::runtime_error("legacy command exec");
     }
-    Disk disk("/data/vendor/zui_control/zuicontrol");
-    Receipts receipts{disk,[&](const std::string& ack){require(binder.call(1012,{requestId,hash,sequence,"ack",ack})=="ok=1","ACK reply");}};
+    Disk parent("/data/vendor/zui_control/zuicontrol"),disk(parent,"user-domain-v1");
+    Receipts receipts{disk,[&](const std::string& ack){require(binder.call(1012,{requestId,hash,sequence,user,kick,"ack",ack})=="ok=1","ACK reply");}};
     receipts.point=mark;
-    receipts.reconcile=[&](const Request& prior){return binder.call(1013,{prior.requestId,sha256(prior.text)},true);};
-    receipts.run(request,[&]{mark("T5");auto result=binder.call(1010,{requestId,hash},true);mark("T6");return result;});
+    receipts.reconcile=[&](const Request& prior){require(!prior.user.empty(),"bound recovery required");return binder.call(1013,{prior.requestId,sha256(prior.text),prior.sequence,prior.user},true);};
+    receipts.run(request,[&]{mark("T5");auto result=binder.call(1010,{requestId,hash,sequence,user},true);mark("T6");return result;});
     return 0;
 }
 }

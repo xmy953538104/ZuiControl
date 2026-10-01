@@ -23,7 +23,8 @@ def migrate(db):
     db.execute('PRAGMA user_version=3')
 
 def remove(db,pkg,user=0):
-    for s in sql:
+    method=src.split('private static void remove(',1)[1].split('    void start(',1)[0]
+    for s in re.findall(r'next\.execSQL\("([^"\n]+)"',method):
         if s.startswith('DELETE FROM'):db.execute(s,(user,pkg))
 def start(db,pkg,wall=100,user=0):
     migrate(db);remove(db,pkg,user)
@@ -77,6 +78,14 @@ with tempfile.TemporaryDirectory(prefix='zui-r6-record-') as tmp:
     with db:db.execute(statement('UPDATE record_meta SET ended='),(0,200,'EXPLICIT_STOP','COMPLETE',other))
     assert db.execute('select completion,terminal_reason,end_elapsed from record_meta where id=?',(other,)).fetchone()==('COMPLETE','EXPLICIT_STOP',200)
     assert db.execute('pragma integrity_check').fetchone()==('ok',)
+    # Retiring an Android user removes only its records and children, including
+    # when another user's logical recording is still incomplete.
+    owner_before={name:[r for r in values if (r[3]==0 if name=='record_meta' else r[4]==b)] for name,values in rows(db).items()}
+    with db:
+        method=src.split('void removeUser(',1)[1].split('private static void schema(',1)[0]
+        for text in re.findall(r'next\.execSQL\("([^"\n]+)"',method):db.execute(text,(10,))
+    assert rows(db)==owner_before
+    with db:start(db,'app.a',400,user=10)
     db.close()
     # No file mutation from merely opening the records page.
     raw=path.read_bytes()

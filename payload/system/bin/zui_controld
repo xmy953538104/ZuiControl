@@ -2,6 +2,7 @@
 
 DATA_ROOT=/data/vendor/zui_control
 CONTROL_DIR=$DATA_ROOT/zuicontrol
+REQUEST_CONTROL_ROOT=$CONTROL_DIR
 UPERF_DIR=$DATA_ROOT/uperf
 LOG_DIR=$DATA_ROOT/log
 
@@ -33,14 +34,22 @@ ts() {
     date '+%Y-%m-%d %H:%M:%S'
 }
 
+request_transport() {
+    /system/bin/zui_control_request --transport "$trusted_id" "$trusted_sha256" "$REQUEST_SEQUENCE" "$REQUEST_USER" "$REQUEST_KICK" "$1" "$2"
+}
+
 settings_get_clean() {
-    value="$(settings get system "$1" 2>/dev/null)"
+    value="$(settings --user "$REQUEST_USER" get system "$1" 2>/dev/null)"
     [ "$value" != "null" ] || value=
     printf '%s\n' "$value"
 }
 
 settings_put_quiet() {
-    settings put system "$1" "$2" >/dev/null 2>&1
+    if [ "$1" = "$REQUEST_ACK_KEY" ]; then
+        request_transport ack "$2" >/dev/null 2>&1
+    else
+        settings --user "$REQUEST_USER" put system "$1" "$2" >/dev/null 2>&1
+    fi
 }
 
 atomic_write_text() {
@@ -613,6 +622,9 @@ init_request_state() {
 oneshot_request() {
     trusted_id="${1:-}"
     trusted_sha256="${2:-}"
+    REQUEST_SEQUENCE="${3:-}"
+    REQUEST_USER="${4:-}"
+    REQUEST_KICK="${5:-}"
     [ "$(id -u 2>/dev/null)" = "0" ] || return 126
     timing_mark "${trusted_id:-invalid}" T4 unknown
     ensure_request_dirs || return 1
@@ -620,7 +632,14 @@ oneshot_request() {
         log_line "request kick rejected: invalid authenticated metadata"
         return 0
     fi
-    captured_request="$(settings_get_clean "$REQ_TEXT_KEY")"
+    captured_request="$(request_transport read '')" || return 1
+    request_namespace="$(request_transport namespace '')" || return 1
+    case "$request_namespace" in user-shell-[0-9]*-[0-9]*) ;; *) return 1 ;; esac
+    case "$request_namespace" in *[!a-z0-9-]*) return 1 ;; esac
+    CONTROL_DIR="$REQUEST_CONTROL_ROOT/$request_namespace"
+    mkdir -p "$CONTROL_DIR" && chmod 0700 "$CONTROL_DIR" || return 1
+    LAST_REQUEST_RECEIPT=$CONTROL_DIR/last_request_receipt
+    ACTIVE_REQUEST_CLAIM=$CONTROL_DIR/active_request_claim
     [ -n "$captured_request" ] || return 0
     captured_id="${captured_request%%'|'*}"
     captured_sha256="$(request_sha256 "$captured_request")" || {
@@ -640,7 +659,7 @@ oneshot_request() {
 
 if [ "${ZUI_CONTROLD_TEST_MODE:-0}" != "1" ]; then
     case "${1:-}" in
-        --oneshot-request) shift; oneshot_request "${1:-}" "${2:-}" ;;
+        --oneshot-request) shift; oneshot_request "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
         "") exit 2 ;;
         *) log_line "unknown argument: $1"; exit 2 ;;
     esac

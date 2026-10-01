@@ -27,8 +27,8 @@ $ExtractErofs = Join-Path $ToolsDir 'super-tools\AMD64\extract.erofs.exe'
 $Apktool = Join-Path $ToolsDir 'smali-apk\apktool.jar'
 $Avbtool = Join-Path $ToolsDir 'avb\downloaded\avbtool_aosp_c0af371_1.2.0.py'
 $ReleaseCertSha256 = '3fecf3a72ca0e0f24991d49e7306ef4a711711f48a66070755eb0237ecb3ed94'
-$ExpectedVersionCode = '79'
-$ExpectedVersionName = '0.21.42'
+$ExpectedVersionCode = '80'
+$ExpectedVersionName = '0.21.43'
 $ExpectedUperfSha256 = 'f1265757009ff0c85dd8587d9e7bfcf5e51d10d36fe5e1341688215ae1fb49d8'
 $ExpectedBootSha256 = 'e7e85b5cd2806b8c27adf4925e05ee169072a79a43502effc34c97fb27ee8371'
 $ExpectedBuildFingerprintMarker = 'ZUI_16.1.11.072_241118_PRC'
@@ -455,11 +455,11 @@ try {
     $System = Join-Path $SystemRoot 'system'
     $PlatSelinux = Join-Path $System 'etc\selinux'
     $VendorSelinux = Join-Path $VendorRoot 'etc\selinux'
-    $AppApk = Join-Path $System 'priv-app\ZuiControlV79\ZuiControl.apk'
+    $AppApk = Join-Path $System 'priv-app\ZuiControlV80\ZuiControl.apk'
     $packageDirs = @(Get-ChildItem -LiteralPath (Join-Path $System 'priv-app') -Directory |
         Where-Object { $_.Name -match '^ZuiControlV\d+$' })
-    if ($packageDirs.Count -ne 1 -or $packageDirs[0].Name -ne 'ZuiControlV79') {
-        throw 'Expected exactly one ZuiControlV79 system package directory.'
+    if ($packageDirs.Count -ne 1 -or $packageDirs[0].Name -ne 'ZuiControlV80') {
+        throw 'Expected exactly one ZuiControlV80 system package directory.'
     }
     $Daemon = Join-Path $System 'bin\zui_controld'
     $Uperf = Join-Path $System 'bin\uperf'
@@ -685,7 +685,8 @@ try {
     Assert-Contains $Daemon 'oneshot_request()' 'one-request command entry point'
     Assert-Contains $Daemon '--oneshot-request) shift; oneshot_request "${1:-}" "${2:-}"' 'authenticated one-request argument dispatch'
     Assert-Contains $Daemon '[ "$(id -u 2>/dev/null)" = "0" ] || return 126' 'non-root direct invocation rejection'
-    Assert-Contains $Daemon 'captured_request="$(settings_get_clean "$REQ_TEXT_KEY")"' 'single request capture'
+    Assert-Contains $Daemon 'captured_request="$(request_transport read' 'authenticated per-user request capture'
+    Assert-Contains $Daemon '/system/bin/zui_control_request --transport "$trusted_id" "$trusted_sha256" "$REQUEST_SEQUENCE" "$REQUEST_USER" "$REQUEST_KICK"' 'server-bound user transport'
     Assert-Contains $Daemon 'captured_sha256="$(request_sha256 "$captured_request")"' 'captured request digest binding'
     Assert-Contains $Daemon 'init_request_state "$captured_request"' 'single-capture recovery input'
     Assert-Contains $Daemon 'process_settings_request "$captured_request"' 'single-capture transaction input'
@@ -723,7 +724,7 @@ try {
     $oneshotRequest = Get-ShellFunctionBlock $Daemon 'oneshot_request'
     Assert-OrderedText $oneshotRequest @(
         'timing_mark "${trusted_id:-invalid}" T4 unknown',
-        'captured_request="$(settings_get_clean "$REQ_TEXT_KEY")"',
+        'captured_request="$(request_transport read',
         'process_settings_request "$captured_request"'
     ) 'T4/request-capture/dispatch order'
     Assert-Contains $Daemon '") exit 2 ;;' 'argument-less persistent daemon rejection'

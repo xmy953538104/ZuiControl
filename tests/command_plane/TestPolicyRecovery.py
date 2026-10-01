@@ -31,7 +31,7 @@ def main(prefix):
     with tempfile.TemporaryDirectory() as directory:
         java=Path(directory)/'RecoveryFixture.java';java.write_text(harness,encoding='utf8')
         subprocess.run(['javac','-encoding','UTF-8','-d',directory,
-            *[str(BASE/n) for n in ('PolicyJson.java','GpuRange.java','AppPolicyStore.java')],str(java)],check=True)
+            *[str(BASE/n) for n in ('PolicyJson.java','GpuRange.java','AppPolicyStore.java','RequestIdentity.java')],str(java)],check=True)
         subprocess.run(['java','-cp',directory,'com.zui.server.control.RecoveryFixture',*prefix],check=True,timeout=180)
 
 

@@ -7,6 +7,7 @@ root=Path(__file__).resolve().parents[2]
 src=root/'framework_patch/src/services/com/zui/server/control'
 stubs['org/json/JSONObject.java']=stubs['org/json/JSONObject.java'].replace('public JSONObject(){}','public static final Object NULL=new Object();public JSONObject(){}').replace('public JSONObject put(String k,Object v){','public JSONObject put(String k,Object v)throws JSONException{')
 stubs.update({
+ 'android/os/UserHandle.java':'package android.os;public class UserHandle {public final int id;private UserHandle(int id){this.id=id;}public static UserHandle getUserHandleForUid(int uid){return new UserHandle(uid/100000);}}',
  'android/os/PowerManager.java':'package android.os;public class PowerManager {public static boolean interactive=true;public boolean isInteractive(){return interactive;}}',
  'android/os/SystemClock.java':'package android.os;public class SystemClock {public static long now;public static long elapsedRealtime(){return now;}}',
  'android/os/Handler.java':'''package android.os;import java.util.*;public class Handler {
@@ -21,6 +22,7 @@ stubs.update({
  'android/content/pm/PackageManager.java':'''package android.content.pm;public class PackageManager {
  public Object getApplicationInfo(String p,int f){return p;}public CharSequence getApplicationLabel(Object o){return o.toString();}}''',
  'android/content/Context.java':'''package android.content;public class Context {public static boolean failBattery;
+ public Context createContextAsUser(android.os.UserHandle u,int f){return this;}
  public <T>T getSystemService(Class<T> c){try{return c.getDeclaredConstructor().newInstance();}catch(Exception e){throw new RuntimeException(e);}}
  public Intent registerReceiver(Object r,IntentFilter f){if(failBattery)throw new IllegalStateException("battery fixture");return new Intent();}
  public android.content.pm.PackageManager getPackageManager(){return new android.content.pm.PackageManager();}}''',
@@ -29,6 +31,7 @@ stubs.update({
  void start(String p,String l,int u,int pid,long g,long t,int task,long epoch){if(active)throw new AssertionError();active=true;starts++;writes++;scalarRows=threadRows=0;}
  void append(long t,double f,double p,double q,int pid,long g,List<MonitorSnapshot.Row> r,String validity){lastFps=f;fpsValidity=validity;if(!active)throw new AssertionError();scalarRows++;threadRows+=r.size();writes+=1+r.size();}
  void finish(long n,String reason,boolean incomplete){if(failFinish)throw new IllegalStateException("SQLite finish fixture");if(active){finishes++;writes++;active=false;terminal=reason;MonitorStore.incomplete=incomplete;}}void abandon(){active=false;if(failClose)throw new IllegalStateException("close fixture");}
+ void removeUser(int user){if(user<=0)throw new AssertionError();}
  String read(int u,String key){return "{}";}String list(int u){return "{}";}String delete(int u,String p){return "ok=1";}}''',
  'com/zui/server/control/CollectorTest.java':'''package com.zui.server.control;
  import android.os.*;import android.app.*;import android.content.*;import java.util.*;
@@ -142,6 +145,19 @@ stubs.update({
   MonitorStore.failFinish=MonitorStore.failClose=false;c.register(new Client());c.scene("game",0,true);Handler.next();
   check(c.state().contains("monitorFinalizeError=record_finalize:"));c.register(null);
  }
+ Collector multi=new Collector();Client owner=new Client(),secondary=new Client();
+ multi.register(owner,0);multi.scene("owner.app",0,true);multi.command("full",0,"");
+ check(multi.command("off",10,"").contains("inactive_user")&&multi.session.mode==MonitorSession.FULL);
+ multi.register(secondary,10);check(secondary.calls==0&&multi.session.mode==MonitorSession.FULL);
+ check(!multi.command("state",10,"").contains("owner.app"));
+ multi.scene("secondary.app",10,true);check(multi.session.mode==MonitorSession.OFF);
+ check(!secondary.last.contains("owner.app")&&owner.last.contains("active=false"));
+ multi.command("fps",10,"");int secondaryCalls=secondary.calls;
+ multi.scene("owner.app",0,true);check(multi.session.mode==MonitorSession.FULL);
+ check(!secondary.last.contains("owner.app")&&secondary.calls>=secondaryCalls);
+ multi.unregister(secondary);check(multi.command("state",0,"").contains("owner.app"));
+ multi.register(null);check(HandlerThread.active==0);
+ System.out.println("MONITOR_CROSS_USER_REGISTRATION_COMMAND_SNAPSHOT_DESIRED=PASS");
  java.nio.file.Path thermal=java.nio.file.Files.createTempDirectory("quiet-host-");
  java.nio.file.Path zone=java.nio.file.Files.createDirectory(thermal.resolve("thermal_zone987"));
  java.nio.file.Files.write(zone.resolve("type"),"quiet-therm".getBytes());

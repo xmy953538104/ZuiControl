@@ -23,6 +23,10 @@ void parsers(){
     check(sha256("abc")=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     check(sha256(std::string(1000000,'a'))=="cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
     Request r("request.1|policy|||e30=");r.authenticate(r.requestId,sha256(r.text));
+    r.bind("10",std::string(32,'a'));auto restored=Request::restore(r.stored());
+    check(restored.user=="10"&&restored.sequence==std::string(32,'a')&&restored.text==r.text);
+    rejects([&]{r.bind("-1",std::string(32,'a'));});rejects([&]{r.bind("21475",std::string(32,'a'));});
+    rejects([&]{r.bind("0","bad");});
     rejects([&]{r.authenticate("wrong",sha256(r.text));});rejects([&]{r.authenticate(r.requestId,std::string(64,'0'));});
     for(auto s:{"a|policy||", "../a|policy|||x", "a|policy|unexpected||x", "a|policy|||x\n", "a|policy|||x|extra"})rejects([&]{Request bad(s);});
     Request maximum(std::string("a|policy|||")+std::string(REQUEST_LIMIT-11,'a'));check(maximum.text.size()==REQUEST_LIMIT);
@@ -142,7 +146,19 @@ void reconciliation(){
     check(mutations==1&&observed=="lost|done|policy|ok=1;recoveryOutcome=APPLIED_RECOVERED");
     receipts.run(lost,[&]{++mutations;return "ok=1";});check(mutations==1);
 }
+void userReceipts(){
+    Temp t;Disk d(t.path);Request a("userclaim|policy|||x");a.bind("10",std::string(32,'a'));
+    d.put("active_request_claim",a.stored()+"\n");unsigned calls=0,acks=0;
+    Receipts receipts{d,[&](const std::string&){++acks;}};
+    receipts.reconcile=[&](const Request& old){check(old.user=="10"&&old.sequence==a.sequence);return "ok=1\nrecoveryOutcome=APPLIED_RECOVERED";};
+    receipts.run(a,[&]{++calls;return "ok=1";});check(calls==0&&acks==1);
+    Request wrong=a;wrong.bind("0",std::string(32,'a'));receipts.run(wrong,[&]{++calls;return "ok=1";});check(calls==0&&acks==1);
+    Request next("otheruser|policy|||x");next.bind("0",std::string(32,'b'));
+    receipts.run(next,[&]{++calls;return "ok=1";});check(calls==1&&acks==3);
+    check(d.read("last_request_receipt").find(next.stored()+"\n")==0);
+}
 int main(int argc,char** argv){try{
+    userReceipts();
     if(argc==2&&std::string(argv[1])=="--portable-core"){
         parsers();projections();concurrentModeReadback();replay();crashes();reconciliation();
         std::cout<<"NATIVE_PORTABLE_CORE_PASS checks="<<checks<<" LINUX_DAC_SECURITY_NOT_RUN\n";return 0;

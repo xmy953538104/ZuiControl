@@ -97,7 +97,24 @@ final class SettingsBackup {
     final AppPolicyStore policy;
     SettingsBackup(AppPolicyStore policy){this.policy=policy;}
     byte[] prefs()throws Exception{
-        byte[] value=policy.disk.read(PREFS);return value.length==0?bytes(defaultPreferences(policy.current.users)):preferences(value,policy.current.users);
+        return prefs(policy.current.users);
+    }
+    byte[] prefs(Map<Integer,Long> users)throws Exception{
+        byte[] value=policy.disk.read(PREFS);
+        Map<String,Object> next=defaultPreferences(users);
+        if(value.length==0)return bytes(next);
+        // Validate the saved schema first, then project only identical user/serial pairs.
+        // Archive validation remains exact-inventory; this is live user lifecycle only.
+        Map<String,Object> old=object(parse(value));Map<Integer,Long> saved=new TreeMap<>();
+        for(Object item:array(old.get("users"))){Map<String,Object> row=object(item);
+            require(saved.put(AppPolicyStore.user(row.get("userId")),integer(row.get("serial")))==null,"preferences duplicate user");}
+        preferences(value,saved);
+        List<Object> rows=array(next.get("users"));
+        for(int i=0;i<rows.size();i++)for(Object item:array(old.get("users"))){
+            Map<String,Object> row=object(item),target=object(rows.get(i));
+            if(integer(row.get("userId"))==integer(target.get("userId"))&&integer(row.get("serial"))==integer(target.get("serial")))rows.set(i,row);
+        }
+        return preferences(bytes(next),users);
     }
     boolean busy()throws Exception{
         byte[] raw=policy.disk.read(JOURNAL);if(raw.length==0)return false;
