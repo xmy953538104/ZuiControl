@@ -91,6 +91,11 @@ final class UperfImportCommand {
                 java.util.Set<String> protectedIds=new java.util.HashSet<>();Map<String,Object> selected=store.selection();
                 for(String name:files.names())if(name.matches("uperf-upload-[0-9a-f]{24}\\.json")){
                     Map<String,Object> meta=object(parse(files.read(name)));
+                    // Selection can commit before selectedGeneration is persisted.
+                    // Protect that crash window, including startup completion/rollback.
+                    long expected=integer(meta.get("generation")),active=integer(selected.get("generation"));
+                    if(expected+1==active||(expected+2==active&&selected.get("state").equals("ROLLED_BACK")))
+                        protectedIds.add(name.substring(13,37));
                     if(meta.containsKey("selectedGeneration")){
                         long g=integer(meta.get("selectedGeneration")),current=integer(selected.get("generation"));
                         if(g==current||(g+1==current&&selected.get("state").equals("ROLLED_BACK")))protectedIds.add(name.substring(13,37));
@@ -121,7 +126,17 @@ final class UperfImportCommand {
                 byte[] archive = files.read("uperf-upload-" + tx + ".bin"); require(archive.length == integer(meta.get("size")) && hash(archive).equals(meta.get("hash")), "upload integrity");
                 if (meta.containsKey("selectedGeneration")) restartGeneration = integer(meta.get("selectedGeneration"));
                 else {
-                    restartGeneration = store.resumeStage(archive, integer(meta.get("generation"))); meta.put("selectedGeneration", restartGeneration);
+                    byte[] beforeSelection=files.read(UperfConfigStore.ACTIVE);
+                    try{restartGeneration = store.resumeStage(archive, integer(meta.get("generation")));}
+                    catch(IllegalArgumentException rejected){
+                        Map<String,Object> unchanged=store.selection();
+                        if(Arrays.equals(beforeSelection,files.read(UperfConfigStore.ACTIVE))
+                                &&integer(unchanged.get("generation"))==integer(meta.get("generation"))&&!unchanged.get("state").equals("PENDING")){
+                            meta.put("transferState","REJECTED");files.write("uperf-upload-"+tx+".json",bytes(meta));
+                        }
+                        throw rejected;
+                    }
+                    meta.put("selectedGeneration", restartGeneration);
                     files.write("uperf-upload-" + tx + ".json", bytes(meta));
                 }
             } else if (action.equals("ui_reset")) {

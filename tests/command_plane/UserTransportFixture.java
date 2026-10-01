@@ -98,6 +98,19 @@ public class UserTransportFixture {
         String refusal=f.utilityCommand("submit",backup);
         check(refusal.contains("settings_primary_user_required")&&refusal.contains("DEFINITIVE_NOT_ADMITTED"));
         check(f.utilityCommand("submit","allowed_utility|zo_state|||").startsWith("ok=1"));
+        for(String reason:new String[]{"settings_primary_user_required","policy_store_unavailable","policy_user_mismatch","request_busy","request_transport_bound","request_payload_mismatch"}){
+            check(f.requestRefused(10,"never_admitted",reason).contains("DEFINITIVE_NOT_ADMITTED"));
+            check(f.requestRefused(10,"allowed_utility",reason).contains("INDETERMINATE_OR_IN_PROGRESS"));
+        }
+        byte[] admission=f.disk.read("control-admission.json");f.disk.write("control-admission.json",new byte[]{1});
+        check(f.requestRefused(10,"never_admitted","request_busy").contains("INDETERMINATE_OR_IN_PROGRESS"));f.disk.write("control-admission.json",admission);
+        AppPolicyStore saved=f.mAppPolicies;f.mAppPolicies=null;
+        check(f.requestRefused(10,"never_admitted","policy_store_unavailable").contains("INDETERMINATE_OR_IN_PROGRESS"));f.mAppPolicies=saved;
+        RequestIdentity utility=RequestIdentity.read(object(parse(admission)).get("identity"));
+        check(f.utilityCommand("ack","allowed_utility").contains("INDETERMINATE_OR_IN_PROGRESS"));
+        f.utilities().publish(utility,"rulesState","current");f.utilities().acknowledge(utility,"allowed_utility|done|zo_state|ok");
+        check(f.utilityCommand("ack","allowed_utility").contains("ADMITTED_TERMINAL"));
+        check(f.utilityCommand("result","allowed_utility|rulesState").contains("ADMITTED_TERMINAL"));
         java.lang.System.out.println("USER_TRANSPORT_PRODUCTION_GUARDS_PASS checks="+checks);
     }
 }

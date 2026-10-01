@@ -959,7 +959,19 @@ public final class ZuiControlService extends Binder {
             }else PolicyJson.require("sb_recover".equals(action),"settings action");
             publishPolicySettings();mMonitor.invalidatePower();return "ok=1\nsettingsPhase="+
                 PolicyJson.string(PolicyJson.object(PolicyJson.parse(mAppPolicies.disk.read(SettingsBackup.JOURNAL))).get("phase"));
-        }catch(Exception e){return "ok=0\nerror=settings:"+e.getClass().getSimpleName()+":"+safe(e.getMessage());}
+        }catch(Exception e){
+            if(e instanceof IllegalArgumentException&&"sb_restore".equals(action)&&argument!=null&&argument.matches("[0-9a-f]{24}")){
+                try{
+                    byte[] raw=mAppPolicies.disk.read(SettingsBackup.JOURNAL);
+                    boolean referenced=raw.length!=0&&argument.equals(PolicyJson.object(PolicyJson.parse(raw)).get("transaction"));
+                    if(!referenced){
+                        String path="settings-upload-"+argument+".json";Map<String,Object> meta=PolicyJson.object(PolicyJson.parse(mAppPolicies.disk.read(path)));
+                        meta.put("transferState","REJECTED");mAppPolicies.disk.write(path,PolicyJson.bytes(meta));
+                    }
+                }catch(Exception uncertain){ /* Retain evidence if durable rejection cannot be established. */ }
+            }
+            return "ok=0\nerror=settings:"+e.getClass().getSimpleName()+":"+safe(e.getMessage());
+        }
         finally{Binder.restoreCallingIdentity(identity);}
     }
     private String settingsTransport(String action,String argument,int user)throws Exception{
@@ -1281,8 +1293,7 @@ public final class ZuiControlService extends Binder {
                 + "\neditableDisplayHz=" + editableDisplayHz() + policyStateLines();
     }
 
-    // Settings is only the existing request/ACK transport. This root-only bridge
-    // does not admit a request, choose a target, or mutate policy authority.
+    // Explicit-user Settings access is retained for migration and non-sensitive compatibility only.
     private String getSettingForUser(String key,int user) {
         try{return (String)Settings.System.class.getMethod("getStringForUser",android.content.ContentResolver.class,String.class,int.class)
                 .invoke(null,mContext.getContentResolver(),key,user);}
@@ -1322,7 +1333,7 @@ public final class ZuiControlService extends Binder {
             Map<Integer,Long> inventory=policyUsers();
             PolicyJson.require(mAppPolicies!=null&&mAppPolicies.current!=null&&inventory.containsKey(user)
                     &&(!mAppPolicies.current.users.containsKey(user)||java.util.Objects.equals(mAppPolicies.current.users.get(user),inventory.get(user))),"user_inventory_not_admitted");
-            UtilityTransport transport=utilities();String result;
+            UtilityTransport transport=utilities();String result,category="INDETERMINATE_OR_IN_PROGRESS";
             if("submit".equals(action)){
                 id=argument==null?"":argument.split("\\|",-1)[0];
                 String[] fields=UtilityTransport.fields(argument);
@@ -1332,9 +1343,10 @@ public final class ZuiControlService extends Binder {
                 return notifyControlRequest(id,sha256(argument),user);
             }else if("ack".equals(action)){
                 PolicyJson.require(validRequestId(argument),"utility request ID");result=transport.ack(user,argument);
+                String[] ack=result.split("\\|",-1);if(ack.length==4&&("done".equals(ack[1])||"failed".equals(ack[1])))category="ADMITTED_TERMINAL";
             }else if("result".equals(action)){
                 String[] fields=argument.split("\\|",-1);PolicyJson.require(fields.length==2&&validRequestId(fields[0]),"utility result request");
-                result=transport.result(user,fields[0],fields[1]);
+                result=transport.result(user,fields[0],fields[1]);category="ADMITTED_TERMINAL";
             }else{
                 PolicyJson.require("uperfRules".equals(action)&&"".equals(argument),"utility action");
                 StringBuilder rows=new StringBuilder();
@@ -1343,7 +1355,7 @@ public final class ZuiControlService extends Binder {
                 }
                 result=rows.toString();
             }
-            return "ok=1\ndata="+java.util.Base64.getEncoder().encodeToString(result.getBytes(StandardCharsets.UTF_8));
+            return "ok=1\nresultCategory="+category+"\ndata="+java.util.Base64.getEncoder().encodeToString(result.getBytes(StandardCharsets.UTF_8));
         }catch(Exception e){
             String reason=safe(e.getMessage());
             if("submit".equals(action)&&java.util.Arrays.asList("request_transport_bound","request_payload_mismatch","request_busy","policy_store_unavailable").contains(reason))

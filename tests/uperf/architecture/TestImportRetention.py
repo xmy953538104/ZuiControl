@@ -46,6 +46,24 @@ public class ImportRetentionFixture{
  System.out.println("attempts=300 accepted="+accepted+" rejected="+rejected+" payloadCount="+count+" payloadBytes="+bytes);
  if(accepted==0)throw new AssertionError("no upload admitted");
  if(count>16||bytes>16L*UperfConfigStore.LIMIT)throw new AssertionError("expired Uperf upload retention unbounded");
+ byte[] selectedBefore=disk.read(UperfConfigStore.ACTIVE);
+ for(int i=300;i<600;i++){
+  String tx=String.format("%024x",i);UperfImportCommand.run("ui_begin",tx+":"+data.length+":"+hash(data)+":0");
+  UperfImportCommand.run("ui_chunk",tx+":0:"+Base64.getEncoder().encodeToString(data));boolean refused=false;
+  try{UperfImportCommand.run("ui_commit",tx+":");}catch(IllegalArgumentException expected){refused=true;}
+  if(!refused||!Arrays.equals(selectedBefore,disk.read(UperfConfigStore.ACTIVE)))throw new AssertionError("invalid import changed selection");
+  if(!object(parse(disk.read("uperf-upload-"+tx+".json"))).get("transferState").equals("REJECTED"))throw new AssertionError("rejection state not durable");
+ }
+ count=0;for(String name:disk.names())if(name.endsWith(".bin"))count++;
+ if(count>2)throw new AssertionError("rejected payload retention unbounded: "+count);
+ // Crash after selection commit, before upload.selectedGeneration is persisted.
+ String recover="d".repeat(24);UperfImportCommand.run("ui_begin",recover+":"+data.length+":"+hash(data)+":0");
+ UperfImportCommand.run("ui_chunk",recover+":0:"+Base64.getEncoder().encodeToString(data));
+ disk.write(UperfConfigStore.ACTIVE,bytes(map("schema",1,"generation",1,"hash",UperfConfigStore.FACTORY_HASH,"previous",UperfConfigStore.FACTORY_HASH,"state","PENDING","rejected","")));
+ android.os.SystemClock.time+=600001;
+ UperfImportCommand.run("ui_begin","e".repeat(24)+":"+data.length+":"+hash(data)+":1");
+ if(disk.read("uperf-upload-"+recover+".bin").length!=data.length)throw new AssertionError("pending selection recovery upload deleted");
+ System.out.println("INVALID_IMPORT_300_BOUNDED=PASS SELECTION_CRASH_WINDOW_PRESERVED=PASS");
  }
 }''')
     classes=['PolicyJson.java','GpuRange.java','AppPolicyStore.java','SettingsBackup.java','UperfConfigStore.java']
