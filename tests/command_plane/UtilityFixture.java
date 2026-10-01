@@ -6,7 +6,7 @@ public class UtilityFixture {
  interface Work {void run()throws Exception;}
  static void check(boolean value){if(!value)throw new AssertionError("utility check "+checks);checks++;}
  static void rejects(Work work)throws Exception{try{work.run();}catch(IllegalArgumentException expected){checks++;return;}throw new AssertionError("accepted invalid utility");}
- static RequestIdentity identity(int user,String request,Map<Integer,Long> users){return new RequestIdentity(user,users.get(user),UtilityTransport.fields(request)[0],hash(request.getBytes(java.nio.charset.StandardCharsets.UTF_8)),"1".repeat(32));}
+ static RequestIdentity identity(int user,String request,Map<Integer,Long> users){return new RequestIdentity(user,users.get(user),UtilityTransport.fields(request).id,hash(request.getBytes(java.nio.charset.StandardCharsets.UTF_8)),"1".repeat(32));}
  public static void main(String[] args)throws Exception{
   AppPolicyFixture.Disk disk=new AppPolicyFixture.Disk();Map<Integer,Long> users=new TreeMap<>();users.put(0,0L);users.put(10,42L);
   UtilityTransport t=new UtilityTransport(disk,users);String first="first|export_logs|||";RequestIdentity id=identity(0,first,users);

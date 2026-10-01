@@ -55,6 +55,7 @@ jobs:
           python3 tests/command_plane/TestPrivateUtility.py 2>&1 | tee "$RUNNER_TEMP/command-native/utility.txt"
           python3 tests/command_plane/TestDiagnosticDump.py 2>&1 | tee "$RUNNER_TEMP/command-native/dump.txt"
           python3 tests/command_plane/TestUploadRetention.py 2>&1 | tee "$RUNNER_TEMP/command-native/uploads.txt"
+          python3 tests/command_plane/TestUtilityWireContract.py --native 2>&1 | tee "$RUNNER_TEMP/command-native/utility-wire.txt"
           python3 tests/command_plane/TestExportPublication.py 2>&1 | tee "$RUNNER_TEMP/command-native/export.txt"
           python3 tests/monitor/TestMonitorRetirement.py 2>&1 | tee "$RUNNER_TEMP/command-native/monitor-retirement.txt"
           clang++ -std=c++17 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \

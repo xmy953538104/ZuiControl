@@ -1,6 +1,7 @@
 """Exercise the service's exact backup transport, with only disk/clock fixtures."""
 from pathlib import Path
 import subprocess, tempfile
+from UtilityWireContract import java_encoder
 ROOT=Path(__file__).resolve().parents[2]
 BASE=ROOT/'framework_patch/src/services/com/zui/server/control'
 source=(BASE/'ZuiControlService.java').read_text('utf8')
@@ -30,7 +31,7 @@ public class RetentionFixture {
  static class SystemClock {static long time=1000;static long elapsedRealtime(){return time;}}
  Map<Integer,Long> policyUsers(){return Collections.singletonMap(0,0L);}
  RetentionFixture()throws Exception{disk.write(AppPolicyStore.ACTIVE,AppPolicyStore.migrate("version=1\\n".getBytes(),"balance\\n".getBytes(),new byte[0],"balance","",policyUsers(),Collections.emptySet()).state.bytes());mAppPolicies=new AppPolicyStore(disk);}
-'''+method+'''
+'''+java_encoder()+method+'''
  public static void main(String[] args)throws Exception{
  RetentionFixture f=new RetentionFixture();byte[] payload=new byte[8192];Arrays.fill(payload,(byte)71);
  int accepted=0,rejected=0;
@@ -57,12 +58,45 @@ public class RetentionFixture {
  String keep="d".repeat(24);
  f.settingsTransport("backupBegin",encode(map("transaction",keep,"size",payload.length,"hash",hash(payload))),0);
  f.settingsTransport("backupChunk",encode(map("transaction",keep,"offset",0,"data",Base64.getEncoder().encodeToString(payload))),0);
- String request="restore|sb_restore|||"+keep;f.utilities().stage(0,request);
+ String request=appWire("restore","sb_restore",keep,"");f.utilities().stage(0,request);
  RequestIdentity id=new RequestIdentity(0,0L,"restore",f.sha256(request),"1".repeat(32));
  f.disk.write("control-admission.json",bytes(map("identity",id.json(),"terminal",false)));
  SystemClock.time+=600001;
  f.settingsTransport("backupBegin",encode(map("transaction","e".repeat(24),"size",payload.length,"hash",hash(payload))),0);
  if(f.disk.read("settings-upload-"+keep+".zip").length!=payload.length)throw new AssertionError("admitted restore payload deleted");
+ // Same authenticated request remains protected after terminal ACK while replay-referenced.
+ f.disk.write("control-admission.json",bytes(map("identity",id.json(),"terminal",true)));
+ if(!f.settingsUploadProtection().contains(keep))throw new AssertionError("replay reference lost");
+ for(String[] args2:new String[][]{{"",keep},{"",""},{keep,keep},{"bad",""}}){
+  RetentionFixture bad=new RetentionFixture();String wire=appWire("bad","sb_restore",args2[0],args2[1]);
+  bad.utilities().stage(0,wire);RequestIdentity bid=new RequestIdentity(0,0L,"bad",bad.sha256(wire),"2".repeat(32));
+  bad.disk.write("control-admission.json",bytes(map("identity",bid.json(),"terminal",false)));
+  if(!bad.settingsUploadProtection().isEmpty())throw new AssertionError("invalid restore wire protected");
+ }
+ for(RequestIdentity bad:new RequestIdentity[]{
+   new RequestIdentity(0,0L,"other",id.sha,id.sequence),new RequestIdentity(0,0L,id.id,"0".repeat(64),id.sequence),
+   new RequestIdentity(1,0L,id.id,id.sha,id.sequence),new RequestIdentity(0,0L,id.id,id.sha,"2".repeat(32))}){
+  boolean denied=false;try{f.utilities().admitted(bad);}catch(IllegalArgumentException expected){denied=true;}
+  if(!denied)throw new AssertionError("admission identity mismatch accepted");
+ }
+ // Real protection rejects fabricated hash/ID/serial; no request text alone grants protection.
+ f.disk.write("control-admission.json",bytes(map("identity",new RequestIdentity(0,0L,"restore","0".repeat(64),id.sequence).json(),"terminal",false)));
+ if(f.settingsUploadProtection().contains(keep))throw new AssertionError("wrong hash protected");
+ f.disk.write("control-admission.json",bytes(map("identity",new RequestIdentity(1,0L,"restore",id.sha,id.sequence).json(),"terminal",false)));
+ if(f.settingsUploadProtection().contains(keep))throw new AssertionError("wrong user protected");
+ f.disk.remove("control-admission.json");
+ f.disk.write(SettingsBackup.JOURNAL,bytes(map("transaction",keep)));
+ AppPolicyStore.Uploads.prune(f.disk,"settings-upload-",".zip",f.mUploadEpoch,SystemClock.time,f.settingsUploadProtection(),SettingsBackup.LIMIT);
+ if(f.disk.read("settings-upload-"+keep+".zip").length!=payload.length)throw new AssertionError("journal upload deleted");
+ f.disk.remove(SettingsBackup.JOURNAL);
+ Map<String,Object> done=object(parse(f.disk.read("settings-upload-"+keep+".json")));done.put("completed",true);f.disk.write("settings-upload-"+keep+".json",bytes(done));
+ AppPolicyStore.Uploads.prune(f.disk,"settings-upload-",".zip",f.mUploadEpoch,SystemClock.time,Collections.emptySet(),SettingsBackup.LIMIT);
+ if(f.disk.read("settings-upload-"+keep+".zip").length!=0)throw new AssertionError("unreferenced completed upload retained");
+ if(f.disk.read("settings-upload-"+"e".repeat(24)+".json").length==0)throw new AssertionError("active current upload deleted");
+ f.disk.write("unknown-payload",payload);f.disk.write("settings-upload-"+"f".repeat(24)+".json",bytes(map("size",8192)));
+ AppPolicyStore.Uploads.prune(f.disk,"settings-upload-",".zip",f.mUploadEpoch,SystemClock.time+700000,Collections.emptySet(),SettingsBackup.LIMIT);
+ if(f.disk.read("unknown-payload").length!=8192||f.disk.read("settings-upload-"+"f".repeat(24)+".json").length==0)throw new AssertionError("unknown file deleted");
+ System.out.println("REAL_WIRE_NEGATIVES=PASS JOURNAL_REPLAY_PROTECTION=PASS COMPLETED_RETIREMENT=PASS NO_ACTIVE_UPLOAD_DELETION=PASS");
  System.out.println("INVALID_RESTORE_300_BOUNDED=PASS ADMITTED_RESTORE_PRESERVED=PASS");
  }
 }'''

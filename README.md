@@ -59,6 +59,7 @@ python tests/command_plane/TestNativeTransportContract.py
 python tests/command_plane/TestPrivateUtility.py
 python tests/command_plane/TestDiagnosticDump.py
 python tests/command_plane/TestUploadRetention.py
+python tests/command_plane/TestUtilityWireContract.py
 python tests/command_plane/TestExportPublication.py
 python tests/monitor/TestMonitorRetirement.py
 python tests/uperf/startup/TestPostCutoverBootstrap.py
@@ -67,6 +68,12 @@ clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/command_plane/RecoveryPeer.cp
 mkdir -m 700 /tmp/policy-recovery-fixture
 python tests/command_plane/TestPolicyRecovery.py /tmp/recovery-peer /tmp/policy-recovery-fixture
 ```
+
+Cross-layer wire fixtures must bind production producer bytes, the consumer
+parser, and business argument interpretation. A handwritten wire alone is not
+sufficient when production encoders/parsers exist. Utility fixtures derive their
+grammar from `ZuiControlRequest.buildRequestText`; the native workflow also runs
+`TestUtilityWireContract.py --native` against the production native parser.
 
 The recovery suite composes exact service admission/transaction slices,
 AppPolicyStore journal recovery, native Receipts and native Projection through a
