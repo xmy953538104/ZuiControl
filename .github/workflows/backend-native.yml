@@ -81,6 +81,11 @@ jobs:
       - name: Native rule evaluator parity
         if: ${{ !cancelled() }}
         run: python3 tests/zuiopt/TestNativeRuleParity.py "$RUNNER_TEMP/zuiopt-fixture" 2>&1 | tee "$RUNNER_TEMP/native-gate/parity.log"
+      - name: Crash gate under real manager lock contention
+        if: ${{ !cancelled() }}
+        run: |
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptCrashGateTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-crash-gate"
+          sudo timeout --kill-after=2s 10s "$RUNNER_TEMP/zuiopt-crash-gate" 2>&1 | tee "$RUNNER_TEMP/native-gate/crash-gate.log"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
