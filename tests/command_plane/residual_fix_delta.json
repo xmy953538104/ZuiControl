@@ -3,6 +3,19 @@
   "scope": "Owner FINAL_BACKEND_FIX_BATCH_V81_R1; seven authorized residual fixes only",
   "files": [
     {
+      "path": "app/build.gradle.kts",
+      "beforeSha256": "7b9c693761aba495a5e886e54124cba501d2e9798dd6d548573650a43606f502",
+      "afterSha256": "de4dd743085482114daae481551a23afe8536ff216d4285ef9dd0df9aa63ec3f",
+      "before": "100644 blob e747a31a62bee77d9c98e26f56d6b08ee8e3690a\tapp/build.gradle.kts",
+      "after": "100644 blob 45da2c7e733a9b52bb34d0fa608c800f83fb67fe\tapp/build.gradle.kts",
+      "hunks": [
+        {
+          "before": "\n    defaultConfig {\n        applicationId = \"com.zui.zuicontrol\"\n        minSdk = 29\n        targetSdk = 30\n        versionCode = 80\n        versionName = \"0.21.43\"\n    }\n\n    signingConfigs {\n        create(\"release\") {\n            val storeFilePath = providers.gradleProperty(\"zuicontrol.storeFile\").orNull\n",
+          "after": "\n    defaultConfig {\n        applicationId = \"com.zui.zuicontrol\"\n        minSdk = 29\n        targetSdk = 30\n        versionCode = 81\n        versionName = \"0.21.44\"\n    }\n\n    signingConfigs {\n        create(\"release\") {\n            val storeFilePath = providers.gradleProperty(\"zuicontrol.storeFile\").orNull\n"
+        }
+      ]
+    },
+    {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "beforeSha256": "8d415ba8be106930e21b82a415dd998eee2337a8ca71bed410f1f8e29b369772",
       "afterSha256": "28834e62c1c9599e3311d6d31af87d65a39a0956a05e3cbddc48937510249ecb",
@@ -250,6 +263,19 @@
         {
           "before": "    }\n    bool failed(){return root.exists(\"failure.v1\");}\n    std::string bootState(){return failed()?\"FAILSAFE\":\"READY_TO_START\";}\n    std::string failureState(){return std::string(\"thread_manager=ZUIOPT\\nfailure=\")+(failed()?\"1\":\"0\")+\"\\n\";}\n    void resetFailure(){\n        require(failed(),\"no persistent failure\");\n        // Validate both before deleting either. Clear failure last; partial I/O\n        // failure therefore remains safe. Never signal/restart the running boot.\n        root.get(\"failure.v1\",128);root.get(\"crashes.v1\",256,true);\n        root.remove(\"crashes.v1\");root.remove(\"failure.v1\");\n    }\n    void failure(){root.put(\"failure.v1\",\"ZUIOPT_FAILURE_V1\\n\"+trim(read(\"/proc/sys/kernel/random/boot_id\"))+\"\\n\");}\n    bool crash(){\n        auto boot=trim(read(\"/proc/sys/kernel/random/boot_id\"));auto lines=fields(root.get(\"crashes.v1\",256,true),'\\n');std::vector<int64_t> times;\n        if(!lines.empty()&&lines[0]==boot)for(size_t i=1;i<lines.size();i++)if(!lines[i].empty()){require(rx(lines[i],\"[0-9]{1,16}\")&&times.size()<3,\"crash history\");auto t=std::stoll(lines[i]);if(t<=now()&&now()-t<=60000)times.push_back(t);}\n        times.push_back(now());if(times.size()>=3){failure();return true;}\n        std::string data=boot+\"\\n\";for(auto t:times)data+=std::to_string(t)+\"\\n\";root.put(\"crashes.v1\",data);return false;\n    }\n};\n}\n",
           "after": "    }\n    bool failed(){return root.exists(\"failure.v1\");}\n    std::string bootState(){return failed()?\"FAILSAFE\":\"READY_TO_START\";}\n    std::string failureState(){return std::string(\"thread_manager=ZUIOPT\\nfailure=\")+(failed()?\"1\":\"0\")+\"\\n\";}\n    void resetFailure(){\n        CrashLock lock(root);\n        require(failed(),\"no persistent failure\");\n        // Validate both before deleting either. Clear failure last; partial I/O\n        // failure therefore remains safe. Never signal/restart the running boot.\n        root.get(\"failure.v1\",128);root.get(\"crashes.v1\",256,true);\n        root.remove(\"crashes.v1\");root.remove(\"failure.v1\");\n    }\n    void failure(){crashFailure(root);}\n    bool crash(){return accountCrash(root);}\n};\n}\n"
+        }
+      ]
+    },
+    {
+      "path": "payload/README.txt",
+      "beforeSha256": "8732703e895811a1a219faa5730d90e231852d9f20c127fef6c9153abd8c2b3c",
+      "afterSha256": "a1f1ea2f658c4347c24c22279553f90e5afb41919588d9b4b25dc420707317c6",
+      "before": "100644 blob 703b9b9f4f409cc0e1c7249cee6b0fdc497836b4\tpayload/README.txt",
+      "after": "100644 blob 1e54274969046dc5c53c0dc3e98ecb656f159e29\tpayload/README.txt",
+      "hunks": [
+        {
+          "before": "ZuiControl production payload \u2014 App V80 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV80/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n",
+          "after": "ZuiControl production payload \u2014 App V81 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV81/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n"
         }
       ]
     },
