@@ -70,6 +70,7 @@ public class RecoveryFixture {
     static final class Monitor {void removeUser(int user){throw new AssertionError("fixture inventory unchanged");}}
     final Monitor mMonitor=new Monitor();
     void publishPolicySettings(){hit("settings_projection");}
+    /* REFUSAL */
     String admit(String id,String sha256)throws Exception {
         int policyCallerUser=callerUser;Map<Integer,Long> inventory=mAppPolicies.current.users;
         RequestIdentity admitted=new RequestIdentity(callerUser,inventory.get(callerUser),id,sha256,UUID.randomUUID().toString().replace("-",""));

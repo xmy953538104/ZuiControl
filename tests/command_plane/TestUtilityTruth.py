@@ -58,15 +58,21 @@ object SystemClock{var n=1000L;fun elapsedRealtime()=n++;fun elapsedRealtimeNano
     'Log.kt':'''package android.util
 object Log{fun i(t:String,s:String)=0}''',
     'Client.kt':'''package com.zui.zuicontrol
-object ZuiControlClient{data class Reply(val ok:Boolean,val text:String);var refusal="settings_primary_user_required";var kicks=0
+object ZuiControlClient{data class Reply(val ok:Boolean,val text:String);var refusal="settings_primary_user_required";var kicks=0;var category="DEFINITIVE_NOT_ADMITTED"
  fun sendPolicy(c:android.content.Context,a:String,p:String,s:String,mode:String="")="unused"
  fun stateValue(s:String,k:String)=s.lineSequence().firstOrNull{it.startsWith("$k=")}?.substringAfter('=')
- fun notifyControlRequest(id:String,sha:String):Reply{kicks++;return if(refusal.isEmpty())Reply(true,"ok=1") else Reply(false,"ok=0\\nerror=$refusal\\nresultCategory=DEFINITIVE_NOT_ADMITTED")}}
+ fun utilityValue(action:String,arg:String)=""
+ fun utility(action:String,arg:String):Reply{kicks++;return if(refusal.isEmpty())Reply(true,"ok=1") else Reply(false,"ok=0\\nerror=$refusal\\nresultCategory=$category")}}
 fun main(){for(reason in listOf("settings_primary_user_required","policy_store_unavailable","policy_user_mismatch","request_busy","request_transport_bound","request_payload_mismatch")){
  val c=android.content.Context();ZuiControlClient.refusal=reason
  val rejected=runCatching{ZuiControlRequest.send(c,"sb_export")}.isFailure
  check(rejected&&c.prefs.values.isEmpty()){ "definitive refusal retained pending: $reason" }
  ZuiControlClient.refusal="";check(ZuiControlRequest.send(c,"status").isNotEmpty())
+}
+for(reason in listOf("request_busy","request_payload_mismatch","Binder transport lost","policy_request:IOException")){
+ val c=android.content.Context();ZuiControlClient.refusal=reason;ZuiControlClient.category="INDETERMINATE_OR_IN_PROGRESS"
+ val id=ZuiControlRequest.send(c,"policy");check(c.prefs.values.isNotEmpty())
+ check(runCatching{ZuiControlRequest.send(c,"status")}.isFailure&&c.prefs.values.values.contains(id))
 }
 println("UTILITY_DEFINITIVE_REJECTION_NEXT_REQUEST=PASS")}
 ''',

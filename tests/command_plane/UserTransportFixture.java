@@ -31,7 +31,7 @@ public class UserTransportFixture {
     interface Work {void run()throws Exception;}
     static int checks;
     static void check(boolean v){if(!v)throw new AssertionError("check "+checks);checks++;}
-    void rejects(Work work)throws Exception{int r=reads.size(),w=writes.size();try{work.run();}catch(IllegalArgumentException expected){check(reads.size()==r&&writes.size()==w);return;}throw new AssertionError("invalid identity accepted");}
+    void rejects(Work work)throws Exception{int r=reads.size(),w=writes.size(),d=disk.writes;try{work.run();}catch(IllegalArgumentException expected){check(reads.size()==r&&writes.size()==w&&disk.writes==d);return;}throw new AssertionError("invalid identity accepted");}
     UserTransportFixture()throws Exception{
         inventory.put(0,0L);inventory.put(10,42L);
         AppPolicyStore.State state=AppPolicyStore.migrate("version=1\n".getBytes(),"balance\n".getBytes(),new byte[0],"balance","",inventory,Collections.emptySet()).state;
@@ -39,7 +39,7 @@ public class UserTransportFixture {
     }
     String request(String id,int user){return id+"|policy|||"+Base64.getEncoder().encodeToString(bytes(map("userId",user,"generation",1)));}
     RequestIdentity admit(String id,int user)throws Exception{
-        String text=request(id,user);putSettingForUser(SETTING_REQUEST_TEXT,text,user);Binder.uid=user*100000+10042;
+        String text=request(id,user);utilities().stage(user,text);Binder.uid=user*100000+10042;
         check(notifyControlRequest(id,sha256(text)).startsWith("ok=1"));
         return RequestIdentity.read(object(parse(disk.read("control-admission.json"))).get("identity"));
     }
@@ -70,8 +70,10 @@ public class UserTransportFixture {
             int writeCount=f.writes.size();
             try{f.transport(i,user,"invalid","");throw new AssertionError();}catch(IllegalArgumentException expected){check(f.writes.size()==writeCount);}
             f.putSettingForUser(SETTING_REQUEST_TEXT,"changed",user);
-            try{f.transport(i,user,"read","");throw new AssertionError();}catch(IllegalArgumentException expected){check(f.writes.size()==writeCount+1);}
-            f.putSettingForUser(SETTING_REQUEST_TEXT,f.request(id,user),user);
+            check(f.transport(i,user,"read","").equals(f.request(id,user))); // Public legacy Settings cannot replace authenticated private input.
+            String slot="utility-u"+user+".json";byte[] saved=f.disk.read(slot);
+            Map<String,Object> damaged=object(parse(saved));damaged.put("request","changed");f.disk.write(slot,bytes(damaged));
+            f.rejects(()->f.transport(i,user,"read",""));f.disk.write(slot,saved);
             for(String ack:new String[]{"wrong|done|policy|x",id+"|done|other|x",id+"|unknown|policy|x",id+"|done|policy|x\n",id+"|done|policy|x|extra"}){
                 int before=f.writes.size();try{f.transport(i,user,"ack",ack);throw new AssertionError();}catch(IllegalArgumentException expected){check(f.writes.size()==before);}
             }
@@ -91,9 +93,11 @@ public class UserTransportFixture {
         check(f.mAppPolicies.reconcileRequest(x.id,x.sha,null,null).startsWith("ok=1")&&f.mAppPolicies.current.generation==gen);
         f.inventory.put(10,43L);f.rejects(()->f.authenticatedPolicyIdentity(x.id,x.sha,x.sequence,10));f.inventory.put(10,42L);
         Binder.uid=1010042;String invalid="wrong_payload|policy|||"+Base64.getEncoder().encodeToString(bytes(map("userId",0)));
-        f.putSettingForUser(SETTING_REQUEST_TEXT,invalid,10);check(f.notifyControlRequest("wrong_payload",sha256(invalid)).contains("policy_user_mismatch"));
-        String backup="secondary_backup|sb_export|||";f.putSettingForUser(SETTING_REQUEST_TEXT,backup,10);
-        check(f.notifyControlRequest("secondary_backup",sha256(backup)).contains("settings_primary_user_required"));
+        f.utilities().stage(10,invalid);check(f.notifyControlRequest("wrong_payload",sha256(invalid)).contains("policy_user_mismatch"));
+        String backup="secondary_backup|sb_export|||";
+        String refusal=f.utilityCommand("submit",backup);
+        check(refusal.contains("settings_primary_user_required")&&refusal.contains("DEFINITIVE_NOT_ADMITTED"));
+        check(f.utilityCommand("submit","allowed_utility|zo_state|||").startsWith("ok=1"));
         java.lang.System.out.println("USER_TRANSPORT_PRODUCTION_GUARDS_PASS checks="+checks);
     }
 }

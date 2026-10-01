@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
+RESIDUAL=json.loads((ROOT/'tests/command_plane/residual_fix_delta.json').read_text(encoding='utf-8'))
 USER_DOMAIN=json.loads((ROOT/'tests/command_plane/user_identity_delta.json').read_text(encoding='utf-8'))
 RECOVERY=json.loads((ROOT/'tests/command_plane/policy_recovery_delta.json').read_text(encoding='utf-8'))
 OPTION_B=json.loads((ROOT/'tests/command_plane/option_b_delta.json').read_text(encoding='utf-8'))
@@ -14,6 +15,12 @@ INTEGRATION=json.loads((ROOT/'tests/backend_monitor_settings_delta.json').read_t
 MANIFEST=json.loads((ROOT/'tests/backend_abc_delta.json').read_text(encoding='utf-8'))
 
 def reverse_text(path,text):
+    change=next((r for r in RESIDUAL['files'] if r['path']==path),None)
+    if change:
+        for h in reversed(change['hunks']):
+            assert text.count(h['after'])==1,('residual fix unauthorized delta',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==change['beforeSha256'],('residual fix V80 base',path)
     change=next((r for r in USER_DOMAIN['files'] if r['path']==path),None)
     if change:
         for h in reversed(change['hunks']):
@@ -89,7 +96,7 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
-    for row in USER_DOMAIN['files']+RECOVERY['files']+OPTION_B['files']+HARDENING['files']+CLOSURE['files']+BOUNDARY['files']+BINDER['files']+BOOTSTRAP['files']+INTEGRATION['files']+MANIFEST['files']:
+    for row in RESIDUAL['files']+USER_DOMAIN['files']+RECOVERY['files']+OPTION_B['files']+HARDENING['files']+CLOSURE['files']+BOUNDARY['files']+BINDER['files']+BOOTSTRAP['files']+INTEGRATION['files']+MANIFEST['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         after=row['after'].encode();assert result.count(after)==1,('R1 exact source bytes',row['path'])
         result.remove(after)

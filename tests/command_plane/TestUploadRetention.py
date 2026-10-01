@@ -11,6 +11,9 @@ import java.util.*;import java.nio.charset.StandardCharsets;
 import static com.zui.server.control.PolicyJson.*;
 public class RetentionFixture {
  final AppPolicyFixture.Disk disk=new AppPolicyFixture.Disk();AppPolicyStore mAppPolicies;
+ final String mUploadEpoch="fixture-process";
+ UtilityTransport utilities(){return new UtilityTransport(disk,policyUsers());}
+ String sha256(String value){return hash(value.getBytes(StandardCharsets.UTF_8));}
  static class SystemClock {static long time=1000;static long elapsedRealtime(){return time;}}
  Map<Integer,Long> policyUsers(){return Collections.singletonMap(0,0L);}
  RetentionFixture()throws Exception{disk.write(AppPolicyStore.ACTIVE,AppPolicyStore.migrate("version=1\\n".getBytes(),"balance\\n".getBytes(),new byte[0],"balance","",policyUsers(),Collections.emptySet()).state.bytes());mAppPolicies=new AppPolicyStore(disk);}
@@ -32,6 +35,6 @@ public class RetentionFixture {
 }'''
 with tempfile.TemporaryDirectory(prefix='upload-retention-') as tmp:
     file=Path(tmp)/'RetentionFixture.java';file.write_text(harness,encoding='utf8')
-    names=['PolicyJson.java','GpuRange.java','AppPolicyStore.java','SettingsBackup.java','UperfConfigStore.java']
+    names=['PolicyJson.java','GpuRange.java','AppPolicyStore.java','SettingsBackup.java','UperfConfigStore.java','UtilityTransport.java','RequestIdentity.java']
     subprocess.run(['javac','-encoding','UTF-8','-d',tmp,*[str(BASE/n) for n in names],str(ROOT/'tests/gpu/AppPolicyFixture.java'),str(file)],check=True)
     subprocess.run(['java','-cp',tmp,'com.zui.server.control.RetentionFixture'],check=True)

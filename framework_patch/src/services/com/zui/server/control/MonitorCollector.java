@@ -56,7 +56,7 @@ class MonitorCollector {
         if(callback==binder)return;
         if(callback!=null)terminate("CLIENT_REPLACED",true);
         drain();
-        if(callback!=null&&death!=null)callback.unlinkToDeath(death,0);
+        retireCallback();
         callback=binder;death=null;session.connectionEpoch++;lastGesture=-1;sources.resetFps();sources.resetQuiet();
         if(binder!=null){
             final long connection=session.connectionEpoch;
@@ -104,8 +104,14 @@ class MonitorCollector {
     private void disconnect(String reason){
         // A failed old connection never owns the new listener or desired mode.
         try { terminate(reason,true); } catch(RuntimeException e){error="record_finalize:"+e.getMessage();}
-        callback=null;death=null;session.connectionEpoch++;lastGesture=-1;drain();
+        retireCallback();session.connectionEpoch++;lastGesture=-1;drain();
         lastSnapshot="{}";
+    }
+    private void retireCallback(){
+        IBinder old=callback;IBinder.DeathRecipient recipient=death;
+        try { if(old!=null&&recipient!=null)old.unlinkToDeath(recipient,0); }
+        catch(java.util.NoSuchElementException alreadyRetired) { }
+        finally { callback=null;death=null; }
     }
     synchronized void scene(String pkg,int user,boolean eligible){
         scene(pkg,user,eligible,eligible);
@@ -119,7 +125,6 @@ class MonitorCollector {
             userModes.put(session.user,new int[]{session.mode,session.circle?1:0,session.overlayAllowed?1:0});
             terminate("FOREGROUND_CHANGED",false);
             session.eligible=false;stop(); // Hide the old user's overlay before retiring its callback.
-            if(callback!=null&&death!=null)callback.unlinkToDeath(death,0);
             disconnect("USER_CHANGED");
             int[] saved=userModes.getOrDefault(user,new int[]{MonitorSession.OFF,0,1});
             session.mode=saved[0];session.circle=saved[1]!=0;session.overlayAllowed=saved[2]!=0;

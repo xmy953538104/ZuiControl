@@ -92,6 +92,8 @@ public final class ZuiControlService extends Binder {
     private static final int TX_SET_GLOBAL_GPU_RANGE = 14;
     private static final int TX_MONITOR = 15;
     private static final int TX_CONTROLS = 16;
+    private static final int TX_UTILITY = 17;
+    private final String mUploadEpoch=java.util.UUID.randomUUID().toString();
     private final ControlsCallbacks mControls = new ControlsCallbacks();
     private final java.util.Set<Integer> mRetiredStatusUsers = new java.util.HashSet<>();
     private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;
@@ -640,11 +642,18 @@ public final class ZuiControlService extends Binder {
                 if (code == ZuioptSceneAuthority.CURRENT) mZuioptScene.writeCurrent(callback, pid, reply);
                 return true;
             }
-            if (code >= 1 && code <= TX_CONTROLS) {
+            if (code >= 1 && code <= TX_UTILITY) {
                 data.enforceInterface(DESCRIPTOR);
             }
             String result;
             switch (code) {
+                case TX_UTILITY:
+                    enforceCommandCallerAllowed();
+                    if((flags & IBinder.FLAG_ONEWAY)!=0)throw new IllegalArgumentException("utility reply required");
+                    String utilityAction=data.readString(),utilityArgument=data.readString();
+                    if(data.dataAvail()!=0)throw new IllegalArgumentException("utility trailing data");
+                    result=utilityCommand(utilityAction,utilityArgument);
+                    break;
                 case TX_CONTROLS:
                     enforceCommandCallerAllowed();
                     if((flags & IBinder.FLAG_ONEWAY)!=0)throw new IllegalArgumentException("controls reply required");
@@ -721,7 +730,9 @@ public final class ZuiControlService extends Binder {
 
     @Override
     protected synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
-        pw.print(state());
+        int uid=Binder.getCallingUid();
+        if(uid==Process.ROOT_UID||uid==Process.SHELL_UID||uid==Process.SYSTEM_UID)pw.print(state());
+        else {enforceZuiControlCaller(uid);pw.print(callerState(false));}
     }
 
     private String policyStateLines() {
@@ -798,13 +809,27 @@ public final class ZuiControlService extends Binder {
         Method put = Settings.System.class.getMethod("putStringForUser", android.content.ContentResolver.class, String.class, String.class, int.class);
         AppPolicyStore.State state = mAppPolicies.current;
         for (int user : state.users.keySet()) {
-            StringBuilder rules = new StringBuilder();
-            for (Map.Entry<String,AppPolicyStore.Row> e : state.apps.entrySet()) if (e.getKey().startsWith(user + ":")) {
-                if (rules.length() > 0) rules.append('\n'); rules.append(e.getKey().substring(e.getKey().indexOf(':') + 1)).append('|').append(e.getValue().uperfMode);
-            }
             PolicyJson.require(Boolean.TRUE.equals(put.invoke(null, mContext.getContentResolver(), SETTING_UPERF_MODE, state.global(user).uperfMode, user)), "Uperf global projection");
-            PolicyJson.require(Boolean.TRUE.equals(put.invoke(null, mContext.getContentResolver(), SETTING_UPERF_RULES, rules.toString(), user)), "Uperf app projection");
+            retireSensitiveSettings(user);
         }
+    }
+    private void retireSensitiveSettings(int user)throws Exception{
+        UtilityTransport transport=utilities();byte[] receipt=mAppPolicies.disk.read("control-admission.json");
+        if(receipt.length!=0&&transport.request(user).isEmpty()){
+            Map<String,Object> admission=PolicyJson.object(PolicyJson.parse(receipt));RequestIdentity prior=RequestIdentity.read(admission.get("identity"));
+            if(prior.user==user&&java.util.Objects.equals(policyUsers().get(user),prior.serial)){
+                String request=safe(getSettingForUser(SETTING_REQUEST_TEXT,user));
+                if(sha256(request).equals(prior.sha)&&UtilityTransport.fields(request)[0].equals(prior.id)){
+                    transport.stage(user,request);
+                    // Do not promote a mutable public ACK to private terminal truth.
+                    // A retained pending client re-kicks its exact identity; the
+                    // existing durable receipt / 1013 path republishes the result.
+                }
+            }
+        }
+        for(String key:new String[]{SETTING_REQUEST_TEXT,"zui_control_request_ack",SETTING_UPERF_RULES,
+                "zui_control_log_export","zui_control_zuiopt_state","zui_control_zuiopt_chunk"})
+            PolicyJson.require(putSettingForUser(key,null,user),"retire sensitive Settings");
     }
 
     private synchronized String policyCommand(String requestId, String requestHash, IBinder remote) {
@@ -969,12 +994,21 @@ public final class ZuiControlService extends Binder {
         if(action.equals("backupBegin")){
             PolicyJson.keys(request,"transaction","size","hash");long size=PolicyJson.integer(request.get("size"));
             PolicyJson.require(size>0&&size<=SettingsBackup.LIMIT&&PolicyJson.string(request.get("hash")).matches("[0-9a-f]{64}"),"settings upload metadata");
-            byte[] old=mAppPolicies.disk.read(path+".json"),next=PolicyJson.bytes(request);
-            PolicyJson.require(old.length==0||Arrays.equals(old,next),"settings upload immutable identity");
-            if(old.length==0){mAppPolicies.disk.write(path+".zip",new byte[0]);mAppPolicies.disk.write(path+".json",next);}
+            AppPolicyStore.Uploads.prune(mAppPolicies.disk,"settings-upload-",".zip",mUploadEpoch,SystemClock.elapsedRealtime(),settingsUploadProtection(),SettingsBackup.LIMIT);
+            byte[] old=mAppPolicies.disk.read(path+".json");
+            if(old.length==0){
+                AppPolicyStore.Uploads.quota(mAppPolicies.disk,"settings-upload-",".zip",SettingsBackup.LIMIT);
+                AppPolicyStore.Uploads.begin(request,mUploadEpoch,SystemClock.elapsedRealtime());
+                // Metadata first: an interrupted begin is an explicitly expirable transaction, not an orphan payload.
+                mAppPolicies.disk.write(path+".json",PolicyJson.bytes(request));mAppPolicies.disk.write(path+".zip",new byte[0]);
+            }else{
+                Map<String,Object> meta=PolicyJson.object(PolicyJson.parse(old));AppPolicyStore.Uploads.active(meta,mUploadEpoch,SystemClock.elapsedRealtime());
+                PolicyJson.require(PolicyJson.integer(meta.get("size"))==size&&meta.get("hash").equals(request.get("hash")),"settings upload immutable identity");
+            }
         }else{
             PolicyJson.require(action.equals("backupChunk"),"settings transport action");PolicyJson.keys(request,"transaction","offset","data");
             Map<String,Object> meta=PolicyJson.object(PolicyJson.parse(mAppPolicies.disk.read(path+".json")));
+            AppPolicyStore.Uploads.active(meta,mUploadEpoch,SystemClock.elapsedRealtime());
             byte[] current=mAppPolicies.disk.read(path+".zip"),chunk=java.util.Base64.getDecoder().decode(PolicyJson.string(request.get("data")));
             int offset=PolicyJson.intValue(request.get("offset"));PolicyJson.require(offset>=0&&offset<=current.length&&chunk.length>0&&chunk.length<=8192
                 &&offset+chunk.length<=PolicyJson.integer(meta.get("size")),"settings upload bound");
@@ -982,6 +1016,17 @@ public final class ZuiControlService extends Binder {
             else {byte[] next=Arrays.copyOf(current,current.length+chunk.length);System.arraycopy(chunk,0,next,current.length,chunk.length);mAppPolicies.disk.write(path+".zip",next);}
         }
         return "ok=1";
+    }
+    private java.util.Set<String> settingsUploadProtection()throws Exception{
+        java.util.Set<String> ids=new java.util.HashSet<>();byte[] raw=mAppPolicies.disk.read(SettingsBackup.JOURNAL);
+        if(raw.length!=0)ids.add(PolicyJson.string(PolicyJson.object(PolicyJson.parse(raw)).get("transaction")));
+        raw=mAppPolicies.disk.read("control-admission.json");
+        if(raw.length!=0){Map<String,Object> admission=PolicyJson.object(PolicyJson.parse(raw));RequestIdentity identity=RequestIdentity.read(admission.get("identity"));
+            if(identity.user==0){String request=utilities().request(0);if(!request.isEmpty()&&sha256(request).equals(identity.sha)){
+                String[] fields=UtilityTransport.fields(request);if(fields[1].equals("sb_restore")&&fields[4].matches("[0-9a-f]{24}"))ids.add(fields[4]);
+            }}
+        }
+        return ids;
     }
 
     private synchronized String setGlobalGpuRange(String mode, int userId, int min, int max) {
@@ -1249,6 +1294,63 @@ public final class ZuiControlService extends Binder {
         catch(Exception e){throw new IllegalStateException("explicit user Settings write",e);}
     }
 
+    private UtilityTransport utilities()throws Exception{
+        PolicyJson.require(mAppPolicies!=null&&mAppPolicies.current!=null,"policy_store_unavailable");
+        return new UtilityTransport(mAppPolicies.disk,policyUsers());
+    }
+    private String requestRefused(int user,String id,String error){
+        String category="INDETERMINATE_OR_IN_PROGRESS";
+        try{
+            if(!validRequestId(id))category="DEFINITIVE_NOT_ADMITTED";
+            else if(mAppPolicies!=null){
+                boolean seen=false;
+                for(String file:new String[]{"control-admission.json","policy-request.json","policy-request-"+id+".json"}){
+                    byte[] data=mAppPolicies.disk.read(file);if(data.length==0)continue;
+                    Map<String,Object> row=PolicyJson.object(PolicyJson.parse(data));
+                    if(row.containsKey("identity"))seen|=id.equals(RequestIdentity.read(row.get("identity")).id);
+                    else seen|=id.equals(row.get("id"));
+                }
+                if(!seen)category="DEFINITIVE_NOT_ADMITTED";
+            }
+        }catch(Exception uncertain){ /* Unreadable admission evidence is never permission to forget a request. */ }
+        return "ok=0\nerror="+error+"\nresultCategory="+category;
+    }
+    private synchronized String utilityCommand(String action,String argument){
+        final int user=Binder.getCallingUid()/100000;
+        long token=Binder.clearCallingIdentity();String id="";
+        try{
+            Map<Integer,Long> inventory=policyUsers();
+            PolicyJson.require(mAppPolicies!=null&&mAppPolicies.current!=null&&inventory.containsKey(user)
+                    &&(!mAppPolicies.current.users.containsKey(user)||java.util.Objects.equals(mAppPolicies.current.users.get(user),inventory.get(user))),"user_inventory_not_admitted");
+            UtilityTransport transport=utilities();String result;
+            if("submit".equals(action)){
+                id=argument==null?"":argument.split("\\|",-1)[0];
+                String[] fields=UtilityTransport.fields(argument);
+                if(user!=0&&(fields[1].startsWith("sb_")||fields[1].equals("export_logs")))
+                    return requestRefused(user,id,fields[1].startsWith("sb_")?"settings_primary_user_required":"diagnostic_primary_user_required");
+                transport.stage(user,argument);
+                return notifyControlRequest(id,sha256(argument),user);
+            }else if("ack".equals(action)){
+                PolicyJson.require(validRequestId(argument),"utility request ID");result=transport.ack(user,argument);
+            }else if("result".equals(action)){
+                String[] fields=argument.split("\\|",-1);PolicyJson.require(fields.length==2&&validRequestId(fields[0]),"utility result request");
+                result=transport.result(user,fields[0],fields[1]);
+            }else{
+                PolicyJson.require("uperfRules".equals(action)&&"".equals(argument),"utility action");
+                StringBuilder rows=new StringBuilder();
+                for(Map.Entry<String,AppPolicyStore.Row> row:mAppPolicies.current.apps.entrySet())if(row.getKey().startsWith(user+":")){
+                    if(rows.length()>0)rows.append('\n');rows.append(row.getKey().substring(row.getKey().indexOf(':')+1)).append('|').append(row.getValue().uperfMode);
+                }
+                result=rows.toString();
+            }
+            return "ok=1\ndata="+java.util.Base64.getEncoder().encodeToString(result.getBytes(StandardCharsets.UTF_8));
+        }catch(Exception e){
+            String reason=safe(e.getMessage());
+            if("submit".equals(action)&&java.util.Arrays.asList("request_transport_bound","request_payload_mismatch","request_busy","policy_store_unavailable").contains(reason))
+                return requestRefused(user,id,reason);
+            return "ok=0\nerror=utility:"+e.getClass().getSimpleName()+":"+reason+"\nresultCategory=INDETERMINATE_OR_IN_PROGRESS";
+        }finally{Binder.restoreCallingIdentity(token);}
+    }
     private RequestIdentity authenticatedPolicyIdentity(String id,String hash,String sequence,int user)throws Exception {
         PolicyJson.require(validRequestId(id)&&validSha256(hash),"policy identity bounds");
         Map<String,Object> request=PolicyJson.object(PolicyJson.parse(mAppPolicies.disk.read("policy-request.json")));
@@ -1270,46 +1372,50 @@ public final class ZuiControlService extends Binder {
             RequestIdentity admitted=RequestIdentity.read(admission.get("identity"));
             admitted.verify(user,id,hash,sequence,policyUsers());
             PolicyJson.require(kick.startsWith("u"+user+"_"+sequence+"_"),"kick user/sequence");
-            String request=safe(getSettingForUser(SETTING_REQUEST_TEXT,user));
+            UtilityTransport transport=utilities();String request=transport.request(user);
             PolicyJson.require(request.length()<=262144 && sha256(request).equals(hash), "transport request hash");
             String[] fields=request.split("\\|",-1);
             PolicyJson.require(fields.length==5 && id.equals(fields[0]) && fields[2].isEmpty(), "transport request");
             if("namespace".equals(action)){PolicyJson.require("".equals(value),"namespace argument");return "user-shell-"+user+"-"+admitted.serial;}
             if ("read".equals(action)) { PolicyJson.require("".equals(value),"read argument"); return request; }
+            if("readAck".equals(action)){PolicyJson.require("".equals(value),"ACK read argument");return transport.ack(user,id);}
+            if(action.startsWith("result:")){transport.publish(admitted,action.substring(7),value);return "ok=1";}
             PolicyJson.require("ack".equals(action) && value!=null && value.length()<=8192
                     && value.indexOf('\n')<0 && value.indexOf('\r')<0, "transport ACK");
             String[] ack=value.split("\\|",-1);
             PolicyJson.require(ack.length==4 && id.equals(ack[0]) && fields[1].equals(ack[2])
                     && ("processing".equals(ack[1])||"done".equals(ack[1])||"failed".equals(ack[1])), "ACK identity/state");
-            PolicyJson.require(putSettingForUser("zui_control_request_ack",value,user),"ACK publication");
+            transport.acknowledge(admitted,value);
             if(!"processing".equals(ack[1])){admission.put("terminal",true);mAppPolicies.disk.write("control-admission.json",PolicyJson.bytes(admission));}
             return "ok=1";
         } finally { Binder.restoreCallingIdentity(identity); }
     }
 
     private synchronized String notifyControlRequest(String requestId, String requestSha256) {
-        final int policyCallerUser = Binder.getCallingUid() / 100000;
+        return notifyControlRequest(requestId,requestSha256,Binder.getCallingUid()/100000);
+    }
+    private String notifyControlRequest(String requestId,String requestSha256,int policyCallerUser){
         long binderEnterNanos = SystemClock.elapsedRealtimeNanos();
         String id = safe(requestId).trim();
         String sha256 = safe(requestSha256).trim();
         Log.i(TIMING_TAG, "id=" + id + " phase=T1 ns=" + binderEnterNanos);
         if (!validRequestId(id)) {
-            return "ok=0\nerror=invalid_request_id";
+            return requestRefused(policyCallerUser,id,"invalid_request_id");
         }
         if (!validSha256(sha256)) {
             return "ok=0\nerror=invalid_request_sha256";
         }
         long identity = Binder.clearCallingIdentity();
         try {
-            String requestText = getSettingForUser( SETTING_REQUEST_TEXT,policyCallerUser);
+            String requestText = utilities().request(policyCallerUser);
             if (requestText == null || requestText.getBytes(StandardCharsets.UTF_8).length > 131072)
-                return "ok=0\nerror=request_transport_bound";
+                return requestRefused(policyCallerUser,id,"request_transport_bound");
             String[] fields = safe(requestText).split("\\|", -1);
             if (fields.length != 5 || !id.equals(fields[0]) || fields[1].isEmpty()
                     || !fields[2].isEmpty() || !sha256(safe(requestText)).equals(sha256)) {
-                return "ok=0\nerror=request_payload_mismatch";
+                return requestRefused(policyCallerUser,id,"request_payload_mismatch");
             }
-            if(fields[1].startsWith("sb_")&&policyCallerUser!=0)return "ok=0\nerror=settings_primary_user_required";
+            if(fields[1].startsWith("sb_")&&policyCallerUser!=0)return requestRefused(policyCallerUser,id,"settings_primary_user_required");
             PolicyJson.require(mAppPolicies!=null,"request store unavailable");
             Map<Integer,Long> inventory=policyUsers();
             PolicyJson.require(inventory.containsKey(policyCallerUser),"request user unavailable");
@@ -1324,14 +1430,14 @@ public final class ZuiControlService extends Binder {
                     // A committed policy may have lost only the terminal root ACK.
                     byte[] oldPolicy=mAppPolicies.disk.read("policy-request.json");
                     Map<String,Object> completed=oldPolicy.length==0?new HashMap<>():PolicyJson.object(PolicyJson.parse(oldPolicy));
-                    if(!prior.id.equals(completed.get("id"))||!completed.containsKey("result"))return "ok=0\nerror=request_busy";
+                    if(!prior.id.equals(completed.get("id"))||!completed.containsKey("result"))return requestRefused(policyCallerUser,id,"request_busy");
                 }
             }
             if ("policy".equals(fields[1])) {
-                if(mAppPolicies!=null&&new SettingsBackup(mAppPolicies).busy())return "ok=0\nerror=settings_recovery_required";
-                if (mAppPolicies == null) return "ok=0\nerror=policy_store_unavailable";
+                if(mAppPolicies!=null&&new SettingsBackup(mAppPolicies).busy())return requestRefused(policyCallerUser,id,"settings_recovery_required");
+                if (mAppPolicies == null) return requestRefused(policyCallerUser,id,"policy_store_unavailable");
                 java.util.Map<String,Object> policy = PolicyJson.object(PolicyJson.parse(java.util.Base64.getDecoder().decode(fields[4])));
-                if (PolicyJson.integer(policy.get("userId")) != policyCallerUser) return "ok=0\nerror=policy_user_mismatch";
+                if (PolicyJson.integer(policy.get("userId")) != policyCallerUser) return requestRefused(policyCallerUser,id,"policy_user_mismatch");
                 byte[] previous = mAppPolicies.disk.read("policy-request.json");
                 byte[] retainedIdentity=mAppPolicies.disk.read("policy-request-"+id+".json");
                 if(retainedIdentity.length!=0){
@@ -1351,8 +1457,8 @@ public final class ZuiControlService extends Binder {
                             old.put("identity",admitted.json());previous=PolicyJson.bytes(old);mAppPolicies.disk.write("policy-request.json",previous);
                         }
                     }
-                    if (!id.equals(old.get("id")) && !old.containsKey("result")) return "ok=0\nerror=policy_request_busy";
-                    if (id.equals(old.get("id")) && !sha256.equals(old.get("sha"))) return "ok=0\nerror=policy_request_conflict";
+                    if (!id.equals(old.get("id")) && !old.containsKey("result")) return requestRefused(policyCallerUser,id,"policy_request_busy");
+                    if (id.equals(old.get("id")) && !sha256.equals(old.get("sha"))) return requestRefused(policyCallerUser,id,"policy_request_conflict");
                     if (!id.equals(old.get("id"))) {
                         String receipt = "policy-request-" + PolicyJson.string(old.get("id")) + ".json";
                         byte[] retained = mAppPolicies.disk.read(receipt);
@@ -1364,7 +1470,7 @@ public final class ZuiControlService extends Binder {
                 if (previous.length == 0) mAppPolicies.disk.write("policy-request.json",retainedIdentity.length!=0?retainedIdentity:
                         PolicyJson.bytes(PolicyJson.map("id", id, "sha", sha256, "payload", policy,"identity",admitted.json())));
             } else if ("set_uperf_mode".equals(fields[1]) || "set_uperf_app".equals(fields[1]) || "remove_uperf_app".equals(fields[1])) {
-                return "ok=0\nerror=unified_policy_generation_required";
+                return requestRefused(policyCallerUser,id,"unified_policy_generation_required");
             }
             mAppPolicies.disk.write("control-admission.json",PolicyJson.bytes(PolicyJson.map("identity",admitted.json(),"terminal",false)));
             String token="u"+policyCallerUser+"_"+admitted.sequence+"_"+Long.toHexString(SystemClock.elapsedRealtimeNanos());
@@ -1379,9 +1485,9 @@ public final class ZuiControlService extends Binder {
             Log.i(TIMING_TAG, "id=" + id + " phase=T2 ns=" + sequenceSetNanos);
             Log.i(TAG, "control_request_kick id=" + id + " sha256="
                     + sha256.substring(0, 12) + " token=" + token);
-            return "ok=1\nrequestId=" + id + "\ncommandSeq=" + token;
+            return "ok=1\nresultCategory=INDETERMINATE_OR_IN_PROGRESS\nrequestId=" + id + "\ncommandSeq=" + token;
         } catch (Exception e) {
-            return "ok=0\nerror=policy_request:" + e.getClass().getSimpleName();
+            return "ok=0\nerror=policy_request:" + e.getClass().getSimpleName()+"\nresultCategory=INDETERMINATE_OR_IN_PROGRESS";
         } finally {
             Binder.restoreCallingIdentity(identity);
         }

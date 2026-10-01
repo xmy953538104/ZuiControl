@@ -44,6 +44,9 @@ public final class ZuiControlManager {
         if(!(callback instanceof IBinder))throw new IllegalArgumentException("callback binder required");
         return transact(16,new Writer(){public void write(Parcel data){data.writeString(register?"register":"unregister");data.writeStrongBinder((IBinder)callback);}});
     }
+    public String utility(final String action,final String argument) {
+        return transact(17,new Writer(){public void write(Parcel data){data.writeString(action);data.writeString(argument);}});
+    }
 
     private ZuiControlManager(IBinder remote) {
         mRemote = remote;

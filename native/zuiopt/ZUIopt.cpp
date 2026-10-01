@@ -30,11 +30,11 @@ int main(int argc,char** argv){
             ZUIopt::Journal journal(ROOT);ZUIopt::Counters counters;ZUIopt::Placement placement(counters,journal);placement.cleanup();return 0;
         }
         ZUIopt::require(argc==2||(argc==5&&std::string(argv[1])=="--control"),"invalid production command");
+        if(argc==2&&std::string(argv[1])=="--crash"){puts(ZUIopt::crashGate(ROOT)?"1":"0");return 0;}
         ZUIopt::RuleStore store(ROOT,ZUIopt::read(FACTORY));
         if(argc==2){
             auto command=std::string(argv[1]);
             if(command=="--boot"){store.initialize();puts(store.bootState().c_str());return 0;}
-            if(command=="--crash"){bool failed=true;try{failed=store.crash();}catch(...){store.failure();}puts(failed?"1":"0");return 0;}
             throw std::runtime_error("unknown production command");
         }
         std::string command=argv[2],key=argv[3],value=argv[4],result;

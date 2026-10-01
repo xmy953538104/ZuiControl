@@ -321,6 +321,9 @@ jobs:
           python3 tests/gpu/TestGpuTouch.py
           python3 tests/monitor/TestDropdownSelection.py
           python3 tests/monitor/TestPendingIntentCache.py
+          for case in null empty throw ok rejection; do
+            python3 tests/command_plane/TestUtilityTruth.py "$case"
+          done
 
       - name: Compile exact services extension and test scheduler health
         shell: bash

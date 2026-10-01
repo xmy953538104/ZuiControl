@@ -2,7 +2,6 @@ package com.zui.zuicontrol
 
 import android.content.Context
 import android.net.Uri
-import android.provider.Settings
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
@@ -40,19 +39,19 @@ object ZuioptRules {
             boundedRead(it, if (kind == "pack") PACK_LIMIT else RULE_LIMIT)
         }
 
-    fun command(context: Context, action: String, key: String = "", value: String = "") {
+    fun command(context: Context, action: String, key: String = "", value: String = ""): String {
         require(action in setOf("state", "reset", "read", "begin", "chunk", "commit", "abort", "enable", "disable", "rollback"))
         require(key.length <= 128 && value.length <= 10924 && '|' !in key && '|' !in value)
         val command = if (action == "reset") ZuiControlContract.CMD_RESET_ZUIOPT_FAILSAFE else "zo_$action"
         val id = ZuiControlRequest.send(context, command, pkg = key, mode = value)
         val ack = ZuiControlRequest.awaitTerminalAck(context, id)
         check(ack.succeeded) { "规则操作未完成：${ack.detail}；请刷新确认状态" }
+        return id
     }
 
     fun state(context: Context): String {
-        command(context, "state")
-        return Settings.System.getString(context.contentResolver, ZuiControlContract.KEY_ZUIOPT_STATE)
-            .orEmpty().also { require(it.length <= 4608) { "状态响应过大" } }
+        val id = command(context, "state")
+        return ZuiControlClient.utilityValue("result", "$id|rulesState").also { require(it.length <= 4608) { "状态响应过大" } }
     }
 
     internal fun field(state: String, key: String): String = state.lineSequence()
@@ -68,8 +67,8 @@ object ZuioptRules {
         require(size in 1..RULE_LIMIT)
         val out = ByteArrayOutputStream()
         while (out.size() < size) {
-            command(context, "read", generation, out.size().toString())
-            val response = Settings.System.getString(context.contentResolver, ZuiControlContract.KEY_ZUIOPT_CHUNK).orEmpty()
+            val id = command(context, "read", generation, out.size().toString())
+            val response = ZuiControlClient.utilityValue("result", "$id|rulesChunk")
             require(response.length <= 11000)
             val fields = response.split(':', limit = 3)
             check(fields.size == 3 && fields[0] == generation && fields[1] == out.size().toString()) { "读取期间规则发生变化，请重试" }

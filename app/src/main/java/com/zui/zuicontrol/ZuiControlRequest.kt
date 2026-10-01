@@ -2,7 +2,6 @@ package com.zui.zuicontrol
 
 import android.content.Context
 import android.os.SystemClock
-import android.provider.Settings
 import android.util.Log
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -37,11 +36,8 @@ object ZuiControlRequest {
             return ZuiControlClient.sendPolicy(context, "mode", pkg.orEmpty(), "APP", mode = mode.orEmpty())
         if (cmd == ZuiControlContract.CMD_REMOVE_UPERF_APP)
             return ZuiControlClient.sendPolicy(context, "delete", pkg.orEmpty(), "APP")
-        val resolver = context.contentResolver
-        val currentAck = Settings.System.getString(
-            resolver, ZuiControlContract.KEY_REQUEST_ACK,
-        ).orEmpty()
         loadPending(context)?.let { pending ->
+            val currentAck = ZuiControlClient.utilityValue("ack", pending.requestId)
             if (isTerminalFor(pending, currentAck)) {
                 clearPending(context, pending.requestId)
             } else {
@@ -59,21 +55,11 @@ object ZuiControlRequest {
         val pending = PendingRequest(requestId, requestText, sha256(requestText))
         check(savePending(context, pending)) { "系统命令认证状态写入失败" }
         Log.i(TIMING_TAG, "id=$requestId phase=T0 ns=${SystemClock.elapsedRealtimeNanos()}")
-        try {
-            check(Settings.System.putString(
-                resolver, ZuiControlContract.KEY_REQUEST_TEXT, requestText,
-            )) { "系统命令写入失败" }
-        } catch (t: Throwable) {
-            clearPending(context, requestId)
-            throw t
-        }
-        val dispatch = ZuiControlClient.notifyControlRequest(requestId, pending.sha256)
+        val dispatch = ZuiControlClient.utility("submit", pending.requestText)
         if (!dispatch.ok) {
             // Only explicit pre-dispatch refusals are safe to clear. Transport or
             // property-write uncertainty retains the durable pending identity.
-            val refusal = ZuiControlClient.stateValue(dispatch.text, "error")
-            if (refusal in setOf("policy_store_unavailable", "policy_user_mismatch", "policy_request_busy",
-                    "policy_request_conflict", "unified_policy_generation_required")) {
+            if (ZuiControlClient.stateValue(dispatch.text, "resultCategory") == "DEFINITIVE_NOT_ADMITTED") {
                 clearPending(context, requestId)
                 error("系统拒绝策略命令：${dispatch.text}")
             }
@@ -84,9 +70,7 @@ object ZuiControlRequest {
     @Synchronized
     fun kickPending(context: Context): String? {
         val pending = loadPending(context) ?: return null
-        val ackText = Settings.System.getString(
-            context.contentResolver, ZuiControlContract.KEY_REQUEST_ACK,
-        ).orEmpty()
+        val ackText = ZuiControlClient.utilityValue("ack", pending.requestId)
         if (isTerminalFor(pending, ackText)) {
             clearPending(context, pending.requestId)
             return null
@@ -114,9 +98,7 @@ object ZuiControlRequest {
         var retryCount = 0
         var nextKickAt = SystemClock.elapsedRealtime() + retryDelayMs(retryCount)
         do {
-            val ack = parseAck(Settings.System.getString(
-                context.contentResolver, ZuiControlContract.KEY_REQUEST_ACK,
-            ).orEmpty())
+            val ack = parseAck(ZuiControlClient.utilityValue("ack", requestId))
             if (ack?.requestId == requestId && ack.command == requestCommand) {
                 if (ack.isTerminal) {
                     Log.i(
@@ -196,16 +178,11 @@ object ZuiControlRequest {
     }
 
     private fun kickTrusted(context: Context, pending: PendingRequest): String? {
-        val resolver = context.contentResolver
-        val currentRequest = Settings.System.getString(
-            resolver, ZuiControlContract.KEY_REQUEST_TEXT,
-        ).orEmpty()
-        if (currentRequest != pending.requestText && !Settings.System.putString(
-                resolver, ZuiControlContract.KEY_REQUEST_TEXT, pending.requestText,
-            )) {
-            return null
+        val dispatch = ZuiControlClient.utility("submit", pending.requestText)
+        if (!dispatch.ok && ZuiControlClient.stateValue(dispatch.text, "resultCategory") == "DEFINITIVE_NOT_ADMITTED") {
+            clearPending(context, pending.requestId)
+            error("系统拒绝命令：${dispatch.text}")
         }
-        ZuiControlClient.notifyControlRequest(pending.requestId, pending.sha256)
         return pending.requestId
     }
 

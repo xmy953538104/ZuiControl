@@ -30,6 +30,7 @@ trap 'setprop sys.zui_control.uperf_fail_safe 1' EXIT
 # Persist the virgin-store seed intent before either legacy-compatible seed write.
 # A power loss between those writes and Settings publication must be resumable.
 SEED_INTENT=$UPERF_DIR/.policy_factory_seed
+if [ ! -f "$UPERF_DIR/policy-projection/active.json" ]; then
 if [ ! -e "$GLOBAL_MODE" ] && [ ! -e "$PERAPP" ] && [ ! -e "$SEED_INTENT" ]; then
     (umask 077; sha256sum "$SYSTEM_PERAPP" > "$SEED_INTENT.tmp") || exit 1
     sync "$SEED_INTENT.tmp" || exit 1
@@ -65,8 +66,8 @@ seed_recovery=0
 if [ -f "$SEED_INTENT" ] && [ "$global_mode" = balance ] && cmp -s "$PERAPP" "$SYSTEM_PERAPP"; then
     if [ "$(cat "$SEED_INTENT")" = "$(sha256sum "$SYSTEM_PERAPP")" ]; then seed_recovery=1; fi
 fi
-# Legacy Settings are bootstrap projections only. Cutover freezes legacy persistent files.
-if [ ! -f "$UPERF_DIR/policy-projection/active.json" ]; then
+# Legacy inputs are used only before durable cutover. Canonical bootstrap below
+# validates and projects the current mode after cutover, including screen-off.
     # Seed projections only with newly created factory stores. Existing Settings
     # must reach the strict migration comparison unchanged, including disagreements.
     if [ "$seed_recovery" = 1 ] && [ "$(settings --user 0 get system zui_control_uperf_mode)" = null ]; then

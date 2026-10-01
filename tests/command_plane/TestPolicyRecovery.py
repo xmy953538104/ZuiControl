@@ -27,6 +27,11 @@ def main(prefix):
     policy=policy.replace(boundary,boundary+'\n                hit("request_authenticated");')
     harness=Path(__file__).with_name('RecoveryFixture.java').read_text(encoding='utf8')
     harness=harness.replace('/* ADMISSION */',admission).replace('/* POLICY */',policy)
+    start=source.index('    private String requestRefused(')
+    refusal=source[start:source.index('    private synchronized String utilityCommand(',start)]
+    start=source.index('    private static boolean validRequestId(')
+    refusal+=source[start:source.index('    private static boolean validSha256(',start)]
+    harness=harness.replace('/* REFUSAL */',refusal)
     # reconcileUsers is part of the exact slice; fixture user inventory stays unchanged.
     with tempfile.TemporaryDirectory() as directory:
         java=Path(directory)/'RecoveryFixture.java';java.write_text(harness,encoding='utf8')

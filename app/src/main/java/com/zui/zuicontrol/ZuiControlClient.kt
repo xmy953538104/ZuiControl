@@ -87,6 +87,15 @@ object ZuiControlClient {
         return stateValue(state.text, key)?.toIntOrNull()
     }
 
+    fun utility(action: String, argument: String): Reply = call { it.utility(action, argument) }
+
+    fun utilityValue(action: String, argument: String): String {
+        val reply = utility(action, argument)
+        check(reply.ok) { "系统私有数据不可用：${reply.text}" }
+        val encoded = checkNotNull(stateValue(reply.text, "data")) { "系统响应缺少数据" }
+        return java.util.Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8)
+    }
+
     fun notifyControlRequest(requestId: String, requestSha256: String): Reply {
         return call { it.notifyControlRequest(requestId, requestSha256) }
     }

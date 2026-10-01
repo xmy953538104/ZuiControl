@@ -39,16 +39,24 @@ request_transport() {
 }
 
 settings_get_clean() {
-    value="$(settings --user "$REQUEST_USER" get system "$1" 2>/dev/null)"
-    [ "$value" != "null" ] || value=
-    printf '%s\n' "$value"
+    case "$1" in
+        "$REQ_TEXT_KEY") request_transport read "" ;;
+        "$REQUEST_ACK_KEY") request_transport readAck "" ;;
+        *) return 1 ;;
+    esac
 }
 
 settings_put_quiet() {
     if [ "$1" = "$REQUEST_ACK_KEY" ]; then
         request_transport ack "$2" >/dev/null 2>&1
     else
-        settings --user "$REQUEST_USER" put system "$1" "$2" >/dev/null 2>&1
+        case "$1" in
+            "$LOG_EXPORT_KEY") result_kind=logs ;;
+            zui_control_zuiopt_state) result_kind=rulesState ;;
+            zui_control_zuiopt_chunk) result_kind=rulesChunk ;;
+            *) return 1 ;;
+        esac
+        request_transport "result:$result_kind" "$2" >/dev/null 2>&1
     fi
 }
 
@@ -242,7 +250,11 @@ $(tail -n 120 "$LOG_FILE" 2>/dev/null)
 
 [Uperf 日志末尾]
 $(tail -n 80 "$UPERF_LOG" 2>/dev/null)"
-    settings_put_quiet "$LOG_EXPORT_KEY" "$export_text"
+    # Exact current request/user publication must succeed before terminal success.
+    settings_put_quiet "$LOG_EXPORT_KEY" "$export_text" || {
+        REQUEST_RESULT_DETAIL="logs=publication_failed"
+        return 1
+    }
     REQUEST_RESULT_DETAIL="logs=exported"
 }
 

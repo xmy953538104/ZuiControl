@@ -619,11 +619,15 @@ class MainActivity : Activity() {
     }
 
     private fun exportLogs() {
+        pendingExportText = ""
+        var requestId = ""
         runCommand("正在整理日志", success = null, onSuccess = {
-            pendingExportText = "[zui_control Binder state]\n${ZuiControlClient.stateText()}\n\n" +
-                setting(ZuiControlContract.KEY_LOG_EXPORT)
-            if (pendingExportText.isBlank()) toast("没有可导出的日志") else openExportDocument()
-        }) { ZuiControlRequest.send(this, ZuiControlContract.CMD_EXPORT_LOGS) }
+            runCatching { ZuiControlClient.utilityValue("result", "$requestId|logs") }
+                .onSuccess { text ->
+                    if (text.isBlank()) toast("没有可导出的日志")
+                    else { pendingExportText = text; openExportDocument() }
+                }.onFailure { toast("日志导出已失效，请重试") }
+        }) { ZuiControlRequest.send(this, ZuiControlContract.CMD_EXPORT_LOGS).also { requestId = it } }
     }
 
     private fun requestMonitorPermission() {
@@ -727,8 +731,11 @@ class MainActivity : Activity() {
         }
         if (requestCode != REQUEST_EXPORT_LOG) return
         runCatching {
-            contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(pendingExportText) }
-        }.onSuccess { toast("日志已导出") }.onFailure { toast("日志导出失败") }
+            check(pendingExportText.isNotBlank()) { "日志导出已失效" }
+            checkNotNull(contentResolver.openOutputStream(uri)) { "无法打开输出文件" }
+                .bufferedWriter(Charsets.UTF_8).use { it.write(pendingExportText) }
+        }.onSuccess { toast("日志已导出") }.onFailure { toast("日志导出失败，请重新导出") }
+        pendingExportText = ""
     }
 
     private fun addFloatingButton(root: FrameLayout, action: () -> Unit) {
@@ -884,7 +891,7 @@ class MainActivity : Activity() {
                 }
             }
         uperfRules.clear()
-        setting(ZuiControlContract.KEY_UPERF_RULES_TEXT).lineSequence().forEach { line ->
+        ZuiControlClient.utilityValue("uperfRules", "").lineSequence().forEach { line ->
             val fields = line.split('|', limit = 2)
             val pkg = fields.getOrNull(0).orEmpty()
             val mode = fields.getOrNull(1)?.let(UperfMode::fromId)

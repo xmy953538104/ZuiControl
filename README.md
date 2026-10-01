@@ -56,6 +56,13 @@ clang++ -std=c++17 -O1 -Wall -Wextra -Werror -fsanitize=address,undefined tests/
 sudo /tmp/command-test
 python tests/command_plane/TestNativeProjectionParity.py /tmp/command-test
 python tests/command_plane/TestNativeTransportContract.py
+python tests/command_plane/TestPrivateUtility.py
+python tests/command_plane/TestDiagnosticDump.py
+python tests/command_plane/TestUploadRetention.py
+python tests/command_plane/TestExportPublication.py
+python tests/monitor/TestMonitorRetirement.py
+python tests/uperf/startup/TestPostCutoverBootstrap.py
+python tests/uperf/architecture/TestImportRetention.py
 clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/command_plane/RecoveryPeer.cpp -o /tmp/recovery-peer
 mkdir -m 700 /tmp/policy-recovery-fixture
 python tests/command_plane/TestPolicyRecovery.py /tmp/recovery-peer /tmp/policy-recovery-fixture

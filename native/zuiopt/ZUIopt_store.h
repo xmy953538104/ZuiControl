@@ -85,6 +85,42 @@ inline std::string unbase64(const std::string& s,size_t limit=8192){
 }
 inline std::vector<std::string> fields(const std::string& text,char delimiter){std::vector<std::string> out;size_t start=0;for(;;){auto end=text.find(delimiter,start);out.push_back(text.substr(start,end-start));if(end==text.npos)break;start=end+1;}return out;}
 
+// Crash accounting never waits for rule commit/owner ACK. Its own tiny critical
+// section has a 200 ms lock deadline; accounting failure durably fails closed.
+class CrashLock {
+    int fd=-1;
+public:
+    explicit CrashLock(const PrivateDir& root){
+        fd=openat(root.fd,"crash.lock",O_RDWR|O_CREAT|O_CLOEXEC|O_NOFOLLOW,0600);
+        try{PrivateDir::file(fd);const auto deadline=now()+200;
+            while(flock(fd,LOCK_EX|LOCK_NB)!=0){
+                require((errno==EWOULDBLOCK||errno==EAGAIN||errno==EINTR)&&now()<deadline,"crash accounting lock deadline");usleep(1000);
+            }
+        }catch(...){if(fd>=0)close(fd);fd=-1;throw;}
+    }
+    ~CrashLock(){if(fd>=0)close(fd);}
+    CrashLock(const CrashLock&)=delete;CrashLock& operator=(const CrashLock&)=delete;
+};
+inline void crashFailure(const PrivateDir& root,const std::string& reason=""){
+    root.put("failure.v1","ZUIOPT_FAILURE_V1\n"+trim(read("/proc/sys/kernel/random/boot_id"))+"\n"+reason);
+}
+inline bool accountCrash(const PrivateDir& root){
+    try{
+        CrashLock lock(root);if(root.exists("failure.v1"))return true;
+        auto boot=trim(read("/proc/sys/kernel/random/boot_id"));auto lines=fields(root.get("crashes.v1",256,true),'\n');std::vector<int64_t> times;
+        if(!lines.empty()&&lines[0]==boot)for(size_t i=1;i<lines.size();i++)if(!lines[i].empty()){
+            require(rx(lines[i],"[0-9]{1,16}")&&times.size()<3,"crash history");auto t=std::stoll(lines[i]);if(t<=now()&&now()-t<=60000)times.push_back(t);
+        }
+        times.push_back(now());if(times.size()>=3){crashFailure(root);return true;}
+        std::string data=boot+"\n";for(auto t:times)data+=std::to_string(t)+"\n";root.put("crashes.v1",data);return false;
+    }catch(...){
+        // Persist the uncountable crash instead of silently dropping it or
+        // allowing another restart. Explicit next-boot reset remains required.
+        crashFailure(root,"ACCOUNTING_UNAVAILABLE_CRASH_RETAINED\n");return true;
+    }
+}
+inline bool crashGate(const std::string& path){PrivateDir root(path);return accountCrash(root);}
+
 class RuleStore {
     PrivateDir root,generations;int lockFd=-1;std::string factory,factorySha;
     RuleState load(const std::string& effective){
@@ -322,18 +358,14 @@ public:
     std::string bootState(){return failed()?"FAILSAFE":"READY_TO_START";}
     std::string failureState(){return std::string("thread_manager=ZUIOPT\nfailure=")+(failed()?"1":"0")+"\n";}
     void resetFailure(){
+        CrashLock lock(root);
         require(failed(),"no persistent failure");
         // Validate both before deleting either. Clear failure last; partial I/O
         // failure therefore remains safe. Never signal/restart the running boot.
         root.get("failure.v1",128);root.get("crashes.v1",256,true);
         root.remove("crashes.v1");root.remove("failure.v1");
     }
-    void failure(){root.put("failure.v1","ZUIOPT_FAILURE_V1\n"+trim(read("/proc/sys/kernel/random/boot_id"))+"\n");}
-    bool crash(){
-        auto boot=trim(read("/proc/sys/kernel/random/boot_id"));auto lines=fields(root.get("crashes.v1",256,true),'\n');std::vector<int64_t> times;
-        if(!lines.empty()&&lines[0]==boot)for(size_t i=1;i<lines.size();i++)if(!lines[i].empty()){require(rx(lines[i],"[0-9]{1,16}")&&times.size()<3,"crash history");auto t=std::stoll(lines[i]);if(t<=now()&&now()-t<=60000)times.push_back(t);}
-        times.push_back(now());if(times.size()>=3){failure();return true;}
-        std::string data=boot+"\n";for(auto t:times)data+=std::to_string(t)+"\n";root.put("crashes.v1",data);return false;
-    }
+    void failure(){crashFailure(root);}
+    bool crash(){return accountCrash(root);}
 };
 }

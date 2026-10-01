@@ -28,6 +28,8 @@ final class UperfImportCommand {
         }
         public byte[] read(String name) throws Exception { return parent(name).read(name.substring(name.lastIndexOf('/') + 1)); }
         public void write(String name, byte[] data) throws Exception { parent(name).write(name.substring(name.lastIndexOf('/') + 1), data); }
+        public String[] names()throws Exception{return root.names();}
+        public void remove(String name)throws Exception{root.remove(name);}
     }
     private static byte[] fixed(String path, int max) throws Exception {
         File file = new File(path); require(file.getCanonicalFile().equals(file.getAbsoluteFile()) && file.length() <= max, "immutable source path/size");
@@ -86,13 +88,24 @@ final class UperfImportCommand {
                 require(p.length == 4 && tx.matches("[0-9a-f]{24}") && p[2].matches("[0-9a-f]{64}"), "Uperf begin");
                 int size = Integer.parseInt(p[1]); long generation = Long.parseLong(p[3]); require(size > 0 && size <= UperfConfigStore.LIMIT, "upload size");
                 require(integer(store.selection().get("generation")) == generation, "upload base generation");
+                java.util.Set<String> protectedIds=new java.util.HashSet<>();Map<String,Object> selected=store.selection();
+                for(String name:files.names())if(name.matches("uperf-upload-[0-9a-f]{24}\\.json")){
+                    Map<String,Object> meta=object(parse(files.read(name)));
+                    if(meta.containsKey("selectedGeneration")){
+                        long g=integer(meta.get("selectedGeneration")),current=integer(selected.get("generation"));
+                        if(g==current||(g+1==current&&selected.get("state").equals("ROLLED_BACK")))protectedIds.add(name.substring(13,37));
+                    }
+                }
+                AppPolicyStore.Uploads.prune(files,"uperf-upload-",".bin",boot(),SystemClock.elapsedRealtime(),protectedIds,UperfConfigStore.LIMIT);
                 byte[] prior = files.read("uperf-upload-" + tx + ".json");
                 if (prior.length != 0) {
                     Map<String,Object> old = upload(files, tx); require(integer(old.get("size")) == size && old.get("hash").equals(p[2]) && integer(old.get("generation")) == generation, "upload replay conflict");
                     return "upload=resumed";
                 }
-                files.write("uperf-upload-" + tx + ".bin", new byte[0]);
-                files.write("uperf-upload-" + tx + ".json", bytes(map("size", size, "hash", p[2], "generation", generation, "boot", boot(), "time", SystemClock.elapsedRealtime())));
+                AppPolicyStore.Uploads.quota(files,"uperf-upload-",".bin",UperfConfigStore.LIMIT);
+                Map<String,Object> meta=map("size", size, "hash", p[2], "generation", generation, "boot", boot(), "time", SystemClock.elapsedRealtime());
+                AppPolicyStore.Uploads.begin(meta,boot(),SystemClock.elapsedRealtime());
+                files.write("uperf-upload-" + tx + ".json",bytes(meta));files.write("uperf-upload-" + tx + ".bin", new byte[0]);
                 return "upload=begun";
             }
             if (action.equals("ui_chunk")) {

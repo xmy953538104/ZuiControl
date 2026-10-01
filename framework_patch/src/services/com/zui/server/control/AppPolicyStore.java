@@ -345,6 +345,48 @@ final class AppPolicyStore {
         for(String name:storage.names())if(name.matches(pattern)&&!protectedNames.contains(name))candidates.add(name);
         for(int i=0;i<candidates.size()-history;i++)storage.remove(candidates.get(i));
     }
+    // Shared bounded upload storage; only explicit expired/terminal state permits retirement.
+    static final class Uploads {
+        static final int MAX_COUNT=16;
+        static final long TTL=600000;
+        static boolean expired(Map<String,Object> meta,String epoch,long now){
+            if(!meta.containsKey("uploadEpoch")||!meta.containsKey("uploadStarted"))return false;
+            long start=integer(meta.get("uploadStarted"));
+            return !epoch.equals(string(meta.get("uploadEpoch")))||now<start||now-start>TTL;
+        }
+        static void begin(Map<String,Object> meta,String epoch,long now){
+            meta.put("transferState","ACTIVE");meta.put("uploadEpoch",epoch);meta.put("uploadStarted",now);
+        }
+        static void active(Map<String,Object> meta,String epoch,long now){
+            require("ACTIVE".equals(meta.get("transferState"))&&!expired(meta,epoch,now),"upload expired or terminal");
+        }
+        static void prune(Storage disk,String prefix,String extension,String epoch,long now,Set<String> protectedIds,int limit)throws Exception{
+            List<String> retired=new ArrayList<>();
+            for(String name:disk.names())if(name.matches(prefix+"[0-9a-f]{24}\\.json")){
+                String tx=name.substring(prefix.length(),prefix.length()+24);if(protectedIds.contains(tx))continue;
+                Map<String,Object> meta=object(parse(disk.read(name)));String state=meta.containsKey("transferState")?string(meta.get("transferState")):"LEGACY_UNKNOWN";
+                require(java.util.Arrays.asList("ACTIVE","REJECTED","COMPLETE","RETIRED","LEGACY_UNKNOWN").contains(state),"unknown upload state");
+                boolean eligible=state.equals("REJECTED")||state.equals("COMPLETE")||state.equals("RETIRED")||expired(meta,epoch,now);
+                // Historical Uperf metadata has an explicit boot/time expiry. Other unknown files are retained.
+                if(state.equals("LEGACY_UNKNOWN")&&meta.containsKey("boot")&&meta.containsKey("time")){
+                    long time=integer(meta.get("time"));eligible=!epoch.equals(string(meta.get("boot")))||now<time||now-time>TTL;
+                }
+                eligible|=Boolean.TRUE.equals(meta.get("completed"));
+                if(eligible)retired.add(name);
+            }
+            for(String name:retired){
+                Map<String,Object> meta=object(parse(disk.read(name)));meta.put("transferState","RETIRED");disk.write(name,bytes(meta));
+                disk.remove(name.substring(0,name.length()-5)+extension);disk.remove(name);
+            }
+        }
+        static void quota(Storage disk,String prefix,String extension,int limit)throws Exception{
+            Set<String> ids=new HashSet<>();long total=0;
+            for(String name:disk.names())if(name.matches(prefix+"[0-9a-f]{24}(\\.json|"+java.util.regex.Pattern.quote(extension)+")")){
+                ids.add(name.substring(prefix.length(),prefix.length()+24));total=Math.addExact(total,disk.read(name).length);
+            }
+            require(ids.size()<MAX_COUNT&&total+limit+2048<=MAX_COUNT*(long)(limit+2048),"upload retention quota");
+        }
+    }
     synchronized void pruneCompleted(){
         if(recoveryRequired)return;
         try{
