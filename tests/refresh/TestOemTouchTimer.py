@@ -144,7 +144,7 @@ class OemTouchTimer(unittest.TestCase):
                 old_doc = identity['readme_text'].encode()
                 self.assertEqual(payload_tree_hash(old),tree)
                 self.assertEqual((ROOT/'payload/README.txt').read_bytes().replace(b'\r\n',b'\n'),
-                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV81').replace(b'App V60',b'App V81'))
+                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV82').replace(b'App V60',b'App V82'))
                 continue
             bound=reverse_entries(scope_entries(path),path)
             relative=[e.split(b'\t',1)[0]+b'\t'+e.split(b'\t',1)[1][len(path)+1:] for e in bound]
@@ -176,8 +176,8 @@ class OemTouchTimer(unittest.TestCase):
         identity_path = 'app/build.gradle.kts'
         old = identity['gradle_text'].encode()
         current = (ROOT/identity_path).read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 81')
-            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.44"')
+        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 82')
+            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.45"')
             .replace(b'targetSdk = 35', b'targetSdk = 30'))
         entry = next(line for line in entries if line.endswith(b'\tapp/build.gradle.kts'))
         entries.remove(entry)

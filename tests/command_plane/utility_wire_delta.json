@@ -3,6 +3,19 @@
   "scope": "Owner V82 real-wire utility representation and retention only",
   "files": [
     {
+      "path": "app/build.gradle.kts",
+      "beforeSha256": "de4dd743085482114daae481551a23afe8536ff216d4285ef9dd0df9aa63ec3f",
+      "afterSha256": "c16129f362e3b27dbd246b8019f12da77e7b6f7a629923fbbf999acca56d8d79",
+      "before": "100644 blob 45da2c7e733a9b52bb34d0fa608c800f83fb67fe\tapp/build.gradle.kts",
+      "after": "100644 blob d5fe1002352b793bfb5cd28fef6790a08de4faa2\tapp/build.gradle.kts",
+      "hunks": [
+        {
+          "before": "\n    defaultConfig {\n        applicationId = \"com.zui.zuicontrol\"\n        minSdk = 29\n        targetSdk = 30\n        versionCode = 81\n        versionName = \"0.21.44\"\n    }\n\n    signingConfigs {\n        create(\"release\") {\n            val storeFilePath = providers.gradleProperty(\"zuicontrol.storeFile\").orNull\n",
+          "after": "\n    defaultConfig {\n        applicationId = \"com.zui.zuicontrol\"\n        minSdk = 29\n        targetSdk = 30\n        versionCode = 82\n        versionName = \"0.21.45\"\n    }\n\n    signingConfigs {\n        create(\"release\") {\n            val storeFilePath = providers.gradleProperty(\"zuicontrol.storeFile\").orNull\n"
+        }
+      ]
+    },
+    {
       "path": "framework_patch/src/services/com/zui/server/control/UtilityTransport.java",
       "beforeSha256": "3af2f7da55383ca76a718850d3618757415ad49204a1da91827f1fd9e27c107b",
       "afterSha256": "5b44c982316ea116e8a2e1df49a0953ac294419a81866743c7e606bd60bba896",
@@ -49,6 +62,19 @@
         {
           "before": "                        previous = new byte[0];\n                    }\n                }\n                if (previous.length == 0) mAppPolicies.disk.write(\"policy-request.json\",retainedIdentity.length!=0?retainedIdentity:\n                        PolicyJson.bytes(PolicyJson.map(\"id\", id, \"sha\", sha256, \"payload\", policy,\"identity\",admitted.json())));\n            } else if (\"set_uperf_mode\".equals(fields[1]) || \"set_uperf_app\".equals(fields[1]) || \"remove_uperf_app\".equals(fields[1])) {\n                return requestRefused(policyCallerUser,id,\"unified_policy_generation_required\");\n            }\n            mAppPolicies.disk.write(\"control-admission.json\",PolicyJson.bytes(PolicyJson.map(\"identity\",admitted.json(),\"terminal\",false)));\n            String token=\"u\"+policyCallerUser+\"_\"+admitted.sequence+\"_\"+Long.toHexString(SystemClock.elapsedRealtimeNanos());\n            if (!id.equals(SystemProperties.get(PROP_COMMAND_ID, \"\"))) {\n",
           "after": "                        previous = new byte[0];\n                    }\n                }\n                if (previous.length == 0) mAppPolicies.disk.write(\"policy-request.json\",retainedIdentity.length!=0?retainedIdentity:\n                        PolicyJson.bytes(PolicyJson.map(\"id\", id, \"sha\", sha256, \"payload\", policy,\"identity\",admitted.json())));\n            } else if (\"set_uperf_mode\".equals(request.command) || \"set_uperf_app\".equals(request.command) || \"remove_uperf_app\".equals(request.command)) {\n                return requestRefused(policyCallerUser,id,\"unified_policy_generation_required\");\n            }\n            mAppPolicies.disk.write(\"control-admission.json\",PolicyJson.bytes(PolicyJson.map(\"identity\",admitted.json(),\"terminal\",false)));\n            String token=\"u\"+policyCallerUser+\"_\"+admitted.sequence+\"_\"+Long.toHexString(SystemClock.elapsedRealtimeNanos());\n            if (!id.equals(SystemProperties.get(PROP_COMMAND_ID, \"\"))) {\n"
+        }
+      ]
+    },
+    {
+      "path": "payload/README.txt",
+      "beforeSha256": "a1f1ea2f658c4347c24c22279553f90e5afb41919588d9b4b25dc420707317c6",
+      "afterSha256": "e1eae39c13b8ce6121ded21ba72def197eaee735388e4e3f647ba894bddf224d",
+      "before": "100644 blob 1e54274969046dc5c53c0dc3e98ecb656f159e29\tpayload/README.txt",
+      "after": "100644 blob 87b15af168008ddeca9eb78f0a07b8e2e21db5d6\tpayload/README.txt",
+      "hunks": [
+        {
+          "before": "ZuiControl production payload \u2014 App V81 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV81/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n",
+          "after": "ZuiControl production payload \u2014 App V82 target\n\nBuild/package target:\n- /system/priv-app/ZuiControlV82/ZuiControl.apk\n- /system/bin/zui_controld\n- /system/bin/uperf\n- /system/bin/zui_uperf_service\n- /system/bin/zui_uperf_supervisor\n- /system/bin/ZUIopt\n"
         }
       ]
     }
