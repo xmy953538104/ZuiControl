@@ -70,6 +70,8 @@ public class RecoveryFixture {
     static final class Monitor {void removeUser(int user){throw new AssertionError("fixture inventory unchanged");}}
     final Monitor mMonitor=new Monitor();
     void publishPolicySettings(){hit("settings_projection");}
+    String mPolicyError="";
+    void publishState(){hit("state_publication");}
     /* REFUSAL */
     String admit(String id,String sha256)throws Exception {
         int policyCallerUser=callerUser;Map<Integer,Long> inventory=mAppPolicies.current.users;
