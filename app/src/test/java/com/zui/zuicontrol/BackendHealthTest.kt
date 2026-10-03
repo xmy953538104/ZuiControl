@@ -12,4 +12,14 @@ class BackendHealthTest {
         assertEquals(BackendHealth.State.OK,failed[3].state)
         assertEquals(160,BackendHealth.components(healthy.replace("monitorError=","monitorError="+"e".repeat(1000)))[4].reason.length)
     }
+    @Test fun requestHistoryIsNotRuntimeHealth(){
+        val rejected=healthy+"\nmonitorLastRequestError=IllegalArgumentException:thread_identity"
+        assertTrue(BackendHealth.components(rejected).all { it.state==BackendHealth.State.OK })
+        val runtime=rejected.replace("monitorError=","monitorError=source_failure")
+        assertEquals(BackendHealth.State.DEGRADED,BackendHealth.components(runtime)[4].state)
+        assertTrue(BackendHealth.components(rejected).all { it.state==BackendHealth.State.OK })
+        val finalize=rejected.replace("monitorFinalizeError=","monitorFinalizeError=record_finalize:SQLite")
+        assertEquals(BackendHealth.State.DEGRADED,BackendHealth.components(finalize)[4].state)
+        assertEquals(BackendHealth.State.OK,BackendHealth.components(finalize)[3].state)
+    }
 }

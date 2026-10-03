@@ -118,6 +118,7 @@ jobs:
           python3 tests/gpu/TestBackupInspection.py
           python3 tests/gpu/TestFactoryReset.py
           python3 tests/monitor/TestPowerEdge.py
+          python3 tests/monitor/TestMonitorHealth.py
           python3 tests/monitor/TestThreadAnalysis.py
           python3 tests/monitor/TestAnalysisCollector.py
           python3 tests/monitor/TestAnalysisSql.py

@@ -48,7 +48,7 @@ class MonitorCollector {
     private boolean powerConfirmationPending;
     private String finalizeError="";
     private long epoch,samples,threadReads,enumerations,lastThreadTime;
-    private String lastSnapshot="{}",error="";
+    private String lastSnapshot="{}",error="",lastRequestError="";
     private List<MonitorSnapshot.Task> previous=Collections.emptyList();
     private int previousPid;
     private long previousStart;
@@ -88,12 +88,12 @@ class MonitorCollector {
     private void terminate(String reason,boolean incomplete){
         if(!session.recording())return;
         long end=Math.min(SystemClock.elapsedRealtime(),session.recordingStart+MonitorSession.MAX_RECORD_MS);
-        try { store.finish(end,reason,incomplete); }
+        try { store.finish(end,reason,incomplete);finalizeError=""; }
         catch(RuntimeException e){
-            finalizeError="record_finalize:"+e.getClass().getSimpleName()+":"+e.getMessage();
+            finalizeError=boundedError("record_finalize:"+e.getClass().getSimpleName()+":"+e.getMessage());
             // A failed write leaves the existing INCOMPLETE row. Best-effort mark it explicitly.
             try { store.finish(end,"FINALIZE_ERROR",true); } catch(RuntimeException ignored) { }
-            try { store.abandon(); } catch(RuntimeException close) { finalizeError+=";close:"+close.getMessage(); }
+            try { store.abandon(); } catch(RuntimeException close) { finalizeError=boundedError(finalizeError+";close:"+close.getMessage()); }
         }
         finally { session.stop();clearThreadBaseline(); }
     }
@@ -115,7 +115,7 @@ class MonitorCollector {
     }
     private void disconnect(String reason){
         // A failed old connection never owns the new listener or desired mode.
-        try { terminate(reason,true); } catch(RuntimeException e){error="record_finalize:"+e.getMessage();}
+        try { terminate(reason,true); } catch(RuntimeException e){finalizeError=boundedError("record_finalize:"+e.getMessage());}
         retireCallback();session.connectionEpoch++;lastGesture=-1;drain();
         lastSnapshot="{}";
         schedule();
@@ -174,7 +174,7 @@ class MonitorCollector {
                     int[] saved=userModes.computeIfAbsent(user,u->new int[]{MonitorSession.OFF,0,1});
                     saved[2]="permissionGranted".equals(action)?1:0;return "ok=1";
                 }
-                return "ok=0\nerror=inactive_user";
+                return reject("inactive_user");
             }
             if("permissionGranted".equals(action)||"permissionLost".equals(action)){
                 boolean allowed="permissionGranted".equals(action);
@@ -185,33 +185,41 @@ class MonitorCollector {
             else if("fps".equals(action))session.toggle(MonitorSession.FPS);
             else if("off".equals(action))session.mode=MonitorSession.OFF;
             else if("circle".equals(action)||"bar".equals(action)){
-                if(callback==null||session.mode!=MonitorSession.FULL)return "ok=0\nerror=not_visible";
+                if(callback==null||session.mode!=MonitorSession.FULL)return reject("not_visible");
                 session.circle="circle".equals(action);
             }
             else if("recordStart".equals(action)){
                 String[] token=arg.split(":",-1);
-                if(token.length!=3)return "ok=0\nerror=start_identity";
+                if(token.length!=3)return reject("start_identity");
                 long connection=Long.parseLong(token[0]),target=Long.parseLong(token[1]),gesture=Long.parseLong(token[2]);
                 if(callback==null||connection!=session.connectionEpoch||target!=session.targetEpoch||gesture<0)
-                    return "ok=0\nerror=stale_start";
+                    return reject("stale_start");
                 if(gesture==lastGesture)return "ok=1\nrecordStartReplay=true";
-                if(gesture<lastGesture||!session.canStart()||session.user!=user)return "ok=0\nerror=scene_changed";
+                if(gesture<lastGesture||!session.canStart()||session.user!=user)return reject("scene_changed");
                 MonitorSnapshot.Task task=identity(findPid());
-                if(task==null)return "ok=0\nerror=process_unavailable";
+                if(task==null)return reject("process_unavailable");
                 android.content.pm.PackageManager packages=((Context)Context.class.getMethod("createContextAsUser",android.os.UserHandle.class,int.class)
                         .invoke(context,android.os.UserHandle.getUserHandleForUid(user*100000),0)).getPackageManager();
                 String label=packages.getApplicationLabel(packages.getApplicationInfo(session.foreground,0)).toString();
                 store.start(session.foreground,label,user,task.tid,task.start,now,session.taskId,session.targetEpoch,facts.recordPolicy(user,session.foreground));
-                session.started(now,task.tid,task.start);finalizeError="";lastGesture=gesture;clearThreadBaseline();
+                session.started(now,task.tid,task.start);lastGesture=gesture;clearThreadBaseline();
             }else if("recordStop".equals(action)){
-                if(session.recordingUser!=user)return "ok=0\nerror=wrong_user";
+                if(session.recordingUser!=user)return reject("wrong_user");
                 terminate("EXPLICIT_STOP",false);
-            }else if(!"state".equals(action))return "ok=0\nerror=unknown_monitor_action";
+            }else if(!"state".equals(action))return reject("unknown_monitor_action");
             if(("full".equals(action)||"fps".equals(action))&&session.mode!=MonitorSession.OFF){sources.resetFps();sources.resetQuiet();}
             if(session.mode!=MonitorSession.FULL)terminate("USER_DISABLE",false);
             if(!"state".equals(action)){stop();schedule();}
             return "ok=1"+state()+"\nmonitorSnapshot="+lastSnapshot;
-        }catch(Exception e){error=e.getClass().getSimpleName()+":"+e.getMessage();return "ok=0\nerror="+error;}
+        }catch(Exception e){return reject(e.getClass().getSimpleName()+":"+e.getMessage());}
+    }
+    private static String boundedError(String value){
+        String text=value.replace('\n',' ').replace('\r',' ');
+        return text.substring(0,Math.min(160,text.length()));
+    }
+    private String reject(String reason){
+        // Request history is diagnostic only; neither runtime nor finalization health changes.
+        lastRequestError=boundedError(reason);return "ok=0\nerror="+lastRequestError;
     }
     private void clearThreadBaseline(){previous=Collections.emptyList();previousPid=0;previousStart=0;lastThreadTime=0;}
     private boolean scalarActive(){return callback!=null&&session.sampling();}
@@ -273,6 +281,7 @@ class MonitorCollector {
             +"\nmonitorQuietPath="+sources.quietPath+"\nmonitorQuietUnit=millidegree_C\nmonitorQuietDiscovery="+sources.discoveryReads
             +"\nmonitorFpsReads="+sources.fpsReads+"\nmonitorFpsError="+sources.fpsError
             +"\nmonitorQuietError="+sources.quietError+"\nmonitorError="+error+"\nmonitorFinalizeError="+finalizeError
+            +"\nmonitorLastRequestError="+lastRequestError
             +"\nanalysisEnumerations="+analysisEnumerations+"\nanalysisTaskReads="+analysisReads+"\nanalysisResultWrites="+analysisWrites;
     }
     private void sample(long ticket){synchronized(this){
@@ -348,7 +357,11 @@ class MonitorCollector {
                 .put("batteryCurrentMagnitudeA",power<0?-1:Math.abs(microAmps/1000000.0))
                 .put("quietC",quiet).put("recordState",session.recordingState());
             lastSnapshot=data.toString();deliver(lastSnapshot);
-        }catch(Exception e){error=e.getClass().getSimpleName()+":"+e.getMessage();
+            // Only a completed sample proves pipeline recovery. Expected lack of demand or
+            // charging power unavailability is not a source fault; failed demanded reads are.
+            error=boundedError(!sources.quietError.isEmpty()?"quiet:"+sources.quietError:
+                    fpsBlockedReason().isEmpty()&&fps<0?"fps:"+fpsValidity:"");
+        }catch(Exception e){error=boundedError(e.getClass().getSimpleName()+":"+e.getMessage());
             terminate("SOURCE_PIPELINE_FAILURE",true);stop();}
         reschedule(powerDelay);
     }}

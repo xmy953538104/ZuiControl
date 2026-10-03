@@ -100,6 +100,7 @@ python tests/gpu/TestAtomicPolicy.py
 python tests/gpu/TestBackupInspection.py
 python tests/gpu/TestFactoryReset.py
 python tests/monitor/TestPowerEdge.py
+python tests/monitor/TestMonitorHealth.py
 python tests/monitor/TestThreadAnalysis.py
 python tests/monitor/TestAnalysisCollector.py
 python tests/monitor/TestAnalysisSql.py
