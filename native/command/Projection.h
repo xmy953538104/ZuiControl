@@ -76,7 +76,7 @@ struct Json {
     int64_t integer()const{require(kind=='-'||(kind>='0'&&kind<='9'),"JSON integer required");size_t used=0;auto n=std::stoll(text,&used);require(used==text.size(),"JSON integer");return n;}
     void keys(std::initializer_list<const char*> names)const{require(kind=='{'&&fields.size()==names.size(),"JSON keys");for(auto n:names)require(fields.count(n)==1,"JSON missing key");}
 };
-inline int64_t generation(const std::string& policy){auto p=Json::parse(policy);auto n=p.get("generation").integer();require(p.get("schema").integer()==2&&n>0,"projection generation/schema");return n;}
+inline int64_t generation(const std::string& policy){auto p=Json::parse(policy);auto n=p.get("generation").integer();require((p.get("schema").integer()==2||p.get("schema").integer()==3)&&n>0,"projection generation/schema");return n;}
 inline std::string base64(const std::string& s){
     static constexpr char table[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";std::string out;
     for(size_t i=0;i<s.size();i+=3){uint32_t v=uint8_t(s[i])<<16;size_t n=std::min(size_t(3),s.size()-i);

@@ -38,13 +38,14 @@ inline std::string unbase64(const std::string& input){
     require(base64(result)==input,"base64 canonical");return result;
 }
 inline std::string settingsProjection(const std::string& action,const std::string& text){
-    if(action=="settings_snapshot"){
+    if(action=="settings_snapshot"||action=="settings_upstream"){
+        bool upstream=action=="settings_upstream";
         require(text.empty(),"snapshot argument");auto state=nativeRules("state","","");auto gen=field(state,"generation");
-        auto count=field(state,"user_size");require(alphabet(count,"0123456789",1,6),"rules size");int size=std::stoi(count);require(size>0&&size<=65536,"canonical size");std::string bytes;
-        while(bytes.size()<size_t(size)){auto reply=nativeRules("read",gen,std::to_string(bytes.size()));auto parts=split(reply,':');
+        auto count=field(state,upstream?"upstream_size":"user_size");require(alphabet(count,"0123456789",1,6),"rules size");int size=std::stoi(count);require(size>0&&size<=65536,"canonical size");std::string bytes;
+        while(bytes.size()<size_t(size)){auto reply=nativeRules(upstream?"upstream_read":"read",gen,(upstream?"rules:":"")+std::to_string(bytes.size()));auto parts=split(reply,':');
             require(parts.size()==3&&parts[0]==gen&&parts[1]==std::to_string(bytes.size()),"canonical read generation");auto chunk=unbase64(parts[2]);
             require(!chunk.empty()&&bytes.size()+chunk.size()<=size_t(size),"canonical chunk");bytes+=chunk;}
-        require(sha256(bytes)==field(state,"user_sha256")&&nativeRules("state","","")==state,"canonical snapshot changed");
+        require(sha256(bytes)==field(state,upstream?"upstream_sha256":"user_sha256")&&nativeRules("state","","")==state,"canonical snapshot changed");
         auto pending=field(state,"settings_pending");require(alphabet(gen,"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-",1,128)&&alphabet(pending,"0123456789abcdef",0,24),"canonical snapshot fields");
         return "{\"data\":\""+base64(bytes)+"\",\"generation\":\""+gen+"\",\"pending\":\""+pending+"\"}";
     }

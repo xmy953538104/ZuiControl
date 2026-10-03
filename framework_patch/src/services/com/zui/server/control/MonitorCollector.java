@@ -20,7 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** One scalar clock; task enumeration exists only inside an active user recording. */
+/** One worker/scalar clock. Task enumeration requires explicit recording or analysis. */
 class MonitorCollector {
     static final String CALLBACK="android.zui.IMonitorSnapshot";
     private final Context context;
@@ -28,6 +28,15 @@ class MonitorCollector {
     private final MonitorSources sources;
     private boolean fpsSceneEligible;
     private final MonitorStore store=new MonitorStore();
+    private final java.util.Map<Integer,ThreadAnalysis> analyses=new java.util.HashMap<>();
+    private final java.util.Map<Integer,String> analysisStates=new java.util.HashMap<>();
+    private final java.util.Map<Integer,List<ThreadAnalysis.Process>> analysisTasks=new java.util.HashMap<>();
+    long analysisEnumerations,analysisReads,analysisWrites;
+    interface Facts {
+        String rulesGeneration();
+        default String recordPolicy(int user,String pkg){return PolicyJson.encode(PolicyJson.map("schema",1,"zuioptGeneration",rulesGeneration(),"policy","UNAVAILABLE"));}
+    }
+    Facts facts=()->"UNAVAILABLE";
     private IBinder callback;
     private IBinder.DeathRecipient death;
     private final java.util.Map<Integer,IBinder> clients=new java.util.HashMap<>();
@@ -35,6 +44,8 @@ class MonitorCollector {
     private HandlerThread thread;
     private Handler handler;
     private boolean scheduled;
+    private int expectedPowerPlugged=-1;
+    private boolean powerConfirmationPending;
     private String finalizeError="";
     private long epoch,samples,threadReads,enumerations,lastThreadTime;
     private String lastSnapshot="{}",error="";
@@ -70,6 +81,7 @@ class MonitorCollector {
     }
     synchronized void unregister(IBinder binder){clients.values().removeIf(value->value==binder);if(callback==binder)disconnect("CLIENT_CLOSED");}
     synchronized void removeUser(int user){
+        analyses.remove(user);analysisStates.remove(user);analysisTasks.remove(user);
         if(user==session.user){terminate("USER_REMOVED",false);disconnect("USER_REMOVED");}
         clients.remove(user);userModes.remove(user);store.removeUser(user);
     }
@@ -106,6 +118,7 @@ class MonitorCollector {
         try { terminate(reason,true); } catch(RuntimeException e){error="record_finalize:"+e.getMessage();}
         retireCallback();session.connectionEpoch++;lastGesture=-1;drain();
         lastSnapshot="{}";
+        schedule();
     }
     private void retireCallback(){
         IBinder old=callback;IBinder.DeathRecipient recipient=death;
@@ -139,6 +152,7 @@ class MonitorCollector {
                 &&(fpsChanged||taskChanged||!pkg.equals(session.foreground)||user!=session.user
                 ||recordEligible!=session.recordEligible));
         session.scene(pkg,user,eligible,recordEligible);
+        for(ThreadAnalysis a:analyses.values())a.scene(a.user==user&&a.pkg.equals(pkg)&&recordEligible,eligible,SystemClock.elapsedRealtime());
         String terminal=session.terminal(SystemClock.elapsedRealtime());
         if(terminal.isEmpty()&&taskChanged&&session.recording())terminal="TASK_CHANGED";
         checkTerminal(!eligible&&terminal.equals("SCREEN_OR_LOCK")?blockedReason:terminal);
@@ -148,6 +162,7 @@ class MonitorCollector {
     synchronized String command(String action,int user,String arg){
         try{
             long now=SystemClock.elapsedRealtime();
+            if(action.startsWith("analysis"))return analysisCommand(action,user,arg,now);
             if("recordRead".equals(action))return store.read(user,arg);
             if("recordList".equals(action))return store.list(user);
             if("recordDelete".equals(action))return store.delete(user,arg);
@@ -186,7 +201,7 @@ class MonitorCollector {
                 android.content.pm.PackageManager packages=((Context)Context.class.getMethod("createContextAsUser",android.os.UserHandle.class,int.class)
                         .invoke(context,android.os.UserHandle.getUserHandleForUid(user*100000),0)).getPackageManager();
                 String label=packages.getApplicationLabel(packages.getApplicationInfo(session.foreground,0)).toString();
-                store.start(session.foreground,label,user,task.tid,task.start,now,session.taskId,session.targetEpoch);
+                store.start(session.foreground,label,user,task.tid,task.start,now,session.taskId,session.targetEpoch,facts.recordPolicy(user,session.foreground));
                 session.started(now,task.tid,task.start);finalizeError="";lastGesture=gesture;clearThreadBaseline();
             }else if("recordStop".equals(action)){
                 if(session.recordingUser!=user)return "ok=0\nerror=wrong_user";
@@ -199,8 +214,9 @@ class MonitorCollector {
         }catch(Exception e){error=e.getClass().getSimpleName()+":"+e.getMessage();return "ok=0\nerror="+error;}
     }
     private void clearThreadBaseline(){previous=Collections.emptyList();previousPid=0;previousStart=0;lastThreadTime=0;}
+    private boolean scalarActive(){return callback!=null&&session.sampling();}
     private void schedule(){
-        if(callback==null||!session.sampling()){stop();return;}
+        if(!scalarActive()&&analyses.isEmpty()){stop();return;}
         if(handler==null){thread=new HandlerThread("ZuiMonitor");thread.start();handler=new Handler(thread.getLooper());}
         if(scheduled)return;
         scheduled=true;long ticket=epoch;handler.post(()->sample(ticket));
@@ -213,7 +229,7 @@ class MonitorCollector {
     }
     synchronized void stop(){
         // Keep the one worker while the client has an active sampling lifetime.
-        if(callback==null||!session.sampling())drain();
+        if(!scalarActive()&&analyses.isEmpty())drain();
         else {epoch++;scheduled=false;if(handler!=null)handler.removeCallbacksAndMessages(null);}
         // Invalidate all cached values, never relabel old target readings as a fresh sample.
         try {
@@ -241,6 +257,10 @@ class MonitorCollector {
         return "";
     }
     synchronized void invalidatePower(){stop();schedule();}
+    synchronized void invalidatePower(boolean connected){
+        // Replace the pending edge on the existing clock; never retain pre-edge watts.
+        stop();expectedPowerPlugged=connected?1:0;powerConfirmationPending=true;schedule();
+    }
     synchronized String snapshot(){return lastSnapshot;}
     synchronized String state(){
         return "\nmonitorActive="+(thread!=null)+"\nmonitorTarget="+session.foreground
@@ -252,15 +272,19 @@ class MonitorCollector {
             +"\nmonitorIntervalMs="+session.interval()+"\nmonitorConnectionEpoch="+session.connectionEpoch+"\nmonitorTargetEpoch="+session.targetEpoch+"\nmonitorThreadIntervalMs=3000\nmonitorTimer="+(handler!=null)
             +"\nmonitorQuietPath="+sources.quietPath+"\nmonitorQuietUnit=millidegree_C\nmonitorQuietDiscovery="+sources.discoveryReads
             +"\nmonitorFpsReads="+sources.fpsReads+"\nmonitorFpsError="+sources.fpsError
-            +"\nmonitorQuietError="+sources.quietError+"\nmonitorError="+error+"\nmonitorFinalizeError="+finalizeError;
+            +"\nmonitorQuietError="+sources.quietError+"\nmonitorError="+error+"\nmonitorFinalizeError="+finalizeError
+            +"\nanalysisEnumerations="+analysisEnumerations+"\nanalysisTaskReads="+analysisReads+"\nanalysisResultWrites="+analysisWrites;
     }
     private void sample(long ticket){synchronized(this){
-        if(ticket!=epoch||handler==null||!session.sampling())return;
+        if(ticket!=epoch||handler==null||(!scalarActive()&&analyses.isEmpty()))return;
         scheduled=false;
+        long powerDelay=0;
         try{
+            updateAnalyses(SystemClock.elapsedRealtime());
+            if(!scalarActive()){reschedule(0);return;}
             String screen=screenTerminal();
             if(!screen.isEmpty()){
-                terminate(screen,false);session.scene(session.foreground,session.user,false);clearThreadBaseline();stop();return;
+                terminate(screen,false);session.scene(session.foreground,session.user,false);clearThreadBaseline();stop();reschedule(0);return;
             }
             long now=SystemClock.elapsedRealtime();
             String fpsValidity=fpsBlockedReason();
@@ -283,18 +307,30 @@ class MonitorCollector {
                     power=MonitorSources.batteryWatts(plugged,batteryStatus,milliVolts,microAmps);
                 }
             }
+            if(expectedPowerPlugged!=-1){
+                boolean settled=expectedPowerPlugged==1?plugged>0:plugged==0&&batteryStatus==3;
+                if(settled){expectedPowerPlugged=-1;powerConfirmationPending=false;}
+                else{
+                    power=-1;
+                    if(powerConfirmationPending){powerDelay=400;powerConfirmationPending=false;}
+                }
+            }
             if(capture){
                 MonitorSnapshot.Task process=identity(session.recordingPid);
                 if(process!=null&&session.sameProcess(process.tid,process.start)){
                     List<MonitorSnapshot.Row> rows=Collections.emptyList();
-                    if(lastThreadTime==0||now-lastThreadTime>=3000){
-                        enumerations++;
-                        List<MonitorSnapshot.Task> tasks=readTasks(process.tid);
+                    ThreadAnalysis analysis=analyses.get(session.user);
+                    boolean shared=analysis!=null&&analysis.pkg.equals(session.recordingPackage)&&analysis.collecting;
+                    long taskTime=shared?analysis.lastSample:now;
+                    if(shared?taskTime>=0&&taskTime!=lastThreadTime:lastThreadTime==0||now-lastThreadTime>=3000){
+                        List<MonitorSnapshot.Task> tasks;
+                        if(shared){tasks=Collections.emptyList();for(ThreadAnalysis.Process p:analysisTasks.getOrDefault(session.user,Collections.emptyList()))if(p.pid==process.tid&&p.start==process.start)tasks=p.tasks;}
+                        else {enumerations++;tasks=readTasks(process.tid);}
                         MonitorSnapshot.Task after=identity(process.tid);
                         if(after==null||after.start!=process.start){clearThreadBaseline();process=null;}
                         else{
-                            rows=MonitorSnapshot.delta(previous,tasks,now-lastThreadTime,hz,previousPid==process.tid&&previousStart==process.start);
-                            previous=tasks;previousPid=process.tid;previousStart=process.start;lastThreadTime=now;
+                            rows=MonitorSnapshot.delta(previous,tasks,taskTime-lastThreadTime,hz,previousPid==process.tid&&previousStart==process.start);
+                            previous=tasks;previousPid=process.tid;previousStart=process.start;lastThreadTime=taskTime;
                         }
                     }
                     if(process!=null)store.append(now,fps,power,quiet,process.tid,process.start,rows,fpsValidity);
@@ -314,11 +350,80 @@ class MonitorCollector {
             lastSnapshot=data.toString();deliver(lastSnapshot);
         }catch(Exception e){error=e.getClass().getSimpleName()+":"+e.getMessage();
             terminate("SOURCE_PIPELINE_FAILURE",true);stop();}
-        if(handler!=null&&session.sampling()&&!scheduled){
-            scheduled=true;long next=epoch;
-            handler.postDelayed(()->sample(next),session.recording()?Math.min(session.interval(),Math.max(1,session.recordingStart+MonitorSession.MAX_RECORD_MS-SystemClock.elapsedRealtime())):session.interval());
-        }
+        reschedule(powerDelay);
     }}
+    private void reschedule(long powerDelay){
+        if(!scalarActive()&&analyses.isEmpty()){drain();return;}
+        if(handler!=null&&(scalarActive()||!analyses.isEmpty())&&!scheduled){
+            scheduled=true;long next=epoch;
+            long now=SystemClock.elapsedRealtime();
+            long delay=scalarActive()?(powerDelay>0?powerDelay:session.interval()):ThreadAnalysis.MAX_WALL;
+            for(ThreadAnalysis a:analyses.values()){
+                delay=Math.min(delay,Math.max(1,a.began+ThreadAnalysis.MAX_WALL-now));
+                if(a.collecting){delay=Math.min(delay,Math.max(1,a.requested-a.active));delay=Math.min(delay,a.lastSample<0?1:Math.max(1,a.lastSample+ThreadAnalysis.INTERVAL-now));}
+                if(!a.live())delay=1;
+            }
+            if(session.recording())delay=Math.min(delay,Math.max(1,session.recordingStart+MonitorSession.MAX_RECORD_MS-SystemClock.elapsedRealtime()));
+            handler.postDelayed(()->sample(next),delay);
+        }
+    }
+    private String analysisCommand(String action,int user,String arg,long now)throws Exception{
+        java.util.Map<String,Object> request=arg.isEmpty()?PolicyJson.map():PolicyJson.object(PolicyJson.parse(arg.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        if(action.equals("analysisStart")){
+            PolicyJson.keys(request,"package","activeMs");PolicyJson.require(user==session.user&&!analyses.containsKey(user),"analysis busy/inactive user");
+            ThreadAnalysis a=new ThreadAnalysis(user,PolicyJson.string(request.get("package")),PolicyJson.integer(request.get("activeMs")),now,facts.rulesGeneration());
+            analyses.put(user,a);a.scene(a.pkg.equals(session.foreground)&&session.recordEligible,session.eligible,now);
+            stop();schedule();return PolicyJson.encode(a.summary(now));
+        }
+        if(action.equals("analysisState")){
+            PolicyJson.keys(request);ThreadAnalysis a=analyses.get(user);
+            return a==null?analysisStates.getOrDefault(user,"{}"):PolicyJson.encode(a.summary(now));
+        }
+        if(action.equals("analysisStop")){
+            PolicyJson.keys(request,"session");ThreadAnalysis a=analyses.get(user);
+            PolicyJson.require(a!=null&&a.id.equals(request.get("session")),"analysis session changed");a.finish("FINISHED",now);finishAnalysis(a,now);stop();schedule();return analysisStates.get(user);
+        }
+        if(action.equals("analysisRead")||action.equals("analysisDelete")){
+            boolean delete=action.equals("analysisDelete");
+            if(delete)PolicyJson.keys(request,"package");else PolicyJson.keys(request,"package","offset","hash");
+            String pkg=PolicyJson.string(request.get("package"));ThreadAnalysis a=analyses.get(user);
+            PolicyJson.require(!delete||a==null||!a.pkg.equals(pkg),"stop analysis before delete");
+            return store.analysis(user,pkg,delete?0:PolicyJson.intValue(request.get("offset")),delete?"":PolicyJson.string(request.get("hash")),delete);
+        }
+        throw new IllegalArgumentException("analysis action");
+    }
+    private void finishAnalysis(ThreadAnalysis a,long now){
+        a.endRules=facts.rulesGeneration();
+        try{store.saveAnalysis(a.user,a.pkg,a.result(now));analysisWrites++;}
+        catch(Exception e){a.state="FAILED";a.error="persist:"+e.getClass().getSimpleName();}
+        analysisStates.put(a.user,PolicyJson.encode(a.summary(now)));analyses.remove(a.user);analysisTasks.remove(a.user);
+    }
+    private void updateAnalyses(long now){
+        boolean screen=screenTerminal().isEmpty()&&session.eligible;
+        for(ThreadAnalysis a:new ArrayList<>(analyses.values())){
+            a.scene(a.user==session.user&&a.pkg.equals(session.foreground)&&session.recordEligible,screen,now);
+            if(a.due(now))try{
+                long before=threadReads;List<ThreadAnalysis.Process> tasks=readAnalysisTasks(a);analysisReads+=threadReads-before;analysisEnumerations++;
+                a.sample(tasks,now,hz);analysisTasks.put(a.user,tasks);
+            }catch(Exception e){a.fail(e.getClass().getSimpleName()+":"+e.getMessage(),now);}
+            if(!a.live())finishAnalysis(a,now);
+        }
+    }
+    List<ThreadAnalysis.Process> readAnalysisTasks(ThreadAnalysis a){
+        ActivityManager manager=context.getSystemService(ActivityManager.class);
+        List<ActivityManager.RunningAppProcessInfo> processes=manager.getRunningAppProcesses();
+        if(processes==null)throw new IllegalStateException("analysis process list unavailable");
+        List<ThreadAnalysis.Process> out=new ArrayList<>();int count=0;
+        for(ActivityManager.RunningAppProcessInfo p:processes){
+            if(p.uid/100000!=a.user||p.pkgList==null||p.pkgList.length!=1||!a.pkg.equals(p.pkgList[0]))continue;
+            MonitorSnapshot.Task before=identity(p.pid);if(before==null)continue;
+            List<MonitorSnapshot.Task> tasks=readTasks(p.pid);MonitorSnapshot.Task after=identity(p.pid);
+            if(after==null||after.start!=before.start)continue;
+            count+=tasks.size();if(count>ThreadAnalysis.MAX_TASKS||out.size()>=64)throw new IllegalStateException("analysis target task bound");
+            out.add(new ThreadAnalysis.Process(p.pid,before.start,tasks));
+        }
+        return out;
+    }
     private MonitorSnapshot.Task parse(String path){
         try{return MonitorSnapshot.Task.parse(MonitorSources.line(path));}catch(java.io.IOException e){return null;}
     }

@@ -28,19 +28,28 @@ final class AppPolicyStore {
     }
     static final class Row {
         final int refreshHz, gpuMinMHz, gpuMaxMHz;
-        final String uperfMode;
-        Row(int hz, String mode, int min, int max) {
+        final String uperfMode, gpuPolicy;
+        Row(int hz, String mode, int min, int max) { this(hz,mode,min,max,"CUSTOM"); }
+        Row(int hz, String mode, int min, int max, String policy) {
             require(Arrays.asList(60, 90, 120, 144, 165).contains(hz), "refreshHz");
             require(mode(mode), "uperfMode"); new GpuRange(min, max);
-            refreshHz = hz; uperfMode = mode; gpuMinMHz = min; gpuMaxMHz = max;
+            require(policy.equals("DEFAULT_FOR_MODE") || policy.equals("CUSTOM"), "gpuPolicy");
+            refreshHz = hz; uperfMode = mode; gpuMinMHz = min; gpuMaxMHz = max; gpuPolicy=policy;
         }
         Object json() { return map("refreshHz", refreshHz, "uperfMode", uperfMode, "gpuMinMHz", gpuMinMHz, "gpuMaxMHz", gpuMaxMHz); }
-        static Row from(Object value) {
-            Map<String,Object> r = object(value); keys(r, "refreshHz", "uperfMode", "gpuMinMHz", "gpuMaxMHz");
-            return new Row(intValue(r.get("refreshHz")), string(r.get("uperfMode")), intValue(r.get("gpuMinMHz")), intValue(r.get("gpuMaxMHz")));
+        Object json(int schema) {
+            Map<String,Object> value=object(json());if(schema>=3)value.put("gpuPolicy",gpuPolicy);return value;
+        }
+        static Row from(Object value) { return from(value,2); }
+        static Row from(Object value,int schema) {
+            Map<String,Object> r = object(value);
+            if(schema==2)keys(r,"refreshHz","uperfMode","gpuMinMHz","gpuMaxMHz");
+            else keys(r,"refreshHz","uperfMode","gpuMinMHz","gpuMaxMHz","gpuPolicy");
+            return new Row(intValue(r.get("refreshHz")), string(r.get("uperfMode")), intValue(r.get("gpuMinMHz")), intValue(r.get("gpuMaxMHz")),schema==2?"CUSTOM":string(r.get("gpuPolicy")));
         }
     }
     static final class State {
+        int schema=2; // Preserve V82 bytes while recovering its existing journal.
         long generation;
         final Map<Integer,Long> users = new TreeMap<>();
         final Map<Integer,Row> globals = new TreeMap<>();
@@ -48,7 +57,7 @@ final class AppPolicyStore {
         final Map<String,GpuRange> defaults = new TreeMap<>();
         String migration = "";
         State copy() {
-            State s = new State(); s.generation = generation; s.users.putAll(users); s.globals.putAll(globals);
+            State s = new State(); s.schema=schema; s.generation = generation; s.users.putAll(users); s.globals.putAll(globals);
             s.apps.putAll(apps); s.defaults.putAll(defaults); s.migration = migration; return s;
         }
         Row global(int user) {
@@ -61,22 +70,27 @@ final class AppPolicyStore {
             GpuRange result = defaults.get(key(user, mode)); return result == null ? factory(mode, false) : result;
         }
         Row resolved(int user, String pkg) {
-            Row app = apps.get(key(user, pkg)); if (app != null) return app;
+            Row app = apps.get(key(user, pkg));
+            if(app!=null){
+                if(!app.gpuPolicy.equals("DEFAULT_FOR_MODE"))return app;
+                GpuRange resolved=range(user,app.uperfMode);
+                return new Row(app.refreshHz,app.uperfMode,resolved.minMHz,resolved.maxMHz,app.gpuPolicy);
+            }
             Row global = global(user); GpuRange range = range(user, global.uperfMode);
-            return new Row(global.refreshHz, global.uperfMode, range.minMHz, range.maxMHz);
+            return new Row(global.refreshHz, global.uperfMode, range.minMHz, range.maxMHz,"DEFAULT_FOR_MODE");
         }
         byte[] bytes() {
             List<Object> inventory = new ArrayList<>(), global = new ArrayList<>(), rows = new ArrayList<>(), ranges = new ArrayList<>();
             for (Map.Entry<Integer,Long> e : users.entrySet()) inventory.add(map("userId", e.getKey(), "serial", e.getValue()));
-            for (Map.Entry<Integer,Row> e : globals.entrySet()) global.add(map("userId", e.getKey(), "value", e.getValue().json()));
-            for (Map.Entry<String,Row> e : apps.entrySet()) rows.add(map("key", e.getKey(), "value", e.getValue().json()));
+            for (Map.Entry<Integer,Row> e : globals.entrySet()) global.add(map("userId", e.getKey(), "value", e.getValue().json(schema)));
+            for (Map.Entry<String,Row> e : apps.entrySet()) rows.add(map("key", e.getKey(), "value", e.getValue().json(schema)));
             for (Map.Entry<String,GpuRange> e : defaults.entrySet()) ranges.add(map("key", e.getKey(), "min", e.getValue().minMHz, "max", e.getValue().maxMHz));
-            byte[] result = PolicyJson.bytes(map("schema", 2, "generation", generation, "users", inventory, "globals", global, "apps", rows, "defaults", ranges, "migration", migration));
+            byte[] result = PolicyJson.bytes(map("schema", schema, "generation", generation, "users", inventory, "globals", global, "apps", rows, "defaults", ranges, "migration", migration));
             require(result.length <= 98304, "policy size"); return result;
         }
         static State parse(byte[] bytes) throws Exception {
             Map<String,Object> root = object(PolicyJson.parse(bytes)); keys(root, "schema", "generation", "users", "globals", "apps", "defaults", "migration");
-            require(integer(root.get("schema")) == 2, "policy schema"); State s = new State();
+            int schema=intValue(root.get("schema"));require(schema==2||schema==3,"policy schema"); State s = new State();s.schema=schema;
             s.generation = integer(root.get("generation")); require(s.generation > 0, "policy generation"); s.migration = string(root.get("migration")); require(s.migration.matches("[0-9a-f-]{36}"), "migration identity");
             for (Object item : array(root.get("users"))) {
                 Map<String,Object> r = object(item); keys(r, "userId", "serial"); int user = user(r.get("userId")); long serial = integer(r.get("serial"));
@@ -84,12 +98,12 @@ final class AppPolicyStore {
             }
             for (Object item : array(root.get("globals"))) {
                 Map<String,Object> r = object(item); keys(r, "userId", "value"); int user = user(r.get("userId"));
-                require(s.users.containsKey(user) && !s.globals.containsKey(user), "global duplicate/unknown user"); s.globals.put(user, Row.from(r.get("value")));
+                require(s.users.containsKey(user) && !s.globals.containsKey(user), "global duplicate/unknown user"); s.globals.put(user, Row.from(r.get("value"),schema));
             }
             require(s.globals.containsKey(0) && s.users.containsKey(0), "primary user missing");
             for (Object item : array(root.get("apps"))) {
                 Map<String,Object> r = object(item); keys(r, "key", "value"); String key = string(r.get("key")); splitKey(key, false);
-                require(!s.apps.containsKey(key), "app duplicate"); s.apps.put(key, Row.from(r.get("value")));
+                require(!s.apps.containsKey(key), "app duplicate"); s.apps.put(key, Row.from(r.get("value"),schema));
             }
             for (Object item : array(root.get("defaults"))) {
                 Map<String,Object> r = object(item); keys(r, "key", "min", "max"); String key = string(r.get("key")); splitKey(key, true);
@@ -222,15 +236,45 @@ final class AppPolicyStore {
             if (r.uperfMode.equals(mode)) next.globals.put(user, new Row(r.refreshHz, r.uperfMode, min, max));
         }
         else {
-            if (action.equals("refresh")) r = new Row(value, r.uperfMode, r.gpuMinMHz, r.gpuMaxMHz);
-            else if (action.equals("mode")) { GpuRange range = next.range(user, mode); r = new Row(r.refreshHz, mode, range.minMHz, range.maxMHz); }
+            if (action.equals("refresh")) r = new Row(value, r.uperfMode, r.gpuMinMHz, r.gpuMaxMHz,r.gpuPolicy);
+            else if (action.equals("mode")) { GpuRange range = next.range(user, mode); r = new Row(r.refreshHz, mode, range.minMHz, range.maxMHz,old.schema>=3&&!globalScope?"DEFAULT_FOR_MODE":"CUSTOM"); }
             else if (action.equals("gpuDefault")) {
                 require(!globalScope, "GPU reset scope"); GpuRange range = next.range(user, r.uperfMode);
-                r = new Row(r.refreshHz, r.uperfMode, range.minMHz, range.maxMHz);
+                r = new Row(r.refreshHz, r.uperfMode, range.minMHz, range.maxMHz,old.schema>=3?"DEFAULT_FOR_MODE":"CUSTOM");
             } else { require(action.equals("gpu") && !globalScope, "policy action"); r = new Row(r.refreshHz, r.uperfMode, min, max); }
             if (globalScope) next.globals.put(user, r); else next.apps.put(key(user, pkg), r);
         }
         next.generation = Math.addExact(old.generation, 1); return next;
+    }
+    static State draft(State old,long expected,int user,String pkg,int hz,String mode,String gpuPolicy,int min,int max){
+        require(old.schema==3,"policy schema upgrade required");
+        require(old.generation==expected,"STALE_POLICY_GENERATION");
+        require(old.users.containsKey(user)&&packageName(pkg),"policy target/user");
+        if("DEFAULT_FOR_MODE".equals(gpuPolicy)){
+            require(min==0&&max==0,"default GPU draft must omit custom range");
+            GpuRange range=old.range(user,mode);min=range.minMHz;max=range.maxMHz;
+        }
+        Row row=new Row(hz,mode,min,max,gpuPolicy);State next=old.copy();
+        next.apps.put(key(user,pkg),row);next.generation=Math.addExact(old.generation,1);return next;
+    }
+    static State gpuFollowMigration(State old){
+        if(old.schema==3)return old;
+        State next=old.copy();next.schema=3;next.generation=Math.addExact(old.generation,1);
+        for(Map.Entry<String,Row> e:old.apps.entrySet()){
+            int user=splitKey(e.getKey(),false);Row r=e.getValue();GpuRange d=old.range(user,r.uperfMode);
+            String policy=r.gpuMinMHz==d.minMHz&&r.gpuMaxMHz==d.maxMHz?"DEFAULT_FOR_MODE":"CUSTOM";
+            next.apps.put(e.getKey(),new Row(r.refreshHz,r.uperfMode,r.gpuMinMHz,r.gpuMaxMHz,policy));
+        }
+        return next;
+    }
+    synchronized void migrateGpuFollow(Owner owner)throws Exception{
+        require(current!=null&&!recoveryRequired,"policy migration recovery required");
+        State next=gpuFollowMigration(current);if(next==current)return;
+        List<Object> choices=new ArrayList<>();
+        for(Map.Entry<String,Row> e:next.apps.entrySet())choices.add(map("key",e.getKey(),"gpuPolicy",e.getValue().gpuPolicy));
+        immutable("policy-gpu-migration-"+current.generation+".json",bytes(map("fromSchema",2,"toSchema",3,
+                "sourceHash",hash(current.bytes()),"targetHash",hash(next.bytes()),"choices",choices)));
+        commit(next,owner);
     }
     static boolean actionScope(long expectedScene, String expectedPackage, long currentScene, String currentPackage,
             String target, String scope, String home, String action, boolean interactive) {

@@ -60,6 +60,9 @@ internal object NotificationQuickControlHelper {
             }
     }
 
+    internal fun availabilityChanged(oldQuiet: Double, newQuiet: Double, oldPower: Double, newPower: Double): Boolean =
+        (oldQuiet > 0 && newQuiet < 0) || ((oldPower > 0) != (newPower > 0))
+
     fun metricNumber(value: Double): String =
         if (value.isFinite() && value > 0.0) String.format(Locale.US, "%.1f", value) else "--"
 

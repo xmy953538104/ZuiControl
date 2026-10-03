@@ -1,6 +1,6 @@
 """Execute exact production migration/mutation SQL on SQLite, including abrupt interruption."""
 from pathlib import Path
-import os,re,sqlite3,subprocess,sys,tempfile
+import json,os,re,sqlite3,subprocess,sys,tempfile
 ROOT=Path(__file__).resolve().parents[2]
 src=(ROOT/'framework_patch/src/services/com/zui/server/control/MonitorStore.java').read_text(encoding='utf8')
 sql=re.findall(r'(?:next|db)\.execSQL\("([^"\n]+)"',src)
@@ -10,7 +10,9 @@ def statement(prefix):
     return found[0]
 def migrate(db):
     version=db.execute('PRAGMA user_version').fetchone()[0]
-    if version==3:return
+    if version==4:return
+    if version==3:
+        db.execute(statement('ALTER TABLE record_meta ADD COLUMN policy_snapshot'));db.execute('PRAGMA user_version=4');return
     if version<2:
         legacy=bool(db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='record_meta'").fetchone())
         if legacy:db.execute(statement('ALTER TABLE record_meta RENAME'))
@@ -20,7 +22,7 @@ def migrate(db):
             if text.startswith('CREATE INDEX'):db.execute(text)
     for text in sql:
         if text.startswith('ALTER TABLE record_meta ADD COLUMN') or text.startswith('ALTER TABLE scalar_samples ADD COLUMN source_validity') or text.startswith('UPDATE record_meta SET completion=') or text.startswith('ALTER TABLE thread_samples ADD COLUMN interval_') or text.startswith('ALTER TABLE thread_samples ADD COLUMN cpu_convention'):db.execute(text)
-    db.execute('PRAGMA user_version=3')
+    db.execute('PRAGMA user_version=4')
 
 def remove(db,pkg,user=0):
     method=src.split('private static void remove(',1)[1].split('    void start(',1)[0]
@@ -49,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix='zui-r6-record-') as tmp:
     with db:migrate(db)
     after=rows(db)
     assert [r[:9] for r in after['record_meta']]==before['record_meta']
-    assert after['record_meta'][0][9:]==('LEGACY_END',4200,'COMPLETE',-1,0)
+    assert after['record_meta'][0][9:]==('LEGACY_END',4200,'COMPLETE',-1,0,'{}')
     for table in ('scalar_samples','thread_samples'):
         assert [r[:4] for r in after[table]]==before[table] and all(r[4]==1 for r in after[table])
     assert db.execute('select count(distinct identity) from thread_samples').fetchone()==(3,)
@@ -60,6 +62,11 @@ with tempfile.TemporaryDirectory(prefix='zui-r6-record-') as tmp:
         db.execute(statement('INSERT INTO scalar_samples'),(1000,None,None,41,b,'fps=UNAVAILABLE_SCENE_OWNERSHIP;fpsSource=DISPLAY_MEASURED_FPS;consumption=UNAVAILABLE;quiet=VALID'))
     assert db.execute('select count(*) from record_meta').fetchone()==(2,)
     assert db.execute('select fps,source_validity from scalar_samples where record_id=?',(b,)).fetchone()==(None,'fps=UNAVAILABLE_SCENE_OWNERSHIP;fpsSource=DISPLAY_MEASURED_FPS;consumption=UNAVAILABLE;quiet=VALID')
+    snapshot=json.dumps({'policyGeneration':12,'zuioptGeneration':'g-at-start','gpuPolicy':'DEFAULT_FOR_MODE'})
+    with db:db.execute(statement('UPDATE record_meta SET policy_snapshot='),(snapshot,b))
+    # A later sample or rule generation cannot rewrite the immutable start snapshot.
+    with db:db.execute(statement('INSERT INTO scalar_samples'),(2000,60,2,41,b,'VALID'))
+    assert db.execute('SELECT policy_snapshot FROM record_meta WHERE id=?',(b,)).fetchone()==(snapshot,)
     before_interrupt=rows(db)
     crash=subprocess.run([sys.executable,__file__,'--interrupt',str(path)])
     assert crash.returncode==17
@@ -80,6 +87,8 @@ with tempfile.TemporaryDirectory(prefix='zui-r6-record-') as tmp:
     assert db.execute('pragma integrity_check').fetchone()==('ok',)
     # Retiring an Android user removes only its records and children, including
     # when another user's logical recording is still incomplete.
+    db.execute("CREATE TABLE analysis_results(user INTEGER,package TEXT,result TEXT)")
+    db.execute("INSERT INTO analysis_results VALUES(10,'app.a','{}')");db.commit()
     owner_before={name:[r for r in values if (r[3]==0 if name=='record_meta' else r[4]==b)] for name,values in rows(db).items()}
     with db:
         method=src.split('void removeUser(',1)[1].split('private static void schema(',1)[0]

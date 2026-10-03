@@ -2,6 +2,14 @@ package com.zui.zuicontrol
 import org.junit.Assert.*
 import org.junit.Test
 class NotificationMetricTest {
+    @Test fun bothPowerAvailabilityEdgesBypassOrdinaryCoalescing() {
+        assertTrue(NotificationQuickControlHelper.availabilityChanged(35.0,35.0,4.0,-1.0))
+        assertTrue(NotificationQuickControlHelper.availabilityChanged(35.0,35.0,-1.0,4.0))
+        assertFalse(NotificationQuickControlHelper.availabilityChanged(35.0,35.1,4.0,5.0))
+        assertFalse(NotificationQuickControlHelper.availabilityChanged(35.0,35.1,-1.0,-1.0))
+        assertTrue(NotificationQuickControlHelper.availabilityChanged(35.0,-1.0,4.0,4.0))
+    }
+
     @Test fun eachMetricValidityIsIndependentOfOverlay() {
         for (active in listOf(false,true)) for (quiet in listOf(-1.0,Double.NaN,36.24))
             for (power in listOf(-1.0,Double.POSITIVE_INFINITY,4.26)) {

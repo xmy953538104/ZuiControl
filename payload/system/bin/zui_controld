@@ -54,6 +54,8 @@ settings_put_quiet() {
             "$LOG_EXPORT_KEY") result_kind=logs ;;
             zui_control_zuiopt_state) result_kind=rulesState ;;
             zui_control_zuiopt_chunk) result_kind=rulesChunk ;;
+            zui_control_zuiopt_validation) result_kind=rulesValidation ;;
+            zui_control_zuiopt_preview) result_kind=rulesPreview ;;
             *) return 1 ;;
         esac
         request_transport "result:$result_kind" "$2" >/dev/null 2>&1
@@ -454,7 +456,7 @@ handle_command() {
             REQUEST_RESULT_DETAIL=unified_policy_generation_required
             return 1
             ;;
-        sb_export|sb_restore|sb_recover)
+        sb_export|sb_restore|sb_recover|sb_reset)
             [ "${#pkg}" -le 64 ] && [ -z "$mode" ] || return 1
             sb_reply="$(policy_command "$cmd" "$pkg" 2>>"$LOG_FILE")" || {
                 REQUEST_RESULT_DETAIL=settings_failed_query_recovery
@@ -474,7 +476,7 @@ handle_command() {
             ;;
         restart_scheduler) restart_scheduler ;;
         export_logs) export_logs ;;
-        zo_state|zo_reset|zo_read|zo_begin|zo_chunk|zo_commit|zo_abort|zo_enable|zo_disable|zo_rollback)
+        zo_state|zo_reset|zo_read|zo_upstream_read|zo_preview|zo_restore_app|zo_validate|zo_begin|zo_chunk|zo_commit|zo_abort|zo_enable|zo_disable|zo_rollback)
             zuiopt_command "$cmd" "$pkg" "$mode"
             ;;
         *) REQUEST_RESULT_DETAIL=unknown_command; return 1 ;;
@@ -492,6 +494,11 @@ zuiopt_command() {
         return 1
     }
     case "$zo_action" in
+        commit|rollback|restore_app|enable|disable)
+            zo_reply="$(/system/bin/ZUIopt --control state "" "" 2>>"$LOG_FILE")" || return 1
+            [ "${#zo_reply}" -le 4096 ] || return 1
+            settings_put_quiet zui_control_zuiopt_state "$zo_reply" || return 1
+            ;;
         state)
             [ "${#zo_reply}" -le 4096 ] || return 1
             zo_service="$(getprop init.svc.zui_zuiopt)"
@@ -511,7 +518,15 @@ fail_safe=$zo_failed"
                 return 1
             }
             ;;
-        read)
+        validate)
+            [ "${#zo_reply}" -le 256 ] || return 1
+            settings_put_quiet zui_control_zuiopt_validation "$zo_reply" || return 1
+            ;;
+        preview)
+            [ "${#zo_reply}" -le 32768 ] || return 1
+            settings_put_quiet zui_control_zuiopt_preview "$zo_reply" || return 1
+            ;;
+        read|upstream_read)
             [ "${#zo_reply}" -le 11000 ] || return 1
             settings_put_quiet zui_control_zuiopt_chunk "$zo_reply" || return 1
             ;;

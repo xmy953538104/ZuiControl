@@ -96,6 +96,14 @@ python tests/gpu/TestGpuFailureIsolation.py
 python tests/command_plane/TestProjectionMode.py
 python tests/gpu/TestGpuProof.py
 python tests/monitor/TestMonitor.py
+python tests/gpu/TestAtomicPolicy.py
+python tests/gpu/TestBackupInspection.py
+python tests/gpu/TestFactoryReset.py
+python tests/monitor/TestPowerEdge.py
+python tests/monitor/TestThreadAnalysis.py
+python tests/monitor/TestAnalysisCollector.py
+python tests/monitor/TestAnalysisSql.py
+python tests/zuiopt/TestSchemaContract.py
 python tests/monitor/TestUiPolish.py
 python tests/monitor/TestProductR6.py
 python tests/monitor/TestProductR7.py

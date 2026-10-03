@@ -28,9 +28,10 @@ stubs.update({
  public android.content.pm.PackageManager getPackageManager(){return new android.content.pm.PackageManager();}}''',
  'com/zui/server/control/MonitorStore.java':'''package com.zui.server.control;import java.util.*;
  final class MonitorStore {long writes,scalarRows,threadRows;boolean active;static int starts,finishes;static String terminal;static boolean incomplete;static double lastFps;static String fpsValidity;static boolean failFinish,failClose;
- void start(String p,String l,int u,int pid,long g,long t,int task,long epoch){if(active)throw new AssertionError();active=true;starts++;writes++;scalarRows=threadRows=0;}
+ void start(String p,String l,int u,int pid,long g,long t,int task,long epoch,String snapshot){if(active)throw new AssertionError();active=true;starts++;writes++;scalarRows=threadRows=0;}
  void append(long t,double f,double p,double q,int pid,long g,List<MonitorSnapshot.Row> r,String validity){lastFps=f;fpsValidity=validity;if(!active)throw new AssertionError();scalarRows++;threadRows+=r.size();writes+=1+r.size();}
  void finish(long n,String reason,boolean incomplete){if(failFinish)throw new IllegalStateException("SQLite finish fixture");if(active){finishes++;writes++;active=false;terminal=reason;MonitorStore.incomplete=incomplete;}}void abandon(){active=false;if(failClose)throw new IllegalStateException("close fixture");}
+ void saveAnalysis(int user,String pkg,byte[] result){} String analysis(int user,String pkg,int offset,String hash,boolean delete){return "{}";}
  void removeUser(int user){if(user<=0)throw new AssertionError();}
  String read(int u,String key){return "{}";}String list(int u){return "{}";}String delete(int u,String p){return "ok=1";}}''',
  'com/zui/server/control/CollectorTest.java':'''package com.zui.server.control;
@@ -176,7 +177,7 @@ with tempfile.TemporaryDirectory(prefix='zui-monitor-r4-') as tmp:
  out=Path(tmp);files=[]
  for name,text in stubs.items():
   p=out/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text,encoding='utf8');files.append(str(p))
- production=['MonitorCollector.java','MonitorSources.java','MonitorSnapshot.java','MonitorSession.java','MonitorLifecycle.java']
+ production=['MonitorCollector.java','MonitorSources.java','MonitorSnapshot.java','MonitorSession.java','MonitorLifecycle.java','ThreadAnalysis.java','PolicyJson.java']
  subprocess.run(['javac','-encoding','UTF-8','-d',tmp,*files,*[str(src/n) for n in production],str(Path(__file__).with_name('MonitorTest.java')),str(Path(__file__).with_name('MonitorR4Test.java'))],check=True)
  for test in ('MonitorTest','MonitorR4Test','CollectorTest'):subprocess.run(['java','-cp',tmp,'com.zui.server.control.'+test],check=True)
 collector=(src/'MonitorCollector.java').read_text(encoding='utf8')

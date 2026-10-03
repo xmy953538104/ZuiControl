@@ -36,11 +36,11 @@ object ZuioptRules {
 
     fun readDocument(context: Context, uri: Uri, kind: String): ByteArray =
         checkNotNull(context.contentResolver.openInputStream(uri)) { "无法读取文件" }.use {
-            boundedRead(it, if (kind == "pack") PACK_LIMIT else RULE_LIMIT)
+            boundedRead(it, if (kind == "pack" || kind == "library") PACK_LIMIT else RULE_LIMIT)
         }
 
     fun command(context: Context, action: String, key: String = "", value: String = ""): String {
-        require(action in setOf("state", "reset", "read", "begin", "chunk", "commit", "abort", "enable", "disable", "rollback"))
+        require(action in setOf("state", "reset", "read", "begin", "chunk", "validate", "preview", "upstream_read", "restore_app", "commit", "abort", "enable", "disable", "rollback"))
         require(key.length <= 128 && value.length <= 10924 && '|' !in key && '|' !in value)
         val command = if (action == "reset") ZuiControlContract.CMD_RESET_ZUIOPT_FAILSAFE else "zo_$action"
         val id = ZuiControlRequest.send(context, command, pkg = key, mode = value)
@@ -82,12 +82,30 @@ object ZuioptRules {
             .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(data)).toString())
     }
 
+    data class Validation(val valid: Boolean, val normalizedSha256: String, val error: String)
+    fun validate(context: Context, data: ByteArray, expectedGeneration: String): Validation {
+        require(data.size in 1..RULE_LIMIT && expectedGeneration.matches(Regex("g[0-9a-f]{24}")))
+        val tx = ByteArray(12).also(random::nextBytes).joinToString("") { "%02x".format(it.toInt() and 255) }
+        command(context, "begin", tx, "user:${data.size}:${digest(data)}:-:0:$expectedGeneration")
+        try {
+            for (offset in data.indices step CHUNK) command(context, "chunk", "$tx:$offset",
+                Base64.getEncoder().encodeToString(data.copyOfRange(offset, minOf(offset + CHUNK, data.size))))
+            val id = command(context, "validate", tx)
+            val result = ZuiControlClient.utilityValue("result", "$id|rulesValidation")
+            require(result.length <= 256)
+            val valid = field(result, "validation")
+            require(valid in setOf("PASS", "FAIL"))
+            val hash = field(result, "normalized_sha256")
+            if (valid == "PASS") require(hash.matches(Regex("[0-9a-f]{64}")))
+            return Validation(valid == "PASS", hash, field(result, "error"))
+        } finally { runCatching { command(context, "abort", tx) } }
+    }
+
     fun upload(context: Context, kind: String, data: ByteArray, packId: String = "-", priority: Int = 0, expectedGeneration: String) {
-        require(kind in setOf("pack", "user", "appopt"))
+        require(kind in setOf("pack", "user")) { "AppOpt must use the preview/confirm library API" }
         require(data.isNotEmpty() && data.size <= if (kind == "pack") PACK_LIMIT else RULE_LIMIT)
         require(priority in -1000000..1000000)
         require(packId == "-" || packId.matches(Regex("[a-z][a-z0-9_.-]{0,63}")))
-        require(kind != "appopt" || packId != "-")
         val tx = ByteArray(12).also(random::nextBytes).joinToString("") { "%02x".format(it.toInt() and 255) }
         require(expectedGeneration.matches(Regex("g[0-9a-f]{24}")))
         command(context, "begin", tx, "$kind:${data.size}:${digest(data)}:$packId:$priority:$expectedGeneration")

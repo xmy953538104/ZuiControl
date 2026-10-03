@@ -19,6 +19,10 @@ def java_encoder():
 # Bind business caller placement, independently of the consumer's numeric indices.
 settings=(APP/'SettingsBackup.kt').read_text('utf8')
 assert 'ZuiControlRequest.send(context,action,pkg=tx)' in settings
-assert 'command(context,"sb_restore",tx)' in settings
+assert 'command(context,"sb_restore",inspection.transaction)' in settings
+assert 'command(context,"sb_reset",tx)' in settings
+confirm=settings.index('transport("backupConfirm",')
+assert confirm < settings.index('command(context,"sb_restore",inspection.transaction)')
+assert '.put("hash",inspection.hash)' in settings[confirm:settings.index('command(context,"sb_restore",inspection.transaction)')]
 rules=(APP/'ZuioptRules.kt').read_text('utf8')
 assert 'ZuiControlRequest.send(context, command, pkg = key, mode = value)' in rules

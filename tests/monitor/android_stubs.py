@@ -24,7 +24,7 @@ stubs = {
     'android/system/Os.java': 'package android.system; public class Os {public static long sysconf(int c){return 100;}}',
     'android/app/KeyguardManager.java': 'package android.app; public class KeyguardManager {public static boolean locked;public boolean isKeyguardLocked(){return locked;}}',
     'android/app/ActivityManager.java': '''package android.app; import java.util.*; public class ActivityManager {
-        public static class RunningAppProcessInfo {public String processName;public int uid,pid;}
+        public static class RunningAppProcessInfo {public String processName;public String[] pkgList;public int uid,pid;}
         public List<RunningAppProcessInfo> getRunningAppProcesses(){return Collections.emptyList();}}''',
     'android/content/Intent.java': '''package android.content;public class Intent {public static final String ACTION_BATTERY_CHANGED="battery";
         public boolean hasExtra(String s){return true;}public int getIntExtra(String s,int d){return 320;}}''',

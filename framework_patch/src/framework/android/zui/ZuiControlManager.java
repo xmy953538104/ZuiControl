@@ -35,7 +35,7 @@ public final class ZuiControlManager {
             public void write(Parcel data) {
                 data.writeString(command);
                 if ("register".equals(command) || "unregister".equals(command)) data.writeStrongBinder((IBinder) callback);
-                else if ("recordRead".equals(command) || "recordDelete".equals(command) || "recordStart".equals(command) || command.startsWith("backup") || command.startsWith("preferences")) data.writeString(pkg);
+                else if ("recordRead".equals(command) || "recordDelete".equals(command) || "recordStart".equals(command) || command.startsWith("backup") || command.startsWith("preferences") || command.startsWith("analysis")) data.writeString(pkg);
             }
         });
     }

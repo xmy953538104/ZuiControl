@@ -1,6 +1,6 @@
 // Root-only, descriptor-relative transactions. effective.conf is the sole commit record.
 #pragma once
-#include "ZUIopt_rules.h"
+#include "ZUIopt_library.h"
 #include <sys/file.h>
 #include <sys/random.h>
 
@@ -71,7 +71,7 @@ inline void recordLoadedGeneration(const std::string& root,const std::string& by
         trim(read("/proc/sys/kernel/random/boot_id"))+":"+std::to_string(getpid())+":"+
         std::to_string(identity(getpid()).start)+":"+sha256(bytes)+"\n");}catch(...){}
 }
-struct RuleState {std::map<std::string,Pack> packs;std::set<std::string> enabled;std::string user="schema 2\nenabled true\n",effective,transaction,provenance,source;bool canonical=false;};
+struct RuleState {std::map<std::string,Pack> packs;std::set<std::string> enabled;std::string user="schema 2\nenabled true\n",effective,transaction,provenance,source,upstream,upstreamMetadata;bool canonical=false,library=false;};
 inline std::string base64(const std::string& s){
     const std::string alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";std::string out;
     for(size_t i=0;i<s.size();i+=3){uint32_t n=uint32_t(static_cast<unsigned char>(s[i]))<<16;if(i+1<s.size())n|=uint32_t(static_cast<unsigned char>(s[i+1]))<<8;if(i+2<s.size())n|=static_cast<unsigned char>(s[i+2]);out+=alphabet[n>>18];out+=alphabet[(n>>12)&63];out+=i+1<s.size()?alphabet[(n>>6)&63]:'=';out+=i+2<s.size()?alphabet[n&63]:'=';}return out;
@@ -126,12 +126,15 @@ class RuleStore {
     RuleState load(const std::string& effective){
         RuleState state;if(effective.empty())return state;rules(effective);auto id=generationOf(effective);PrivateDir d(generations,id);
         require(d.get("effective.conf",RULE_LIMIT)==effective,"generation commit content");state.effective=effective;
-        if(d.exists("canonical_state.v2")){
-            auto meta=fields(d.get("canonical_state.v2",2048),'\n');
-            require(meta.size()==9&&meta[0]=="ZUIOPT_CANONICAL_STATE_V2"&&meta[1]==id
+        if(d.exists("canonical_state.v2")||d.exists("canonical_state.v3")){
+            state.library=d.exists("canonical_state.v3");
+            auto meta=fields(d.get(state.library?"canonical_state.v3":"canonical_state.v2",2048),'\n');
+            require(meta.size()==(state.library?11u:9u)&&meta[0]==(state.library?"ZUIOPT_CANONICAL_STATE_V3":"ZUIOPT_CANONICAL_STATE_V2")&&meta[1]==id
                 &&hex(meta[2],24)&&hex(meta[3],64)&&meta[4]=="schema2-1"
-                &&hex(meta[5],64)&&(meta[6]=="none"||generationId(meta[6]))&&hex(meta[7],64)&&meta[8].empty(),"canonical metadata");
-            state.user=dumpRules(rules(effective));state.canonical=true;state.transaction=meta[2];
+                &&hex(meta[5],64)&&(meta[6]=="none"||generationId(meta[6]))&&hex(meta[7],64)&&meta.back().empty(),"canonical metadata");
+            state.user=dumpRules(rules(effective));state.canonical=true;
+            if(state.library){state.upstream=d.get("upstream.conf",RULE_LIMIT);state.upstreamMetadata=d.get("upstream.metadata.json",8192);
+                require(sha256(state.upstream)==meta[8]&&sha256(state.upstreamMetadata)==meta[9]&&dumpRules(rules(state.upstream))==state.upstream,"upstream binding");}state.transaction=meta[2];
             state.provenance=d.get("provenance.txt",16384);state.source=d.get("source.bin",PACK_LIMIT);require(sha256(state.source)==meta[7],"canonical source digest");
             require(sha256(state.user)==meta[3]&&sha256(state.provenance)==meta[5],"canonical digest");
             auto previous=d.get("last_good.conf",RULE_LIMIT);
@@ -159,10 +162,12 @@ class RuleStore {
         std::string provenance=state.provenance;
         if(provenance.empty())provenance="source=canonical\n";
         if(state.source.empty())state.source=state.user;
-        const auto metadata="ZUIOPT_CANONICAL_STATE_V2\n"+id+"\n"+transaction+"\n"+sha256(canonical)
-            +"\nschema2-1\n"+sha256(provenance)+"\n"+expected+"\n"+sha256(state.source)+"\n";
+        if(state.upstream.empty()){auto seed=root.get("migration_factory.conf",RULE_LIMIT,true);state.upstream=dumpRules(rules(seed.empty()?factory:seed));
+            state.upstreamMetadata="{\"source\":\"FROZEN_FACTORY_SEED\",\"rulesHash\":\""+sha256(state.upstream)+"\"}";}
+        const auto metadata="ZUIOPT_CANONICAL_STATE_V3\n"+id+"\n"+transaction+"\n"+sha256(canonical)
+            +"\nschema2-1\n"+sha256(provenance)+"\n"+expected+"\n"+sha256(state.source)+"\n"+sha256(state.upstream)+"\n"+sha256(state.upstreamMetadata)+"\n";
         d.put("source.bin",state.source,true);d.put("last_good.conf",active,true);d.put("provenance.txt",provenance,true);
-        d.put("canonical_state.v2",metadata,true);d.put("effective.conf",effective,true);d.sync();generations.sync();
+        d.put("upstream.conf",state.upstream,true);d.put("upstream.metadata.json",state.upstreamMetadata,true);d.put("canonical_state.v3",metadata,true);d.put("effective.conf",effective,true);d.sync();generations.sync();
 #ifdef ZUIOPT_TEST
         if(testBeforeCommit)throw std::runtime_error("injected before commit");
 #endif
@@ -181,7 +186,7 @@ class RuleStore {
         require(generations.get(marker,64)==id+"\n","retirement marker identity");
         if(generations.exists(id)){
             PrivateDir retired(generations,id);
-            const std::set<std::string> allowed{"source.bin","last_good.conf","provenance.txt","canonical_state.v2","effective.conf","committed.v2"};
+            const std::set<std::string> allowed{"source.bin","last_good.conf","provenance.txt","canonical_state.v2","canonical_state.v3","upstream.conf","upstream.metadata.json","effective.conf","committed.v2"};
             auto entries=retired.names();for(const auto& entry:entries)require(allowed.count(entry),"unknown retired entry");
             for(const auto& entry:entries)retired.remove(entry);
             require(unlinkat(generations.fd,id.c_str(),AT_REMOVEDIR)==0,"generation retirement");generations.sync();
@@ -208,7 +213,7 @@ class RuleStore {
                 if(candidate.get("committed.v2",64,true)==name+"\n")completed.push_back(name);
             }
             std::sort(completed.begin(),completed.end());
-            const std::set<std::string> allowed{"source.bin","last_good.conf","provenance.txt","canonical_state.v2","effective.conf","committed.v2"};
+            const std::set<std::string> allowed{"source.bin","last_good.conf","provenance.txt","canonical_state.v2","canonical_state.v3","upstream.conf","upstream.metadata.json","effective.conf","committed.v2"};
             for(size_t i=8;i<completed.size();++i){
                 PrivateDir candidate(generations,completed[i]);auto entries=candidate.names();
                 for(const auto& name:entries)require(allowed.count(name),"unknown generation retention entry");
@@ -236,7 +241,7 @@ class RuleStore {
     }
     std::vector<std::string> upload(const std::string& id){
         require(hex(id,24),"transaction ID");auto f=fields(trim(root.get("upload.meta",512)),':');
-        require(f.size()==9&&f[0]==id&&(f[1]=="pack"||f[1]=="user"||f[1]=="appopt")&&rx(f[2],"[0-9]{1,6}")&&number(f[2])>0&&number(f[2])<=static_cast<int>(f[1]=="pack"?PACK_LIMIT:RULE_LIMIT)&&hex(f[3],64)&&(f[4]=="-"||packId(f[4]))&&rx(f[5],"-?[0-9]{1,7}"),"upload metadata");
+        require(f.size()==9&&f[0]==id&&(f[1]=="pack"||f[1]=="library"||f[1]=="user"||f[1]=="appopt")&&rx(f[2],"[0-9]{1,6}")&&number(f[2])>0&&number(f[2])<=static_cast<int>((f[1]=="pack"||f[1]=="library")?PACK_LIMIT:RULE_LIMIT)&&hex(f[3],64)&&(f[4]=="-"||packId(f[4]))&&rx(f[5],"-?[0-9]{1,7}"),"upload metadata");
         auto boot=trim(read("/proc/sys/kernel/random/boot_id"));require(generationId(f[6])&&f[7]==boot&&rx(f[8],"[0-9]{1,16}"),"expired upload boot");auto begun=std::stoll(f[8]);require(begun<=now()&&now()-begun<=600000,"expired upload window");return f;
     }
 public:
@@ -251,7 +256,8 @@ public:
     ~RuleStore(){if(lockFd>=0)close(lockFd);}
     RuleState current(){return load(root.get("effective.conf",RULE_LIMIT,true));}
     void initialize(){
-        auto s=current();if(s.canonical)return;
+        auto s=current();if(s.canonical&&s.library)return;
+        if(s.canonical){s.provenance="migration=UPSTREAM_LIBRARY_SEED\nprevious_effective_sha256="+sha256(s.user)+"\n";commit(s,randomId(),generationOf(s.effective));return;}
         // load() above verifies exact V1 merge once. Its immutable inputs remain untouched.
         s.provenance="migration=V1_to_V2\nfactory_sha256="+factorySha+"\nold_effective_sha256="+sha256(s.effective)+"\n";
         if(s.effective.empty()){s.user=dumpRules(rules(factory));s.provenance+="source=factory_seed\n";}
@@ -266,7 +272,10 @@ public:
     }
     std::string state(){
         auto s=current();require(!s.effective.empty(),"store not initialized");std::ostringstream out;
-        out<<"settings_pending="<<trim(root.get("settings.pending",64,true))<<"\nstore_schema=ZUIOPT_CANONICAL_STATE_V2\ncanonical_sha256="<<sha256(s.user)<<"\nloaded_generation="<<trim(root.get("loaded-generation.v2",256,true))<<"\ngeneration="<<generationOf(s.effective)<<"\ntransaction="<<s.transaction<<"\nfactory_sha256="<<factorySha<<"\nuser_size="<<s.user.size()<<"\nuser_sha256="<<sha256(s.user)<<"\neffective_sha256="<<sha256(s.effective)<<'\n';
+        out<<"settings_pending="<<trim(root.get("settings.pending",64,true))<<"\nstore_schema=ZUIOPT_CANONICAL_STATE_V3\ncanonical_sha256="<<sha256(s.user)<<"\nloaded_generation="<<trim(root.get("loaded-generation.v2",256,true))<<"\ngeneration="<<generationOf(s.effective)<<"\ntransaction="<<s.transaction<<"\nfactory_sha256="<<factorySha<<"\nuser_size="<<s.user.size()<<"\nuser_sha256="<<sha256(s.user)<<"\neffective_sha256="<<sha256(s.effective)<<'\n';
+        out<<"upstream_sha256="<<sha256(s.upstream)<<"\nupstream_size="<<s.upstream.size()<<"\nupstream_metadata_size="<<s.upstreamMetadata.size()<<"\n";
+        PrivateDir active(generations,generationOf(s.effective));auto previous=active.get("last_good.conf",RULE_LIMIT,true);
+        out<<"previous_generation="<<(previous.empty()?"none":generationOf(previous))<<'\n';
         for(const auto& [id,p]:s.packs)out<<"pack="<<id<<'|'<<p.manifest.at("pack_version").text<<'|'<<p.manifest.at("pack_priority").text<<'|'<<s.enabled.count(id)<<'|'<<p.manifest.at("source_type").text<<'\n';
         require(out.str().size()<=4096,"state response bound");return out.str();
     }
@@ -320,9 +329,15 @@ public:
     std::string apply(const std::string& action,const std::string& id,const std::string& value){
         auto s=current();require(s.canonical,"canonical migration required");
         require(!root.exists("settings.pending"),"settings restore recovery required");
+        if(action=="upstream_read"){
+            auto input=fields(value,':');require(input.size()==2&&(input[0]=="rules"||input[0]=="metadata")&&rx(input[1],"[0-9]{1,6}"),"upstream read arguments");
+            require(id==generationOf(s.effective)&&s.library,"upstream changed");
+            auto text=input[0]=="rules"?s.upstream:s.upstreamMetadata;size_t offset=number(input[1]);require(offset<=text.size(),"upstream read offset");
+            return id+":"+input[1]+":"+base64(text.substr(offset,8192));
+        }
         if(action=="begin"){
-            require(hex(id,24),"upload ID");auto f=fields(value,':');require(f.size()==6&&generationId(f[5])&&f[5]==generationOf(s.effective)&&(f[0]=="pack"||f[0]=="user"||f[0]=="appopt")&&rx(f[1],"[0-9]{1,6}")&&hex(f[2],64)&&(f[3]=="-"||packId(f[3]))&&rx(f[4],"-?[0-9]{1,7}"),"begin metadata");
-            int size=number(f[1]),priority=number(f[4]);require(size>0&&size<=static_cast<int>(f[0]=="pack"?PACK_LIMIT:RULE_LIMIT)&&priority>=-1000000&&priority<=1000000&&(f[0]!="appopt"||packId(f[3])),"begin bounds");
+            require(hex(id,24),"upload ID");auto f=fields(value,':');require(f.size()==6&&generationId(f[5])&&f[5]==generationOf(s.effective)&&(f[0]=="pack"||f[0]=="library"||f[0]=="user"||f[0]=="appopt")&&rx(f[1],"[0-9]{1,6}")&&hex(f[2],64)&&(f[3]=="-"||packId(f[3]))&&rx(f[4],"-?[0-9]{1,7}"),"begin metadata");
+            int size=number(f[1]),priority=number(f[4]);require(size>0&&size<=static_cast<int>((f[0]=="pack"||f[0]=="library")?PACK_LIMIT:RULE_LIMIT)&&priority>=-1000000&&priority<=1000000&&(f[0]!="appopt"||packId(f[3])),"begin bounds");
             if(root.exists("upload.meta")){auto old=fields(trim(root.get("upload.meta",512)),':');bool active=false;try{if(!old.empty()){upload(old[0]);active=true;}}catch(...){}
                 if(active){require(old[0]==id&&trim(root.get("upload.meta",512)).rfind(id+":"+value+":",0)==0,"upload busy");return "upload=resumed";}clearUpload();}
             root.put("upload.bin","");root.put("upload.meta",id+":"+value+":"+trim(read("/proc/sys/kernel/random/boot_id"))+":"+std::to_string(now())+"\n");return "upload=begun";
@@ -334,17 +349,57 @@ public:
             if(offset<data.size()){require(offset+bytes.size()<=data.size()&&data.substr(offset,bytes.size())==bytes,"conflicting chunk replay");return "chunk=replayed";}
             root.put("upload.bin",data+bytes);return "received="+std::to_string(data.size()+bytes.size());
         }
+        if(action=="validate"){
+            require(value.empty(),"validation arguments");auto f=upload(id);
+            require(f[1]=="user","validation requires canonical input");
+            auto data=root.get("upload.bin",RULE_LIMIT);
+            require(data.size()==static_cast<size_t>(number(f[2]))&&sha256(data)==f[3],"validation length/SHA256");
+            // No commit, generation write, upload clearing or owner reload on this path.
+            try{auto normalized=dumpRules(rules(data));return "validation=PASS\nnormalized_sha256="+sha256(normalized);}
+            catch(const std::exception& e){std::string error=e.what();
+                for(char& c:error)if(c<' '||c>'~')c=' ';
+                return "validation=FAIL\nerror="+error.substr(0,160);}
+        }
+        if(action=="preview"){
+            auto f=upload(id);require(f[6]==generationOf(s.effective)&&rx(value,"[0-9]{1,3}"),"preview generation/offset");
+            auto data=root.get("upload.bin",PACK_LIMIT);require(data.size()==static_cast<size_t>(number(f[2]))&&sha256(data)==f[3],"preview input digest");
+            LibraryMerge merged;
+            if(f[1]=="library"){
+                auto p=libraryPack(data,sha256(s.upstream));auto manual=rules(p.manual);
+                merged=mergeLibrary(rules(s.upstream),rules(s.user),rules(p.upstream),p.decisions,&manual,p.partial);
+            }else{require(f[1]=="appopt","preview requires library or AppOpt input");auto p=importAppOpt(data,f[4],number(f[5]));
+                merged=mergeLibrary(rules(s.upstream),rules(s.user),p.config,{},nullptr,true);}
+            auto page=libraryPreview(merged,number(value));
+            root.put("library-preview.v1",id+":"+f[3]+":"+f[6]+":"+sha256(s.upstream)+":"+sha256(merged.canonical));return page;
+        }
         if(action=="commit"){
             auto f=upload(id);std::string result;
             try{require(f[6]==generationOf(s.effective),"generation conflict");auto data=root.get("upload.bin",PACK_LIMIT);require(data.size()==static_cast<size_t>(number(f[2]))&&sha256(data)==f[3],"upload length/SHA256");
                 if(f[1]=="user")s.user=dumpRules(rules(data));
-                else{auto pack=f[1]=="pack"?unpackPack(data,s.user):importAppOpt(data,f[4],number(f[5]));s.user=dumpRules(pack.config);}
+                else if(f[1]=="pack")s.user=dumpRules(unpackPack(data,s.user).config);
+                else{
+                    LibraryMerge merged;std::string upstream=s.upstream,metadata=s.upstreamMetadata;
+                    if(f[1]=="library"){
+                        auto p=libraryPack(data,sha256(s.upstream));auto manual=rules(p.manual);
+                        merged=mergeLibrary(rules(s.upstream),rules(s.user),rules(p.upstream),p.decisions,&manual,p.partial);
+                        if(!p.partial){upstream=p.upstream;metadata=p.metadata;}
+                    }else{auto p=importAppOpt(data,f[4],number(f[5]));merged=mergeLibrary(rules(s.upstream),rules(s.user),p.config,{},nullptr,true);}
+                    require(root.get("library-preview.v1",512)==id+":"+f[3]+":"+f[6]+":"+sha256(s.upstream)+":"+sha256(merged.canonical),"exact library preview required");
+                    s.user=merged.canonical;s.upstream=upstream;s.upstreamMetadata=metadata;
+                }
                 s.source=data;s.provenance="source="+f[1]+"\nsource_sha256="+sha256(data)+"\nbase_generation="+f[6]+"\n";
                 result=commit(s,id,f[6]);
             }catch(...){try{clearUpload();}catch(...){}throw;}
             try{clearUpload();}catch(...){}return "generation="+result;
         }
         if(action=="enable"||action=="disable")throw std::runtime_error("canonical store has no live pack layers");
+        if(action=="restore_app"){
+            auto f=fields(value,':');require(id==generationOf(s.effective)&&f.size()==2&&packageLabel(f[0])&&f[1]==sha256(s.upstream),"restore upstream CAS");
+            auto baseline=rules(s.upstream);require(appBehavior(baseline,f[0]),"App absent from upstream");
+            s.user=mergeLibrary(baseline,rules(s.user),baseline,{{f[0],"USE_UPSTREAM"}}).canonical;
+            s.source=s.user;s.provenance="source=restore_app_upstream\npackage="+f[0]+"\n";
+            return "generation="+commit(s,randomId(),id);
+        }
         if(action=="rollback"){
             require(generationId(id)&&id==generationOf(s.effective),"generation conflict");
             PrivateDir d(generations,id);auto old=d.get("last_good.conf",RULE_LIMIT);require(!old.empty(),"no last good generation");
@@ -356,7 +411,15 @@ public:
     }
     bool failed(){return root.exists("failure.v1");}
     std::string bootState(){return failed()?"FAILSAFE":"READY_TO_START";}
-    std::string failureState(){return std::string("thread_manager=ZUIOPT\nfailure=")+(failed()?"1":"0")+"\n";}
+    std::string failureState(){
+        std::string result=std::string("thread_manager=ZUIOPT\nfailure=")+(failed()?"1":"0")+"\n";
+        if(!failed())return result+"failure_reason=NONE\nfailure_evidence_unix_seconds=0\n";
+        auto lines=fields(root.get("failure.v1",128),'\n');std::string reason=lines.size()>2?lines[2]:"";
+        if(reason.empty())reason="CRASH_BUDGET_OR_OWNER_FAILURE";
+        for(char& c:reason)if(c<' '||c>'~')c=' ';
+        struct stat info{};require(fstatat(root.fd,"failure.v1",&info,AT_SYMLINK_NOFOLLOW)==0,"failure evidence stat");
+        return result+"failure_reason="+reason.substr(0,96)+"\nfailure_evidence_unix_seconds="+std::to_string(info.st_mtime)+"\n";
+    }
     void resetFailure(){
         CrashLock lock(root);
         require(failed(),"no persistent failure");

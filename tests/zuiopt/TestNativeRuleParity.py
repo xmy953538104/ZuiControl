@@ -4,11 +4,14 @@ import io,json,subprocess,sys,tempfile,zipfile
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/rules'))
 from ZUIOPT_rule_pack import parse_rules,dump_rules,manifest_for,pack_bytes,unpack,appopt,merge,canonical_workflow,normalize_source
 
+from TestSchemaContract import CANONICAL as AUDITED, INVALID as AUDITED_INVALID, check as check_contract
+
 ROOT=Path(__file__).resolve().parents[2]
 BASE=b'schema 2\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n'
 OPEN=b'schema 2\nenabled true\nprofile G 2-7\nthread G ALL glob "Job.worker[AB]*" selector=all 30 2-4\nthread G R1 prefix Top selector=rank:1 20 7\nthread G R2 contains Runner selector=rank:2 10 5-6\npackage exact org.example.game G 100\n'
 
 def main(binary):
+    check_contract()
     checked=0
     with tempfile.TemporaryDirectory(prefix='zuiopt-parity-') as tmp:
         directory=Path(tmp)
@@ -20,6 +23,8 @@ def main(binary):
             result=subprocess.run([binary,command,*paths,*extra],capture_output=True,timeout=15)
             assert (result.returncode==0)==ok,(command,result.stderr.decode(errors='replace'))
             checked+=1;return result.stdout
+        assert parse_rules(call('rules',AUDITED))==parse_rules(AUDITED)
+        for invalid in AUDITED_INVALID: call('rules',invalid,ok=False)
         factory=(ROOT/'payload/system/etc/zuiopt/factory_rules.conf').read_bytes()
         for rules in (BASE,OPEN,factory,OPEN.replace(b'Job.worker[AB]*',b'a?[0-9]*'),OPEN.replace(b'prefix Top',b'exact Top')):
             assert parse_rules(call('rules',rules))==parse_rules(rules)

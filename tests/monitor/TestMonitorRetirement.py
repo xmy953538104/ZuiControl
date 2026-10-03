@@ -36,6 +36,6 @@ with tempfile.TemporaryDirectory(prefix='monitor-retirement-') as tmp:
     out=Path(tmp);files=[]
     for name,text in stubs.items():
         p=out/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text,encoding='utf8');files.append(str(p))
-    production=['MonitorCollector.java','MonitorSources.java','MonitorSnapshot.java','MonitorSession.java','MonitorLifecycle.java']
+    production=['MonitorCollector.java','MonitorSources.java','MonitorSnapshot.java','MonitorSession.java','MonitorLifecycle.java','ThreadAnalysis.java','PolicyJson.java']
     subprocess.run(['javac','-encoding','UTF-8','-d',tmp,*files,*[str(namespace['src']/n) for n in production]],check=True)
     subprocess.run(['java','-cp',tmp,'com.zui.server.control.RetirementTest'],check=True)

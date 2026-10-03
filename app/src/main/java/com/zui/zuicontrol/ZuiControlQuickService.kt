@@ -115,7 +115,7 @@ class ZuiControlQuickService : Service() {
         val fresh = elapsed > 0 && now - elapsed in 0..readingTtl
         val nextQuiet = if (fresh && quiet.isFinite() && quiet > 0) quiet else -1.0
         val nextPower = if (fresh && power.isFinite() && power > 0) power else -1.0
-        val invalidated = (quietC > 0 && nextQuiet < 0) || (powerW > 0 && nextPower < 0)
+        val invalidated = NotificationQuickControlHelper.availabilityChanged(quietC, nextQuiet, powerW, nextPower)
         val changed = NotificationQuickControlHelper.metricNumber(quietC) != NotificationQuickControlHelper.metricNumber(nextQuiet) ||
             NotificationQuickControlHelper.metricNumber(powerW) != NotificationQuickControlHelper.metricNumber(nextPower)
         quietC = nextQuiet; powerW = nextPower; readingTime = if (fresh) elapsed else 0L

@@ -14,6 +14,7 @@ import static com.zui.server.control.PolicyJson.*;
 public class RetentionFixture {
  final AppPolicyFixture.Disk disk=new AppPolicyFixture.Disk();AppPolicyStore mAppPolicies;
  final String mUploadEpoch="fixture-process";
+ String mObservedRuleGeneration="UNAVAILABLE";
  static class IBinder{}
  static class Binder{static long clearCallingIdentity(){return 0;}static void restoreCallingIdentity(long x){}}
  static class PolicyCommand{
@@ -67,6 +68,12 @@ public class RetentionFixture {
  // Same authenticated request remains protected after terminal ACK while replay-referenced.
  f.disk.write("control-admission.json",bytes(map("identity",id.json(),"terminal",true)));
  if(!f.settingsUploadProtection().contains(keep))throw new AssertionError("replay reference lost");
+ String resetTx="c".repeat(24),resetWire=appWire("reset","sb_reset",resetTx,"");
+ f.utilities().stage(0,resetWire);
+ RequestIdentity resetId=new RequestIdentity(0,0L,"reset",f.sha256(resetWire),"3".repeat(32));
+ f.disk.write("control-admission.json",bytes(map("identity",resetId.json(),"terminal",false)));
+ if(!f.settingsUploadProtection().contains(resetTx))throw new AssertionError("factory reset recovery archive not protected");
+ f.disk.write("control-admission.json",bytes(map("identity",id.json(),"terminal",true)));
  for(String[] args2:new String[][]{{"",keep},{"",""},{keep,keep},{"bad",""}}){
   RetentionFixture bad=new RetentionFixture();String wire=appWire("bad","sb_restore",args2[0],args2[1]);
   bad.utilities().stage(0,wire);RequestIdentity bid=new RequestIdentity(0,0L,"bad",bad.sha256(wire),"2".repeat(32));

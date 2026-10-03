@@ -3,9 +3,9 @@ from UtilityWireContract import *
 import subprocess,tempfile,os,json,shlex,sys
 TX='d'*24
 ROWS=[('status','','','status'),('policy','','e30=','native policy payload'),
- ('sb_export','','','policy_command pkg'),('sb_restore',TX,'','policy_command pkg'),('sb_recover','','','policy_command pkg'),
+ ('sb_export','','','policy_command pkg'),('sb_restore',TX,'','policy_command pkg'),('sb_reset',TX,'','policy_command pkg'),('sb_recover','','','policy_command pkg'),
  ('export_logs','','','export_logs'),('restart_scheduler','','','restart_scheduler')]
-for cmd in ('state','reset','read','begin','chunk','commit','abort','enable','disable','rollback'):
+for cmd in ('state','reset','read','begin','chunk','validate','preview','upstream_read','restore_app','commit','abort','enable','disable','rollback'):
     ROWS.append(('zo_'+cmd, 'g'+'a'*24 if cmd=='read' else TX, '0' if cmd=='read' else '', 'ZUIopt --control pkg mode'))
 for cmd in ('begin','chunk','commit','state','reset'):
     ROWS.append(('ui_'+cmd,TX if cmd not in ('state','reset') else '', '0', 'policy_command pkg:mode / state=- / reset=mode'))

@@ -28,7 +28,7 @@ final class UtilityTransport {
         final String id,command,packageName,mode;
         private Request(String[] fields){id=fields[0];command=fields[1];packageName=fields[3];mode=fields[4];}
         String restoreTransaction(){
-            return command.equals("sb_restore")&&mode.isEmpty()&&packageName.matches("[0-9a-f]{24}")?packageName:"";
+            return (command.equals("sb_restore")||command.equals("sb_reset"))&&mode.isEmpty()&&packageName.matches("[0-9a-f]{24}")?packageName:"";
         }
     }
     static Request fields(String request){
@@ -70,8 +70,10 @@ final class UtilityTransport {
     }
     void publish(RequestIdentity identity,String kind,String data)throws Exception{
         Map<String,Object> slot=bound(identity);String command=fields(string(slot.get("request"))).command;
-        require((kind.equals("logs")&&command.equals("export_logs"))||(kind.equals("rulesState")&&command.equals("zo_state"))
-                ||(kind.equals("rulesChunk")&&command.equals("zo_read")),"utility result kind");
+        require((kind.equals("logs")&&command.equals("export_logs"))||(kind.equals("rulesState")&&(command.equals("zo_state")||command.equals("zo_commit")||command.equals("zo_rollback")||command.equals("zo_restore_app")||command.equals("zo_enable")||command.equals("zo_disable")))
+                ||(kind.equals("rulesChunk")&&(command.equals("zo_read")||command.equals("zo_upstream_read")))
+                ||(kind.equals("rulesPreview")&&command.equals("zo_preview"))
+                ||(kind.equals("rulesValidation")&&command.equals("zo_validate")),"utility result kind");
         require(data!=null&&!data.isEmpty()&&data.getBytes(StandardCharsets.UTF_8).length<=RESULT_LIMIT,"utility result bound");
         slot.put("kind",kind);slot.put("data",data);save(identity.user,slot);
     }

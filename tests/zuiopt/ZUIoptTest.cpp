@@ -142,6 +142,7 @@ void canonicalMigrationTests(const fs::path& parent){
     }
     puts("ZUIOPT_V1_CANONICAL_PARITY_AND_ACK=PASS");
 }
+#include "LibraryTest.h"
 int main(int argc,char** argv){
     signal(SIGPIPE,SIG_IGN);
     try{
@@ -194,8 +195,21 @@ int main(int argc,char** argv){
         lifecycleTests(root);
         journalTests(root);
         canonicalMigrationTests(root);
+        libraryTests(root);
         {
             RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;
+            for(const auto& candidate:std::vector<std::string>{OPEN,"schema 2\nenabled true\nunknown bad\n"}){
+                auto tx=randomId();store.apply("begin",tx,"user:"+std::to_string(candidate.size())+":"+sha256(candidate)+":-:0:"+generationOf(initial));
+                store.apply("chunk",tx+":0",base64(candidate));
+                std::map<std::string,std::string> snapshot;
+                for(const auto& e:fs::recursive_directory_iterator(root))if(e.is_regular_file())snapshot[e.path().string()]=read(e.path().string());
+                auto result=store.apply("validate",tx,"");
+                require(result.find(candidate==OPEN?"validation=PASS":"validation=FAIL")==0&&result.size()<=256,"validation bounded result");
+                require(store.current().effective==initial,"validation no generation/source change");
+                std::map<std::string,std::string> after;
+                for(const auto& e:fs::recursive_directory_iterator(root))if(e.is_regular_file())after[e.path().string()]=read(e.path().string());
+                require(snapshot==after,"validation zero storage changes");store.apply("abort",tx,"");
+            }
             rejects([&]{store.apply("enable","appopt-test","");});
             uploadData(store,"user",pack.ruleText,randomId());auto enabled=store.current().effective;
             require(rules(enabled).find("org.example.game")->general==cpus("0-6"),"pack enabled");

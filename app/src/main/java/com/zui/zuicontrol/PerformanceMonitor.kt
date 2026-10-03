@@ -60,6 +60,7 @@ class PerformanceMonitor(private val context: Context,
         }
     }
     private var closed = false
+    private var recordStartPending = false
     private var circle = false
     private var circleX: Int? = null
     private var circleY: Int? = null
@@ -448,11 +449,21 @@ class PerformanceMonitor(private val context: Context,
         private fun applyGesture(action: MonitorGesture.Release) {
             when (action) {
                 MonitorGesture.Release.START_RECORDING -> {
+                    if (recordStartPending) return
                     val token = "${snapshot.optLong("connectionEpoch")}:${snapshot.optLong("targetEpoch")}:$touchSequence"
-                    if (command("recordStart", token).startsWith("ok=1")) {
-                        snapshot.put("recordState", "RECORDING")
-                        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                    }
+                    recordStartPending = true
+                    // One explicit pre-start read, never a periodic worker or a UI-thread wait.
+                    Thread({
+                        val qualified = runCatching { ZuioptRules.state(context) }.isSuccess
+                        this@PerformanceMonitor.handler.post {
+                            recordStartPending = false
+                            if (!closed && attached && circle && qualified && command("recordStart", token).startsWith("ok=1")) {
+                                snapshot.put("recordState", "RECORDING")
+                                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                                update()
+                            }
+                        }
+                    }, "RecordStartFacts").start()
                 }
                 MonitorGesture.Release.STOP_RECORDING -> {
                     if (command("recordStop").startsWith("ok=1")) snapshot.put("recordState", "IDLE")

@@ -33,13 +33,31 @@ internal object SettingsBackup {
         val read=checkNotNull(context.contentResolver.openInputStream(uri)).use { ZuioptRules.boundedRead(it,LIMIT) }
         check(read.contentEquals(bytes)) { "目标文件未完整保存，请勿使用该文件" }
     }
-    fun restore(context: Context, uri: Uri) {
+    data class Inspection(val transaction: String, val hash: String, val summary: JSONObject)
+    fun inspect(context: Context, uri: Uri): Inspection {
         val bytes=checkNotNull(context.contentResolver.openInputStream(uri)).use { ZuioptRules.boundedRead(it,LIMIT) }
         val tx=ByteArray(12).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it.toInt() and 255) }
         transport("backupBegin",JSONObject().put("transaction",tx).put("size",bytes.size).put("hash",ZuioptRules.digest(bytes)).toString())
         for(offset in bytes.indices step 8192)transport("backupChunk",JSONObject().put("transaction",tx).put("offset",offset)
             .put("data",Base64.getEncoder().encodeToString(bytes.copyOfRange(offset,minOf(offset+8192,bytes.size)))).toString())
-        command(context,"sb_restore",tx)
+        val hash=ZuioptRules.digest(bytes)
+        val summary=JSONObject(transport("backupInspect",JSONObject().put("transaction",tx).put("hash",hash).toString()))
+        check(summary.getString("hash")==hash&&summary.getString("transaction")==tx)
+        return Inspection(tx,hash,summary)
+    }
+    fun abort(inspection: Inspection) {
+        transport("backupAbort",JSONObject().put("transaction",inspection.transaction).toString())
+    }
+    fun restore(context: Context, inspection: Inspection) {
+        transport("backupConfirm",JSONObject().put("transaction",inspection.transaction).put("hash",inspection.hash).toString())
+        command(context,"sb_restore",inspection.transaction)
+        context.startService(android.content.Intent(context,ZuiControlQuickService::class.java).setAction("com.zui.zuicontrol.SETTINGS_RESTORED"))
+    }
+    // Existing UI has its own confirmation. New frontend retains Inspection until explicit confirmation.
+    fun restore(context: Context, uri: Uri) = restore(context,inspect(context,uri))
+    fun factoryReset(context: Context) {
+        val tx=ByteArray(12).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it.toInt() and 255) }
+        command(context,"sb_reset",tx)
         context.startService(android.content.Intent(context,ZuiControlQuickService::class.java).setAction("com.zui.zuicontrol.SETTINGS_RESTORED"))
     }
 }

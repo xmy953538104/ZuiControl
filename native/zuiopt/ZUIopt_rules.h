@@ -110,18 +110,18 @@ inline uint32_t le(const std::string& s,size_t at,size_t bytes){
     for(size_t i=0;i<bytes;i++)n|=uint32_t(static_cast<unsigned char>(s[at+i]))<<(8*i);return n;
 }
 inline uint32_t crc(const std::string& s){return crc32(0,reinterpret_cast<const Bytef*>(s.data()),static_cast<uInt>(s.size()));}
-inline Pack unpackPack(const std::string& data,const std::string& canonicalBase={}){
+inline std::map<std::string,std::string> unpackRuleFiles(const std::string& data,const std::set<std::string>& namesWanted){
     require(data.size()>=22&&data.size()<=PACK_LIMIT,"archive size");size_t end=data.size()-22;
     while(le(data,end,4)!=0x06054b50||end+22+le(data,end+20,2)!=data.size()){require(end>0&&data.size()-end<65557,"ZIP end record");end--;}
-    require(le(data,end+4,2)==0&&le(data,end+6,2)==0&&le(data,end+8,2)==2&&le(data,end+10,2)==2,"ZIP disk/member count");
+    require(le(data,end+4,2)==0&&le(data,end+6,2)==0&&le(data,end+8,2)==namesWanted.size()&&le(data,end+10,2)==namesWanted.size(),"ZIP disk/member count");
     size_t central=le(data,end+16,4),centralEnd=central+le(data,end+12,4),at=central;
     require(centralEnd==end,"ZIP directory bounds");std::map<std::string,std::string> files;std::vector<std::pair<size_t,size_t>> spans;
-    for(int i=0;i<2;i++){
+    for(size_t i=0;i<namesWanted.size();i++){
         require(at+46<=centralEnd&&le(data,at,4)==0x02014b50,"ZIP central header");
         auto flags=le(data,at+8,2),method=le(data,at+10,2),expectedCrc=le(data,at+16,4),compressed=le(data,at+20,4),size=le(data,at+24,4);
         size_t names=le(data,at+28,2),extras=le(data,at+30,2),comments=le(data,at+32,2),local=le(data,at+42,4);
         require(at+46+names+extras+comments<=centralEnd&&le(data,at+34,2)==0,"ZIP member bounds/disk");
-        std::string name=data.substr(at+46,names);require((name=="manifest.json"||name=="rules.conf")&&!files.count(name),"ZIP exact members");
+        std::string name=data.substr(at+46,names);require(namesWanted.count(name)&&!files.count(name),"ZIP exact members");
         auto type=(le(data,at+38,4)>>16)&S_IFMT;
         require((type==0||type==S_IFREG)&&(flags&~0x080e)==0&&(method==0||method==8),"ZIP type/encryption/compression");
         require(size>0&&size<=(name=="manifest.json"?8192:RULE_LIMIT)&&compressed<=PACK_LIMIT,"ZIP expanded bound");
@@ -140,7 +140,12 @@ inline Pack unpackPack(const std::string& data,const std::string& canonicalBase=
             require(inflateInit2(&stream,-MAX_WBITS)==Z_OK,"ZIP inflate init");int rc=inflate(&stream,Z_FINISH);bool ok=rc==Z_STREAM_END&&stream.total_in==compressed&&stream.total_out==size;inflateEnd(&stream);require(ok,"ZIP inflate size/content");out.resize(size);}
         require(crc(out)==expectedCrc,"ZIP CRC mismatch");files.emplace(name,std::move(out));spans.emplace_back(local,localEnd);at+=46+names+extras+comments;
     }
-    std::sort(spans.begin(),spans.end());require(at==centralEnd&&spans[0].first==0&&spans[0].second==spans[1].first&&spans[1].second==central,"ZIP overlapping/extra content");
+    std::sort(spans.begin(),spans.end());require(!spans.empty()&&at==centralEnd&&spans.front().first==0&&spans.back().second==central,"ZIP overlapping/extra content");
+    for(size_t i=1;i<spans.size();i++)require(spans[i-1].second==spans[i].first,"ZIP overlapping entries");
+    return files;
+}
+inline Pack unpackPack(const std::string& data,const std::string& canonicalBase={}){
+    auto files=unpackRuleFiles(data,{"manifest.json","rules.conf"});
     auto manifest=ManifestJson(files.at("manifest.json")).parse();auto text=files.at("rules.conf");
     if(!canonicalBase.empty()){
         const std::set<std::string> required={"schemaVersion","oldCanonicalHash","newSourceHash","normalizerVersion","outputChoice","outputCanonicalHash","conflictListHash","engineSchema","targetSoC","workflowRepoCommitRun","qualificationEvidenceHash"};
@@ -158,15 +163,16 @@ inline Pack unpackPack(const std::string& data,const std::string& canonicalBase=
     return validatePack(std::move(manifest),text,data);
 }
 inline void appendLe(std::string& s,uint32_t n,size_t bytes){for(size_t i=0;i<bytes;i++)s+=static_cast<char>(n>>(i*8));}
-inline std::string packBytes(const Manifest& manifest,const std::string& rulesText){
+inline std::string packRuleFiles(const std::vector<std::pair<std::string,std::string>>& files){
     std::string local,central;
-    for(const auto& [name,content]:std::vector<std::pair<std::string,std::string>>{{"manifest.json",jsonText(manifest)},{"rules.conf",rulesText}}){
+    for(const auto& [name,content]:files){
         auto offset=local.size();appendLe(local,0x04034b50,4);appendLe(local,20,2);appendLe(local,0,4);appendLe(local,0x00210000,4);appendLe(local,crc(content),4);appendLe(local,content.size(),4);appendLe(local,content.size(),4);appendLe(local,name.size(),2);appendLe(local,0,2);local+=name+content;
         appendLe(central,0x02014b50,4);appendLe(central,0x0314,2);appendLe(central,20,2);appendLe(central,0,4);appendLe(central,0x00210000,4);appendLe(central,crc(content),4);appendLe(central,content.size(),4);appendLe(central,content.size(),4);appendLe(central,name.size(),2);appendLe(central,0,4);appendLe(central,0,4);appendLe(central,uint32_t(S_IFREG|0600)<<16,4);appendLe(central,offset,4);central+=name;
     }
-    std::string end;appendLe(end,0x06054b50,4);appendLe(end,0,4);appendLe(end,2,2);appendLe(end,2,2);appendLe(end,central.size(),4);appendLe(end,local.size(),4);appendLe(end,0,2);
+    std::string end;appendLe(end,0x06054b50,4);appendLe(end,0,4);appendLe(end,files.size(),2);appendLe(end,files.size(),2);appendLe(end,central.size(),4);appendLe(end,local.size(),4);appendLe(end,0,2);
     auto data=local+central+end;require(data.size()<=PACK_LIMIT,"pack output bound");return data;
 }
+inline std::string packBytes(const Manifest& manifest,const std::string& rulesText){return packRuleFiles({{"manifest.json",jsonText(manifest)},{"rules.conf",rulesText}});}
 inline Pack importAppOpt(const std::string& text,const std::string& id,int priority){
     require(!text.empty()&&text.size()<=RULE_LIMIT&&text.find('\0')==text.npos&&packId(id),"AppOpt input");
     std::map<std::string,Profile> packages;std::istringstream input(text);std::string line;

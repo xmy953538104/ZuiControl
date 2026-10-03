@@ -65,6 +65,19 @@ void searchOnlyAncestor(){
     check(WIFEXITED(status)&&WEXITSTATUS(status)==0);
 }
 void projections(){
+    check(generation(policy(7))==7);
+    auto schema3=policy(7);schema3.replace(schema3.find("\"schema\":2"),10,"\"schema\":3");
+    check(generation(schema3)==7);
+    auto schema4=schema3;schema4.replace(schema4.find("\"schema\":3"),10,"\"schema\":4");
+    rejects([&]{generation(schema4);});
+    {
+        Temp v3;Disk runtime(v3.path);runtime.put("effective_powermode.txt","fast\n");Projection p(v3.path);
+        auto row=schema3;row.pop_back();
+        check(p.call("prepare","{\"policy\":"+row+",\"transaction\":\""+tx+"\"}")==sha256(schema3));
+        auto request=apply(7);request.replace(request.find(sha256(policy(7))),64,sha256(schema3));
+        check(p.call("apply",request)==sha256(schema3));
+        check(p.stages.read("active.json")==schema3);
+    }
     for(auto mode:{"powersave","balance","performance","fast"}){
         check(modeReadbackMatches(mode,mode));check(modeReadbackMatches(std::string(mode)+"\n",mode));
         check(modeReadbackMatches(std::string(" \t")+mode+"\r\n",mode));

@@ -94,6 +94,7 @@ public final class PolicyCommand {
     static SettingsBackup.Rules rules(IBinder remote){
         return new SettingsBackup.Rules(){
             public Map<String,Object> snapshot()throws Exception{return object(parse(callback(remote,"settings_snapshot","").getBytes(StandardCharsets.UTF_8)));}
+            public Map<String,Object> upstream()throws Exception{return object(parse(callback(remote,"settings_upstream","").getBytes(StandardCharsets.UTF_8)));}
             public void prepare(String tx,String generation,byte[] rules)throws Exception{
                 require(callback(remote,"settings_prepare",encode(map("tx",tx,"generation",generation,"data",Base64.getEncoder().encodeToString(rules)))).trim().equals("prepared="+hash(rules)),"rules prepared ACK");
             }
@@ -114,13 +115,14 @@ public final class PolicyCommand {
     }
     private static String field(String text,String key){for(String line:text.split("\n"))if(line.startsWith(key+"="))return line.substring(key.length()+1);return "";}
     private static String settingsProjection(String action,String text)throws Exception{
-        if(action.equals("settings_snapshot")){
-            String state=nativeRules("state","","");String generation=field(state,"generation");int size=Integer.parseInt(field(state,"user_size"));
+        if(action.equals("settings_snapshot")||action.equals("settings_upstream")){
+            boolean upstream=action.equals("settings_upstream");
+            String state=nativeRules("state","","");String generation=field(state,"generation");int size=Integer.parseInt(field(state,upstream?"upstream_size":"user_size"));
             require(size>0&&size<=65536,"canonical size");java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
-            while(bytes.size()<size){String reply=nativeRules("read",generation,String.valueOf(bytes.size()));String[] parts=reply.split(":",3);
+            while(bytes.size()<size){String reply=nativeRules(upstream?"upstream_read":"read",generation,(upstream?"rules:":"")+bytes.size());String[] parts=reply.split(":",3);
                 require(parts.length==3&&parts[0].equals(generation)&&Integer.parseInt(parts[1])==bytes.size(),"canonical read generation");
                 byte[] chunk=Base64.getDecoder().decode(parts[2]);require(chunk.length>0&&bytes.size()+chunk.length<=size,"canonical chunk");bytes.write(chunk);}
-            require(hash(bytes.toByteArray()).equals(field(state,"user_sha256")),"canonical read hash");
+            require(hash(bytes.toByteArray()).equals(field(state,upstream?"upstream_sha256":"user_sha256")),"canonical read hash");
             require(nativeRules("state","","").equals(state),"canonical export changed");
             return encode(map("generation",generation,"pending",field(state,"settings_pending"),"data",Base64.getEncoder().encodeToString(bytes.toByteArray())));
         }

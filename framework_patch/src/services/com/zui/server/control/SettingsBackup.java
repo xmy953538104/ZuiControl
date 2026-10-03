@@ -13,6 +13,7 @@ final class SettingsBackup {
     static final String OPP_HASH=hash("231,310,366,422,500,578,629,680,720,770,834,903".getBytes(StandardCharsets.US_ASCII));
     interface Rules {
         Map<String,Object> snapshot() throws Exception;
+        default Map<String,Object> upstream() throws Exception {throw new IllegalStateException("upstream baseline unavailable");}
         void prepare(String tx,String generation,byte[] rules) throws Exception;
         void apply(String tx,byte[] rules,boolean rollback) throws Exception;
         void finish(String tx) throws Exception;
@@ -60,7 +61,7 @@ final class SettingsBackup {
         entries.put("preferences.json",preferences(prefs,policy.users));List<Object> hashes=new ArrayList<>();
         for(int i=1;i<NAMES.length;i++){byte[] data=entries.get(NAMES[i]);hashes.add(map("name",NAMES[i],"bytes",data.length,"sha256",hash(data)));}
         Map<String,Object> manifest=map("schemaVersion",1,"kind","zui.settings.backup","productSpecVersion","1.0",
-            "sourceBuild",build,"policySchema",2,"zuioptSchema",2,"targetSoC","SM8650","gpuOppSetHash",OPP_HASH,
+            "sourceBuild",build,"policySchema",policy.schema,"zuioptSchema",2,"targetSoC","SM8650","gpuOppSetHash",OPP_HASH,
             "createdAt",created,"userInventory",object(parse(policy.bytes())).get("users"),"entries",hashes,
             "configGeneration",map("policy",policy.generation,"rules",rule.get("generation"),"preferences",hash(prefs)));
         manifest.put("manifestHash",hash(bytes(manifest)));entries.put("manifest.json",bytes(manifest));return zip(entries);
@@ -73,7 +74,7 @@ final class SettingsBackup {
             "gpuOppSetHash","createdAt","userInventory","entries","configGeneration","manifestHash");
         String digest=string(manifest.remove("manifestHash"));require(digest.equals(hash(bytes(manifest))),"manifest hash");
         require(integer(manifest.get("schemaVersion"))==1&&"zui.settings.backup".equals(manifest.get("kind"))
-            &&"1.0".equals(manifest.get("productSpecVersion"))&&integer(manifest.get("policySchema"))==2
+            &&"1.0".equals(manifest.get("productSpecVersion"))&&(integer(manifest.get("policySchema"))==2||integer(manifest.get("policySchema"))==3)
             &&integer(manifest.get("zuioptSchema"))==2&&"SM8650".equals(manifest.get("targetSoC"))
             &&OPP_HASH.equals(manifest.get("gpuOppSetHash")),"unsupported backup compatibility");
         require(!string(manifest.get("sourceBuild")).isEmpty()&&integer(manifest.get("createdAt"))>=0,"backup provenance");
@@ -82,6 +83,7 @@ final class SettingsBackup {
             byte[] data=entries.get(NAMES[i+1]);require(NAMES[i+1].equals(entry.get("name"))&&integer(entry.get("bytes"))==data.length
                 &&hash(data).equals(entry.get("sha256")),"member digest/size");}
         AppPolicyStore.State policy=AppPolicyStore.State.parse(entries.get("policy.json"));
+        require(integer(manifest.get("policySchema"))==policy.schema,"policy schema binding");
         require(policy.users.equals(users)&&Arrays.equals(bytes(manifest.get("userInventory")),bytes(object(parse(policy.bytes())).get("users"))),"backup user inventory");
         require(policy.globals.keySet().equals(users.keySet()),"complete global inventory");
         for(int user:users.keySet())for(String mode:AppPolicyStore.MODES)require(policy.defaults.containsKey(AppPolicyStore.key(user,mode)),"complete GPU defaults");
@@ -96,6 +98,32 @@ final class SettingsBackup {
     }
     final AppPolicyStore policy;
     SettingsBackup(AppPolicyStore policy){this.policy=policy;}
+    // Inspect/confirm bind one immutable staged archive; only transport metadata is written.
+    Map<String,Object> inspect(String tx,String digest,String epoch,long now)throws Exception{
+        Map<String,Object> meta=staged(tx,digest,epoch,now);
+        byte[] archive=policy.disk.read("settings-upload-"+tx+".zip");
+        Map<String,byte[]> entries=validate(archive,policy.current.users);
+        AppPolicyStore.State target=AppPolicyStore.State.parse(entries.get("policy.json"));
+        Map<String,Object> manifest=object(parse(entries.get("manifest.json")));
+        meta.put("inspectedHash",digest);policy.disk.write("settings-upload-"+tx+".json",bytes(meta));
+        return map("transaction",tx,"hash",digest,"compatibility","PASS","backupSchema",1,
+            "sourceBuild",manifest.get("sourceBuild"),"userScope",manifest.get("userInventory"),
+            "appPolicyRows",target.apps.size(),"gpuDefaultsPresent",!target.defaults.isEmpty(),
+            "rulesPresent",true,"rulesHash",hash(entries.get("zuiopt.canonical.conf")),"preferencesPresent",true);
+    }
+    Map<String,Object> staged(String tx,String digest,String epoch,long now)throws Exception{
+        require(tx.matches("[0-9a-f]{24}")&&digest.matches("[0-9a-f]{64}"),"staged identity");
+        Map<String,Object> meta=object(parse(policy.disk.read("settings-upload-"+tx+".json")));
+        AppPolicyStore.Uploads.active(meta,epoch,now);
+        byte[] archive=policy.disk.read("settings-upload-"+tx+".zip");
+        require(integer(meta.get("size"))==archive.length&&digest.equals(meta.get("hash"))&&digest.equals(hash(archive)),"staged bytes changed");
+        return meta;
+    }
+    void confirm(String tx,String digest,String epoch,long now)throws Exception{
+        Map<String,Object> meta=staged(tx,digest,epoch,now);
+        require(digest.equals(meta.get("inspectedHash")),"archive not inspected");
+        meta.put("confirmedHash",digest);policy.disk.write("settings-upload-"+tx+".json",bytes(meta));
+    }
     byte[] prefs()throws Exception{
         return prefs(policy.current.users);
     }
@@ -126,6 +154,19 @@ final class SettingsBackup {
         require(Arrays.equals(before,policy.disk.read(AppPolicyStore.ACTIVE))&&Arrays.equals(preferences,prefs())
             &&snapshot.equals(rules.snapshot()),"settings changed during export");validate(archive,policy.current.users);return archive;
     }
+    byte[] factoryArchive(int user,Rules rules,String build,long time)throws Exception{
+        require(policy.current.users.containsKey(user)&&!busy()&&!policy.recoveryRequired,"reset user/busy");
+        AppPolicyStore.State next=policy.current.copy();
+        next.apps.keySet().removeIf(k->k.startsWith(user+":"));
+        for(String mode:AppPolicyStore.MODES)next.defaults.put(AppPolicyStore.key(user,mode),AppPolicyStore.factory(mode,false));
+        GpuRange range=next.range(user,"balance");next.globals.put(user,new AppPolicyStore.Row(120,"balance",range.minMHz,range.maxMHz));
+        Map<String,Object> preferences=object(parse(prefs()));
+        for(Object item:array(preferences.get("users"))){Map<String,Object> row=object(item);
+            if(integer(row.get("userId"))==user){row.put("powerPresentation","CONSUMPTION");row.put("circle_x",0.5);row.put("circle_y",0);}}
+        Map<String,Object> baseline=rules.upstream();
+        require(baseline.get("generation").equals(rules.snapshot().get("generation")),"reset upstream generation changed");
+        return archive(next,baseline,bytes(preferences),build,time);
+    }
     void restore(byte[] archive,String transaction,AppPolicyStore.Owner owner,Rules rules)throws Exception{
         require(transaction.matches("[0-9a-f]{24}"),"restore identity");
         byte[] journal=policy.disk.read(JOURNAL);
@@ -134,7 +175,9 @@ final class SettingsBackup {
             recover(owner,rules);require("APPLIED".equals(object(parse(policy.disk.read(JOURNAL))).get("phase")),"restore previously rolled back");return;
         }
         require(!busy()&&!policy.recoveryRequired,"settings busy");Map<String,byte[]> entries=validate(archive,policy.current.users);
-        AppPolicyStore.State next=AppPolicyStore.State.parse(entries.get("policy.json"));next.generation=Math.addExact(policy.current.generation,1);
+        AppPolicyStore.State next=AppPolicyStore.State.parse(entries.get("policy.json"));
+        if(policy.current.schema>=3)next=AppPolicyStore.gpuFollowMigration(next);
+        next.generation=Math.addExact(policy.current.generation,1);
         // Preserve installation migration identity; archive generation is provenance, never a replayed CAS.
         next.migration=policy.current.migration;Map<String,Object> nativeBefore=rules.snapshot();
         String prefix="settings-"+transaction;

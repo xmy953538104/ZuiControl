@@ -42,7 +42,7 @@ int main(int argc,char** argv){
         if(command=="state")result=store.state()+store.failureState();
         else if(command=="read")result=store.userChunk(key,value);
         else if(command=="reset"){ZUIopt::require(key.empty()&&value.empty(),"reset arguments");store.resetFailure();result="NEXT_REBOOT_RETRIES_ZUIOPT";}
-        else{result=command.rfind("settings_",0)==0?store.settings(command,key,value):store.apply(command,key,value);if(command=="commit"||command=="rollback"||command=="settings_apply"||command=="settings_revert"){
+        else{result=command.rfind("settings_",0)==0?store.settings(command,key,value):store.apply(command,key,value);if(command=="commit"||command=="restore_app"||command=="rollback"||command=="settings_apply"||command=="settings_revert"){
             reload();const auto deadline=ZUIopt::now()+3000;
             while(selected()&&!store.loaded()&&ZUIopt::now()<deadline)usleep(20000);
             ZUIopt::require(selected()&&store.loaded(),"COMMITTED_PENDING_OWNER_ACK_query_state");
