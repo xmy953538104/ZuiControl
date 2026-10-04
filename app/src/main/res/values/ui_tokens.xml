@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ui_accent">#445B8B</color>
+    <color name="ui_accent">#3562C6</color>
     <color name="monitor_active">#C77B28</color>
     <color name="notification_track">#CAD2E0</color>
-    <color name="ui_surface">#FAF9FD</color>
-    <color name="ui_field">#F0F1F7</color>
-    <color name="ui_text">#22232A</color>
-    <color name="ui_secondary">#575963</color>
-    <color name="mode_powersave">#538C35</color>
-    <color name="mode_balance">#4774CE</color>
-    <color name="mode_performance">#CA6B21</color>
-    <color name="mode_fast">#D64E70</color>
+    <color name="ui_surface">#FFFFFF</color>
+    <color name="ui_field">#F1F4F9</color>
+    <color name="ui_text">#0F172A</color>
+    <color name="ui_secondary">#475569</color>
+    <color name="mode_powersave">#10B981</color>
+    <color name="mode_balance">#3562C6</color>
+    <color name="mode_performance">#EA580C</color>
+    <color name="mode_fast">#DC2626</color>
     <dimen name="ui_control_height">48dp</dimen>
     <dimen name="ui_card_radius">18dp</dimen>
     <dimen name="ui_chip_height">32dp</dimen>
@@ -48,4 +48,8 @@
     <color name="monitor_value">#F5FFFFFF</color>
     <color name="monitor_unit">#DEFFFFFF</color>
     <fraction name="monitor_unit_scale">60%</fraction>
+    <color name="ui_detail">#EEF2F7</color>
+    <color name="ui_master">#F6F8FB</color>
+    <color name="ui_rail">#FFFFFF</color>
+    <color name="ui_line">#E3E8EF</color>
 </resources>

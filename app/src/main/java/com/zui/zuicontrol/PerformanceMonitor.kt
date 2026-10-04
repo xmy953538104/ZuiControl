@@ -105,7 +105,7 @@ class PerformanceMonitor(private val context: Context,
             val client=++backendGeneration
             expectedProducer=""
             val death=IBinder.DeathRecipient { handler.post {
-                if(client==backendGeneration){backend=null;expectedProducer="";snapshot=JSONObject();hide();onReading(-1.0,-1.0,0L,3500L)}
+                if(client==backendGeneration){backend=null;expectedProducer="";snapshot=JSONObject();hide();MonitorPresentation.publish(null);onReading(-1.0,-1.0,0L,3500L)}
             } }
             serviceDeath=death
             backend=ZuiControlManager.get()?.also { it.linkMonitorDeath(death) }
@@ -114,10 +114,11 @@ class PerformanceMonitor(private val context: Context,
             expectedProducer=JSONObject(reply.substringAfter("monitorSnapshot=")).getString("producerEpoch")
             permissionAllowed=Settings.canDrawOverlays(context)
             command(if(permissionAllowed) "permissionGranted" else "permissionLost")
-        }.onFailure { hide();onReading(-1.0,-1.0,0L,3500L) }
+        }.onFailure { hide();MonitorPresentation.publish(null);onReading(-1.0,-1.0,0L,3500L) }
     }
     fun close() {
         closed = true
+        MonitorPresentation.publish(null)
         runCatching { ZuiControlManager.get()?.monitor("unregister", "", false, false, callback) }
         backendGeneration++;expectedProducer=""
         runCatching { serviceDeath?.let { backend?.unlinkMonitorDeath(it) } };backend=null
@@ -269,6 +270,7 @@ class PerformanceMonitor(private val context: Context,
         // Both consumers receive the exact same scalar sample, including OFF notifications.
         displayPower = if(positions.optString("powerPresentation")=="INPUT") -1.0 else next.optDouble("powerW", -1.0)
         snapshot = next
+        MonitorPresentation.publish(next)
         if (modeChanged) onModeChanged()
         circle = next.optBoolean("circle", circle)
         onReading(next.optDouble("quietC", -1.0), displayPower, next.optLong("elapsedMs"), next.optLong("ttlMs", 3500))

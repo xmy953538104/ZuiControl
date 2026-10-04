@@ -1,4 +1,4 @@
-"""R10 design/entry-point audit. Actual reapply, timing and 10-minute stability are device gates."""
+"""V3 notion proportions/entry-point audit. Actual reapply, timing and 10-minute stability are device gates."""
 from pathlib import Path
 import re
 import unittest
@@ -13,32 +13,33 @@ class NotificationRenderer(unittest.TestCase):
     def test_exact_geometry_and_native_supported_views(self):
         root=ET.parse(RES/'layout/notification_quick_control.xml').getroot()
         ids={n.get(A+'id','').removeprefix('@+id/'):n for n in root.iter() if n.get(A+'id')}
-        self.assertEqual((root.get(A+'layout_width'),root.get(A+'layout_height')),('384dp','88dp'))
-        self.assertEqual([root.get(A+'padding'+side) for side in ('Start','End','Top','Bottom')],['16dp']*4)
+        self.assertEqual((root.get(A+'layout_width'),root.get(A+'layout_height')),('match_parent','88dp'))
+        self.assertEqual([root.get(A+'padding'+side) for side in ('Start','End','Top','Bottom')],['14dp','14dp','12dp','12dp'])
         self.assertTrue(all(n.tag in ('LinearLayout','FrameLayout','TextView','ImageView') for n in root.iter()))
-        self.assertEqual((ids['monitor_toggle'].get(A+'layout_width'),ids['monitor_toggle'].get(A+'layout_height')),('56dp','56dp'))
-        self.assertEqual(ids['monitor_icon'].get(A+'layout_width'),'56dp')
-        self.assertEqual(ids['monitor_indicator'].get(A+'layout_width'),'10dp')
-        self.assertEqual(ids['monitor_indicator'].get(A+'layout_marginEnd'),'3.5dp')
-        self.assertEqual(ids['quick_controls'].get(A+'layout_width'),'222dp')
-        self.assertEqual(ids['quick_controls'].get(A+'layout_marginStart'),'10dp')
-        self.assertEqual(ids['quick_metrics'].get(A+'layout_width'),'52dp')
-        self.assertEqual(ids['quick_metrics'].get(A+'layout_marginStart'),'12dp')
+        self.assertEqual((ids['monitor_toggle'].get(A+'layout_width'),ids['monitor_toggle'].get(A+'layout_height')),('64dp','64dp'))
+        self.assertEqual(ids['monitor_icon'].get(A+'layout_width'),'64dp')
+        self.assertEqual(ids['monitor_indicator'].get(A+'layout_width'),'16dp')
+        self.assertEqual(ids['monitor_indicator'].get(A+'layout_marginEnd'),'1dp')
+        self.assertEqual(ids['quick_controls'].get(A+'layout_width'),'0dp')
+        self.assertEqual(ids['quick_controls'].get(A+'layout_weight'),'1')
+        self.assertEqual(ids['quick_controls'].get(A+'layout_marginStart'),'14dp')
+        self.assertEqual(ids['quick_metrics'].get(A+'layout_width'),'56dp')
+        self.assertEqual(ids['quick_metrics'].get(A+'layout_marginStart'),'14dp')
         self.assertEqual(ids['notification_quiet'].get(A+'text'),'--°C')
         self.assertEqual(ids['notification_power'].get(A+'text'),'-- W')
         self.assertEqual(ids['notification_power'].get(A+'layout_marginTop'),'4dp')
         styles={s.get('name'): {i.get('name'):i.text for i in s} for s in ET.parse(RES/'values/styles.xml').getroot().findall('style')}
         style=styles['NotificationControl']
-        self.assertEqual(style['android:layout_height'],'22dp')
-        self.assertEqual(style['android:textSize'],'11.5sp')
+        self.assertEqual(style['android:layout_height'],'26dp')
+        self.assertEqual(style['android:textSize'],'12sp')
         self.assertEqual(style['android:includeFontPadding'],'false')
-        for name,labels in [('refresh_row',['60','90','120','144','165']),('uperf_row',['节能','均衡','性能','极速'])]:
-            self.assertEqual(ids[name].get(A+'layout_height'),'26dp')
+        for name,labels in [('refresh_row',['60','90','120','144','165']),('uperf_row',['节能','均衡','性能','快速'])]:
+            self.assertEqual(ids[name].get(A+'layout_height'),'30dp')
             self.assertEqual(ids[name].get(A+'padding'),'2dp')
             self.assertEqual([n.get(A+'text') for n in ids[name]],labels)
         self.assertEqual(ids['uperf_row'].get(A+'layout_marginTop'),'4dp')
-        self.assertEqual(16+56+12+52+10+222+16,384)
-        self.assertEqual(16+26+4+26+16,88)
+        self.assertEqual(14+64+14+56+14+208+14,384)
+        self.assertEqual(12+30+4+30+12,88)
         self.assertFalse((RES/'layout/notification_zuicontrol.xml').exists())
 
     def test_every_update_uses_one_fresh_renderer(self):

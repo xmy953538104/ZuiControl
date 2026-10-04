@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
@@ -73,11 +74,12 @@
             </intent-filter>
         </receiver>
 
-        <activity android:name="com.zui.zuicontrol.PerformanceRecordActivity" android:exported="false" />
+        <activity android:name="com.zui.zuicontrol.PerformanceRecordActivity" android:exported="false" android:screenOrientation="sensorLandscape" />
         <activity
             android:name="com.zui.zuicontrol.MainActivity"
             android:excludeFromRecents="true"
             android:exported="true"
+            android:screenOrientation="sensorLandscape"
             android:resizeableActivity="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

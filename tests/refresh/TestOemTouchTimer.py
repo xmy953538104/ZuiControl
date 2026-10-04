@@ -176,8 +176,8 @@ class OemTouchTimer(unittest.TestCase):
         identity_path = 'app/build.gradle.kts'
         old = identity['gradle_text'].encode()
         current = (ROOT/identity_path).read_bytes().replace(b'\r\n', b'\n')
-        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 83')
-            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.46"')
+        self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 84')
+            .replace(b'versionName = "0.21.23"', b'versionName = "0.21.47"')
             .replace(b'targetSdk = 35', b'targetSdk = 30'))
         entry = next(line for line in entries if line.endswith(b'\tapp/build.gradle.kts'))
         entries.remove(entry)

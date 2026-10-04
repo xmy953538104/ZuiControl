@@ -1,0 +1,15 @@
+<resources>
+    <color name="ui_accent">#5B8CFF</color>
+    <color name="ui_surface">#111927</color>
+    <color name="ui_field">#1A2334</color>
+    <color name="ui_text">#E8EDF6</color>
+    <color name="ui_secondary">#A5B0C3</color>
+    <color name="mode_powersave">#1ECB8E</color>
+    <color name="mode_balance">#5B8CFF</color>
+    <color name="mode_performance">#FF8A3D</color>
+    <color name="mode_fast">#FF4D5E</color>
+    <color name="ui_detail">#090D15</color>
+    <color name="ui_master">#0D1320</color>
+    <color name="ui_rail">#0D1320</color>
+    <color name="ui_line">#1F2938</color>
+</resources>

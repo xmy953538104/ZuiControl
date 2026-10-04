@@ -144,14 +144,13 @@ class CommandPlaneArchitectureTest(unittest.TestCase):
 
     def test_app_reads_binder_state_not_retired_health_setting(self) -> None:
         self.assertIn("val state = ZuiControlClient.stateText()", self.activity)
-        for field in (
-            "schedulerActive",
-            "uperfServiceState",
-            "uperfMode",
-            "threadManagerState",
-            "schedulerHealth",
-        ):
-            self.assertIn(f'ZuiControlClient.stateValue(state, "{field}")', self.activity)
+        # V3 delegates presentation of the same Binder response to the accepted pure Health mapper.
+        self.assertIn("BackendHealth.components(state)", self.activity)
+        health = read("app/src/main/java/com/zui/zuicontrol/BackendHealth.kt")
+        self.assertIn('values["schedulerActive"]', health)
+        self.assertIn('scheduler(names[1],"uperf")', health)
+        self.assertIn('scheduler(names[2],"zuiopt")', health)
+        self.assertIn('values["systemServiceAlive"]', health)
         for source in (ROOT / "app/src/main/java").rglob("*.kt"):
             if source.name != "ZuiControlContract.kt":
                 self.assertNotIn("KEY_UPERF_HEALTH", source.read_text(encoding="utf-8"))

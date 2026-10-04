@@ -33,23 +33,19 @@ class UiPolish(unittest.TestCase):
         self.assertIn('frame.bottom - xy[1] - height - gap', ui)
         self.assertIn('showAsDropDown(this@AnchoredDropdown, 0, gap, Gravity.START)', ui)
         self.assertIn('overlapAnchor = false', ui)
-        self.assertEqual(main.count('val picker = traySpinner('), 2)
-        self.assertIn('AnchoredDropdown(this, items)', main)
+        # V3 Owner replaces popup App-policy selectors and the old grid with rail/master/detail.
+        self.assertIn('AnchoredDropdown(this@MainActivity, classes.mapIndexed', main)
         self.assertNotIn('Spinner(this)', main)
-        self.assertNotIn('✓', main); self.assertNotIn('性能：', main)
-        self.assertNotIn('熄屏固定节能', main)
-        self.assertIn('UiControls.modeChip(this@MainActivity, mode, mode == selected)', main)
-        self.assertIn('(contentWidthDp / 260).coerceIn(2, 4)', ui)
-        self.assertEqual(main.count('addAppGrid('), 3)  # definition + both callers
-        settings = main.split('private fun buildSystemPage()', 1)[1].split('private fun exportLogs()', 1)[0]
-        self.assertEqual(settings.count('settingsActionMargins()'), 7)
-        self.assertNotIn('spaced =', main)
-        self.assertIn('addView(reset, LinearLayout.LayoutParams(-2, dimen(R.dimen.ui_chip_height))', main)
-        self.assertEqual(main.count('gravity = Gravity.TOP; topMargin = bar.chipTopMargin'), 2)
-        self.assertNotIn('maxOf(dp(92)', main)
-        self.assertIn('"ZUIopt" to threadState)', settings)
-        self.assertNotIn('.chunked(2)', settings)
-        self.assertNotIn('"刷新率" to', settings)
+        self.assertIn('GpuRangeBar(this@MainActivity, range)', main)
+        self.assertIn('LinearLayout.LayoutParams(dp(72), -1)', main)
+        self.assertIn('LinearLayout.LayoutParams(dp(312), -1)', main)
+        for module in ('监测与显示','GPU 默认范围','数据与维护','关于'):
+            self.assertIn(module, main)
+        self.assertIn('session.saveApp(after)', main)
+        self.assertIn('session.saveGpu(after)', main)
+        settings=main.split('private fun settingsPage()',1)[1].split('private fun theme(',1)[0]
+        self.assertNotIn('BackendHealth', settings)
+        self.assertNotIn('职责', settings)
 
     def test_overlay_tokens_and_raw_recording_boundary(self):
         tokens = {x.attrib['name']: x.text for x in ET.parse(ROOT/'app/src/main/res/values/ui_tokens.xml').getroot()}

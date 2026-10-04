@@ -327,6 +327,9 @@ jobs:
       - name: Test app
         run: |
           gradle -p . :app:testDebugUnitTest :app:lintDebug
+          python3 tests/monitor/TestFrontendV3.py
+          python3 tests/monitor/TestFinalIntegration.py
+          python3 tests/zuiopt/TestRulePublisher.py
           python3 tests/gpu/TestGpuTouch.py
           python3 tests/monitor/TestDropdownSelection.py
           python3 tests/monitor/TestPendingIntentCache.py
@@ -410,9 +413,10 @@ jobs:
           rm -rf payload/system/priv-app/ZuiControlV80
           rm -rf payload/system/priv-app/ZuiControlV81
           rm -rf payload/system/priv-app/ZuiControlV82
-          mkdir -p payload/system/priv-app/ZuiControlV83
+          rm -rf payload/system/priv-app/ZuiControlV83
+          mkdir -p payload/system/priv-app/ZuiControlV84
           cp app/build/outputs/apk/release/app-release.apk \
-            payload/system/priv-app/ZuiControlV83/ZuiControl.apk
+            payload/system/priv-app/ZuiControlV84/ZuiControl.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

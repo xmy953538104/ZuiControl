@@ -54,7 +54,7 @@ internal object NotificationQuickControlHelper {
             R.drawable.notify_mode_performance, R.drawable.notify_mode_fast)
         listOf(R.id.mode_powersave, R.id.mode_balance, R.id.mode_performance, R.id.mode_fast)
             .zip(UperfMode.entries).forEach { (id, value) ->
-                val title = if (value == UperfMode.FAST) "极速" else value.title
+                val title = value.title
                 button(views, id, title, value == snapshot.currentMode, backgrounds[value.ordinal],
                     snapshot.uperfEnabled, modeIntent(value), title)
             }
@@ -85,11 +85,11 @@ internal object NotificationQuickControlHelper {
     private fun button(views: RemoteViews, id: Int, text: String, selected: Boolean,
                        activeBackground: Int, enabled: Boolean, intent: PendingIntent, description: String) {
         views.setTextViewText(id, text)
-        views.setTextColor(id, if (selected) Color.WHITE else if (enabled) Color.rgb(90, 107, 130) else Color.rgb(148, 163, 184))
-        views.setInt(id, "setBackgroundResource", if (selected) activeBackground else R.drawable.notify_rate_normal)
+        views.setTextColor(id, if (selected && enabled) Color.WHITE else if (enabled) Color.rgb(90, 107, 130) else Color.rgb(148, 163, 184))
+        views.setInt(id, "setBackgroundResource", if (selected && enabled) activeBackground else R.drawable.notify_rate_normal)
         views.setViewVisibility(id, View.VISIBLE)
         views.setBoolean(id, "setEnabled", enabled)
-        views.setContentDescription(id, "$description ${if (selected) "已选择" else "未选择"}")
+        views.setContentDescription(id, "$description ${if (selected) "已选择" else "未选择"} ${if (enabled) "可用" else "不可配置"}")
         views.setOnClickPendingIntent(id, intent)
     }
 }
