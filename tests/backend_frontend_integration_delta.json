@@ -22,7 +22,7 @@
     {
       "path": "framework_patch/src/services/com/zui/server/control/MonitorCollector.java",
       "beforeSha256": "fa6923af58fc5711c8df968b902416ba3625f802d4dff46f1acc724b065442fd",
-      "afterSha256": "4640ab968d9c129fe1850ec536bf8878fbaa611c8134df4552fdf222ce1396dd",
+      "afterSha256": "608d26b4789232e0fdd84f8ac0c80a9e567be30d1c16c3b97d4539324e9496db",
       "hunks": [
         {
           "before": "    private boolean powerConfirmationPending;\n    private String finalizeError=\"\";\n    private long epoch,samples,threadReads,enumerations,lastThreadTime;\n    private String lastSnapshot=\"{}\",error=\"\",lastRequestError=\"\";\n    private List<MonitorSnapshot.Task> previous=Collections.emptyList();\n    private int previousPid;\n",
@@ -45,8 +45,8 @@
           "after": "        scheduled=false;\n        long powerDelay=0;\n        try{\n            // End the recording before enumerating at or beyond its deadline.\n            checkTerminal(session.terminal(SystemClock.elapsedRealtime()));\n            updateAnalyses(SystemClock.elapsedRealtime());\n            if(!scalarActive()){reschedule(0);return;}\n            String screen=screenTerminal();\n"
         },
         {
-          "before": "            if(fpsValidity.isEmpty())fpsValidity=sources.fpsError;\n            int plugged=-1,batteryStatus=-1,milliVolts=-1;\n            long microAmps=Long.MIN_VALUE;\n            String terminal=session.terminal(now);\n            checkTerminal(terminal);\n            boolean capture=session.recording();\n            { // All visible controller modes consume the same quiet/consumption sample.\n                quiet=sources.quiet();sources.scalarReads++;\n",
-          "after": "            if(fpsValidity.isEmpty())fpsValidity=sources.fpsError;\n            int plugged=-1,batteryStatus=-1,milliVolts=-1;\n            long microAmps=Long.MIN_VALUE;\n            boolean capture=session.recording();\n            { // All visible controller modes consume the same quiet/consumption sample.\n                quiet=sources.quiet();sources.scalarReads++;\n"
+          "before": "                terminate(screen,false);session.scene(session.foreground,session.user,false);clearThreadBaseline();stop();reschedule(0);return;\n            }\n            long now=SystemClock.elapsedRealtime();\n            String fpsValidity=fpsBlockedReason();\n            double fps=fpsValidity.isEmpty()?sources.fps():-1,quiet=-1,power=-1;\n            if(fpsValidity.isEmpty())fpsValidity=sources.fpsError;\n            int plugged=-1,batteryStatus=-1,milliVolts=-1;\n            long microAmps=Long.MIN_VALUE;\n            String terminal=session.terminal(now);\n            checkTerminal(terminal);\n            boolean capture=session.recording();\n            { // All visible controller modes consume the same quiet/consumption sample.\n                quiet=sources.quiet();sources.scalarReads++;\n",
+          "after": "                terminate(screen,false);session.scene(session.foreground,session.user,false);clearThreadBaseline();stop();reschedule(0);return;\n            }\n            long now=SystemClock.elapsedRealtime();\n            String terminal=session.terminal(now);\n            if(!terminal.isEmpty())checkTerminal(terminal); // A shared task read may cross the deadline.\n            String fpsValidity=fpsBlockedReason();\n            double fps=fpsValidity.isEmpty()?sources.fps():-1,quiet=-1,power=-1;\n            if(fpsValidity.isEmpty())fpsValidity=sources.fpsError;\n            int plugged=-1,batteryStatus=-1,milliVolts=-1;\n            long microAmps=Long.MIN_VALUE;\n            boolean capture=session.recording();\n            { // All visible controller modes consume the same quiet/consumption sample.\n                quiet=sources.quiet();sources.scalarReads++;\n"
         },
         {
           "before": "                if(process!=null&&session.sameProcess(process.tid,process.start)){\n                    List<MonitorSnapshot.Row> rows=Collections.emptyList();\n                    ThreadAnalysis analysis=analyses.get(session.user);\n                    boolean shared=analysis!=null&&analysis.pkg.equals(session.recordingPackage)&&analysis.collecting;\n                    long taskTime=shared?analysis.lastSample:now;\n                    if(shared?taskTime>=0&&taskTime!=lastThreadTime:lastThreadTime==0||now-lastThreadTime>=3000){\n                        List<MonitorSnapshot.Task> tasks;\n                        if(shared){tasks=Collections.emptyList();for(ThreadAnalysis.Process p:analysisTasks.getOrDefault(session.user,Collections.emptyList()))if(p.pid==process.tid&&p.start==process.start)tasks=p.tasks;}\n                        else {enumerations++;tasks=readTasks(process.tid);}\n                        MonitorSnapshot.Task after=identity(process.tid);\n                        if(after==null||after.start!=process.start){clearThreadBaseline();process=null;}\n",
@@ -66,7 +66,7 @@
         }
       ],
       "before": "100644 blob 08891eb21d9da57651403baffd713742ac32a2a7\tframework_patch/src/services/com/zui/server/control/MonitorCollector.java",
-      "after": "100644 blob 7302a615311058e64442be97c05c85a5dadb822b\tframework_patch/src/services/com/zui/server/control/MonitorCollector.java"
+      "after": "100644 blob 7c3c9ff1b8471ec1fbfee52f4d9464d239fdf7ff\tframework_patch/src/services/com/zui/server/control/MonitorCollector.java"
     },
     {
       "path": "framework_patch/src/services/com/zui/server/control/MonitorStore.java",

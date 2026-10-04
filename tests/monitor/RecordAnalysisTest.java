@@ -23,13 +23,14 @@ public final class RecordAnalysisTest {
   p.pid=pid;p.uid=user*100000+10001;p.pkgList=packages;p.processName=packages[0];return p;
  }
  static class Collector extends MonitorCollector {
-  int fullScans,separateScans;long childGeneration=2,mainGeneration=1;boolean sourceFailure;
+  int fullScans,separateScans;long childGeneration=2,mainGeneration=1,scanDelay;boolean sourceFailure;
   Collector(){super(new Context(),sources);facts=()->"g-record";}
   int findPid(){return 1;}
   MonitorSnapshot.Task identity(int pid){return new MonitorSnapshot.Task(pid,"Main",mainGeneration,SystemClock.now/10);}
   List<MonitorSnapshot.Task> readTasks(int pid){separateScans++;throw new AssertionError("duplicate Recording enumeration");}
   List<ThreadAnalysis.Process> readAnalysisTasks(ThreadAnalysis a){
    fullScans++;if(sourceFailure)throw new IllegalStateException("task source unavailable");List<MonitorSnapshot.Task> main=new ArrayList<>();
+   SystemClock.now+=scanDelay;
    for(int i=0;i<40;i++)main.add(new MonitorSnapshot.Task(i+10,"Task"+i,1,SystemClock.now/10+i));
    return Arrays.asList(new ThreadAnalysis.Process(1,mainGeneration,main),new ThreadAnalysis.Process(2,childGeneration,
     Arrays.asList(new MonitorSnapshot.Task(99,"Child",childGeneration,SystemClock.now/5))));
@@ -82,6 +83,9 @@ public final class RecordAnalysisTest {
   check(!c.session.recording()&&MonitorStore.incomplete&&result().get("sourceRecordTerminalReason").equals("ANALYSIS_SOURCE_FAILURE"),"task source failure finalizes linked incomplete record");
   check(c.state().contains("monitorError=IllegalStateException:analysis source:"),"failed pipeline health is visible until actual recovery");
   c.sourceFailure=false;tick(SystemClock.now+1000);check(c.state().contains("monitorError=\n"),"completed scalar sample proves recovery");
+  SystemClock.now+=100;start(c);long slowStart=SystemClock.now;c.scanDelay=1000;
+  tick(slowStart+MonitorSession.MAX_RECORD_MS-500);c.scanDelay=0;
+  check(!c.session.recording()&&MonitorStore.terminal.equals("DURATION_LIMIT")&&c.state().contains("monitorScalarRows=0"),"slow task read cannot persist a post-deadline scalar");
   c.unregister(client);check(HandlerThread.active==0&&Handler.pending.isEmpty(),"no detached record analysis lifetime");
   for(boolean omitted:new boolean[]{false,true}){
    EnumerationCollector actual=new EnumerationCollector();actual.register(new Client());

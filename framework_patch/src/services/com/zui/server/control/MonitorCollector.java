@@ -316,6 +316,8 @@ class MonitorCollector {
                 terminate(screen,false);session.scene(session.foreground,session.user,false);clearThreadBaseline();stop();reschedule(0);return;
             }
             long now=SystemClock.elapsedRealtime();
+            String terminal=session.terminal(now);
+            if(!terminal.isEmpty())checkTerminal(terminal); // A shared task read may cross the deadline.
             String fpsValidity=fpsBlockedReason();
             double fps=fpsValidity.isEmpty()?sources.fps():-1,quiet=-1,power=-1;
             if(fpsValidity.isEmpty())fpsValidity=sources.fpsError;
