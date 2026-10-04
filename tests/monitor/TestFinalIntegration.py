@@ -21,7 +21,12 @@ assert all(a.get(android+'screenOrientation') == 'sensorLandscape' for a in mani
 for filename in ('MainActivity.kt', 'FrontendGateway.kt', 'FrontendSession.kt', 'PerformanceRecordActivity.kt'):
     text = (APP / filename).read_text('utf8')
     assert all(bad not in text for bad in ('recordStart', 'analysisStart', 'analysisStop', 'FakeFrontendGateway', 'DemoBackend', 'Math.random'))
-assert not subprocess.check_output(['git', 'diff', '6d896f29812dab653e2e88c6ee989c972a343c97', '--', 'framework_patch', 'native', 'payload/system', 'payload/patches'], cwd=ROOT)
+backend_scopes = ['framework_patch', 'native', 'payload/system', 'payload/patches']
+assert not subprocess.check_output(['git', 'diff', '6d896f29812dab653e2e88c6ee989c972a343c97', 'HEAD', '--', *backend_scopes], cwd=ROOT)
+# BuildZUIopt deliberately replaces its tracked seed with the current CI ELF.
+# Every other working-tree runtime source must still match the committed freeze.
+generated = subprocess.check_output(['git', 'diff', '--name-only', 'HEAD', '--', *backend_scopes], cwd=ROOT, text=True).splitlines()
+assert set(generated) <= {'payload/system/bin/ZUIopt'}, generated
 
 stubs = {
     'Context.kt': 'package android.content\nclass Context\n',
