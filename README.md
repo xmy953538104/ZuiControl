@@ -114,6 +114,11 @@ python tests/monitor/TestProductR7.py
 python tests/monitor/TestNotificationRenderer.py
 python tests/monitor/TestDropdownSelection.py
 python tests/monitor/TestPendingIntentCache.py
+python tests/command_plane/TestUtilityTruth.py null
+python tests/command_plane/TestUtilityTruth.py empty
+python tests/command_plane/TestUtilityTruth.py throw
+python tests/command_plane/TestUtilityTruth.py ok
+python tests/command_plane/TestUtilityTruth.py rejection
 bash tests/uperf/TestConfigurableAppPolicy.sh
 python tests/monitor/TestRecordSql.py
 python tests/monitor/TestPackageIdentity.py

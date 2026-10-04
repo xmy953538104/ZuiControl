@@ -22,20 +22,27 @@ def compile_run(files,main,args):
 
 def saf(case):
     source=(APP/'MainActivity.kt').read_text('utf8')
-    body=source[source.index('        if (requestCode != REQUEST_EXPORT_LOG) return'):source.index('    private fun addFloatingButton(')]
-    # Includes the exact final onActivityResult branch and closing function brace.
+    body=source.split('            101 -> ',1)[1].split('\n            102 -> ',1)[0]
+    session=(APP/'FrontendSession.kt').read_text('utf8')
+    work=session[session.index('    fun work('):session.index('    fun saveApp(')]
+    # Execute the current export branch and exact success/error owner. Only the
+    # ContentResolver and executor/post boundaries are replaced in this harness.
     harness='''package com.zui.zuicontrol
 import java.io.*
-class Resolver(val mode:String){var bytes=ByteArrayOutputStream();fun openOutputStream(uri:String):OutputStream? =
+class Resolver(val mode:String){var bytes=ByteArrayOutputStream();fun openOutputStream(uri:String,access:String):OutputStream? =
  if(mode=="null")null else if(mode=="throw")object:OutputStream(){override fun write(b:Int){throw IOException("write failure")}} else bytes}
-class Export(val mode:String){val contentResolver=Resolver(mode);var pendingExportText=if(mode=="empty")"" else "CURRENT_EXPORT";var message=""
- val REQUEST_EXPORT_LOG=1
- fun toast(s:String){message=s}
- fun result(requestCode:Int,uri:String){
-'''+body+'''}
-fun main(args:Array<String>){val c=args.single();val e=Export(c);e.result(1,"fixture")
- if(c=="ok")check(e.message=="日志已导出"&&e.contentResolver.bytes.toString()=="CURRENT_EXPORT")
- else check(e.message!="日志已导出"){"false success: $c"}
+class Session {var busy=false;var error="";var notice="";var onChanged:(()->Unit)?=null
+ val executor=java.util.concurrent.Executor { it.run() };val post:(()->Unit)->Unit={it()}
+'''+work+'''}
+class Export(val mode:String){val contentResolver=Resolver(mode);val session=Session()
+ var exportBytes=if(mode=="empty")byteArrayOf() else "CURRENT_EXPORT".toByteArray()
+ fun result(uri:String){
+'''+body+'''
+}}
+fun main(args:Array<String>){val c=args.single();val e=Export(c);e.result("fixture")
+ if(c=="ok")check(e.session.notice=="已导出"&&e.session.error.isEmpty()&&e.contentResolver.bytes.toString()=="CURRENT_EXPORT"&&e.exportBytes.isEmpty())
+ else {check(e.session.notice.isEmpty()&&e.session.error.isNotEmpty()){ "false success: $c" }
+  if(c!="empty")check(e.exportBytes.toString(Charsets.UTF_8)=="CURRENT_EXPORT"){"failed export lost source bytes"}}
  println("SAF_$c=PASS")}
 '''
     compile_run({'Saf.kt':harness},'com.zui.zuicontrol.SafKt',[case])
