@@ -41,7 +41,7 @@ final class ThreadAnalysis {
         began=lastClock=now;startRules=rules;id=UUID.randomUUID().toString();
     }
     void bindRecord(long record,long wall,long start){
-        require(recordBound&&sourceRecordId==0&&record>0&&wall>0&&start==began,"analysis record identity");
+        require(recordBound&&sourceRecordId==0&&record>0&&start==began,"analysis record identity");
         sourceRecordId=record;sourceRecordWall=wall;sourceRecordStartElapsed=start;
     }
     boolean live(){return ended==0&&!state.equals("FINISHED")&&!state.equals("TIMED_OUT")&&!state.equals("FAILED");}
