@@ -33,6 +33,10 @@ class PerformanceRecordActivity : Activity() {
         setPadding(0, dp(8), 0, dp(8))
     }
     override fun onCreate(savedInstanceState: Bundle?) {
+        val theme = getSharedPreferences("frontend", MODE_PRIVATE).getString("theme", "system")
+        if (theme != "system") applyOverrideConfiguration(android.content.res.Configuration().apply {
+            uiMode = if (theme == "dark") android.content.res.Configuration.UI_MODE_NIGHT_YES else android.content.res.Configuration.UI_MODE_NIGHT_NO
+        })
         super.onCreate(savedInstanceState)
         window.statusBarColor = getColor(R.color.ui_field)
         window.navigationBarColor = getColor(R.color.ui_field)
@@ -84,9 +88,10 @@ class PerformanceRecordActivity : Activity() {
             !data.has("package") -> content.addView(label("该应用暂无记录"))
             threadKey.isNotEmpty() -> {
                 addCard(content, card().apply {
-                    addView(label("CPU · 单核百分比", 18f))
+                    addView(label("入榜期间 CPU 时间线 · 单核百分比", 18f))
                     addView(label(threadKey, 12f))
-                    addView(RecordChart(data.optJSONArray("detail") ?: JSONArray(), 1, data.optLong("duration")), LinearLayout.LayoutParams(-1, dp(208)))
+                    addView(label("断档表示无已保存 Top15 样本，不代表 CPU=0。", 12f))
+                    addView(RecordChart(this@PerformanceRecordActivity, data.optJSONArray("detail") ?: JSONArray(), 1, data.optLong("duration")), LinearLayout.LayoutParams(-1, dp(208)))
                 })
             }
             threadPage -> showThreads(content, data)
@@ -136,7 +141,7 @@ class PerformanceRecordActivity : Activity() {
             addCard(content, card().apply {
                 addView(label(title, 18f))
                 addView(label("最低 ${number(stats.optDouble(index * 3, Double.NaN))}    平均 ${number(stats.optDouble(index * 3 + 1, Double.NaN))}    最高 ${number(stats.optDouble(index * 3 + 2, Double.NaN))}", 14f))
-                addView(RecordChart(scalars, index + 1, duration), LinearLayout.LayoutParams(-1, dp(208)))
+                addView(RecordChart(this@PerformanceRecordActivity, scalars, index + 1, duration), LinearLayout.LayoutParams(-1, dp(208)))
             })
         }
         addCard(content, card().apply {
@@ -146,7 +151,7 @@ class PerformanceRecordActivity : Activity() {
     }
     private fun showThreads(content: LinearLayout, data: JSONObject) {
         content.addView(identity(data))
-        content.addView(label("热点线程", 20f))
+        content.addView(label("Top15 入榜线程", 20f))
         content.addView(label("每约 3 秒采集 Top15。入榜均值不代表整个运行期间的均值；不同进程和线程代次分别统计。", 12f))
         val threads = data.optJSONArray("threads") ?: JSONArray()
         if (threads.length() == 0) content.addView(label("暂无可用线程增量样本"))
@@ -175,46 +180,4 @@ class PerformanceRecordActivity : Activity() {
         UiControls.styleDialog(dialog); dialog.show()
     }
     private fun number(value: Double) = if (!value.isFinite() || value < 0) "--" else String.format(Locale.ROOT, "%.1f", value)
-    private inner class RecordChart(private val rows: JSONArray, private val column: Int, private val duration: Long) : View(this@PerformanceRecordActivity) {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val values = (0 until rows.length()).map { rows.getJSONArray(it).optDouble(column, Double.NaN) }
-        private val axis = RecordAxis.of(values)
-        init { contentDescription = "时间曲线；${values.count { it.isFinite() && it >= 0 }} 个有效汇总点" }
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            val left = dp(48).toFloat(); val right = width - dp(16).toFloat()
-            val top = dp(20).toFloat(); val bottom = height - dp(32).toFloat()
-            if (right <= left || bottom <= top) return
-            paint.textSize = 11 * resources.displayMetrics.scaledDensity; paint.strokeWidth = density
-            axis.ticks.forEach { value ->
-                val y = bottom - (bottom - top) * ((value - axis.low) / (axis.high - axis.low)).toFloat()
-                paint.color = 0xFFE0E5ED.toInt(); canvas.drawLine(left, y, right, y, paint)
-                paint.color = getColor(R.color.ui_secondary); paint.textAlign = Paint.Align.RIGHT
-                canvas.drawText(axis.label(value), left - dp(8), y - (paint.ascent() + paint.descent()) / 2, paint)
-            }
-            for (i in 0..2) {
-                val seconds = duration * i / 2000
-                val text = if (duration < 120000) "${seconds}s" else String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60)
-                paint.textAlign = when (i) { 0 -> Paint.Align.LEFT; 2 -> Paint.Align.RIGHT; else -> Paint.Align.CENTER }
-                canvas.drawText(text, left + (right - left) * i / 2, bottom + dp(22), paint)
-            }
-            if (values.none { it.isFinite() && it >= 0 }) {
-                paint.textAlign = Paint.Align.CENTER; canvas.drawText("暂无有效值", (left + right) / 2, (top + bottom) / 2, paint); return
-            }
-            val path = Path(); var connected = false; var previous = -1.0
-            val gapLimit = maxOf(4000.0, duration / 600.0 * 2.5)
-            paint.color = getColor(R.color.ui_accent)
-            for (i in 0 until rows.length()) {
-                val t = rows.getJSONArray(i).optDouble(0); val value = values[i]
-                if (!value.isFinite() || value < 0) { connected = false; continue }
-                val x = left + (right - left) * (t / duration.coerceAtLeast(1)).toFloat()
-                val y = bottom - (bottom - top) * ((value - axis.low) / (axis.high - axis.low)).toFloat()
-                if (!connected || t - previous > gapLimit) path.moveTo(x, y) else path.lineTo(x, y)
-                canvas.drawCircle(x, y, density, paint)
-                connected = true; previous = t
-            }
-            paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.8f * density
-            canvas.drawPath(path, paint); paint.style = Paint.Style.FILL
-        }
-    }
 }

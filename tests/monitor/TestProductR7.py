@@ -10,10 +10,11 @@ class ProductR7(unittest.TestCase):
         ui=app('UiControls.kt');main=app('MainActivity.kt');quick=app('ZuiControlQuickService.kt')
         self.assertNotIn('fun setSelection(',ui)
         self.assertIn('this@AnchoredDropdown.commitSelection(position)',ui)
-        self.assertEqual(main.count('picker.commitSelection('),2)
+        self.assertIn('commitSelection(classes.indexOf(cls))',main)
         self.assertNotIn('picker.setSelection(',main)
-        self.assertIn('UperfAppPolicy.isConfigurable(packageManager, it.info.packageName)',main)
-        self.assertIn('check(UperfAppPolicy.isConfigurable(packageManager, pkg))',main)
+        self.assertIn('UperfAppPolicy.isConfigurable(packageManager, d.packageName)',main)
+        self.assertIn('tiers(d.uperfMode, configurable)',main)
+        self.assertIn('configurable && d.gpuPolicy',main)
         self.assertIn('editableSceneIsHome',quick)
         self.assertIn('|| UperfAppPolicy.isConfigurable(packageManager, pkg)',quick)
         self.assertIn('snapshot.uperfEnabled, modeIntent(value)',app('NotificationQuickControlHelper.kt'))
@@ -58,25 +59,20 @@ class ProductR7(unittest.TestCase):
 
     def test_owner_ui(self):
         main=app('MainActivity.kt');ui=app('UiControls.kt')
-        header=main.split('private fun headerStatusText()',1)[1].split('\n    private ',1)[0]
-        self.assertNotIn('Hz',header);self.assertIn('v$version',header)
-        self.assertIn('UPERF("性能"',main)
-        self.assertIn('label("Hz", 17f, COLOR_SUBTLE, Typeface.NORMAL)',main)
-        self.assertIn('R.color.ui_text',ui.split('fun modeChip',1)[1].split('fun ',1)[0])
-        settings=main.split('private fun buildSystemPage()',1)[1].split('private fun exportLogs()',1)[0]
-        icons=re.findall(r'settingsAction\(\s*R.drawable.(\w+)',settings)
-        self.assertEqual(len(icons),7);self.assertEqual(len(set(icons)),5)
-        self.assertIn("备份设置",settings);self.assertIn("恢复设置",settings)
-        self.assertNotIn('"刷新率" to',settings);self.assertNotIn('chunked(',settings)
-        self.assertIn('if (schedulerError != "ok")',settings)
+        # Latest Owner V3: four settings modules; Health is exclusively in Dashboard.
+        settings=main.split('private fun settingsPage()',1)[1].split('private fun theme(',1)[0]
+        for title in ('监测与显示','GPU 默认范围','数据与维护','关于','立即备份','从备份恢复','恢复出厂配置','导出运行日志','重启调度核心'):
+            self.assertIn(title,settings)
+        self.assertNotIn('BackendHealth',settings)
+        self.assertIn('if (!enabled) addView(button("系统通知设置")',settings)
+        self.assertIn('listOf("跟随系统", "深色", "浅色")',settings)
+        self.assertNotIn('职责',settings)
+        self.assertIn('private fun coreHealth()',main)
+        self.assertIn('暂无可用于线程分析的监测记录',main)
+        self.assertIn('停止',main)
         record=app('PerformanceRecordActivity.kt')
-        self.assertEqual(record.count('ScrollView(this)'),1)
+        self.assertIn('入榜期间 CPU 时间线',record)
         self.assertIn('isVerticalScrollBarEnabled = false',record)
-        primary=main.split('private fun showPerformanceMonitor()',1)[1].split('private fun showMonitorHelp()',1)[0]
-        self.assertNotIn('2 秒',primary)
-        for title in ('性能监视器','悬浮窗权限','快捷通知','帮助','完成'):
-            self.assertIn(title,primary)
-        self.assertIn('showMonitorHelp()',primary)
 
     def test_notification_visual_controls_not_a_sampler(self):
         # R10 Owner replaces the historical track/dot visuals; retained controller boundaries still apply.

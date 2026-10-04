@@ -30,7 +30,7 @@ class ProductR6(unittest.TestCase):
         self.assertEqual(tokens['ui_dialog_vertical_spacing'],'16dp')
         self.assertEqual(tokens['ui_dialog_max_width'],'560dp')
         self.assertIn('r.displayMetrics.widthPixels - 2 * margin',ui)
-        self.assertIn('UiControls.styleDialog(this)',source('MainActivity.kt'))
+        self.assertIn('UiControls.styleDialog(it)',source('MainActivity.kt'))
         self.assertIn('gpu_visual_max_width',source('GpuRangeBar.kt'))
 
     def test_physical_padding_typography_and_order(self):
@@ -52,7 +52,7 @@ class ProductR6(unittest.TestCase):
             self.assertIn('R.drawable.notify_mode_'+name,source('NotificationQuickControlHelper.kt'))
             drawable=ET.parse(ROOT/('app/src/main/res/drawable/notify_mode_'+name+'.xml')).getroot()
             self.assertEqual(drawable.find('solid').get('{http://schemas.android.com/apk/res/android}color'),{'powersave':'#15A05C','balance':'#3B67C1','performance':'#EA580C','fast':'#D92424'}[name])
-        self.assertIn('ui_mode_group_width',source('MainActivity.kt'))
+        self.assertIn('private fun tiers(',source('MainActivity.kt'))
 
     def test_shared_authority_and_profile_paths(self):
         quick=source('ZuiControlQuickService.kt');client=source('ZuiControlClient.kt');main=source('MainActivity.kt')
@@ -61,7 +61,8 @@ class ProductR6(unittest.TestCase):
         self.assertIn('ZuiControlClient.setCurrentSceneDisplayHz',quick)
         self.assertIn('ZuiControlClient.sendPolicy(this, "mode", pkg, "FOREGROUND"',quick)
         self.assertIn('ZuiControlRequest.send(',client)
-        self.assertIn('ZuiControlContract.CMD_SET_UPERF_APP',main)
+        self.assertIn('session.saveApp(after)',main)
+        self.assertIn('gateway.saveAppPolicy(captured)',source('FrontendSession.kt'))
         self.assertIn('scene = scene',quick)
         for surface in (quick,main):
             self.assertIn('ControlsState.observe(controlsChanged)',surface)
@@ -72,7 +73,7 @@ class ProductR6(unittest.TestCase):
                            'lastPackage','targetGeneration','stateVersion','cachedTarget','Timer','while('):
             self.assertNotIn(prohibited,quick)
         self.assertIn('override fun onResume()',main)
-        self.assertIn('reloadState(); renderCurrentPage()',main)
+        self.assertIn('observeGlobals()',main)
         service=reverse_text('framework_patch/src/services/com/zui/server/control/ZuiControlService.java',SERVICE.read_text(encoding='utf8'))
         for d in json.loads((Path(__file__).with_name('r11_product_delta.json')).read_text())['service']:
             self.assertEqual(service.count(d['after']),1)
@@ -104,7 +105,7 @@ class ProductR6(unittest.TestCase):
         self.assertNotIn('"threads"',detail)
         self.assertIn('navigate(threads = true)',detail)
         self.assertIn('dp(208)',detail)
-        self.assertIn('RecordAxis.of',record)
+        self.assertIn('RecordAxis.of',source('RecordChart.kt'))
         self.assertNotIn('WebView',record)
 
 if __name__=='__main__':unittest.main(verbosity=2)
