@@ -1,0 +1,128 @@
+name: Publish upstream Schema2 rules
+run-name: Rules publisher · ${{ github.sha }}
+
+on:
+  push:
+    paths:
+      - 'scripts/rules/PublishRules*.py'
+      - 'tests/zuiopt/TestRulePublisher.py'
+      - '.github/workflows/publish-rules.yml'
+  workflow_dispatch:
+    inputs:
+      source_path:
+        description: Checked-in upstream source inside this checkout
+        type: string
+        default: payload/system/etc/zuiopt/factory_rules.conf
+        required: true
+      source_kind:
+        description: Qualified static input grammar
+        type: choice
+        options: [canonical, appopt, recovered-csv]
+        default: canonical
+      source_name:
+        description: Upstream provenance name
+        type: string
+        default: zuiopt-upstream
+        required: true
+      source_version:
+        description: Explicit upstream source version
+        type: string
+        required: true
+      source_date:
+        description: Explicit upstream source date YYYY-MM-DD
+        type: string
+        required: true
+      publish:
+        description: Publish dedicated GitHub distribution branch after validation
+        type: boolean
+        default: false
+      mirror_gitee:
+        description: Also push the accepted GitHub commit one way to configured Gitee
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify deterministic publisher and production native parser
+        run: |
+          set -euo pipefail
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptTest.cpp -lz -o "$RUNNER_TEMP/rules-native"
+          python3 tests/zuiopt/TestRulePublisher.py "$RUNNER_TEMP/rules-native"
+
+  distribute:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: upstream-rules-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce manual publishing branch and mirror gate
+        env:
+          WANT_PUBLISH: ${{ inputs.publish }}
+          WANT_MIRROR: ${{ inputs.mirror_gitee }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          test "$WANT_PUBLISH" != true || test "$REF_NAME" = "$DEFAULT_BRANCH"
+          test "$WANT_MIRROR" != true || test "$WANT_PUBLISH" = true
+      - name: Build or publish two-file upstream snapshot
+        id: rules
+        env:
+          INPUT_SOURCE: ${{ inputs.source_path }}
+          INPUT_KIND: ${{ inputs.source_kind }}
+          INPUT_NAME: ${{ inputs.source_name }}
+          INPUT_VERSION: ${{ inputs.source_version }}
+          INPUT_DATE: ${{ inputs.source_date }}
+          WANT_PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          options=()
+          if [ "$WANT_PUBLISH" = true ]; then options+=(--publish); fi
+          python3 scripts/rules/PublishRulesGit.py --input "$INPUT_SOURCE" --kind "$INPUT_KIND" \
+            --source "$INPUT_NAME" --source-version "$INPUT_VERSION" --source-date "$INPUT_DATE" \
+            "${options[@]}" | tee "$RUNNER_TEMP/publish-receipt.json"
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json,os,pathlib
+          receipt=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'publish-receipt.json').read_text())
+          print('commit='+receipt['publicationCommit'])
+          PY
+      - name: Optional one-way Gitee mirror
+        if: inputs.publish && inputs.mirror_gitee
+        env:
+          GITEE_DEPLOY_KEY: ${{ secrets.GITEE_DEPLOY_KEY }}
+          GITEE_KNOWN_HOSTS: ${{ secrets.GITEE_KNOWN_HOSTS }}
+          GITEE_SSH_URL: ${{ vars.GITEE_SSH_URL }}
+          PUBLICATION_COMMIT: ${{ steps.rules.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test -n "$GITEE_DEPLOY_KEY" && test -n "$GITEE_KNOWN_HOSTS"
+          [[ "$GITEE_SSH_URL" =~ ^git@gitee\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$ ]]
+          umask 077
+          key="$RUNNER_TEMP/gitee-key"
+          hosts="$RUNNER_TEMP/gitee-known-hosts"
+          printf '%s\n' "$GITEE_DEPLOY_KEY" > "$key"
+          printf '%s\n' "$GITEE_KNOWN_HOSTS" > "$hosts"
+          export GIT_SSH_COMMAND="ssh -i $key -o UserKnownHostsFile=$hosts -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes"
+          git push "$GITEE_SSH_URL" "$PUBLICATION_COMMIT:refs/heads/rules-published"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-rules-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            output/latest.json
+            output/rules.conf
+            ${{ runner.temp }}/publish-receipt.json
+          if-no-files-found: warn

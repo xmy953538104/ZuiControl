@@ -13,16 +13,21 @@ final class MonitorStore {
     private final File file = new File(Environment.getDataDirectory(), "system/zui_control/monitor.db");
     private SQLiteDatabase db;
     long writes, scalarRows, threadRows;
-    long beginElapsed, recordId;
+    long beginElapsed, recordId, recordWall;
     boolean active;
 
     // Same DB owner, final analysis only. No write occurs for analysis samples or state reads.
     void saveAnalysis(int user,String pkg,byte[] result) {
         if(result.length>ThreadAnalysis.RESULT_LIMIT)throw new IllegalArgumentException("analysis result bound");
+        java.util.Map<String,Object> summary;
+        try{summary=PolicyJson.object(PolicyJson.parse(result,ThreadAnalysis.RESULT_LIMIT));}catch(Exception e){throw new IllegalArgumentException("analysis result",e);}
+        PolicyJson.require(PolicyJson.integer(summary.get("user"))==user&&pkg.equals(summary.get("package")),"analysis result target");
         if(!file.getParentFile().isDirectory()&&!file.getParentFile().mkdirs())throw new IllegalStateException("record_directory");
         try(SQLiteDatabase next=SQLiteDatabase.openOrCreateDatabase(file,null)){
             next.beginTransaction();
             try{
+                if(PolicyJson.integer(summary.get("sourceRecordId"))>0)
+                    PolicyJson.require(matchesRecord(next,user,pkg,summary),"analysis source record changed");
                 next.execSQL("CREATE TABLE IF NOT EXISTS analysis_results (user INTEGER NOT NULL, package TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(user,package))");
                 try(Cursor c=next.rawQuery("SELECT COUNT(*),COALESCE(SUM(length(CAST(result AS BLOB))),0) FROM analysis_results WHERE NOT (user=? AND package=?)",new String[]{String.valueOf(user),pkg})){
                     c.moveToFirst();if(c.getLong(0)>=16||c.getLong(1)+result.length>8*1024*1024)throw new IllegalStateException("analysis storage full; delete a result");
@@ -35,6 +40,15 @@ final class MonitorStore {
     private static boolean hasAnalysis(SQLiteDatabase database){
         try(Cursor c=database.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='analysis_results'",null)){return c.moveToFirst();}
     }
+    private static boolean matchesRecord(SQLiteDatabase database,int user,String pkg,java.util.Map<String,Object> result){
+        try(Cursor c=database.rawQuery("SELECT id,wall,elapsed,completion,terminal_reason FROM record_meta WHERE user=? AND package=?",new String[]{String.valueOf(user),pkg})){
+            return c.moveToFirst()&&c.getLong(0)==PolicyJson.integer(result.get("sourceRecordId"))
+                &&c.getLong(1)==PolicyJson.integer(result.get("sourceRecordWall"))
+                &&c.getLong(2)==PolicyJson.integer(result.get("sourceRecordStartElapsed"))
+                &&c.getString(3).equals(result.get("sourceRecordCompletion"))
+                &&c.getString(4).equals(result.get("sourceRecordTerminalReason"));
+        }
+    }
     String analysis(int user,String pkg,int offset,String digest,boolean delete)throws Exception {
         if(!pkg.matches("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+")||offset<0)throw new IllegalArgumentException("analysis read identity");
         if(!file.exists())return "{}";
@@ -43,6 +57,10 @@ final class MonitorStore {
             if(delete){read.execSQL("DELETE FROM analysis_results WHERE user=? AND package=?",new Object[]{user,pkg});return "ok=1";}
             try(Cursor c=read.rawQuery("SELECT result FROM analysis_results WHERE user=? AND package=?",new String[]{String.valueOf(user),pkg})){
                 if(!c.moveToFirst())return "{}";byte[] data=c.getString(0).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                java.util.Map<String,Object> summary=PolicyJson.object(PolicyJson.parse(data,ThreadAnalysis.RESULT_LIMIT));
+                // Old standalone summaries are readable for compatibility, but never claim a source record.
+                if(summary.containsKey("sourceRecordId")&&PolicyJson.integer(summary.get("sourceRecordId"))>0
+                        &&!matchesRecord(read,user,pkg,summary))return "{}";
                 String hash=PolicyJson.hash(data);PolicyJson.require(data.length<=ThreadAnalysis.RESULT_LIMIT&&offset<=data.length&&(offset==0||hash.equals(digest)),"analysis read changed");
                 return PolicyJson.encode(PolicyJson.map("hash",hash,"size",data.length,"offset",offset,"data",java.util.Base64.getEncoder().encodeToString(java.util.Arrays.copyOfRange(data,offset,Math.min(offset+8192,data.length)))));
             }
@@ -113,6 +131,7 @@ final class MonitorStore {
     }
     private static void remove(SQLiteDatabase next, int user, String pkg) {
         Object[] args={user,pkg};
+        if(hasAnalysis(next))next.execSQL("DELETE FROM analysis_results WHERE user=? AND package=?",args);
         next.execSQL("DELETE FROM thread_samples WHERE record_id IN (SELECT id FROM record_meta WHERE user=? AND package=?)",args);
         next.execSQL("DELETE FROM scalar_samples WHERE record_id IN (SELECT id FROM record_meta WHERE user=? AND package=?)",args);
         next.execSQL("DELETE FROM record_meta WHERE user=? AND package=?",args);
@@ -126,20 +145,20 @@ final class MonitorStore {
         if (!file.getParentFile().isDirectory() && !file.getParentFile().mkdirs())
             throw new IllegalStateException("record_directory");
         SQLiteDatabase next = SQLiteDatabase.openOrCreateDatabase(file, null);
-        long nextId;
+        long nextId,wall=System.currentTimeMillis();
         try {
             next.beginTransaction();
             try {
                 schema(next);
                 remove(next,user,pkg);
                 next.execSQL("INSERT INTO record_meta(package,label,user,pid,generation,wall,elapsed,terminal_reason,task_id,target_epoch) VALUES(?,?,?,?,?,?,?,'CRASH_RECOVERY',?,?)",
-                        new Object[]{pkg,label,user,pid,generation,System.currentTimeMillis(),elapsed,taskId,targetEpoch});
+                        new Object[]{pkg,label,user,pid,generation,wall,elapsed,taskId,targetEpoch});
                 try(Cursor c=next.rawQuery("SELECT last_insert_rowid()",null)){c.moveToFirst();nextId=c.getLong(0);}
                 next.execSQL("UPDATE record_meta SET policy_snapshot=? WHERE id=?",new Object[]{policySnapshot,nextId});
                 next.setTransactionSuccessful();
             } finally { next.endTransaction(); }
         } catch (RuntimeException e) { next.close(); throw e; }
-        db=next; recordId=nextId; active=true; beginElapsed=elapsed; writes++; scalarRows=threadRows=0;
+        db=next; recordId=nextId; recordWall=wall; active=true; beginElapsed=elapsed; writes++; scalarRows=threadRows=0;
     }
     void append(long now, double fps, double power, double quiet, int pid, long generation,
             List<MonitorSnapshot.Row> threads, String fpsValidity) {
@@ -207,7 +226,7 @@ final class MonitorStore {
             try(Cursor c=read.rawQuery("SELECT package,label,pid,generation,wall,ended,id"+(read.getVersion()>=3?",completion,terminal_reason,end_elapsed":"")+(read.getVersion()>=4?",policy_snapshot":"")+" FROM record_meta WHERE user=?"+
                     (pkg.isEmpty()?"":" AND package=?")+" ORDER BY wall DESC LIMIT 1",args)) {
                 if(!c.moveToFirst())return "{}";
-                result.put("package",c.getString(0)).put("label",c.getString(1)).put("pid",c.getInt(2))
+                result.put("recordId",c.getLong(6)).put("user",user).put("package",c.getString(0)).put("label",c.getString(1)).put("pid",c.getInt(2))
                     .put("generation",c.getLong(3)).put("wall",c.getLong(4))
                     .put("complete",read.getVersion()>=3?"COMPLETE".equals(c.getString(7)):c.getLong(5)>0)
                     .put("terminalReason",read.getVersion()>=3?c.getString(8):"LEGACY")
@@ -215,6 +234,9 @@ final class MonitorStore {
                     .put("policySnapshot",read.getVersion()>=4?new JSONObject(c.getString(10)):JSONObject.NULL)
                     .put("threadCoverage","TOP15_OBSERVED_ONLY");
                 duration=c.getLong(5);id=c.getLong(6);
+            }
+            try(Cursor c=read.rawQuery("SELECT elapsed FROM record_meta WHERE id=?",new String[]{String.valueOf(id)})){
+                if(c.moveToFirst())result.put("startElapsed",c.getLong(0));
             }
             String filter=read.getVersion()>=2 ? "record_id="+id : "1=1";
             try(Cursor c=read.rawQuery("SELECT COALESCE(MAX(t),0),COUNT(*) FROM scalar_samples WHERE "+filter,null)) {

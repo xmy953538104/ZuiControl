@@ -20,7 +20,10 @@ final class PolicyJson {
         if (!value) throw new IllegalArgumentException(reason);
     }
     static Object parse(byte[] bytes) throws Exception {
-        require(bytes.length > 0 && bytes.length <= 262144, "JSON size");
+        return parse(bytes,262144);
+    }
+    static Object parse(byte[] bytes,int limit) throws Exception {
+        require(limit>0&&limit<=524288&&bytes.length>0&&bytes.length<=limit,"JSON size");
         String text = utf8(bytes);
         PolicyJson reader = new PolicyJson(text);
         Object value = reader.value(0); reader.space();

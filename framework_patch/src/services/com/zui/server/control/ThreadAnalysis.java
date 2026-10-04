@@ -3,7 +3,7 @@ package com.zui.server.control;
 import java.util.*;
 import static com.zui.server.control.PolicyJson.*;
 
-/** Explicit bounded analysis, owned by MonitorCollector. No timers, IO or scheduling mutations. */
+/** Bounded analysis, owned by MonitorCollector. No timers, IO or scheduling mutations. */
 final class ThreadAnalysis {
     static final long INTERVAL=3000, MAX_ACTIVE=600000, MAX_WALL=1800000;
     static final int MAX_TASKS=8192, MAX_IDENTITIES=32768, MAX_NAMES=512, RESULT_LIMIT=524288;
@@ -19,6 +19,9 @@ final class ThreadAnalysis {
     }
     final int user;final String pkg,id,startRules;
     final long began,requested;
+    final boolean recordBound;
+    long sourceRecordId,sourceRecordWall,sourceRecordStartElapsed;
+    String sourceRecordCompletion="",sourceRecordTerminalReason="";
     long active,lastClock,lastSample=-1,ended;
     int eligibleSamples,scans;
     String state="ARMED",error="",endRules="UNAVAILABLE";
@@ -29,10 +32,17 @@ final class ThreadAnalysis {
     final Map<String,MonitorSnapshot.Task> previous=new HashMap<>();
     final Set<String> priorProcesses=new HashSet<>();
     ThreadAnalysis(int user,String pkg,long requested,long now,String rules){
+        this(user,pkg,requested,now,rules,false);
+    }
+    ThreadAnalysis(int user,String pkg,long requested,long now,String rules,boolean recordBound){
         require(user>=0&&pkg.matches("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"),"analysis target");
-        require(requested==0||requested==120000||requested==300000||requested==600000,"analysis preset");
-        this.user=user;this.pkg=pkg;this.requested=requested==0?MAX_ACTIVE:requested;
+        require(recordBound?requested==MAX_WALL:requested==0||requested==120000||requested==300000||requested==600000,"analysis preset");
+        this.user=user;this.pkg=pkg;this.requested=requested==0?MAX_ACTIVE:requested;this.recordBound=recordBound;
         began=lastClock=now;startRules=rules;id=UUID.randomUUID().toString();
+    }
+    void bindRecord(long record,long wall,long start){
+        require(recordBound&&sourceRecordId==0&&record>0&&wall>0&&start==began,"analysis record identity");
+        sourceRecordId=record;sourceRecordWall=wall;sourceRecordStartElapsed=start;
     }
     boolean live(){return ended==0&&!state.equals("FINISHED")&&!state.equals("TIMED_OUT")&&!state.equals("FAILED");}
     private void clock(long now){
@@ -67,13 +77,14 @@ final class ThreadAnalysis {
         for(Process p:processes){
             require(p.pid>0&&p.start>0&&processKeys.add(p.key()),"analysis process identity");
             if(!priorProcesses.isEmpty()&&!priorProcesses.contains(p.key()))restart=true;
-            segments.add(p.key());
+            require(segments.contains(p.key())||segments.size()<1024,"analysis segment bound");segments.add(p.key());
             for(MonitorSnapshot.Task t:p.tasks){
                 require(t.name.length()<=64,"analysis name bound");
                 String key=p.key()+":"+t.tid+":"+t.start;
-                require(next.put(key,t)==null&&next.size()<=MAX_TASKS,"analysis task bound/duplicate");
-                identities.add(key);require(identities.size()<=MAX_IDENTITIES,"analysis identity bound");
-                Group g=groups.computeIfAbsent(t.name,k->new Group());require(groups.size()<=MAX_NAMES,"analysis name count bound");
+                require(!next.containsKey(key)&&next.size()<MAX_TASKS,"analysis task bound/duplicate");next.put(key,t);
+                require(identities.contains(key)||identities.size()<MAX_IDENTITIES,"analysis identity bound");identities.add(key);
+                Group g=groups.get(t.name);
+                if(g==null){require(groups.size()<MAX_NAMES,"analysis name count bound");g=new Group();groups.put(t.name,g);}
                 g.identities.add(key);g.segments.add(p.key());counts.merge(t.name,1,Integer::sum);
                 MonitorSnapshot.Task before=previous.get(key);
                 if(before!=null&&t.ticks>=before.ticks&&interval>0){
@@ -101,7 +112,11 @@ final class ThreadAnalysis {
         return n%2==1?(double)sorted.get(n/2):(sorted.get(n/2-1)+sorted.get(n/2))/2.0;
     }
     Map<String,Object> summary(long now){
-        return map("schema",1,"session",id,"user",user,"package",pkg,"state",state,"error",error,
+        return map("schema",recordBound?2:1,"session",id,"user",user,"package",pkg,"state",state,"error",error,
+            "acquisition",recordBound?"MONITOR_RECORDING":"STANDALONE_COMPATIBILITY",
+            "sourceRecordId",sourceRecordId,"sourceRecordWall",sourceRecordWall,"sourceRecordStartElapsed",sourceRecordStartElapsed,
+            "sourceRecordCompletion",sourceRecordCompletion,"sourceRecordTerminalReason",sourceRecordTerminalReason,
+            "threadCoverage","ALL_QUALIFIED_TARGET_TASKS_OBSERVED",
             "wallElapsedMs",Math.max(0,(live()?now:ended)-began),"activeForegroundMs",active,
             "requestedActiveMs",requested,"hardWallMs",MAX_WALL,"eligibleSamples",eligibleSamples,
             "processSegmentCount",segments.size(),"uniqueIdentities",identities.size(),"uniqueNames",groups.size(),

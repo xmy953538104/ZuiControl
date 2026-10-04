@@ -156,9 +156,8 @@ final class SettingsBackup {
     }
     byte[] factoryArchive(int user,Rules rules,String build,long time)throws Exception{
         require(policy.current.users.containsKey(user)&&!busy()&&!policy.recoveryRequired,"reset user/busy");
-        AppPolicyStore.State next=policy.current.copy();
+        AppPolicyStore.State next=AppPolicyStore.gpuDefaults(policy.current,user,AppPolicyStore.factoryGpuDefaults());
         next.apps.keySet().removeIf(k->k.startsWith(user+":"));
-        for(String mode:AppPolicyStore.MODES)next.defaults.put(AppPolicyStore.key(user,mode),AppPolicyStore.factory(mode,false));
         GpuRange range=next.range(user,"balance");next.globals.put(user,new AppPolicyStore.Row(120,"balance",range.minMHz,range.maxMHz));
         Map<String,Object> preferences=object(parse(prefs()));
         for(Object item:array(preferences.get("users"))){Map<String,Object> row=object(item);

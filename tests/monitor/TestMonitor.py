@@ -27,11 +27,11 @@ stubs.update({
  public Intent registerReceiver(Object r,IntentFilter f){if(failBattery)throw new IllegalStateException("battery fixture");return new Intent();}
  public android.content.pm.PackageManager getPackageManager(){return new android.content.pm.PackageManager();}}''',
  'com/zui/server/control/MonitorStore.java':'''package com.zui.server.control;import java.util.*;
- final class MonitorStore {long writes,scalarRows,threadRows;boolean active;static int starts,finishes;static String terminal;static boolean incomplete;static double lastFps;static String fpsValidity;static boolean failFinish,failClose;
- void start(String p,String l,int u,int pid,long g,long t,int task,long epoch,String snapshot){if(active)throw new AssertionError();active=true;starts++;writes++;scalarRows=threadRows=0;}
+ final class MonitorStore {long writes,scalarRows,threadRows,recordId,recordWall;boolean active;static int starts,finishes,analysisSaves;static byte[] lastAnalysis;static String terminal;static boolean incomplete;static double lastFps;static String fpsValidity;static boolean failFinish,failClose;
+ void start(String p,String l,int u,int pid,long g,long t,int task,long epoch,String snapshot){if(active)throw new AssertionError();active=true;starts++;recordId=starts;recordWall=1700000000000L+starts;writes++;scalarRows=threadRows=0;}
  void append(long t,double f,double p,double q,int pid,long g,List<MonitorSnapshot.Row> r,String validity){lastFps=f;fpsValidity=validity;if(!active)throw new AssertionError();scalarRows++;threadRows+=r.size();writes+=1+r.size();}
  void finish(long n,String reason,boolean incomplete){if(failFinish)throw new IllegalStateException("SQLite finish fixture");if(active){finishes++;writes++;active=false;terminal=reason;MonitorStore.incomplete=incomplete;}}void abandon(){active=false;if(failClose)throw new IllegalStateException("close fixture");}
- void saveAnalysis(int user,String pkg,byte[] result){} String analysis(int user,String pkg,int offset,String hash,boolean delete){return "{}";}
+ void saveAnalysis(int user,String pkg,byte[] result){lastAnalysis=result;analysisSaves++;} String analysis(int user,String pkg,int offset,String hash,boolean delete){return "{}";}
  void removeUser(int user){if(user<=0)throw new AssertionError();}
  String read(int u,String key){return "{}";}String list(int u){return "{}";}String delete(int u,String p){return "ok=1";}}''',
  'com/zui/server/control/CollectorTest.java':'''package com.zui.server.control;
@@ -46,7 +46,8 @@ stubs.update({
  static class Collector extends MonitorCollector {int scans;long generation=9;boolean missing;
  Collector(){super(new Context(),source);}int findPid(){return 42;}
  MonitorSnapshot.Task identity(int p){return missing?null:new MonitorSnapshot.Task(p,"GameThread",generation,SystemClock.now/10);}
- List<MonitorSnapshot.Task> readTasks(int p){scans++;return Arrays.asList(identity(p));}}
+ List<MonitorSnapshot.Task> readTasks(int p){scans++;return Arrays.asList(identity(p));}
+ List<ThreadAnalysis.Process> readAnalysisTasks(ThreadAnalysis a){return Arrays.asList(new ThreadAnalysis.Process(42,generation,readTasks(42)));}}
  static long gesture; static String start(Collector c){c.command("circle",0,"");return c.command("recordStart",0,c.session.connectionEpoch+":"+c.session.targetEpoch+":"+(gesture=Math.max(gesture+1,SystemClock.now+1)));}
  public static void main(String[] args)throws Exception {
  fpsFile=java.nio.file.Files.createTempFile("measured-fps-",".txt");
@@ -172,6 +173,7 @@ stubs.update({
  System.out.println("MONITOR_SHARED_DEMAND_EPOCH_RECONNECT_TERMINALS_NO_RESUME_ZERO_IDLE_WRITES_SCANS=PASS");}}
 '''
 })
+stubs['com/zui/server/control/CollectorTest.java']=stubs['com/zui/server/control/CollectorTest.java'].replace('"game"','"org.game"').replace('"other"','"org.other"')
 stubs['android/os/HandlerThread.java']=stubs['android/os/HandlerThread.java'].replace('public static int active;', 'public static int active,created;').replace('public void start(){active++;','public void start(){created++;active++;')
 with tempfile.TemporaryDirectory(prefix='zui-monitor-r4-') as tmp:
  out=Path(tmp);files=[]

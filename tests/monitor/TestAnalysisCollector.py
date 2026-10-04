@@ -6,6 +6,8 @@ namespace={'__file__':str(HERE/'TestPowerEdge.py')}
 text=(HERE/'TestPowerEdge.py').read_text(encoding='utf8')
 exec(compile(text[:text.index("stubs['com/zui/server/control/")],str(HERE/'TestPowerEdge.py'),'exec'),namespace)
 stubs=namespace['stubs']
+stubs['android/app/ActivityManager.java']=stubs['android/app/ActivityManager.java'].replace('public List<RunningAppProcessInfo> getRunningAppProcesses(){return Collections.emptyList();}',
+    'public static List<RunningAppProcessInfo> processes=Collections.emptyList();public List<RunningAppProcessInfo> getRunningAppProcesses(){return processes;}')
 stubs['com/zui/server/control/AnalysisCollectorTest.java']='''package com.zui.server.control;
 import java.util.*;import android.os.*;import android.content.*;
 public final class AnalysisCollectorTest {
@@ -56,8 +58,8 @@ public final class AnalysisCollectorTest {
   long begin=SystemClock.now;tick(begin);tick(begin+1000);tick(begin+3000);
   check(c.separateScans==0&&c.session.recording(),"recording shares all-task analysis enumeration");
   c.command("recordStop",0,"");c.unregister(client);
-  check(c.command("analysisState",0,"").contains("RUNNING"),"UI detach does not cancel rebindable analysis");
-  tick(begin+120000);check(Handler.pending.isEmpty(),"final analysis retires last worker");
+  check(c.command("analysisState",0,"").contains("FINISHED"),"record stop finalizes its internal analysis");
+  check(Handler.pending.isEmpty(),"completed recording leaves no separate analysis worker");
   System.out.println("PASS analysis collector pause/rebind/segment/screen-off/stop/user/caps/shared-recording");
  }
 }'''
@@ -66,5 +68,7 @@ with tempfile.TemporaryDirectory(prefix='analysis-collector-') as tmp:
  for name,text in stubs.items():
   p=out/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text,encoding='utf8');files.append(str(p))
  production=['MonitorCollector.java','MonitorSources.java','MonitorSnapshot.java','MonitorSession.java','MonitorLifecycle.java','ThreadAnalysis.java','PolicyJson.java']
- subprocess.run(['javac','-encoding','UTF-8','-d',tmp,*files,*[str(namespace['namespace']['src']/n) for n in production]],check=True)
+ subprocess.run(['javac','-encoding','UTF-8','-d',tmp,*files,*[str(namespace['namespace']['src']/n) for n in production],str(HERE/'RecordAnalysisTest.java'),str(HERE/'RecordAnalysisBenchmark.java')],check=True)
  subprocess.run(['java','-cp',tmp,'com.zui.server.control.AnalysisCollectorTest'],check=True)
+ subprocess.run(['java','-cp',tmp,'com.zui.server.control.RecordAnalysisTest',*sys.argv[1:]],check=True)
+ subprocess.run(['java','-cp',tmp,'com.zui.server.control.RecordAnalysisBenchmark'],check=True)

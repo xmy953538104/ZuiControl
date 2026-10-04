@@ -1,10 +1,13 @@
 """App-produced bytes -> real Java/native parser -> exact shell business dispatch."""
 from UtilityWireContract import *
-import subprocess,tempfile,os,json,shlex,sys
+import subprocess,tempfile,os,json,shlex,sys,base64
 TX='d'*24
 ROWS=[('status','','','status'),('policy','','e30=','native policy payload'),
  ('sb_export','','','policy_command pkg'),('sb_restore',TX,'','policy_command pkg'),('sb_reset',TX,'','policy_command pkg'),('sb_recover','','','policy_command pkg'),
  ('export_logs','','','export_logs'),('restart_scheduler','','','restart_scheduler')]
+batch={'action':'defaultGpuBatch','userId':0,'generation':12,'ranges':{mode:{'min':values[0],'max':values[1]} for mode,values in
+       [('powersave',(310,422)),('balance',(366,629)),('performance',(500,834)),('fast',(680,903))]}}
+ROWS.append(('policy','',base64.b64encode(json.dumps(batch,separators=(',',':')).encode()).decode(),'native atomic GPU defaults payload'))
 for cmd in ('state','reset','read','begin','chunk','validate','preview','upstream_read','restore_app','commit','abort','enable','disable','rollback'):
     ROWS.append(('zo_'+cmd, 'g'+'a'*24 if cmd=='read' else TX, '0' if cmd=='read' else '', 'ZUIopt --control pkg mode'))
 for cmd in ('begin','chunk','commit','state','reset'):

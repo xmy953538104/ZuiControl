@@ -11,6 +11,8 @@ BASE=b'schema 2\nenabled true\nprofile G 2-6\npackage exact org.example.game G 1
 OPEN=b'schema 2\nenabled true\nprofile G 2-7\nthread G ALL glob "Job.worker[AB]*" selector=all 30 2-4\nthread G R1 prefix Top selector=rank:1 20 7\nthread G R2 contains Runner selector=rank:2 10 5-6\npackage exact org.example.game G 100\n'
 
 def main(binary):
+    from TestRulePublisher import main as check_publisher
+    check_publisher(binary)
     check_contract()
     checked=0
     with tempfile.TemporaryDirectory(prefix='zuiopt-parity-') as tmp:

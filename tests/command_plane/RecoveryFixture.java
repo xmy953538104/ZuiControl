@@ -13,6 +13,7 @@ public class RecoveryFixture {
     boolean armed, ownerUnavailable, failApply, failResultOnce, blockAfterCrash;
     int mutations;
     int callerUser;
+    boolean batch;
     long projectionGeneration;
     BufferedReader reader; PrintWriter writer;
     final AppPolicyStore.Storage storage=new AppPolicyStore.Storage(){
@@ -79,6 +80,9 @@ public class RecoveryFixture {
         Map<String,Object> policy=map("action","refresh","userId",callerUser,"packageName","org.example.probe",
             "generation",mAppPolicies.current.generation,"sceneGeneration",1,"scenePackage","org.example.probe",
             "scope","APP","value",90,"mode","","min",0,"max",0);
+        if(batch)policy=map("action","defaultGpuBatch","userId",callerUser,"generation",mAppPolicies.current.generation,
+            "ranges",map("powersave",map("min",310,"max",422),"balance",map("min",366,"max",629),
+                "performance",map("min",500,"max",834),"fast",map("min",680,"max",903)));
         /* ADMISSION */
         return "ok=1";
     }
@@ -97,9 +101,14 @@ public class RecoveryFixture {
         this(0);
     }
     RecoveryFixture(int user)throws Exception {
+        this(user,false);
+    }
+    RecoveryFixture(int user,boolean batch)throws Exception {
+        this.batch=batch;
         callerUser=user;
         Map<Integer,Long> users=new TreeMap<>();users.put(0,0L);users.put(10,42L);
         AppPolicyStore.State initial=AppPolicyStore.migrate("version=1\n".getBytes(),"balance\n".getBytes(),new byte[0],"balance","",users,Collections.emptySet()).state;
+        if(batch)initial.schema=3;
         files.put(AppPolicyStore.ACTIVE,initial.bytes());mAppPolicies=new AppPolicyStore(storage);
         require(admit("X",SHA).equals("ok=1"),"admit X");
     }
@@ -134,8 +143,8 @@ public class RecoveryFixture {
             "projection_apply_after","settings_projection","policy_result_written","after_binder",
             "before_root_receipt","after_root_receipt","before_terminal_ack","after_terminal_ack","lost_client"};
         int n=0;
-        for(String point:points){
-            RecoveryFixture f=new RecoveryFixture(n%2==0?0:10);f.fault=point;f.armed=true;
+        for(boolean batch:new boolean[]{false,true})for(String point:points){
+            RecoveryFixture f=new RecoveryFixture(n%2==0?0:10,batch);f.fault=point;f.armed=true;
             String name="case"+(++n);int rc=f.peer(prefix,name,point);
             require(rc==0||rc==73,"unexpected native exit "+rc+" at "+point);
             f.armed=false;require(f.peer(prefix,name,"none")==0,"replay");
@@ -148,6 +157,7 @@ public class RecoveryFixture {
             require(f.ack.startsWith(applied?"X|done|policy|":"X|failed|policy|"),"truthful terminal "+point+":"+f.ack);
             require(f.mutations==(applied?1:0),"no duplicate generation");
             if(applied)require(f.projectionGeneration==2,"owner ACK");
+            if(batch&&applied)require(f.ack.contains("gpuDefaults=")&&f.ack.contains("680"),"batch recovery confirmed ranges");
             for(String key:f.files.keySet())if(key.endsWith("-previous.json"))require(f.files.get(key).length>0,"last good retained");
             System.out.println("PASS "+point+" generation="+f.mAppPolicies.current.generation+" mutations="+f.mutations+" ack="+f.ack);
             f.callerUser=n%2==0?10:0;
@@ -155,7 +165,8 @@ public class RecoveryFixture {
             long beforeY=f.mAppPolicies.current.generation;f.currentId="Y";
             require(f.peer(prefix,name,"none")==0&&f.ack.startsWith("Y|done|policy|"),"Y succeeds automatically");
             require(f.mAppPolicies.current.generation==beforeY+1&&f.mutations==mutations+1,"Y mutates exactly once");
-            require(f.mAppPolicies.current.apps.containsKey(f.callerUser+":org.example.probe"),"Y targets admitted user");
+            if(batch)require(f.mAppPolicies.current.apps.isEmpty()&&f.mAppPolicies.current.range(f.callerUser,"fast").minMHz==680,"batch never creates App rows, admitted user");
+            else require(f.mAppPolicies.current.apps.containsKey(f.callerUser+":org.example.probe"),"Y targets admitted user");
             Map<String,Object> snapshot=new TreeMap<>();for(Map.Entry<String,byte[]> entry:f.files.entrySet())snapshot.put(entry.getKey(),Base64.getEncoder().encodeToString(entry.getValue()));
             System.out.println("EVIDENCE "+point+" "+encode(snapshot));
         }

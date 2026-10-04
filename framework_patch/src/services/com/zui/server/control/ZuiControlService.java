@@ -882,34 +882,44 @@ public final class ZuiControlService extends Binder {
                 PolicyJson.require(requestId.equals(request.get("id")) && requestHash.equals(request.get("sha")), "authenticated policy request");
                 if (request.containsKey("result")) return PolicyJson.string(request.get("result"));
                 Map<String,Object> p = PolicyJson.object(request.get("payload"));
-                if("save".equals(p.get("action")))
+                boolean defaultBatch="defaultGpuBatch".equals(p.get("action"));
+                if(defaultBatch)PolicyJson.keys(p,"action","userId","generation","ranges");
+                else if("save".equals(p.get("action")))
                     PolicyJson.keys(p,"action","userId","packageName","generation","sceneGeneration","scenePackage","scope","value","mode","min","max","gpuPolicy");
                 else PolicyJson.keys(p, "action", "userId", "packageName", "generation", "sceneGeneration", "scenePackage", "scope", "value", "mode", "min", "max");
                 long expected = PolicyJson.integer(p.get("generation")); int user = AppPolicyStore.user(p.get("userId"));
                 if (request.containsKey("targetHash") && current.generation == expected + 1 && PolicyJson.hash(current.bytes()).equals(request.get("targetHash"))) {
                     // The prior invocation committed but lost its reply; recovery above obtained owner ACKs.
                 } else {
-                    String pkg = PolicyJson.string(p.get("packageName")), action = PolicyJson.string(p.get("action")), scope = PolicyJson.string(p.get("scope"));
                     PolicyJson.require(users.containsKey(user), "policy user unavailable");
-                    PolicyJson.require(user == mTopResumedState.stableUserId(), "STALE_SCENE_USER");
-                    boolean global = AppPolicyStore.actionScope(PolicyJson.integer(p.get("sceneGeneration")), PolicyJson.string(p.get("scenePackage")),
-                            mTopResumedState.generation(), mTopResumedState.stablePackage(), pkg, scope, policyHome(user), action, mScreenInteractive);
-                    if (!global) PolicyJson.require(!excluded.contains(pkg) && !excluded.contains(key(user,pkg)) && !isTransientPackage(pkg) && AppPolicyStore.packageName(pkg), "excluded policy target");
-                    if (pkg.equals(policyHome(user))) PolicyJson.require(action.equals("refresh") || action.equals("mode"), "HOME global action");
-                    if(action.equals("save"))PolicyJson.require(!global&&scope.equals("APP"),"atomic draft APP scope");
-                    AppPolicyStore.State next = action.equals("save")
-                            ?AppPolicyStore.draft(current,expected,user,pkg,PolicyJson.intValue(p.get("value")),
-                                    PolicyJson.string(p.get("mode")),PolicyJson.string(p.get("gpuPolicy")),
-                                    PolicyJson.intValue(p.get("min")),PolicyJson.intValue(p.get("max")))
-                            :AppPolicyStore.change(current, expected, user, pkg, action,
-                            PolicyJson.intValue(p.get("value")), PolicyJson.string(p.get("mode")),
-                            PolicyJson.intValue(p.get("min")), PolicyJson.intValue(p.get("max")), global);
+                    AppPolicyStore.State next;
+                    if(defaultBatch){
+                        // Authenticated admission already binds caller user and serial. Settings
+                        // defaults do not depend on a foreground scene or create App snapshots.
+                        next=AppPolicyStore.defaultGpuBatch(current,expected,user,p.get("ranges"));
+                    }else{
+                        String pkg = PolicyJson.string(p.get("packageName")), action = PolicyJson.string(p.get("action")), scope = PolicyJson.string(p.get("scope"));
+                        PolicyJson.require(user == mTopResumedState.stableUserId(), "STALE_SCENE_USER");
+                        boolean global = AppPolicyStore.actionScope(PolicyJson.integer(p.get("sceneGeneration")), PolicyJson.string(p.get("scenePackage")),
+                                mTopResumedState.generation(), mTopResumedState.stablePackage(), pkg, scope, policyHome(user), action, mScreenInteractive);
+                        if (!global) PolicyJson.require(!excluded.contains(pkg) && !excluded.contains(key(user,pkg)) && !isTransientPackage(pkg) && AppPolicyStore.packageName(pkg), "excluded policy target");
+                        if (pkg.equals(policyHome(user))) PolicyJson.require(action.equals("refresh") || action.equals("mode"), "HOME global action");
+                        if(action.equals("save"))PolicyJson.require(!global&&scope.equals("APP"),"atomic draft APP scope");
+                        next = action.equals("save")
+                                ?AppPolicyStore.draft(current,expected,user,pkg,PolicyJson.intValue(p.get("value")),
+                                        PolicyJson.string(p.get("mode")),PolicyJson.string(p.get("gpuPolicy")),
+                                        PolicyJson.intValue(p.get("min")),PolicyJson.intValue(p.get("max")))
+                                :AppPolicyStore.change(current, expected, user, pkg, action,
+                                PolicyJson.intValue(p.get("value")), PolicyJson.string(p.get("mode")),
+                                PolicyJson.intValue(p.get("min")), PolicyJson.intValue(p.get("max")), global);
+                    }
                     request.put("previousHash", PolicyJson.hash(current.bytes()));
                     request.put("targetHash", PolicyJson.hash(next.bytes())); mAppPolicies.disk.write("policy-request.json", PolicyJson.bytes(request));
                     mAppPolicies.commit(next, owner);
                 }
                 publishPolicySettings();
                 String result = "ok=1\ngpuRuntime=" + mGpuPolicy.runtimeStatus() + "\npolicyGeneration=" + mAppPolicies.current.generation;
+                if(defaultBatch)result+=AppPolicyStore.gpuDefaultsResult(mAppPolicies.current,user);
                 if("save".equals(p.get("action"))){
                     AppPolicyStore.Row saved=mAppPolicies.current.resolved(user,PolicyJson.string(p.get("packageName")));
                     result+="\ngpuPolicy="+saved.gpuPolicy+"\nresolvedGpuMinMHz="+saved.gpuMinMHz+"\nresolvedGpuMaxMHz="+saved.gpuMaxMHz;

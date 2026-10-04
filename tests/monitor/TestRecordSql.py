@@ -27,7 +27,9 @@ def migrate(db):
 def remove(db,pkg,user=0):
     method=src.split('private static void remove(',1)[1].split('    void start(',1)[0]
     for s in re.findall(r'next\.execSQL\("([^"\n]+)"',method):
-        if s.startswith('DELETE FROM'):db.execute(s,(user,pkg))
+        if s.startswith('DELETE FROM'):
+            if 'analysis_results' in s and not db.execute("SELECT name FROM sqlite_master WHERE name='analysis_results'").fetchone():continue
+            db.execute(s,(user,pkg))
 def start(db,pkg,wall=100,user=0):
     migrate(db);remove(db,pkg,user)
     db.execute(statement('INSERT INTO record_meta(package'),(pkg,pkg,user,42,100,wall,200,17,4))

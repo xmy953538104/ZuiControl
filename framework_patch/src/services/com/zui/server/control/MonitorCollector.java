@@ -48,6 +48,8 @@ class MonitorCollector {
     private boolean powerConfirmationPending;
     private String finalizeError="";
     private long epoch,samples,threadReads,enumerations,lastThreadTime;
+    private long recordScanTime=-1;
+    private List<MonitorSnapshot.Task> recordPrimaryTasks=Collections.emptyList();
     private String lastSnapshot="{}",error="",lastRequestError="";
     private List<MonitorSnapshot.Task> previous=Collections.emptyList();
     private int previousPid;
@@ -87,15 +89,24 @@ class MonitorCollector {
     }
     private void terminate(String reason,boolean incomplete){
         if(!session.recording())return;
+        ThreadAnalysis analysis=analyses.get(session.recordingUser);
+        boolean linked=analysis!=null&&analysis.recordBound;
         long end=Math.min(SystemClock.elapsedRealtime(),session.recordingStart+MonitorSession.MAX_RECORD_MS);
         try { store.finish(end,reason,incomplete);finalizeError=""; }
         catch(RuntimeException e){
+            reason="FINALIZE_ERROR";incomplete=true;
             finalizeError=boundedError("record_finalize:"+e.getClass().getSimpleName()+":"+e.getMessage());
             // A failed write leaves the existing INCOMPLETE row. Best-effort mark it explicitly.
             try { store.finish(end,"FINALIZE_ERROR",true); } catch(RuntimeException ignored) { }
             try { store.abandon(); } catch(RuntimeException close) { finalizeError=boundedError(finalizeError+";close:"+close.getMessage()); }
         }
-        finally { session.stop();clearThreadBaseline(); }
+        finally {
+            session.stop();clearThreadBaseline();recordScanTime=-1;recordPrimaryTasks=Collections.emptyList();
+            if(linked){
+                analysis.sourceRecordCompletion=incomplete?"INCOMPLETE":"COMPLETE";analysis.sourceRecordTerminalReason=reason;
+                analysis.finish("FINISHED",end);finishAnalysis(analysis,end);
+            }
+        }
     }
     private String screenTerminal(){
         PowerManager power=context.getSystemService(PowerManager.class);
@@ -152,7 +163,9 @@ class MonitorCollector {
                 &&(fpsChanged||taskChanged||!pkg.equals(session.foreground)||user!=session.user
                 ||recordEligible!=session.recordEligible));
         session.scene(pkg,user,eligible,recordEligible);
-        for(ThreadAnalysis a:analyses.values())a.scene(a.user==user&&a.pkg.equals(pkg)&&recordEligible,eligible,SystemClock.elapsedRealtime());
+        long now=SystemClock.elapsedRealtime();
+        for(ThreadAnalysis a:analyses.values())a.scene(a.user==user&&a.pkg.equals(pkg)&&recordEligible,eligible,
+                a.recordBound?Math.min(now,a.began+MonitorSession.MAX_RECORD_MS):now);
         String terminal=session.terminal(SystemClock.elapsedRealtime());
         if(terminal.isEmpty()&&taskChanged&&session.recording())terminal="TASK_CHANGED";
         checkTerminal(!eligible&&terminal.equals("SCREEN_OR_LOCK")?blockedReason:terminal);
@@ -201,8 +214,13 @@ class MonitorCollector {
                 android.content.pm.PackageManager packages=((Context)Context.class.getMethod("createContextAsUser",android.os.UserHandle.class,int.class)
                         .invoke(context,android.os.UserHandle.getUserHandleForUid(user*100000),0)).getPackageManager();
                 String label=packages.getApplicationLabel(packages.getApplicationInfo(session.foreground,0)).toString();
+                ThreadAnalysis linked=new ThreadAnalysis(user,session.foreground,ThreadAnalysis.MAX_WALL,now,facts.rulesGeneration(),true);
                 store.start(session.foreground,label,user,task.tid,task.start,now,session.taskId,session.targetEpoch,facts.recordPolicy(user,session.foreground));
                 session.started(now,task.tid,task.start);lastGesture=gesture;clearThreadBaseline();
+                ThreadAnalysis prior=analyses.get(user);
+                if(prior!=null){prior.interruptions.merge("SUPERSEDED_BY_RECORDING",1,Integer::sum);prior.finish("FINISHED",now);finishAnalysis(prior,now);}
+                linked.bindRecord(store.recordId,store.recordWall,now);linked.scene(true,session.eligible,now);
+                analyses.put(user,linked);analysisStates.remove(user);analysisTasks.remove(user);recordScanTime=-1;recordPrimaryTasks=Collections.emptyList();
             }else if("recordStop".equals(action)){
                 if(session.recordingUser!=user)return reject("wrong_user");
                 terminate("EXPLICIT_STOP",false);
@@ -289,6 +307,8 @@ class MonitorCollector {
         scheduled=false;
         long powerDelay=0;
         try{
+            // End the recording before enumerating at or beyond its deadline.
+            checkTerminal(session.terminal(SystemClock.elapsedRealtime()));
             updateAnalyses(SystemClock.elapsedRealtime());
             if(!scalarActive()){reschedule(0);return;}
             String screen=screenTerminal();
@@ -301,8 +321,6 @@ class MonitorCollector {
             if(fpsValidity.isEmpty())fpsValidity=sources.fpsError;
             int plugged=-1,batteryStatus=-1,milliVolts=-1;
             long microAmps=Long.MIN_VALUE;
-            String terminal=session.terminal(now);
-            checkTerminal(terminal);
             boolean capture=session.recording();
             { // All visible controller modes consume the same quiet/consumption sample.
                 quiet=sources.quiet();sources.scalarReads++;
@@ -329,11 +347,11 @@ class MonitorCollector {
                 if(process!=null&&session.sameProcess(process.tid,process.start)){
                     List<MonitorSnapshot.Row> rows=Collections.emptyList();
                     ThreadAnalysis analysis=analyses.get(session.user);
-                    boolean shared=analysis!=null&&analysis.pkg.equals(session.recordingPackage)&&analysis.collecting;
-                    long taskTime=shared?analysis.lastSample:now;
+                    boolean shared=analysis!=null&&analysis.recordBound&&analysis.pkg.equals(session.recordingPackage);
+                    long taskTime=shared?recordScanTime:now;
                     if(shared?taskTime>=0&&taskTime!=lastThreadTime:lastThreadTime==0||now-lastThreadTime>=3000){
                         List<MonitorSnapshot.Task> tasks;
-                        if(shared){tasks=Collections.emptyList();for(ThreadAnalysis.Process p:analysisTasks.getOrDefault(session.user,Collections.emptyList()))if(p.pid==process.tid&&p.start==process.start)tasks=p.tasks;}
+                        if(shared){tasks=recordPrimaryTasks;for(ThreadAnalysis.Process p:analysisTasks.getOrDefault(session.user,Collections.emptyList()))if(p.pid==process.tid&&p.start==process.start)tasks=p.tasks;}
                         else {enumerations++;tasks=readTasks(process.tid);}
                         MonitorSnapshot.Task after=identity(process.tid);
                         if(after==null||after.start!=process.start){clearThreadBaseline();process=null;}
@@ -372,18 +390,22 @@ class MonitorCollector {
             long now=SystemClock.elapsedRealtime();
             long delay=scalarActive()?(powerDelay>0?powerDelay:session.interval()):ThreadAnalysis.MAX_WALL;
             for(ThreadAnalysis a:analyses.values()){
+                if(a.recordBound)continue; // The Recording deadline and shared scan clock own this lifetime.
                 delay=Math.min(delay,Math.max(1,a.began+ThreadAnalysis.MAX_WALL-now));
                 if(a.collecting){delay=Math.min(delay,Math.max(1,a.requested-a.active));delay=Math.min(delay,a.lastSample<0?1:Math.max(1,a.lastSample+ThreadAnalysis.INTERVAL-now));}
                 if(!a.live())delay=1;
             }
-            if(session.recording())delay=Math.min(delay,Math.max(1,session.recordingStart+MonitorSession.MAX_RECORD_MS-SystemClock.elapsedRealtime()));
+            if(session.recording()){
+                delay=Math.min(delay,recordScanTime<0?1:Math.max(1,recordScanTime+ThreadAnalysis.INTERVAL-now));
+                delay=Math.min(delay,Math.max(1,session.recordingStart+MonitorSession.MAX_RECORD_MS-now));
+            }
             handler.postDelayed(()->sample(next),delay);
         }
     }
     private String analysisCommand(String action,int user,String arg,long now)throws Exception{
         java.util.Map<String,Object> request=arg.isEmpty()?PolicyJson.map():PolicyJson.object(PolicyJson.parse(arg.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         if(action.equals("analysisStart")){
-            PolicyJson.keys(request,"package","activeMs");PolicyJson.require(user==session.user&&!analyses.containsKey(user),"analysis busy/inactive user");
+            PolicyJson.keys(request,"package","activeMs");PolicyJson.require(user==session.user&&!analyses.containsKey(user)&&!session.recording(),"analysis busy/inactive user");
             ThreadAnalysis a=new ThreadAnalysis(user,PolicyJson.string(request.get("package")),PolicyJson.integer(request.get("activeMs")),now,facts.rulesGeneration());
             analyses.put(user,a);a.scene(a.pkg.equals(session.foreground)&&session.recordEligible,session.eligible,now);
             stop();schedule();return PolicyJson.encode(a.summary(now));
@@ -394,7 +416,7 @@ class MonitorCollector {
         }
         if(action.equals("analysisStop")){
             PolicyJson.keys(request,"session");ThreadAnalysis a=analyses.get(user);
-            PolicyJson.require(a!=null&&a.id.equals(request.get("session")),"analysis session changed");a.finish("FINISHED",now);finishAnalysis(a,now);stop();schedule();return analysisStates.get(user);
+            PolicyJson.require(a!=null&&!a.recordBound&&a.id.equals(request.get("session")),"analysis session changed or recording owned");a.finish("FINISHED",now);finishAnalysis(a,now);stop();schedule();return analysisStates.get(user);
         }
         if(action.equals("analysisRead")||action.equals("analysisDelete")){
             boolean delete=action.equals("analysisDelete");
@@ -408,32 +430,51 @@ class MonitorCollector {
     private void finishAnalysis(ThreadAnalysis a,long now){
         a.endRules=facts.rulesGeneration();
         try{store.saveAnalysis(a.user,a.pkg,a.result(now));analysisWrites++;}
-        catch(Exception e){a.state="FAILED";a.error="persist:"+e.getClass().getSimpleName();}
+        catch(Exception e){a.state="FAILED";a.error="persist:"+e.getClass().getSimpleName();if(a.recordBound)finalizeError=boundedError((finalizeError.isEmpty()?"":finalizeError+";")+"analysis_finalize:"+e.getMessage());}
         analysisStates.put(a.user,PolicyJson.encode(a.summary(now)));analyses.remove(a.user);analysisTasks.remove(a.user);
     }
     private void updateAnalyses(long now){
         boolean screen=screenTerminal().isEmpty()&&session.eligible;
         for(ThreadAnalysis a:new ArrayList<>(analyses.values())){
             a.scene(a.user==session.user&&a.pkg.equals(session.foreground)&&session.recordEligible,screen,now);
-            if(a.due(now))try{
+            boolean due=a.recordBound?session.recording()&&(recordScanTime<0||now-recordScanTime>=ThreadAnalysis.INTERVAL):a.due(now);
+            if(due)try{
                 long before=threadReads;List<ThreadAnalysis.Process> tasks=readAnalysisTasks(a);analysisReads+=threadReads-before;analysisEnumerations++;
-                a.sample(tasks,now,hz);analysisTasks.put(a.user,tasks);
-            }catch(Exception e){a.fail(e.getClass().getSimpleName()+":"+e.getMessage(),now);}
-            if(!a.live())finishAnalysis(a,now);
+                analysisTasks.put(a.user,tasks);if(a.recordBound)recordScanTime=now;
+                if(a.due(now))try{a.sample(tasks,now,hz);}catch(Exception e){a.fail(e.getClass().getSimpleName()+":"+e.getMessage(),now);}
+            }catch(Exception e){
+                a.fail(e.getClass().getSimpleName()+":"+e.getMessage(),now);
+                if(a.recordBound){terminate("ANALYSIS_SOURCE_FAILURE",true);throw new IllegalStateException("analysis source:"+e.getMessage(),e);}
+            }
+            if(!a.live()&&!a.recordBound)finishAnalysis(a,now);
         }
     }
     List<ThreadAnalysis.Process> readAnalysisTasks(ThreadAnalysis a){
         ActivityManager manager=context.getSystemService(ActivityManager.class);
         List<ActivityManager.RunningAppProcessInfo> processes=manager.getRunningAppProcesses();
         if(processes==null)throw new IllegalStateException("analysis process list unavailable");
-        List<ThreadAnalysis.Process> out=new ArrayList<>();int count=0;
+        List<ThreadAnalysis.Process> out=new ArrayList<>();int count=0;boolean primary=false;
+        java.util.Set<Integer> selected=new java.util.HashSet<>();
+        recordPrimaryTasks=Collections.emptyList();
         for(ActivityManager.RunningAppProcessInfo p:processes){
             if(p.uid/100000!=a.user||p.pkgList==null||p.pkgList.length!=1||!a.pkg.equals(p.pkgList[0]))continue;
+            PolicyJson.require(selected.add(p.pid),"analysis duplicate process");
             MonitorSnapshot.Task before=identity(p.pid);if(before==null)continue;
             List<MonitorSnapshot.Task> tasks=readTasks(p.pid);MonitorSnapshot.Task after=identity(p.pid);
             if(after==null||after.start!=before.start)continue;
+            if(a.recordBound&&p.pid==session.recordingPid&&before.start==session.processStart){recordPrimaryTasks=tasks;primary=true;}
             count+=tasks.size();if(count>ThreadAnalysis.MAX_TASKS||out.size()>=64)throw new IllegalStateException("analysis target task bound");
             out.add(new ThreadAnalysis.Process(p.pid,before.start,tasks));
+        }
+        // Preserve the original Recording primary snapshot if ActivityManager omits it
+        // or reports an ambiguous pkgList. It is not admitted to qualified analysis.
+        // A qualified primary above is never enumerated twice.
+        if(a.recordBound&&!primary){
+            MonitorSnapshot.Task before=identity(session.recordingPid);
+            if(before!=null&&session.sameProcess(before.tid,before.start)){
+                List<MonitorSnapshot.Task> tasks=readTasks(before.tid);MonitorSnapshot.Task after=identity(before.tid);
+                if(after!=null&&after.start==before.start)recordPrimaryTasks=tasks;
+            }
         }
         return out;
     }

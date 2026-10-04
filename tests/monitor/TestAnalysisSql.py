@@ -46,3 +46,4 @@ with tempfile.TemporaryDirectory(prefix='analysis-sql-') as folder:
     assert db.execute('PRAGMA integrity_check').fetchone()==('ok',)
     db.close()
 print('ANALYSIS_SQL_REPLACE_QUOTA_CRASH_USER_RECORD_PRESERVATION=PASS')
+subprocess.run([sys.executable,str(Path(__file__).with_name('TestRecordLinkSql.py'))],check=True)

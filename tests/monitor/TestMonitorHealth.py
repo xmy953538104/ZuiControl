@@ -31,7 +31,7 @@ public class HealthTest {
   String diagnostic=field(c,"monitorLastRequestError");c.command("recordRead",0,"{}");check(field(c,"monitorLastRequestError").equals(diagnostic),"successful read retains diagnostic");
   c.command("recordRead",0,new String(new char[1000]).replace('\\0','x')+"\\nspoof=1\\r");
   check(field(c,"monitorLastRequestError").length()==160&&!c.state().contains("\\nspoof="),"bounded single-line diagnostic");healthy(c);
-  c.scene("game",0,true);Client client=new Client();c.register(client);Handler.next();healthy(c);
+  c.scene("org.game",0,true);Client client=new Client();c.register(client);Handler.next();healthy(c);
   Context.failBattery=true;Handler.next();check(field(c,"monitorError").contains("battery fixture"),"runtime fault visible");
   c.command("recordRead",0,"{}");check(!field(c,"monitorError").isEmpty(),"read cannot recover pipeline");
   c.command("recordRead",0,"com.zui.calculator");check(field(c,"monitorError").contains("battery fixture"),"reject cannot overwrite runtime");

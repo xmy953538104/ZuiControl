@@ -257,6 +257,35 @@ final class AppPolicyStore {
         Row row=new Row(hz,mode,min,max,gpuPolicy);State next=old.copy();
         next.apps.put(key(user,pkg),row);next.generation=Math.addExact(old.generation,1);return next;
     }
+    static Map<String,Object> factoryGpuDefaults(){
+        Map<String,Object> ranges=new TreeMap<>();
+        for(String mode:MODES){GpuRange r=factory(mode,false);ranges.put(mode,map("min",r.minMHz,"max",r.maxMHz));}
+        return ranges;
+    }
+    static State gpuDefaults(State old,int user,Object value){
+        require(old.users.containsKey(user),"unknown user");
+        Map<String,Object> ranges=object(value);keys(ranges,MODES);
+        Map<String,GpuRange> validated=new TreeMap<>();
+        for(String mode:MODES){
+            Map<String,Object> r=object(ranges.get(mode));keys(r,"min","max");
+            validated.put(key(user,mode),new GpuRange(intValue(r.get("min")),intValue(r.get("max"))));
+        }
+        // Validate the entire draft before constructing a changed state. App rows stay byte-identical.
+        State next=old.copy();next.defaults.putAll(validated);
+        Row global=old.global(user);GpuRange range=next.range(user,global.uperfMode);
+        next.globals.put(user,new Row(global.refreshHz,global.uperfMode,range.minMHz,range.maxMHz,global.gpuPolicy));
+        return next;
+    }
+    static State defaultGpuBatch(State old,long expected,int user,Object ranges){
+        require(old.schema==3,"policy schema upgrade required");
+        require(old.generation==expected,"STALE_POLICY_GENERATION");
+        State next=gpuDefaults(old,user,ranges);next.generation=Math.addExact(old.generation,1);return next;
+    }
+    static String gpuDefaultsResult(State state,int user){
+        Map<String,Object> ranges=new TreeMap<>();
+        for(String mode:MODES){GpuRange r=state.range(user,mode);ranges.put(mode,map("min",r.minMHz,"max",r.maxMHz));}
+        return "\ngpuDefaults="+encode(ranges);
+    }
     static State gpuFollowMigration(State old){
         if(old.schema==3)return old;
         State next=old.copy();next.schema=3;next.generation=Math.addExact(old.generation,1);
@@ -381,6 +410,9 @@ final class AppPolicyStore {
         publish.call();
         String result = (applied ? "ok=1" : "ok=0") + "\nrecoveryOutcome=" + outcome
                 + "\npolicyGeneration=" + current.generation;
+        Map<String,Object> payload=object(request.get("payload"));
+        if(applied&&"defaultGpuBatch".equals(payload.get("action")))
+            result+=gpuDefaultsResult(current,user(payload.get("userId")));
         request.put("result", result); disk.write("policy-request.json", bytes(request));
         return result;
     }
