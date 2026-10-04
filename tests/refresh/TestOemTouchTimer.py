@@ -144,7 +144,7 @@ class OemTouchTimer(unittest.TestCase):
                 old_doc = identity['readme_text'].encode()
                 self.assertEqual(payload_tree_hash(old),tree)
                 self.assertEqual((ROOT/'payload/README.txt').read_bytes().replace(b'\r\n',b'\n'),
-                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV83').replace(b'App V60',b'App V83'))
+                                 old_doc.replace(b'ZuiControlV60',b'ZuiControlV84').replace(b'App V60',b'App V84'))
                 continue
             bound=reverse_entries(scope_entries(path),path)
             relative=[e.split(b'\t',1)[0]+b'\t'+e.split(b'\t',1)[1][len(path)+1:] for e in bound]

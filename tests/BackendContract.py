@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
 IDENTITY=json.loads((ROOT/'tests/integration_identity_delta.json').read_text(encoding='utf-8'))
+FINAL_FRONTEND=json.loads((ROOT/'tests/final_frontend_merge_delta.json').read_text(encoding='utf-8'))
 FRONTEND_INTEGRATION=json.loads((ROOT/'tests/backend_frontend_integration_delta.json').read_text(encoding='utf-8'))
 FRONTEND_DELTA=json.loads((ROOT/'tests/backend_frontend_delta.json').read_text(encoding='utf-8'))
 REAL_WIRE=json.loads((ROOT/'tests/command_plane/utility_wire_delta.json').read_text(encoding='utf-8'))
@@ -123,6 +124,15 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
+    # Reverse the exact final App merge before replaying unchanged Backend freezes.
+    for row in FINAL_FRONTEND['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        if row['after'] is None:
+            assert not any(e.endswith(('\t'+row['path']).encode()) for e in result),('V84 deleted frontend file',row['path'])
+        else:
+            after=row['after'].encode();assert result.count(after)==1,('V84 exact final frontend bytes',row['path'])
+            result.remove(after)
+        if row['before'] is not None:result.append(row['before'].encode())
     for row in IDENTITY['files']+FRONTEND_INTEGRATION['files']+FRONTEND_DELTA['files']+REAL_WIRE['files']+RESIDUAL['files']+USER_DOMAIN['files']+RECOVERY['files']+OPTION_B['files']+HARDENING['files']+CLOSURE['files']+BOUNDARY['files']+BINDER['files']+BOOTSTRAP['files']+INTEGRATION['files']+MANIFEST['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         after=row['after'].encode();assert result.count(after)==1,('R1 exact source bytes',row['path'])

@@ -1,0 +1,97 @@
+{
+  "workPackage": "V84_FRONTEND_BACKEND_FINAL_INTEGRATION_R3",
+  "backendInputHead": "6d896f29812dab653e2e88c6ee989c972a343c97",
+  "frontendInputHead": "f68c537b9bcc0e8259305e246df5326abace53d9",
+  "files": [
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "before": "100644 blob 7d74f2ba60eecb016fb4bdb8fa2342439c7d64eb\tapp/src/main/AndroidManifest.xml",
+      "after": "100644 blob e5c2c839411a6b9cc29bfe153825ca98087e6ce8\tapp/src/main/AndroidManifest.xml"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/FrontendGateway.kt",
+      "before": null,
+      "after": "100644 blob 70de5b464a45f6d3ff62a5e3a80d2cd6fe134dda\tapp/src/main/java/com/zui/zuicontrol/FrontendGateway.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+      "before": null,
+      "after": "100644 blob 516d0a0ed09d18f115cf0519ee9b9eabda7ffefa\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/FrontendState.kt",
+      "before": null,
+      "after": "100644 blob 5b28bb7fbb41063d9fa66af4cb96702c1f9bda03\tapp/src/main/java/com/zui/zuicontrol/FrontendState.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "before": "100644 blob b0c68322920beb9e3c04935976cd1555df21d23b\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob bd270af846aa8f2e41ee5ff352f6e7cdb220e170\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MonitorPresentation.kt",
+      "before": null,
+      "after": "100644 blob 284861dcc3df23f0abe50acfe6dfcd9849a62bb0\tapp/src/main/java/com/zui/zuicontrol/MonitorPresentation.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",
+      "before": "100644 blob 218abdb667918c02578be2115c617f05e0c86af5\tapp/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",
+      "after": "100644 blob 22f9dd974c6357bbb74449340d40c8dc19a01f2a\tapp/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "before": "100644 blob 89e4bcc0bfe25ab133eb92b545e7d4524e47789d\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "after": "100644 blob e14d682911ca999ddbae76420ba2a459dcb5f5bc\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
+      "before": "100644 blob 387ad7afdd5ba0e17d4169332e4c3b2abf1088ce\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
+      "after": "100644 blob 5c99bd64059f0784b5bfe4e81579d50464cba883\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/RecordChart.kt",
+      "before": null,
+      "after": "100644 blob e0af0ad4c27c2ca6e931f1882627e498ca4bd5d4\tapp/src/main/java/com/zui/zuicontrol/RecordChart.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/RuleUpstreamFetcher.kt",
+      "before": null,
+      "after": "100644 blob 9b057c4f85773ecdc6d7e127fa4d0af19b0bceb2\tapp/src/main/java/com/zui/zuicontrol/RuleUpstreamFetcher.kt"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_monitor_indicator.xml",
+      "before": "100644 blob 1b2b8ee4adfad29dd7a35bcc8c227aa54995316d\tapp/src/main/res/drawable/notify_monitor_indicator.xml",
+      "after": "100644 blob 3dc39cb00500cf36780bcdad3eeec3c996a7b820\tapp/src/main/res/drawable/notify_monitor_indicator.xml"
+    },
+    {
+      "path": "app/src/main/res/layout/notification_quick_control.xml",
+      "before": "100644 blob 56675ece4be67812163f4fbefa1e996efcb74bda\tapp/src/main/res/layout/notification_quick_control.xml",
+      "after": "100644 blob ccf8d0aff60a169553de276f6184b3ca97a8aacd\tapp/src/main/res/layout/notification_quick_control.xml"
+    },
+    {
+      "path": "app/src/main/res/values-night/styles.xml",
+      "before": null,
+      "after": "100644 blob a2961ff4829ed5842b3e1cba5707947edd4527b4\tapp/src/main/res/values-night/styles.xml"
+    },
+    {
+      "path": "app/src/main/res/values-night/ui_tokens.xml",
+      "before": null,
+      "after": "100644 blob 0387b89ea07fb653480a573948f18089b0d54a60\tapp/src/main/res/values-night/ui_tokens.xml"
+    },
+    {
+      "path": "app/src/main/res/values/styles.xml",
+      "before": "100644 blob 1b716db829779cb024bb665d0f3dc0bf2a1f0c29\tapp/src/main/res/values/styles.xml",
+      "after": "100644 blob 560818a9a24de561d7284aab084f29be2f383f76\tapp/src/main/res/values/styles.xml"
+    },
+    {
+      "path": "app/src/main/res/values/ui_tokens.xml",
+      "before": "100644 blob ac8455a469a35444bb26cb1dab22091eecaa0ccb\tapp/src/main/res/values/ui_tokens.xml",
+      "after": "100644 blob aef6d2949d2c00e785d50e0b88171a65f321881c\tapp/src/main/res/values/ui_tokens.xml"
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+      "before": null,
+      "after": "100644 blob 828ff08f777f8502f23f1290990ce010223a4b7d\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt"
+    }
+  ]
+}
