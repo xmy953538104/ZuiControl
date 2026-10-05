@@ -13,7 +13,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob f50a9d04d7169966b0dcb50bfd47a515443c852d\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob 83f9920c6e662c363f66664c4df1d18c35003703\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob b5c20c68fd71cc6f5bb6e49a6845546d3971e5f0\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",

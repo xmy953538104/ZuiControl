@@ -335,7 +335,7 @@ class MainActivity : Activity() {
     }
     private fun buildMaster() {
         val titles=mapOf("tune" to "应用策略","thread" to "线程策略","monitor" to "监测记录","settings" to "设置")
-        val subtitle=when(session.section){"tune"->"${policies?.apps?.size ?: 0} 个独立配置";"settings"->"ZuiControl 偏好与工具";else->""}
+        val subtitle=when(session.section){"tune"->"${policies?.apps?.size ?: 0} 个独立配置";"thread"->"${installed.count{model?.appProfile(it.packageName)!=null}} 个应用 · ${model?.profiles?.values?.sumOf{it.rules.size} ?: 0} 条特殊线程规则";"monitor"->"${records.length()} 条记录 · 每个应用保留最近一次";"settings"->"ZuiControl 偏好与工具";else->""}
         master.addView(owner.row().apply {
             setPadding(owner.px(18),owner.px(22),owner.px(18),owner.px(12))
             addView(owner.column().apply{
@@ -353,7 +353,7 @@ class MainActivity : Activity() {
             val rows=listOf("监测与显示" to "悬浮窗权限 · 通知 · 主题","GPU 默认范围" to "四档默认 GPU 频率区间","数据与维护" to "备份 · 恢复 · 维护","关于" to "Release · Build · Schema")
             rows.forEachIndexed{i,(title,sub)->list.addView(ownerListRow("",title,sub,session.settingsModule==i,icons[i]){guard{session.settingsModule=i;session.clearDrafts();render()}})}
         } else {
-            val (box,search)=owner.search("搜索应用...",query)
+            val (box,search)=owner.search(when(session.section){"thread"->"搜索应用或包名...";"monitor"->"搜索记录...";else->"搜索应用..."},query)
             master.addView(box,LinearLayout.LayoutParams(-1,owner.px(38)).apply{marginStart=owner.px(18);marginEnd=owner.px(18);bottomMargin=owner.px(12)})
             if(session.section=="thread"){
                 master.addView(segment(listOf("全部","上游","我的"),filter){filter=it;populateList(list)},LinearLayout.LayoutParams(-1,-2).apply{marginStart=owner.px(18);marginEnd=owner.px(18);bottomMargin=owner.px(12)})
@@ -386,7 +386,7 @@ class MainActivity : Activity() {
                 chips.addView(owner.chip("${d.refreshHz}Hz"));chips.addView(owner.chip(modeTitle(d.uperfMode),GpuDefaultsDraft.modes.indexOf(d.uperfMode)+1),LinearLayout.LayoutParams(-2,owner.px(18)).apply{marginStart=owner.px(6)})
                 if(model?.appProfile(pkg)!=null)chips.addView(owner.icon(R.drawable.owner_chip,owner.zoFg,12).apply{background=owner.shape(owner.zoBg,5f);setPadding(owner.px(3),owner.px(3),owner.px(3),owner.px(3))},LinearLayout.LayoutParams(owner.px(18),owner.px(18)).apply{marginStart=owner.px(6)})
             } else if(session.section=="thread" && pkg.isNotEmpty()){
-                chips.addView(owner.chip(sourceTitle(provenance(pkg)),if(provenance(pkg)=="UPSTREAM")2 else 1))
+                chips.addView(provenanceChip(pkg))
                 chips.addView(owner.chip("${model?.appProfile(pkg)?.rules?.size ?: 0} 条规则"),LinearLayout.LayoutParams(-2,dp(18)).apply{marginStart=dp(6)})
             }else chips.addView(owner.label(subtitle,11f,owner.muted),LinearLayout.LayoutParams(-1,owner.px(14)))
             addView(chips,LinearLayout.LayoutParams(-1,-2).apply{topMargin=owner.px(5)})
@@ -840,7 +840,9 @@ class MainActivity : Activity() {
     }
     private fun threadApp() {
         val pkg=session.selected;val d=session.ruleDraft
-        detail.addView(owner.title(name(pkg),"$pkg · ${sourceTitle(provenance(pkg))}",leading=ownerAppIcon(pkg,44),trailing=owner.chip(if(d?.dirty==true)"未保存" else "已保存",if(d?.dirty==true)3 else 0,true)))
+        detail.addView(owner.title(name(pkg),pkg,leading=ownerAppIcon(pkg,44),trailing=owner.row().apply{
+            addView(provenanceChip(pkg,true));if(d?.dirty==true)addView(owner.chip("未保存",3,true),LinearLayout.LayoutParams(-2,dp(22)).apply{marginStart=dp(6)})
+        }))
         if(d==null)detail.addView(owner.empty("此规则暂不能无损显示","可查看完整原文。$ruleError",true),gap())
         else {
             val mapping=d.base.mappings.firstOrNull{when(it.matchKind){"exact"->it.packageName==pkg;"prefix"->pkg.startsWith(it.packageName);else->pkg.contains(it.packageName)}}
@@ -1203,6 +1205,9 @@ class MainActivity : Activity() {
     private fun globalRanges(): Map<String, GpuRanges.Range> = session.gpuAuthority?.original ?: GpuDefaultsDraft.fromState(state, session.userId).original
     private fun provenance(pkg: String) = upstreamModel?.let { model?.provenance(pkg, it) }.orEmpty()
     private fun sourceTitle(source: String) = when (source) { "UPSTREAM" -> "上游"; "USER_MODIFIED" -> "我的修改"; "USER_CREATED" -> "我的新建"; else -> "来源未知" }
+    private fun provenanceChip(pkg:String,large:Boolean=false)=owner.chip(sourceTitle(provenance(pkg)),if(provenance(pkg)=="USER_MODIFIED")3 else 0,large).apply{
+        if(provenance(pkg)=="USER_CREATED"){setTextColor(owner.zoFg);background=owner.shape(owner.zoBg,if(large)6f else 5f)}
+    }
     private fun modeTitle(id: String) = UperfMode.fromId(id)?.title ?: "--"
     private fun value(source: String, key: String) = ZuiControlClient.stateValue(source, key).orEmpty()
     private fun name(pkg: String) = runCatching { packageManager.getApplicationInfo(pkg, 0).loadLabel(packageManager).toString() }.getOrDefault(pkg)
