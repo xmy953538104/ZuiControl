@@ -687,7 +687,11 @@ class MainActivity : Activity() {
         }
         box.addView(OwnerSegment(this,owner,listOf("用户应用","系统应用"),0,true){system=it==1;selected="";next.isEnabled=false;next.alpha=.4f;populate()},LinearLayout.LayoutParams(-1,owner.px(34)).apply{bottomMargin=owner.px(10)})
         box.addView(searchBox,LinearLayout.LayoutParams(-1,owner.px(38)).apply{bottomMargin=owner.px(10)})
-        search.addTextChangedListener(watcher{populate()});box.addView(ScrollView(this).apply{isVerticalScrollBarEnabled=false;clipChildren=true;clipToPadding=true;addView(list)},LinearLayout.LayoutParams(-1,owner.px(300)));populate()
+        search.addTextChangedListener(watcher{populate()});box.addView(ScrollView(this).apply{
+            isVerticalScrollBarEnabled=false;clipChildren=true;clipToPadding=true
+            addOnLayoutChangeListener{view,_,_,_,_,_,_,_,_->view.clipBounds=android.graphics.Rect(0,0,view.width,view.height)}
+            addView(list)
+        },LinearLayout.LayoutParams(-1,owner.px(300)));populate()
         ownerModal?.open("添加应用","选择一个应用，创建独立性能策略",440,box,listOf(owner.button("取消"){ownerModal?.close()},next))
     }
 
