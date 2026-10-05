@@ -169,7 +169,8 @@ class ZuiControlQuickService : Service() {
         val fresh = readingTime > 0 && SystemClock.elapsedRealtime() - readingTime in 0..readingTtl
         // monitorMode comes from the existing authenticated producer snapshot, never a second state query.
         return controls!!.copy(isFloatActive = monitor?.desiredFull() == true,
-            quietC = if (fresh) quietC else -1.0, powerW = if (fresh) powerW else -1.0)
+            quietC = if (fresh) quietC else -1.0, powerW = if (fresh) powerW else -1.0,
+            dark=resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES)
     }
     @Suppress("DEPRECATION")
     private fun renderNotification(snapshot: NotificationQuickControlHelper.Snapshot): Notification {

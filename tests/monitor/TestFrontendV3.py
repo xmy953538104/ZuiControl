@@ -103,6 +103,13 @@ fun main() {
   check(views.properties[R.id.notification_power to "text"]=="5.6 W")
   check(views.properties[modes[tier.ordinal] to "setEnabled"]==true)
  }
+ for(dark in listOf(false,true)) {
+  helper.updateRemoteViews(views,NotificationQuickControlHelper.Snapshot("org.test.app",120,UperfMode.BALANCE,false,true,true,40.1,-1.0,dark),PendingIntent("monitor"),{PendingIntent("hz:$it")},{PendingIntent("mode:${it.id}")})
+  check(views.properties[R.id.notification_quiet to "textColor"]==if(dark)Color.rgb(232,237,246)else Color.rgb(15,23,42))
+  check(views.properties[R.id.notification_power to "textColor"]==if(dark)Color.rgb(108,120,144)else Color.rgb(142,155,174))
+  check((views.properties[R.id.notification_power to "description"] as String).contains("暂不可用"))
+  check((views.properties[R.id.mode_fast to "click"] as PendingIntent).action=="mode:fast")
+ }
  println("EXACT_RENDERER_REBIND_20_COMBINATIONS_60_TRANSITIONS=PASS")
 }
 '''

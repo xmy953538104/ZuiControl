@@ -15,7 +15,7 @@ internal object NotificationQuickControlHelper {
     data class Snapshot(
         val pkg: String, val currentHz: Int, val currentMode: UperfMode,
         val isFloatActive: Boolean, val refreshEnabled: Boolean, val uperfEnabled: Boolean,
-        val quietC: Double = -1.0, val powerW: Double = -1.0
+        val quietC: Double = -1.0, val powerW: Double = -1.0, val dark:Boolean=false
     )
 
     fun updateRemoteViews(
@@ -40,15 +40,15 @@ internal object NotificationQuickControlHelper {
         setContentDescription(R.id.monitor_toggle, "监视器 ${if (snapshot.isFloatActive) "开启" else "关闭"}")
         setOnClickPendingIntent(R.id.monitor_toggle, monitorIntent)
         metric(views, R.id.notification_quiet, snapshot.quietC,
-            "°C", "quiet-therm 温度")
+            "°C", "quiet-therm 温度",snapshot.dark)
         metric(views, R.id.notification_power, snapshot.powerW,
-            " W", "设备电池侧功率")
+            " W", "设备电池侧功率",snapshot.dark)
 
         listOf(R.id.refresh_60, R.id.refresh_90, R.id.refresh_120, R.id.refresh_144, R.id.refresh_165)
             .zip(ZuiControlContract.rates).forEach { (id, value) ->
                 button(views, id, value.toString(), value == snapshot.currentHz,
                     R.drawable.notify_rate_selected, snapshot.refreshEnabled, refreshIntent(value),
-                    "${value}Hz")
+                    "${value}Hz",snapshot.dark)
             }
         val backgrounds = listOf(R.drawable.notify_mode_powersave, R.drawable.notify_mode_balance,
             R.drawable.notify_mode_performance, R.drawable.notify_mode_fast)
@@ -56,7 +56,7 @@ internal object NotificationQuickControlHelper {
             .zip(UperfMode.entries).forEach { (id, value) ->
                 val title = value.title
                 button(views, id, title, value == snapshot.currentMode, backgrounds[value.ordinal],
-                    snapshot.uperfEnabled, modeIntent(value), title)
+                    snapshot.uperfEnabled, modeIntent(value), title,snapshot.dark)
             }
     }
 
@@ -66,14 +66,14 @@ internal object NotificationQuickControlHelper {
     fun metricNumber(value: Double): String =
         if (value.isFinite() && value > 0.0) String.format(Locale.US, "%.1f", value) else "--"
 
-    private fun metric(views: RemoteViews, id: Int, value: Double, unit: String, description: String) {
+    private fun metric(views: RemoteViews, id: Int, value: Double, unit: String, description: String,dark:Boolean) {
         val valid = value.isFinite() && value > 0.0
         val number = metricNumber(value)
         val text = SpannableString(number + unit)
         val flags = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-        views.setTextColor(id, if (valid) Color.rgb(30, 41, 59) else Color.rgb(148, 163, 184))
+        views.setTextColor(id, if(valid)if(dark)Color.rgb(232,237,246)else Color.rgb(15,23,42) else if(dark)Color.rgb(108,120,144)else Color.rgb(142,155,174))
         if (valid) {
-            text.setSpan(ForegroundColorSpan(Color.rgb(59, 103, 193)), number.length, text.length, flags)
+            text.setSpan(ForegroundColorSpan(if(dark)Color.rgb(91,140,255)else Color.rgb(53,98,198)), number.length, text.length, flags)
             text.setSpan(RelativeSizeSpan(9f / 11f), number.length, text.length, flags)
         }
         views.setTextViewText(id, text)
@@ -83,9 +83,9 @@ internal object NotificationQuickControlHelper {
     }
 
     private fun button(views: RemoteViews, id: Int, text: String, selected: Boolean,
-                       activeBackground: Int, enabled: Boolean, intent: PendingIntent, description: String) {
+                       activeBackground: Int, enabled: Boolean, intent: PendingIntent, description: String,dark:Boolean) {
         views.setTextViewText(id, text)
-        views.setTextColor(id, if (selected && enabled) Color.WHITE else if (enabled) Color.rgb(90, 107, 130) else Color.rgb(148, 163, 184))
+        views.setTextColor(id, if(selected && enabled)Color.WHITE else if(enabled)if(dark)Color.rgb(165,176,195)else Color.rgb(71,85,105) else if(dark)Color.rgb(108,120,144)else Color.rgb(142,155,174))
         views.setInt(id, "setBackgroundResource", if (selected && enabled) activeBackground else R.drawable.notify_rate_normal)
         views.setViewVisibility(id, View.VISIBLE)
         views.setBoolean(id, "setEnabled", enabled)

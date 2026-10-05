@@ -13,7 +13,7 @@ import android.view.animation.PathInterpolator
 import android.widget.*
 import kotlin.math.*
 
-/** Literal Phase 1 port of FRONTEND_FINAL_V83.html. Dimensions are Owner CSS pixels. */
+/** Native port of FRONTEND_FINAL_V83.html. Dimensions are Owner CSS pixels. */
 internal class OwnerUi(val context: Context) {
     val dark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
     private fun c(d: String, l: String) = Color.parseColor(if (dark) d else l)
@@ -107,6 +107,42 @@ internal class OwnerUi(val context: Context) {
             addView(input,LinearLayout.LayoutParams(0,-1,1f))
         } to input
     }
+    fun empty(title: String,description: String,error: Boolean=false)=column().apply{
+        gravity=Gravity.CENTER;setPadding(px(24),px(24),px(24),px(24));background=shape(if(error)chipBg[3] else card,18f,line)
+        addView(icon(if(error)R.drawable.owner_warn else R.drawable.owner_info,if(error)chipFg[3] else muted,24),LinearLayout.LayoutParams(px(24),px(24)).apply{bottomMargin=px(12)})
+        addView(label(title,13f,if(error)chipFg[3] else sub,700).apply{setSingleLine(false);gravity=Gravity.CENTER})
+        addView(label(description,11.5f,if(error)chipFg[3] else muted).apply{setSingleLine(false);gravity=Gravity.CENTER;setLineSpacing(0f,1.5f)},LinearLayout.LayoutParams(-1,-2).apply{topMargin=px(6)})
+    }
+    fun formRow(title: String,control: View)=row().apply{
+        setPadding(0,px(9),0,px(9))
+        addView(label(title,12f,sub,700),LinearLayout.LayoutParams(px(72),-2).apply{marginEnd=px(12)})
+        addView(control,LinearLayout.LayoutParams(0,-2,1f));minimumHeight=px(52)
+    }
+    fun scroll(content: View,height: Int)=ScrollView(context).apply{
+        isVerticalScrollBarEnabled=false;clipChildren=true;clipToPadding=true
+        addOnLayoutChangeListener{v,_,_,_,_,_,_,_,_->v.clipBounds=Rect(0,0,v.width,v.height)}
+        addView(content);layoutParams=LinearLayout.LayoutParams(-1,px(height))
+        minimumHeight=px(height)
+    }
+    fun cpus(initial: Set<Int>,action:(Set<Int>)->Boolean):View {
+        var selected=initial;val group=row()
+        fun bind(){group.removeAllViews();for(cpu in 0..7){
+            val on=cpu in selected
+            group.addView(label(cpu.toString(),10f,if(on)Color.parseColor("#04131A") else muted,700).apply{
+                gravity=Gravity.CENTER;background=shape(if(on)zo else card2,5f,if(on)null else line2)
+                isFocusable=true;contentDescription="CPU $cpu，${if(on)"已选择" else "未选择"}";isEnabled=true
+                setOnClickListener{val next=if(cpu in selected)selected-cpu else selected+cpu;if(action(next)){selected=next;bind()}};press(this)
+            },LinearLayout.LayoutParams(0,px(26),1f).apply{if(cpu>0)marginStart=px(if(cpu==4 || cpu==7)7 else 3)})
+        }};bind();return group
+    }
+    fun check(value:String,checked:Boolean=false,action:(Boolean)->Unit):View=row().apply{
+        var selected=checked;setPadding(px(6),px(8),px(6),px(8));isFocusable=true
+        val mark=label(if(selected)"✓" else "",12f,Color.WHITE,700).apply{gravity=Gravity.CENTER;background=shape(if(selected)accent else Color.TRANSPARENT,4f,if(selected)accent else line2,2f)}
+        addView(mark,LinearLayout.LayoutParams(px(16),px(16)).apply{marginEnd=px(10)})
+        addView(label(value,12f,text,600).apply{setSingleLine(false);setLineSpacing(0f,1.5f)},LinearLayout.LayoutParams(0,-2,1f))
+        fun describe(){contentDescription="$value，${if(selected)"已选择" else "未选择"}";isSelected=selected}
+        describe();setOnClickListener{selected=!selected;mark.text=if(selected)"✓" else "";mark.background=shape(if(selected)accent else Color.TRANSPARENT,4f,if(selected)accent else line2,2f);background=shape(if(selected)soft(accent) else Color.TRANSPARENT,8f);describe();action(selected)}
+    }
     fun tiers(current: String,compact: Boolean=false,enabled: Boolean=true,action:(String)->Unit)=row().apply {
         tag="owner-control"
         val group=this
@@ -130,10 +166,11 @@ internal class OwnerUi(val context: Context) {
                             val start=if(k==previous)tiers[k] else card2;val end=if(lit)tiers[k] else card2
                             ValueAnimator.ofArgb(start,end).apply{duration=250;addUpdateListener{target.background=shape(it.animatedValue as Int,14f)};start()}
                             target.elevation=px(if(lit)6 else 0).toFloat();target.outlineSpotShadowColor=tiers[k]
-                            (target.getChildAt(0) as OwnerGauge).lit=lit
+                            (target.getChildAt(0) as OwnerGauge).animateInk(lit)
                             val textColumn=target.getChildAt(1) as LinearLayout
-                            (textColumn.getChildAt(0) as TextView).setTextColor(if(lit)Color.WHITE else text)
-                            if(!compact)(textColumn.getChildAt(1) as TextView).setTextColor(if(lit)0xd1ffffff.toInt() else muted)
+                            fun ink(label:TextView,end:Int){val start=label.currentTextColor;ValueAnimator.ofArgb(start,end).apply{duration=250;addUpdateListener{label.setTextColor(it.animatedValue as Int)};start()}}
+                            ink(textColumn.getChildAt(0) as TextView,if(lit)Color.WHITE else text)
+                            if(!compact)ink(textColumn.getChildAt(1) as TextView,if(lit)0xd1ffffff.toInt() else muted)
                             target.contentDescription="${names[k]}${if(lit)"，已选择" else ""}"
                         }
                         action(id)
@@ -233,19 +270,23 @@ internal class OwnerPing(context: Context,private val ui: OwnerUi,private val to
 
 @SuppressLint("ViewConstructor")
 internal class OwnerGauge(context: Context,private val ui: OwnerUi,private val tier: Int,selected: Boolean=false):View(context) {
-    var lit=selected;set(value){field=value;invalidate()}
+    private var litAmount=if(selected)1f else 0f
+    private var inkMotion:ValueAnimator?=null
+    fun animateInk(value:Boolean){inkMotion?.cancel();inkMotion=ValueAnimator.ofFloat(litAmount,if(value)1f else 0f).apply{duration=250;addUpdateListener{litAmount=it.animatedValue as Float;invalidate()};start()}}
+    private fun ink(off:Int,on:Int)=android.animation.ArgbEvaluator().evaluate(litAmount,off,on) as Int
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply{strokeCap=Paint.Cap.ROUND}
     override fun onDraw(c: Canvas) {
         val save=c.save();c.scale(width/32f,height/32f)
         val level=(tier+1)/4f;val oval=RectF(5f,7.5f,27f,29.5f)
-        paint.style=Paint.Style.STROKE;paint.strokeWidth=2.6f;paint.color=if(lit)0x47ffffff else ui.line2;c.drawArc(oval,150f,240f,false,paint)
-        paint.color=if(lit)Color.WHITE else ui.tiers[tier];c.drawArc(oval,150f,240*level,false,paint)
-        paint.strokeWidth=1.4f;paint.color=if(lit)0x99ffffff.toInt() else ui.muted
+        paint.style=Paint.Style.STROKE;paint.strokeWidth=2.6f;paint.color=ink(ui.line2,0x47ffffff);c.drawArc(oval,150f,240f,false,paint)
+        paint.color=ink(ui.tiers[tier],Color.WHITE);c.drawArc(oval,150f,240*level,false,paint)
+        paint.strokeWidth=1.4f;paint.color=ink(ui.muted,0x99ffffff.toInt())
         fun point(deg: Float,r: Float)=Pair(16f+r*cos(deg*PI/180).toFloat(),18.5f-r*sin(deg*PI/180).toFloat())
         for(i in 0..4){val d=210-60f*i;val a=point(d,6.4f);val b=point(d,8.2f);c.drawLine(a.first,a.second,b.first,b.second,paint)}
-        val tip=point(210-240*level,7.6f);paint.strokeWidth=2.2f;paint.color=if(lit)Color.WHITE else ui.text
+        val tip=point(210-240*level,7.6f);paint.strokeWidth=2.2f;paint.color=ink(ui.text,Color.WHITE)
         c.drawLine(16f,18.5f,tip.first,tip.second,paint);paint.style=Paint.Style.FILL;c.drawCircle(16f,18.5f,2.2f,paint);c.restoreToCount(save)
     }
+    override fun onDetachedFromWindow(){inkMotion?.cancel();super.onDetachedFromWindow()}
 }
 
 @SuppressLint("ViewConstructor")
@@ -271,14 +312,17 @@ internal class OwnerMeter(context: Context,private val ui: OwnerUi,private val c
 /** Owner .modal/.sheet: in-shell so the OS dialog decor cannot change geometry. */
 internal class OwnerModal(private val ui: OwnerUi,private val host: FrameLayout,private val content: View) {
     private var overlay: FrameLayout?=null
+    private var onDismiss:(()->Unit)?=null
     val isOpen get()=overlay!=null
     fun close(){
         val current=overlay?:return;overlay=null
+        val callback=onDismiss;onDismiss=null;callback?.invoke()
         if(Build.VERSION.SDK_INT>=31)content.setRenderEffect(null)
         current.animate().alpha(0f).setDuration(200).withEndAction{host.removeView(current)}.start()
     }
-    fun open(title: String,subtitle: String,width: Int=440,body: View,buttons: List<View>) {
+    fun open(title: String,subtitle: String,width: Int=440,body: View,buttons: List<View>,onDismiss:(()->Unit)?=null) {
         close()
+        this.onDismiss=onDismiss
         if(Build.VERSION.SDK_INT>=31)content.setRenderEffect(RenderEffect.createBlurEffect(ui.px(3).toFloat(),ui.px(3).toFloat(),Shader.TileMode.CLAMP))
         val mask=FrameLayout(ui.context).apply{setBackgroundColor(0x8c03060c.toInt());isClickable=true;setOnClickListener{close()}}
         val sheet=ui.column().apply{background=ui.shape(ui.card,20f,ui.line2);elevation=ui.px(20).toFloat();setOnClickListener{};isClickable=true}
@@ -290,7 +334,7 @@ internal class OwnerModal(private val ui: OwnerUi,private val host: FrameLayout,
             },LinearLayout.LayoutParams(0,-2,1f))
             addView(ui.icon(R.drawable.owner_close,ui.sub,16).apply{background=ui.shape(ui.card2,9f);setPadding(ui.px(7),ui.px(7),ui.px(7),ui.px(7));isFocusable=true;contentDescription="关闭";setOnClickListener{close()}},LinearLayout.LayoutParams(ui.px(30),ui.px(30)).apply{marginStart=ui.px(12)})
         })
-        sheet.addView(body,LinearLayout.LayoutParams(-1,-2).apply{marginStart=ui.px(20);marginEnd=ui.px(20)})
+        sheet.addView(body,LinearLayout.LayoutParams(-1,if(body is ScrollView && body.minimumHeight>0)body.minimumHeight else -2).apply{marginStart=ui.px(20);marginEnd=ui.px(20)})
         sheet.addView(ui.row().apply{gravity=Gravity.END;setPadding(ui.px(20),ui.px(14),ui.px(20),ui.px(18));buttons.forEach{addView(it,LinearLayout.LayoutParams(-2,ui.px(40)).apply{marginStart=ui.px(10)})}})
         mask.addView(sheet,FrameLayout.LayoutParams(ui.px(width),-2,Gravity.CENTER));host.addView(mask,FrameLayout.LayoutParams(-1,-1));overlay=mask
         mask.alpha=0f;mask.animate().alpha(1f).setDuration(250).start()

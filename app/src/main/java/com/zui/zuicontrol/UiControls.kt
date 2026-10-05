@@ -65,19 +65,20 @@ internal object UiControls {
 
 /** Both Refresh and Uperf use this single below-anchor, same-width native popup. */
 internal class AnchoredDropdown(context: Context, private val items: List<String>) : android.widget.LinearLayout(context) {
+    private val owner=OwnerUi(context)
     var selectedItemPosition = 0; private set
     var onSelection: (Int) -> Unit = {}
     private var popup: PopupWindow? = null
     private val selectedText = TextView(context).apply {
-        textSize = 14f; typeface = Typeface.DEFAULT_BOLD
-        setTextColor(context.getColor(R.color.ui_text)); setSingleLine(true)
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP,12f);typeface=Typeface.create(Typeface.create("sans-serif",Typeface.NORMAL),700,false);includeFontPadding=false
+        setTextColor(owner.text);setSingleLine(true)
     }
     init {
         orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         val pad = resources.getDimensionPixelSize(R.dimen.ui_chip_padding)
         setPadding(pad, 0, pad, 0)
-        minimumHeight = resources.getDimensionPixelSize(R.dimen.ui_control_height)
-        background = UiControls.shape(context, R.color.ui_field, resources.getDimension(R.dimen.ui_card_radius))
+        minimumHeight=owner.px(34)
+        background=owner.shape(owner.card2,10f,owner.line2)
         isFocusable = true
         addView(selectedText, LayoutParams(0, -2, 1f))
         addView(TextView(context).apply {

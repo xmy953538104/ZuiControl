@@ -30,7 +30,7 @@ class ProductR6(unittest.TestCase):
         self.assertEqual(tokens['ui_dialog_vertical_spacing'],'16dp')
         self.assertEqual(tokens['ui_dialog_max_width'],'560dp')
         self.assertIn('r.displayMetrics.widthPixels - 2 * margin',ui)
-        self.assertIn('UiControls.styleDialog(dialog)',source('MainActivity.kt'))
+        self.assertNotIn('AlertDialog',source('MainActivity.kt'))
         self.assertIn('ownerModal?.open(',source('MainActivity.kt'))
         self.assertIn('setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec)',source('GpuRangeBar.kt'))
 
@@ -52,7 +52,7 @@ class ProductR6(unittest.TestCase):
         for name in ('powersave','balance','performance','fast'):
             self.assertIn('R.drawable.notify_mode_'+name,source('NotificationQuickControlHelper.kt'))
             drawable=ET.parse(ROOT/('app/src/main/res/drawable/notify_mode_'+name+'.xml')).getroot()
-            self.assertEqual(drawable.find('solid').get('{http://schemas.android.com/apk/res/android}color'),{'powersave':'#15A05C','balance':'#3B67C1','performance':'#EA580C','fast':'#D92424'}[name])
+            self.assertEqual(drawable.find('solid').get('{http://schemas.android.com/apk/res/android}color'),'@color/mode_'+name)
         self.assertIn('private fun tiers(',source('MainActivity.kt'))
 
     def test_shared_authority_and_profile_paths(self):

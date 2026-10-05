@@ -103,6 +103,7 @@ python tests/monitor/TestPowerEdge.py
 python tests/monitor/TestMonitorHealth.py
 python tests/monitor/TestThreadAnalysis.py
 python tests/monitor/TestFrontendV3.py
+python tests/monitor/TestOwnerVisualSync.py
 python tests/monitor/TestFinalIntegration.py
 python tests/zuiopt/TestRulePublisher.py
 python tests/monitor/TestAnalysisCollector.py

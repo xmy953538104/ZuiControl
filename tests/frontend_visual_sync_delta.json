@@ -1,0 +1,99 @@
+{
+  "workPackage": "V84_FRONTEND_SYNC_PLAN1_R2",
+  "ownerClarification": "V84_FRONTEND_SYNC_PLAN1_R2_OWNER_CLARIFICATION_CONTINUE_R1",
+  "baseHead": "e46691dee3a6ee988f641aacb41a4b2aa2352ca4",
+  "visualAuthoritySha256": "d15293b30c5ae17ab4b3a82be5cb63c22441ae7e67cfd4943be7340a2eee2487",
+  "scope": "FRONTEND_PRESENTATION_ONLY; R1/historical receipts immutable",
+  "files": [
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
+      "before": "100644 blob d849495270f08db02b8ca5e69865b094ff79e253\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
+      "after": "100644 blob f382f19e6318c7ba166e838534642d41f6d55cc3\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "before": "100644 blob f50a9d04d7169966b0dcb50bfd47a515443c852d\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob 57609f4afd3ffee3de658f624a4627b3c2b4dae3\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",
+      "before": "100644 blob 22f9dd974c6357bbb74449340d40c8dc19a01f2a\tapp/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",
+      "after": "100644 blob 79042b860fec150f03f22fa457ffd576b9daaca1\tapp/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
+      "before": "100644 blob 91839616ccef46e0808bbf168b5398764341851a\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
+      "after": "100644 blob c82779541328caa6437b9968a7b969d2ee51fb91\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
+      "before": null,
+      "after": "100644 blob 2cc8c522904f5a0027c35cd310032c58b1fd59e4\tapp/src/main/java/com/zui/zuicontrol/OwnerWindow.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
+      "before": "100644 blob 5c99bd64059f0784b5bfe4e81579d50464cba883\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
+      "after": "100644 blob 85ba72d82cbc79cf774e8d6e342b8a3c70629224\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/RecordChart.kt",
+      "before": "100644 blob e0af0ad4c27c2ca6e931f1882627e498ca4bd5d4\tapp/src/main/java/com/zui/zuicontrol/RecordChart.kt",
+      "after": "100644 blob 12e16a0c996385462bdaaa56295cebeef7a53464\tapp/src/main/java/com/zui/zuicontrol/RecordChart.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/UiControls.kt",
+      "before": "100644 blob 9eabd4c148645b6172a3af460a93ba7530effe2d\tapp/src/main/java/com/zui/zuicontrol/UiControls.kt",
+      "after": "100644 blob 486dd2abcc2bae71c8796ec2a775816fb60d3757\tapp/src/main/java/com/zui/zuicontrol/UiControls.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
+      "before": "100644 blob 142a54b1aff0cc083272129f3b97684d4a231059\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
+      "after": "100644 blob 2a11957d25d3ce7fce5de0142037c4a6d4622cf6\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_capsule_track.xml",
+      "before": "100644 blob c7c8a220b02069f38a8a70907981d2e408e2cd17\tapp/src/main/res/drawable/notify_capsule_track.xml",
+      "after": "100644 blob 345c8fec69669673fb9b2dc0389ac32d2df9b8a6\tapp/src/main/res/drawable/notify_capsule_track.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_card.xml",
+      "before": "100644 blob 1ac0586b6a5bdd71e3cd17aa73ada0cf65d26c31\tapp/src/main/res/drawable/notify_card.xml",
+      "after": "100644 blob 3c598e342974c527b1e721bb629c943d7f0a0a5c\tapp/src/main/res/drawable/notify_card.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_balance.xml",
+      "before": "100644 blob 8e8f6b73ce5f3a538add9902bc5f3f46762da797\tapp/src/main/res/drawable/notify_mode_balance.xml",
+      "after": "100644 blob 5d6648b027ff83a267f2137c2abde1de8e88f96f\tapp/src/main/res/drawable/notify_mode_balance.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_fast.xml",
+      "before": "100644 blob 52271580f9ba9519909110581749d5c24225c1a9\tapp/src/main/res/drawable/notify_mode_fast.xml",
+      "after": "100644 blob ac1f5d105b782778c9860b39ff844c5a53ff9d72\tapp/src/main/res/drawable/notify_mode_fast.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_performance.xml",
+      "before": "100644 blob d96eca0991333796d57a67413563922a4fe27bc9\tapp/src/main/res/drawable/notify_mode_performance.xml",
+      "after": "100644 blob 71818262251aa5fd3c95a8a77b35cebe80c1a485\tapp/src/main/res/drawable/notify_mode_performance.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_mode_powersave.xml",
+      "before": "100644 blob f8275ce0c552b37f1ae2853b63a2f13f3f929013\tapp/src/main/res/drawable/notify_mode_powersave.xml",
+      "after": "100644 blob e576b3c34d7567fc89ff9c43b46100b3697c1247\tapp/src/main/res/drawable/notify_mode_powersave.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_monitor_active.xml",
+      "before": "100644 blob e97cadf67ad4d0a839c507369e7abd17ba1e222f\tapp/src/main/res/drawable/notify_monitor_active.xml",
+      "after": "100644 blob ca17b1c80b2f6093690cc021905d81997721f51a\tapp/src/main/res/drawable/notify_monitor_active.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_monitor_indicator.xml",
+      "before": "100644 blob 3dc39cb00500cf36780bcdad3eeec3c996a7b820\tapp/src/main/res/drawable/notify_monitor_indicator.xml",
+      "after": "100644 blob e338678f995ab66a25420ee6dad2474493cb0f5d\tapp/src/main/res/drawable/notify_monitor_indicator.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/notify_rate_selected.xml",
+      "before": "100644 blob 8e8f6b73ce5f3a538add9902bc5f3f46762da797\tapp/src/main/res/drawable/notify_rate_selected.xml",
+      "after": "100644 blob 1186209c878464262ae0006715dd5d8f8a4e9eaf\tapp/src/main/res/drawable/notify_rate_selected.xml"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import java.util.Locale
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val values = (0 until rows.length()).map { rows.getJSONArray(it).optDouble(column, Double.NaN) }
         private val axis = RecordAxis.of(values)
+        private val owner=OwnerUi(context)
         init { contentDescription = "时间曲线；${values.count { it.isFinite() && it >= 0 }} 个有效汇总点" }
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
@@ -23,8 +24,8 @@ import java.util.Locale
             paint.textSize = 11 * resources.displayMetrics.scaledDensity; paint.strokeWidth = density
             axis.ticks.forEach { value ->
                 val y = bottom - (bottom - top) * ((value - axis.low) / (axis.high - axis.low)).toFloat()
-                paint.color = getColor(R.color.ui_line); canvas.drawLine(left, y, right, y, paint)
-                paint.color = getColor(R.color.ui_secondary); paint.textAlign = Paint.Align.RIGHT
+                paint.color = owner.line;paint.pathEffect=android.graphics.DashPathEffect(floatArrayOf(4*density,4*density),0f);canvas.drawLine(left, y, right, y, paint);paint.pathEffect=null
+                paint.color = owner.muted; paint.textAlign = Paint.Align.RIGHT
                 canvas.drawText(axis.label(value), left - dp(8), y - (paint.ascent() + paint.descent()) / 2, paint)
             }
             for (i in 0..2) {
@@ -38,7 +39,7 @@ import java.util.Locale
             }
             val path = Path(); var connected = false; var previous = -1.0
             val gapLimit = maxOf(4000.0, duration / 600.0 * 2.5)
-            paint.color = getColor(R.color.ui_accent)
+            paint.color = when(column){2->owner.tiers[0];3->owner.tiers[2];else->owner.accent}
             for (i in 0 until rows.length()) {
                 val t = rows.getJSONArray(i).optDouble(0); val value = values[i]
                 if (!value.isFinite() || value < 0) { connected = false; continue }

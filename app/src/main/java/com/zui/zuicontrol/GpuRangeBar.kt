@@ -41,6 +41,13 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
     private var downY = 0f
     private var trackingTouch = false
     private var dragging = false
+    private var pressedScale = 1f
+    private var pressMotion:ValueAnimator?=null
+    private fun pressThumb(pressed:Boolean){
+        pressMotion?.cancel();pressMotion=ValueAnimator.ofFloat(pressedScale,if(pressed)1.12f else 1f).apply{
+            duration=150;addUpdateListener{pressedScale=it.animatedValue as Float;invalidate()};start()
+        }
+    }
     init { isFocusable = true; isClickable = true; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES; describe() }
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), resolveSize(preferredHeight, heightMeasureSpec))
@@ -61,7 +68,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
             canvas.drawCircle(x(opp), y, 2 * unit, paint)
         }
         for ((i,index) in listOf(shownMin,shownMax).withIndex()) {
-            val radius=12*unit*(if(dragging && (minimumThumb == (i==0)))1.12f else 1f)
+            val radius=12*unit*(if(minimumThumb == (i==0))pressedScale else 1f)
             val xx=pos(index)
             if(isEnabled){
                 paint.color=tone;paint.setShadowLayer(10*unit,0f,4*unit,0x4d000000)
@@ -91,10 +98,12 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
                 minimumThumb = if (range.min == range.max) event.x <= x(range.min)
                     else abs(event.x - x(range.min)) <= abs(event.x - x(range.max))
                 requestFocus()
+                pressThumb(true)
             }
             MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> {
                 if (!trackingTouch) return false
                 range = beforeDrag;resetRangeVisual();onPreview(range);trackingTouch = false; dragging = false
+                pressThumb(false)
                 parent?.requestDisallowInterceptTouchEvent(false)
             }
             // Take ownership only after horizontal intent; vertical scrolling never previews.
@@ -102,7 +111,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
                 if (!trackingTouch) return false
                 if (!dragging) {
                     val dx = abs(event.x - downX); val dy = abs(event.y - downY)
-                    if (dy > touchSlop && dy >= dx) { trackingTouch = false; return false }
+                    if (dy > touchSlop && dy >= dx) { trackingTouch = false;pressThumb(false);return false }
                     if (dx <= touchSlop || dx <= dy) return true
                     dragging = true; parent?.requestDisallowInterceptTouchEvent(true)
                 }
@@ -113,6 +122,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
                 preview(track().snap(event.x))
                 val changed = range != beforeDrag
                 trackingTouch = false; dragging = false
+                pressThumb(false)
                 parent?.requestDisallowInterceptTouchEvent(false)
                 describe()
                 if (changed) onCommit(range)
@@ -151,7 +161,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
     private fun resetRangeVisual() {
         motion?.cancel();shownMin=GpuRanges.opps.indexOf(range.min).toFloat();shownMax=GpuRanges.opps.indexOf(range.max).toFloat();invalidate()
     }
-    override fun onDetachedFromWindow() { motion?.cancel();super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() { motion?.cancel();pressMotion?.cancel();super.onDetachedFromWindow() }
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
         super.onInitializeAccessibilityNodeInfo(info)
         info.className = "android.widget.SeekBar"

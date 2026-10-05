@@ -78,14 +78,14 @@ class NotificationRenderer(unittest.TestCase):
         self.assertEqual(render.count('Settings.canDrawOverlays(context)'),1)
 
     def test_colors_and_modes(self):
-        expected={'notify_card':'#F4F6FA','notify_monitor_off':'#FFFFFF',
-                  'notify_monitor_active':'#3B67C1','notify_monitor_indicator':'#F59E0B',
-                  'notify_rate_normal':'#00000000','notify_rate_selected':'#3B67C1',
-                  'notify_capsule_track':'#E2E7EE'}
+        expected={'notify_card':'@color/ui_surface','notify_monitor_off':'#FFFFFF',
+                  'notify_monitor_active':'@color/ui_accent','notify_monitor_indicator':'@color/mode_performance',
+                  'notify_rate_normal':'#00000000','notify_rate_selected':'@color/ui_accent',
+                  'notify_capsule_track':'@color/ui_field'}
         for name,color in expected.items():
             shape=ET.parse(RES/('drawable/'+name+'.xml')).getroot()
             self.assertEqual(shape.find('solid').get(A+'color'),color)
-        for mode,color in [('powersave','#15A05C'),('balance','#3B67C1'),('performance','#EA580C'),('fast','#D92424')]:
+        for mode,color in [(m,'@color/mode_'+m) for m in ('powersave','balance','performance','fast')]:
             shape=ET.parse(RES/('drawable/notify_mode_'+mode+'.xml')).getroot()
             self.assertEqual(shape.find('solid').get(A+'color'),color)
             self.assertEqual(shape.find('corners').get(A+'radius'),'11dp')

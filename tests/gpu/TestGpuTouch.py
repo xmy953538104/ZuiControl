@@ -23,6 +23,14 @@ class MotionEvent(val actionMasked: Int, val x: Float, val y: Float) {
 }
 object ViewConfiguration { fun get(context: Int)=this; val scaledTouchSlop=8 }
 object AccessibilityEvent { const val TYPE_VIEW_SELECTED=4 }
+// Inert Android animation boundary; gesture/commit methods below remain production bytes.
+class ValueAnimator(private val end:Float) {
+ var duration=0L;val animatedValue:Any get()=end
+ private var listener:((ValueAnimator)->Unit)?=null
+ fun cancel(){};fun addUpdateListener(next:(ValueAnimator)->Unit){listener=next}
+ fun start(){listener?.invoke(this)}
+ companion object { fun ofFloat(start:Float,end:Float)=ValueAnimator(end) }
+}
 class HostParent { var captured=false; fun requestDisallowInterceptTouchEvent(value: Boolean) { captured=value } }
 open class HostView {
     var isEnabled=true; val context=0; val parent: HostParent? = HostParent()
@@ -30,6 +38,7 @@ open class HostView {
     open fun performClick() = true
     fun sendAccessibilityEvent(event: Int) {}
     fun postInvalidateOnAnimation() {}
+    fun invalidate() {}
     open fun onTouchEvent(event: MotionEvent) = false
 }
 class UnderTest(initial: GpuRanges.Range) : HostView() {

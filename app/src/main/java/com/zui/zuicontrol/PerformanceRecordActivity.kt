@@ -1,7 +1,6 @@
 package com.zui.zuicontrol
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -23,27 +22,21 @@ import java.util.Locale
 
 /** Native application grid -> latest detail -> thread list -> one thread chart. */
 class PerformanceRecordActivity : Activity() {
+    private val owner by lazy{OwnerUi(this)}
+    private var modal:OwnerModal?=null
     private val density get() = resources.displayMetrics.density
     private fun dp(n: Int) = (n * density).toInt()
     private val pkg get() = intent.getStringExtra("package").orEmpty()
     private val threadPage get() = intent.getBooleanExtra("threads", false)
     private val threadKey get() = intent.getStringExtra("thread").orEmpty()
-    private fun label(text: String, size: Float = 15f) = TextView(this).apply {
-        this.text = text; textSize = size; setTextColor(getColor(R.color.ui_text))
-        setPadding(0, dp(8), 0, dp(8))
+    private fun label(text:String,size:Float=13f)=owner.label(text,size,if(size>=16)owner.text else owner.muted,if(size>=16)800 else 400).apply{
+        setSingleLine(false);setLineSpacing(0f,1.4f);setPadding(0,dp(4),0,dp(4))
     }
-    override fun onCreate(savedInstanceState: Bundle?) {
-        val theme = getSharedPreferences("frontend", MODE_PRIVATE).getString("theme", "system")
-        if (theme != "system") applyOverrideConfiguration(android.content.res.Configuration().apply {
-            uiMode = if (theme == "dark") android.content.res.Configuration.UI_MODE_NIGHT_YES else android.content.res.Configuration.UI_MODE_NIGHT_NO
-        })
-        super.onCreate(savedInstanceState)
-        window.statusBarColor = getColor(R.color.ui_field)
-        window.navigationBarColor = getColor(R.color.ui_field)
-    }
+    override fun attachBaseContext(base:android.content.Context){super.attachBaseContext(OwnerWindow.themed(base))}
+    override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);OwnerWindow.fullscreen(this)}
     override fun onResume() { super.onResume(); load() }
     private fun load() {
-        setContentView(label("正在读取应用记录…"))
+        showShell(owner.empty("正在读取应用记录…","读取当前用户最近一次记录"))
         Thread {
             val data = runCatching {
                 JSONObject(if (pkg.isEmpty()) PerformanceMonitor.command("recordList") else
@@ -52,16 +45,12 @@ class PerformanceRecordActivity : Activity() {
             }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                data.onSuccess { show(it) }.onFailure { setContentView(label("记录暂不可读，请稍后重试")) }
+                data.onSuccess { show(it) }.onFailure { showShell(owner.empty("记录暂不可读","请稍后重试",true)) }
             }
         }.start()
     }
-    private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-    private fun card() = column().apply {
-        setPadding(dp(16), dp(12), dp(16), dp(12))
-        background = UiControls.shape(this@PerformanceRecordActivity, R.color.ui_surface,
-            resources.getDimension(R.dimen.ui_card_radius))
-    }
+    private fun column() = owner.column()
+    private fun card() = owner.card()
     private fun addCard(parent: LinearLayout, child: View) = parent.addView(child,
         LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(16) })
     private fun identity(data: JSONObject): View = LinearLayout(this).apply {
@@ -82,7 +71,7 @@ class PerformanceRecordActivity : Activity() {
     private fun show(data: JSONObject) {
         val content = column().apply { setPadding(dp(24), dp(20), dp(24), dp(24)) }
         val title = when { pkg.isEmpty() -> "应用记录"; threadKey.isNotEmpty() -> intent.getStringExtra("name").orEmpty(); threadPage -> "线程记录"; else -> "最近一次记录" }
-        content.addView(label("‹  $title", 24f).apply { setOnClickListener { finish() } })
+        content.addView(owner.title(title,"当前用户已保存记录",leading=owner.button("返回",small=true,icon=R.drawable.owner_back){finish()}))
         when {
             pkg.isEmpty() -> showApps(content, data.optJSONArray("records") ?: JSONArray())
             !data.has("package") -> content.addView(label("该应用暂无记录"))
@@ -97,17 +86,40 @@ class PerformanceRecordActivity : Activity() {
             threadPage -> showThreads(content, data)
             else -> showDetail(content, data)
         }
-        val max = if (pkg.isEmpty()) 880 else 760
-        val scroll = ScrollView(this).apply {
-            isFillViewport = false
-            isVerticalScrollBarEnabled = false
-            addView(content)
-        }
-        setContentView(FrameLayout(this).apply {
-            setBackgroundColor(getColor(R.color.ui_field))
-            addView(scroll, FrameLayout.LayoutParams(minOf(resources.displayMetrics.widthPixels, dp(max)), -1, Gravity.CENTER_HORIZONTAL))
-        })
+        showShell(content)
     }
+    private fun showShell(content:View){
+        val root=owner.row().apply{setBackgroundColor(owner.detail)}
+        val rail=owner.column().apply{
+            setBackgroundColor(owner.rail);gravity=Gravity.CENTER_HORIZONTAL;setPadding(0,dp(28),0,dp(18))
+            addView(owner.label("ZUI",17f,owner.accent,900));addView(owner.label("CONTROL",8f,owner.muted,700))
+            listOf(R.drawable.owner_tune to "调控",R.drawable.owner_chip to "线程",R.drawable.owner_pulse to "监测").forEach{(icon,title)->
+                addView(owner.column().apply{
+                    gravity=Gravity.CENTER;background=owner.shape(if(title=="监测")owner.soft(owner.accent)else android.graphics.Color.TRANSPARENT,14f)
+                    addView(owner.icon(icon,if(title=="监测")owner.accent else owner.muted));addView(owner.label(title,10.5f,if(title=="监测")owner.accent else owner.muted,700))
+                    contentDescription=title
+                },LinearLayout.LayoutParams(dp(52),dp(52)).apply{topMargin=dp(if(title=="调控")30 else 8)})
+            }
+            addView(View(this@PerformanceRecordActivity),LinearLayout.LayoutParams(1,0,1f))
+            addView(owner.icon(R.drawable.owner_settings,owner.muted).apply{isFocusable=true;contentDescription="返回";setOnClickListener{finish()}},LinearLayout.LayoutParams(dp(20),dp(20)))
+        }
+        root.addView(owner.borderedColumn(rail,72),LinearLayout.LayoutParams(dp(72),-1))
+        val master=owner.column().apply{
+            setBackgroundColor(owner.master);setPadding(dp(18),dp(22),dp(18),dp(18))
+            addView(owner.label("监测记录",19f,owner.text,800));addView(label("最近一次记录 · Top15 线程",11f))
+            addView(owner.card().apply{
+                addView(owner.label(if(threadKey.isNotEmpty())intent.getStringExtra("name").orEmpty()else if(threadPage)"线程记录" else "应用记录",13.5f,owner.text,800))
+                addView(label(pkg,11f));addView(owner.chip("已选择",2))
+            },LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(18)})
+        }
+        root.addView(owner.borderedColumn(master,312),LinearLayout.LayoutParams(dp(312),-1))
+        root.addView(ScrollView(this).apply{isVerticalScrollBarEnabled = false;addView(content)},LinearLayout.LayoutParams(0,-1,1f))
+        val host=FrameLayout(this).apply{setBackgroundColor(owner.detail);clipToOutline=false;addView(root,FrameLayout.LayoutParams(-1,-1))}
+        modal=OwnerModal(owner,host,root)
+        setContentView(OwnerDesignLayout(this).apply{setBackgroundColor(owner.detail);addView(host)})
+    }
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed(){if(modal?.isOpen==true)modal?.close()else super.onBackPressed()}
     private fun showApps(content: LinearLayout, records: JSONArray) {
         if (records.length() == 0) {
             content.addView(label("暂无性能记录\n开启监视器后，轻触长条切换圆形，双击圆形开始。")); return
@@ -165,19 +177,14 @@ class PerformanceRecordActivity : Activity() {
             })
         }
     }
-    private fun deleteRecord() {
-        val dialog = AlertDialog.Builder(this).setTitle("删除该应用记录？")
-            .setMessage("仅删除此应用的最近一次记录，其他应用记录会保留。")
-            .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ ->
-                Thread {
-                    val reply = PerformanceMonitor.command("recordDelete", pkg)
-                    runOnUiThread {
-                        if (reply.startsWith("ok=1")) finish()
-                        else Toast.makeText(this, "请先结束录制后重试", Toast.LENGTH_SHORT).show()
-                    }
+    private fun deleteRecord(){
+        modal?.open("删除该应用记录？","仅删除此应用的最近一次记录，其他应用记录会保留。",360,owner.column(),listOf(
+            owner.button("取消"){modal?.close()},owner.button("删除","danger-fill"){
+                modal?.close();Thread{
+                    val reply=PerformanceMonitor.command("recordDelete",pkg)
+                    runOnUiThread{if(reply.startsWith("ok=1"))finish()else Toast.makeText(this,"请先结束录制后重试",Toast.LENGTH_SHORT).show()}
                 }.start()
-            }.create()
-        UiControls.styleDialog(dialog); dialog.show()
+            }))
     }
     private fun number(value: Double) = if (!value.isFinite() || value < 0) "--" else String.format(Locale.ROOT, "%.1f", value)
 }
