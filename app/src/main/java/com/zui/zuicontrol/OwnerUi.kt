@@ -34,6 +34,11 @@ internal class OwnerUi(val context: Context) {
     }
     fun row()=LinearLayout(context).apply { orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;clipChildren=false;clipToPadding=false }
     fun column()=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL;clipChildren=false;clipToPadding=false }
+    fun borderedColumn(content: View,width: Int)=FrameLayout(context).apply {
+        addView(content,FrameLayout.LayoutParams(-1,-1).apply{rightMargin=px(1)})
+        addView(View(context).apply{setBackgroundColor(line)},FrameLayout.LayoutParams(px(1),-1,Gravity.END))
+        minimumWidth=px(width)
+    }
     fun label(value: String,size: Float,color: Int=text,weight: Int=400)=TextView(context).apply {
         this.text=value;setTextSize(TypedValue.COMPLEX_UNIT_DIP,size);setTextColor(color)
         typeface=Typeface.create(Typeface.create("sans-serif",Typeface.NORMAL),weight,false);includeFontPadding=false;gravity=Gravity.CENTER_VERTICAL
@@ -103,6 +108,8 @@ internal class OwnerUi(val context: Context) {
     }
     fun tiers(current: String,compact: Boolean=false,enabled: Boolean=true,action:(String)->Unit)=row().apply {
         tag="owner-control"
+        val group=this
+        var selectedIndex=GpuDefaultsDraft.modes.indexOf(current)
         GpuDefaultsDraft.modes.forEachIndexed { i,id ->
             val selected=id==current
             val item=row().apply{
@@ -115,13 +122,19 @@ internal class OwnerUi(val context: Context) {
                 })
                 isEnabled=enabled;alpha=if(enabled)1f else .6f;isFocusable=true;contentDescription="${names[i]}${if(selected)"，已选择" else ""}"
                 setOnClickListener{
-                    if(id!=current){
-                        val target=this
-                        ValueAnimator.ofArgb(card2,tiers[i]).apply{duration=250;addUpdateListener{target.background=shape(it.animatedValue as Int,14f)};start()}
-                        (getChildAt(0) as OwnerGauge).lit=true
-                        val textColumn=getChildAt(1) as LinearLayout
-                        (textColumn.getChildAt(0) as TextView).setTextColor(Color.WHITE)
-                        if(!compact)(textColumn.getChildAt(1) as TextView).setTextColor(0xd1ffffff.toInt())
+                    if(i!=selectedIndex){
+                        val previous=selectedIndex;selectedIndex=i
+                        for(k in 0 until group.childCount){
+                            val target=group.getChildAt(k) as LinearLayout;val lit=k==i
+                            val start=if(k==previous)tiers[k] else card2;val end=if(lit)tiers[k] else card2
+                            ValueAnimator.ofArgb(start,end).apply{duration=250;addUpdateListener{target.background=shape(it.animatedValue as Int,14f)};start()}
+                            target.elevation=px(if(lit)6 else 0).toFloat();target.outlineSpotShadowColor=tiers[k]
+                            (target.getChildAt(0) as OwnerGauge).lit=lit
+                            val textColumn=target.getChildAt(1) as LinearLayout
+                            (textColumn.getChildAt(0) as TextView).setTextColor(if(lit)Color.WHITE else text)
+                            if(!compact)(textColumn.getChildAt(1) as TextView).setTextColor(if(lit)0xd1ffffff.toInt() else muted)
+                            target.contentDescription="${names[k]}${if(lit)"，已选择" else ""}"
+                        }
                         action(id)
                     }
                 };press(this)
@@ -178,7 +191,13 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
                     animator?.cancel();animator=ValueAnimator.ofFloat(position,i.toFloat()).apply{
                         duration=350;interpolator=OwnerUi.spring;addUpdateListener{position=it.animatedValue as Float;invalidate()};start()
                     }
-                    index=i;for(k in 0 until options.childCount)(options.getChildAt(k) as TextView).setTextColor(if(k==i)Color.WHITE else ui.sub)
+                    index=i;for(k in 0 until options.childCount){
+                        val label=options.getChildAt(k) as TextView;label.setTextColor(if(k==i)Color.WHITE else ui.sub)
+                        (label.text as? android.text.Spannable)?.let { s ->
+                            s.getSpans(0,s.length,android.text.style.ForegroundColorSpan::class.java).forEach(s::removeSpan)
+                            s.setSpan(android.text.style.ForegroundColorSpan(if(k==i)0xd9ffffff.toInt() else ui.soft(ui.sub,153)),s.length-2,s.length,0)
+                        }
+                    }
                     action(i)
                 }
             }
@@ -195,6 +214,20 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
         val left=p+position*(w+gap);canvas.drawRoundRect(left,p,left+w,height-p,ui.px(if(small)8 else 11).toFloat(),ui.px(if(small)8 else 11).toFloat(),paint);paint.clearShadowLayer()
     }
     override fun onDetachedFromWindow(){animator?.cancel();super.onDetachedFromWindow()}
+}
+
+/** Literal .ping / .ping::after, presentation only. */
+@SuppressLint("ViewConstructor")
+internal class OwnerPing(context: Context,private val ui: OwnerUi,private val tone: Int):View(context) {
+    private val paint=Paint(Paint.ANTI_ALIAS_FLAG);private var phase=0f;private var motion:ValueAnimator?=null
+    override fun onAttachedToWindow(){super.onAttachedToWindow();motion=ValueAnimator.ofFloat(0f,1f).apply{
+        duration=2000;repeatCount=ValueAnimator.INFINITE;interpolator=PathInterpolator(0f,0f,.58f,1f)
+        addUpdateListener{phase=it.animatedValue as Float;invalidate()};start()
+    }}
+    override fun onDraw(c:Canvas){val radius=ui.px(7)/2f;paint.color=tone;c.drawCircle(width/2f,height/2f,radius,paint)
+        paint.color=ui.soft(tone,(140*(1-phase)).roundToInt());c.drawCircle(width/2f,height/2f,radius*(1+1.6f*phase),paint)
+    }
+    override fun onDetachedFromWindow(){motion?.cancel();super.onDetachedFromWindow()}
 }
 
 @SuppressLint("ViewConstructor")

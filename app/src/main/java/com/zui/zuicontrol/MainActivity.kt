@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.NotificationManager
 import android.content.ClipData
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
@@ -49,7 +50,8 @@ class MainActivity : Activity() {
         if(::detail.isInitialized)visit(detail)
     }
     private val phaseOne get() = session.section == "tune" || session.section == "settings" && session.settingsModule == 1
-    private fun localRender() { handler.postDelayed({ if (visible && !isDestroyed) render() }, 360) }
+    private val renderDraft = Runnable { if (visible && !isDestroyed) render() }
+    private fun localRender() { handler.removeCallbacks(renderDraft); handler.postDelayed(renderDraft, 360) }
 
     private val handler = Handler(Looper.getMainLooper())
     private val prefs get() = getSharedPreferences("frontend", MODE_PRIVATE)
@@ -91,6 +93,7 @@ class MainActivity : Activity() {
     private var quietLabel: TextView? = null
     private var powerLabel: TextView? = null
     private var powerReason: TextView? = null
+    private var powerUnit: TextView? = null
     private var recordLabel: TextView? = null
     private var recordBanner: LinearLayout? = null
     private var overlayButton: TextView? = null
@@ -104,7 +107,12 @@ class MainActivity : Activity() {
             val bad = BackendHealth.components(state).filter { it.state in setOf(BackendHealth.State.FAILED, BackendHealth.State.DEGRADED) }
             if (bad.size < 2) return
             coreIndex = (coreIndex + 1) % bad.size
-            coreLabel?.apply { text = bad[coreIndex].component; translationY = dp(6).toFloat(); animate().translationY(0f).setDuration(300).start() }
+            coreLabel?.apply {
+                animate().translationY(-owner.px(32).toFloat()).alpha(0f).setDuration(450).setInterpolator(OwnerUi.smooth).withEndAction {
+                    text=bad[coreIndex].component;translationY=owner.px(32).toFloat()
+                    animate().translationY(0f).alpha(1f).setDuration(450).setInterpolator(OwnerUi.smooth).start()
+                }.start()
+            }
             handler.postDelayed(this, 2000)
         }
     }
@@ -140,11 +148,15 @@ class MainActivity : Activity() {
     private val surface get() = getColor(R.color.ui_surface)
     private val orange get() = getColor(R.color.mode_performance)
 
-    override fun onCreate(saved: Bundle?) {
-        val theme = prefs.getString("theme", "system")
-        if (theme != "system") applyOverrideConfiguration(Configuration().apply {
-            uiMode = if (FrontendTheme.dark(theme.orEmpty(), false)) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+    override fun attachBaseContext(base: Context) {
+        val theme=base.getSharedPreferences("frontend",MODE_PRIVATE).getString("theme","system").orEmpty()
+        val themed=if(theme=="system")base else base.createConfigurationContext(Configuration(base.resources.configuration).apply {
+            uiMode=(uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                if(FrontendTheme.dark(theme,false))Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
         })
+        super.attachBaseContext(themed)
+    }
+    override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
         session = (lastNonConfigurationInstance as? FrontendSession)?.takeIf { it.userId == ZuiControlClient.currentUserId() }
             ?: FrontendSession(V84FrontendGateway(applicationContext), ZuiControlClient.currentUserId())
@@ -239,9 +251,11 @@ class MainActivity : Activity() {
         ownerSwitch?.animate()?.translationX(owner.px(if(overlay.displayed)18 else 0).toFloat())?.setDuration(300)?.setInterpolator(OwnerUi.spring)?.start()
         quietMeter?.progress = if (q > 0) (q / 55 * 100).toInt().coerceIn(0, 100) else 0
         powerMeter?.progress = if (p > 0) (p / 20 * 100).toInt().coerceIn(0, 100) else 0
-        quietLabel?.setTextColor(if (q >= 45) getColor(R.color.mode_fast) else if (q >= 40) orange else ink)
-        powerLabel?.setTextColor(if (p >= 14) getColor(R.color.mode_fast) else if (p >= 7) orange else ink)
-        powerReason?.text = if(p < 0) when(monitor.optString("powerValidity")){"PLUGGED_IN"->"插电";else->"不可用"} else ""
+        quietLabel?.setTextColor(if (q >= 45) owner.inks[3] else if (q >= 40) owner.inks[2] else owner.text)
+        powerLabel?.setTextColor(if (p >= 14) owner.inks[3] else if (p >= 7) owner.inks[2] else owner.text)
+        val plugged=fresh && monitor.optInt("batteryPlugged",-1)>0
+        powerUnit?.visibility=if(p>=0)View.VISIBLE else View.GONE
+        powerReason?.text = if(plugged) "插电中 · 不显示功耗" else if(p < 0) "不可用" else ""
         powerReason?.contentDescription=if(p < 0) "功耗不可用 · ${monitor.optString("powerValidity", "等待数据")}" else "设备电池侧功耗"
         overlayButton?.text = if (this@MainActivity.overlay.displayed) "已开启" else "已关闭"
         recordBanner?.visibility = if (monitor.optString("recordState") == "RECORDING") View.VISIBLE else View.GONE
@@ -254,7 +268,7 @@ class MainActivity : Activity() {
         if(session.busy && phaseOne && ::ownerHost.isInitialized){ownerPending();return}
         ownerControls.clear()
         handler.removeCallbacks(coreTicker); coreLabel = null; quietMeter = null; powerMeter = null
-        quietLabel = null; powerLabel = null; powerReason = null; recordLabel = null; recordBanner = null; overlayButton = null
+        quietLabel = null; powerLabel = null; powerReason = null; powerUnit = null; recordLabel = null; recordBanner = null; overlayButton = null
         ownerQuiet = null; ownerPower = null; ownerSwitch = null
         val root = owner.row().apply { setBackgroundColor(owner.detail) }
         fun navigate(key: String) { guard {
@@ -266,7 +280,7 @@ class MainActivity : Activity() {
             addView(owner.label("ZUI",17f,owner.accent,900).apply{letterSpacing=.03f},LinearLayout.LayoutParams(-2,owner.px(17)))
             addView(owner.label("CONTROL",8f,owner.muted,700).apply{letterSpacing=.04f},LinearLayout.LayoutParams(-2,owner.px(8)).apply{topMargin=owner.px(4)})
         },LinearLayout.LayoutParams(-2,owner.px(29)).apply{topMargin=owner.px(6);bottomMargin=owner.px(30)})
-        fun nav(key: String,title: String,icon: Int,action:()->Unit) {
+        fun nav(key: String,title: String,icon: Int,gap: Int=8,action:()->Unit) {
             val selected=session.section==key
             val frame=FrameLayout(this).apply {
                 val color=if(selected)owner.accent else owner.muted
@@ -278,17 +292,17 @@ class MainActivity : Activity() {
                 },FrameLayout.LayoutParams(owner.px(52),owner.px(52),Gravity.CENTER))
                 if(selected)addView(View(this@MainActivity).apply{background=owner.shape(owner.accent,3f)},FrameLayout.LayoutParams(owner.px(3),owner.px(24),Gravity.START or Gravity.CENTER_VERTICAL))
             }
-            rail.addView(frame,LinearLayout.LayoutParams(owner.px(71),owner.px(52)).apply{bottomMargin=owner.px(8)})
+            rail.addView(frame,LinearLayout.LayoutParams(-1,owner.px(52)).apply{bottomMargin=owner.px(gap)})
         }
         nav("tune","调控",R.drawable.owner_tune){navigate("tune")}
         nav("thread","线程",R.drawable.owner_chip){navigate("thread")}
         nav("monitor","监测",R.drawable.owner_pulse){navigate("monitor")}
         rail.addView(View(this),LinearLayout.LayoutParams(1,0,1f))
-        nav("theme",if(owner.dark)"浅色" else "深色",if(owner.dark)R.drawable.owner_sun else R.drawable.owner_moon){theme(if(owner.dark)"light" else "dark")}
-        nav("settings","设置",R.drawable.owner_settings){navigate("settings")}
-        root.addView(rail,LinearLayout.LayoutParams(owner.px(71),-1));root.addView(View(this).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(owner.px(1),-1))
+        nav("theme",if(owner.dark)"浅色" else "深色",if(owner.dark)R.drawable.owner_sun else R.drawable.owner_moon,6){theme(if(owner.dark)"light" else "dark")}
+        nav("settings","设置",R.drawable.owner_settings,0){navigate("settings")}
+        root.addView(owner.borderedColumn(rail,72),LinearLayout.LayoutParams(owner.px(72),-1))
         master=owner.column().apply{setBackgroundColor(owner.master)}
-        root.addView(master,LinearLayout.LayoutParams(owner.px(311),-1));root.addView(View(this).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(owner.px(1),-1))
+        root.addView(owner.borderedColumn(master,312),LinearLayout.LayoutParams(owner.px(312),-1))
         detail=owner.column().apply{setPadding(owner.px(22),owner.px(20),owner.px(22),owner.px(20))}
         root.addView(ScrollView(this).apply{isFillViewport=false;isVerticalScrollBarEnabled=false;clipToPadding=false;addView(detail)},LinearLayout.LayoutParams(0,-1,1f))
         ownerHost=FrameLayout(this).apply{background=owner.shape(owner.detail,32f);clipToOutline=true;addView(root,FrameLayout.LayoutParams(-1,-1))}
@@ -404,7 +418,7 @@ class MainActivity : Activity() {
         val modeChip=owner.row().apply{
             background=owner.shape(owner.chipBg[tier+1],999f);setPadding(owner.px(11),0,owner.px(13),0)
             minimumHeight=owner.px(30)
-            addView(View(this@MainActivity).apply{background=owner.shape(owner.tiers[tier],99f)},LinearLayout.LayoutParams(owner.px(7),owner.px(7)).apply{marginEnd=owner.px(8)})
+            addView(OwnerPing(this@MainActivity,owner,owner.tiers[tier]),LinearLayout.LayoutParams(owner.px(7),owner.px(7)).apply{marginEnd=owner.px(8)})
             addView(owner.label("${modeTitle(mode.displayed)}模式",12f,owner.chipFg[tier+1],800));layoutParams=LinearLayout.LayoutParams(-2,owner.px(30))
         }
         detail.addView(owner.title("系统全局状态","系统关键性能参数与组件运行情况",trailing=modeChip))
@@ -418,7 +432,7 @@ class MainActivity : Activity() {
             val metric=owner.label("--",if(i==2)20f else 28f,owner.text,800)
             val values=owner.row().apply{
                 addView(metric,LinearLayout.LayoutParams(-2,owner.px(32)))
-                if(i<2)addView(owner.label(if(i==0)"℃" else "W",13f,owner.sub,700),LinearLayout.LayoutParams(-2,-2).apply{marginStart=owner.px(3);topMargin=owner.px(9)})
+                if(i<2)addView(owner.label(if(i==0)"℃" else "W",13f,owner.sub,700).also{if(i==1)powerUnit=it},LinearLayout.LayoutParams(-2,-2).apply{marginStart=owner.px(3);topMargin=owner.px(9)})
                 if(i==1){powerReason=owner.label("",11.5f,owner.muted,700);addView(powerReason,LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=owner.px(8)})}
             }
             box.addView(values,LinearLayout.LayoutParams(-1,owner.px(32)).apply{topMargin=owner.px(12);bottomMargin=owner.px(12)})
@@ -513,9 +527,9 @@ class MainActivity : Activity() {
         val rates=supportedRates()
         val box=owner.card()
         box.addView(owner.section("自定义应用刷新率","前台应用自定义刷新率档位"))
-        box.addView(OwnerSegment(this,owner,rates.map{"$it Hz"},rates.indexOf(d.refreshHz),enabled=!session.busy){session.appDraft=d.copy(refreshHz=rates[it]);localRender()})
+        box.addView(OwnerSegment(this,owner,rates.map{"$it Hz"},rates.indexOf(d.refreshHz),enabled=!session.busy){session.appDraft=checkNotNull(session.appDraft).copy(refreshHz=rates[it]);localRender()})
         box.addView(owner.divider());box.addView(owner.section("自定义应用性能档位","调配集群负载迁移阈值与超大核激进度"))
-        box.addView(owner.tiers(d.uperfMode,true,!session.busy && configurable){id->session.appDraft=d.copy(uperfMode=id,gpuPolicy=ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,gpuMinMHz=null,gpuMaxMHz=null);localRender()})
+        box.addView(owner.tiers(d.uperfMode,true,!session.busy && configurable){id->session.appDraft=checkNotNull(session.appDraft).copy(uperfMode=id,gpuPolicy=ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,gpuMinMHz=null,gpuMaxMHz=null);localRender()})
         if(!configurable)box.addView(owner.label("此应用不支持 Uperf 配置；刷新率和适用的线程规则仍可配置",11f,owner.muted).apply{setSingleLine(false)})
         box.addView(owner.divider())
         val range=runCatching{if(d.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM)GpuRanges.Range(d.gpuMinMHz!!,d.gpuMaxMHz!!) else globalRanges().getValue(d.uperfMode)}
@@ -524,7 +538,9 @@ class MainActivity : Activity() {
             val custom=d.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM
             val trailing=owner.row().apply{
                 addView(OwnerSegment(this@MainActivity,owner,listOf("默认","自定义"),if(custom)1 else 0,true,!session.busy && configurable){i->
-                    session.appDraft=d.copy(gpuPolicy=if(i==0)ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE else ZuiControlClient.GpuPolicy.CUSTOM,gpuMinMHz=if(i==0)null else r.min,gpuMaxMHz=if(i==0)null else r.max);localRender()
+                    val current=checkNotNull(session.appDraft)
+                    val effective=if(current.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM)GpuRanges.Range(current.gpuMinMHz!!,current.gpuMaxMHz!!) else globalRanges().getValue(current.uperfMode)
+                    session.appDraft=current.copy(gpuPolicy=if(i==0)ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE else ZuiControlClient.GpuPolicy.CUSTOM,gpuMinMHz=if(i==0)null else effective.min,gpuMaxMHz=if(i==0)null else effective.max);localRender()
                 },LinearLayout.LayoutParams(owner.px(132),owner.px(34)).apply{marginEnd=owner.px(14)})
                 addView(readout)
             }

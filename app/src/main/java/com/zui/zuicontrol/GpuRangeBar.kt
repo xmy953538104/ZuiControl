@@ -54,8 +54,8 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
         val y = trackCenterY
         fun pos(index: Float) = 12f*unit+(width-24f*unit)*index/GpuRanges.opps.lastIndex
         paint.strokeWidth = 10 * unit; paint.strokeCap = Paint.Cap.ROUND
-        paint.color = owner.card2; canvas.drawLine(x(231), y, x(903), y, paint)
-        paint.color = if(isEnabled)tone else owner.soft(tone,115);canvas.drawLine(pos(shownMin),y,pos(shownMax),y,paint)
+        paint.color = owner.card2; canvas.drawRoundRect(x(231),y-5*unit,x(903),y+5*unit,5*unit,5*unit,paint)
+        paint.color = if(isEnabled)tone else owner.soft(tone,115);canvas.drawRoundRect(pos(shownMin),y-5*unit,pos(shownMax),y+5*unit,5*unit,5*unit,paint)
         for (opp in GpuRanges.opps) {
             paint.color = if (opp > range.min && opp < range.max) 0x99ffffff.toInt() else owner.line2
             canvas.drawCircle(x(opp), y, 2 * unit, paint)

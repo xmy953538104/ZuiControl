@@ -27,7 +27,7 @@ class UiPolish(unittest.TestCase):
         self.assertLess(touch.index('MotionEvent.ACTION_MOVE'), touch.index('onCommit(range)'))
         for forbidden in ('requestLayout', 'setGpuRange', 'setGlobalGpuRange'):
             self.assertNotIn(forbidden, text)
-        self.assertIn('x(231), y, x(903)', text)
+        self.assertIn('x(231),y-5*unit,x(903)', text)
         self.assertNotIn('canvas.drawText', text) # Owner readout lives in the section heading.
 
     def test_shared_dropdown_chip_grid_and_tools(self):
@@ -40,9 +40,8 @@ class UiPolish(unittest.TestCase):
         self.assertIn('AnchoredDropdown(this@MainActivity, classes.mapIndexed', main)
         self.assertNotIn('Spinner(this)', main)
         self.assertIn('GpuRangeBar(this@MainActivity,r)', main)
-        self.assertIn('LinearLayout.LayoutParams(owner.px(71),-1)', main)
-        self.assertIn('LinearLayout.LayoutParams(owner.px(311),-1)', main)
-        self.assertIn('LinearLayout.LayoutParams(owner.px(1),-1)', main) # 72 / 312 include CSS border.
+        self.assertIn('owner.borderedColumn(rail,72)', main)
+        self.assertIn('owner.borderedColumn(master,312)', main) # Borders inside total column width.
         for module in ('监测与显示','GPU 默认范围','数据与维护','关于'):
             self.assertIn(module, main)
         self.assertIn('session.saveApp(after)', main)

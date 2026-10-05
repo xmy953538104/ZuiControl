@@ -18,9 +18,9 @@ class GpuProfiles(unittest.TestCase):
         source=(ROOT/'framework_patch/src/services/com/zui/server/control/ZuiControlService.java').read_text(encoding='utf8')
         self.assertIn('case TX_SET_GLOBAL_GPU_RANGE:\n                    enforceCommandCallerAllowed();',source)
         bar=(ROOT/'app/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt').read_text(encoding='utf8')
-        self.assertIn('canvas.drawLine(x(231), y, x(903), y, paint)',bar)
+        self.assertIn('canvas.drawRoundRect(x(231),y-5*unit,x(903),y+5*unit,5*unit,5*unit,paint)',bar)
         # Owner HTML places the readout in .sec-head, and animates OPP index positions.
-        self.assertIn('canvas.drawLine(pos(shownMin),y,pos(shownMax),y,paint)',bar)
+        self.assertIn('canvas.drawRoundRect(pos(shownMin),y-5*unit,pos(shownMax),y+5*unit,5*unit,5*unit,paint)',bar)
         self.assertIn('paint.strokeWidth = 10 * unit',bar)
         self.assertIn('radius-4*unit',bar)
         self.assertNotIn('canvas.drawText',bar)
