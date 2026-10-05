@@ -63,6 +63,10 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
         for ((i,index) in listOf(shownMin,shownMax).withIndex()) {
             val radius=12*unit*(if(dragging && (minimumThumb == (i==0)))1.12f else 1f)
             val xx=pos(index)
+            if(isEnabled){
+                paint.color=tone;paint.setShadowLayer(10*unit,0f,4*unit,0x4d000000)
+                canvas.drawCircle(xx,y,radius,paint);paint.clearShadowLayer()
+            }
             if(isEnabled){paint.color=owner.soft(tone);canvas.drawCircle(xx,y,radius+6*unit,paint)}
             paint.color=if(isEnabled)tone else owner.soft(tone,140);canvas.drawCircle(xx,y,radius,paint)
             paint.color=if(isEnabled)0xffffffff.toInt() else 0x8cffffff.toInt();canvas.drawCircle(xx,y,radius-4*unit,paint)

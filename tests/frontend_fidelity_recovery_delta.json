@@ -17,7 +17,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
       "before": "100644 blob a2c998c83d7982737fc070df9c42620f30e65449\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
-      "after": "100644 blob 0d1581025dfb853be038c7e57b2f59bf98b97b96\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt"
+      "after": "100644 blob d849495270f08db02b8ca5e69865b094ff79e253\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
