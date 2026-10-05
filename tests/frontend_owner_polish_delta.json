@@ -42,7 +42,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
       "before": "100644 blob 077c7c18a2ccad90675bb9c227666c23cbc29e75\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
-      "after": "100644 blob 5408c102db447626db9f5b365d576cd836a1339f\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+      "after": "100644 blob 9b140896eef10f04cb7394383f66e48df3ca6b4e\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",

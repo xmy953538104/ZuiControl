@@ -250,7 +250,7 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
             options.addView(text,LinearLayout.LayoutParams(0,-1,1f).apply{if(i>0)marginStart=ui.px(if(small)2 else 4)})
         }
         val measure=Paint(Paint.ANTI_ALIAS_FLAG).apply{textSize=ui.px(if(small)OwnerTypography.BUTTON.size else 15f).toFloat();typeface=Typeface.create("sans-serif",Typeface.BOLD)}
-        minimumWidth=(values.maxOf{measure.measureText(it)}+ui.px(if(small)16 else 24)).roundToInt()*values.size+pad*2+ui.px(if(small)2 else 4)*(values.size-1)
+        minimumWidth=((values.maxOfOrNull{measure.measureText(it)} ?: 0f)+ui.px(if(small)16 else 24)).roundToInt()*values.size+pad*2+ui.px(if(small)2 else 4)*(values.size-1).coerceAtLeast(0)
         addView(options,LayoutParams(-1,-1));minimumHeight=ui.px(if(small)34 else 50)
         layoutParams=LinearLayout.LayoutParams(-1,ui.px(if(small)34 else 50))
     }
