@@ -24,6 +24,10 @@ class Plan2(unittest.TestCase):
   self.assertIn('if(snapshot==null || session.section=="thread")runCatching',main)
   self.assertIn('actionRow("规则集导出"',main);self.assertIn('规则源尚未启用',main)
   self.assertIn('if(!enabled)addView(owner.button("系统通知设置"',main)
+ def test_many_competition_groups_scroll_instead_of_compressing(self):
+  main=(APP/'MainActivity.kt').read_text(encoding='utf8')
+  self.assertIn('FrameLayout.LayoutParams(dp(classes.size*52),dp(34))',main)
+  self.assertNotIn('minOf(340,classes.size*52)',main)
  def test_charts_keep_gap_semantics(self):
   chart=read('RecordChart.kt')
   self.assertIn('!value.isFinite() || value < 0',chart);self.assertIn('t-previous>gapLimit',chart)

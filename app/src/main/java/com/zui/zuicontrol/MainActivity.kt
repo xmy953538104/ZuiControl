@@ -956,7 +956,7 @@ class MainActivity : Activity() {
             box.addView(owner.formRow("匹配内容",pattern))
             box.addView(owner.formRow("竞争组",HorizontalScrollView(this@MainActivity).apply{
                 isHorizontalScrollBarEnabled=false
-                addView(segment(classes.mapIndexed{i,_->"组 ${('A'.code+i).toChar()}"},classes.indexOf(cls)){cls=classes[it]},android.widget.FrameLayout.LayoutParams(dp(minOf(340,classes.size*52)),dp(32)))
+                addView(segment(classes.mapIndexed{i,_->"组 ${('A'.code+i).toChar()}"},classes.indexOf(cls)){cls=classes[it]},android.widget.FrameLayout.LayoutParams(dp(classes.size*52),dp(34)))
             }))
             box.addView(owner.formRow("竞争选择",owner.row().apply{
                 addView(segment(listOf("全部候选","按排名"),if(selector=="all")0 else 1){selector=if(it==0)"all" else "rank";stepper.visibility=if(it==0)View.GONE else View.VISIBLE},LinearLayout.LayoutParams(dp(200),dp(32)))

@@ -27,7 +27,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob 651f0d34dd23968e3e999d7960e7fe52656b9708\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob f47554ff673b3e9c1e949f93f7058dcea5b27642\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob 44beea1d45f5526fa79735c97a3ae6d73e4022c9\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerEffects.kt",
