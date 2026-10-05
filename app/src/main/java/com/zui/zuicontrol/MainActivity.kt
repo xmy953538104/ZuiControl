@@ -130,7 +130,26 @@ class MainActivity : Activity() {
     private var analysisPage = false
     private var reading = false
     private var boundGeneration = ""
+    private var controlPresentationUntil = 0L
+    private fun holdingControlPresentation() = session.controlsPending || SystemClock.uptimeMillis() < controlPresentationUntil
+    private val controlsSettled = object : Runnable {
+        override fun run() {
+            if (!visible || isDestroyed) return
+            if (holdingControlPresentation()) {
+                handler.postDelayed(this, maxOf(50L, controlPresentationUntil - SystemClock.uptimeMillis()))
+                return
+            }
+            observeGlobals(); render(); load()
+        }
+    }
+    private fun reconcileControlsLater() {
+        handler.removeCallbacks(controlsSettled)
+        handler.postDelayed(controlsSettled, maxOf(50L, controlPresentationUntil - SystemClock.uptimeMillis()))
+    }
     private val controlsChanged: () -> Unit = {
+        if (visible && holdingControlPresentation()) {
+            reconcileControlsLater()
+        } else {
         if (visible && session.section == "tune" && session.selected.isEmpty()) {
             val oldHz = refresh.displayed; val oldMode = mode.displayed
             observeGlobals()
@@ -138,6 +157,7 @@ class MainActivity : Activity() {
         }
         val generation = value(ControlsState.snapshot, "policyGeneration")
         if (visible && generation.isNotEmpty() && generation != boundGeneration && !session.busy) load()
+        }
     }
     private val changed: () -> Unit = {
         if (visible && !isDestroyed) { render(); if (!session.busy) { presentPending(); load() } }
@@ -163,7 +183,7 @@ class MainActivity : Activity() {
     override fun onRetainNonConfigurationInstance(): Any = session
     override fun onSaveInstanceState(out: Bundle) { session.save(out); super.onSaveInstanceState(out) }
     override fun onResume() {
-        super.onResume(); visible = true; session.onChanged = changed; session.onControlsChanged = { if(visible) render() }
+        super.onResume(); visible = true; session.onChanged = changed; session.onControlsChanged = { if(visible) reconcileControlsLater() }
         ControlsState.observe(controlsChanged); MonitorPresentation.observe(monitorChanged); load()
         ZuiControlQuickService.start(this)
         presentPending()
@@ -172,10 +192,11 @@ class MainActivity : Activity() {
         visible = false; session.onChanged = null; session.onControlsChanged = null; ControlsState.remove(controlsChanged)
         MonitorPresentation.remove(monitorChanged)
         handler.removeCallbacks(recordClock); handler.removeCallbacks(coreTicker); super.onPause()
+        handler.removeCallbacks(controlsSettled)
     }
     override fun onDestroy() { if (!isChangingConfigurations) session.close(); super.onDestroy() }
     private fun load() {
-        if (reading || session.busy) return
+        if (reading || session.busy || holdingControlPresentation()) return
         reading = true
         Thread {
             val result = runCatching {
@@ -199,6 +220,7 @@ class MainActivity : Activity() {
                 if (!visible || isDestroyed) return@post
                 result.onFailure { session.error = it.message.orEmpty() }
                 boundGeneration = value(ControlsState.snapshot, "policyGeneration")
+                if (holdingControlPresentation()) { reconcileControlsLater(); return@post }
                 observeGlobals()
                 runCatching { GpuDefaultsDraft.fromState(state, session.userId) }.onSuccess(session::observeGpuDefaults)
                 if (!session.appDirty && session.appDraft != null) {
@@ -481,7 +503,9 @@ class MainActivity : Activity() {
     }
 
     private fun <T> optimistic(control: OptimisticControl<T>, value: T, action: (T) -> ZuiControlClient.Reply) {
+        controlPresentationUntil = SystemClock.uptimeMillis() + 350L
         session.intent(control,value,action)
+        reconcileControlsLater()
     }
     private fun toggleOverlay() {
         if (!Settings.canDrawOverlays(this)) { overlayPermission(); return }
