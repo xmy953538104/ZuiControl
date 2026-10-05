@@ -433,7 +433,7 @@ class MainActivity : Activity() {
             val values=owner.row().apply{
                 addView(metric,LinearLayout.LayoutParams(-2,owner.px(32)))
                 if(i<2)addView(owner.label(if(i==0)"℃" else "W",13f,owner.sub,700).also{if(i==1)powerUnit=it},LinearLayout.LayoutParams(-2,-2).apply{marginStart=owner.px(3);topMargin=owner.px(9)})
-                if(i==1){powerReason=owner.label("",11.5f,owner.muted,700);addView(powerReason,LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=owner.px(8)})}
+                if(i==1){powerReason=owner.label("",11.5f,owner.muted,700).apply{setSingleLine(false);maxLines=2};addView(powerReason,LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=owner.px(8)})}
             }
             box.addView(values,LinearLayout.LayoutParams(-1,owner.px(32)).apply{topMargin=owner.px(12);bottomMargin=owner.px(12)})
             val meter=when(i){
@@ -627,7 +627,7 @@ class MainActivity : Activity() {
             .setPositiveButton("保存") { _, _ -> saveDraft(next) }.show()
     }
     @Deprecated("Deprecated in Java")
-    override fun onBackPressed() { guard { if (session.selected.isNotEmpty()) { session.clearDrafts(); session.selected = ""; render() } else finish() } }
+    override fun onBackPressed() { if(ownerModal?.isOpen==true){ownerModal?.close();return};guard { if (session.selected.isNotEmpty()) { session.clearDrafts(); session.selected = ""; render() } else finish() } }
     private fun picker() {
         if(session.section=="tune"){ownerPicker();return}
         val box = column(); val list = column(); var system = false; var selected = ""; val search = input("搜索应用或包名")
@@ -687,7 +687,7 @@ class MainActivity : Activity() {
         }
         box.addView(OwnerSegment(this,owner,listOf("用户应用","系统应用"),0,true){system=it==1;selected="";next.isEnabled=false;next.alpha=.4f;populate()},LinearLayout.LayoutParams(-1,owner.px(34)).apply{bottomMargin=owner.px(10)})
         box.addView(searchBox,LinearLayout.LayoutParams(-1,owner.px(38)).apply{bottomMargin=owner.px(10)})
-        search.addTextChangedListener(watcher{populate()});box.addView(ScrollView(this).apply{isVerticalScrollBarEnabled=false;addView(list)},LinearLayout.LayoutParams(-1,owner.px(300)));populate()
+        search.addTextChangedListener(watcher{populate()});box.addView(ScrollView(this).apply{isVerticalScrollBarEnabled=false;clipChildren=true;clipToPadding=true;addView(list)},LinearLayout.LayoutParams(-1,owner.px(300)));populate()
         ownerModal?.open("添加应用","选择一个应用，创建独立性能策略",440,box,listOf(owner.button("取消"){ownerModal?.close()},next))
     }
 

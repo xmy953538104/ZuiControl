@@ -98,6 +98,7 @@ internal class OwnerUi(val context: Context) {
     fun search(hint: String,value: String=""): Pair<View,EditText> {
         val input=EditText(context).apply{
             this.hint=hint;setText(value);setTextSize(TypedValue.COMPLEX_UNIT_DIP,12f);setTextColor(this@OwnerUi.text);setHintTextColor(muted)
+            inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setSingleLine(true);includeFontPadding=false;background=null;setPadding(0,0,0,0)
         }
         return row().apply{
@@ -184,7 +185,7 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
                 gravity=Gravity.CENTER;isFocusable=true;contentDescription=value;isEnabled=enabled
                 if(value.endsWith(" Hz")) {
                     val s=android.text.SpannableString(value.replace(" Hz","Hz"));s.setSpan(android.text.style.RelativeSizeSpan(10f/15f),s.length-2,s.length,0)
-                    s.setSpan(android.text.style.ForegroundColorSpan(if(i==index)0xd9ffffff.toInt() else ui.soft(ui.sub,153)),s.length-2,s.length,0);text=s
+                    s.setSpan(android.text.style.ForegroundColorSpan(if(i==index)0xd9ffffff.toInt() else ui.soft(ui.sub,153)),s.length-2,s.length,0);setText(s,TextView.BufferType.SPANNABLE)
                 }
                 setOnClickListener{
                     if(i==index)return@setOnClickListener

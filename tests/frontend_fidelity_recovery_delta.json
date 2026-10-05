@@ -22,12 +22,12 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob bd270af846aa8f2e41ee5ff352f6e7cdb220e170\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob f457d4bf0cc9200d9faaaca126e301c0e1355a09\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob 497575ac39c94dfa33cfcb7a3611e9ce633c47d5\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
       "before": null,
-      "after": "100644 blob 12af9d030c311813fdb0637eccd61b9151ac6a0b\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+      "after": "100644 blob 91839616ccef46e0808bbf168b5398764341851a\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
     },
     {
       "path": "app/src/main/res/drawable/owner_back.xml",
