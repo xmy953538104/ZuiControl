@@ -13,7 +13,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob f50a9d04d7169966b0dcb50bfd47a515443c852d\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob 1c32e3e028136ef442d7b1955a0a531aa33afbcd\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob 651f0d34dd23968e3e999d7960e7fe52656b9708\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",
@@ -23,7 +23,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
       "before": "100644 blob 91839616ccef46e0808bbf168b5398764341851a\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
-      "after": "100644 blob b8d62de2999c6351acdb7e2c24659fe987c5b728\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+      "after": "100644 blob 077c7c18a2ccad90675bb9c227666c23cbc29e75\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
@@ -96,6 +96,11 @@
       "after": "100644 blob 1186209c878464262ae0006715dd5d8f8a4e9eaf\tapp/src/main/res/drawable/notify_rate_selected.xml"
     },
     {
+      "path": "app/src/main/res/drawable/owner_backup.xml",
+      "before": null,
+      "after": "100644 blob 5b280db45fe774b9902c749d19111fbbc07e8aed\tapp/src/main/res/drawable/owner_backup.xml"
+    },
+    {
       "path": "app/src/main/res/drawable/owner_code.xml",
       "before": null,
       "after": "100644 blob 96476e4c2f0aa37a7924f62f15121df6311ed49d\tapp/src/main/res/drawable/owner_code.xml"
@@ -109,6 +114,31 @@
       "path": "app/src/main/res/drawable/owner_grip.xml",
       "before": null,
       "after": "100644 blob 9bb5549231814225fcaf10cca73fb9ffc598f7ce\tapp/src/main/res/drawable/owner_grip.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_help.xml",
+      "before": null,
+      "after": "100644 blob 9876006f0875b2252d51d5b1305a0707c3a2be29\tapp/src/main/res/drawable/owner_help.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_logs.xml",
+      "before": null,
+      "after": "100644 blob 455b7537a9bf3b4738f6218d90ba467107d6e1c6\tapp/src/main/res/drawable/owner_logs.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_reset.xml",
+      "before": null,
+      "after": "100644 blob e436aa32fca3c044912bfdaa78e41fd861013c41\tapp/src/main/res/drawable/owner_reset.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_restart.xml",
+      "before": null,
+      "after": "100644 blob df5b911c6e3a399a9ef6fe6ddcdfea789a3bf74e\tapp/src/main/res/drawable/owner_restart.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_restore.xml",
+      "before": null,
+      "after": "100644 blob 0d0dc57ce79782613b6075cbc04b99389f60d425\tapp/src/main/res/drawable/owner_restore.xml"
     }
   ]
 }

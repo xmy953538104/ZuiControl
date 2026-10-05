@@ -1244,7 +1244,8 @@ class MainActivity : Activity() {
         handler.postDelayed({pill.animate().alpha(0f).translationY(owner.px(60).toFloat()).setDuration(300).withEndAction{(pill.parent as? ViewGroup)?.removeView(pill)}.start()},2600)
     }
     private fun confirm(title: String,message: String,action:()->Unit) {
-        ownerModal?.open(title,message,360,owner.column(),listOf(owner.button("取消"){ownerModal?.close()},owner.button("确认","primary"){ownerModal?.close();action()}))
+        val kind=if(title.contains("删除") || title.contains("恢复") || title.contains("重启") || title.contains("回退"))"danger-fill" else "primary"
+        ownerModal?.open(title,message,360,owner.column(),listOf(owner.button("取消"){ownerModal?.close()},owner.button("确认",kind){ownerModal?.close();action()}))
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()
     private fun row() = owner.row()
@@ -1310,11 +1311,12 @@ class MainActivity : Activity() {
     }
     private fun actionRow(title: String,subtitle: String,action:()->Unit)=owner.row().apply{
         minimumHeight=dp(46);setPadding(0,dp(6),0,dp(6))
-        val icon=when{title.contains("线程") || title.contains("规则")->R.drawable.owner_chip;title.contains("备份") || title.contains("恢复")->R.drawable.owner_data;title.contains("重启")->R.drawable.owner_warn;else->R.drawable.owner_info}
-        addView(owner.icon(icon,owner.accent,16).apply{background=owner.shape(owner.soft(owner.accent),10f);setPadding(dp(8),dp(8),dp(8),dp(8))},LinearLayout.LayoutParams(dp(32),dp(32)).apply{marginEnd=dp(12)})
+        val icon=when(title){"立即备份"->R.drawable.owner_backup;"从备份恢复"->R.drawable.owner_restore;"恢复出厂配置"->R.drawable.owner_reset;"导出运行日志"->R.drawable.owner_logs;"重启调度核心"->R.drawable.owner_restart;"使用帮助"->R.drawable.owner_help;else->if(title.contains("线程") || title.contains("规则"))R.drawable.owner_chip else R.drawable.owner_info}
+        val tone=when(title){"恢复出厂配置","重启调度核心"->owner.inks[3];"导出运行日志","使用帮助"->owner.muted;else->owner.accent}
+        addView(owner.icon(icon,tone,16).apply{background=owner.shape(owner.soft(tone),10f);setPadding(dp(8),dp(8),dp(8),dp(8))},LinearLayout.LayoutParams(dp(32),dp(32)).apply{marginEnd=dp(12)})
         addView(owner.column().apply{addView(owner.label(title,13f,owner.text,800));addView(note(subtitle,owner.muted))},LinearLayout.LayoutParams(0,-2,1f))
         val actionLabel=when(title){"立即备份"->"备份";"从备份恢复"->"选择文件";"恢复出厂配置"->"重置";"导出运行日志"->"导出";"重启调度核心"->"重启";else->""}
-        if(actionLabel.isEmpty())addView(owner.icon(R.drawable.owner_chevron,owner.muted,16))else addView(owner.button(actionLabel,if(title=="立即备份")"primary" else "ghost",true){if(!session.busy)action()})
+        if(actionLabel.isEmpty())addView(owner.icon(R.drawable.owner_chevron,owner.muted,16))else addView(owner.button(actionLabel,when(title){"立即备份"->"primary";"恢复出厂配置","重启调度核心"->"warn-outline";else->"ghost"},true){if(!session.busy)action()})
         isFocusable=true;contentDescription=title;setOnClickListener{if(!session.busy)action()};owner.press(this)
     }
     private fun listRow(pkg: String,title: String,subtitle: String,selected: Boolean,action:()->Unit)=ownerListRow(pkg,title,subtitle,selected,if(session.section=="thread")R.drawable.owner_chip else R.drawable.owner_pulse){if(!session.busy)action()}
