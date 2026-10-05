@@ -37,7 +37,9 @@ class UiPolish(unittest.TestCase):
         self.assertIn('showAsDropDown(this@AnchoredDropdown, 0, gap, Gravity.START)', ui)
         self.assertIn('overlapAnchor = false', ui)
         # V3 Owner replaces popup App-policy selectors and the old grid with rail/master/detail.
-        self.assertIn('AnchoredDropdown(this@MainActivity,classes.mapIndexed', main)
+        self.assertIn('segment(classes.mapIndexed', main)
+        self.assertIn('classes.indexOf(cls)){cls=classes[it]}', main)
+        self.assertIn('coerceIn(1,1024)', main) # Owner stepper keeps the native selector bound.
         self.assertNotIn('Spinner(this)', main)
         self.assertIn('GpuRangeBar(this@MainActivity,r)', main)
         self.assertIn('owner.borderedColumn(rail,72)', main)

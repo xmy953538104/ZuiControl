@@ -132,7 +132,7 @@ internal class OwnerUi(val context: Context) {
         minimumHeight=px(height)
     }
     fun cpus(initial: Set<Int>,large:Boolean=false,action:(Set<Int>)->Boolean):View {
-        var selected=initial;val group=row()
+        var selected=initial;val group=row().apply{tag="owner-control"}
         fun bind(){group.removeAllViews();for(cpu in 0..7){
             val on=cpu in selected
             group.addView(label(if(large)cpu.toString()else "",10f,if(on)Color.parseColor("#04131A") else muted,700).apply{

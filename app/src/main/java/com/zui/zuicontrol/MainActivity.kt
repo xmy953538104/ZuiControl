@@ -328,6 +328,7 @@ class MainActivity : Activity() {
         val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage"
         if(page!=shownPage){shownPage=page;detail.alpha=0f;detail.translationY=owner.px(6).toFloat();detail.animate().alpha(1f).translationY(0f).setDuration(300).setInterpolator(OwnerUi.smooth).start()}
         bindMonitor()
+        if(session.busy)ownerPending()
         if(session.notice.isNotEmpty() && session.notice!=shownToast){shownToast=session.notice;toast(session.notice)}
         if(session.notice.isEmpty())shownToast=""
         showThemeTransition()
@@ -900,7 +901,7 @@ class MainActivity : Activity() {
                 addView(owner.button("保存并应用","primary",enabled=!session.busy){saveDraft()})
             },gap())
         }
-        detail.addView(card().apply{addView(actionRow("线程分析","读取该应用已完成的监测记录；不自动生成或应用规则"){analysisPage=true;render()})},gap())
+        detail.addView(card().apply{addView(actionRow("记录关联线程分析","读取该应用已完成的监测记录；不自动生成或应用规则"){analysisPage=true;render()})},gap())
         detail.addView(owner.button("查看原文 · 只读",small=true){rawView()},gap())
     }
     private fun mutateRule(next: () -> Unit) {
@@ -1121,7 +1122,7 @@ class MainActivity : Activity() {
                 },gap())
                 detail.addView(card().apply{
                     addView(owner.label("版本信息",11f,owner.muted,800))
-                    listOf("releaseVersion","sourceBuild","integrationSchema","appPolicySchema","zuioptSchema").forEach{key->addView(owner.formRow(key,note(value(caps,key).ifEmpty{"暂不可用"})))}
+                    listOf("Release" to "releaseVersion","Build" to "sourceBuild","Integration" to "integrationSchema","AppPolicy" to "appPolicySchema","ZUIopt" to "zuioptSchema").forEach{(title,key)->addView(owner.formRow(title,note(value(caps,key).ifEmpty{"暂不可用"})))}
                 },gap())
                 detail.addView(card().apply{addView(actionRow("使用帮助","功能说明与监测记录指引"){monitorGuidance()})},gap())
             }
