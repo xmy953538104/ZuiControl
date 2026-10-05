@@ -45,6 +45,10 @@ internal object OwnerWindow {
         context.getSharedPreferences("frontend",Context.MODE_PRIVATE).getString("theme","system").orEmpty(),
         context.applicationContext.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES)
     fun inset(view:View){
+        view.addOnAttachStateChangeListener(object:View.OnAttachStateChangeListener{
+            override fun onViewAttachedToWindow(v:View){v.requestApplyInsets()}
+            override fun onViewDetachedFromWindow(v:View){}
+        })
         view.setOnApplyWindowInsetsListener{v,insets->
             val top:Int;val bottom:Int
             if(Build.VERSION.SDK_INT>=30){
