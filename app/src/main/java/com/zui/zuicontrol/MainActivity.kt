@@ -342,7 +342,9 @@ class MainActivity : Activity() {
     }
     private fun ownerAppIcon(pkg: String,size: Int=40): View=ImageView(this).apply {
         setImageDrawable(runCatching{packageManager.getApplicationIcon(pkg)}.getOrNull());scaleType=ImageView.ScaleType.CENTER_CROP
-        background=owner.shape(owner.card2,if(size==44)13f else 12f);clipToOutline=true;importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        val radius=when(size){44->13f;36->10f;else->12f}
+        background=owner.shape(owner.card2,radius);foreground=owner.shape(Color.TRANSPARENT,radius,0x14ffffff)
+        clipToOutline=true;importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
         layoutParams=LinearLayout.LayoutParams(owner.px(size),owner.px(size))
     }
     private fun ownerListRow(pkg: String,title: String,subtitle: String,selected: Boolean,icon: Int?=null,action:()->Unit): View=owner.row().apply{
@@ -401,6 +403,7 @@ class MainActivity : Activity() {
         val tier=GpuDefaultsDraft.modes.indexOf(mode.displayed).coerceAtLeast(0)
         val modeChip=owner.row().apply{
             background=owner.shape(owner.chipBg[tier+1],999f);setPadding(owner.px(11),0,owner.px(13),0)
+            minimumHeight=owner.px(30)
             addView(View(this@MainActivity).apply{background=owner.shape(owner.tiers[tier],99f)},LinearLayout.LayoutParams(owner.px(7),owner.px(7)).apply{marginEnd=owner.px(8)})
             addView(owner.label("${modeTitle(mode.displayed)}模式",12f,owner.chipFg[tier+1],800));layoutParams=LinearLayout.LayoutParams(-2,owner.px(30))
         }

@@ -51,6 +51,7 @@ internal class OwnerUi(val context: Context) {
     fun gap(height: Int=14)=LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=px(height) }
     fun chip(value: String,tone: Int=0,large: Boolean=false)=label(value,if(large)11f else 10f,chipFg[tone],700).apply {
         background=shape(chipBg[tone],if(large)6f else 5f);setPadding(px(if(large)9 else 7),0,px(if(large)9 else 7),0)
+        minimumHeight=px(if(large)22 else 18)
         layoutParams=LinearLayout.LayoutParams(-2,px(if(large)22 else 18))
     }
     fun press(v: View,scale: Float=.97f) {
