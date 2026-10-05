@@ -29,6 +29,13 @@ class FrontendV3Test {
             assertEquals(listOf("performance","balance"),modes);assertEquals("balance",mode.confirmed)
         }finally{session.close()}
     }
+    @Test fun closingUiDrainsAlreadyRequestedLatestIntentWithoutExecutorRejection(){
+        val callbacks=LinkedBlockingQueue<()->Unit>();val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
+        val control=session.refresh.apply{observe(120)};val sent=mutableListOf<Int>();val action:(Int)->ZuiControlClient.Reply={sent+=it;ZuiControlClient.Reply(true,"ACK")}
+        session.intent(control,60,action);session.intent(control,90,action);session.close()
+        checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+        assertEquals(listOf(60,90),sent);assertEquals(90,control.confirmed);assertFalse(control.pending)
+    }
     @Test fun localAppFieldsNeverWriteBeforeOneCompleteSave() {
         val gateway=FakeFrontendGateway().apply{succeed=true};val callbacks=LinkedBlockingQueue<()->Unit>()
         val session=FrontendSession(gateway,0,Executors.newSingleThreadExecutor()){callbacks.put(it)}

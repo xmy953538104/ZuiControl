@@ -12,7 +12,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
       "before": "100644 blob 3ef525656739c13ff8df77211207a70f9289ecaf\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
-      "after": "100644 blob 824e7fc98f03c1a423557d1dd9ac54472246b97f\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt"
+      "after": "100644 blob 163e4e906cf4df7e3e1a850ab81f1c661b500f95\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/FrontendState.kt",
@@ -62,7 +62,7 @@
     {
       "path": "app/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
       "before": "100644 blob e6bc4eb0b4093b7bb65e322285e9ca6e6eb87251\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
-      "after": "100644 blob 92520c6583eb5ea5097709e018e10b030505fa42\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt"
+      "after": "100644 blob 44063087d8bbe938050352da3800d2b5507fee57\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt"
     }
   ]
 }

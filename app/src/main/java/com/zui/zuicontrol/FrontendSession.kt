@@ -50,6 +50,8 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     var manual: ZuioptRuleModel? = null
     var onChanged: (() -> Unit)? = null
     var onControlsChanged: (() -> Unit)? = null
+    private var closing = false
+    private fun finishClose(){if(closing && !busy && !controlsPending)executor.shutdown()}
     val controlsPending get() = refresh.pending || mode.pending || overlay.pending
     /** UI thread intent, serialized existing terminal-ACK actions; no transport changes. */
     fun <T> intent(control: OptimisticControl<T>, value: T, action: (T) -> ZuiControlClient.Reply) {
@@ -63,6 +65,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
                 if (control.displayed != control.confirmed) intent(control, control.displayed, action)
                 if (!reply.ok) error = reply.text
                 onControlsChanged?.invoke()
+                finishClose()
             }
         }
     }
@@ -79,6 +82,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
                 reconciled?.invoke()
                 result.onSuccess { notice = success; completed?.invoke() }.onFailure { error = it.message ?: "操作失败" }
                 onChanged?.invoke()
+                finishClose()
             }
         }
         onChanged?.invoke()
@@ -133,7 +137,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
             gpuDraft = GpuDefaultsDraft(authority.expectedGeneration, authority.original)
         }
     }
-    fun close() { onChanged = null; onControlsChanged = null; executor.shutdown() }
+    fun close() { onChanged = null; onControlsChanged = null; closing = true; finishClose() }
     fun save(out: Bundle) {
         out.putInt("user", userId); out.putString("section", section); out.putString("selected", selected)
         out.putInt("module", settingsModule); out.putBoolean("newApp", newApp)
