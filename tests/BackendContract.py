@@ -129,7 +129,7 @@ def reverse_entries(current,*scopes):
     result=list(current)
     # Reverse only the current Owner's explicit frontend/interaction delta.
     assert PLAN2['baseHead']=='d7c99926ee55b54af3d53129644693aff81fd887'
-    allowed={'FrontendGateway.kt','FrontendSession.kt','FrontendState.kt','MainActivity.kt','OwnerUi.kt','OwnerWindow.kt','OwnerTypography.kt','OwnerEffects.kt','PerformanceRecordActivity.kt','RecordChart.kt','FrontendV3Test.kt'}
+    allowed={'FrontendGateway.kt','FrontendSession.kt','FrontendState.kt','MainActivity.kt','GpuRangeBar.kt','OwnerUi.kt','OwnerWindow.kt','OwnerTypography.kt','OwnerEffects.kt','PerformanceRecordActivity.kt','RecordChart.kt','FrontendV3Test.kt'}
     for row in PLAN2['files']:
         assert row['path'].startswith('app/') and Path(row['path']).name in allowed
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue

@@ -23,6 +23,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
         set(value) { currentRange = value; describe(); invalidate() }
     var onCommit: (GpuRanges.Range) -> Unit = {}
     var onPreview: (GpuRanges.Range) -> Unit = {}
+    fun showRange(value:GpuRanges.Range){if(value!=range){range=value;animateRange(value)}}
     private val owner = OwnerUi(context)
     var tone: Int = owner.accent
     private var shownMin = GpuRanges.opps.indexOf(initial.min).toFloat()

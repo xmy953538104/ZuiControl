@@ -530,34 +530,52 @@ class MainActivity : Activity() {
             },LinearLayout.LayoutParams(owner.px(36),owner.px(36)).apply{marginEnd=owner.px(14)})
             addView(ownerAppIcon(d.packageName,44))
         }
-        detail.addView(owner.title(name(d.packageName),d.packageName,leading,if(session.appDirty)owner.chip("未保存",3,true) else null))
+        val dirtyChip=owner.chip("未保存",3,true).apply{visibility=if(session.appDirty)View.VISIBLE else View.GONE}
+        var saveButton:View?=null
+        fun markDirty(){
+            dirtyChip.visibility=if(session.appDirty)View.VISIBLE else View.GONE
+            saveButton?.let{it.isEnabled=!session.busy && session.appDirty;it.alpha=if(it.isEnabled)1f else .4f}
+        }
+        var syncGpu:()->Unit={}
+        detail.addView(owner.title(name(d.packageName),d.packageName,leading,dirtyChip))
         val configurable=UperfAppPolicy.isConfigurable(packageManager,d.packageName)
         val rates=supportedRates()
         val box=owner.card()
         box.addView(owner.section("自定义应用刷新率","前台应用自定义刷新率档位"))
-        box.addView(OwnerSegment(this,owner,rates.map{"$it Hz"},rates.indexOf(d.refreshHz)){session.appDraft=checkNotNull(session.appDraft).copy(refreshHz=rates[it]);localRender()})
+        box.addView(OwnerSegment(this,owner,rates.map{"$it Hz"},rates.indexOf(d.refreshHz)){session.appDraft=checkNotNull(session.appDraft).copy(refreshHz=rates[it]);markDirty()})
         box.addView(owner.divider());box.addView(owner.section("自定义应用性能档位","调配集群负载迁移阈值与超大核激进度"))
-        box.addView(owner.tiers(d.uperfMode,true,configurable){id->session.appDraft=checkNotNull(session.appDraft).copy(uperfMode=id,gpuPolicy=ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,gpuMinMHz=null,gpuMaxMHz=null);localRender()})
+        box.addView(owner.tiers(d.uperfMode,true,configurable){id->session.appDraft=checkNotNull(session.appDraft).copy(uperfMode=id,gpuPolicy=ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,gpuMinMHz=null,gpuMaxMHz=null);syncGpu();markDirty()})
         if(!configurable)box.addView(owner.label("此应用不支持 Uperf 配置；刷新率和适用的线程规则仍可配置",11f,owner.muted).apply{setSingleLine(false)})
         box.addView(owner.divider())
         val range=runCatching{if(d.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM)GpuRanges.Range(d.gpuMinMHz!!,d.gpuMaxMHz!!) else globalRanges().getValue(d.uperfMode)}
         range.onSuccess{r->
             val readout=ownerReadout(r,owner.accent)
             val custom=d.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM
-            val trailing=owner.row().apply{
-                addView(OwnerSegment(this@MainActivity,owner,listOf("默认","自定义"),if(custom)1 else 0,true,configurable){i->
-                    val current=checkNotNull(session.appDraft)
-                    val effective=if(current.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM)GpuRanges.Range(current.gpuMinMHz!!,current.gpuMaxMHz!!) else globalRanges().getValue(current.uperfMode)
-                    session.appDraft=current.copy(gpuPolicy=if(i==0)ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE else ZuiControlClient.GpuPolicy.CUSTOM,gpuMinMHz=if(i==0)null else effective.min,gpuMaxMHz=if(i==0)null else effective.max);localRender()
-                },LinearLayout.LayoutParams(owner.px(132),owner.px(34)).apply{marginEnd=owner.px(14)})
-                addView(readout)
-            }
-            box.addView(owner.section("GPU 频率范围",if(custom)"仅此应用使用的固定区间" else "持续跟随「${modeTitle(d.uperfMode)}」档默认范围",trailing))
+            val heading=owner.section("GPU 频率范围",if(custom)"仅此应用使用的固定区间" else "持续跟随「${modeTitle(d.uperfMode)}」档默认范围",readout)
+            box.addView(heading)
             val bar=GpuRangeBar(this,r).apply{
                 isEnabled=configurable && custom
                 onPreview={ownerUpdateReadout(readout,it)}
-                onCommit={session.appDraft=checkNotNull(session.appDraft).copy(gpuPolicy=ZuiControlClient.GpuPolicy.CUSTOM,gpuMinMHz=it.min,gpuMaxMHz=it.max);localRender()}
-            };box.addView(bar,LinearLayout.LayoutParams(-1,bar.preferredHeight))
+                onCommit={session.appDraft=checkNotNull(session.appDraft).copy(gpuPolicy=ZuiControlClient.GpuPolicy.CUSTOM,gpuMinMHz=it.min,gpuMaxMHz=it.max);markDirty()}
+            }
+            val policySelector=OwnerSegment(this,owner,listOf("默认","自定义"),if(custom)1 else 0,true,configurable){i->
+                val current=checkNotNull(session.appDraft)
+                val effective=if(current.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM)GpuRanges.Range(current.gpuMinMHz!!,current.gpuMaxMHz!!) else globalRanges().getValue(current.uperfMode)
+                session.appDraft=current.copy(gpuPolicy=if(i==0)ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE else ZuiControlClient.GpuPolicy.CUSTOM,gpuMinMHz=if(i==0)null else effective.min,gpuMaxMHz=if(i==0)null else effective.max)
+                syncGpu();markDirty()
+            }
+            // DOCX: switch and interval share the row below the numeric readout.
+            box.addView(owner.row().apply{
+                addView(policySelector,LinearLayout.LayoutParams(owner.px(132),owner.px(34)).apply{marginEnd=owner.px(14)})
+                addView(bar,LinearLayout.LayoutParams(0,bar.preferredHeight,1f))
+            })
+            syncGpu={
+                val current=checkNotNull(session.appDraft);val isCustom=current.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM
+                val effective=if(isCustom)GpuRanges.Range(current.gpuMinMHz!!,current.gpuMaxMHz!!) else globalRanges().getValue(current.uperfMode)
+                policySelector.showSelection(if(isCustom)1 else 0)
+                bar.isEnabled=configurable && isCustom;bar.showRange(effective);ownerUpdateReadout(readout,effective)
+                ((heading.getChildAt(0) as LinearLayout).getChildAt(1) as TextView).text=if(isCustom)"仅此应用使用的固定区间" else "持续跟随「${modeTitle(current.uperfMode)}」档默认范围"
+            }
         }.onFailure{box.addView(owner.label("GPU 默认范围暂不可用 · ${it.message}",11f,owner.inks[2]).apply{setSingleLine(false)})}
         box.addView(View(this).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,owner.px(1)).apply{topMargin=owner.px(18);bottomMargin=owner.px(16)})
         val profile=model?.appProfile(d.packageName)
@@ -577,7 +595,7 @@ class MainActivity : Activity() {
                 session.work("已删除"){val reply=ZuiControlClient.removePackageProfile(applicationContext,d.packageName);check(reply.ok){reply.text};session.clearDrafts();session.selected=""}
             }})
             addView(View(this@MainActivity),LinearLayout.LayoutParams(0,1,1f))
-            addView(owner.button(if(session.busy)"正在保存…" else "保存并生效","primary",enabled=!session.busy && session.appDirty){saveDraft()})
+            saveButton=owner.button(if(session.busy)"正在保存…" else "保存并生效","primary",enabled=!session.busy && session.appDirty){saveDraft()};addView(saveButton)
         })
     }
     private fun ownerReadout(range: GpuRanges.Range,color: Int,size: Float=22f)=owner.row().apply{

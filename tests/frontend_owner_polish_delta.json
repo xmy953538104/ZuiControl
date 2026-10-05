@@ -20,9 +20,14 @@
       "after": "100644 blob 755f1ba5a602c21d8a0df9daa1c70176466f70b7\tapp/src/main/java/com/zui/zuicontrol/FrontendState.kt"
     },
     {
+      "path": "app/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
+      "before": "100644 blob f382f19e6318c7ba166e838534642d41f6d55cc3\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
+      "after": "100644 blob c85762f1a2401e663fbfad9a285d704ac37227b4\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt"
+    },
+    {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob 651f0d34dd23968e3e999d7960e7fe52656b9708\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob 8c0739b2a078dd35257f6b12e7a8991b969a7d49\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob f47554ff673b3e9c1e949f93f7058dcea5b27642\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerEffects.kt",
@@ -32,12 +37,12 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerTypography.kt",
       "before": null,
-      "after": "100644 blob d7bd4c5cf434c5931ce3555594868db93dc5ca8c\tapp/src/main/java/com/zui/zuicontrol/OwnerTypography.kt"
+      "after": "100644 blob 0951a37fdda718c2301c50098321e16ce6956c2d\tapp/src/main/java/com/zui/zuicontrol/OwnerTypography.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
       "before": "100644 blob 077c7c18a2ccad90675bb9c227666c23cbc29e75\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
-      "after": "100644 blob 7d5be4559201e9a0b75ecbe2adda59b9f06aaa58\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+      "after": "100644 blob 0cc331a1837888d94c9316ae17a46d5836a48ebb\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",

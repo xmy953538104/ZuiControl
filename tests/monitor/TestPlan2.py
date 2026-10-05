@@ -16,6 +16,8 @@ class Plan2(unittest.TestCase):
   self.assertNotIn('background=',icon);self.assertNotIn('foreground=',icon)
   draft=main.split('private fun appPage()',1)[1].split('private fun ownerReadout',1)[0]
   for forbidden in ('setGlobal(', 'setOverlay(', 'sendPolicy(', 'session.busy && configurable'):self.assertNotIn(forbidden,draft)
+  self.assertNotIn('localRender()',draft);self.assertIn('policySelector.showSelection',draft)
+  self.assertIn('addView(policySelector',draft);self.assertIn('addView(bar,LinearLayout.LayoutParams(0',draft)
  def test_thread_ia_and_notification_conditional(self):
   main=read('MainActivity.kt')
   self.assertNotIn('listRow("","规则库"',main);self.assertNotIn('owner.label("职责边界"',main)

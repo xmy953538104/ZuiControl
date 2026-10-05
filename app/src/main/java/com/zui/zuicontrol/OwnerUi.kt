@@ -229,9 +229,9 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
     private val small: Boolean=false,enabled: Boolean=true,private val action:(Int)->Unit): FrameLayout(context) {
     private var position=selected.toFloat();private var index=selected;private var animator: ValueAnimator?=null
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+    private val options=ui.row()
     init {
         setWillNotDraw(false);background=ui.shape(ui.card2,if(small)10f else 14f);isEnabled=enabled;alpha=if(enabled)1f else .6f
-        val options=ui.row()
         val pad=ui.px(if(small)3 else 4);options.setPadding(pad,pad,pad,pad)
         values.forEachIndexed { i,value ->
             val text=ui.label(value,if(small)12f else 15f,if(i==index)Color.WHITE else ui.sub,if(small)700 else 800).apply{
@@ -243,6 +243,19 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
                 }
                 setOnClickListener{
                     if(i==index)return@setOnClickListener
+                    showSelection(i)
+                    action(i)
+                }
+            }
+            options.addView(text,LinearLayout.LayoutParams(0,-1,1f).apply{if(i>0)marginStart=ui.px(if(small)2 else 4)})
+        }
+        val measure=Paint(Paint.ANTI_ALIAS_FLAG).apply{textSize=ui.px(if(small)OwnerTypography.BUTTON.size else 15f).toFloat();typeface=Typeface.create("sans-serif",Typeface.BOLD)}
+        minimumWidth=(values.maxOf{measure.measureText(it)}+ui.px(if(small)16 else 24)).roundToInt()*values.size+pad*2+ui.px(if(small)2 else 4)*(values.size-1)
+        addView(options,LayoutParams(-1,-1));minimumHeight=ui.px(if(small)34 else 50)
+        layoutParams=LinearLayout.LayoutParams(-1,ui.px(if(small)34 else 50))
+    }
+    fun showSelection(i:Int){
+        if(i==index)return
                     animator?.cancel();animator=ValueAnimator.ofFloat(position,i.toFloat()).apply{
                         duration=350;interpolator=OwnerUi.spring;addUpdateListener{position=it.animatedValue as Float;invalidate()};start()
                     }
@@ -253,15 +266,6 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
                             s.setSpan(android.text.style.ForegroundColorSpan(if(k==i)0xd9ffffff.toInt() else ui.soft(ui.sub,153)),s.length-2,s.length,0)
                         }
                     }
-                    action(i)
-                }
-            }
-            options.addView(text,LinearLayout.LayoutParams(0,-1,1f).apply{if(i>0)marginStart=ui.px(if(small)2 else 4)})
-        }
-        val measure=Paint(Paint.ANTI_ALIAS_FLAG).apply{textSize=ui.px(if(small)OwnerTypography.BUTTON.size else 15f).toFloat();typeface=Typeface.create("sans-serif",Typeface.BOLD)}
-        minimumWidth=(values.maxOf{measure.measureText(it)}+ui.px(if(small)16 else 24)).roundToInt()*values.size+pad*2+ui.px(if(small)2 else 4)*(values.size-1)
-        addView(options,LayoutParams(-1,-1));minimumHeight=ui.px(if(small)34 else 50)
-        layoutParams=LinearLayout.LayoutParams(-1,ui.px(if(small)34 else 50))
     }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas);if(index<0)return
