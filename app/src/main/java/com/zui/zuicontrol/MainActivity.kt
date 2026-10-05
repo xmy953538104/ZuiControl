@@ -360,7 +360,7 @@ class MainActivity : Activity() {
     private fun ownerListRow(pkg: String,title: String,subtitle: String,selected: Boolean,icon: Int?=null,action:()->Unit): View=owner.row().apply{
         setPadding(owner.px(13),owner.px(12),owner.px(13),owner.px(12))
         background=owner.shape(owner.card,14f,if(selected)owner.accent else owner.line,if(selected)2f else 1f)
-        if(selected){elevation=owner.px(6).toFloat();outlineSpotShadowColor=owner.soft(owner.accent,102)}
+        if(selected)background=owner.shadow(checkNotNull(background),14f,24f,10f,-12f,owner.soft(owner.accent,if(owner.dark)89 else 51))
         val image=if(pkg.isNotEmpty())ownerAppIcon(pkg) else owner.icon(icon ?: R.drawable.owner_tune,if(selected)owner.accent else owner.sub,19).apply{
             background=owner.shape(if(selected)owner.soft(owner.accent) else owner.card2,12f);setPadding(owner.px(10),owner.px(10),owner.px(10),owner.px(10))
         }

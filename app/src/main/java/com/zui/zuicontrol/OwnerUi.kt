@@ -32,6 +32,7 @@ internal class OwnerUi(val context: Context) {
     fun shape(color: Int, radius: Float, border: Int? = null, stroke: Float=1f) = GradientDrawable().apply {
         setColor(color); cornerRadius=px(radius).toFloat(); if(border!=null)setStroke(px(stroke).coerceAtLeast(1),border)
     }
+    fun shadow(surface:android.graphics.drawable.Drawable,radius:Float,blur:Float,offset:Float,spread:Float,tone:Int)=OwnerShadowDrawable(surface,density,radius,blur,offset,spread,tone)
     fun row()=LinearLayout(context).apply { orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;clipChildren=false;clipToPadding=false }
     fun column()=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL;clipChildren=false;clipToPadding=false }
     fun borderedColumn(content: View,width: Int)=FrameLayout(context).apply {
@@ -49,9 +50,8 @@ internal class OwnerUi(val context: Context) {
         layoutParams=LinearLayout.LayoutParams(px(size),px(size))
     }
     fun card(padding: Boolean=true)=column().apply {
-        background=shape(card,18f,line); if(padding)setPadding(px(20),px(18),px(20),px(18))
-        elevation=px(if(dark)3 else 1).toFloat()
-        outlineAmbientShadowColor=if(dark)0x66000000 else 0x0d0f172a;outlineSpotShadowColor=outlineAmbientShadowColor
+        background=shadow(shape(card,18f,line),18f,if(dark)30f else 10f,if(dark)10f else 2f,if(dark)-12f else 0f,if(dark)0x8c000000.toInt() else 0x0d0f172a)
+        if(padding)setPadding(px(20),px(18),px(20),px(18))
     }
     fun gap(height: Int=14)=LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=px(height) }
     fun chip(value: String,tone: Int=0,large: Boolean=false)=label(value,if(large)11f else 10f,chipFg[tone],700).apply {
@@ -77,7 +77,7 @@ internal class OwnerUi(val context: Context) {
         if(icon!=null)addView(icon(icon,color,16),LinearLayout.LayoutParams(px(16),px(16)).apply{marginEnd=px(7)})
         addView(label(value,if(small)12f else 13f,color,800).apply{ellipsize=null;gravity=Gravity.CENTER});minimumHeight=px(if(small)32 else 40)
         isEnabled=enabled;alpha=if(enabled)1f else .4f;isFocusable=true;contentDescription=value
-        if(kind=="primary"){elevation=px(5).toFloat();outlineSpotShadowColor=soft(accent,100)}
+        if(kind=="primary")background=shadow(checkNotNull(background),if(small)10f else 12f,14f,6f,-4f,soft(accent,if(dark)89 else 51))
         setOnClickListener { action() };press(this,.96f)
     }
     fun title(title: String,subtitle: String,leading: View?=null,trailing: View?=null): View=row().apply {
@@ -167,7 +167,7 @@ internal class OwnerUi(val context: Context) {
             val selected=id==current
             val item=row().apply{
                 gravity=Gravity.CENTER;background=shape(if(selected)tiers[i] else card2,14f)
-                if(selected){elevation=px(6).toFloat();outlineSpotShadowColor=tiers[i]}
+                if(selected)background=shadow(checkNotNull(background),14f,22f,10f,-10f,tiers[i])
                 addView(OwnerGauge(context,this@OwnerUi,i,selected),LinearLayout.LayoutParams(px(if(compact)28 else 34),px(if(compact)28 else 34)).apply{marginEnd=px(if(compact)8 else 10)})
                 addView(column().apply{
                     addView(label(names[i],14f,if(selected)Color.WHITE else text,800),LinearLayout.LayoutParams(-2,px(18)))
@@ -180,8 +180,7 @@ internal class OwnerUi(val context: Context) {
                         for(k in 0 until group.childCount){
                             val target=group.getChildAt(k) as LinearLayout;val lit=k==i
                             val start=if(k==previous)tiers[k] else card2;val end=if(lit)tiers[k] else card2
-                            ValueAnimator.ofArgb(start,end).apply{duration=250;addUpdateListener{target.background=shape(it.animatedValue as Int,14f)};start()}
-                            target.elevation=px(if(lit)6 else 0).toFloat();target.outlineSpotShadowColor=tiers[k]
+                            ValueAnimator.ofArgb(start,end).apply{duration=250;addUpdateListener{val surface=shape(it.animatedValue as Int,14f);target.background=if(lit)shadow(surface,14f,22f,10f,-10f,tiers[k]) else surface};start()}
                             (target.getChildAt(0) as OwnerGauge).animateInk(lit)
                             val textColumn=target.getChildAt(1) as LinearLayout
                             fun ink(label:TextView,end:Int){val start=label.currentTextColor;ValueAnimator.ofArgb(start,end).apply{duration=250;addUpdateListener{label.setTextColor(it.animatedValue as Int)};start()}}
@@ -268,8 +267,10 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
         super.onDraw(canvas);if(index<0)return
         val p=ui.px(if(small)3 else 4).toFloat();val gap=ui.px(if(small)2 else 4).toFloat()
         val w=(width-2*p-(values.size-1)*gap)/values.size
-        paint.color=ui.accent;paint.setShadowLayer(ui.px(6).toFloat(),0f,ui.px(3).toFloat(),ui.soft(ui.accent,102))
-        val left=p+position*(w+gap);canvas.drawRoundRect(left,p,left+w,height-p,ui.px(if(small)8 else 11).toFloat(),ui.px(if(small)8 else 11).toFloat(),paint);paint.clearShadowLayer()
+        paint.color=ui.accent;paint.setShadowLayer(ui.px(16).toFloat(),0f,ui.px(6).toFloat(),ui.soft(ui.accent,if(ui.dark)89 else 51))
+        val left=p+position*(w+gap);val spread=ui.px(6).toFloat()
+        canvas.drawRoundRect(left+spread,p+spread,left+w-spread,height-p-spread,ui.px(5).toFloat(),ui.px(5).toFloat(),paint);paint.clearShadowLayer()
+        canvas.drawRoundRect(left,p,left+w,height-p,ui.px(if(small)8 else 11).toFloat(),ui.px(if(small)8 else 11).toFloat(),paint)
     }
     override fun onDetachedFromWindow(){animator?.cancel();super.onDetachedFromWindow()}
 }
@@ -344,8 +345,8 @@ internal class OwnerModal(private val ui: OwnerUi,private val host: FrameLayout,
         close()
         this.onDismiss=onDismiss
         if(Build.VERSION.SDK_INT>=31)content.setRenderEffect(RenderEffect.createBlurEffect(ui.px(3).toFloat(),ui.px(3).toFloat(),Shader.TileMode.CLAMP))
-        val mask=FrameLayout(ui.context).apply{setBackgroundColor(0x8c03060c.toInt());isClickable=true;setOnClickListener{close()}}
-        val sheet=ui.column().apply{background=ui.shape(ui.card,20f,ui.line2);elevation=ui.px(20).toFloat();setOnClickListener{};isClickable=true}
+        val mask=FrameLayout(ui.context).apply{clipChildren=false;setBackgroundColor(0x8c03060c.toInt());isClickable=true;setOnClickListener{close()}}
+        val sheet=ui.column().apply{background=ui.shadow(ui.shape(ui.card,20f,ui.line2),20f,80f,30f,0f,0x73000000);setOnClickListener{};isClickable=true}
         sheet.addView(ui.row().apply{
             setPadding(ui.px(20),ui.px(18),ui.px(20),ui.px(12));gravity=Gravity.TOP
             addView(ui.column().apply{

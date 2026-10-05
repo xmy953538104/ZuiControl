@@ -22,7 +22,12 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob 651f0d34dd23968e3e999d7960e7fe52656b9708\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob 446d867b83c02b8d8b089322a60eaeaa7d745480\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob 0a51ce43188c79ceca16cd424637334e0f488fe1\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerEffects.kt",
+      "before": null,
+      "after": "100644 blob 3afe247c941fe4924b653074209e19dddc1f2998\tapp/src/main/java/com/zui/zuicontrol/OwnerEffects.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerTypography.kt",
@@ -32,7 +37,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
       "before": "100644 blob 077c7c18a2ccad90675bb9c227666c23cbc29e75\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
-      "after": "100644 blob c0637186a13e22ba6a3731675c120800780a319d\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+      "after": "100644 blob 7d5be4559201e9a0b75ecbe2adda59b9f06aaa58\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
