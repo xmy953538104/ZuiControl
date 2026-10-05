@@ -696,11 +696,11 @@ class MainActivity : Activity() {
         }, gap())
         val b = baseline
         detail.addView(card().apply {
-            addView(owner.section("当前规则集",b?.metadata?.let { "${it.optString("source")} · ${it.optString("sourceVersion")}" } ?: "规则集不可用",owner.row().apply {
+            addView(owner.section("当前规则集",b?.metadata?.let { listOf(it.optString("source").ifBlank{"来源未提供"},it.optString("sourceVersion")).filter{it.isNotBlank()}.joinToString(" · ") } ?: "规则集不可用",owner.row().apply {
                 addView(owner.button("查看原文",small=true){rawView()})
                 addView(owner.button("导出",small=true){snapshot?.let { export(it.text.toByteArray(),"ZuiControl_rules.conf") }},LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(8)})
             }))
-            addView(note(b?.metadata?.let { "${it.optString("sourceDate")} · ${it.optString("sourceCommit")}\n${b.generation}" } ?: "等待原生规则权威"))
+            addView(note(b?.let { listOf(it.metadata.optString("sourceDate"),it.metadata.optString("sourceCommit"),"生效 generation ${it.generation}").filter{it.isNotBlank()}.joinToString(" · ") } ?: "等待原生规则权威"))
             val apps=installed.filter { model?.appProfile(it.packageName)!=null }
             val counts=listOf(apps.size,model?.profiles?.values?.sumOf{it.rules.size} ?: 0,apps.count{provenance(it.packageName) in setOf("USER_MODIFIED","USER_CREATED")})
             addView(owner.row().apply {
@@ -884,7 +884,7 @@ class MainActivity : Activity() {
                             setOnClickListener{editRule(index)}
                         },0)
                         cell(this,owner.row().apply{addView(owner.chip("组 ${groupName(d,rule.competitionClass)}"));setOnClickListener{editRule(index)}},62)
-                        cell(this,owner.row().apply{addView(owner.chip(if(rule.selector=="all")"全部候选" else "第${rule.selector.substringAfter(':')}个",2));setOnClickListener{editRule(index)}},84)
+                        cell(this,owner.row().apply{addView(owner.chip(if(rule.selector=="all")"全部候选" else "第${rule.selector.substringAfter(':')}个").apply{background=owner.shape(owner.zoBg,5f);setTextColor(owner.zoFg)});setOnClickListener{editRule(index)}},84)
                         cell(this,cpuPicker(rule.cpuMask){mask->mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.map{if(it.competitionClass==rule.competitionClass)it.copy(cpuMask=mask)else it});render()}},117)
                         cell(this,owner.icon(R.drawable.owner_close,owner.muted,14).apply{isFocusable=true;contentDescription="删除规则 ${index+1}";setOnClickListener{mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.filterIndexed{i,_->i!=index});render()}}},22)
                         setOnDragListener{_,event->when(event.action){DragEvent.ACTION_DRAG_STARTED->event.clipDescription?.label=="rule-order";DragEvent.ACTION_DROP->{(event.localState as? Int)?.let{moveRule(it,index)};true};else->true}}
@@ -908,8 +908,8 @@ class MainActivity : Activity() {
                     session.work("已恢复上游"){ZuioptLibrary.restoreApp(applicationContext,pkg,checkNotNull(this@MainActivity.baseline));session.ruleDraft=null}
                 }},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
                 addView(View(this@MainActivity),LinearLayout.LayoutParams(0,1,1f))
-                addView(owner.button("记录关联线程分析",small=true,icon=R.drawable.owner_chip){analysisPage=true;render()}.apply{minimumHeight=dp(40)},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
-                addView(owner.button("原文预览",small=true,icon=R.drawable.owner_info){rawView()}.apply{minimumHeight=dp(40)},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
+                addView(owner.button("记录关联线程分析",small=true,icon=R.drawable.owner_pulse){analysisPage=true;render()}.apply{minimumHeight=dp(40)},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
+                addView(owner.button("原文预览",small=true,icon=R.drawable.owner_code){rawView()}.apply{minimumHeight=dp(40)},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
                 addView(owner.button("保存并应用","primary",small=true,enabled=!session.busy && d.dirty){saveDraft()}.apply{minimumHeight=dp(40)})
             },gap())
         }
