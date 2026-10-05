@@ -118,6 +118,13 @@ internal class OwnerUi(val context: Context) {
         addView(label(title,12f,sub,700),LinearLayout.LayoutParams(px(72),-2).apply{marginEnd=px(12)})
         addView(control,LinearLayout.LayoutParams(0,-2,1f));minimumHeight=px(52)
     }
+    fun tableRow(cells:List<View>,widths:List<Int>,header:Boolean=false)=column().apply{
+        addView(row().apply{
+            setPadding(px(7),px(10),px(7),px(10));minimumHeight=px(40)
+            cells.forEachIndexed{i,cell->addView(cell,if(widths[i]==0)LinearLayout.LayoutParams(0,-2,1f) else LinearLayout.LayoutParams(px(widths[i]),-2))}
+        },LinearLayout.LayoutParams(-1,-2))
+        addView(View(context).apply{setBackgroundColor(if(header)line2 else line)},LinearLayout.LayoutParams(-1,px(1)))
+    }
     fun scroll(content: View,height: Int)=ScrollView(context).apply{
         isVerticalScrollBarEnabled=false;clipChildren=true;clipToPadding=true
         addOnLayoutChangeListener{v,_,_,_,_,_,_,_,_->v.clipBounds=Rect(0,0,v.width,v.height)}

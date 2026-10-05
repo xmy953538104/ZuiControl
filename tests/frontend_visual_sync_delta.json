@@ -13,7 +13,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob f50a9d04d7169966b0dcb50bfd47a515443c852d\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob 072b6fa3bb56c1effb89d1e59214f9de9b33cf33\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob c70970831c966d4af8a138274777c95c22155975\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",
@@ -23,7 +23,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
       "before": "100644 blob 91839616ccef46e0808bbf168b5398764341851a\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
-      "after": "100644 blob 3f98347a1bad50cfca5de22e77d8c6406b74619d\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+      "after": "100644 blob 4afbe2c3639c7bfec77c7e749394dd7ed4aada15\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
