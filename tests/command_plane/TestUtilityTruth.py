@@ -25,6 +25,7 @@ def saf(case):
     body=source.split('            101 -> ',1)[1].split('\n            102 -> ',1)[0]
     session=(APP/'FrontendSession.kt').read_text('utf8')
     work=session[session.index('    fun work('):session.index('    fun saveApp(')]
+    lifecycle=session[session.index('    private var closing ='):session.index('    val controlsPending')]
     # Execute the current export branch and exact success/error owner. Only the
     # ContentResolver and executor/post boundaries are replaced in this harness.
     harness='''package com.zui.zuicontrol
@@ -32,8 +33,10 @@ import java.io.*
 class Resolver(val mode:String){var bytes=ByteArrayOutputStream();fun openOutputStream(uri:String,access:String):OutputStream? =
  if(mode=="null")null else if(mode=="throw")object:OutputStream(){override fun write(b:Int){throw IOException("write failure")}} else bytes}
 class Session {var busy=false;var error="";var notice="";var onChanged:(()->Unit)?=null
- val executor=java.util.concurrent.Executor { it.run() };val post:(()->Unit)->Unit={it()}
-'''+work+'''}
+ // This export-only fixture has no global intent. Lifecycle code is copied literally.
+ val controlsPending=false
+ private val executor=object { fun execute(task:Runnable){task.run()};fun shutdown(){} };val post:(()->Unit)->Unit={it()}
+'''+lifecycle+work+'''}
 class Export(val mode:String){val contentResolver=Resolver(mode);val session=Session()
  var exportBytes=if(mode=="empty")byteArrayOf() else "CURRENT_EXPORT".toByteArray()
  fun result(uri:String){
