@@ -16,14 +16,16 @@ class FrontendV3Test {
         var app: ZuiControlClient.AppPolicyDraft? = null
         var authoritativeGeneration = 84L
         var readFailure = false
+        var staleRead = false
         var authoritativeRanges = GpuDefaultsDraft.modes.associateWith { GpuRanges.Range(231,903) }
         override fun readGpuDefaults(user: Int): GpuDefaultsDraft {
             check(!readFailure) { "READ_UNAVAILABLE" }
-            return GpuDefaultsDraft(authoritativeGeneration, authoritativeRanges)
+            return GpuDefaultsDraft(if(staleRead)generation else authoritativeGeneration, authoritativeRanges)
         }
         override fun saveGpuDefaultsAtomic(powersave: GpuRanges.Range, balance: GpuRanges.Range,
             performance: GpuRanges.Range, fast: GpuRanges.Range, expectedGeneration: Long): ZuiControlClient.Reply {
             calls++; gpu = listOf(powersave, balance, performance, fast); generation = expectedGeneration
+            if(succeed){authoritativeGeneration=maxOf(authoritativeGeneration,expectedGeneration+1);authoritativeRanges=GpuDefaultsDraft.modes.zip(checkNotNull(gpu)).toMap()}
             return ZuiControlClient.Reply(succeed, if (succeed) "ACK" else "GENERATION_MISMATCH")
         }
         override fun saveAppPolicy(draft: ZuiControlClient.AppPolicyDraft): ZuiControlClient.Reply {
@@ -94,6 +96,15 @@ class FrontendV3Test {
             val draft=GpuDefaultsDraft(83,gateway.authoritativeRanges).apply{restoreDefaults()};session.gpuDraft=draft
             session.saveGpu();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
             assertSame(draft,session.gpuDraft);assertTrue(draft.dirty);assertEquals("",session.notice);assertEquals("READ_UNAVAILABLE",session.error)
+        }finally{session.close()}
+    }
+    @Test fun postAckSameGenerationIsStaleEvenWhenReturnedRangesMatch() {
+        val gateway=FakeFrontendGateway().apply{succeed=true;staleRead=true}
+        val callbacks=LinkedBlockingQueue<()->Unit>();val session=FrontendSession(gateway,0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
+        try{
+            val draft=GpuDefaultsDraft(359,gateway.authoritativeRanges).apply{restoreDefaults()};session.gpuDraft=draft
+            session.saveGpu();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertSame(draft,session.gpuDraft);assertTrue(draft.dirty);assertEquals("",session.notice);assertEquals("GPU_POST_ACK_READ_STALE",session.error)
         }finally{session.close()}
     }
     @Test fun completeAppDraftIsConfirmedOnlyAfterSuccessfulAck() {

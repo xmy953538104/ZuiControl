@@ -80,7 +80,8 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
                 r.getValue("performance"), r.getValue("fast"), captured.expectedGeneration)
             if (!reply.ok) {
                 // A rejected CAS never erases the user's ranges or reports success.
-                runCatching { gateway.readGpuDefaults(userId) }.onSuccess { fresh ->
+                runCatching {
+                    val fresh = gateway.readGpuDefaults(userId)
                     check(fresh.expectedGeneration >= captured.expectedGeneration) { "GPU_CAS_REFRESH_STALE" }
                     observeGpuDefaults(fresh)
                     val authority = checkNotNull(gpuAuthority)
@@ -93,7 +94,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
             // Establish post-terminal authority BEFORE making a clean draft. MainActivity
             // may still hold its pre-save state while onChanged immediately renders again.
             val fresh = gateway.readGpuDefaults(userId)
-            check(fresh.expectedGeneration >= captured.expectedGeneration) { "GPU_POST_ACK_READ_STALE" }
+            check(fresh.expectedGeneration > captured.expectedGeneration) { "GPU_POST_ACK_READ_STALE" }
             observeGpuDefaults(fresh)
             val authority = checkNotNull(gpuAuthority)
             gpuDraft = GpuDefaultsDraft(authority.expectedGeneration, authority.original)
