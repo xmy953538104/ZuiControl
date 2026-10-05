@@ -67,7 +67,11 @@ class ProductR7(unittest.TestCase):
         for title in ('监测与显示','GPU 默认范围','数据与维护','关于','立即备份','从备份恢复','恢复出厂配置','导出运行日志','重启调度核心'):
             self.assertIn(title,settings)
         self.assertNotIn('BackendHealth',settings)
-        self.assertIn('if (!enabled) addView(button("系统通知设置")',settings)
+        self.assertIn('owner.chip(if(enabled)"已开启" else "已关闭"',settings)
+        self.assertIn('Settings.ACTION_APP_NOTIFICATION_SETTINGS',settings)
+        self.assertIn('Settings.EXTRA_APP_PACKAGE,packageName',settings)
+        self.assertIn('owner.settingsRow("界面主题"',settings)
+        self.assertIn('LinearLayout.LayoutParams(dp(195),dp(32))',settings)
         self.assertIn('listOf("跟随系统", "深色", "浅色")',settings)
         self.assertNotIn('职责',settings)
         self.assertIn('private fun coreHealth()',main)
