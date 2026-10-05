@@ -856,7 +856,7 @@ class MainActivity : Activity() {
             addView(label(raw,12f,owner.text).apply{typeface=Typeface.MONOSPACE;setTextIsSelectable(true);gravity=Gravity.TOP;setPadding(dp(14),dp(12),dp(14),dp(12))},LinearLayout.LayoutParams(0,-2,1f))
         }
         ownerModal?.open("规则集原文 · 只读","完整 canonical 规则；编辑请进入单个应用。",600,
-            owner.scroll(code,340),listOf(owner.button("关闭"){ownerModal?.close()},owner.button("导出","primary"){ownerModal?.close();export(raw.toByteArray(),"ZuiControl_rules.conf")}))
+            owner.scroll(code,340),listOf(owner.button("关闭"){ownerModal?.close()}))
     }
     private fun openRule(pkg: String) {
         analysisPage=false
@@ -880,7 +880,7 @@ class MainActivity : Activity() {
         else {
             val mapping=d.base.mappings.firstOrNull{when(it.matchKind){"exact"->it.packageName==pkg;"prefix"->pkg.startsWith(it.packageName);else->pkg.contains(it.packageName)}}
             detail.addView(card().apply {
-                addView(owner.section("线程规则","Profile ${mapping?.profile ?: "新建"} · 按顺序匹配，可拖动调整",owner.button("导出",small=true,icon=R.drawable.owner_export){snapshot?.let{export(it.text.toByteArray(),"ZuiControl_rules.conf")}}))
+                addView(owner.section("线程规则","Profile ${mapping?.profile ?: "新建"} · 按顺序匹配，可拖动调整"))
                 addView(owner.row().apply{
                     addView(owner.column().apply{addView(owner.label("默认 CPU 范围",13f,owner.text,800));addView(note("未命中特殊规则的线程 · ${cpuRange(d.profile.generalMask)}"))},LinearLayout.LayoutParams(0,-2,1f))
                     addView(cpuPicker(d.profile.generalMask){mask->mutateRule{d.profile=d.profile.copy(generalMask=mask);render()}})
