@@ -49,16 +49,34 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     val decisions = linkedMapOf<String, ZuioptLibrary.Decision>()
     var manual: ZuioptRuleModel? = null
     var onChanged: (() -> Unit)? = null
+    var onControlsChanged: (() -> Unit)? = null
+    val controlsPending get() = refresh.pending || mode.pending || overlay.pending
+    /** UI thread intent, serialized existing terminal-ACK actions; no transport changes. */
+    fun <T> intent(control: OptimisticControl<T>, value: T, action: (T) -> ZuiControlClient.Reply) {
+        if (!control.begin(value)) return
+        val captured = checkNotNull(control.inFlight)
+        error = ""; notice = ""
+        executor.execute {
+            val reply = runCatching { action(captured) }.getOrElse { ZuiControlClient.Reply(false, it.message.orEmpty()) }
+            post {
+                control.finish(reply.ok)
+                if (control.displayed != control.confirmed) intent(control, control.displayed, action)
+                if (!reply.ok) error = reply.text
+                onControlsChanged?.invoke()
+            }
+        }
+    }
     val appDirty get() = appDraft != null && (newApp || appDraft != originalApp)
     val dirty get() = appDirty || gpuDraft?.dirty == true || ruleDraft?.dirty == true
     fun clearDrafts() { appDraft = null; originalApp = null; newApp = false; gpuDraft = null; ruleDraft = null }
-    fun work(success: String = "", completed: (() -> Unit)? = null, task: () -> Unit) {
+    fun work(success: String = "", completed: (() -> Unit)? = null, reconciled: (() -> Unit)? = null, task: () -> Unit) {
         if (busy) return
         busy = true; error = ""; notice = ""
         executor.execute {
             val result = runCatching(task)
             post {
                 busy = false
+                reconciled?.invoke()
                 result.onSuccess { notice = success; completed?.invoke() }.onFailure { error = it.message ?: "操作失败" }
                 onChanged?.invoke()
             }
@@ -67,9 +85,24 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     }
     fun saveApp(completed: (() -> Unit)? = null) {
         val captured = appDraft ?: return
-        work("已保存并生效", completed) {
-            val reply = gateway.saveAppPolicy(captured); check(reply.ok) { reply.text }
-            originalApp = captured; newApp = false
+        var authority: ZuiControlClient.AppPolicyDraft? = null
+        var accepted = false
+        work("已保存并生效", completed, reconciled = {
+            authority?.let { fresh ->
+                originalApp = fresh
+                appDraft = if (accepted && appDraft == captured) fresh else appDraft?.copy(expectedGeneration = fresh.expectedGeneration)
+                if (accepted) newApp = false
+            }
+        }) {
+            val reply = gateway.saveAppPolicy(captured)
+            val fresh = runCatching { gateway.readAppPolicy(captured.packageName) }
+            authority = fresh.getOrNull()
+            if (!reply.ok) {
+                error(reply.text)
+            }
+            val confirmed = checkNotNull(fresh.getOrThrow()) { "APP_POST_ACK_READ_UNAVAILABLE" }
+            check(confirmed.expectedGeneration > captured.expectedGeneration) { "APP_POST_ACK_READ_STALE" }
+            accepted = true
         }
     }
     fun saveGpu(completed: (() -> Unit)? = null) {
@@ -100,7 +133,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
             gpuDraft = GpuDefaultsDraft(authority.expectedGeneration, authority.original)
         }
     }
-    fun close() { onChanged = null; executor.shutdown() }
+    fun close() { onChanged = null; onControlsChanged = null; executor.shutdown() }
     fun save(out: Bundle) {
         out.putInt("user", userId); out.putString("section", section); out.putString("selected", selected)
         out.putInt("module", settingsModule); out.putBoolean("newApp", newApp)

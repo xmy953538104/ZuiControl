@@ -4,6 +4,7 @@ import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
 FIDELITY=json.loads((ROOT/'tests/frontend_fidelity_recovery_delta.json').read_text(encoding='utf-8'))
 SYNC=json.loads((ROOT/'tests/frontend_visual_sync_delta.json').read_text(encoding='utf-8'))
+PLAN2=json.loads((ROOT/'tests/frontend_owner_polish_delta.json').read_text(encoding='utf-8'))
 IDENTITY=json.loads((ROOT/'tests/integration_identity_delta.json').read_text(encoding='utf-8'))
 FINAL_FRONTEND=json.loads((ROOT/'tests/final_frontend_merge_delta.json').read_text(encoding='utf-8'))
 FRONTEND_INTEGRATION=json.loads((ROOT/'tests/backend_frontend_integration_delta.json').read_text(encoding='utf-8'))
@@ -126,6 +127,15 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
+    # Reverse only the current Owner's explicit frontend/interaction delta.
+    assert PLAN2['baseHead']=='d7c99926ee55b54af3d53129644693aff81fd887'
+    allowed={'FrontendGateway.kt','FrontendSession.kt','FrontendState.kt','MainActivity.kt','OwnerUi.kt','OwnerWindow.kt','OwnerTypography.kt','PerformanceRecordActivity.kt','RecordChart.kt','FrontendV3Test.kt'}
+    for row in PLAN2['files']:
+        assert row['path'].startswith('app/') and Path(row['path']).name in allowed
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        after=row['after'].encode();assert result.count(after)==1,('Plan2 exact frontend bytes',row['path'])
+        result.remove(after)
+        if row['before'] is not None:result.append(row['before'].encode())
     # Owner R2 presentation delta reverses to the immutable R1 receipt first.
     assert SYNC['baseHead']=='e46691dee3a6ee988f641aacb41a4b2aa2352ca4'
     allowed={'MainActivity.kt','OwnerUi.kt','OwnerWindow.kt','GpuRangeBar.kt','RecordChart.kt','PerformanceRecordActivity.kt','UiControls.kt','NotificationQuickControlHelper.kt','ZuiControlQuickService.kt'}

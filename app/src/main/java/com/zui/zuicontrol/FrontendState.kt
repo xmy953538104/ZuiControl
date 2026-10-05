@@ -5,14 +5,20 @@ class OptimisticControl<T>(confirmed: T) {
     var confirmed = confirmed; private set
     var displayed = confirmed; private set
     var pending = false; private set
+    var inFlight: T? = null; private set
     fun begin(value: T): Boolean {
+        displayed = value
         if (pending) return false
-        displayed = value; pending = true; return true
+        pending = true; inFlight = value; return true
     }
     fun finish(succeeded: Boolean) {
         check(pending)
-        if (succeeded) confirmed = displayed else displayed = confirmed
-        pending = false
+        val submitted = inFlight
+        if (succeeded) {
+            @Suppress("UNCHECKED_CAST")
+            confirmed = submitted as T
+        } else if (displayed == submitted) displayed = confirmed
+        pending = false; inFlight = null
     }
     fun observe(value: T) { if (!pending) { confirmed = value; displayed = value } }
 }

@@ -18,13 +18,13 @@ import java.util.Locale
         init { contentDescription = "时间曲线；${values.count { it.isFinite() && it >= 0 }} 个有效汇总点" }
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            val left = dp(48).toFloat(); val right = width - dp(16).toFloat()
-            val top = dp(20).toFloat(); val bottom = height - dp(32).toFloat()
+            val left = dp(32).toFloat(); val right = width - dp(8).toFloat()
+            val top = dp(8).toFloat(); val bottom = height - dp(24).toFloat()
             if (right <= left || bottom <= top) return
-            paint.textSize = 11 * resources.displayMetrics.scaledDensity; paint.strokeWidth = density
+            paint.textSize = OwnerTypography.CHIP.size * density; paint.typeface=android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD);paint.strokeWidth = density
             axis.ticks.forEach { value ->
                 val y = bottom - (bottom - top) * ((value - axis.low) / (axis.high - axis.low)).toFloat()
-                paint.color = owner.line;paint.pathEffect=android.graphics.DashPathEffect(floatArrayOf(4*density,4*density),0f);canvas.drawLine(left, y, right, y, paint);paint.pathEffect=null
+                paint.color = owner.line;paint.pathEffect=android.graphics.DashPathEffect(floatArrayOf(3*density,4*density),0f);canvas.drawLine(left, y, right, y, paint);paint.pathEffect=null
                 paint.color = owner.muted; paint.textAlign = Paint.Align.RIGHT
                 canvas.drawText(axis.label(value), left - dp(8), y - (paint.ascent() + paint.descent()) / 2, paint)
             }
@@ -37,19 +37,35 @@ import java.util.Locale
             if (values.none { it.isFinite() && it >= 0 }) {
                 paint.textAlign = Paint.Align.CENTER; canvas.drawText("暂无有效值", (left + right) / 2, (top + bottom) / 2, paint); return
             }
-            val path = Path(); var connected = false; var previous = -1.0
+            var path = Path(); var connected = false; var previous = -1.0
+            var firstX=0f;var lastX=0f;var lastY=0f
             val gapLimit = maxOf(4000.0, duration / 600.0 * 2.5)
-            paint.color = when(column){2->owner.tiers[0];3->owner.tiers[2];else->owner.accent}
+            val tone=when(column){2->owner.tiers[0];3->owner.tiers[2];else->owner.accent}
+            fun finishSegment(){
+                if(!connected)return
+                val area=Path(path).apply{lineTo(lastX,bottom);lineTo(firstX,bottom);close()}
+                paint.style=Paint.Style.FILL
+                paint.shader=android.graphics.LinearGradient(0f,top,0f,bottom,owner.soft(tone,38),owner.soft(tone,0),android.graphics.Shader.TileMode.CLAMP)
+                canvas.drawPath(area,paint);paint.shader=null
+                paint.color=tone;paint.style=Paint.Style.STROKE;paint.strokeWidth=2*density;paint.strokeJoin=Paint.Join.ROUND;paint.strokeCap=Paint.Cap.ROUND
+                paint.setShadowLayer(8*density,0f,0f,owner.soft(tone,128))
+                canvas.drawPath(path,paint);paint.clearShadowLayer();paint.style=Paint.Style.FILL
+                paint.shader=android.graphics.RadialGradient(lastX,lastY,8*density,intArrayOf(owner.soft(tone,100),owner.soft(tone,0)),null,android.graphics.Shader.TileMode.CLAMP)
+                canvas.drawCircle(lastX,lastY,8*density,paint);paint.shader=null
+                paint.color=owner.card;canvas.drawCircle(lastX,lastY,3*density,paint)
+                paint.color=tone;paint.style=Paint.Style.STROKE;paint.strokeWidth=2*density;canvas.drawCircle(lastX,lastY,3*density,paint);paint.style=Paint.Style.FILL
+                path=Path();connected=false
+            }
             for (i in 0 until rows.length()) {
                 val t = rows.getJSONArray(i).optDouble(0); val value = values[i]
-                if (!value.isFinite() || value < 0) { connected = false; continue }
+                if (!value.isFinite() || value < 0) { finishSegment(); continue }
                 val x = left + (right - left) * (t / duration.coerceAtLeast(1)).toFloat()
                 val y = bottom - (bottom - top) * ((value - axis.low) / (axis.high - axis.low)).toFloat()
-                if (!connected || t - previous > gapLimit) path.moveTo(x, y) else path.lineTo(x, y)
-                canvas.drawCircle(x, y, density, paint)
+                if(connected && t-previous>gapLimit)finishSegment()
+                if (!connected) {path.moveTo(x, y);firstX=x} else path.lineTo(x, y)
+                lastX=x;lastY=y
                 connected = true; previous = t
             }
-            paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.8f * density
-            canvas.drawPath(path, paint); paint.style = Paint.Style.FILL
+            finishSegment()
         }
     }

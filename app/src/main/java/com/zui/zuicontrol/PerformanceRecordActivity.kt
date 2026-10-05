@@ -77,7 +77,7 @@ class PerformanceRecordActivity : Activity() {
             !data.has("package") -> content.addView(label("该应用暂无记录"))
             threadKey.isNotEmpty() -> {
                 addCard(content, card().apply {
-                    addView(label("入榜期间 CPU 时间线 · 单核百分比", 18f))
+                    addView(owner.row().apply{addView(owner.icon(R.drawable.owner_pulse,owner.accent,16),LinearLayout.LayoutParams(dp(16),dp(16)).apply{marginEnd=dp(8)});addView(label("入榜期间 CPU 时间线 · 单核百分比",14f))})
                     addView(label(threadKey, 12f))
                     addView(label("断档表示无已保存 Top15 样本，不代表 CPU=0。", 12f))
                     addView(RecordChart(this@PerformanceRecordActivity, data.optJSONArray("detail") ?: JSONArray(), 1, data.optLong("duration")), LinearLayout.LayoutParams(-1, dp(208)))
@@ -116,7 +116,7 @@ class PerformanceRecordActivity : Activity() {
         root.addView(ScrollView(this).apply{isVerticalScrollBarEnabled = false;addView(content)},LinearLayout.LayoutParams(0,-1,1f))
         val host=FrameLayout(this).apply{setBackgroundColor(owner.detail);clipToOutline=false;addView(root,FrameLayout.LayoutParams(-1,-1))}
         modal=OwnerModal(owner,host,root)
-        setContentView(OwnerDesignLayout(this).apply{setBackgroundColor(owner.detail);addView(host)})
+        setContentView(OwnerDesignLayout(this).apply{setBackgroundColor(owner.detail);addView(host);OwnerWindow.inset(this)})
     }
     @Deprecated("Deprecated in Java")
     override fun onBackPressed(){if(modal?.isOpen==true)modal?.close()else super.onBackPressed()}
@@ -151,7 +151,10 @@ class PerformanceRecordActivity : Activity() {
         val stats = data.optJSONArray("stats")?.optJSONArray(0) ?: JSONArray()
         listOf("FPS", "Power W", "quiet-therm °C").forEachIndexed { index, title ->
             addCard(content, card().apply {
-                addView(label(title, 18f))
+                addView(owner.row().apply{
+                    addView(View(this@PerformanceRecordActivity).apply{background=owner.shape(when(index){1->owner.tiers[0];2->owner.tiers[2];else->owner.accent},99f)},LinearLayout.LayoutParams(dp(8),dp(8)).apply{marginEnd=dp(8)})
+                    addView(label(title,14f))
+                })
                 addView(label("最低 ${number(stats.optDouble(index * 3, Double.NaN))}    平均 ${number(stats.optDouble(index * 3 + 1, Double.NaN))}    最高 ${number(stats.optDouble(index * 3 + 2, Double.NaN))}", 14f))
                 addView(RecordChart(this@PerformanceRecordActivity, scalars, index + 1, duration), LinearLayout.LayoutParams(-1, dp(208)))
             })

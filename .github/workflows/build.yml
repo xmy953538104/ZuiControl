@@ -331,6 +331,7 @@ jobs:
           gradle -p . :app:testDebugUnitTest :app:lintDebug
           python3 tests/monitor/TestFrontendV3.py
           python3 tests/monitor/TestOwnerVisualSync.py
+          python3 tests/monitor/TestPlan2.py
           python3 tests/monitor/TestFinalIntegration.py
           python3 tests/zuiopt/TestRulePublisher.py
           python3 tests/gpu/TestGpuTouch.py

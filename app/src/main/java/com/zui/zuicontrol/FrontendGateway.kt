@@ -10,6 +10,7 @@ interface FrontendGateway {
         performance: GpuRanges.Range, fast: GpuRanges.Range, expectedGeneration: Long): ZuiControlClient.Reply
     fun readRecordLinkedThreadAnalysis(packageName: String): JSONObject
     fun saveAppPolicy(draft: ZuiControlClient.AppPolicyDraft): ZuiControlClient.Reply
+    fun readAppPolicy(packageName: String): ZuiControlClient.AppPolicyDraft?
     fun setGlobal(action: String, value: Int = 0, mode: String = ""): ZuiControlClient.Reply
     fun setOverlay(enabled: Boolean): ZuiControlClient.Reply
     fun stopRecord(): ZuiControlClient.Reply
@@ -39,6 +40,7 @@ class V84FrontendGateway(private val context: Context) : FrontendGateway {
         return result
     }
     override fun saveAppPolicy(draft: ZuiControlClient.AppPolicyDraft) = ZuiControlClient.saveAppPolicy(context, draft)
+    override fun readAppPolicy(packageName: String) = ZuiControlClient.appPolicies().apps.firstOrNull { it.draft.packageName == packageName }?.draft
     override fun setGlobal(action: String, value: Int, mode: String): ZuiControlClient.Reply = runCatching {
         require(action in setOf("refresh", "mode"))
         val id = ZuiControlClient.sendPolicy(context, action, "", "GLOBAL", value = value, mode = mode)

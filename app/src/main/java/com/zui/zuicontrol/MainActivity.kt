@@ -27,7 +27,7 @@ import java.util.Locale
 /** Native V3 shell; all applied facts come from the existing owners. */
 class MainActivity : Activity() {
     private lateinit var session: FrontendSession
-    private val owner by lazy { OwnerUi(this) }
+    private lateinit var owner: OwnerUi
     private lateinit var ownerHost: FrameLayout
     private var ownerModal: OwnerModal? = null
     private var ownerQuiet: OwnerMeter? = null
@@ -50,7 +50,7 @@ class MainActivity : Activity() {
     }
     private val phaseOne get() = session.section == "tune" || session.section == "settings" && session.settingsModule == 1
     private val renderDraft = Runnable { if (visible && !isDestroyed) render() }
-    private fun localRender() { handler.removeCallbacks(renderDraft); handler.postDelayed(renderDraft, 360) }
+    private fun localRender() { handler.removeCallbacks(renderDraft); handler.postDelayed(renderDraft, 16) }
 
     private val handler = Handler(Looper.getMainLooper())
     private val prefs get() = getSharedPreferences("frontend", MODE_PRIVATE)
@@ -100,9 +100,6 @@ class MainActivity : Activity() {
     private var powerMeter: ProgressBar? = null
     private var coreLabel: TextView? = null
     private var coreSlot:FrameLayout?=null
-    private var themeReady=false
-    private data class ThemeFrame(val bitmap:android.graphics.Bitmap,val detailScroll:Int,val masterScroll:Int,val user:Int,val query:String,val record:JSONObject?,val threads:Boolean,val analysis:JSONObject?,val analysisPage:Boolean)
-    companion object { private var themeFrame:ThemeFrame?=null }
     private var coreIndex = 0
     private val coreTicker = object : Runnable {
         override fun run() {
@@ -152,28 +149,13 @@ class MainActivity : Activity() {
     private val surface get() = owner.card
     private val orange get() = owner.inks[2]
 
-    override fun attachBaseContext(base: Context) {
-        val theme=base.getSharedPreferences("frontend",MODE_PRIVATE).getString("theme","system").orEmpty()
-        val themed=if(theme=="system")base else base.createConfigurationContext(Configuration(base.resources.configuration).apply {
-            uiMode=(uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
-                if(FrontendTheme.dark(theme,false))Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
-        })
-        super.attachBaseContext(themed)
-    }
     override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
+        owner=OwnerUi(this)
         session = (lastNonConfigurationInstance as? FrontendSession)?.takeIf { it.userId == ZuiControlClient.currentUserId() }
             ?: FrontendSession(V84FrontendGateway(applicationContext), ZuiControlClient.currentUserId())
         if (lastNonConfigurationInstance == null && saved != null) session.restore(saved)
-        themeFrame?.takeIf{it.user==session.userId}?.let{query=it.query;selectedRecord=it.record;recordThreads=it.threads;recordRequested=it.record!=null;analysis=it.analysis;analysisPage=it.analysisPage}
-        window.statusBarColor = Color.TRANSPARENT; window.navigationBarColor = Color.TRANSPARENT
-        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        if (Build.VERSION.SDK_INT >= 30) {
-            window.setDecorFitsSystemWindows(false)
-            window.insetsController?.apply { hide(WindowInsets.Type.systemBars()); systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE }
-        }
+        OwnerWindow.fullscreen(this)
         val appContext = applicationContext
         Thread { runCatching { ZuiControlRequest.recoverPending(appContext) } }.start()
         render()
@@ -181,13 +163,13 @@ class MainActivity : Activity() {
     override fun onRetainNonConfigurationInstance(): Any = session
     override fun onSaveInstanceState(out: Bundle) { session.save(out); super.onSaveInstanceState(out) }
     override fun onResume() {
-        super.onResume(); visible = true; session.onChanged = changed
+        super.onResume(); visible = true; session.onChanged = changed; session.onControlsChanged = { if(visible) render() }
         ControlsState.observe(controlsChanged); MonitorPresentation.observe(monitorChanged); load()
         ZuiControlQuickService.start(this)
         presentPending()
     }
     override fun onPause() {
-        visible = false; session.onChanged = null; ControlsState.remove(controlsChanged)
+        visible = false; session.onChanged = null; session.onControlsChanged = null; ControlsState.remove(controlsChanged)
         MonitorPresentation.remove(monitorChanged)
         handler.removeCallbacks(recordClock); handler.removeCallbacks(coreTicker); super.onPause()
     }
@@ -202,18 +184,18 @@ class MainActivity : Activity() {
                 policies = ZuiControlClient.appPolicies()
                 installed = packageManager.getInstalledApplications(0).sortedBy { name(it.packageName).lowercase(Locale.ROOT) }
                 ruleError = ""
-                runCatching {
+                if(session.section=="thread")runCatching {
                     ruleState = ZuioptRules.state(applicationContext)
                     val current = ZuioptRules.userRules(applicationContext); val up = ZuioptLibrary.baseline(applicationContext)
                     check(current.generation == up.generation) { "规则版本变化，请刷新" }
                     snapshot = current; baseline = up
                     model = ZuioptRuleModel.parseNormalized(current.text); upstreamModel = ZuioptRuleModel.parseNormalized(up.rules)
                 }.onFailure { model = null; upstreamModel = null; ruleError = it.message.orEmpty() }
-                records = JSONObject(PerformanceMonitor.command("recordList")).optJSONArray("records") ?: JSONArray()
+                if(session.section=="monitor" || records.length()==0) records = JSONObject(PerformanceMonitor.command("recordList")).optJSONArray("records") ?: JSONArray()
                 recordsReadAt = SystemClock.elapsedRealtime()
             }
             handler.post {
-                reading = false;themeReady=true
+                reading = false
                 if (!visible || isDestroyed) return@post
                 result.onFailure { session.error = it.message.orEmpty() }
                 boundGeneration = value(ControlsState.snapshot, "policyGeneration")
@@ -270,14 +252,17 @@ class MainActivity : Activity() {
     }
     private fun render() {
         if (ownerModal?.isOpen == true) return
-        if(session.busy && phaseOne && ::ownerHost.isInitialized){ownerPending();return}
+        val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage"
+        val keepScroll=page==shownPage
+        val oldDetail=if(keepScroll && ::detail.isInitialized)(detail.parent as? ScrollView)?.scrollY ?: 0 else 0
+        val oldMaster=if(keepScroll && ::master.isInitialized)(0 until master.childCount).map{master.getChildAt(it)}.filterIsInstance<ScrollView>().firstOrNull()?.scrollY ?: 0 else 0
         ownerControls.clear()
         handler.removeCallbacks(coreTicker); coreLabel = null;coreSlot=null;quietMeter = null; powerMeter = null
         quietLabel = null; powerLabel = null; powerReason = null; powerUnit = null; recordLabel = null; recordBanner = null; overlayButton = null
         ownerQuiet = null; ownerPower = null; ownerSwitch = null
         val root = owner.row().apply { setBackgroundColor(owner.detail) }
         fun navigate(key: String) { guard {
-            session.section = key; session.selected = ""; session.clearDrafts(); query = ""; selectedRecord = null; recordRequested = false; analysisPage=false;render()
+            session.section = key; session.selected = ""; session.clearDrafts(); query = ""; selectedRecord = null; recordRequested = false; analysisPage=false;render();load()
         } }
         val rail = owner.column().apply { setPadding(0, owner.px(22), 0, owner.px(18)); setBackgroundColor(owner.rail); gravity = Gravity.CENTER_HORIZONTAL }
         rail.addView(owner.column().apply {
@@ -312,7 +297,7 @@ class MainActivity : Activity() {
         root.addView(ScrollView(this).apply{isFillViewport=false;isVerticalScrollBarEnabled=false;clipToPadding=false;addView(detail)},LinearLayout.LayoutParams(0,-1,1f))
         ownerHost=FrameLayout(this).apply{setBackgroundColor(owner.detail);clipToOutline=false;clipChildren=false;clipToPadding=false;addView(root,FrameLayout.LayoutParams(-1,-1))}
         ownerModal=OwnerModal(owner,ownerHost,root)
-        setContentView(OwnerDesignLayout(this).apply{setBackgroundColor(owner.detail);clipChildren=false;clipToPadding=false;addView(ownerHost)})
+        setContentView(OwnerDesignLayout(this).apply{setBackgroundColor(owner.detail);clipChildren=false;clipToPadding=false;addView(ownerHost);OwnerWindow.inset(this)})
         buildMaster()
         if(session.error.isNotEmpty()) detail.addView(owner.label(session.error,12f,owner.chipFg[3],600).apply{
             setSingleLine(false);setPadding(owner.px(14),owner.px(10),owner.px(14),owner.px(10));background=owner.shape(owner.chipBg[3],12f)
@@ -325,13 +310,16 @@ class MainActivity : Activity() {
             "monitor" -> monitorPage()
             "settings" -> settingsPage()
         }
-        val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage"
         if(page!=shownPage){shownPage=page;detail.alpha=0f;detail.translationY=owner.px(6).toFloat();detail.animate().alpha(1f).translationY(0f).setDuration(300).setInterpolator(OwnerUi.smooth).start()}
         bindMonitor()
-        if(session.busy)ownerPending()
+        if(session.busy && !phaseOne)ownerPending()
+        if(keepScroll)ownerHost.post{
+            (detail.parent as? ScrollView)?.scrollTo(0,oldDetail)
+            (0 until master.childCount).map{master.getChildAt(it)}.filterIsInstance<ScrollView>().firstOrNull()?.scrollTo(0,oldMaster)
+        }
         if(session.notice.isNotEmpty() && session.notice!=shownToast){shownToast=session.notice;toast(session.notice)}
         if(session.notice.isEmpty())shownToast=""
-        showThemeTransition()
+
     }
     private fun buildMaster() {
         val titles=mapOf("tune" to "应用策略","thread" to "线程策略","monitor" to "监测记录","settings" to "设置")
@@ -357,17 +345,16 @@ class MainActivity : Activity() {
             master.addView(box,LinearLayout.LayoutParams(-1,owner.px(38)).apply{marginStart=owner.px(18);marginEnd=owner.px(18);bottomMargin=owner.px(12)})
             if(session.section=="thread"){
                 master.addView(segment(listOf("全部","上游","我的"),filter){filter=it;populateList(list)},LinearLayout.LayoutParams(-1,-2).apply{marginStart=owner.px(18);marginEnd=owner.px(18);bottomMargin=owner.px(12)})
-                list.addView(listRow("","规则库","",session.selected.isEmpty()){guard{session.clearDrafts();session.selected="";render()}})
+
             }
             search.addTextChangedListener(watcher{query=it;populateList(list)});populateList(list)
         }
         master.addView(ScrollView(this).apply{isVerticalScrollBarEnabled=false;addView(list)},LinearLayout.LayoutParams(-1,0,1f))
     }
     private fun ownerAppIcon(pkg: String,size: Int=40): View=ImageView(this).apply {
-        setImageDrawable(runCatching{packageManager.getApplicationIcon(pkg)}.getOrNull());scaleType=ImageView.ScaleType.CENTER_CROP
-        val radius=when(size){44->13f;36->10f;else->12f}
-        background=owner.shape(owner.card2,radius);foreground=owner.shape(Color.TRANSPARENT,radius,0x14ffffff)
-        clipToOutline=true;importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        runCatching{packageManager.getApplicationIcon(pkg)}.onSuccess{setImageDrawable(it)}
+        scaleType=ImageView.ScaleType.FIT_CENTER;setPadding(0,0,0,0)
+        importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
         layoutParams=LinearLayout.LayoutParams(owner.px(size),owner.px(size))
     }
     private fun ownerListRow(pkg: String,title: String,subtitle: String,selected: Boolean,icon: Int?=null,action:()->Unit): View=owner.row().apply{
@@ -397,7 +384,7 @@ class MainActivity : Activity() {
 
     private fun populateList(list: LinearLayout) {
         list.removeAllViews()
-        if(session.section=="thread")list.addView(listRow("","规则库","",session.selected.isEmpty()){guard{session.clearDrafts();session.selected="";render()}})
+
         val rows = when (session.section) {
             "tune" -> policies?.apps.orEmpty().map { Triple(it.draft.packageName, name(it.draft.packageName), "${it.draft.refreshHz} Hz · ${modeTitle(it.draft.uperfMode)}${if (model?.appProfile(it.draft.packageName) != null) " · 线程" else ""}") }
             "thread" -> installed.mapNotNull { app ->
@@ -469,12 +456,12 @@ class MainActivity : Activity() {
         detail.addView(stats,owner.gap())
         detail.addView(owner.card().apply{
             addView(owner.section("全局刷新率","全局默认屏幕刷新率档位模式"))
-            val rates=supportedRates();addView(ownerControl(OwnerSegment(this@MainActivity,owner,rates.map{"$it Hz"},rates.indexOf(refresh.displayed),enabled=!session.busy){i->
-                optimistic(refresh,rates[i]){session.gateway.setGlobal("refresh",value=rates[i])}
+            val rates=supportedRates();addView(ownerControl(OwnerSegment(this@MainActivity,owner,rates.map{"$it Hz"},rates.indexOf(refresh.displayed)){i->
+                optimistic(refresh,rates[i]){target->session.gateway.setGlobal("refresh",value=target)}
             }))
             if(refresh.confirmed==0)addView(owner.label("全局档位尚未确认",11f,owner.inks[2]))
             addView(owner.divider());addView(owner.section("全局性能档位","日常系统调度激进程度"))
-            addView(ownerControl(owner.tiers(mode.displayed,enabled=!session.busy){id->optimistic(mode,id){session.gateway.setGlobal("mode",mode=id)}}))
+            addView(ownerControl(owner.tiers(mode.displayed){id->optimistic(mode,id){target->session.gateway.setGlobal("mode",mode=target)}}))
         },owner.gap())
         detail.addView(owner.card(false).apply{
             orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(owner.px(19),owner.px(16),owner.px(19),owner.px(16))
@@ -488,22 +475,20 @@ class MainActivity : Activity() {
                 ownerSwitch=View(this@MainActivity).apply{background=owner.shape(Color.WHITE,99f);elevation=owner.px(2).toFloat();translationX=owner.px(if(this@MainActivity.overlay.displayed)18 else 0).toFloat()}
                 addView(ownerSwitch,FrameLayout.LayoutParams(owner.px(20),owner.px(20)).apply{leftMargin=owner.px(3);topMargin=owner.px(3)})
             },LinearLayout.LayoutParams(owner.px(44),owner.px(26)).apply{marginStart=owner.px(14)})
-            isEnabled=!session.busy;alpha=if(session.busy).6f else 1f;isFocusable=true;contentDescription="性能监视悬浮窗，${if(this@MainActivity.overlay.displayed)"已开启" else "已关闭"}";setOnClickListener{toggleOverlay()}
+            isEnabled=true;alpha=1f;isFocusable=true;contentDescription="性能监视悬浮窗，${if(this@MainActivity.overlay.displayed)"已开启" else "已关闭"}";setOnClickListener{toggleOverlay()}
             tag="owner-control"
         },owner.gap())
     }
 
-    private fun <T> optimistic(control: OptimisticControl<T>, value: T, action: () -> ZuiControlClient.Reply) {
-        if (session.busy || !control.begin(value)) return
-        session.work("已生效") {
-            try { val reply = action(); control.finish(reply.ok); check(reply.ok) { reply.text } }
-            catch (e: Exception) { if (control.pending) control.finish(false); throw e }
-        }
+    private fun <T> optimistic(control: OptimisticControl<T>, value: T, action: (T) -> ZuiControlClient.Reply) {
+        session.intent(control,value,action)
     }
     private fun toggleOverlay() {
         if (!Settings.canDrawOverlays(this)) { overlayPermission(); return }
         ZuiControlQuickService.start(this); val desired = !this@MainActivity.overlay.displayed
-        optimistic(overlay, desired) { session.gateway.setOverlay(desired) }
+        optimistic(overlay, desired) { target->session.gateway.setOverlay(target) }
+        ownerSwitch?.animate()?.translationX(owner.px(if(desired)18 else 0).toFloat())?.setDuration(300)?.setInterpolator(OwnerUi.spring)?.start()
+        (ownerSwitch?.parent as? View)?.background=owner.shape(if(desired)owner.accent else owner.line2,13f)
     }
     private fun coreHealth() {
         val body=owner.column()
@@ -550,9 +535,9 @@ class MainActivity : Activity() {
         val rates=supportedRates()
         val box=owner.card()
         box.addView(owner.section("自定义应用刷新率","前台应用自定义刷新率档位"))
-        box.addView(OwnerSegment(this,owner,rates.map{"$it Hz"},rates.indexOf(d.refreshHz),enabled=!session.busy){session.appDraft=checkNotNull(session.appDraft).copy(refreshHz=rates[it]);localRender()})
+        box.addView(OwnerSegment(this,owner,rates.map{"$it Hz"},rates.indexOf(d.refreshHz)){session.appDraft=checkNotNull(session.appDraft).copy(refreshHz=rates[it]);localRender()})
         box.addView(owner.divider());box.addView(owner.section("自定义应用性能档位","调配集群负载迁移阈值与超大核激进度"))
-        box.addView(owner.tiers(d.uperfMode,true,!session.busy && configurable){id->session.appDraft=checkNotNull(session.appDraft).copy(uperfMode=id,gpuPolicy=ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,gpuMinMHz=null,gpuMaxMHz=null);localRender()})
+        box.addView(owner.tiers(d.uperfMode,true,configurable){id->session.appDraft=checkNotNull(session.appDraft).copy(uperfMode=id,gpuPolicy=ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,gpuMinMHz=null,gpuMaxMHz=null);localRender()})
         if(!configurable)box.addView(owner.label("此应用不支持 Uperf 配置；刷新率和适用的线程规则仍可配置",11f,owner.muted).apply{setSingleLine(false)})
         box.addView(owner.divider())
         val range=runCatching{if(d.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM)GpuRanges.Range(d.gpuMinMHz!!,d.gpuMaxMHz!!) else globalRanges().getValue(d.uperfMode)}
@@ -560,7 +545,7 @@ class MainActivity : Activity() {
             val readout=ownerReadout(r,owner.accent)
             val custom=d.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM
             val trailing=owner.row().apply{
-                addView(OwnerSegment(this@MainActivity,owner,listOf("默认","自定义"),if(custom)1 else 0,true,!session.busy && configurable){i->
+                addView(OwnerSegment(this@MainActivity,owner,listOf("默认","自定义"),if(custom)1 else 0,true,configurable){i->
                     val current=checkNotNull(session.appDraft)
                     val effective=if(current.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM)GpuRanges.Range(current.gpuMinMHz!!,current.gpuMaxMHz!!) else globalRanges().getValue(current.uperfMode)
                     session.appDraft=current.copy(gpuPolicy=if(i==0)ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE else ZuiControlClient.GpuPolicy.CUSTOM,gpuMinMHz=if(i==0)null else effective.min,gpuMaxMHz=if(i==0)null else effective.max);localRender()
@@ -569,9 +554,9 @@ class MainActivity : Activity() {
             }
             box.addView(owner.section("GPU 频率范围",if(custom)"仅此应用使用的固定区间" else "持续跟随「${modeTitle(d.uperfMode)}」档默认范围",trailing))
             val bar=GpuRangeBar(this,r).apply{
-                isEnabled=!session.busy && configurable && custom
+                isEnabled=configurable && custom
                 onPreview={ownerUpdateReadout(readout,it)}
-                onCommit={session.appDraft=checkNotNull(session.appDraft).copy(gpuPolicy=ZuiControlClient.GpuPolicy.CUSTOM,gpuMinMHz=it.min,gpuMaxMHz=it.max);handler.postDelayed({if(visible)render()},320)}
+                onCommit={session.appDraft=checkNotNull(session.appDraft).copy(gpuPolicy=ZuiControlClient.GpuPolicy.CUSTOM,gpuMinMHz=it.min,gpuMaxMHz=it.max);localRender()}
             };box.addView(bar,LinearLayout.LayoutParams(-1,bar.preferredHeight))
         }.onFailure{box.addView(owner.label("GPU 默认范围暂不可用 · ${it.message}",11f,owner.inks[2]).apply{setSingleLine(false)})}
         box.addView(View(this).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,owner.px(1)).apply{topMargin=owner.px(18);bottomMargin=owner.px(16)})
@@ -698,7 +683,7 @@ class MainActivity : Activity() {
         detail.addView(card().apply {
             addView(owner.section("当前规则集",b?.metadata?.let { listOf(it.optString("source").ifBlank{"来源未提供"},it.optString("sourceVersion")).filter{it.isNotBlank()}.joinToString(" · ") } ?: "规则集不可用",owner.row().apply {
                 addView(owner.button("查看原文",small=true){rawView()})
-                addView(owner.button("导出",small=true){snapshot?.let { export(it.text.toByteArray(),"ZuiControl_rules.conf") }},LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(8)})
+
             }))
             addView(note(b?.let { listOf(it.metadata.optString("sourceDate"),it.metadata.optString("sourceCommit"),"生效 generation ${it.generation}").filter{it.isNotBlank()}.joinToString(" · ") } ?: "等待原生规则权威"))
             val apps=installed.filter { model?.appProfile(it.packageName)!=null }
@@ -715,25 +700,15 @@ class MainActivity : Activity() {
         },gap())
         detail.addView(card().apply {
             addView(owner.label("规则库",11f,owner.muted,800))
-            addView(actionRow("同步上游规则",if(!RuleRemoteConfig.configured)"在线规则待兼容性实验室确认" else latest?.let{"${it.version} · ${it.date}"} ?: "无待同步更新"){syncUpstream()}.apply{isEnabled=RuleRemoteConfig.configured && latest!=null;alpha=if(isEnabled)1f else .4f})
+            addView(actionRow("同步上游规则",if(!RuleRemoteConfig.configured)"规则源尚未启用" else latest?.let{"${it.version} · ${it.date}"} ?: "无待同步更新"){syncUpstream()}.apply{isEnabled=RuleRemoteConfig.configured && latest!=null;alpha=if(isEnabled)1f else .4f})
             val previous=ZuioptRules.field(ruleState,"previous_generation").matches(Regex("g[0-9a-f]{24}"))
             addView(actionRow("回退规则版本",if(previous)"回到上一代完整规则集" else "暂无可回退版本"){confirm("回退规则版本？","上游基线和生效规则一起回退。"){
                 session.work("已回退"){ZuioptRules.command(applicationContext,"rollback",checkNotNull(snapshot).generation)}
             }}.apply{isEnabled=previous;alpha=if(previous)1f else .4f})
             addView(actionRow("高级兼容导入 · AppOpt","兼容转换与差异预览后确认"){document(Intent.ACTION_OPEN_DOCUMENT,102,"*/*")})
-            addView(owner.button("检查更新",small=true){checkUpdates()}.apply{isEnabled=RuleRemoteConfig.configured;alpha=if(isEnabled)1f else .4f})
+            addView(actionRow("规则集导出","导出当前生效规则集"){snapshot?.let{export(it.text.toByteArray(),"ZuiControl_rules.conf")}})
+            addView(actionRow("检查更新",if(RuleRemoteConfig.configured)updateStatus else "规则源尚未启用"){checkUpdates()}.apply{isEnabled=RuleRemoteConfig.configured;alpha=if(isEnabled)1f else .4f})
             if(RuleRemoteConfig.configured && updateStatus.isNotEmpty())addView(note(updateStatus))
-        },gap())
-        detail.addView(card().apply {
-            addView(owner.label("职责边界",11f,owner.muted,800))
-            addView(owner.row().apply {
-                listOf("ZUIopt" to "只决定线程可以运行在哪些 CPU（cpuset / affinity）","Uperf" to "宏观性能模式：调频策略与档位","GPU · Thermal" to "各自 owner 管理，不受线程规则影响").forEachIndexed{i,(title,description)->
-                    addView(owner.column().apply{
-                        background=owner.shape(if(i==0)owner.zoBg else owner.card2,12f);setPadding(dp(12),dp(10),dp(12),dp(10))
-                        addView(owner.label(title,12.5f,if(i==0)owner.zoFg else owner.text,800));addView(note(description,if(i==0)owner.zoFg else owner.muted))
-                    },LinearLayout.LayoutParams(0,-1,1f).apply{if(i>0)marginStart=dp(10)})
-                }
-            },LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(10)})
         },gap())
     }
     private fun checkUpdates() {
@@ -954,7 +929,7 @@ class MainActivity : Activity() {
                     setOnClickListener{rank.setText(((rank.text.toString().toIntOrNull() ?: 1)+delta).coerceIn(1,1024).toString())};owner.press(this)
                 }
                 addView(step("−",-1),LinearLayout.LayoutParams(dp(26),dp(26)))
-                addView(rank,LinearLayout.LayoutParams(dp(32),dp(26)))
+                addView(rank,LinearLayout.LayoutParams(dp(48),dp(26)))
                 addView(step("+",1),LinearLayout.LayoutParams(dp(26),dp(26)))
                 visibility=if(selector=="all")View.GONE else View.VISIBLE
             }
@@ -1070,6 +1045,7 @@ class MainActivity : Activity() {
         fun chart(index:Int,title:String,height:Int)=card().apply{
             setPadding(dp(16),dp(14),dp(16),dp(10))
             addView(owner.row().apply{
+                addView(View(this@MainActivity).apply{background=owner.shape(when(index){1->owner.tiers[0];2->owner.tiers[2];else->owner.accent},99f)},LinearLayout.LayoutParams(dp(8),dp(8)).apply{marginEnd=dp(8)})
                 addView(owner.label(title,13f,owner.text,800),LinearLayout.LayoutParams(0,-2,1f))
                 addView(owner.label("最低 ${number(stats.optDouble(index*3,Double.NaN))} · 平均 ${number(stats.optDouble(index*3+1,Double.NaN))} · 最高 ${number(stats.optDouble(index*3+2,Double.NaN))}",10f,owner.muted,600))
             },LinearLayout.LayoutParams(-1,dp(22)))
@@ -1097,13 +1073,13 @@ class MainActivity : Activity() {
                     addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
                     addView(owner.settingsRow("通知","故障保护与监测记录状态提醒",owner.row().apply{
                         addView(owner.chip(if(enabled)"已开启" else "已关闭",if(enabled)1 else 0,true))
-                        addView(owner.button("系统通知设置",small=true){startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))},LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(8)})
+                        if(!enabled)addView(owner.button("系统通知设置",small=true){startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))},LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(8)})
                     }))
                 },gap())
                 detail.addView(card().apply{
                     setPadding(dp(18),dp(14),dp(18),dp(14));addView(owner.label("显示",11.5f,owner.muted,800),owner.gap(4))
                     val values=listOf("system","dark","light")
-                    addView(owner.settingsRow("界面主题","侧边栏按钮可快速切换深色 / 浅色",segment(listOf("跟随系统", "深色", "浅色"),values.indexOf(prefs.getString("theme","system"))){theme(values[it])}.apply{layoutParams=LinearLayout.LayoutParams(dp(195),dp(32))}))
+                    addView(owner.settingsRow("界面主题","侧边栏按钮可快速切换深色 / 浅色",segment(listOf("跟随系统", "深色", "浅色"),values.indexOf(prefs.getString("theme","system"))){theme(values[it])}.apply{layoutParams=LinearLayout.LayoutParams(dp(220),dp(34))}))
                 },gap())
             }
             1 -> gpuDefaultsPage()
@@ -1148,27 +1124,18 @@ class MainActivity : Activity() {
         }
     }
     private fun theme(theme: String) {
-        themeFrame?.bitmap?.recycle();themeFrame=null
-        if(::ownerHost.isInitialized && ownerHost.width>0 && ownerHost.height>0){
-            val bitmap=android.graphics.Bitmap.createBitmap(ownerHost.width,ownerHost.height,android.graphics.Bitmap.Config.ARGB_8888)
-            ownerHost.draw(android.graphics.Canvas(bitmap))
-            val masterScroll=(0 until master.childCount).map{master.getChildAt(it)}.filterIsInstance<ScrollView>().firstOrNull()?.scrollY ?: 0
-            themeFrame=ThemeFrame(bitmap,(detail.parent as? ScrollView)?.scrollY ?: 0,masterScroll,session.userId,query,selectedRecord,recordThreads,analysis,analysisPage)
-        }
-        prefs.edit().putString("theme", theme).apply();recreate()
-        overridePendingTransition(0,0)
-    }
-    private fun showThemeTransition(){
-        val frame=themeFrame ?: return
-        if(frame.user!=session.userId){frame.bitmap.recycle();themeFrame=null;return}
-        val image=ImageView(this).apply{setImageBitmap(frame.bitmap);scaleType=ImageView.ScaleType.FIT_XY;isClickable=true}
-        ownerHost.addView(image,FrameLayout.LayoutParams(-1,-1))
-        if(!themeReady)return
-        themeFrame=null
-        ownerHost.post{
-            (detail.parent as? ScrollView)?.scrollTo(0,frame.detailScroll)
-            (0 until master.childCount).map{master.getChildAt(it)}.filterIsInstance<ScrollView>().firstOrNull()?.scrollTo(0,frame.masterScroll)
-            image.animate().alpha(0f).setDuration(250).withEndAction{ownerHost.removeView(image);image.setImageDrawable(null);frame.bitmap.recycle()}.start()
+        if(prefs.getString("theme","system")==theme)return
+        val old=if(::ownerHost.isInitialized)ownerHost else null
+        prefs.edit().putString("theme",theme).apply()
+        owner=OwnerUi(this);OwnerWindow.fullscreen(this)
+        render()
+        // Crossfade existing hardware views. No read, recreation or touch-blocking screenshot.
+        if(old!=null && old!==ownerHost){
+            (old.parent as? ViewGroup)?.removeView(old)
+            val fade=object:FrameLayout(this){override fun dispatchTouchEvent(event:MotionEvent)=false}
+            fade.importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            fade.addView(old,FrameLayout.LayoutParams(-1,-1));ownerHost.addView(fade,FrameLayout.LayoutParams(-1,-1))
+            fade.animate().alpha(0f).setDuration(275).withEndAction{(fade.parent as? ViewGroup)?.removeView(fade)}.start()
         }
     }
     private fun monitorGuidance() {
@@ -1239,9 +1206,21 @@ class MainActivity : Activity() {
             setPadding(owner.px(24),owner.px(11),owner.px(24),owner.px(11));background=owner.shape(if(owner.dark)0xf0e8edf6.toInt() else 0xeb0f172a.toInt(),999f)
             elevation=owner.px(12).toFloat();alpha=0f;translationY=owner.px(60).toFloat();importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_YES
         }
-        ownerHost.addView(pill,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply{bottomMargin=owner.px(24)})
-        toastView=pill;pill.animate().alpha(1f).translationY(0f).setDuration(300).setInterpolator(OwnerUi.spring).start();pill.announceForAccessibility(message)
-        handler.postDelayed({pill.animate().alpha(0f).translationY(owner.px(60).toFloat()).setDuration(300).withEndAction{(pill.parent as? ViewGroup)?.removeView(pill)}.start()},2600)
+        val surface=FrameLayout(this).apply{background=owner.shape(Color.TRANSPARENT,999f);clipToOutline=true;alpha=0f;addView(pill);pill.alpha=1f;pill.translationY=0f}
+        ownerHost.addView(surface,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply{bottomMargin=owner.px(24)})
+        toastView=surface
+        surface.post{
+            // Owner toast blur is 8px (modal is 3px): cache only this small backdrop once.
+            if(Build.VERSION.SDK_INT>=31 && surface.width>0 && surface.height>0){
+                val bitmap=android.graphics.Bitmap.createBitmap(surface.width,surface.height,android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas=android.graphics.Canvas(bitmap);canvas.translate(-surface.left.toFloat(),-surface.top.toFloat());ownerHost.draw(canvas)
+                val backdrop=ImageView(this).apply{setImageBitmap(bitmap);scaleType=ImageView.ScaleType.FIT_XY;setRenderEffect(android.graphics.RenderEffect.createBlurEffect(owner.px(8).toFloat(),owner.px(8).toFloat(),android.graphics.Shader.TileMode.CLAMP))}
+                surface.addView(backdrop,0,FrameLayout.LayoutParams(-1,-1))
+            }
+            surface.translationY=owner.px(60).toFloat();surface.animate().alpha(1f).translationY(0f).setDuration(300).setInterpolator(OwnerUi.spring).start()
+        }
+        pill.announceForAccessibility(message)
+        handler.postDelayed({surface.animate().alpha(0f).translationY(owner.px(60).toFloat()).setDuration(300).withEndAction{(surface.parent as? ViewGroup)?.removeView(surface)}.start()},2600)
     }
     private fun confirm(title: String,message: String,action:()->Unit) {
         val kind=if(title.contains("删除") || title.contains("恢复") || title.contains("重启") || title.contains("回退"))"danger-fill" else "primary"

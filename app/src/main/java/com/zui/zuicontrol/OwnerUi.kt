@@ -15,11 +15,11 @@ import kotlin.math.*
 
 /** Native port of FRONTEND_FINAL_V83.html. Dimensions are Owner CSS pixels. */
 internal class OwnerUi(val context: Context) {
-    val dark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+    val dark = OwnerWindow.dark(context)
     private fun c(d: String, l: String) = Color.parseColor(if (dark) d else l)
     val rail=c("#0D1320","#FFFFFF"); val master=c("#0D1320","#F6F8FB"); val detail=c("#090D15","#EEF2F7")
     val card=c("#111927","#FFFFFF"); val card2=c("#1A2334","#F1F4F9")
-    val text=c("#E8EDF6","#0F172A"); val sub=c("#A5B0C3","#475569"); val muted=c("#6C7890","#8E9BAE")
+    val text=c("#E8EDF6","#0F172A"); val sub=c("#A5B0C3","#475569"); val muted=c("#8895AD","#64748B")
     val accent=c("#5B8CFF","#3562C6"); val line=c("#1A94A3B8","#E3E8EF"); val line2=c("#3894A3B8","#CBD5E1")
     val zo=c("#22C3E6","#0891B2"); val zoBg=c("#0D3340","#CFFAFE"); val zoFg=c("#5FD9F3","#155E75")
     val tiers=intArrayOf(c("#1ECB8E","#10B981"),accent,c("#FF8A3D","#EA580C"),c("#FF4D5E","#DC2626"))
@@ -40,8 +40,8 @@ internal class OwnerUi(val context: Context) {
         minimumWidth=px(width)
     }
     fun label(value: String,size: Float,color: Int=text,weight: Int=400)=TextView(context).apply {
-        this.text=value;setTextSize(TypedValue.COMPLEX_UNIT_DIP,size);setTextColor(color)
-        typeface=Typeface.create(Typeface.create("sans-serif",Typeface.NORMAL),weight,false);includeFontPadding=false;gravity=Gravity.CENTER_VERTICAL
+        this.text=value;setTextSize(TypedValue.COMPLEX_UNIT_DIP,OwnerTypography.size(size));setTextColor(color)
+        typeface=Typeface.create(Typeface.create("sans-serif",Typeface.NORMAL),if(weight==400){if(size<12f)OwnerTypography.META.weight else OwnerTypography.BODY.weight}else weight,false);includeFontPadding=false;gravity=Gravity.CENTER_VERTICAL
         setSingleLine(true);ellipsize=android.text.TextUtils.TruncateAt.END
     }
     fun icon(id: Int,color: Int,size: Int=20)=ImageView(context).apply {
@@ -49,12 +49,13 @@ internal class OwnerUi(val context: Context) {
         layoutParams=LinearLayout.LayoutParams(px(size),px(size))
     }
     fun card(padding: Boolean=true)=column().apply {
-        background=shape(card,18f,line); if(padding)setPadding(px(21),px(19),px(21),px(19))
+        background=shape(card,18f,line); if(padding)setPadding(px(20),px(18),px(20),px(18))
         elevation=px(if(dark)3 else 1).toFloat()
         outlineAmbientShadowColor=if(dark)0x66000000 else 0x0d0f172a;outlineSpotShadowColor=outlineAmbientShadowColor
     }
     fun gap(height: Int=14)=LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=px(height) }
     fun chip(value: String,tone: Int=0,large: Boolean=false)=label(value,if(large)11f else 10f,chipFg[tone],700).apply {
+        ellipsize=null;gravity=Gravity.CENTER
         background=shape(chipBg[tone],if(large)6f else 5f);setPadding(px(if(large)9 else 7),0,px(if(large)9 else 7),0)
         minimumHeight=px(if(large)22 else 18)
         layoutParams=LinearLayout.LayoutParams(-2,px(if(large)22 else 18))
@@ -74,7 +75,7 @@ internal class OwnerUi(val context: Context) {
         if(kind=="dashed")background=shape(Color.TRANSPARENT,10f).apply{setStroke(px(1),line2,px(4).toFloat(),px(4).toFloat())}
         val pad=if(kind=="danger")8 else if(small)14 else 20;setPadding(px(pad),0,px(pad),0);gravity=Gravity.CENTER
         if(icon!=null)addView(icon(icon,color,16),LinearLayout.LayoutParams(px(16),px(16)).apply{marginEnd=px(7)})
-        addView(label(value,if(small)12f else 13f,color,800));minimumHeight=px(if(small)32 else 40)
+        addView(label(value,if(small)12f else 13f,color,800).apply{ellipsize=null;gravity=Gravity.CENTER});minimumHeight=px(if(small)32 else 40)
         isEnabled=enabled;alpha=if(enabled)1f else .4f;isFocusable=true;contentDescription=value
         if(kind=="primary"){elevation=px(5).toFloat();outlineSpotShadowColor=soft(accent,100)}
         setOnClickListener { action() };press(this,.96f)
@@ -208,8 +209,9 @@ internal class OwnerDesignLayout(context: Context): FrameLayout(context) {
     private val unit=resources.displayMetrics.density
     override fun onMeasure(w: Int,h: Int) {
         val width=MeasureSpec.getSize(w);val height=MeasureSpec.getSize(h);setMeasuredDimension(width,height)
-        val dw=(1040*unit).roundToInt();val dh=(650*unit).roundToInt()
-        val scale=min(width.toFloat()/dw,height.toFloat()/dh)
+        val dw=(1040*unit).roundToInt()
+        val scale=(width-paddingLeft-paddingRight).toFloat()/dw
+        val dh=((height-paddingTop-paddingBottom)/scale).roundToInt()
         for(i in 0 until childCount)getChildAt(i).apply{
             measure(MeasureSpec.makeMeasureSpec(dw,MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(dh,MeasureSpec.EXACTLY))
             pivotX=0f;pivotY=0f;scaleX=scale;scaleY=scale
@@ -217,7 +219,7 @@ internal class OwnerDesignLayout(context: Context): FrameLayout(context) {
     }
     override fun onLayout(changed: Boolean,l: Int,t: Int,r: Int,b: Int) {
         for(i in 0 until childCount)getChildAt(i).apply{
-            val x=((this@OwnerDesignLayout.width-measuredWidth*scaleX)/2).roundToInt();val y=((this@OwnerDesignLayout.height-measuredHeight*scaleY)/2).roundToInt()
+            val x=paddingLeft;val y=paddingTop
             layout(x,y,x+measuredWidth,y+measuredHeight)
         }
     }
@@ -234,6 +236,7 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
         val pad=ui.px(if(small)3 else 4);options.setPadding(pad,pad,pad,pad)
         values.forEachIndexed { i,value ->
             val text=ui.label(value,if(small)12f else 15f,if(i==index)Color.WHITE else ui.sub,if(small)700 else 800).apply{
+                ellipsize=null
                 gravity=Gravity.CENTER;isFocusable=true;contentDescription=value;isEnabled=enabled
                 if(value.endsWith(" Hz")) {
                     val s=android.text.SpannableString(value.replace(" Hz","Hz"));s.setSpan(android.text.style.RelativeSizeSpan(10f/15f),s.length-2,s.length,0)
@@ -256,6 +259,8 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
             }
             options.addView(text,LinearLayout.LayoutParams(0,-1,1f).apply{if(i>0)marginStart=ui.px(if(small)2 else 4)})
         }
+        val measure=Paint(Paint.ANTI_ALIAS_FLAG).apply{textSize=ui.px(if(small)OwnerTypography.BUTTON.size else 15f).toFloat();typeface=Typeface.create("sans-serif",Typeface.BOLD)}
+        minimumWidth=(values.maxOf{measure.measureText(it)}+ui.px(if(small)16 else 24)).roundToInt()*values.size+pad*2+ui.px(if(small)2 else 4)*(values.size-1)
         addView(options,LayoutParams(-1,-1));minimumHeight=ui.px(if(small)34 else 50)
         layoutParams=LinearLayout.LayoutParams(-1,ui.px(if(small)34 else 50))
     }

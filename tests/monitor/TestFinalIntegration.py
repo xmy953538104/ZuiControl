@@ -60,7 +60,10 @@ import android.content.Context
 import org.json.JSONObject
 object ZuiControlClient {
  data class Reply(val ok:Boolean,val text:String)
- class AppPolicyDraft
+ class AppPolicyDraft(val packageName:String="")
+ class AppRow(val draft:AppPolicyDraft)
+ class AppPolicies(val apps:List<AppRow>)
+ fun appPolicies()=AppPolicies(emptyList())
  fun currentUserId()=0
  fun stateText()="ok=1\\npolicyGeneration=1\\n"+GpuDefaultsDraft.modes.joinToString("\\n"){val r=GpuRanges.default(it);"gpuGlobal=0|$it|${r.min}|${r.max}"}
  fun saveAppPolicy(c:Context,d:AppPolicyDraft)=Reply(true,"")

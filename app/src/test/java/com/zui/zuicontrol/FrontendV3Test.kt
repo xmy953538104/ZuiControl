@@ -8,6 +8,41 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 class FrontendV3Test {
+    @Test fun rapidIntentCoalescesWithoutOverlappingActionsAndAckConfirmsCapturedValue() {
+        val callbacks=LinkedBlockingQueue<()->Unit>()
+        val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
+        val submitted=java.util.Collections.synchronizedList(mutableListOf<Int>())
+        val control=OptimisticControl(120)
+        val action:(Int)->ZuiControlClient.Reply={ submitted.add(it);ZuiControlClient.Reply(true,"ACK") }
+        try{
+            session.intent(control,60,action);session.intent(control,120,action);session.intent(control,90,action)
+            assertEquals(90,control.displayed);assertEquals(120,control.confirmed);assertEquals(60,control.inFlight)
+            checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertEquals(60,control.confirmed);assertEquals(90,control.inFlight)
+            checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertEquals(listOf(60,90),submitted.toList());assertEquals(90,control.confirmed);assertFalse(control.pending)
+            val mode=OptimisticControl("balance");val modes=mutableListOf<String>()
+            val change:(String)->ZuiControlClient.Reply={ modes+=it;ZuiControlClient.Reply(true,"ACK") }
+            session.intent(mode,"performance",change);session.intent(mode,"balance",change)
+            assertEquals("balance",mode.displayed);assertEquals("performance",mode.inFlight)
+            checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertEquals(listOf("performance","balance"),modes);assertEquals("balance",mode.confirmed)
+        }finally{session.close()}
+    }
+    @Test fun localAppFieldsNeverWriteBeforeOneCompleteSave() {
+        val gateway=FakeFrontendGateway().apply{succeed=true};val callbacks=LinkedBlockingQueue<()->Unit>()
+        val session=FrontendSession(gateway,0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
+        try{
+            session.appDraft=ZuiControlClient.AppPolicyDraft("org.example.game",120,"balance",ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,42)
+            session.originalApp=session.appDraft
+            repeat(5){session.appDraft=session.appDraft!!.copy(refreshHz=listOf(60,90,120)[it%3])}
+            repeat(5){session.appDraft=session.appDraft!!.copy(uperfMode=GpuDefaultsDraft.modes[it%4])}
+            session.appDraft=session.appDraft!!.copy(gpuPolicy=ZuiControlClient.GpuPolicy.CUSTOM,gpuMinMHz=310,gpuMaxMHz=903)
+            assertEquals(0,gateway.calls);assertTrue(session.appDirty)
+            val complete=session.appDraft;session.saveApp();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertEquals(1,gateway.calls);assertEquals(complete,gateway.app);assertFalse(session.appDirty);assertEquals(43L,session.originalApp!!.expectedGeneration)
+        }finally{session.close()}
+    }
     private class FakeFrontendGateway : FrontendGateway {
         var calls = 0
         var succeed = false
@@ -31,6 +66,7 @@ class FrontendV3Test {
         override fun saveAppPolicy(draft: ZuiControlClient.AppPolicyDraft): ZuiControlClient.Reply {
             calls++; app = draft; return ZuiControlClient.Reply(succeed, if (succeed) "ACK" else "REFUSED")
         }
+        override fun readAppPolicy(packageName: String) = if(succeed)app?.copy(expectedGeneration=app!!.expectedGeneration+1)else null
         override fun readRecordLinkedThreadAnalysis(packageName: String): JSONObject = error("unused")
         override fun setGlobal(action: String, value: Int, mode: String) = error("unused")
         override fun setOverlay(enabled: Boolean) = error("unused")
@@ -41,8 +77,9 @@ class FrontendV3Test {
     @Test fun optimisticSelectionWaitsForAckAndRollsBack() {
         val control = OptimisticControl(120)
         assertTrue(control.begin(165)); assertEquals(165, control.displayed); assertEquals(120, control.confirmed)
-        assertFalse(control.begin(60)); control.observe(90); assertEquals(165, control.displayed)
-        control.finish(false); assertFalse(control.pending); assertEquals(120, control.displayed)
+        assertFalse(control.begin(60)); control.observe(90); assertEquals(60, control.displayed)
+        control.finish(false); assertFalse(control.pending); assertEquals(60, control.displayed)
+        control.begin(60);control.finish(false);assertEquals(120,control.displayed)
         control.begin(144); control.finish(true); assertEquals(144, control.confirmed)
         control.observe(60); assertEquals(60, control.displayed)
     }
@@ -118,7 +155,7 @@ class FrontendV3Test {
             assertEquals(edited, gateway.app); assertEquals(saved, session.originalApp); assertEquals(edited, session.appDraft)
             assertTrue(session.appDirty); assertEquals("REFUSED", session.error)
             gateway.succeed = true; session.saveApp(); checkNotNull(callbacks.poll(5, TimeUnit.SECONDS)).invoke()
-            assertEquals(edited, session.originalApp); assertFalse(session.appDirty)
+            assertEquals(edited.copy(expectedGeneration=43), session.originalApp); assertFalse(session.appDirty)
         } finally { session.close() }
     }
     @Test fun restoreDefaultRemainsDraftUntilSavedAndMayBeDiscarded() {
