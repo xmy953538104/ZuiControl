@@ -184,7 +184,7 @@ class MainActivity : Activity() {
                 policies = ZuiControlClient.appPolicies()
                 installed = packageManager.getInstalledApplications(0).sortedBy { name(it.packageName).lowercase(Locale.ROOT) }
                 ruleError = ""
-                if(session.section=="thread")runCatching {
+                if(snapshot==null || session.section=="thread")runCatching {
                     ruleState = ZuioptRules.state(applicationContext)
                     val current = ZuioptRules.userRules(applicationContext); val up = ZuioptLibrary.baseline(applicationContext)
                     check(current.generation == up.generation) { "规则版本变化，请刷新" }
