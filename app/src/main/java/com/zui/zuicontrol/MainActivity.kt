@@ -331,7 +331,7 @@ class MainActivity : Activity() {
                 addView(owner.label(subtitle,11f,owner.muted),LinearLayout.LayoutParams(-1,owner.px(14)).apply{topMargin=owner.px(3)})
             },LinearLayout.LayoutParams(0,-2,1f))
             if(session.section in setOf("tune","thread"))addView(owner.icon(R.drawable.owner_plus,Color.WHITE,18).apply{
-                background=owner.shape(owner.accent,11f);setPadding(owner.px(8),owner.px(8),owner.px(8),owner.px(8));elevation=owner.px(5).toFloat()
+                background=owner.shadow(owner.shape(owner.accent,11f),11f,14f,6f,-4f,owner.soft(owner.accent,if(owner.dark)89 else 51));setPadding(owner.px(8),owner.px(8),owner.px(8),owner.px(8))
                 isFocusable=true;contentDescription="添加应用";setOnClickListener{guard{picker()}};owner.press(this,.92f)
             },LinearLayout.LayoutParams(owner.px(34),owner.px(34)))
         },LinearLayout.LayoutParams(-1,owner.px(82)))
@@ -692,7 +692,16 @@ class MainActivity : Activity() {
     }
 
     private fun threadHome() {
-        heading("线程调度", "ZUIopt · 按线程 / 任务的 CPU 放置（cpuset / affinity）")
+        val health=BackendHealth.components(state).firstOrNull{it.component=="ZUIopt"}
+        val status=when {
+            health?.reason=="DISABLED_BY_OWNER" -> "已关闭"
+            health?.reason=="FAILSAFE" -> "故障保护"
+            health?.state==BackendHealth.State.OK -> "运行中"
+            health?.state==BackendHealth.State.FAILED -> "异常"
+            health?.state==BackendHealth.State.DEGRADED -> "需关注"
+            else -> "状态不可用"
+        }
+        detail.addView(owner.title("线程调度","ZUIopt · 按线程 / 任务的 CPU 放置（cpuset / affinity）",trailing=owner.chip(status,when(health?.state){BackendHealth.State.OK->if(health.reason=="DISABLED_BY_OWNER")0 else 1;BackendHealth.State.FAILED->4;BackendHealth.State.DEGRADED->3;else->0},true)))
         if (ruleError.isNotEmpty()) detail.addView(owner.empty("规则暂不可用",ruleError,true), gap())
         if (ZuioptRules.field(ruleState, "failure") == "1") detail.addView(actionRow("ZUIopt 已进入故障保护", ZuioptRules.field(ruleState, "failure_reason") + " · 下次开机重新启用") {
             confirm("下次开机重新启用？", "本次开机继续由 Android 调度，不会立即重启。") { session.work("已安排") { ZuioptRules.command(applicationContext, "reset") } }

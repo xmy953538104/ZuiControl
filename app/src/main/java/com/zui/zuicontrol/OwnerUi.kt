@@ -77,7 +77,7 @@ internal class OwnerUi(val context: Context) {
         if(icon!=null)addView(icon(icon,color,16),LinearLayout.LayoutParams(px(16),px(16)).apply{marginEnd=px(7)})
         addView(label(value,if(small)12f else 13f,color,800).apply{ellipsize=null;gravity=Gravity.CENTER});minimumHeight=px(if(small)32 else 40)
         isEnabled=enabled;alpha=if(enabled)1f else .4f;isFocusable=true;contentDescription=value
-        if(kind=="primary")background=shadow(checkNotNull(background),if(small)10f else 12f,14f,6f,-4f,soft(accent,if(dark)89 else 51))
+        if(kind=="primary")background=shadow(checkNotNull(background),if(small)10f else 12f,18f,8f,-6f,soft(accent,if(dark)89 else 51))
         setOnClickListener { action() };press(this,.96f)
     }
     fun title(title: String,subtitle: String,leading: View?=null,trailing: View?=null): View=row().apply {
