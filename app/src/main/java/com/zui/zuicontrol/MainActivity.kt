@@ -903,13 +903,14 @@ class MainActivity : Activity() {
                         ZuioptRules.upload(applicationContext,"user",next.normalized().toByteArray(),expectedGeneration=d.generation);session.ruleDraft=null
                     }
                 }})
-                addView(View(this@MainActivity),LinearLayout.LayoutParams(0,1,1f))
-                addView(owner.button("记录关联线程分析",icon=R.drawable.owner_chip){analysisPage=true;render()},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
-                addView(owner.button("原始配置",icon=R.drawable.owner_info){rawView()},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
+                else addView(owner.button("放弃新建","danger",icon=R.drawable.owner_trash){guard{session.clearDrafts();session.selected="";render()}})
                 if(provenance(pkg)=="USER_MODIFIED")addView(owner.button("恢复上游"){confirm("恢复上游规则？","将放弃此应用的修改。"){
                     session.work("已恢复上游"){ZuioptLibrary.restoreApp(applicationContext,pkg,checkNotNull(this@MainActivity.baseline));session.ruleDraft=null}
                 }},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
-                addView(owner.button("保存并应用","primary",enabled=!session.busy && d.dirty){saveDraft()})
+                addView(View(this@MainActivity),LinearLayout.LayoutParams(0,1,1f))
+                addView(owner.button("记录关联线程分析",small=true,icon=R.drawable.owner_chip){analysisPage=true;render()}.apply{minimumHeight=dp(40)},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
+                addView(owner.button("原文预览",small=true,icon=R.drawable.owner_info){rawView()}.apply{minimumHeight=dp(40)},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
+                addView(owner.button("保存并应用","primary",small=true,enabled=!session.busy && d.dirty){saveDraft()}.apply{minimumHeight=dp(40)})
             },gap())
         }
         if(d==null)detail.addView(owner.button("查看原文 · 只读",small=true){rawView()},gap())
@@ -1257,9 +1258,9 @@ class MainActivity : Activity() {
         var mask=mine?.generalMask ?: emptySet();val kept=mine?.rules.orEmpty().toMutableList()
         val pattern=input("可选：添加精确线程名")
         val box=column().apply{
-            addView(note("原生预览提供差异摘要。以当前规则为基础，选择 CPU、保留线程或手动添加；采用导入配置请选「采用上游」。"))
+            addView(note("以当前规则为基础，选择 CPU、保留线程或手动添加；采用导入配置请选「采用转换」。"))
             addView(owner.formRow("默认 CPU",cpuPicker(mask,true){mask=it}))
-            mine?.rules?.forEach{rule->addView(owner.check("${rule.matchKind} ${rule.pattern} · ${rule.selector} · CPU ${rule.cpuMask.sorted()}",true){yes->if(yes){if(rule !in kept)kept+=rule}else kept-=rule})}
+            mine?.rules?.forEach{rule->addView(owner.check("${when(rule.matchKind){"exact"->"精确";"prefix"->"前缀";"contains"->"包含";else->"通配"}} ${rule.pattern} · ${if(rule.selector=="all")"全部候选" else "第${rule.selector.substringAfter(':')}个"} · CPU ${cpuRange(rule.cpuMask)}",true){yes->if(yes){if(rule !in kept)kept+=rule}else kept-=rule})}
             addView(owner.formRow("新增线程",pattern));addView(note("新增精确规则使用上方选择的 CPU；已有规则保持原竞争组和 CPU。"))
         }
         ownerModal?.open("手动合并 · ${name(pkg)}","选择要保留的规则后重新预览",480,owner.scroll(box,320),listOf(owner.button("取消"){ownerModal?.close()},owner.button("重新预览","primary"){
