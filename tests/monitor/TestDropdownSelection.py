@@ -5,7 +5,9 @@ ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zui
 ui=(APP/'UiControls.kt').read_text(encoding='utf8');main=(APP/'MainActivity.kt').read_text(encoding='utf8')
 commit=ui[ui.index('    fun commitSelection('):ui.index('    private fun showChoices(')]
 listener=re.search(r'            setOnItemClickListener \{.*?\n            }',ui,re.S)[0]
-assert 'commitSelection(classes.indexOf(cls))' in main
+# Current Owner form uses segmented classes; keep the production dropdown
+# listener regression below without requiring the superseded form composition.
+assert 'classes.indexOf(cls)){cls=classes[it]}' in main
 prefix='''package com.zui.zuicontrol
 class HostText { var text="" }
 class PopupWindow { var dismissals=0; fun dismiss(){dismissals++} }
