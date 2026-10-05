@@ -254,6 +254,13 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
         addView(options,LayoutParams(-1,-1));minimumHeight=ui.px(if(small)34 else 50)
         layoutParams=LinearLayout.LayoutParams(-1,ui.px(if(small)34 else 50))
     }
+    override fun onMeasure(widthMeasureSpec:Int,heightMeasureSpec:Int) {
+        super.onMeasure(widthMeasureSpec,heightMeasureSpec)
+        // HorizontalScrollView measures with an unbounded width. Keep the labels
+        // on the same final geometry as the indicator, including intrinsic width.
+        options.measure(MeasureSpec.makeMeasureSpec((measuredWidth-paddingLeft-paddingRight).coerceAtLeast(0),MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec((measuredHeight-paddingTop-paddingBottom).coerceAtLeast(0),MeasureSpec.EXACTLY))
+    }
     fun showSelection(i:Int){
         if(i==index)return
         animator?.cancel();animator=ValueAnimator.ofFloat(position,i.toFloat()).apply{
