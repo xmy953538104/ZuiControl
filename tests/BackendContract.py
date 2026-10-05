@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
+FIDELITY=json.loads((ROOT/'tests/frontend_fidelity_recovery_delta.json').read_text(encoding='utf-8'))
 IDENTITY=json.loads((ROOT/'tests/integration_identity_delta.json').read_text(encoding='utf-8'))
 FINAL_FRONTEND=json.loads((ROOT/'tests/final_frontend_merge_delta.json').read_text(encoding='utf-8'))
 FRONTEND_INTEGRATION=json.loads((ROOT/'tests/backend_frontend_integration_delta.json').read_text(encoding='utf-8'))
@@ -124,6 +125,16 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
+    # New Owner-authorized Phase 1 App port reverses to the exact 04 integration.
+    # Never repin the original merge/input or historical Backend manifests.
+    assert FIDELITY['baseHead']=='04d4f962315b2cf051f8a3be0af952513e8e6928'
+    allowed={'FrontendGateway.kt','FrontendSession.kt','GpuRangeBar.kt','MainActivity.kt','OwnerUi.kt','FrontendV3Test.kt'}
+    for row in FIDELITY['files']:
+        assert row['path'].startswith('app/') and (Path(row['path']).name in allowed or row['path'].startswith('app/src/main/res/drawable/owner_'))
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        after=row['after'].encode();assert result.count(after)==1,('V84 Phase 1 exact frontend bytes',row['path'])
+        result.remove(after)
+        if row['before'] is not None:result.append(row['before'].encode())
     # Reverse the exact final App merge before replaying unchanged Backend freezes.
     for row in FINAL_FRONTEND['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue

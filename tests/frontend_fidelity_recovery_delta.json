@@ -1,0 +1,138 @@
+{
+  "workPackage": "V84_FRONTEND_VISUAL_FIDELITY_RECOVERY_R1",
+  "baseHead": "04d4f962315b2cf051f8a3be0af952513e8e6928",
+  "visualAuthoritySha256": "d15293b30c5ae17ab4b3a82be5cb63c22441ae7e67cfd4943be7340a2eee2487",
+  "scope": "PHASE_1_A_B_C_D_AND_GPU_POST_ACK_FRONTEND_ONLY",
+  "files": [
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/FrontendGateway.kt",
+      "before": "100644 blob 70de5b464a45f6d3ff62a5e3a80d2cd6fe134dda\tapp/src/main/java/com/zui/zuicontrol/FrontendGateway.kt",
+      "after": "100644 blob ffadb57f5e8344614c4d4324d547edab9e213c17\tapp/src/main/java/com/zui/zuicontrol/FrontendGateway.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+      "before": "100644 blob 516d0a0ed09d18f115cf0519ee9b9eabda7ffefa\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+      "after": "100644 blob 3ef525656739c13ff8df77211207a70f9289ecaf\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
+      "before": "100644 blob a2c998c83d7982737fc070df9c42620f30e65449\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
+      "after": "100644 blob 2e6604767dde2352a0d1e904c41ed010f447a03e\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "before": "100644 blob bd270af846aa8f2e41ee5ff352f6e7cdb220e170\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob 40a5339f3e4fe5ab198ee3bcc80f3afba77b1f3b\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
+      "before": null,
+      "after": "100644 blob ebb622892928d6ccea638141ddc1cecd22850d03\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_back.xml",
+      "before": null,
+      "after": "100644 blob efdf7a91a282ce24acd2cda42e34d7247772cd60\tapp/src/main/res/drawable/owner_back.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_chevron.xml",
+      "before": null,
+      "after": "100644 blob f3c049ac448041fb1142206720f297f55bd1ef1b\tapp/src/main/res/drawable/owner_chevron.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_chip.xml",
+      "before": null,
+      "after": "100644 blob c94b19ad6cd5ce6509b6d16e752ffa7c97ff5933\tapp/src/main/res/drawable/owner_chip.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_close.xml",
+      "before": null,
+      "after": "100644 blob 3bc39525a81dca432632be9dc3b54f90e627811b\tapp/src/main/res/drawable/owner_close.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_data.xml",
+      "before": null,
+      "after": "100644 blob 3b88dedbca6db51f4799e480ef7cc6d4f68d626b\tapp/src/main/res/drawable/owner_data.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_gpu.xml",
+      "before": null,
+      "after": "100644 blob 3a33a1eb97bf63499dd64cff7b6ccf3cde7a27af\tapp/src/main/res/drawable/owner_gpu.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_health.xml",
+      "before": null,
+      "after": "100644 blob 0ba5288c9472df3ca92c29e685293e247620bd77\tapp/src/main/res/drawable/owner_health.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_info.xml",
+      "before": null,
+      "after": "100644 blob 64246a79a3b3dbd411235c824f6d8e450c88e6dc\tapp/src/main/res/drawable/owner_info.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_monitor.xml",
+      "before": null,
+      "after": "100644 blob 63110d6f907697fa0cc18553ddb344129a729806\tapp/src/main/res/drawable/owner_monitor.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_moon.xml",
+      "before": null,
+      "after": "100644 blob f9a15b0d5393bf220ac33ab20a0b37abc3412f37\tapp/src/main/res/drawable/owner_moon.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_plus.xml",
+      "before": null,
+      "after": "100644 blob 6d44a2ccf870463734a746fe9602d0ac7ffb3981\tapp/src/main/res/drawable/owner_plus.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_power.xml",
+      "before": null,
+      "after": "100644 blob 03b8ca76af8103abbfa9e10653fc5d4fdf54ec50\tapp/src/main/res/drawable/owner_power.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_pulse.xml",
+      "before": null,
+      "after": "100644 blob 3499f0496db736bcbaf44d9b8695a68e161e3698\tapp/src/main/res/drawable/owner_pulse.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_search.xml",
+      "before": null,
+      "after": "100644 blob 9af32f9d48e9cd6b22f5fe895d7a18bd276f4ed7\tapp/src/main/res/drawable/owner_search.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_settings.xml",
+      "before": null,
+      "after": "100644 blob 8de7497cd08613fab46455463f79af9a7de2b10c\tapp/src/main/res/drawable/owner_settings.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_sun.xml",
+      "before": null,
+      "after": "100644 blob c7b10202046f65e8b4f27478024b5fc232b0a3a7\tapp/src/main/res/drawable/owner_sun.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_temperature.xml",
+      "before": null,
+      "after": "100644 blob 855533cfe50b41a6fd68dae18d35e6d77e106a6a\tapp/src/main/res/drawable/owner_temperature.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_trash.xml",
+      "before": null,
+      "after": "100644 blob 4cdf7a1428322efe72ef3cbc9143b9e29f853e25\tapp/src/main/res/drawable/owner_trash.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_tune.xml",
+      "before": null,
+      "after": "100644 blob 07136d41f87819e645bda9e2a4aa59f56b1cb7ed\tapp/src/main/res/drawable/owner_tune.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_warn.xml",
+      "before": null,
+      "after": "100644 blob 28c8b1451f874060329e12736a6921af994e1112\tapp/src/main/res/drawable/owner_warn.xml"
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+      "before": "100644 blob 828ff08f777f8502f23f1290990ce010223a4b7d\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+      "after": "100644 blob e6bc4eb0b4093b7bb65e322285e9ca6e6eb87251\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt"
+    }
+  ]
+}
