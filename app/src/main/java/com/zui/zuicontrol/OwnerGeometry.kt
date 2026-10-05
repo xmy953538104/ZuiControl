@@ -43,7 +43,10 @@ internal object OwnerGeometry {
                     .put("textHash",view.text.toString().hashCode()).put("bounds",JSONArray(listOf(view.left,view.top,view.right,view.bottom)))
                     .put("physicalOrigin",JSONArray(location.toList())).put("textSize",view.textSize)
                     .put("scale",JSONArray(listOf(view.scaleX,view.scaleY))).put("translation",JSONArray(listOf(view.translationX,view.translationY)))
-                    .put("lineHeight",view.lineHeight).put("weight",view.typeface.weight).put("ancestorTransforms",transforms(view)).toString())
+                    .put("lineHeight",view.lineHeight).put("weight",view.typeface.weight).put("ancestorTransforms",transforms(view))
+                    .put("packageId",view.tag=="owner-package-id").put("characterCount",view.text.length)
+                    .put("lineEnds",JSONArray((0 until (view.layout?.lineCount ?: 0)).map{view.layout!!.getLineEnd(it)}))
+                    .put("ellipsis",JSONArray((0 until (view.layout?.lineCount ?: 0)).map{view.layout!!.getEllipsisCount(it)})).toString())
             }
             if(view is ViewGroup)for(i in 0 until view.childCount)visit(view.getChildAt(i),"$path/$i")
         }
