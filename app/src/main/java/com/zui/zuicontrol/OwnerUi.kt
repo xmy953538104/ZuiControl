@@ -19,7 +19,10 @@ internal class OwnerUi(val context: Context) {
     private fun c(d: String, l: String) = Color.parseColor(if (dark) d else l)
     val rail=c("#0D1320","#FFFFFF"); val master=c("#0D1320","#F6F8FB"); val detail=c("#090D15","#EEF2F7")
     val card=c("#111927","#FFFFFF"); val card2=c("#1A2334","#F1F4F9")
-    val text=c("#E8EDF6","#0F172A"); val sub=c("#A5B0C3","#475569"); val muted=c("#8895AD","#64748B")
+    val text=c("#E8EDF6","#0F172A"); val sub=c("#A5B0C3","#475569"); val muted=c("#6C7890","#8E9BAE")
+    val code=c("#0A101A","#F8FAFC")
+    val accentSoft=c("#245B8CFF","#173562C6"); val accentGlow=c("#665B8CFF","#4D3562C6")
+    val toastBg=c("#F0E8EDF6","#EB0F172A"); val toastFg=c("#0B1120","#FFFFFF")
     val accent=c("#5B8CFF","#3562C6"); val line=c("#1A94A3B8","#E3E8EF"); val line2=c("#3894A3B8","#CBD5E1")
     val zo=c("#22C3E6","#0891B2"); val zoBg=c("#0D3340","#CFFAFE"); val zoFg=c("#5FD9F3","#155E75")
     val tiers=intArrayOf(c("#1ECB8E","#10B981"),accent,c("#FF8A3D","#EA580C"),c("#FF4D5E","#DC2626"))
@@ -28,7 +31,7 @@ internal class OwnerUi(val context: Context) {
     val chipFg=intArrayOf(sub,c("#5EE0A8","#166534"),c("#8FB0FF","#1E40AF"),c("#FFAA70","#9A3412"),c("#FF8A96","#991B1B"))
     val density=context.resources.displayMetrics.density
     fun px(v: Number)=(v.toFloat()*density).roundToInt()
-    fun soft(color: Int, alpha: Int = if(dark)36 else 23)=(color and 0xffffff) or (alpha shl 24)
+    fun soft(color: Int, alpha: Int = if(dark)36 else if(color==tiers[0] || color==tiers[2])26 else 23)=(color and 0xffffff) or (alpha shl 24)
     fun shape(color: Int, radius: Float, border: Int? = null, stroke: Float=1f) = GradientDrawable().apply {
         setColor(color); cornerRadius=px(radius).toFloat(); if(border!=null)setStroke(px(stroke).coerceAtLeast(1),border)
     }
@@ -42,7 +45,7 @@ internal class OwnerUi(val context: Context) {
     }
     fun label(value: String,size: Float,color: Int=text,weight: Int=400)=TextView(context).apply {
         this.text=value;setTextSize(TypedValue.COMPLEX_UNIT_DIP,OwnerTypography.size(size));setTextColor(color)
-        typeface=Typeface.create(Typeface.create("sans-serif",Typeface.NORMAL),if(weight==400){if(size<12f)OwnerTypography.META.weight else OwnerTypography.BODY.weight}else weight,false);includeFontPadding=false;gravity=Gravity.CENTER_VERTICAL
+        typeface=Typeface.create(Typeface.create("sans-serif",Typeface.NORMAL),weight,false);includeFontPadding=false;gravity=Gravity.CENTER_VERTICAL
         setSingleLine(true);ellipsize=android.text.TextUtils.TruncateAt.END
     }
     fun icon(id: Int,color: Int,size: Int=20)=ImageView(context).apply {
@@ -77,7 +80,7 @@ internal class OwnerUi(val context: Context) {
         if(icon!=null)addView(icon(icon,color,16),LinearLayout.LayoutParams(px(16),px(16)).apply{marginEnd=px(7)})
         addView(label(value,if(small)12f else 13f,color,800).apply{ellipsize=null;gravity=Gravity.CENTER});minimumHeight=px(if(small)32 else 40)
         isEnabled=enabled;alpha=if(enabled)1f else .4f;isFocusable=true;contentDescription=value
-        if(kind=="primary")background=shadow(checkNotNull(background),if(small)10f else 12f,18f,8f,-6f,soft(accent,if(dark)89 else 51))
+        if(kind=="primary")background=shadow(checkNotNull(background),if(small)10f else 12f,18f,8f,-6f,accentGlow)
         setOnClickListener { action() };press(this,.96f)
     }
     fun title(title: String,subtitle: String,leading: View?=null,trailing: View?=null): View=row().apply {
@@ -87,6 +90,19 @@ internal class OwnerUi(val context: Context) {
             addView(label(subtitle,11.5f,muted),LinearLayout.LayoutParams(-1,px(14)).apply{topMargin=px(4)})
         },LinearLayout.LayoutParams(0,px(48),1f))
         if(trailing!=null)addView(trailing,LinearLayout.LayoutParams(-2,-2).apply{marginStart=px(14)})
+        layoutParams=gap()
+    }
+    /** Identity subtitle spans the whole detail width; status chips only share the name row. */
+    fun identityTitle(title:String,pkg:String,leading:View?=null,trailing:View?=null):View=column().apply {
+        addView(row().apply {
+            if(leading!=null)addView(leading,LinearLayout.LayoutParams(-2,-2).apply{marginEnd=px(14)})
+            addView(label(title,20f,text,800),LinearLayout.LayoutParams(0,px(36),1f))
+            if(trailing!=null)addView(trailing,LinearLayout.LayoutParams(-2,-2).apply{marginStart=px(14)})
+        },LinearLayout.LayoutParams(-1,-2))
+        addView(label(pkg,11.5f,muted).apply {
+            tag="owner-package-id";setSingleLine(false);maxLines=2;ellipsize=null
+            setHorizontallyScrolling(false);breakStrategy=android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE
+        },LinearLayout.LayoutParams(-1,-2).apply{topMargin=px(4)})
         layoutParams=gap()
     }
     fun section(title: String,subtitle: String,trailing: View?=null)=row().apply {
@@ -209,8 +225,8 @@ internal class OwnerDesignLayout(context: Context): FrameLayout(context) {
     override fun onMeasure(w: Int,h: Int) {
         val width=MeasureSpec.getSize(w);val height=MeasureSpec.getSize(h);setMeasuredDimension(width,height)
         val dw=(1040*unit).roundToInt()
-        val scale=(width-paddingLeft-paddingRight).toFloat()/dw
-        val dh=((height-paddingTop-paddingBottom)/scale).roundToInt()
+        val scale=min(width.toFloat()/dw,height.toFloat()/(650*unit))
+        val dh=(650*unit).roundToInt()
         for(i in 0 until childCount)getChildAt(i).apply{
             measure(MeasureSpec.makeMeasureSpec(dw,MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(dh,MeasureSpec.EXACTLY))
             pivotX=0f;pivotY=0f;scaleX=scale;scaleY=scale
@@ -218,7 +234,7 @@ internal class OwnerDesignLayout(context: Context): FrameLayout(context) {
     }
     override fun onLayout(changed: Boolean,l: Int,t: Int,r: Int,b: Int) {
         for(i in 0 until childCount)getChildAt(i).apply{
-            val x=paddingLeft;val y=paddingTop
+            val x=0;val y=0
             layout(x,y,x+measuredWidth,y+measuredHeight)
         }
     }
@@ -278,7 +294,7 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
         super.onDraw(canvas);if(index<0)return
         val p=ui.px(if(small)3 else 4).toFloat();val gap=ui.px(if(small)2 else 4).toFloat()
         val w=(width-2*p-(values.size-1)*gap)/values.size
-        paint.color=ui.accent;paint.setShadowLayer(ui.px(16).toFloat(),0f,ui.px(6).toFloat(),ui.soft(ui.accent,if(ui.dark)89 else 51))
+        paint.color=ui.accent;paint.setShadowLayer(ui.px(16).toFloat(),0f,ui.px(6).toFloat(),ui.accentGlow)
         val left=p+position*(w+gap);val spread=ui.px(6).toFloat()
         canvas.drawRoundRect(left+spread,p+spread,left+w-spread,height-p-spread,ui.px(5).toFloat(),ui.px(5).toFloat(),paint);paint.clearShadowLayer()
         canvas.drawRoundRect(left,p,left+w,height-p,ui.px(if(small)8 else 11).toFloat(),ui.px(if(small)8 else 11).toFloat(),paint)

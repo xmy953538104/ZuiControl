@@ -24,6 +24,7 @@ import java.util.Locale
 class PerformanceRecordActivity : Activity() {
     private val owner by lazy{OwnerUi(this)}
     private var modal:OwnerModal?=null
+    private val cpuSparklines=OwnerCpuSparklineLoader()
     private val density get() = resources.displayMetrics.density
     private fun dp(n: Int) = (n * density).toInt()
     private val pkg get() = intent.getStringExtra("package").orEmpty()
@@ -35,7 +36,10 @@ class PerformanceRecordActivity : Activity() {
     override fun attachBaseContext(base:android.content.Context){super.attachBaseContext(OwnerWindow.themed(base))}
     override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);OwnerWindow.fullscreen(this)}
     override fun onResume() { super.onResume(); load() }
+    override fun onPause(){cpuSparklines.cancel();super.onPause()}
+    override fun onDestroy(){cpuSparklines.close();super.onDestroy()}
     private fun load() {
+        cpuSparklines.cancel()
         showShell(owner.empty("正在读取应用记录…","读取当前用户最近一次记录"))
         Thread {
             val data = runCatching {
@@ -77,6 +81,9 @@ class PerformanceRecordActivity : Activity() {
             !data.has("package") -> content.addView(label("该应用暂无记录"))
             threadKey.isNotEmpty() -> {
                 addCard(content, card().apply {
+                    addView(OwnerCpuSparklineView(this@PerformanceRecordActivity).apply{
+                        bind(data.optJSONArray("detail") ?: JSONArray(),data.optLong("duration"))
+                    },LinearLayout.LayoutParams(dp(88),dp(22)))
                     addView(owner.row().apply{addView(owner.icon(R.drawable.owner_pulse,owner.accent,16),LinearLayout.LayoutParams(dp(16),dp(16)).apply{marginEnd=dp(8)});addView(label("入榜期间 CPU 时间线 · 单核百分比",14f))})
                     addView(label(threadKey, 12f))
                     addView(label("断档表示无已保存 Top15 样本，不代表 CPU=0。", 12f))
@@ -103,6 +110,7 @@ class PerformanceRecordActivity : Activity() {
             addView(View(this@PerformanceRecordActivity),LinearLayout.LayoutParams(1,0,1f))
             addView(owner.icon(R.drawable.owner_settings,owner.muted).apply{isFocusable=true;contentDescription="返回";setOnClickListener{finish()}},LinearLayout.LayoutParams(dp(20),dp(20)))
         }
+        OwnerWindow.safeContent(rail,28f,18f)
         root.addView(owner.borderedColumn(rail,72),LinearLayout.LayoutParams(dp(72),-1))
         val master=owner.column().apply{
             setBackgroundColor(owner.master);setPadding(dp(18),dp(22),dp(18),dp(18))
@@ -112,6 +120,8 @@ class PerformanceRecordActivity : Activity() {
                 addView(label(pkg,11f));addView(owner.chip("已选择",2))
             },LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(18)})
         }
+        OwnerWindow.safeContent(master,22f)
+        if(content is LinearLayout)OwnerWindow.safeContent(content,20f)
         root.addView(owner.borderedColumn(master,312),LinearLayout.LayoutParams(dp(312),-1))
         root.addView(ScrollView(this).apply{isVerticalScrollBarEnabled = false;addView(content)},LinearLayout.LayoutParams(0,-1,1f))
         val host=FrameLayout(this).apply{setBackgroundColor(owner.detail);clipToOutline=false;addView(root,FrameLayout.LayoutParams(-1,-1))}
@@ -167,18 +177,8 @@ class PerformanceRecordActivity : Activity() {
     private fun showThreads(content: LinearLayout, data: JSONObject) {
         content.addView(identity(data))
         content.addView(label("Top15 入榜线程", 20f))
-        content.addView(label("每约 3 秒采集 Top15。入榜均值不代表整个运行期间的均值；不同进程和线程代次分别统计。", 12f))
-        val threads = data.optJSONArray("threads") ?: JSONArray()
-        if (threads.length() == 0) content.addView(label("暂无可用线程增量样本"))
-        for (i in 0 until threads.length()) {
-            val row = threads.getJSONArray(i)
-            addCard(content, card().apply {
-                addView(label(row.optString(1), 17f))
-                addView(label("入榜均值 ${number(row.optDouble(2))}% · 峰值 ${number(row.optDouble(3))}% · 有效样本 ${row.optLong(4)} 次", 13f))
-                addView(label(row.optString(0), 11f))
-                setOnClickListener { navigate(key = row.optString(0), name = row.optString(1)) }
-            })
-        }
+        content.addView(label("每约 3 秒采集 Top15。入榜均值只统计有效样本，不代表整个运行期间的均值；不同进程和线程代次分别统计。", 12f))
+        addCard(content,owner.cpuThreadTable(data,cpuSparklines))
     }
     private fun deleteRecord(){
         modal?.open("删除该应用记录？","仅删除此应用的最近一次记录，其他应用记录会保留。",360,owner.column(),listOf(

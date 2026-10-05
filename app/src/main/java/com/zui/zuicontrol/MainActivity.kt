@@ -29,6 +29,9 @@ class MainActivity : Activity() {
     private lateinit var session: FrontendSession
     private lateinit var owner: OwnerUi
     private lateinit var ownerHost: FrameLayout
+    private lateinit var physicalHost: FrameLayout
+    private lateinit var ownerCanvas: OwnerDesignLayout
+    private val cpuSparklines=OwnerCpuSparklineLoader()
     private var ownerModal: OwnerModal? = null
     private var ownerQuiet: OwnerMeter? = null
     private var ownerPower: OwnerMeter? = null
@@ -193,8 +196,9 @@ class MainActivity : Activity() {
         MonitorPresentation.remove(monitorChanged)
         handler.removeCallbacks(recordClock); handler.removeCallbacks(coreTicker); super.onPause()
         handler.removeCallbacks(controlsSettled)
+        cpuSparklines.cancel()
     }
-    override fun onDestroy() { if (!isChangingConfigurations) session.close(); super.onDestroy() }
+    override fun onDestroy() { cpuSparklines.close(); if (!isChangingConfigurations) session.close(); super.onDestroy() }
     private fun load() {
         if (reading || session.busy || holdingControlPresentation()) return
         reading = true
@@ -278,6 +282,7 @@ class MainActivity : Activity() {
         val keepScroll=page==shownPage
         val oldDetail=if(keepScroll && ::detail.isInitialized)(detail.parent as? ScrollView)?.scrollY ?: 0 else 0
         val oldMaster=if(keepScroll && ::master.isInitialized)(0 until master.childCount).map{master.getChildAt(it)}.filterIsInstance<ScrollView>().firstOrNull()?.scrollY ?: 0 else 0
+        cpuSparklines.cancel()
         ownerControls.clear()
         handler.removeCallbacks(coreTicker); coreLabel = null;coreSlot=null;quietMeter = null; powerMeter = null
         quietLabel = null; powerLabel = null; powerReason = null; powerUnit = null; recordLabel = null; recordBanner = null; overlayButton = null
@@ -312,14 +317,21 @@ class MainActivity : Activity() {
         rail.addView(View(this),LinearLayout.LayoutParams(1,0,1f))
         nav("theme",if(owner.dark)"浅色" else "深色",if(owner.dark)R.drawable.owner_sun else R.drawable.owner_moon,6){theme(if(owner.dark)"light" else "dark")}
         nav("settings","设置",R.drawable.owner_settings,0){navigate("settings")}
+        OwnerWindow.safeContent(rail,22f,18f)
         root.addView(owner.borderedColumn(rail,72),LinearLayout.LayoutParams(owner.px(72),-1))
         master=owner.column().apply{setBackgroundColor(owner.master)}
         root.addView(owner.borderedColumn(master,312),LinearLayout.LayoutParams(owner.px(312),-1))
         detail=owner.column().apply{setPadding(owner.px(22),owner.px(20),owner.px(22),owner.px(20))}
+        OwnerWindow.safeContent(detail,20f)
         root.addView(ScrollView(this).apply{isFillViewport=false;isVerticalScrollBarEnabled=false;clipToPadding=false;addView(detail)},LinearLayout.LayoutParams(0,-1,1f))
         ownerHost=FrameLayout(this).apply{setBackgroundColor(owner.detail);clipToOutline=false;clipChildren=false;clipToPadding=false;addView(root,FrameLayout.LayoutParams(-1,-1))}
         ownerModal=OwnerModal(owner,ownerHost,root)
-        setContentView(OwnerDesignLayout(this).apply{setBackgroundColor(owner.detail);clipChildren=false;clipToPadding=false;addView(ownerHost);OwnerWindow.inset(this)})
+        ownerCanvas=OwnerDesignLayout(this).apply{setBackgroundColor(owner.detail);clipChildren=false;clipToPadding=false;addView(ownerHost);OwnerWindow.inset(this)}
+        if(!::physicalHost.isInitialized) {
+            physicalHost=FrameLayout(this);setContentView(physicalHost)
+        }
+        physicalHost.setBackgroundColor(owner.detail);physicalHost.removeAllViews()
+        physicalHost.addView(ownerCanvas,FrameLayout.LayoutParams(-1,-1))
         buildMaster()
         if(session.error.isNotEmpty()) detail.addView(owner.label(session.error,12f,owner.chipFg[3],600).apply{
             setSingleLine(false);setPadding(owner.px(14),owner.px(10),owner.px(14),owner.px(10));background=owner.shape(owner.chipBg[3],12f)
@@ -353,10 +365,11 @@ class MainActivity : Activity() {
                 addView(owner.label(subtitle,11f,owner.muted),LinearLayout.LayoutParams(-1,owner.px(14)).apply{topMargin=owner.px(3)})
             },LinearLayout.LayoutParams(0,-2,1f))
             if(session.section in setOf("tune","thread"))addView(owner.icon(R.drawable.owner_plus,Color.WHITE,18).apply{
-                background=owner.shadow(owner.shape(owner.accent,11f),11f,14f,6f,-4f,owner.soft(owner.accent,if(owner.dark)89 else 51));setPadding(owner.px(8),owner.px(8),owner.px(8),owner.px(8))
+                background=owner.shadow(owner.shape(owner.accent,11f),11f,14f,6f,-4f,owner.accentGlow);setPadding(owner.px(8),owner.px(8),owner.px(8),owner.px(8))
                 isFocusable=true;contentDescription="添加应用";setOnClickListener{guard{picker()}};owner.press(this,.92f)
             },LinearLayout.LayoutParams(owner.px(34),owner.px(34)))
         },LinearLayout.LayoutParams(-1,owner.px(82)))
+        OwnerWindow.safeContent(master.getChildAt(0),22f)
         val list=owner.column().apply{setPadding(owner.px(14),owner.px(4),owner.px(14),owner.px(18))}
         if(session.section=="settings") {
             val icons=listOf(R.drawable.owner_monitor,R.drawable.owner_gpu,R.drawable.owner_data,R.drawable.owner_info)
@@ -382,7 +395,7 @@ class MainActivity : Activity() {
     private fun ownerListRow(pkg: String,title: String,subtitle: String,selected: Boolean,icon: Int?=null,action:()->Unit): View=owner.row().apply{
         setPadding(owner.px(13),owner.px(12),owner.px(13),owner.px(12))
         background=owner.shape(owner.card,14f,if(selected)owner.accent else owner.line,if(selected)2f else 1f)
-        if(selected)background=owner.shadow(checkNotNull(background),14f,24f,10f,-12f,owner.soft(owner.accent,if(owner.dark)89 else 51))
+        if(selected)background=owner.shadow(checkNotNull(background),14f,24f,10f,-12f,owner.accentGlow)
         val image=if(pkg.isNotEmpty())ownerAppIcon(pkg) else owner.icon(icon ?: R.drawable.owner_tune,if(selected)owner.accent else owner.sub,19).apply{
             background=owner.shape(if(selected)owner.soft(owner.accent) else owner.card2,12f);setPadding(owner.px(10),owner.px(10),owner.px(10),owner.px(10))
         }
@@ -561,7 +574,7 @@ class MainActivity : Activity() {
             saveButton?.let{it.isEnabled=!session.busy && session.appDirty;it.alpha=if(it.isEnabled)1f else .4f}
         }
         var syncGpu:()->Unit={}
-        detail.addView(owner.title(name(d.packageName),d.packageName,leading,dirtyChip))
+        detail.addView(owner.identityTitle(name(d.packageName),d.packageName,leading,dirtyChip))
         val configurable=UperfAppPolicy.isConfigurable(packageManager,d.packageName)
         val rates=supportedRates()
         val box=owner.card()
@@ -851,7 +864,7 @@ class MainActivity : Activity() {
     private fun rawView() {
         val raw = snapshot?.text ?: return
         val code=owner.row().apply {
-            background=owner.shape(if(owner.dark)Color.parseColor("#080E18") else Color.parseColor("#F8FAFC"),12f,owner.line)
+            background=owner.shape(owner.code,12f,owner.line)
             addView(owner.label(raw.lines().indices.joinToString("\n"){(it+1).toString()},12f,owner.muted).apply{setSingleLine(false);typeface=Typeface.MONOSPACE;gravity=Gravity.TOP;setPadding(dp(12),dp(12),dp(8),dp(12))},LinearLayout.LayoutParams(dp(40),-2))
             addView(label(raw,12f,owner.text).apply{typeface=Typeface.MONOSPACE;setTextIsSelectable(true);gravity=Gravity.TOP;setPadding(dp(14),dp(12),dp(14),dp(12))},LinearLayout.LayoutParams(0,-2,1f))
         }
@@ -873,7 +886,7 @@ class MainActivity : Activity() {
             },LinearLayout.LayoutParams(dp(36),dp(36)).apply{marginEnd=dp(14)})
             addView(ownerAppIcon(pkg,44))
         }
-        detail.addView(owner.title(name(pkg),pkg,leading=leading,trailing=owner.row().apply{
+        detail.addView(owner.identityTitle(name(pkg),pkg,leading=leading,trailing=owner.row().apply{
             addView(provenanceChip(pkg,true));if(d?.dirty==true)addView(owner.chip("未保存",3,true),LinearLayout.LayoutParams(-2,dp(22)).apply{marginStart=dp(6)})
         }))
         if(d==null)detail.addView(owner.empty("此规则暂不能无损显示","可查看完整原文。$ruleError",true),gap())
@@ -1072,22 +1085,7 @@ class MainActivity : Activity() {
         if (recordThreads) {
             detail.addView(button("‹ 返回记录详情") { readRecord(session.selected) }, gap())
             detail.addView(note("Top15 入榜线程；入榜均值不是整段平均。时间线断档表示无已保存的 Top15 样本，不代表 CPU=0。"), gap())
-            val rows = r.optJSONArray("threads") ?: JSONArray(); val same = (0 until rows.length()).groupingBy { rows.getJSONArray(it).optString(1) }.eachCount()
-            detail.addView(card().apply{
-                setPadding(dp(14),dp(8),dp(14),dp(8))
-                val widths=listOf(0,56,80,70,70,84)
-                addView(owner.tableRow(listOf("线程名称","TID","入榜均值","峰值","入榜样本","CPU 时间线").map{owner.label(it,11f,owner.muted,700)},widths,true))
-                for (i in 0 until rows.length()) {
-                    val t = rows.getJSONArray(i)
-                    val values=listOf(t.optString(1)+(if(same[t.optString(1)]!!>1)" · 同名 ${same[t.optString(1)]}" else ""),t.optString(0).split(':').getOrNull(2).orEmpty(),"${number(t.optDouble(2))}%","${number(t.optDouble(3))}%",t.optLong(4).toString(),"查看 ›")
-                    addView(owner.tableRow(values.mapIndexed{j,v->owner.label(v,if(j==0)12f else 11f,if(j==5)owner.accent else owner.text,700)},widths).apply{
-                        isFocusable=true;contentDescription=values.joinToString(" · ");setOnClickListener{
-                            startActivity(Intent(this@MainActivity, PerformanceRecordActivity::class.java).putExtra("package", session.selected).putExtra("thread", t.optString(0)).putExtra("name", t.optString(1)))
-                        };owner.press(this)
-                    })
-                }
-                if(rows.length()==0)addView(owner.empty("暂无线程样本","断档表示未保存 Top15 样本，不代表 CPU=0。"))
-            },gap());return
+            detail.addView(owner.cpuThreadTable(r,cpuSparklines),gap());return
         }
         val policy = r.optJSONObject("policySnapshot")
         detail.addView(note(if (policy == null || policy.length() == 0) "记录开始时未保存策略快照" else
@@ -1177,17 +1175,38 @@ class MainActivity : Activity() {
     }
     private fun theme(theme: String) {
         if(prefs.getString("theme","system")==theme)return
-        val old=if(::ownerHost.isInitialized)ownerHost else null
+        val old=if(::ownerCanvas.isInitialized)ownerCanvas else null
         prefs.edit().putString("theme",theme).apply()
         owner=OwnerUi(this);OwnerWindow.fullscreen(this)
         render()
         // Crossfade existing hardware views. No read, recreation or touch-blocking screenshot.
-        if(old!=null && old!==ownerHost){
+        if(old!=null && old!==ownerCanvas){
             (old.parent as? ViewGroup)?.removeView(old)
             val fade=object:FrameLayout(this){override fun dispatchTouchEvent(event:MotionEvent)=false}
             fade.importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-            fade.addView(old,FrameLayout.LayoutParams(-1,-1));ownerHost.addView(fade,FrameLayout.LayoutParams(-1,-1))
-            fade.animate().alpha(0f).setDuration(275).withEndAction{(fade.parent as? ViewGroup)?.removeView(fade)}.start()
+            fade.addView(old,FrameLayout.LayoutParams(-1,-1));physicalHost.addView(fade,FrameLayout.LayoutParams(-1,-1))
+            // Sibling physical hosts; each Owner canvas applies exactly one transform.
+            val next=ownerCanvas
+            next.viewTreeObserver.addOnPreDrawListener(object:ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw():Boolean {
+                next.viewTreeObserver.removeOnPreDrawListener(this)
+                var measured=-1
+                fun frame(fraction:Int){
+                    if(fraction==measured)return
+                    measured=fraction
+                    OwnerGeometry.theme(old,fraction,"old");OwnerGeometry.theme(next,fraction,"new")
+                }
+                frame(0)
+                android.animation.ValueAnimator.ofFloat(1f,0f).apply {
+                    setDuration(275)
+                    addUpdateListener{fade.alpha=it.animatedValue as Float;frame((it.animatedFraction*4).toInt()*25)}
+                    addListener(object:android.animation.AnimatorListenerAdapter(){
+                        override fun onAnimationEnd(animation:android.animation.Animator){frame(100);physicalHost.removeView(fade)}
+                    });start()
+                }
+                return true
+                }
+            })
         }
     }
     private fun monitorGuidance() {
@@ -1254,8 +1273,8 @@ class MainActivity : Activity() {
     private fun toast(message: String) {
         if(!::ownerHost.isInitialized){Toast.makeText(this,message,Toast.LENGTH_SHORT).show();return}
         toastView?.let{(it.parent as? ViewGroup)?.removeView(it)}
-        val pill=owner.label(message,12f,if(owner.dark)Color.parseColor("#0B1120") else Color.WHITE,700).apply{
-            setPadding(owner.px(24),owner.px(11),owner.px(24),owner.px(11));background=owner.shape(if(owner.dark)0xf0e8edf6.toInt() else 0xeb0f172a.toInt(),999f)
+        val pill=owner.label(message,12f,owner.toastFg,700).apply{
+            setPadding(owner.px(24),owner.px(11),owner.px(24),owner.px(11));background=owner.shape(owner.toastBg,999f)
             elevation=owner.px(12).toFloat();alpha=0f;translationY=owner.px(60).toFloat();importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_YES
         }
         val surface=FrameLayout(this).apply{background=owner.shape(Color.TRANSPARENT,999f);clipToOutline=true;alpha=0f;addView(pill);pill.alpha=1f;pill.translationY=0f}
@@ -1332,7 +1351,7 @@ class MainActivity : Activity() {
     private fun input(hint: String,text: String="")=EditText(this).apply{
         this.hint=hint;setText(text);setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP,12.5f);setTextColor(owner.text);setHintTextColor(owner.muted)
         setSingleLine(true);includeFontPadding=false;typeface=Typeface.MONOSPACE
-        background=owner.shape(if(owner.dark)Color.parseColor("#080E18") else Color.parseColor("#F8FAFC"),10f,owner.line2)
+        background=owner.shape(owner.code,10f,owner.line2)
         setPadding(dp(12),0,dp(12),0);minimumHeight=dp(34);inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
     }
     private fun watcher(action:(String)->Unit)=object:TextWatcher{

@@ -21,7 +21,7 @@ import java.util.Locale
             val left = dp(32).toFloat(); val right = width - dp(8).toFloat()
             val top = dp(8).toFloat(); val bottom = height - dp(24).toFloat()
             if (right <= left || bottom <= top) return
-            paint.textSize = OwnerTypography.CHIP.size * density; paint.typeface=android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD);paint.strokeWidth = density
+            paint.textSize = 10f * density; paint.typeface=android.graphics.Typeface.create(android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.NORMAL),600,false);paint.strokeWidth = density
             axis.ticks.forEach { value ->
                 val y = bottom - (bottom - top) * ((value - axis.low) / (axis.high - axis.low)).toFloat()
                 paint.color = owner.line;paint.pathEffect=android.graphics.DashPathEffect(floatArrayOf(3*density,4*density),0f);canvas.drawLine(left, y, right, y, paint);paint.pathEffect=null
@@ -45,12 +45,12 @@ import java.util.Locale
                 if(!connected)return
                 val area=Path(path).apply{lineTo(lastX,bottom);lineTo(firstX,bottom);close()}
                 paint.style=Paint.Style.FILL
-                paint.shader=android.graphics.LinearGradient(0f,top,0f,bottom,owner.soft(tone,38),owner.soft(tone,0),android.graphics.Shader.TileMode.CLAMP)
+                paint.shader=android.graphics.LinearGradient(0f,top,0f,bottom,owner.soft(tone,71),owner.soft(tone,0),android.graphics.Shader.TileMode.CLAMP)
                 canvas.drawPath(area,paint);paint.shader=null
                 paint.color=tone;paint.style=Paint.Style.STROKE;paint.strokeWidth=2*density;paint.strokeJoin=Paint.Join.ROUND;paint.strokeCap=Paint.Cap.ROUND
                 paint.setShadowLayer(8*density,0f,0f,owner.soft(tone,128))
                 canvas.drawPath(path,paint);paint.clearShadowLayer();paint.style=Paint.Style.FILL
-                paint.shader=android.graphics.RadialGradient(lastX,lastY,8*density,intArrayOf(owner.soft(tone,100),owner.soft(tone,0)),null,android.graphics.Shader.TileMode.CLAMP)
+                paint.shader=android.graphics.RadialGradient(lastX,lastY,8*density,intArrayOf(owner.soft(tone,128),owner.soft(tone,0)),null,android.graphics.Shader.TileMode.CLAMP)
                 canvas.drawCircle(lastX,lastY,8*density,paint);paint.shader=null
                 paint.color=owner.card;canvas.drawCircle(lastX,lastY,3*density,paint)
                 paint.color=tone;paint.style=Paint.Style.STROKE;paint.strokeWidth=2*density;canvas.drawCircle(lastX,lastY,3*density,paint);paint.style=Paint.Style.FILL

@@ -5,6 +5,7 @@ ROOT=Path(__file__).resolve().parents[1]
 FIDELITY=json.loads((ROOT/'tests/frontend_fidelity_recovery_delta.json').read_text(encoding='utf-8'))
 SYNC=json.loads((ROOT/'tests/frontend_visual_sync_delta.json').read_text(encoding='utf-8'))
 PLAN2=json.loads((ROOT/'tests/frontend_owner_polish_delta.json').read_text(encoding='utf-8'))
+VISUAL_CLOSURE=json.loads((ROOT/'tests/frontend_visual_closure_delta.json').read_text(encoding='utf-8'))
 IDENTITY=json.loads((ROOT/'tests/integration_identity_delta.json').read_text(encoding='utf-8'))
 FINAL_FRONTEND=json.loads((ROOT/'tests/final_frontend_merge_delta.json').read_text(encoding='utf-8'))
 FRONTEND_INTEGRATION=json.loads((ROOT/'tests/backend_frontend_integration_delta.json').read_text(encoding='utf-8'))
@@ -127,6 +128,14 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
+    assert VISUAL_CLOSURE['baseHead']=='aeda10226cab96a62eee48081ecbd882bffab71a'
+    allowed={'MainActivity.kt','OwnerUi.kt','OwnerWindow.kt','OwnerTypography.kt','OwnerGeometry.kt','OwnerCpuSparklineView.kt','PerformanceRecordActivity.kt','RecordChart.kt','OwnerVisualClosureTest.kt'}
+    for row in VISUAL_CLOSURE['files']:
+        assert row['path'].startswith('app/') and Path(row['path']).name in allowed
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        after=row['after'].encode();assert result.count(after)==1,('Plan2 closure exact frontend bytes',row['path'])
+        result.remove(after)
+        if row['before'] is not None:result.append(row['before'].encode())
     # Reverse only the current Owner's explicit frontend/interaction delta.
     assert PLAN2['baseHead']=='d7c99926ee55b54af3d53129644693aff81fd887'
     allowed={'FrontendGateway.kt','FrontendSession.kt','FrontendState.kt','MainActivity.kt','GpuRangeBar.kt','OwnerUi.kt','OwnerWindow.kt','OwnerTypography.kt','OwnerEffects.kt','PerformanceRecordActivity.kt','RecordChart.kt','FrontendV3Test.kt'}

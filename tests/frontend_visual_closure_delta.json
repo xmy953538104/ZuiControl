@@ -1,0 +1,53 @@
+{
+  "workPackage": "V84_PRODUCT_PLAN2_VISUAL_CLOSURE_R2",
+  "baseHead": "aeda10226cab96a62eee48081ecbd882bffab71a",
+  "visualAuthoritySha256": "d15293b30c5ae17ab4b3a82be5cb63c22441ae7e67cfd4943be7340a2eee2487",
+  "scope": "Owner-authorized composition/color/typography/full identity/real inline CPU frontend only; preceding receipts immutable",
+  "files": [
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "before": "100644 blob 02cbbec5859c19bd6927810e646e4e32769f2a74\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob e86a05897239a9ecf387c33daddd30ef9f709a91\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerCpuSparklineView.kt",
+      "before": null,
+      "after": "100644 blob c702894338522450de2e5e81c25f0a2822b4961e\tapp/src/main/java/com/zui/zuicontrol/OwnerCpuSparklineView.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerGeometry.kt",
+      "before": null,
+      "after": "100644 blob 7b3747714cfe1a3b2b3b5d0c3dd7c13832933609\tapp/src/main/java/com/zui/zuicontrol/OwnerGeometry.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerTypography.kt",
+      "before": "100644 blob 0951a37fdda718c2301c50098321e16ce6956c2d\tapp/src/main/java/com/zui/zuicontrol/OwnerTypography.kt",
+      "after": "100644 blob 269f10c77dc6db59cb20f8aea7d3cac69a8c0574\tapp/src/main/java/com/zui/zuicontrol/OwnerTypography.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
+      "before": "100644 blob e384bf4249ea250f498083151ed5579adee8bff7\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
+      "after": "100644 blob 436203c60a91368fe4c876090852db3345eb65b6\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
+      "before": "100644 blob d75775791c8d35505502155d84be589142f2e1b6\tapp/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
+      "after": "100644 blob e2d9b4b86cc1fe23c7e257a4bc6ded4ca21762f7\tapp/src/main/java/com/zui/zuicontrol/OwnerWindow.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
+      "before": "100644 blob 17898eccd21ea9073b3e8f05766c672b11362b2b\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
+      "after": "100644 blob 2066bea3e7af269413d35dc21fa19d5d03a345c9\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/RecordChart.kt",
+      "before": "100644 blob 1ac5ddfedb6736307a01bbc2514a8139a0bb91ca\tapp/src/main/java/com/zui/zuicontrol/RecordChart.kt",
+      "after": "100644 blob 1d6d4b3013e1f2329eea6416b7b67da3ba402377\tapp/src/main/java/com/zui/zuicontrol/RecordChart.kt"
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/OwnerVisualClosureTest.kt",
+      "before": null,
+      "after": "100644 blob 40ff1ffc093573b0370ee5c5909312ff2878209c\tapp/src/test/java/com/zui/zuicontrol/OwnerVisualClosureTest.kt"
+    }
+  ]
+}

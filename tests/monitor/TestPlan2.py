@@ -29,4 +29,23 @@ class Plan2(unittest.TestCase):
   self.assertIn('!value.isFinite() || value < 0',chart);self.assertIn('t-previous>gapLimit',chart)
   self.assertIn('LinearGradient',chart);self.assertIn('RadialGradient',chart)
   self.assertNotIn('cubicTo',chart);self.assertNotIn('quadTo',chart)
+ def test_visual_closure_composition_and_exact_type(self):
+  window=read('OwnerWindow.kt');ui=read('OwnerUi.kt');main=read('MainActivity.kt')
+  self.assertIn('v.setPadding(0,0,0,0)',window)
+  self.assertNotIn('v.setPadding(bars.left',window)
+  self.assertIn('val dh=(650*unit).roundToInt()',ui)
+  self.assertIn('physicalHost.addView(fade',main)
+  self.assertNotIn('ownerHost.addView(fade',main)
+  self.assertIn('weight,false)',ui);self.assertNotIn('if(weight==400)',ui)
+  identity=ui.split('fun identityTitle',1)[1].split('fun section',1)[0]
+  self.assertIn('maxLines=2;ellipsize=null',identity)
+  self.assertIn('owner.identityTitle(name(d.packageName)',main)
+  self.assertIn('owner.identityTitle(name(pkg)',main)
+ def test_inline_cpu_has_bounded_existing_authority(self):
+  spark=read('OwnerCpuSparklineView.kt')
+  self.assertIn('targets.take(15)',spark);self.assertIn('newSingleThreadExecutor',spark)
+  self.assertIn('put("thread",key)',spark);self.assertIn('data.optLong("recordId")==id',spark)
+  self.assertIn('Paint.Style.STROKE',spark);self.assertNotIn('Paint.Style.FILL',spark)
+  for name in ('MainActivity.kt','PerformanceRecordActivity.kt'):self.assertIn('owner.cpuThreadTable(',read(name))
+  self.assertNotIn('"查看 ›"',read('MainActivity.kt'))
 if __name__=='__main__':unittest.main(verbosity=2)
