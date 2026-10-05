@@ -101,7 +101,7 @@ class MainActivity : Activity() {
     private var coreLabel: TextView? = null
     private var coreSlot:FrameLayout?=null
     private var themeReady=false
-    private data class ThemeFrame(val bitmap:android.graphics.Bitmap,val detailScroll:Int,val masterScroll:Int,val user:Int,val query:String,val record:JSONObject?,val threads:Boolean,val analysis:JSONObject?)
+    private data class ThemeFrame(val bitmap:android.graphics.Bitmap,val detailScroll:Int,val masterScroll:Int,val user:Int,val query:String,val record:JSONObject?,val threads:Boolean,val analysis:JSONObject?,val analysisPage:Boolean)
     companion object { private var themeFrame:ThemeFrame?=null }
     private var coreIndex = 0
     private val coreTicker = object : Runnable {
@@ -130,6 +130,7 @@ class MainActivity : Activity() {
     private var analysis: JSONObject? = null
     private var analysisError = ""
     private var analysisRead = 0
+    private var analysisPage = false
     private var reading = false
     private var boundGeneration = ""
     private val controlsChanged: () -> Unit = {
@@ -164,7 +165,7 @@ class MainActivity : Activity() {
         session = (lastNonConfigurationInstance as? FrontendSession)?.takeIf { it.userId == ZuiControlClient.currentUserId() }
             ?: FrontendSession(V84FrontendGateway(applicationContext), ZuiControlClient.currentUserId())
         if (lastNonConfigurationInstance == null && saved != null) session.restore(saved)
-        themeFrame?.takeIf{it.user==session.userId}?.let{query=it.query;selectedRecord=it.record;recordThreads=it.threads;recordRequested=it.record!=null;analysis=it.analysis}
+        themeFrame?.takeIf{it.user==session.userId}?.let{query=it.query;selectedRecord=it.record;recordThreads=it.threads;recordRequested=it.record!=null;analysis=it.analysis;analysisPage=it.analysisPage}
         window.statusBarColor = Color.TRANSPARENT; window.navigationBarColor = Color.TRANSPARENT
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
             View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
@@ -276,7 +277,7 @@ class MainActivity : Activity() {
         ownerQuiet = null; ownerPower = null; ownerSwitch = null
         val root = owner.row().apply { setBackgroundColor(owner.detail) }
         fun navigate(key: String) { guard {
-            session.section = key; session.selected = ""; session.clearDrafts(); query = ""; selectedRecord = null; recordRequested = false; render()
+            session.section = key; session.selected = ""; session.clearDrafts(); query = ""; selectedRecord = null; recordRequested = false; analysisPage=false;render()
         } }
         val rail = owner.column().apply { setPadding(0, owner.px(22), 0, owner.px(18)); setBackgroundColor(owner.rail); gravity = Gravity.CENTER_HORIZONTAL }
         rail.addView(owner.column().apply {
@@ -318,11 +319,13 @@ class MainActivity : Activity() {
         },owner.gap())
         when(session.section) {
             "tune" -> if(session.selected.isEmpty())dashboard() else appPage()
-            "thread" -> if(preview!=null)updatePage() else if(session.selected.isEmpty())threadHome() else threadApp()
+            "thread" -> if(preview!=null)updatePage() else if(session.selected.isEmpty())threadHome() else if(analysisPage){
+                detail.addView(owner.title("线程分析 · ${name(session.selected)}","读取已完成记录；CPU 放置由你决定",leading=owner.button("‹",small=true){analysisPage=false;render()}));analysisCard()
+            }else threadApp()
             "monitor" -> monitorPage()
             "settings" -> settingsPage()
         }
-        val page="${session.section}/${session.selected}/${session.settingsModule}"
+        val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage"
         if(page!=shownPage){shownPage=page;detail.alpha=0f;detail.translationY=owner.px(6).toFloat();detail.animate().alpha(1f).translationY(0f).setDuration(300).setInterpolator(OwnerUi.smooth).start()}
         bindMonitor()
         if(session.notice.isNotEmpty() && session.notice!=shownToast){shownToast=session.notice;toast(session.notice)}
@@ -829,6 +832,7 @@ class MainActivity : Activity() {
             owner.scroll(code,340),listOf(owner.button("关闭"){ownerModal?.close()},owner.button("导出","primary"){ownerModal?.close();export(raw.toByteArray(),"ZuiControl_rules.conf")}))
     }
     private fun openRule(pkg: String) {
+        analysisPage=false
         val base = model ?: return
         val p = base.appProfile(pkg)
         session.ruleDraft = RuleDraft(pkg, base, checkNotNull(snapshot).generation, p, p ?: ZuioptRuleModel.Profile((0..7).toSet(), emptyList()))
@@ -896,7 +900,8 @@ class MainActivity : Activity() {
                 addView(owner.button("保存并应用","primary",enabled=!session.busy){saveDraft()})
             },gap())
         }
-        detail.addView(owner.button("查看原文 · 只读",small=true){rawView()},gap());analysisCard()
+        detail.addView(card().apply{addView(actionRow("线程分析","读取该应用已完成的监测记录；不自动生成或应用规则"){analysisPage=true;render()})},gap())
+        detail.addView(owner.button("查看原文 · 只读",small=true){rawView()},gap())
     }
     private fun mutateRule(next: () -> Unit) {
         if (session.busy) return
@@ -988,16 +993,23 @@ class MainActivity : Activity() {
         selectedRecord = JSONObject(PerformanceMonitor.command("recordRead", JSONObject().put("package", pkg).put("threads", threads).put("thread", "").toString())); recordThreads = threads
     } }
     private fun monitorPage() {
-        heading(if (session.selected.isEmpty()) "性能监测" else "${name(session.selected)} · 监测记录", "通过性能监视悬浮窗开始记录")
+        val r = selectedRecord
+        if(r!=null && r.has("package")){
+            val actions=owner.row().apply{
+                addView(owner.button("导出记录",small=true,icon=R.drawable.owner_export){export(r.toString(2).toByteArray(),"ZuiControl_record.json")})
+                addView(owner.button("删除","danger",true,R.drawable.owner_trash){confirm("删除记录？","仅删除此应用最近一次记录。"){
+                    session.work("已删除"){val reply=PerformanceMonitor.command("recordDelete",session.selected);check(reply.startsWith("ok=1")){reply};selectedRecord=null}
+                }},LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(8)})
+            }
+            detail.addView(owner.title(if(recordThreads)"线程运行记录" else name(session.selected),"${whenRecorded(r.optLong("wall"))} · ${duration(r.optLong("duration"))} · ${if(r.optBoolean("complete"))"已结束" else r.optString("terminalReason","未完成")}",trailing=if(recordThreads)null else actions))
+        }else heading("性能监测","通过性能监视悬浮窗开始记录")
         recordBanner = row().apply {
             background = shape(field, 14); recordLabel = label("", 13f, orange, true)
             addView(recordLabel, LinearLayout.LayoutParams(0, -2, 1f)); addView(button("停止") { session.work("记录已停止") {
                 val reply = session.gateway.stopRecord(); check(reply.ok) { reply.text }
             } }); visibility = View.GONE
         }; detail.addView(recordBanner, gap())
-        val r = selectedRecord
         if (r == null || !r.has("package")) { detail.addView(owner.empty("选择一条记录查看详情","暂无记录时，请先开启性能监视悬浮窗。"),gap()); detail.addView(button("记录指引") { monitorGuidance() }); return }
-        detail.addView(note("${whenRecorded(r.optLong("wall"))} · ${duration(r.optLong("duration"))} · ${if (r.optBoolean("complete")) "已结束" else r.optString("terminalReason", "未完成")}"), gap())
         if (recordThreads) {
             detail.addView(button("‹ 返回记录详情") { readRecord(session.selected) }, gap())
             detail.addView(note("Top15 入榜线程；入榜均值不是整段平均。时间线断档表示无已保存的 Top15 样本，不代表 CPU=0。"), gap())
@@ -1036,12 +1048,9 @@ class MainActivity : Activity() {
             addView(chart(2,"温度 · quiet ℃",120),LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=dp(12)})
         },gap())
         detail.addView(note("功耗统计不含插电/不可用时段，曲线断档保留缺失；FPS 为 DISPLAY_MEASURED_FPS。"))
-        detail.addView(button("线程运行记录 · Top15") { readRecord(session.selected, true) }, gap())
-        detail.addView(button("导出记录") { export(r.toString(2).toByteArray(), "ZuiControl_record.json") }, gap())
-        detail.addView(button("删除记录") { confirm("删除记录？", "仅删除此应用最近一次记录。") { session.work("已删除") {
-            val reply = PerformanceMonitor.command("recordDelete", session.selected); check(reply.startsWith("ok=1")) { reply }; selectedRecord = null
-        } } }, gap())
+        detail.addView(card().apply{addView(actionRow("线程运行记录","Top15 入榜线程 · 点击查看 CPU 时间线"){readRecord(session.selected,true)})},gap())
     }
+
     private fun settingsPage() {
         when (session.settingsModule) {
             0 -> {
@@ -1108,7 +1117,7 @@ class MainActivity : Activity() {
             val bitmap=android.graphics.Bitmap.createBitmap(ownerHost.width,ownerHost.height,android.graphics.Bitmap.Config.ARGB_8888)
             ownerHost.draw(android.graphics.Canvas(bitmap))
             val masterScroll=(0 until master.childCount).map{master.getChildAt(it)}.filterIsInstance<ScrollView>().firstOrNull()?.scrollY ?: 0
-            themeFrame=ThemeFrame(bitmap,(detail.parent as? ScrollView)?.scrollY ?: 0,masterScroll,session.userId,query,selectedRecord,recordThreads,analysis)
+            themeFrame=ThemeFrame(bitmap,(detail.parent as? ScrollView)?.scrollY ?: 0,masterScroll,session.userId,query,selectedRecord,recordThreads,analysis,analysisPage)
         }
         prefs.edit().putString("theme", theme).apply();recreate()
         overridePendingTransition(0,0)
