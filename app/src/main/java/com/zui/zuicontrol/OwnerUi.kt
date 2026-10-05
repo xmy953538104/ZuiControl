@@ -256,16 +256,16 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
     }
     fun showSelection(i:Int){
         if(i==index)return
-                    animator?.cancel();animator=ValueAnimator.ofFloat(position,i.toFloat()).apply{
-                        duration=350;interpolator=OwnerUi.spring;addUpdateListener{position=it.animatedValue as Float;invalidate()};start()
-                    }
-                    index=i;for(k in 0 until options.childCount){
-                        val label=options.getChildAt(k) as TextView;label.setTextColor(if(k==i)Color.WHITE else ui.sub)
-                        (label.text as? android.text.Spannable)?.let { s ->
-                            s.getSpans(0,s.length,android.text.style.ForegroundColorSpan::class.java).forEach(s::removeSpan)
-                            s.setSpan(android.text.style.ForegroundColorSpan(if(k==i)0xd9ffffff.toInt() else ui.soft(ui.sub,153)),s.length-2,s.length,0)
-                        }
-                    }
+        animator?.cancel();animator=ValueAnimator.ofFloat(position,i.toFloat()).apply{
+            duration=350;interpolator=OwnerUi.spring;addUpdateListener{position=it.animatedValue as Float;invalidate()};start()
+        }
+        index=i;for(k in 0 until options.childCount){
+            val label=options.getChildAt(k) as TextView;label.setTextColor(if(k==i)Color.WHITE else ui.sub)
+            (label.text as? android.text.Spannable)?.let { s ->
+                s.getSpans(0,s.length,android.text.style.ForegroundColorSpan::class.java).forEach(s::removeSpan)
+                s.setSpan(android.text.style.ForegroundColorSpan(if(k==i)0xd9ffffff.toInt() else ui.soft(ui.sub,153)),s.length-2,s.length,0)
+            }
+        }
     }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas);if(index<0)return
