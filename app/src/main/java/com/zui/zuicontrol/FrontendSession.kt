@@ -16,6 +16,19 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     var originalApp: ZuiControlClient.AppPolicyDraft? = null
     var newApp = false
     var gpuDraft: GpuDefaultsDraft? = null
+    var gpuAuthority: GpuDefaultsDraft? = null; private set
+    fun observeGpuDefaults(fresh: GpuDefaultsDraft) {
+        if (fresh.expectedGeneration < (gpuAuthority?.expectedGeneration ?: 0)) return
+        gpuAuthority = fresh
+        if (gpuDraft != null && gpuDraft?.dirty == false && !busy) gpuDraft = fresh
+    }
+    fun gpuDraftFrom(state: String): GpuDefaultsDraft {
+        gpuDraft?.let { return it }
+        val fresh = GpuDefaultsDraft.fromState(state, userId)
+        observeGpuDefaults(fresh)
+        return checkNotNull(gpuAuthority).also { gpuDraft = GpuDefaultsDraft(it.expectedGeneration, it.original) }
+            .let { checkNotNull(gpuDraft) }
+    }
     var ruleDraft: RuleDraft? = null
     var busy = false
     val refresh = OptimisticControl(0)
@@ -65,7 +78,24 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
         work("已保存并生效", completed) {
             val reply = gateway.saveGpuDefaultsAtomic(r.getValue("powersave"), r.getValue("balance"),
                 r.getValue("performance"), r.getValue("fast"), captured.expectedGeneration)
-            check(reply.ok) { reply.text }; gpuDraft = null
+            if (!reply.ok) {
+                // A rejected CAS never erases the user's ranges or reports success.
+                runCatching { gateway.readGpuDefaults(userId) }.onSuccess { fresh ->
+                    observeGpuDefaults(fresh)
+                    val authority = checkNotNull(gpuAuthority)
+                    gpuDraft = GpuDefaultsDraft(authority.expectedGeneration, authority.original).also {
+                        r.forEach { (mode, range) -> it.set(mode, range) }
+                    }
+                }
+                error(reply.text)
+            }
+            // Establish post-terminal authority BEFORE making a clean draft. MainActivity
+            // may still hold its pre-save state while onChanged immediately renders again.
+            val fresh = gateway.readGpuDefaults(userId)
+            check(fresh.expectedGeneration >= captured.expectedGeneration) { "GPU_POST_ACK_READ_STALE" }
+            observeGpuDefaults(fresh)
+            val authority = checkNotNull(gpuAuthority)
+            gpuDraft = GpuDefaultsDraft(authority.expectedGeneration, authority.original)
         }
     }
     fun close() { onChanged = null; executor.shutdown() }

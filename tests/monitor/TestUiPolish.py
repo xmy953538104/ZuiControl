@@ -14,18 +14,21 @@ class UiPolish(unittest.TestCase):
             self.assertNotIn(forbidden, move)
         self.assertIn('preview(track().snap(event.x))', move)
         preview = text.split('private fun preview(value: Int) {', 1)[1].split('override fun onTouchEvent', 1)[0]
-        for forbidden in ('onCommit', 'onPreview', 'describe(', 'requestLayout', 'Thread', 'ZuiControlClient', 'range =', 'setContentDescription'):
+        for forbidden in ('onCommit', 'describe(', 'requestLayout', 'Thread', 'ZuiControlClient', 'range =', 'setContentDescription'):
             self.assertNotIn(forbidden, preview)
-        self.assertIn('currentRange = next; postInvalidateOnAnimation()', preview)
+        self.assertIn('currentRange = next;onPreview(next);animateRange(next)', preview)
+        # The preview only changes the readout. It cannot create a backend save/draft.
+        main = source('MainActivity.kt')
+        self.assertEqual(main.count('onPreview={ownerUpdateReadout(readout,it)}'),2)
         touch = text.split('override fun onTouchEvent', 1)[1].split('override fun performClick', 1)[0]
         self.assertEqual(touch.count('onCommit(range)'), 1)
-        self.assertIn('val changed = dragging && range != beforeDrag', touch)
+        self.assertIn('val changed = range != beforeDrag', touch)
         self.assertIn('if (changed) onCommit(range)', touch)
         self.assertLess(touch.index('MotionEvent.ACTION_MOVE'), touch.index('onCommit(range)'))
-        for forbidden in ('requestLayout', 'setGpuRange', 'setGlobalGpuRange', 'onPreview'):
+        for forbidden in ('requestLayout', 'setGpuRange', 'setGlobalGpuRange'):
             self.assertNotIn(forbidden, text)
         self.assertIn('x(231), y, x(903)', text)
-        self.assertIn('track().labelsCollide', text)
+        self.assertNotIn('canvas.drawText', text) # Owner readout lives in the section heading.
 
     def test_shared_dropdown_chip_grid_and_tools(self):
         ui = source('UiControls.kt'); main = source('MainActivity.kt')
@@ -36,9 +39,10 @@ class UiPolish(unittest.TestCase):
         # V3 Owner replaces popup App-policy selectors and the old grid with rail/master/detail.
         self.assertIn('AnchoredDropdown(this@MainActivity, classes.mapIndexed', main)
         self.assertNotIn('Spinner(this)', main)
-        self.assertIn('GpuRangeBar(this@MainActivity, range)', main)
-        self.assertIn('LinearLayout.LayoutParams(dp(72), -1)', main)
-        self.assertIn('LinearLayout.LayoutParams(dp(312), -1)', main)
+        self.assertIn('GpuRangeBar(this@MainActivity,r)', main)
+        self.assertIn('LinearLayout.LayoutParams(owner.px(71),-1)', main)
+        self.assertIn('LinearLayout.LayoutParams(owner.px(311),-1)', main)
+        self.assertIn('LinearLayout.LayoutParams(owner.px(1),-1)', main) # 72 / 312 include CSS border.
         for module in ('监测与显示','GPU 默认范围','数据与维护','关于'):
             self.assertIn(module, main)
         self.assertIn('session.saveApp(after)', main)

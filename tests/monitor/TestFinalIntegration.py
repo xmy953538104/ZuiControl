@@ -62,6 +62,7 @@ object ZuiControlClient {
  data class Reply(val ok:Boolean,val text:String)
  class AppPolicyDraft
  fun currentUserId()=0
+ fun stateText()="ok=1\\npolicyGeneration=1\\n"+GpuDefaultsDraft.modes.joinToString("\\n"){val r=GpuRanges.default(it);"gpuGlobal=0|$it|${r.min}|${r.max}"}
  fun saveAppPolicy(c:Context,d:AppPolicyDraft)=Reply(true,"")
  fun sendPolicy(c:Context,a:String,p:String,s:String,value:Int,mode:String)="global"
  fun stateValue(s:String,k:String)=s.lineSequence().firstOrNull{it.startsWith("$k=")}?.substringAfter('=')

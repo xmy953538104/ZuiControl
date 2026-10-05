@@ -14,6 +14,13 @@ class FrontendV3Test {
         var gpu: List<GpuRanges.Range>? = null
         var generation = -1L
         var app: ZuiControlClient.AppPolicyDraft? = null
+        var authoritativeGeneration = 84L
+        var readFailure = false
+        var authoritativeRanges = GpuDefaultsDraft.modes.associateWith { GpuRanges.Range(231,903) }
+        override fun readGpuDefaults(user: Int): GpuDefaultsDraft {
+            check(!readFailure) { "READ_UNAVAILABLE" }
+            return GpuDefaultsDraft(authoritativeGeneration, authoritativeRanges)
+        }
         override fun saveGpuDefaultsAtomic(powersave: GpuRanges.Range, balance: GpuRanges.Range,
             performance: GpuRanges.Range, fast: GpuRanges.Range, expectedGeneration: Long): ZuiControlClient.Reply {
             calls++; gpu = listOf(powersave, balance, performance, fast); generation = expectedGeneration
@@ -51,13 +58,43 @@ class FrontendV3Test {
             checkNotNull(callbacks.poll(5, TimeUnit.SECONDS)).invoke()
             assertFalse(session.busy); assertFalse(navigated); assertEquals(1, gateway.calls)
             assertEquals(83L, gateway.generation); assertEquals(GpuDefaultsDraft.modes.map { captured.getValue(it) }, gateway.gpu)
-            assertSame(draft, session.gpuDraft); assertEquals(captured, draft.ranges); assertTrue(draft.dirty)
+            assertEquals(captured, session.gpuDraft!!.ranges); assertTrue(session.gpuDraft!!.dirty)
+            assertEquals(84L,session.gpuDraft!!.expectedGeneration)
             assertEquals("GENERATION_MISMATCH", session.error); assertEquals(1, oldListener); assertEquals(1, newListener)
             gateway.succeed = true; session.saveGpu { navigated = true }
             checkNotNull(callbacks.poll(5, TimeUnit.SECONDS)).invoke()
-            assertTrue(navigated); assertNull(session.gpuDraft); assertEquals(2, gateway.calls)
+            assertTrue(navigated); assertFalse(session.gpuDraft!!.dirty); assertEquals(2, gateway.calls)
             assertEquals("已保存并生效", session.notice)
         } finally { session.close() }
+    }
+    @Test fun gpuPostAckAuthorityWinsOverStaleActivityStateAndNextSaveUsesFreshGeneration() {
+        val gateway=FakeFrontendGateway().apply{succeed=true;authoritativeGeneration=360}
+        val callbacks=LinkedBlockingQueue<()->Unit>()
+        val session=FrontendSession(gateway,0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
+        try {
+            val stale=GpuDefaultsDraft(359,gateway.authoritativeRanges)
+            session.observeGpuDefaults(stale);session.gpuDraft=GpuDefaultsDraft(359,stale.original).apply{set("fast",GpuRanges.Range(680,903))}
+            gateway.authoritativeRanges=session.gpuDraft!!.ranges.toMap()
+            session.saveGpu();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertEquals(359L,gateway.generation);assertEquals(360L,session.gpuDraft!!.expectedGeneration);assertFalse(session.gpuDraft!!.dirty)
+            session.observeGpuDefaults(stale);assertEquals(360L,session.gpuDraft!!.expectedGeneration)
+            session.gpuDraft!!.set("fast",GpuRanges.Range(629,903))
+            val dirty=session.gpuDraft;session.observeGpuDefaults(GpuDefaultsDraft(360,gateway.authoritativeRanges))
+            assertSame(dirty,session.gpuDraft);assertTrue(session.gpuDraft!!.dirty)
+            gateway.authoritativeGeneration=361;gateway.authoritativeRanges=session.gpuDraft!!.ranges.toMap()
+            session.saveGpu();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertEquals(360L,gateway.generation);assertEquals(361L,session.gpuDraft!!.expectedGeneration);assertFalse(session.gpuDraft!!.dirty)
+            session.clearDrafts();assertEquals(361L,session.gpuDraftFrom("ok=1\npolicyGeneration=359\n"+stale.original.entries.joinToString("\n"){"gpuGlobal=0|${it.key}|${it.value.min}|${it.value.max}"}).expectedGeneration)
+        } finally {session.close()}
+    }
+    @Test fun postAckReadFailureKeepsDraftAndCannotClaimSuccess() {
+        val gateway=FakeFrontendGateway().apply{succeed=true;readFailure=true}
+        val callbacks=LinkedBlockingQueue<()->Unit>();val session=FrontendSession(gateway,0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
+        try{
+            val draft=GpuDefaultsDraft(83,gateway.authoritativeRanges).apply{restoreDefaults()};session.gpuDraft=draft
+            session.saveGpu();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertSame(draft,session.gpuDraft);assertTrue(draft.dirty);assertEquals("",session.notice);assertEquals("READ_UNAVAILABLE",session.error)
+        }finally{session.close()}
     }
     @Test fun completeAppDraftIsConfirmedOnlyAfterSuccessfulAck() {
         val gateway = FakeFrontendGateway(); val callbacks = LinkedBlockingQueue<() -> Unit>()

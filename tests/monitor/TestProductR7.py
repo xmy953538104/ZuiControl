@@ -12,9 +12,11 @@ class ProductR7(unittest.TestCase):
         self.assertIn('this@AnchoredDropdown.commitSelection(position)',ui)
         self.assertIn('commitSelection(classes.indexOf(cls))',main)
         self.assertNotIn('picker.setSelection(',main)
-        self.assertIn('UperfAppPolicy.isConfigurable(packageManager, d.packageName)',main)
-        self.assertIn('tiers(d.uperfMode, configurable)',main)
-        self.assertIn('configurable && d.gpuPolicy',main)
+        compact=re.sub(r'\s+','',main)
+        self.assertIn('UperfAppPolicy.isConfigurable(packageManager,d.packageName)',compact)
+        self.assertIn('owner.tiers(d.uperfMode,true,!session.busy&&configurable)',compact)
+        self.assertIn('isEnabled=!session.busy&&configurable&&custom',compact)
+        self.assertIn('valcustom=d.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM',compact)
         self.assertIn('editableSceneIsHome',quick)
         self.assertIn('|| UperfAppPolicy.isConfigurable(packageManager, pkg)',quick)
         self.assertIn('snapshot.uperfEnabled, modeIntent(value)',app('NotificationQuickControlHelper.kt'))
@@ -60,7 +62,7 @@ class ProductR7(unittest.TestCase):
     def test_owner_ui(self):
         main=app('MainActivity.kt');ui=app('UiControls.kt')
         # Latest Owner V3: four settings modules; Health is exclusively in Dashboard.
-        settings=main.split('private fun settingsPage()',1)[1].split('private fun theme(',1)[0]
+        settings=main.split('private fun settingsPage()',1)[1].split('private fun theme(',1)[0]+main.split('private fun gpuDefaultsPage()',1)[1].split('private fun saveDraft(',1)[0]
         for title in ('监测与显示','GPU 默认范围','数据与维护','关于','立即备份','从备份恢复','恢复出厂配置','导出运行日志','重启调度核心'):
             self.assertIn(title,settings)
         self.assertNotIn('BackendHealth',settings)

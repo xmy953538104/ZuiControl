@@ -4,6 +4,7 @@ import android.content.Context
 import android.annotation.SuppressLint
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.animation.ValueAnimator
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -21,18 +22,18 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
         get() = currentRange
         set(value) { currentRange = value; describe(); invalidate() }
     var onCommit: (GpuRanges.Range) -> Unit = {}
+    var onPreview: (GpuRanges.Range) -> Unit = {}
+    private val owner = OwnerUi(context)
+    var tone: Int = owner.accent
+    private var shownMin = GpuRanges.opps.indexOf(initial.min).toFloat()
+    private var shownMax = GpuRanges.opps.indexOf(initial.max).toFloat()
+    private var motion: ValueAnimator? = null
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val unit = resources.displayMetrics.density
-    private val trackCenterY = resources.getDimension(R.dimen.gpu_track_center_y)
-    private val accent = context.getColor(R.color.ui_accent)
-    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = context.getColor(R.color.ui_secondary); textAlign = Paint.Align.CENTER
-        textSize = 12f * resources.displayMetrics.scaledDensity
-    }
-    private val widestLabel = GpuRanges.opps.maxOf { labelPaint.measureText("${it}MHz") }
-    val preferredHeight: Int get() = (40f * unit + 2f * labelPaint.fontSpacing + 0.5f).toInt()
+    private val trackCenterY = 15f * unit
+    val preferredHeight: Int get() = (30f * unit + .5f).toInt()
     val chipTopMargin: Int get() = (trackCenterY - resources.getDimension(R.dimen.ui_chip_height) / 2).toInt().coerceAtLeast(0)
-    private fun track() = GpuRanges.track(width.toFloat(), widestLabel, 8f * unit)
+    private fun track() = GpuRanges.track(width.toFloat(), 0f, 12f * unit)
     private var minimumThumb = true
     private var beforeDrag = initial
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -42,9 +43,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
     private var dragging = false
     init { isFocusable = true; isClickable = true; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES; describe() }
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        setMeasuredDimension(minOf(MeasureSpec.getSize(widthMeasureSpec),
-            resources.getDimensionPixelSize(R.dimen.gpu_visual_max_width)),
-            resolveSize(preferredHeight, heightMeasureSpec))
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), resolveSize(preferredHeight, heightMeasureSpec))
     }
     private fun x(mhz: Int) = track().x(mhz)
     private fun describe() {
@@ -53,28 +52,28 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val y = trackCenterY
-        paint.strokeWidth = 4 * unit; paint.strokeCap = Paint.Cap.ROUND
-        paint.color = 0xffd5dde5.toInt(); canvas.drawLine(x(231), y, x(903), y, paint)
-        paint.color = accent; canvas.drawLine(x(range.min), y, x(range.max), y, paint)
+        fun pos(index: Float) = 12f*unit+(width-24f*unit)*index/GpuRanges.opps.lastIndex
+        paint.strokeWidth = 10 * unit; paint.strokeCap = Paint.Cap.ROUND
+        paint.color = owner.card2; canvas.drawLine(x(231), y, x(903), y, paint)
+        paint.color = if(isEnabled)tone else owner.soft(tone,115);canvas.drawLine(pos(shownMin),y,pos(shownMax),y,paint)
         for (opp in GpuRanges.opps) {
-            paint.color = if (opp in range.min..range.max) accent else 0xffd5dde5.toInt()
+            paint.color = if (opp > range.min && opp < range.max) 0x99ffffff.toInt() else owner.line2
             canvas.drawCircle(x(opp), y, 2 * unit, paint)
         }
-        for (opp in listOf(range.min, range.max)) {
-            paint.color = accent; canvas.drawCircle(x(opp), y, 10 * unit, paint)
-            paint.color = 0xffffffff.toInt(); canvas.drawCircle(x(opp), y, 5 * unit, paint)
+        for ((i,index) in listOf(shownMin,shownMax).withIndex()) {
+            val radius=12*unit*(if(dragging && (minimumThumb == (i==0)))1.12f else 1f)
+            val xx=pos(index)
+            if(isEnabled){paint.color=owner.soft(tone);canvas.drawCircle(xx,y,radius+6*unit,paint)}
+            paint.color=if(isEnabled)tone else owner.soft(tone,140);canvas.drawCircle(xx,y,radius,paint)
+            paint.color=if(isEnabled)0xffffffff.toInt() else 0x8cffffff.toInt();canvas.drawCircle(xx,y,radius-4*unit,paint)
         }
-        val minLabel = "${range.min}MHz"; val maxLabel = "${range.max}MHz"
-        val baseline = y + 16f * unit - labelPaint.fontMetrics.ascent
-        val stagger = if (track().labelsCollide(range, labelPaint.measureText(minLabel),
-                labelPaint.measureText(maxLabel), 4f * unit)) labelPaint.fontSpacing + 2f * unit else 0f
-        canvas.drawText(minLabel, x(range.min), baseline, labelPaint)
-        canvas.drawText(maxLabel, x(range.max), baseline + stagger, labelPaint)
     }
     private fun preview(value: Int) {
         val next = if (minimumThumb) GpuRanges.Range(value.coerceAtMost(range.max), range.max)
             else GpuRanges.Range(range.min, value.coerceAtLeast(range.min))
-        if (next != currentRange) { currentRange = next; postInvalidateOnAnimation() }
+        if (next != currentRange) {
+            currentRange = next;onPreview(next);animateRange(next)
+        }
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isEnabled) return false
@@ -91,7 +90,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
             }
             MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> {
                 if (!trackingTouch) return false
-                range = beforeDrag; trackingTouch = false; dragging = false
+                range = beforeDrag;resetRangeVisual();onPreview(range);trackingTouch = false; dragging = false
                 parent?.requestDisallowInterceptTouchEvent(false)
             }
             // Take ownership only after horizontal intent; vertical scrolling never previews.
@@ -107,8 +106,8 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
             }
             MotionEvent.ACTION_UP -> {
                 if (!trackingTouch) return false
-                if (dragging) preview(track().snap(event.x))
-                val changed = dragging && range != beforeDrag
+                preview(track().snap(event.x))
+                val changed = range != beforeDrag
                 trackingTouch = false; dragging = false
                 parent?.requestDisallowInterceptTouchEvent(false)
                 describe()
@@ -138,6 +137,17 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
         KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> performClick()
         else -> super.onKeyDown(code, event)
     }
+    private fun animateRange(next: GpuRanges.Range) {
+        motion?.cancel();val a=shownMin;val b=shownMax
+        motion=ValueAnimator.ofFloat(0f,1f).apply {
+            duration=300;interpolator=OwnerUi.spring;addUpdateListener{val f=it.animatedValue as Float
+                shownMin=a+(GpuRanges.opps.indexOf(next.min)-a)*f;shownMax=b+(GpuRanges.opps.indexOf(next.max)-b)*f;invalidate()};start()
+        }
+    }
+    private fun resetRangeVisual() {
+        motion?.cancel();shownMin=GpuRanges.opps.indexOf(range.min).toFloat();shownMax=GpuRanges.opps.indexOf(range.max).toFloat();invalidate()
+    }
+    override fun onDetachedFromWindow() { motion?.cancel();super.onDetachedFromWindow() }
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
         super.onInitializeAccessibilityNodeInfo(info)
         info.className = "android.widget.SeekBar"

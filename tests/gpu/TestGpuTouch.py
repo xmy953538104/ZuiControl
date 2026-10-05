@@ -43,6 +43,9 @@ class UnderTest(initial: GpuRanges.Range) : HostView() {
     private fun track()=GpuRanges.Track(0f,1100f)
     private fun x(mhz:Int)=track().x(mhz)
     private fun describe() {}
+    var onPreview: (GpuRanges.Range)->Unit = {}
+    private fun animateRange(range:GpuRanges.Range) {}
+    private fun resetRangeVisual() {}
     fun keyboard(delta:Int)=step(delta)
 '''
 tests = '''
@@ -54,9 +57,10 @@ fun main() {
     for (y in listOf(41f,88f)) {
         val b=bar(); check(!send(b,0,500f,y)); check(!send(b,1,500f,y)); unchanged(b)
     }
-    // Track taps and slight horizontal jitter do not jump to another OPP.
+    // Owner HTML track taps select the nearest endpoint, committing exactly once.
     for (dx in listOf(0f,7f,8f)) {
-        val b=bar(); send(b,0,500f); send(b,2,500f+dx); send(b,1,500f+dx); unchanged(b)
+        val b=bar(); send(b,0,500f); send(b,2,500f+dx); send(b,1,500f+dx)
+        check(b.range==GpuRanges.Range(578,903)); check(b.commits==1)
         check(b.parent?.captured==false)
     }
     // Vertical gestures never commit even if the parent does not intercept.

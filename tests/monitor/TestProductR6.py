@@ -30,8 +30,9 @@ class ProductR6(unittest.TestCase):
         self.assertEqual(tokens['ui_dialog_vertical_spacing'],'16dp')
         self.assertEqual(tokens['ui_dialog_max_width'],'560dp')
         self.assertIn('r.displayMetrics.widthPixels - 2 * margin',ui)
-        self.assertIn('UiControls.styleDialog(it)',source('MainActivity.kt'))
-        self.assertIn('gpu_visual_max_width',source('GpuRangeBar.kt'))
+        self.assertIn('UiControls.styleDialog(dialog)',source('MainActivity.kt'))
+        self.assertIn('ownerModal?.open(',source('MainActivity.kt'))
+        self.assertIn('setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec)',source('GpuRangeBar.kt'))
 
     def test_physical_padding_typography_and_order(self):
         monitor=source('PerformanceMonitor.kt')

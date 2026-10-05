@@ -5,6 +5,7 @@ import org.json.JSONObject
 
 /** Production adapters use the existing authenticated owners and terminal ACKs. */
 interface FrontendGateway {
+    fun readGpuDefaults(user: Int): GpuDefaultsDraft
     fun saveGpuDefaultsAtomic(powersave: GpuRanges.Range, balance: GpuRanges.Range,
         performance: GpuRanges.Range, fast: GpuRanges.Range, expectedGeneration: Long): ZuiControlClient.Reply
     fun readRecordLinkedThreadAnalysis(packageName: String): JSONObject
@@ -18,6 +19,7 @@ interface FrontendGateway {
 
 class V84FrontendGateway(private val context: Context) : FrontendGateway {
     private val upstream = RuleUpstreamFetcher()
+    override fun readGpuDefaults(user: Int) = GpuDefaultsDraft.fromState(ZuiControlClient.stateText(), user)
     override fun saveGpuDefaultsAtomic(powersave: GpuRanges.Range, balance: GpuRanges.Range,
         performance: GpuRanges.Range, fast: GpuRanges.Range, expectedGeneration: Long): ZuiControlClient.Reply = runCatching {
         val payload = gpuBatchPayload(ZuiControlClient.currentUserId(), expectedGeneration,
