@@ -12,7 +12,7 @@ internal class OwnerShadowDrawable(private val surface: Drawable, private val un
     override fun draw(canvas:Canvas){
         val rect=RectF(bounds).apply{inset(-spread*unit,-spread*unit)}
         if(rect.width()>0 && rect.height()>0){
-            paint.color=Color.BLACK;paint.setShadowLayer(blur*unit,0f,offset*unit,tone)
+            paint.color=tone;paint.setShadowLayer(blur*unit,0f,offset*unit,tone)
             canvas.drawRoundRect(rect,(radius+spread).coerceAtLeast(0f)*unit,(radius+spread).coerceAtLeast(0f)*unit,paint)
             paint.clearShadowLayer()
         }

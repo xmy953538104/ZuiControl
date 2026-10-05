@@ -32,7 +32,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerEffects.kt",
       "before": null,
-      "after": "100644 blob 3afe247c941fe4924b653074209e19dddc1f2998\tapp/src/main/java/com/zui/zuicontrol/OwnerEffects.kt"
+      "after": "100644 blob 05d814d46312e8ba6720569fb401b106a939a5cb\tapp/src/main/java/com/zui/zuicontrol/OwnerEffects.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerTypography.kt",
