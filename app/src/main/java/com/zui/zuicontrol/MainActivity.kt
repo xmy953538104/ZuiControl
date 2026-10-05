@@ -927,16 +927,32 @@ class MainActivity : Activity() {
             val classes=d.profile.rules.map{it.competitionClass}.distinct().toMutableList()
             val newClass=(0..64).map{"group$it"}.first{it !in classes};classes+=newClass
             var cls=old?.competitionClass ?: newClass;var selector=old?.selector ?: "all";var mask=old?.cpuMask ?: emptySet()
-            val rank=input("排名 N（1–1024）",selector.substringAfter(':',"1")).apply{inputType=android.text.InputType.TYPE_CLASS_NUMBER}
+            val rank=input("",selector.substringAfter(':',"1")).apply{
+                inputType=android.text.InputType.TYPE_CLASS_NUMBER;background=null;setPadding(0,0,0,0);minimumHeight=0;gravity=Gravity.CENTER
+                contentDescription="排名 N（1–1024）"
+            }
+            val stepper=owner.row().apply{
+                fun step(text:String,delta:Int)=owner.label(text,12f,owner.text,800).apply{
+                    gravity=Gravity.CENTER;background=owner.shape(owner.card2,7f);isFocusable=true;contentDescription=if(delta<0)"降低排名" else "提高排名"
+                    setOnClickListener{rank.setText(((rank.text.toString().toIntOrNull() ?: 1)+delta).coerceIn(1,1024).toString())};owner.press(this)
+                }
+                addView(step("−",-1),LinearLayout.LayoutParams(dp(26),dp(26)))
+                addView(rank,LinearLayout.LayoutParams(dp(32),dp(26)))
+                addView(step("+",1),LinearLayout.LayoutParams(dp(26),dp(26)))
+                visibility=if(selector=="all")View.GONE else View.VISIBLE
+            }
             val box=owner.column()
             box.addView(owner.formRow("匹配方式",segment(listOf("精确","前缀","包含","通配"),kinds.indexOf(kind)){kind=kinds[it]}))
             box.addView(owner.formRow("匹配内容",pattern))
-            box.addView(owner.formRow("竞争组",AnchoredDropdown(this@MainActivity,classes.mapIndexed{i,_->"竞争组 ${('A'.code+i).toChar()}"}).apply{
-                commitSelection(classes.indexOf(cls));onSelection={cls=classes[it]}
+            box.addView(owner.formRow("竞争组",HorizontalScrollView(this@MainActivity).apply{
+                isHorizontalScrollBarEnabled=false
+                addView(segment(classes.mapIndexed{i,_->"组 ${('A'.code+i).toChar()}"},classes.indexOf(cls)){cls=classes[it]},android.widget.FrameLayout.LayoutParams(dp(minOf(340,classes.size*52)),dp(32)))
             }))
-            box.addView(owner.formRow("竞争选择",segment(listOf("全部候选","按排名"),if(selector=="all")0 else 1){selector=if(it==0)"all" else "rank";rank.visibility=if(it==0)View.GONE else View.VISIBLE}))
-            rank.visibility=if(selector=="all")View.GONE else View.VISIBLE
-            box.addView(owner.formRow("排名",rank));box.addView(owner.formRow("CPU 范围",cpuPicker(mask,true){mask=it}))
+            box.addView(owner.formRow("竞争选择",owner.row().apply{
+                addView(segment(listOf("全部候选","按排名"),if(selector=="all")0 else 1){selector=if(it==0)"all" else "rank";stepper.visibility=if(it==0)View.GONE else View.VISIBLE},LinearLayout.LayoutParams(dp(200),dp(32)))
+                addView(stepper,LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(8)})
+            }))
+            box.addView(owner.formRow("CPU 范围",cpuPicker(mask,true){mask=it}))
             ownerModal?.open(if(index==null)"添加特殊线程规则" else "编辑规则 ${index+1}","同组候选一起排名；选择全部候选或排名第 N 的候选。",480,box,listOf(
                 owner.button("取消"){ownerModal?.close()},owner.button("加入草稿","primary"){
                     val selected=if(selector=="all")"all" else "rank:${rank.text}"
