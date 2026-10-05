@@ -81,6 +81,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
             if (!reply.ok) {
                 // A rejected CAS never erases the user's ranges or reports success.
                 runCatching { gateway.readGpuDefaults(userId) }.onSuccess { fresh ->
+                    check(fresh.expectedGeneration >= captured.expectedGeneration) { "GPU_CAS_REFRESH_STALE" }
                     observeGpuDefaults(fresh)
                     val authority = checkNotNull(gpuAuthority)
                     gpuDraft = GpuDefaultsDraft(authority.expectedGeneration, authority.original).also {

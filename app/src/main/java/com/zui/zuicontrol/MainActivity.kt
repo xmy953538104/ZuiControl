@@ -475,6 +475,7 @@ class MainActivity : Activity() {
     }
     private fun coreHealth() {
         val body=owner.column()
+        val zuioptState=ruleState
         val kind=listOf("逻辑组件","调度守护进程","线程优化守护进程","逻辑组件","逻辑组件")
         BackendHealth.components(state).forEachIndexed{i,h->
             if(i>0)body.addView(View(this).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,owner.px(1)))
@@ -488,8 +489,8 @@ class MainActivity : Activity() {
         }
         body.addView(owner.label("Monitor OFF、GPU 在桌面 handle=0 均属正常",11f,owner.muted).apply{setSingleLine(false)})
         val buttons=mutableListOf<View>()
-        if(ZuioptRules.field(ruleState,"failure")=="1")buttons+=owner.button("复位 ZUIopt 故障"){ownerModal?.close();confirm("复位故障锁存？","下次重启重新启用 ZUIopt；本次启动继续保持故障保护。"){
-            session.work("故障已复位；下次重启生效"){ZuioptRules.command(this@MainActivity,"reset")}
+        if(ZuioptRules.field(zuioptState, "failure") == "1")buttons+=owner.button("复位 ZUIopt 故障"){ownerModal?.close();confirm("复位故障锁存？","下次重启重新启用 ZUIopt；本次启动继续保持故障保护。"){
+            session.work("故障已复位；下次重启生效"){ZuioptRules.command(this@MainActivity, "reset")}
         }}
         buttons+=owner.button("知道了","primary"){ownerModal?.close()}
         ownerModal?.open("核心组件","5 个逻辑组件；其中部分是 system_server 内的逻辑组件，不是独立进程。",600,body,buttons)
