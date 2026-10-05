@@ -13,7 +13,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob f50a9d04d7169966b0dcb50bfd47a515443c852d\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob 57609f4afd3ffee3de658f624a4627b3c2b4dae3\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob 072b6fa3bb56c1effb89d1e59214f9de9b33cf33\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",
@@ -23,7 +23,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
       "before": "100644 blob 91839616ccef46e0808bbf168b5398764341851a\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
-      "after": "100644 blob c82779541328caa6437b9968a7b969d2ee51fb91\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+      "after": "100644 blob 3f98347a1bad50cfca5de22e77d8c6406b74619d\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
@@ -94,6 +94,11 @@
       "path": "app/src/main/res/drawable/notify_rate_selected.xml",
       "before": "100644 blob 8e8f6b73ce5f3a538add9902bc5f3f46762da797\tapp/src/main/res/drawable/notify_rate_selected.xml",
       "after": "100644 blob 1186209c878464262ae0006715dd5d8f8a4e9eaf\tapp/src/main/res/drawable/notify_rate_selected.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_grip.xml",
+      "before": null,
+      "after": "100644 blob 9bb5549231814225fcaf10cca73fb9ffc598f7ce\tapp/src/main/res/drawable/owner_grip.xml"
     }
   ]
 }

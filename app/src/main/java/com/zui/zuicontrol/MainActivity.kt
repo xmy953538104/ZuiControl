@@ -814,35 +814,45 @@ class MainActivity : Activity() {
         else {
             val mapping=d.base.mappings.firstOrNull{when(it.matchKind){"exact"->it.packageName==pkg;"prefix"->pkg.startsWith(it.packageName);else->pkg.contains(it.packageName)}}
             detail.addView(card().apply {
-                addView(owner.section("Profile ${mapping?.profile ?: "新建"}","按顺序匹配，可拖动调整 · CPU 0–7"))
-                addView(owner.formRow("默认 CPU",cpuPicker(d.profile.generalMask){mask->mutateRule{d.profile=d.profile.copy(generalMask=mask);render()}}))
+                addView(owner.section("线程规则","Profile ${mapping?.profile ?: "新建"} · 按顺序匹配，可拖动调整"))
                 addView(owner.row().apply{
-                    addView(owner.label("线程匹配 / 竞争选择",11f,owner.muted,700),LinearLayout.LayoutParams(0,dp(24),1f))
-                    addView(owner.label("CPU 范围",11f,owner.muted,700),LinearLayout.LayoutParams(dp(178),dp(24)))
-                })
-                if(d.profile.rules.isEmpty())addView(owner.empty("还没有特殊线程规则","所有线程使用默认 CPU 范围"))
+                    addView(owner.column().apply{addView(owner.label("默认 CPU 范围",13f,owner.text,800));addView(note("未命中特殊规则的线程 · ${d.profile.generalMask.sorted()}"))},LinearLayout.LayoutParams(0,-2,1f))
+                    addView(cpuPicker(d.profile.generalMask){mask->mutateRule{d.profile=d.profile.copy(generalMask=mask);render()}})
+                },LinearLayout.LayoutParams(-1,dp(48)))
+                val table=owner.column()
+                fun cell(parent:LinearLayout,view:View,width:Int){parent.addView(view,LinearLayout.LayoutParams(if(width==0)0 else dp(width),-2,if(width==0)1f else 0f).apply{marginStart=dp(10)})}
+                table.addView(owner.row().apply{
+                    addView(View(this@MainActivity),LinearLayout.LayoutParams(dp(16),dp(22)))
+                    cell(this,owner.label("匹配",11f,owner.muted,700),0);cell(this,owner.label("竞争组",11f,owner.muted,700),62)
+                    cell(this,owner.label("竞争选择",11f,owner.muted,700),84);cell(this,owner.label("CPU 0–7",11f,owner.muted,700),117);cell(this,View(this@MainActivity),22)
+                },LinearLayout.LayoutParams(-1,dp(28)))
+                if(d.profile.rules.isEmpty())table.addView(owner.empty("还没有特殊线程规则","所有线程使用默认 CPU 范围"))
                 d.profile.rules.forEachIndexed{index,rule->
-                    addView(owner.column().apply{
-                        addView(owner.row().apply{
-                            addView(owner.button("≡",small=true){editRule(index)}.apply{contentDescription="拖动调整规则顺序";setOnLongClickListener{startDragAndDrop(ClipData.newPlainText("rule-order",index.toString()),View.DragShadowBuilder(this),index,0);true}},LinearLayout.LayoutParams(dp(30),dp(28)))
-                            addView(owner.column().apply{
-                                addView(owner.label(rule.pattern,12.5f,owner.text,600).apply{typeface=Typeface.MONOSPACE;setOnClickListener{editRule(index)}})
-                                addView(owner.row().apply{
-                                    addView(owner.chip(when(rule.matchKind){"exact"->"精确";"prefix"->"前缀";"contains"->"包含";else->"通配"}))
-                                    addView(owner.chip("组 ${groupName(d,rule.competitionClass)}"),LinearLayout.LayoutParams(-2,dp(18)).apply{marginStart=dp(6)})
-                                    addView(owner.chip(if(rule.selector=="all")"全部候选" else rule.selector,2),LinearLayout.LayoutParams(-2,dp(18)).apply{marginStart=dp(6)})
-                                    setOnClickListener{editRule(index)}
-                                },LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(4)})
-                            },LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=dp(8)})
-                            addView(cpuPicker(rule.cpuMask){mask->mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.map{if(it.competitionClass==rule.competitionClass)it.copy(cpuMask=mask) else it});render()}},LinearLayout.LayoutParams(dp(178),-2).apply{marginStart=dp(8)})
-                            addView(owner.icon(R.drawable.owner_close,owner.muted,14).apply{isFocusable=true;contentDescription="删除规则 ${index+1}";setOnClickListener{mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.filterIndexed{i,_->i!=index});render()}}},LinearLayout.LayoutParams(dp(22),dp(22)).apply{marginStart=dp(8)})
-                        },LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8);bottomMargin=dp(8)})
-                        if(rule.cpuMask.isEmpty())addView(note("请选择 CPU 后再保存",orange))
-                        addView(owner.row().apply{addView(owner.button("↑",small=true){moveRule(index,index-1)});addView(owner.button("↓",small=true){moveRule(index,index+1)})})
-                        addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
+                    table.addView(owner.row().apply{
+                        setPadding(0,dp(8),0,dp(8))
+                        addView(owner.icon(R.drawable.owner_grip,owner.muted,14).apply{
+                            isFocusable=true;contentDescription="拖动调整规则顺序"
+                            setOnLongClickListener{startDragAndDrop(ClipData.newPlainText("rule-order",index.toString()),View.DragShadowBuilder(this),index,0);true}
+                            accessibilityDelegate=object:View.AccessibilityDelegate(){
+                                override fun onInitializeAccessibilityNodeInfo(host:View,info:android.view.accessibility.AccessibilityNodeInfo){super.onInitializeAccessibilityNodeInfo(host,info);info.addAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD,"上移规则"));info.addAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD,"下移规则"))}
+                                override fun performAccessibilityAction(host:View,action:Int,args:Bundle?):Boolean=when(action){android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD->{moveRule(index,index-1);true};android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD->{moveRule(index,index+1);true};else->super.performAccessibilityAction(host,action,args)}
+                            }
+                        },LinearLayout.LayoutParams(dp(16),dp(22)))
+                        cell(this,owner.row().apply{
+                            addView(owner.chip(when(rule.matchKind){"exact"->"精确";"prefix"->"前缀";"contains"->"包含";else->"通配"}))
+                            addView(owner.label(rule.pattern,12.5f,owner.text,600).apply{typeface=Typeface.MONOSPACE},LinearLayout.LayoutParams(0,dp(22),1f).apply{marginStart=dp(6)})
+                            setOnClickListener{editRule(index)}
+                        },0)
+                        cell(this,owner.chip("组 ${groupName(d,rule.competitionClass)}").apply{setOnClickListener{editRule(index)}},62)
+                        cell(this,owner.chip(if(rule.selector=="all")"全部候选" else rule.selector,2).apply{setOnClickListener{editRule(index)}},84)
+                        cell(this,cpuPicker(rule.cpuMask){mask->mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.map{if(it.competitionClass==rule.competitionClass)it.copy(cpuMask=mask)else it});render()}},117)
+                        cell(this,owner.icon(R.drawable.owner_close,owner.muted,14).apply{isFocusable=true;contentDescription="删除规则 ${index+1}";setOnClickListener{mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.filterIndexed{i,_->i!=index});render()}}},22)
                         setOnDragListener{_,event->when(event.action){DragEvent.ACTION_DRAG_STARTED->event.clipDescription?.label=="rule-order";DragEvent.ACTION_DROP->{(event.localState as? Int)?.let{moveRule(it,index)};true};else->true}}
                     })
+                    table.addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
+                    if(rule.cpuMask.isEmpty())table.addView(note("请选择 CPU 后再保存",orange))
                 }
+                addView(owner.scroll(table,minOf(214,28+d.profile.rules.size*40)))
                 addView(owner.button("添加特殊线程规则",small=true,icon=R.drawable.owner_plus){editRule(null)},LinearLayout.LayoutParams(-1,dp(34)).apply{topMargin=dp(8)})
             },gap())
             detail.addView(owner.row().apply{
@@ -895,7 +905,7 @@ class MainActivity : Activity() {
             }))
             box.addView(owner.formRow("竞争选择",segment(listOf("全部候选","按排名"),if(selector=="all")0 else 1){selector=if(it==0)"all" else "rank";rank.visibility=if(it==0)View.GONE else View.VISIBLE}))
             rank.visibility=if(selector=="all")View.GONE else View.VISIBLE
-            box.addView(owner.formRow("排名",rank));box.addView(owner.formRow("CPU 范围",cpuPicker(mask){mask=it}))
+            box.addView(owner.formRow("排名",rank));box.addView(owner.formRow("CPU 范围",cpuPicker(mask,true){mask=it}))
             ownerModal?.open(if(index==null)"添加特殊线程规则" else "编辑规则 ${index+1}","同组候选一起排名；选择全部候选或排名第 N 的候选。",480,box,listOf(
                 owner.button("取消"){ownerModal?.close()},owner.button("加入草稿","primary"){
                     val selected=if(selector=="all")"all" else "rank:${rank.text}"
@@ -1015,20 +1025,27 @@ class MainActivity : Activity() {
             1 -> gpuDefaultsPage()
             2 -> {
                 heading("数据与维护", "配置备份、恢复与系统维护")
-                detail.addView(card().apply{addView(actionRow("立即备份", prefs.getString("backup", "保存到你选择的位置").orEmpty()) {
+                val rows=mutableListOf<View>()
+                rows+=actionRow("立即备份", prefs.getString("backup", "保存到你选择的位置").orEmpty()) {
                     session.work { backupBytes = SettingsBackup.export(applicationContext); session.pendingDocument = 103 }
-                })}, gap())
-                detail.addView(card().apply{addView(actionRow("从备份恢复", "校验 → 摘要 → 确认") { document(Intent.ACTION_OPEN_DOCUMENT, 104, "application/zip") })}, gap())
-                detail.addView(card().apply{addView(actionRow("恢复出厂配置", "保留监测记录与上游基线") { confirm("恢复出厂配置？", "清除本用户应用策略，恢复全局档位、GPU 默认与偏好；线程规则恢复当前上游基线。保留监测记录、上游版本与诊断记录。") {
+                }
+                rows+=actionRow("从备份恢复", "校验 → 摘要 → 确认") { document(Intent.ACTION_OPEN_DOCUMENT, 104, "application/zip") }
+                rows+=actionRow("恢复出厂配置", "保留监测记录与上游基线") { confirm("恢复出厂配置？", "清除本用户应用策略，恢复全局档位、GPU 默认与偏好；线程规则恢复当前上游基线。保留监测记录、上游版本与诊断记录。") {
                     session.work("已恢复出厂配置") { SettingsBackup.factoryReset(applicationContext) }
-                } })}, gap())
-                detail.addView(card().apply{addView(actionRow("导出运行日志", "可能包含应用与使用记录") { confirm("导出运行日志？", "日志可能包含已安装应用和使用信息，请妥善保存。") {
+                } }
+                rows+=actionRow("导出运行日志", "可能包含应用与使用记录") { confirm("导出运行日志？", "日志可能包含已安装应用和使用信息，请妥善保存。") {
                     session.work { val id = ZuiControlRequest.send(applicationContext, ZuiControlContract.CMD_EXPORT_LOGS); val ack = ZuiControlRequest.awaitTerminalAck(applicationContext, id); check(ack.succeeded) { ack.detail }
                         exportBytes = ZuiControlClient.utilityValue("result", "$id|logs").toByteArray(); session.pendingDocument = 101 }
-                } })}, gap())
-                detail.addView(card().apply{addView(actionRow("重启调度核心", "Uperf 与 ZUIopt；已保存配置保留") { confirm("重启调度核心？", "短暂恢复 Android 调度后重新加载已保存配置。") {
+                } }
+                rows+=actionRow("重启调度核心", "Uperf 与 ZUIopt；已保存配置保留") { confirm("重启调度核心？", "短暂恢复 Android 调度后重新加载已保存配置。") {
                     session.work("调度核心已重启") { val id = ZuiControlRequest.send(applicationContext, ZuiControlContract.CMD_RESTART_SCHEDULER); val ack = ZuiControlRequest.awaitTerminalAck(applicationContext, id); check(ack.succeeded) { ack.detail } }
-                } })}, gap())
+                } }
+                listOf("备份" to rows.take(1),"恢复" to rows.subList(1,3),"维护" to rows.takeLast(2)).forEach{(title,items)->
+                    detail.addView(card().apply{
+                        setPadding(dp(18),dp(14),dp(18),dp(14));addView(owner.label(title,11.5f,owner.muted,800))
+                        items.forEachIndexed{i,v->if(i>0)addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)));addView(v)}
+                    },gap())
+                }
             }
             else -> {
                 heading("关于","版本信息与使用帮助")
@@ -1158,7 +1175,7 @@ class MainActivity : Activity() {
         val pattern=input("可选：添加精确线程名")
         val box=column().apply{
             addView(note("原生预览提供差异摘要。以当前规则为基础，选择 CPU、保留线程或手动添加；采用导入配置请选「采用上游」。"))
-            addView(owner.formRow("默认 CPU",cpuPicker(mask){mask=it}))
+            addView(owner.formRow("默认 CPU",cpuPicker(mask,true){mask=it}))
             mine?.rules?.forEach{rule->addView(owner.check("${rule.matchKind} ${rule.pattern} · ${rule.selector} · CPU ${rule.cpuMask.sorted()}",true){yes->if(yes){if(rule !in kept)kept+=rule}else kept-=rule})}
             addView(owner.formRow("新增线程",pattern));addView(note("新增精确规则使用上方选择的 CPU；已有规则保持原竞争组和 CPU。"))
         }
@@ -1190,7 +1207,7 @@ class MainActivity : Activity() {
     }
     private fun segment(values: List<String>,selected: Int,enabled: Boolean=true,action:(Int)->Unit):View = OwnerSegment(this,owner,values,selected,true,enabled,action)
     private fun tiers(current: String,enabled: Boolean,action:(String)->Unit):View = owner.tiers(current,false,enabled,action)
-    private fun cpuPicker(initial: Set<Int>,action:(Set<Int>)->Unit):View = owner.cpus(initial){next->
+    private fun cpuPicker(initial: Set<Int>,large:Boolean=false,action:(Set<Int>)->Unit):View = owner.cpus(initial,large){next->
         if(next.isEmpty()){toast("至少保留一个 CPU");false}else{action(next);true}
     }
     private fun input(hint: String,text: String="")=EditText(this).apply{
@@ -1205,11 +1222,13 @@ class MainActivity : Activity() {
         override fun afterTextChanged(s:Editable?)=Unit
     }
     private fun actionRow(title: String,subtitle: String,action:()->Unit)=owner.row().apply{
-        minimumHeight=dp(60);setPadding(0,dp(10),0,dp(10))
+        minimumHeight=dp(46);setPadding(0,dp(6),0,dp(6))
         val icon=when{title.contains("线程") || title.contains("规则")->R.drawable.owner_chip;title.contains("备份") || title.contains("恢复")->R.drawable.owner_data;title.contains("重启")->R.drawable.owner_warn;else->R.drawable.owner_info}
         addView(owner.icon(icon,owner.accent,16).apply{background=owner.shape(owner.soft(owner.accent),10f);setPadding(dp(8),dp(8),dp(8),dp(8))},LinearLayout.LayoutParams(dp(32),dp(32)).apply{marginEnd=dp(12)})
         addView(owner.column().apply{addView(owner.label(title,13f,owner.text,800));addView(note(subtitle,owner.muted))},LinearLayout.LayoutParams(0,-2,1f))
-        addView(owner.icon(R.drawable.owner_chevron,owner.muted,16));isFocusable=true;contentDescription=title;setOnClickListener{if(!session.busy)action()};owner.press(this)
+        val actionLabel=when(title){"立即备份"->"备份";"从备份恢复"->"选择文件";"恢复出厂配置"->"重置";"导出运行日志"->"导出";"重启调度核心"->"重启";else->""}
+        if(actionLabel.isEmpty())addView(owner.icon(R.drawable.owner_chevron,owner.muted,16))else addView(owner.button(actionLabel,if(title=="立即备份")"primary" else "ghost",true){if(!session.busy)action()})
+        isFocusable=true;contentDescription=title;setOnClickListener{if(!session.busy)action()};owner.press(this)
     }
     private fun listRow(pkg: String,title: String,subtitle: String,selected: Boolean,action:()->Unit)=ownerListRow(pkg,title,subtitle,selected,if(session.section=="thread")R.drawable.owner_chip else R.drawable.owner_pulse){if(!session.busy)action()}
 }

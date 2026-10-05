@@ -124,15 +124,15 @@ internal class OwnerUi(val context: Context) {
         addView(content);layoutParams=LinearLayout.LayoutParams(-1,px(height))
         minimumHeight=px(height)
     }
-    fun cpus(initial: Set<Int>,action:(Set<Int>)->Boolean):View {
+    fun cpus(initial: Set<Int>,large:Boolean=false,action:(Set<Int>)->Boolean):View {
         var selected=initial;val group=row()
         fun bind(){group.removeAllViews();for(cpu in 0..7){
             val on=cpu in selected
-            group.addView(label(cpu.toString(),10f,if(on)Color.parseColor("#04131A") else muted,700).apply{
-                gravity=Gravity.CENTER;background=shape(if(on)zo else card2,5f,if(on)null else line2)
+            group.addView(label(if(large)cpu.toString()else "",10f,if(on)Color.parseColor("#04131A") else muted,700).apply{
+                gravity=Gravity.CENTER;background=shape(if(on)zo else card2,if(large)7f else 3f,if(on)null else line2)
                 isFocusable=true;contentDescription="CPU $cpu，${if(on)"已选择" else "未选择"}";isEnabled=true
                 setOnClickListener{val next=if(cpu in selected)selected-cpu else selected+cpu;if(action(next)){selected=next;bind()}};press(this)
-            },LinearLayout.LayoutParams(0,px(26),1f).apply{if(cpu>0)marginStart=px(if(cpu==4 || cpu==7)7 else 3)})
+            },LinearLayout.LayoutParams(px(if(large)26 else 12),px(if(large)26 else 16)).apply{if(cpu>0)marginStart=px(if(large)5 else 3)})
         }};bind();return group
     }
     fun check(value:String,checked:Boolean=false,action:(Boolean)->Unit):View=row().apply{

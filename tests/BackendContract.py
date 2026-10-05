@@ -130,7 +130,7 @@ def reverse_entries(current,*scopes):
     assert SYNC['baseHead']=='e46691dee3a6ee988f641aacb41a4b2aa2352ca4'
     allowed={'MainActivity.kt','OwnerUi.kt','OwnerWindow.kt','GpuRangeBar.kt','RecordChart.kt','PerformanceRecordActivity.kt','UiControls.kt','NotificationQuickControlHelper.kt','ZuiControlQuickService.kt'}
     for row in SYNC['files']:
-        assert row['path'].startswith('app/') and (Path(row['path']).name in allowed or row['path'].startswith('app/src/main/res/drawable/notify_'))
+        assert row['path'].startswith('app/') and (Path(row['path']).name in allowed or (row['path'].startswith('app/src/main/res/drawable/notify_') or row['path']=='app/src/main/res/drawable/owner_grip.xml'))
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         after=row['after'].encode();assert result.count(after)==1,('V84 R2 exact presentation bytes',row['path'])
         result.remove(after)
