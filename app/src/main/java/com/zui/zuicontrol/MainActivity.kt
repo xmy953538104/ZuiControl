@@ -1098,7 +1098,8 @@ class MainActivity : Activity() {
             addView(owner.row().apply{
                 addView(View(this@MainActivity).apply{background=owner.shape(when(index){1->owner.tiers[0];2->owner.tiers[2];else->owner.accent},99f)},LinearLayout.LayoutParams(dp(8),dp(8)).apply{marginEnd=dp(8)})
                 addView(owner.label(title,13f,owner.text,800),LinearLayout.LayoutParams(0,-2,1f))
-                addView(owner.label("最低 ${number(stats.optDouble(index*3,Double.NaN))} · 平均 ${number(stats.optDouble(index*3+1,Double.NaN))} · 最高 ${number(stats.optDouble(index*3+2,Double.NaN))}",10f,owner.muted,600))
+                val prefix=if(index==0)"最低 ${number(stats.optDouble(index*3,Double.NaN))} · " else ""
+                addView(owner.label("${prefix}平均 ${number(stats.optDouble(index*3+1,Double.NaN))} · 最高 ${number(stats.optDouble(index*3+2,Double.NaN))}",10f,owner.muted,600))
             },LinearLayout.LayoutParams(-1,dp(22)))
             addView(RecordChart(this@MainActivity,scalars,index+1,r.optLong("duration")),LinearLayout.LayoutParams(-1,dp(height)))
         }
