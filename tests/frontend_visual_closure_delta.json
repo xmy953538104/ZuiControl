@@ -37,7 +37,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
       "before": "100644 blob 17898eccd21ea9073b3e8f05766c672b11362b2b\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
-      "after": "100644 blob 2066bea3e7af269413d35dc21fa19d5d03a345c9\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
+      "after": "100644 blob 41a8c5e0be41db859625a6a90e549dece014497b\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/RecordChart.kt",

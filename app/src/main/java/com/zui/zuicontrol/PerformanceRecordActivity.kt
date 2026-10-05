@@ -98,19 +98,28 @@ class PerformanceRecordActivity : Activity() {
     private fun showShell(content:View){
         val root=owner.row().apply{setBackgroundColor(owner.detail)}
         val rail=owner.column().apply{
-            setBackgroundColor(owner.rail);gravity=Gravity.CENTER_HORIZONTAL;setPadding(0,dp(28),0,dp(18))
-            addView(owner.label("ZUI",17f,owner.accent,900));addView(owner.label("CONTROL",8f,owner.muted,700))
+            setBackgroundColor(owner.rail);gravity=Gravity.CENTER_HORIZONTAL;setPadding(0,dp(22),0,dp(18))
+            addView(owner.column().apply{
+                gravity=Gravity.CENTER_HORIZONTAL
+                addView(owner.label("ZUI",17f,owner.accent,900).apply{letterSpacing=.03f},LinearLayout.LayoutParams(-2,dp(17)))
+                addView(owner.label("CONTROL",8f,owner.muted,700).apply{letterSpacing=.04f},LinearLayout.LayoutParams(-2,dp(8)).apply{topMargin=dp(4)})
+            },LinearLayout.LayoutParams(-2,dp(29)).apply{topMargin=dp(6);bottomMargin=dp(30)})
             listOf(R.drawable.owner_tune to "调控",R.drawable.owner_chip to "线程",R.drawable.owner_pulse to "监测").forEach{(icon,title)->
-                addView(owner.column().apply{
-                    gravity=Gravity.CENTER;background=owner.shape(if(title=="监测")owner.soft(owner.accent)else android.graphics.Color.TRANSPARENT,14f)
-                    addView(owner.icon(icon,if(title=="监测")owner.accent else owner.muted));addView(owner.label(title,10.5f,if(title=="监测")owner.accent else owner.muted,700))
-                    contentDescription=title
-                },LinearLayout.LayoutParams(dp(52),dp(52)).apply{topMargin=dp(if(title=="调控")30 else 8)})
+                val selected=title=="监测";val tone=if(selected)owner.accent else owner.muted
+                addView(FrameLayout(this@PerformanceRecordActivity).apply{
+                    addView(owner.column().apply{
+                        gravity=Gravity.CENTER;background=owner.shape(if(selected)owner.soft(owner.accent)else android.graphics.Color.TRANSPARENT,14f)
+                        addView(owner.icon(icon,tone,20),LinearLayout.LayoutParams(dp(20),dp(20)))
+                        addView(owner.label(title,10.5f,tone,700),LinearLayout.LayoutParams(-2,dp(13)).apply{topMargin=dp(4)})
+                        contentDescription=title
+                    },FrameLayout.LayoutParams(dp(52),dp(52),Gravity.CENTER))
+                    if(selected)addView(View(this@PerformanceRecordActivity).apply{background=owner.shape(owner.accent,3f)},FrameLayout.LayoutParams(dp(3),dp(24),Gravity.START or Gravity.CENTER_VERTICAL))
+                },LinearLayout.LayoutParams(-1,dp(52)).apply{bottomMargin=dp(8)})
             }
             addView(View(this@PerformanceRecordActivity),LinearLayout.LayoutParams(1,0,1f))
             addView(owner.icon(R.drawable.owner_settings,owner.muted).apply{isFocusable=true;contentDescription="返回";setOnClickListener{finish()}},LinearLayout.LayoutParams(dp(20),dp(20)))
         }
-        OwnerWindow.safeContent(rail,28f,18f)
+        OwnerWindow.safeContent(rail,22f,18f)
         root.addView(owner.borderedColumn(rail,72),LinearLayout.LayoutParams(dp(72),-1))
         val master=owner.column().apply{
             setBackgroundColor(owner.master);setPadding(dp(18),dp(22),dp(18),dp(18))
