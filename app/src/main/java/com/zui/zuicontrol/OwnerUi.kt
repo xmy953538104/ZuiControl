@@ -119,6 +119,13 @@ internal class OwnerUi(val context: Context) {
         addView(label(title,12f,sub,700),LinearLayout.LayoutParams(px(72),-2).apply{marginEnd=px(12)})
         addView(control,LinearLayout.LayoutParams(0,-2,1f));minimumHeight=px(52)
     }
+    fun settingsRow(title:String,description:String,trailing:View)=row().apply{
+        minimumHeight=px(46);setPadding(0,px(6),0,px(6))
+        addView(column().apply{
+            addView(label(title,13f,text,800));addView(label(description,11f,muted),LinearLayout.LayoutParams(-1,px(14)).apply{topMargin=px(2)})
+        },LinearLayout.LayoutParams(0,-2,1f).apply{marginEnd=px(12)})
+        addView(trailing)
+    }
     fun tableRow(cells:List<View>,widths:List<Int>,header:Boolean=false)=column().apply{
         addView(row().apply{
             setPadding(px(7),px(10),px(7),px(10));minimumHeight=px(40)

@@ -1091,16 +1091,19 @@ class MainActivity : Activity() {
                 val nm=getSystemService(NotificationManager::class.java)
                 val enabled=nm.areNotificationsEnabled() && nm.getNotificationChannel("zui_control_monitor_v1")?.importance!=NotificationManager.IMPORTANCE_NONE
                 detail.addView(card().apply{
-                    addView(owner.label("权限与通知",11f,owner.muted,800))
-                    addView(actionRow("悬浮窗权限",if(Settings.canDrawOverlays(this@MainActivity))"已授权 · 性能监视与记录手势" else "去授权 · 性能监视与记录手势"){overlayPermission()})
-                    addView(owner.formRow("通知",owner.chip(if(enabled)"已开启" else "已关闭",if(enabled)1 else 0,true)))
-                    if (!enabled) addView(button("系统通知设置") { startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName)) })
+                    setPadding(dp(18),dp(14),dp(18),dp(14));addView(owner.label("权限与通知",11.5f,owner.muted,800),owner.gap(4))
+                    val granted=Settings.canDrawOverlays(this@MainActivity)
+                    addView(owner.settingsRow("悬浮窗权限","性能监视悬浮窗与记录开始 / 停止手势依赖此权限",if(granted)owner.chip("已授权",1,true).apply{isFocusable=true;contentDescription="悬浮窗权限已授权";setOnClickListener{overlayPermission()}}else owner.button("去授权",small=true){overlayPermission()}))
+                    addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
+                    addView(owner.settingsRow("通知","故障保护与监测记录状态提醒",owner.row().apply{
+                        addView(owner.chip(if(enabled)"已开启" else "已关闭",if(enabled)1 else 0,true))
+                        addView(owner.button("系统通知设置",small=true){startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))},LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(8)})
+                    }))
                 },gap())
                 detail.addView(card().apply{
-                    addView(owner.label("显示",11f,owner.muted,800))
-                    addView(owner.section("界面主题","侧边栏按钮可快速切换深色 / 浅色"))
+                    setPadding(dp(18),dp(14),dp(18),dp(14));addView(owner.label("显示",11.5f,owner.muted,800),owner.gap(4))
                     val values=listOf("system","dark","light")
-                    addView(segment(listOf("跟随系统", "深色", "浅色"),values.indexOf(prefs.getString("theme","system"))){theme(values[it])})
+                    addView(owner.settingsRow("界面主题","侧边栏按钮可快速切换深色 / 浅色",segment(listOf("跟随系统", "深色", "浅色"),values.indexOf(prefs.getString("theme","system"))){theme(values[it])}.apply{layoutParams=LinearLayout.LayoutParams(dp(195),dp(32))}))
                 },gap())
             }
             1 -> gpuDefaultsPage()
