@@ -71,6 +71,7 @@ internal class OwnerUi(val context: Context) {
         tag="owner-button"
         val color=when(kind){"primary","danger-fill"->Color.WHITE;"danger"->inks[3];else->sub}
         background=shape(when(kind){"primary"->accent;"danger-fill"->tiers[3];"danger"->Color.TRANSPARENT;else->card},if(small)10f else 12f,if(kind=="ghost")line2 else null)
+        if(kind=="dashed")background=shape(Color.TRANSPARENT,10f).apply{setStroke(px(1),line2,px(4).toFloat(),px(4).toFloat())}
         val pad=if(kind=="danger")8 else if(small)14 else 20;setPadding(px(pad),0,px(pad),0);gravity=Gravity.CENTER
         if(icon!=null)addView(icon(icon,color,16),LinearLayout.LayoutParams(px(16),px(16)).apply{marginEnd=px(7)})
         addView(label(value,if(small)12f else 13f,color,800));minimumHeight=px(if(small)32 else 40)

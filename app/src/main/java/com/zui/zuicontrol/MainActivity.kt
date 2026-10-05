@@ -715,14 +715,14 @@ class MainActivity : Activity() {
         },gap())
         detail.addView(card().apply {
             addView(owner.label("规则库",11f,owner.muted,800))
-            addView(actionRow("同步上游规则",if(!RuleRemoteConfig.configured)RuleRemoteConfig.DIAGNOSTIC else latest?.let{"${it.version} · ${it.date}"} ?: "无待同步更新"){syncUpstream()}.apply{isEnabled=RuleRemoteConfig.configured && latest!=null;alpha=if(isEnabled)1f else .4f})
+            addView(actionRow("同步上游规则",if(!RuleRemoteConfig.configured)"在线规则待兼容性实验室确认" else latest?.let{"${it.version} · ${it.date}"} ?: "无待同步更新"){syncUpstream()}.apply{isEnabled=RuleRemoteConfig.configured && latest!=null;alpha=if(isEnabled)1f else .4f})
             val previous=ZuioptRules.field(ruleState,"previous_generation").matches(Regex("g[0-9a-f]{24}"))
             addView(actionRow("回退规则版本",if(previous)"回到上一代完整规则集" else "暂无可回退版本"){confirm("回退规则版本？","上游基线和生效规则一起回退。"){
                 session.work("已回退"){ZuioptRules.command(applicationContext,"rollback",checkNotNull(snapshot).generation)}
             }}.apply{isEnabled=previous;alpha=if(previous)1f else .4f})
             addView(actionRow("高级兼容导入 · AppOpt","兼容转换与差异预览后确认"){document(Intent.ACTION_OPEN_DOCUMENT,102,"*/*")})
             addView(owner.button("检查更新",small=true){checkUpdates()}.apply{isEnabled=RuleRemoteConfig.configured;alpha=if(isEnabled)1f else .4f})
-            if(updateStatus.isNotEmpty())addView(note(updateStatus))
+            if(RuleRemoteConfig.configured && updateStatus.isNotEmpty())addView(note(updateStatus))
         },gap())
         detail.addView(card().apply {
             addView(owner.label("职责边界",11f,owner.muted,800))
@@ -840,16 +840,23 @@ class MainActivity : Activity() {
     }
     private fun threadApp() {
         val pkg=session.selected;val d=session.ruleDraft
-        detail.addView(owner.title(name(pkg),pkg,leading=ownerAppIcon(pkg,44),trailing=owner.row().apply{
+        val leading=owner.row().apply{
+            addView(owner.icon(R.drawable.owner_back,owner.sub,18).apply{
+                background=owner.shape(owner.card,11f,owner.line);setPadding(dp(9),dp(9),dp(9),dp(9));isFocusable=true;contentDescription="返回线程首页"
+                setOnClickListener{guard{session.clearDrafts();session.selected="";analysisPage=false;render()}}
+            },LinearLayout.LayoutParams(dp(36),dp(36)).apply{marginEnd=dp(14)})
+            addView(ownerAppIcon(pkg,44))
+        }
+        detail.addView(owner.title(name(pkg),pkg,leading=leading,trailing=owner.row().apply{
             addView(provenanceChip(pkg,true));if(d?.dirty==true)addView(owner.chip("未保存",3,true),LinearLayout.LayoutParams(-2,dp(22)).apply{marginStart=dp(6)})
         }))
         if(d==null)detail.addView(owner.empty("此规则暂不能无损显示","可查看完整原文。$ruleError",true),gap())
         else {
             val mapping=d.base.mappings.firstOrNull{when(it.matchKind){"exact"->it.packageName==pkg;"prefix"->pkg.startsWith(it.packageName);else->pkg.contains(it.packageName)}}
             detail.addView(card().apply {
-                addView(owner.section("线程规则","Profile ${mapping?.profile ?: "新建"} · 按顺序匹配，可拖动调整"))
+                addView(owner.section("线程规则","Profile ${mapping?.profile ?: "新建"} · 按顺序匹配，可拖动调整",owner.button("导出",small=true,icon=R.drawable.owner_export){snapshot?.let{export(it.text.toByteArray(),"ZuiControl_rules.conf")}}))
                 addView(owner.row().apply{
-                    addView(owner.column().apply{addView(owner.label("默认 CPU 范围",13f,owner.text,800));addView(note("未命中特殊规则的线程 · ${d.profile.generalMask.sorted()}"))},LinearLayout.LayoutParams(0,-2,1f))
+                    addView(owner.column().apply{addView(owner.label("默认 CPU 范围",13f,owner.text,800));addView(note("未命中特殊规则的线程 · ${cpuRange(d.profile.generalMask)}"))},LinearLayout.LayoutParams(0,-2,1f))
                     addView(cpuPicker(d.profile.generalMask){mask->mutateRule{d.profile=d.profile.copy(generalMask=mask);render()}})
                 },LinearLayout.LayoutParams(-1,dp(48)))
                 val table=owner.column()
@@ -876,8 +883,8 @@ class MainActivity : Activity() {
                             addView(owner.label(rule.pattern,12.5f,owner.text,600).apply{typeface=Typeface.MONOSPACE},LinearLayout.LayoutParams(0,dp(22),1f).apply{marginStart=dp(6)})
                             setOnClickListener{editRule(index)}
                         },0)
-                        cell(this,owner.chip("组 ${groupName(d,rule.competitionClass)}").apply{setOnClickListener{editRule(index)}},62)
-                        cell(this,owner.chip(if(rule.selector=="all")"全部候选" else rule.selector,2).apply{setOnClickListener{editRule(index)}},84)
+                        cell(this,owner.row().apply{addView(owner.chip("组 ${groupName(d,rule.competitionClass)}"));setOnClickListener{editRule(index)}},62)
+                        cell(this,owner.row().apply{addView(owner.chip(if(rule.selector=="all")"全部候选" else "第${rule.selector.substringAfter(':')}个",2));setOnClickListener{editRule(index)}},84)
                         cell(this,cpuPicker(rule.cpuMask){mask->mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.map{if(it.competitionClass==rule.competitionClass)it.copy(cpuMask=mask)else it});render()}},117)
                         cell(this,owner.icon(R.drawable.owner_close,owner.muted,14).apply{isFocusable=true;contentDescription="删除规则 ${index+1}";setOnClickListener{mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.filterIndexed{i,_->i!=index});render()}}},22)
                         setOnDragListener{_,event->when(event.action){DragEvent.ACTION_DRAG_STARTED->event.clipDescription?.label=="rule-order";DragEvent.ACTION_DROP->{(event.localState as? Int)?.let{moveRule(it,index)};true};else->true}}
@@ -886,7 +893,7 @@ class MainActivity : Activity() {
                     if(rule.cpuMask.isEmpty())table.addView(note("请选择 CPU 后再保存",orange))
                 }
                 addView(owner.scroll(table,minOf(214,28+d.profile.rules.size*40)))
-                addView(owner.button("添加特殊线程规则",small=true,icon=R.drawable.owner_plus){editRule(null)},LinearLayout.LayoutParams(-1,dp(34)).apply{topMargin=dp(8)})
+                addView(owner.button("添加特殊线程规则","dashed",small=true,icon=R.drawable.owner_plus){editRule(null)},LinearLayout.LayoutParams(-1,dp(34)).apply{topMargin=dp(8)})
             },gap())
             detail.addView(owner.row().apply{
                 if(d.original!=null)addView(owner.button("删除规则","danger",icon=R.drawable.owner_trash){confirm("删除此应用规则？","只移除此应用的独立包映射。"){
@@ -897,14 +904,15 @@ class MainActivity : Activity() {
                     }
                 }})
                 addView(View(this@MainActivity),LinearLayout.LayoutParams(0,1,1f))
+                addView(owner.button("记录关联线程分析",icon=R.drawable.owner_chip){analysisPage=true;render()},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
+                addView(owner.button("原始配置",icon=R.drawable.owner_info){rawView()},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
                 if(provenance(pkg)=="USER_MODIFIED")addView(owner.button("恢复上游"){confirm("恢复上游规则？","将放弃此应用的修改。"){
                     session.work("已恢复上游"){ZuioptLibrary.restoreApp(applicationContext,pkg,checkNotNull(this@MainActivity.baseline));session.ruleDraft=null}
                 }},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
-                addView(owner.button("保存并应用","primary",enabled=!session.busy){saveDraft()})
+                addView(owner.button("保存并应用","primary",enabled=!session.busy && d.dirty){saveDraft()})
             },gap())
         }
-        detail.addView(card().apply{addView(actionRow("记录关联线程分析","读取该应用已完成的监测记录；不自动生成或应用规则"){analysisPage=true;render()})},gap())
-        detail.addView(owner.button("查看原文 · 只读",small=true){rawView()},gap())
+        if(d==null)detail.addView(owner.button("查看原文 · 只读",small=true){rawView()},gap())
     }
     private fun mutateRule(next: () -> Unit) {
         if (session.busy) return
@@ -922,6 +930,11 @@ class MainActivity : Activity() {
         mutateRule { val rows = d.profile.rules.toMutableList(); rows.add(to, rows.removeAt(from)); d.profile = d.profile.copy(rules = rows); render() }
     }
     private fun groupName(d: RuleDraft, key: String) = ('A'.code + d.profile.rules.map { it.competitionClass }.distinct().indexOf(key).coerceAtLeast(0)).toChar().toString()
+    private fun cpuRange(mask:Set<Int>):String {
+        val ranges=mutableListOf<String>();val cores=mask.sorted();var i=0
+        while(i<cores.size){val start=cores[i];var end=start;while(i+1<cores.size && cores[i+1]==end+1){i++;end=cores[i]};ranges+=if(start==end)"$start" else "$start–$end";i++}
+        return ranges.joinToString("、").ifEmpty{"未选择"}
+    }
     private fun editRule(index: Int?) {
         mutateRule {
             val d=session.ruleDraft ?: return@mutateRule;val old=index?.let{d.profile.rules[it]}
