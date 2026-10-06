@@ -196,6 +196,7 @@ class MainActivity : Activity() {
                 ?: FrontendSession(V84FrontendGateway(applicationContext), ZuiControlClient.currentUserId())
         }
         if (createdSession && lastNonConfigurationInstance == null && saved != null) session.restore(saved)
+        session.onQueueEvent = { kind, detail -> OwnerRenderTrace.event(kind, detail) }
         if(intent.getBooleanExtra("openRecord",false))recordLaunch=intent
         OwnerWindow.fullscreen(this)
         val appContext = applicationContext
@@ -344,8 +345,10 @@ class MainActivity : Activity() {
             }
             rail.addView(frame,LinearLayout.LayoutParams(-1,owner.px(52)).apply{bottomMargin=owner.px(gap)})
         }
-        fun navigate(key:String){guard{
-            session.section=key;session.selected="";session.clearDrafts();query="";selectedRecord=null;recordRequested=false;recordThreads=false;analysisPage=false
+        fun navigate(key:String){
+            if(session.sameContext(key))return
+            guard{
+            session.changeContext(key);query="";selectedRecord=null;recordRequested=false;recordThreads=false;analysisPage=false
             render();load()
         }}
         nav("tune","调控",R.drawable.owner_tune){navigate("tune")}
@@ -386,7 +389,11 @@ class MainActivity : Activity() {
         }
         masterSelectionBindings.forEach{it()}
         masterSubtitle?.text=masterSubtitleText()
-        val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage/$recordThreads/${selectedThread?.optString("key")}/$rawPage/${preview?.hashCode()}/${caps.isNotEmpty()}/${session.appDraft!=null}/${session.ruleDraft!=null}/${selectedRecord?.optLong("recordId")}/${analysisPage && analysis!=null}"
+        // Reconcile before binding retained controls. A failed read yields the existing
+        // non-editable unavailable page; range edits never participate in page identity.
+        if(session.section=="settings" && session.settingsModule==1 && session.gpuDraft==null)
+            runCatching{session.gpuDraftFrom(state)}
+        val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage/$recordThreads/${selectedThread?.optString("key")}/$rawPage/${preview?.hashCode()}/${caps.isNotEmpty()}/${session.appDraft!=null}/${session.ruleDraft!=null}/${session.gpuDraft!=null}/${selectedRecord?.optLong("recordId")}/${analysisPage && analysis!=null}"
         if(page!=shownPage) {
         shownPage=page;cpuSparklines.cancel();pageBindings.clear()
         // A read completion can interrupt an incoming page at alpha=0. Keep the
@@ -452,7 +459,9 @@ class MainActivity : Activity() {
         if(session.section=="settings") {
             val icons=listOf(R.drawable.owner_monitor,R.drawable.owner_gpu,R.drawable.owner_data,R.drawable.owner_info)
             val rows=listOf("监测与显示" to "悬浮窗权限 · 通知 · 主题","GPU 默认范围" to "四档默认 GPU 频率区间","数据与维护" to "备份 · 恢复 · 维护","关于" to "Release · Build · Schema")
-            rows.forEachIndexed{i,(title,sub)->list.addView(ownerListRow("",title,sub,session.settingsModule==i,icons[i]){guard{session.settingsModule=i;session.clearDrafts();render()}})}
+            rows.forEachIndexed{i,(title,sub)->list.addView(ownerListRow("",title,sub,session.settingsModule==i,icons[i]){
+                if(!session.sameContext("settings",i))guard{session.changeContext("settings",i);render()}
+            })}
         } else {
             val (box,search)=owner.search(when(session.section){"thread"->"搜索应用或包名...";"monitor"->"搜索记录...";else->"搜索应用..."},query)
             master.addView(box,LinearLayout.LayoutParams(-1,owner.px(38)).apply{marginStart=owner.px(18);marginEnd=owner.px(18);bottomMargin=owner.px(12)})
@@ -738,12 +747,20 @@ class MainActivity : Activity() {
     private fun ownerUpdateReadout(view: LinearLayout,range: GpuRanges.Range){(view.getChildAt(0) as TextView).text="${range.min} – ${range.max}"}
     private fun gpuDefaultsPage() {
         val d=runCatching{session.gpuDraftFrom(state)}.getOrElse{heading("GPU 默认范围","各性能档位的默认 GPU 频率区间");detail.addView(note("默认范围暂不可用 · ${it.message}",orange));return}
+        fun draft() = session.gpuDraftFrom(state)
+        fun edit(action:(GpuDefaultsDraft)->Unit) {
+            runCatching { action(draft()) }.onFailure { session.error="GPU 草稿状态不可用：${it.message}" }
+            render()
+        }
         val dirtyChip=owner.chip("未保存",3,true)
         val trailing=owner.row().apply{
             addView(dirtyChip,LinearLayout.LayoutParams(-2,owner.px(22)).apply{marginEnd=owner.px(10)})
-            addView(owner.button("恢复默认",small=true,enabled=!session.busy){session.gpuDraft?.restoreDefaults();render()})
+            addView(owner.button("恢复默认",small=true,enabled=!session.busy){edit{it.restoreDefaults()}})
         }
-        bindPresentation{dirtyChip.visibility=if(session.gpuDraft?.dirty==true)View.VISIBLE else View.GONE}
+        bindPresentation{
+            val current=draft();dirtyChip.visibility=if(current.dirty)View.VISIBLE else View.GONE
+            OwnerRenderTrace.event("GPU_DRAFT_BOUND","model=${System.identityHashCode(current)};generation=${current.expectedGeneration};dirty=${current.dirty};ranges=${current.ranges}")
+        }
         detail.addView(owner.title("GPU 默认范围","各性能档位的默认 GPU 频率区间",trailing=trailing))
         detail.addView(owner.card().apply{
             GpuDefaultsDraft.modes.forEachIndexed{i,id->
@@ -754,13 +771,13 @@ class MainActivity : Activity() {
                     addView(owner.label(modeTitle(id),13.5f,owner.text,800));addView(owner.label(OwnerUi.descriptions[i],11f,owner.muted,600),LinearLayout.LayoutParams(-2,-2).apply{marginStart=owner.px(6)})
                     addView(View(this@MainActivity),LinearLayout.LayoutParams(0,1,1f));addView(readout)
                 },LinearLayout.LayoutParams(-1,owner.px(30)).apply{bottomMargin=owner.px(10)})
-                val bar=GpuRangeBar(this@MainActivity,r).apply{tone=owner.tiers[i];isEnabled=!session.busy;onPreview={ownerUpdateReadout(readout,it)};onCommit={session.gpuDraft?.set(id,it);render()}}
+                val bar=GpuRangeBar(this@MainActivity,r).apply{tone=owner.tiers[i];isEnabled=!session.busy;onPreview={ownerUpdateReadout(readout,it)};onCommit={range->edit{it.set(id,range)}}}
                 addView(bar,LinearLayout.LayoutParams(-1,bar.preferredHeight))
-                bindPresentation{session.gpuDraft?.ranges?.get(id)?.let{bar.showRange(it);ownerUpdateReadout(readout,it)};bar.isEnabled=!session.busy}
+                bindPresentation{val range=draft().ranges.getValue(id);bar.showRange(range);ownerUpdateReadout(readout,range);bar.isEnabled=!session.busy}
             }
         },owner.gap())
         detail.addView(owner.label("单应用选择“跟随档位默认”时会持续使用这里的区间，修改后这些应用随之更新。拖动后需确认才会保存。",11f,owner.muted).apply{setSingleLine(false);setPadding(owner.px(4),0,owner.px(4),0)},owner.gap())
-        detail.addView(owner.row().apply{gravity=Gravity.END;addView(draftSave("保存并生效"){session.gpuDraft?.dirty==true})})
+        detail.addView(owner.row().apply{gravity=Gravity.END;addView(draftSave("保存并生效"){draft().dirty})})
     }
     private fun draftSave(title:String,dirty:()->Boolean):View=owner.button(title,"primary",small=true,enabled=!session.busy && dirty()){saveDraft()}.also{button->
         button.minimumHeight=dp(40)

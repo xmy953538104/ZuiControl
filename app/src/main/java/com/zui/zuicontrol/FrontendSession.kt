@@ -21,6 +21,15 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
         else->false
     }
     var settingsModule = 0
+    fun sameContext(section: String, module: Int = settingsModule) =
+        this.section == section && (section == "settings" || selected.isEmpty()) &&
+            (section != "settings" || settingsModule == module)
+    /** Called only after the existing dirty guard permits a real context transition. */
+    fun changeContext(section: String, module: Int = settingsModule): Boolean {
+        if (sameContext(section, module)) return false
+        clearDrafts(); this.section = section; selected = ""; settingsModule = module
+        return true
+    }
     var appDraft: ZuiControlClient.AppPolicyDraft? = null
     var originalApp: ZuiControlClient.AppPolicyDraft? = null
     var newApp = false
@@ -59,9 +68,19 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     var manual: ZuioptRuleModel? = null
     var onChanged: (() -> Unit)? = null
     var onControlsChanged: (() -> Unit)? = null
+    @Volatile var onQueueEvent: ((String, String) -> Unit)? = null
+    private val queueSequence = java.util.concurrent.atomic.AtomicLong()
     private var closing = false
     /** Reads consume their ACK-bound results before another queued command can replace the slot. */
-    fun read(task:()->Unit) { if(!closing)executor.execute(task) }
+    fun read(task:()->Unit) {
+        if (closing) return
+        val id = queueSequence.incrementAndGet().toString()
+        onQueueEvent?.invoke("READ_ENQUEUED", id)
+        executor.execute {
+            onQueueEvent?.invoke("READ_STARTED", id)
+            try { task() } finally { onQueueEvent?.invoke("READ_FINISHED", id) }
+        }
+    }
     private fun finishClose(){if(closing && !busy && !controlsPending)executor.shutdown()}
     val controlsPending get() = refresh.pending || mode.pending || overlay.pending
     /** UI thread intent, serialized existing terminal-ACK actions; no transport changes. */
@@ -122,10 +141,15 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     }
     fun saveGpu(completed: (() -> Unit)? = null) {
         val captured = gpuDraft ?: return
+        val id = "${queueSequence.incrementAndGet()};generation=${captured.expectedGeneration}"
+        onQueueEvent?.invoke("SAVE_INTENT", id)
         val r = captured.ranges.toMap()
+        onQueueEvent?.invoke("SAVE_ENQUEUED", id)
         work("已保存并生效", completed) {
+            onQueueEvent?.invoke("SAVE_DISPATCHED", id)
             val reply = gateway.saveGpuDefaultsAtomic(r.getValue("powersave"), r.getValue("balance"),
                 r.getValue("performance"), r.getValue("fast"), captured.expectedGeneration)
+            onQueueEvent?.invoke("SAVE_TERMINAL_ACK", "$id;ok=${reply.ok}")
             if (!reply.ok) {
                 // A rejected CAS never erases the user's ranges or reports success.
                 runCatching {
@@ -143,6 +167,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
             // may still hold its pre-save state while onChanged immediately renders again.
             val fresh = gateway.readGpuDefaults(userId)
             check(fresh.expectedGeneration > captured.expectedGeneration) { "GPU_POST_ACK_READ_STALE" }
+            onQueueEvent?.invoke("SAVE_POST_ACK_READ", "$id;fresh=${fresh.expectedGeneration}")
             observeGpuDefaults(fresh)
             val authority = checkNotNull(gpuAuthority)
             gpuDraft = GpuDefaultsDraft(authority.expectedGeneration, authority.original)

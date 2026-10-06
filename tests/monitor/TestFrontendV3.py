@@ -13,7 +13,8 @@ class FrontendV3(unittest.TestCase):
         self.assertIn('session.read {',load);self.assertNotIn('Thread {',load)
         self.assertIn('ZuioptLibrary.baseline(applicationContext)',load)
         self.assertIn('session.read { runCatching { ZuiControlRequest.recoverPending(appContext) } }',main)
-        self.assertIn('fun read(task:()->Unit) { if(!closing)executor.execute(task) }',session)
+        reader=session.split('fun read(task:()->Unit)',1)[1].split('private fun finishClose()',1)[0]
+        self.assertIn('if (closing) return',reader);self.assertIn('executor.execute',reader)
         self.assertEqual(1,session.count('Executors.newSingleThreadExecutor()'))
     def test_one_monitor_owner_no_mock_sampler_or_hidden_network_poll(self):
         main=read('MainActivity.kt');gateway=read('FrontendGateway.kt');session=read('FrontendSession.kt')

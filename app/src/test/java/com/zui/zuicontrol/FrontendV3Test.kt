@@ -8,6 +8,52 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 class FrontendV3Test {
+    private fun gpuState(generation:Long=458) = "ok=1\npolicyGeneration=$generation\n" +
+        GpuDefaultsDraft.modes.joinToString("\n") { "gpuGlobal=0|$it|231|903" }
+    @Test fun gpuSameContextNavigationPreservesCleanAndDirtyModels() {
+        val gateway=FakeFrontendGateway();val session=FrontendSession(gateway,0,Executors.newSingleThreadExecutor()){}
+        try {
+            assertTrue(session.changeContext("settings",1))
+            val d=session.gpuDraftFrom(gpuState());assertSame(d,session.gpuDraft)
+            assertFalse(session.changeContext("settings"));assertFalse(session.changeContext("settings",1))
+            assertSame(d,session.gpuDraft);assertFalse(d.dirty)
+            d.set("powersave",GpuRanges.Range(231,422));assertTrue(session.dirty)
+            assertFalse(session.changeContext("settings"));assertFalse(session.changeContext("settings",1))
+            assertSame(d,session.gpuDraft);assertEquals(GpuRanges.Range(231,422),d.ranges.getValue("powersave"))
+            FrontendTheme.dark("dark",false);session.returnHome() // Theme and genuine background do not own drafts.
+            assertSame(d,session.gpuDraft);assertTrue(d.dirty);assertEquals(0,gateway.calls)
+        }finally{session.close()}
+    }
+    @Test fun gpuModelReconciliationUsesLatestAuthorityAndNeverOverwritesDirtyRanges() {
+        val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){}
+        try {
+            session.changeContext("settings",1);val d=session.gpuDraftFrom(gpuState())
+            d.set("powersave",GpuRanges.Range(231,422))
+            session.observeGpuDefaults(GpuDefaultsDraft.fromState(gpuState(459),0))
+            assertSame(d,session.gpuDraftFrom(gpuState(459)));assertEquals(458L,d.expectedGeneration);assertTrue(d.dirty)
+            session.gpuDraft=null // Defensive lost-model path; retained authority stays newer than Activity.state.
+            val recovered=session.gpuDraftFrom(gpuState(458))
+            assertEquals(459L,recovered.expectedGeneration);assertFalse(recovered.dirty)
+            assertThrows(IllegalStateException::class.java){GpuDefaultsDraft.fromState("ok=0",0)}
+        }finally{session.close()}
+    }
+    @Test fun realGpuContextLeaveCancelsDiscardsOrCommitsBeforeNavigation() {
+        val gateway=FakeFrontendGateway().apply{succeed=true;authoritativeGeneration=458}
+        val callbacks=LinkedBlockingQueue<()->Unit>();val session=FrontendSession(gateway,0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
+        try {
+            session.changeContext("settings",1);val d=session.gpuDraftFrom(gpuState());d.restoreDefaults()
+            assertTrue(d.dirty);assertEquals(0,gateway.calls)
+            assertFalse(session.sameContext("settings",2)) // Cancel does not call the transition.
+            assertSame(d,session.gpuDraft);assertTrue(session.dirty)
+            session.saveGpu{session.changeContext("settings",2)}
+            assertEquals(1,session.settingsModule);checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertEquals(2,session.settingsModule);assertNull(session.gpuDraft);assertEquals(1,gateway.calls)
+            assertEquals(458L,gateway.generation);assertEquals(GpuDefaultsDraft.modes.map(GpuRanges::default),gateway.gpu)
+            session.changeContext("settings",1);session.gpuDraftFrom(gpuState(459)).restoreDefaults()
+            session.clearDrafts();session.changeContext("settings",0) // Explicit Discard, then transition.
+            assertNull(session.gpuDraft);assertEquals(0,session.settingsModule);assertEquals(1,gateway.calls)
+        }finally{session.close()}
+    }
     /** Real pending-identity/ACK predicate; the platform transport is a counted boundary. */
     private fun twoSavesWithRead(enqueue:(FrontendSession,()->Unit)->Unit,blocked:Boolean) {
         val owner=FakeFrontendGateway().apply{succeed=true;authoritativeGeneration=365}
