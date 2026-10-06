@@ -88,7 +88,7 @@ internal object OwnerWindow {
             @Deprecated("Drawable opacity") override fun getOpacity()=PixelFormat.OPAQUE
         }
         bridge.setBounds(0,0,host.width,top);host.overlay.add(bridge)
-        var inkChanged=false;var inkChangedAt=0L
+        var inkChanged=false;var inkChangedAt=0L;var railChanged=false
         ValueAnimator.ofFloat(0f,1f).apply{
             duration=280;interpolator=android.view.animation.LinearInterpolator()
             addUpdateListener {animation->
@@ -99,13 +99,18 @@ internal object OwnerWindow {
                     else->IntArray(3){i->blend(midpoint[i],target[i],((ms-195)/85.0).coerceAtMost(1.0))}
                 }
                 // ZUI's120ms tint animation crosses intermediate rail shades.
-                // Keep endpoint contrast; native R3 frames require a later
-                // dark-to-light handoff for the clock's delayed first frame.
+                // Keep endpoint contrast. Native clock frames require an earlier
+                // light-to-dark handoff and a later dark-to-light handoff.
                 // Both rail and its physical bridge use the SAME color.
-                colors[0]=if(!inkChanged || (if(dark)ms-inkChangedAt<40 else ms-inkChangedAt<50))source[0] else target[0]
+                val railReady=inkChanged && !(if(dark)ms-inkChangedAt<30 else ms-inkChangedAt<50)
+                colors[0]=if(railReady)target[0] else source[0]
                 frame(animation.animatedFraction,colors)
                 bridge.invalidateSelf()
-                if(ms>=65 && !inkChanged){inkChanged=true;inkChangedAt=ms;updateSystemBarAppearance(activity,dark)}
+                if(railReady && !railChanged){railChanged=true;OwnerRenderTrace.event("STATUS_RAIL_HANDOFF","dark=$dark;playTime=$ms")}
+                if(ms>=65 && !inkChanged){
+                    inkChanged=true;inkChangedAt=ms;updateSystemBarAppearance(activity,dark)
+                    OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;playTime=$ms")
+                }
             }
             addListener(object:android.animation.AnimatorListenerAdapter(){
                 override fun onAnimationEnd(animation:android.animation.Animator){frame(1f,target);host.overlay.remove(bridge);finished()}
