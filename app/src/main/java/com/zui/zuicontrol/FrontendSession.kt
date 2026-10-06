@@ -1,13 +1,12 @@
 package com.zui.zuicontrol
 
-import java.util.concurrent.Executors
 import android.os.Bundle
 import org.json.JSONArray
 import org.json.JSONObject
 
 /** Retained in memory across configuration changes; no second persistent policy/rule store. */
 internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
-    private val executor: java.util.concurrent.ExecutorService = Executors.newSingleThreadExecutor(),
+    private val executor: java.util.concurrent.ExecutorService = FrontendTransport.commands,
     private val post: (() -> Unit) -> Unit = { android.os.Handler(android.os.Looper.getMainLooper()).post(it) }) {
     var section = "tune"
     var selected = ""
@@ -33,6 +32,15 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     var appDraft: ZuiControlClient.AppPolicyDraft? = null
     var originalApp: ZuiControlClient.AppPolicyDraft? = null
     var newApp = false
+    var appAuthorityGeneration=0L;private set
+    fun observeAppPolicies(fresh:ZuiControlClient.AppPolicies) {
+        if(fresh.userId!=userId || fresh.generation<appAuthorityGeneration)return
+        appAuthorityGeneration=fresh.generation
+        if(appDirty || appDraft==null)return
+        val next=fresh.apps.firstOrNull{it.draft.packageName==selected}?.draft
+        originalApp=next;appDraft=next
+        if(next==null)selected=""
+    }
     var gpuDraft: GpuDefaultsDraft? = null
     var gpuAuthority: GpuDefaultsDraft? = null; private set
     fun observeGpuDefaults(fresh: GpuDefaultsDraft) {
@@ -81,20 +89,31 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
             try { task() } finally { onQueueEvent?.invoke("READ_FINISHED", id) }
         }
     }
-    private fun finishClose(){if(closing && !busy && !controlsPending)executor.shutdown()}
+    private fun finishClose(){if(closing && !busy && !controlsPending && executor !== FrontendTransport.commands)executor.shutdown()}
+    /** Only source-proven independent Binder/local reads use this lane, never mutation busy. */
+    fun directRead(task:()->Unit) { if(!closing) FrontendTransport.reads.execute(task) }
     val controlsPending get() = refresh.pending || mode.pending || overlay.pending
     /** UI thread intent, serialized existing terminal-ACK actions; no transport changes. */
-    fun <T> intent(control: OptimisticControl<T>, value: T, action: (T) -> ZuiControlClient.Reply) {
-        if (!control.begin(value)) return
+    fun <T> intent(control: OptimisticControl<T>, value: T, action: (T) -> ZuiControlClient.Reply) = queueIntent(control,value,true,action)
+    private fun <T> queueIntent(control: OptimisticControl<T>, value: T, userTouch:Boolean, action: (T) -> ZuiControlClient.Reply) {
+        if(userTouch)onQueueEvent?.invoke("TOUCH", value.toString())
+        val dispatch=control.begin(value)
+        if(userTouch)onQueueEvent?.invoke("VISUAL_INTENT", value.toString())
+        if (!dispatch) return
         val captured = checkNotNull(control.inFlight)
+        val id = "${queueSequence.incrementAndGet()};value=$captured"
         error = ""; notice = ""
+        onQueueEvent?.invoke("COMMAND_ENQUEUED", id)
         executor.execute {
+            onQueueEvent?.invoke("COMMAND_DISPATCHED", id)
             val reply = runCatching { action(captured) }.getOrElse { ZuiControlClient.Reply(false, it.message.orEmpty()) }
+            onQueueEvent?.invoke("TERMINAL_ACK", "$id;ok=${reply.ok}")
             post {
                 control.finish(reply.ok)
-                if (control.displayed != control.confirmed) intent(control, control.displayed, action)
+                if (control.displayed != control.confirmed) queueIntent(control, control.displayed, false, action)
                 if (!reply.ok) error = reply.text
                 onControlsChanged?.invoke()
+                onQueueEvent?.invoke("CONFIRMED_REBIND", id)
                 finishClose()
             }
         }

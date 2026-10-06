@@ -143,7 +143,7 @@ class CommandPlaneArchitectureTest(unittest.TestCase):
         )
 
     def test_app_reads_binder_state_not_retired_health_setting(self) -> None:
-        self.assertIn("val state = ZuiControlClient.stateText()", self.activity)
+        self.assertIn('read("state",fetch={ZuiControlClient.stateText()}', self.activity)
         # V3 delegates presentation of the same Binder response to the accepted pure Health mapper.
         self.assertIn("BackendHealth.components(state)", self.activity)
         health = read("app/src/main/java/com/zui/zuicontrol/BackendHealth.kt")

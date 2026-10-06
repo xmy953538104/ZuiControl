@@ -15,6 +15,7 @@ internal object ControlsState {
     private var callback: IBinder? = null
     private var death: IBinder.DeathRecipient? = null
     private var epoch = 0L
+    private var connecting=false
     var snapshot: String = ""
         private set
     private val reconnect = Runnable { connect() }
@@ -28,8 +29,12 @@ internal object ControlsState {
         listeners.remove(listener)
         if (listeners.isEmpty()) {
             epoch++; handler.removeCallbacks(reconnect)
-            runCatching { callback?.let { backend?.controls(false, it) } }
-            runCatching { death?.let { backend?.unlinkMonitorDeath(it) } }
+            val old=backend;val client=callback;val recipient=death
+            FrontendTransport.reads.execute {
+                runCatching { client?.let { old?.controls(false, it) } }
+                runCatching { recipient?.let { old?.unlinkMonitorDeath(it) } }
+            }
+            connecting=false
             backend = null; callback = null; death = null; snapshot = ""
         }
     }
@@ -40,7 +45,8 @@ internal object ControlsState {
     }
     private fun connect() {
         handler.removeCallbacks(reconnect)
-        if (listeners.isEmpty()) return
+        if (listeners.isEmpty() || connecting) return
+        connecting=true
         val ticket = ++epoch
         val next = object : Binder() {
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
@@ -52,24 +58,36 @@ internal object ControlsState {
                 return true
             }
         }
-        runCatching {
-            val manager = checkNotNull(ZuiControlManager.get())
-            val died = IBinder.DeathRecipient { handler.post {
+        val died = IBinder.DeathRecipient { handler.post {
                 if (ticket == epoch) {
-                    epoch++; backend = null; callback = null; death = null
+                    epoch++; backend = null; callback = null; death = null;connecting=false
                     accept(""); handler.postDelayed(reconnect, 1000)
                 }
-            } }
-            val initial = manager.controls(true, next)
-            check(initial.startsWith("ok=1") || initial.contains("error=inactive_user"))
-            backend = manager; callback = next; death = died
-            manager.linkMonitorDeath(died)
-            accept(initial)
-        }.onFailure {
-            runCatching { callback?.let { backend?.controls(false, it) } }
-            runCatching { death?.let { backend?.unlinkMonitorDeath(it) } }
-            epoch++; backend = null; callback = null; death = null; accept("")
-            handler.postDelayed(reconnect, 5000)
+        } }
+        FrontendTransport.reads.execute {
+            var manager:ZuiControlManager?=null
+            val result=runCatching {
+                val owner=checkNotNull(ZuiControlManager.get());manager=owner
+                val initial=owner.controls(true,next)
+                check(initial.startsWith("ok=1") || initial.contains("error=inactive_user"))
+                owner.linkMonitorDeath(died);initial
+            }
+            if(result.isFailure){runCatching{manager?.controls(false,next)};runCatching{manager?.unlinkMonitorDeath(died)}}
+            handler.post {
+                if(ticket!=epoch || listeners.isEmpty()) {
+                    FrontendTransport.reads.execute{runCatching{manager?.controls(false,next)};runCatching{manager?.unlinkMonitorDeath(died)}}
+                    return@post
+                }
+                connecting=false
+                result.onSuccess {
+                    backend=manager;callback=next;death=died
+                    // A newer callback may already have been delivered during registration.
+                    if(snapshot.isEmpty())accept(it)
+                }.onFailure {
+                    epoch++;backend=null;callback=null;death=null;accept("")
+                    handler.postDelayed(reconnect,5000)
+                }
+            }
         }
     }
 }

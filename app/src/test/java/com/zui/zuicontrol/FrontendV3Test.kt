@@ -8,6 +8,52 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 class FrontendV3Test {
+    @Test fun directReadDoesNotHoldCommandsOrMutationBusy() {
+        val entered=java.util.concurrent.CountDownLatch(1);val release=java.util.concurrent.CountDownLatch(1)
+        val callbacks=LinkedBlockingQueue<()->Unit>();val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
+        try {
+            session.directRead{entered.countDown();check(release.await(5,TimeUnit.SECONDS))}
+            check(entered.await(5,TimeUnit.SECONDS));assertFalse(session.busy)
+            session.appDraft=ZuiControlClient.AppPolicyDraft("org.test.app",120,"balance",ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,10)
+            session.originalApp=session.appDraft
+            session.appDraft=session.appDraft!!.copy(refreshHz=90);assertTrue(session.appDirty)
+            session.intent(session.refresh,60){ZuiControlClient.Reply(true,"ACK")}
+            checkNotNull(callbacks.poll(1,TimeUnit.SECONDS)).invoke()
+            assertEquals(60,session.refresh.confirmed);assertFalse(session.busy);assertTrue(session.appDirty)
+        }finally{release.countDown();session.close()}
+    }
+    @Test fun defaultSessionsAndNotificationUseOneProcessCommandLane() {
+        val entered=java.util.concurrent.CountDownLatch(1);val release=java.util.concurrent.CountDownLatch(1)
+        val complete=java.util.concurrent.CountDownLatch(1);val events=java.util.Collections.synchronizedList(mutableListOf<String>())
+        val callbacks=LinkedBlockingQueue<()->Unit>()
+        val first=FrontendSession(FakeFrontendGateway(),0,post={callbacks.put(it)})
+        val second=FrontendSession(FakeFrontendGateway(),0,post={callbacks.put(it)})
+        try {
+            first.read{events+="read-start";entered.countDown();check(release.await(5,TimeUnit.SECONDS));events+="read-consumed"}
+            check(entered.await(5,TimeUnit.SECONDS))
+            second.intent(second.refresh,90){events+="policy";ZuiControlClient.Reply(true,"ACK")}
+            FrontendTransport.commands.execute{events+="quick";complete.countDown()}
+            assertFalse(complete.await(100,TimeUnit.MILLISECONDS));assertEquals(listOf("read-start"),events.toList())
+            first.close();release.countDown();check(complete.await(5,TimeUnit.SECONDS))
+            checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertEquals(listOf("read-start","read-consumed","policy","quick"),events.toList());assertEquals(90,second.refresh.confirmed)
+        }finally{release.countDown();first.close();second.close()}
+    }
+    @Test fun selectedAppProjectionUpdatesCleanDetailAndPreservesDirtyCas() {
+        val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){}
+        try {
+            val old=ZuiControlClient.AppPolicyDraft("org.test.app",120,"balance",ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,10)
+            session.selected=old.packageName;session.appDraft=old;session.originalApp=old
+            val fresh=old.copy(refreshHz=90,uperfMode="fast",gpuPolicy=ZuiControlClient.GpuPolicy.CUSTOM,expectedGeneration=11,gpuMinMHz=422,gpuMaxMHz=903)
+            fun projection(d:ZuiControlClient.AppPolicyDraft)=ZuiControlClient.AppPolicies(0,d.expectedGeneration,listOf(ZuiControlClient.AppPolicyRead(d,422,903)))
+            session.observeAppPolicies(projection(fresh));assertEquals(fresh,session.appDraft);assertEquals(fresh,session.originalApp);assertFalse(session.appDirty)
+            val local=fresh.copy(refreshHz=60);session.appDraft=local
+            session.observeAppPolicies(projection(fresh.copy(expectedGeneration=12,refreshHz=165)))
+            assertEquals(local,session.appDraft);assertEquals(fresh,session.originalApp);assertEquals(12L,session.appAuthorityGeneration)
+            assertEquals(11L,session.appDraft!!.expectedGeneration);assertTrue(session.appDirty)
+            session.observeAppPolicies(projection(old));assertEquals(12L,session.appAuthorityGeneration)
+        }finally{session.close()}
+    }
     private fun gpuState(generation:Long=458) = "ok=1\npolicyGeneration=$generation\n" +
         GpuDefaultsDraft.modes.joinToString("\n") { "gpuGlobal=0|$it|231|903" }
     @Test fun gpuSameContextNavigationPreservesCleanAndDirtyModels() {

@@ -10,12 +10,20 @@ class FrontendV3(unittest.TestCase):
     def test_shared_command_reads_use_existing_session_queue(self):
         main=read('MainActivity.kt');session=read('FrontendSession.kt')
         load=main.split('private fun load() {',1)[1].split('private fun observeGlobals()',1)[0]
-        self.assertIn('session.read {',load);self.assertNotIn('Thread {',load)
-        self.assertIn('ZuioptLibrary.baseline(applicationContext)',load)
+        self.assertIn('"tune"->{loadState();loadPolicies();loadCapabilities()}',load);self.assertNotIn('Thread {',load)
+        self.assertIn('"monitor"->loadRecords()',load)
+        self.assertIn('"settings"->when(session.settingsModule)',load)
+        self.assertIn('"thread"->{loadInventory();loadRules()}',load)
+        self.assertNotIn('ZuioptLibrary.baseline',load)
+        rules=main.split('private fun loadRules()',1)[1].split('private fun loadRecords()',1)[0]
+        self.assertIn('shared=true',rules);self.assertIn('snapshot?.generation==generation && baseline?.generation==generation',rules)
+        self.assertIn('ZuioptLibrary.baseline(applicationContext)',rules)
         self.assertIn('session.read { runCatching { ZuiControlRequest.recoverPending(appContext) } }',main)
         reader=session.split('fun read(task:()->Unit)',1)[1].split('private fun finishClose()',1)[0]
         self.assertIn('if (closing) return',reader);self.assertIn('executor.execute',reader)
-        self.assertEqual(1,session.count('Executors.newSingleThreadExecutor()'))
+        self.assertIn('= FrontendTransport.commands',session)
+        self.assertIn('FrontendTransport.reads.execute',session)
+        self.assertNotIn('session.work',main.split('private fun readRecord',1)[1].split('private fun monitorPage',1)[0])
     def test_one_monitor_owner_no_mock_sampler_or_hidden_network_poll(self):
         main=read('MainActivity.kt');gateway=read('FrontendGateway.kt');session=read('FrontendSession.kt')
         self.assertNotIn('monitor("register"',main)

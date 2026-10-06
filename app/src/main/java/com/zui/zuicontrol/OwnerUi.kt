@@ -19,7 +19,14 @@ internal data class OwnerIcon(val resource:Int,val size:Int)
 internal fun ownerForegroundColor(value:Int,recolor:(Int)->Int)=if(value and 0xffffff==0xffffff)value else recolor(value)
 internal class OwnerUi(val context: Context) {
     var dark = OwnerWindow.dark(context);private set
-    private fun c(d: String, l: String) = Color.parseColor(if (dark) d else l)
+    private var themeSource:Boolean?=null
+    private var themeProgress=1f
+    private fun c(d: String, l: String):Int {
+        val target=Color.parseColor(if(dark)d else l)
+        val source=themeSource ?: return target
+        return OwnerWindow.blend(Color.parseColor(if(source)d else l),target,themeProgress.toDouble())
+    }
+    fun beginTheme(){themeSource=dark;themeProgress=0f}
     val rail get()=c("#0D1320","#FFFFFF"); val master get()=c("#0D1320","#F6F8FB"); val detail get()=c("#090D15","#EEF2F7")
     val card get()=c("#111927","#FFFFFF"); val card2 get()=c("#1A2334","#F1F4F9")
     val text get()=c("#E8EDF6","#0F172A"); val sub get()=c("#A5B0C3","#475569"); val muted get()=c("#6C7890","#8E9BAE")
@@ -37,9 +44,9 @@ internal class OwnerUi(val context: Context) {
     // Toast foreground has its own role: its light white aliases the card surface.
     private fun palette()=listOf(card,card2,text,sub,muted,code,accentSoft,accentGlow,toastBg,accent,line,line2,zo,zoBg,zoFg)+tiers.toList()+inks.toList()+chipBg.toList()+chipFg.toList()
     /** Recolor attached views; their identities, font metrics and layout remain untouched. */
-    fun applyTheme(root:View,value:Boolean){
+    fun applyTheme(root:View,value:Boolean,progress:Float=1f){
         val old=palette();val wasDark=dark;val oldSoft=tiers.map{soft(it)}
-        dark=value;val next=palette();val mapping=old.zip(next).toMap()+oldSoft.zip(tiers.map{soft(it)}).toMap()
+        dark=value;themeProgress=progress;val next=palette();val mapping=old.zip(next).toMap()+oldSoft.zip(tiers.map{soft(it)}).toMap()
         fun color(v:Int):Int=mapping[v] ?: old.zip(next).firstOrNull{(a,_)->(a and 0xffffff)==(v and 0xffffff) && Color.alpha(a)==255}?.let{(_,b)->(v and -0x1000000) or (b and 0xffffff)} ?: v
         fun drawable(d:android.graphics.drawable.Drawable?) {
             when(d){
@@ -58,7 +65,8 @@ internal class OwnerUi(val context: Context) {
             if(v is ViewGroup)for(i in 0 until v.childCount)visit(v.getChildAt(i))
             v.invalidate()
         }
-        if(wasDark!=value)visit(root)
+        if(wasDark!=value || old!=next)visit(root)
+        if(progress>=1f)themeSource=null
     }
     val density=context.resources.displayMetrics.density
     fun px(v: Number)=(v.toFloat()*density).roundToInt()
@@ -402,6 +410,7 @@ internal class OwnerGauge(context: Context,private val ui: OwnerUi,private val t
 
 @SuppressLint("ViewConstructor")
 internal class OwnerMeter(context: Context,private val ui: OwnerUi,private val cuts: List<Float> = emptyList(),private var segments: List<Int>? = null): View(context) {
+    fun showSegments(value:List<Int>){if(segments!=value){segments=value;invalidate()}}
     fun retheme(color:(Int)->Int){tone=color(tone);segments=segments?.map(color);invalidate()}
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG);private var shown=0f;private var animator: ValueAnimator?=null
     private var segmentTime=0f

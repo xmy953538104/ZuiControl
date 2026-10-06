@@ -62,7 +62,10 @@ object ZuiControlClient {
     data class AppPolicyRead(val draft: AppPolicyDraft,val effectiveMinMHz: Int,val effectiveMaxMHz: Int)
     data class AppPolicies(val userId: Int,val generation: Long,val apps: List<AppPolicyRead>)
     fun appPolicies(): AppPolicies {
-        val text=utilityValue("appPolicies","");require(text.toByteArray(Charsets.UTF_8).size<=262144)
+        return parseAppPolicies(utilityValue("appPolicies",""))
+    }
+    internal fun parseAppPolicies(text:String): AppPolicies {
+        require(text.toByteArray(Charsets.UTF_8).size<=262144)
         val root=org.json.JSONObject(text);check(root.getInt("schema")==3&&root.getInt("userId")==currentUserId())
         val generation=root.getLong("generation");val rows=root.getJSONArray("apps")
         val apps=(0 until rows.length()).map { i ->

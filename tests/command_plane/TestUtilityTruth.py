@@ -30,6 +30,11 @@ def saf(case):
     # ContentResolver and executor/post boundaries are replaced in this harness.
     harness='''package com.zui.zuicontrol
 import java.io.*
+object FrontendTransport {
+ val commands:Any=Any()
+ class Reads{fun execute(task:()->Unit){task()}}
+ val reads=Reads()
+}
 class Resolver(val mode:String){var bytes=ByteArrayOutputStream();fun openOutputStream(uri:String,access:String):OutputStream? =
  if(mode=="null")null else if(mode=="throw")object:OutputStream(){override fun write(b:Int){throw IOException("write failure")}} else bytes}
 class Session {var busy=false;var error="";var notice="";var onChanged:(()->Unit)?=null

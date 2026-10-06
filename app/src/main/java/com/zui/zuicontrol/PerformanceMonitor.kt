@@ -62,15 +62,23 @@ class PerformanceMonitor(private val context: Context,
     private var closed = false
     private var recordStartPending = false
     private var circle = false
+    private var pendingShape:Boolean?=null
+    private var shapeEpoch=0L
     private var circleX: Int? = null
     private var circleY: Int? = null
     private var circleBounds = Rect()
     private var positionWrites = 0L
     private var positions = JSONObject()
+    private var preferencesEpoch=0L
     fun reloadPreferences() {
-        positions = runCatching { JSONObject(command("preferencesRead")) }.getOrDefault(JSONObject())
-        circleX=null;circleY=null
-        if(attached) { ensureCirclePosition();positionWindow("preferences") }
+        val ticket=++preferencesEpoch
+        FrontendTransport.commands.execute{
+            val fresh=runCatching{JSONObject(command("preferencesRead"))}
+            handler.post{if(!closed && ticket==preferencesEpoch)fresh.onSuccess{
+                positions=it;circleX=null;circleY=null
+                if(attached){ensureCirclePosition();positionWindow("preferences")}
+            }}
+        }
     }
     private var snapshot = JSONObject()
     private var displayPower = -1.0
@@ -78,6 +86,7 @@ class PerformanceMonitor(private val context: Context,
     private var permissionAllowed = true
     private var backendGeneration=0L
     private var expectedProducer=""
+    private var connecting=false
     private var serviceDeath: IBinder.DeathRecipient? = null
     private val expireReading = Runnable {
         render(JSONObject(snapshot.toString()).put("elapsedMs",0).put("fps",JSONObject.NULL)
@@ -94,34 +103,46 @@ class PerformanceMonitor(private val context: Context,
         }
     }
     fun start() {
-        if (closed) return
+        if (closed || connecting) return
         if (!started) {
             reloadPreferences()
             displays.registerDisplayListener(displayListener, handler)
             started = true
         }
-        runCatching {
-            serviceDeath?.let { backend?.unlinkMonitorDeath(it) }
-            val client=++backendGeneration
-            expectedProducer=""
-            val death=IBinder.DeathRecipient { handler.post {
-                if(client==backendGeneration){backend=null;expectedProducer="";snapshot=JSONObject();hide();MonitorPresentation.publish(null);onReading(-1.0,-1.0,0L,3500L)}
-            } }
-            serviceDeath=death
-            backend=ZuiControlManager.get()?.also { it.linkMonitorDeath(death) }
-            val reply=backend?.monitor("register", "", false, false, callback).orEmpty()
-            check(reply.startsWith("ok=1")) { "monitor register failed" }
-            expectedProducer=JSONObject(reply.substringAfter("monitorSnapshot=")).getString("producerEpoch")
-            permissionAllowed=Settings.canDrawOverlays(context)
-            command(if(permissionAllowed) "permissionGranted" else "permissionLost")
-        }.onFailure { hide();MonitorPresentation.publish(null);onReading(-1.0,-1.0,0L,3500L) }
+        connecting=true
+        val client=++backendGeneration;expectedProducer=""
+        val previous=backend;val previousDeath=serviceDeath
+        val death=IBinder.DeathRecipient { handler.post {
+            if(client==backendGeneration){backend=null;connecting=false;expectedProducer="";snapshot=JSONObject();hide();MonitorPresentation.publish(null);onReading(-1.0,-1.0,0L,3500L)}
+        } }
+        FrontendTransport.commands.execute {
+            var manager:ZuiControlManager?=null
+            val result=runCatching {
+                previousDeath?.let{previous?.unlinkMonitorDeath(it)}
+                manager=checkNotNull(ZuiControlManager.get());manager!!.linkMonitorDeath(death)
+                val reply=manager!!.monitor("register","",false,false,callback)
+                check(reply.startsWith("ok=1")){"monitor register failed"}
+                val fresh=reply.substringAfter("monitorSnapshot=")
+                check(JSONObject(fresh).getString("producerEpoch").isNotEmpty())
+                val allowed=Settings.canDrawOverlays(context)
+                command(if(allowed)"permissionGranted" else "permissionLost")
+                fresh to allowed
+            }
+            handler.post {
+                if(closed || client!=backendGeneration){FrontendTransport.commands.execute{runCatching{manager?.monitor("unregister","",false,false,callback);manager?.unlinkMonitorDeath(death)}};return@post}
+                connecting=false
+                result.onSuccess{(fresh,allowed)->backend=manager;serviceDeath=death;permissionAllowed=allowed;expectedProducer=JSONObject(fresh).getString("producerEpoch");render(fresh)}
+                    .onFailure{FrontendTransport.commands.execute{runCatching{manager?.monitor("unregister","",false,false,callback);manager?.unlinkMonitorDeath(death)}};hide();MonitorPresentation.publish(null);onReading(-1.0,-1.0,0L,3500L)}
+            }
+        }
     }
     fun close() {
         closed = true
         MonitorPresentation.publish(null)
-        runCatching { ZuiControlManager.get()?.monitor("unregister", "", false, false, callback) }
+        val old=backend;val death=serviceDeath
+        FrontendTransport.commands.execute{runCatching{old?.monitor("unregister","",false,false,callback);death?.let{old?.unlinkMonitorDeath(it)}}}
         backendGeneration++;expectedProducer=""
-        runCatching { serviceDeath?.let { backend?.unlinkMonitorDeath(it) } };backend=null
+        backend=null
         if (started) displays.unregisterDisplayListener(displayListener)
         hide(); handler.removeCallbacksAndMessages(null)
     }
@@ -201,10 +222,11 @@ class PerformanceMonitor(private val context: Context,
     private fun persistCirclePosition() {
         val x = (circleX!! - circleBounds.left).toFloat() / maxOf(1, circleBounds.width())
         val y = (circleY!! - circleBounds.top).toFloat() / maxOf(1, circleBounds.height())
-        val result=command("preferencesWrite",JSONObject().put("circle_x",x).put("circle_y",y).toString())
-        if(result.startsWith("ok=0"))return
-        positions=JSONObject(result)
-        positionWrites++; event("drag persisted x=$circleX y=$circleY writes=$positionWrites")
+        val ticket=++preferencesEpoch;val argument=JSONObject().put("circle_x",x).put("circle_y",y).toString()
+        FrontendTransport.commands.execute{
+            val fresh=runCatching{val result=command("preferencesWrite",argument);check(!result.startsWith("ok=0")){result};JSONObject(result)}
+            handler.post{if(!closed && ticket==preferencesEpoch)fresh.onSuccess{positions=it;positionWrites++;event("drag persisted x=$circleX y=$circleY writes=$positionWrites")}}
+        }
     }
     private fun positionWindow(reason: String) {
         val target = view ?: return
@@ -253,7 +275,7 @@ class PerformanceMonitor(private val context: Context,
         if(expectedProducer.isEmpty()||next.optString("producerEpoch")!=expectedProducer)return
         if(next.optString("producerEpoch")!=snapshot.optString("producerEpoch")) {view?.cancelGesture();snapshot=JSONObject()}
         val allowed=Settings.canDrawOverlays(context)
-        if(allowed!=permissionAllowed){permissionAllowed=allowed;command(if(allowed) "permissionGranted" else "permissionLost")}
+        if(allowed!=permissionAllowed){permissionAllowed=allowed;FrontendTransport.commands.execute{runCatching{command(if(allowed) "permissionGranted" else "permissionLost")}}}
         val oldConnection = snapshot.optLong("connectionEpoch")
         val newConnection = next.optLong("connectionEpoch")
         if (newConnection < oldConnection) return
@@ -272,7 +294,7 @@ class PerformanceMonitor(private val context: Context,
         snapshot = next
         MonitorPresentation.publish(next)
         if (modeChanged) onModeChanged()
-        circle = next.optBoolean("circle", circle)
+        circle = pendingShape ?: next.optBoolean("circle", circle)
         onReading(next.optDouble("quietC", -1.0), displayPower, next.optLong("elapsedMs"), next.optLong("ttlMs", 3500))
         if (!next.optBoolean("active") || !allowed) { hide(); return }
         if (recording()) circle = true
@@ -306,7 +328,7 @@ class PerformanceMonitor(private val context: Context,
                 windows.addView(fresh, params); attached = true; adds++; event("add y=${params.y}")
             }
             view?.update()
-        } catch (_: RuntimeException) { hide(); command("permissionLost") }
+        } catch (_: RuntimeException) { hide();FrontendTransport.commands.execute{runCatching{command("permissionLost")}} }
     }
     private inner class MonitorView(context: Context) : View(context) {
         private val density = resources.displayMetrics.density
@@ -455,24 +477,43 @@ class PerformanceMonitor(private val context: Context,
                     val token = "${snapshot.optLong("connectionEpoch")}:${snapshot.optLong("targetEpoch")}:$touchSequence"
                     recordStartPending = true
                     // One explicit pre-start read, never a periodic worker or a UI-thread wait.
-                    Thread({
+                    FrontendTransport.commands.execute {
                         val qualified = runCatching { ZuioptRules.state(context) }.isSuccess
+                        val reply=if(qualified && !closed)command("recordStart", token) else "ok=0"
                         this@PerformanceMonitor.handler.post {
                             recordStartPending = false
-                            if (!closed && attached && circle && qualified && command("recordStart", token).startsWith("ok=1")) {
+                            if (!closed && attached && circle && reply.startsWith("ok=1")) {
                                 snapshot.put("recordState", "RECORDING")
                                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                                 update()
                             }
                         }
-                    }, "RecordStartFacts").start()
+                    }
                 }
                 MonitorGesture.Release.STOP_RECORDING -> {
-                    if (command("recordStop").startsWith("ok=1")) snapshot.put("recordState", "IDLE")
+                    FrontendTransport.commands.execute {
+                        val reply=command("recordStop")
+                        this@PerformanceMonitor.handler.post{if(!closed && reply.startsWith("ok=1")){snapshot.put("recordState","IDLE");update()}}
+                    }
                 }
                 MonitorGesture.Release.TO_CIRCLE, MonitorGesture.Release.TO_BAR -> {
                     val nextCircle = action == MonitorGesture.Release.TO_CIRCLE
-                    if (command(if (nextCircle) "circle" else "bar").startsWith("ok=1")) circle = nextCircle
+                    val token=++shapeEpoch;val previous=circle
+                    pendingShape=nextCircle;circle=nextCircle;update()
+                    OwnerRenderTrace.event("SHAPE_LOCAL","$token;circle=$nextCircle;touchUp=$lastUpTime")
+                    FrontendTransport.commands.execute {
+                        val started=SystemClock.elapsedRealtimeNanos()
+                        val reply=command(if(nextCircle)"circle" else "bar")
+                        val rtt=(SystemClock.elapsedRealtimeNanos()-started)/1e6
+                        this@PerformanceMonitor.handler.post {
+                            if(closed || token!=shapeEpoch)return@post
+                            pendingShape=null
+                            circle=if(reply.startsWith("ok=1"))nextCircle else previous
+                            if(reply.startsWith("ok=1"))snapshot.put("circle",nextCircle)
+                            else android.widget.Toast.makeText(context,"形状切换失败，请重试",android.widget.Toast.LENGTH_SHORT).show()
+                            update();OwnerRenderTrace.event("SHAPE_ACK","$token;ok=${reply.startsWith("ok=1")};rtt_ms=$rtt")
+                        }
+                    }
                 }
                 MonitorGesture.Release.DRAG_END -> persistCirclePosition()
                 MonitorGesture.Release.WAIT_TAP -> this@PerformanceMonitor.handler.postDelayed(confirmTap, ViewConfiguration.getDoubleTapTimeout().toLong())

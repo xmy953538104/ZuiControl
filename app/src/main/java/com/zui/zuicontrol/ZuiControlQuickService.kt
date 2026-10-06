@@ -22,11 +22,14 @@ import java.io.PrintWriter
 class ZuiControlQuickService : Service() {
     private var monitor: PerformanceMonitor? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var commandInFlight = false
+    private val intentEpoch=java.util.concurrent.ConcurrentHashMap<String,Long>()
     private var refreshPosted = false
     private var controlsDirty = true
     private var controls: NotificationQuickControlHelper.Snapshot? = null
     private var lastRendered: NotificationQuickControlHelper.Snapshot? = null
+    private val eligibility=mutableMapOf<String,Boolean>()
+    private val eligibilityLoading=mutableSetOf<String>()
+    private val packagesChanged:()->Unit={eligibility.clear();requestRefresh()}
     private var notificationPublishes = 0L
     private val update = Runnable { refreshPosted = false; refreshNotification() }
     private var quietC = -1.0
@@ -47,6 +50,7 @@ class ZuiControlQuickService : Service() {
             })
         startForeground(ID, renderNotification(snapshot()))
         ControlsState.observe(controlsChanged)
+        FrontendPackages.observe(applicationContext,packagesChanged)
         monitor = PerformanceMonitor(this, onReading = ::acceptReading) { requestRefresh() }.also { it.start() }
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -61,13 +65,13 @@ class ZuiControlQuickService : Service() {
                         android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 } else {
                     monitor?.start()
-                    if (monitor?.toggle("full")?.startsWith("ok=1") != true) errorToast("监视器不可用")
+                    mutate { check(PerformanceMonitor.command("full").startsWith("ok=1")){"监视器不可用"} }
                 }
             }
             action.startsWith(REFRESH) -> {
                 val rate = action.removePrefix(REFRESH).toIntOrNull()
                 val trace = QuickControlTrace.begin("Refresh",rate.toString())
-                if (rate in ZuiControlContract.rates) mutate {
+                if (rate in ZuiControlContract.rates) mutate("refresh") {
                     val scene = ZuiControlClient.currentSceneText()
                     QuickControlTrace.target(trace,ZuiControlClient.stateValue(scene,"editableScenePackage").orEmpty())
                     // Same transaction as the accepted current-scene Refresh control.
@@ -79,7 +83,7 @@ class ZuiControlQuickService : Service() {
             action.startsWith(UPERF) -> {
                 val mode = UperfMode.fromId(action.removePrefix(UPERF))
                 val trace = QuickControlTrace.begin("Uperf",mode?.id.orEmpty())
-                if (mode != null) mutate {
+                if (mode != null) mutate("uperf") {
                     // Read the accepted editable scene at this action, never shade focus or a cache.
                     val scene = ZuiControlClient.currentSceneText()
                     val pkg = ZuiControlClient.stateValue(scene, "editableScenePackage").orEmpty()
@@ -96,17 +100,17 @@ class ZuiControlQuickService : Service() {
         requestRefresh()
         return START_STICKY
     }
-    private fun mutate(block: () -> Unit) {
-        if (commandInFlight) { errorToast("操作处理中"); return }
-        commandInFlight = true
-        Thread {
+    private fun mutate(control:String="",block: () -> Unit) {
+        val ticket=(intentEpoch[control] ?: 0)+1;intentEpoch[control]=ticket
+        FrontendTransport.commands.execute {
+            // Coalesce only not-yet-dispatched intents for the same control.
+            if(control.isNotEmpty() && intentEpoch[control]!=ticket)return@execute
             val result = runCatching(block)
             handler.post {
-                commandInFlight = false
                 result.onFailure { errorToast(it.message ?: "设置失败") }
                 requestRefresh()
             }
-        }.start()
+        }
     }
     private fun errorToast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     private fun acceptReading(quiet: Double, power: Double, elapsed: Long, ttl: Long) {
@@ -162,7 +166,18 @@ class ZuiControlQuickService : Service() {
             val rate = ZuiControlClient.stateValue(scene, "editableDisplayHz")?.toIntOrNull() ?: 0
             val mode = UperfMode.fromId(ZuiControlClient.stateValue(scene, "editableUperfMode").orEmpty()) ?: UperfMode.BALANCE
             val enabled = PackageNames.isValid(pkg)
-            val uperfEnabled = ZuiControlClient.stateValue(scene, "editableSceneIsHome") == "true" || UperfAppPolicy.isConfigurable(packageManager, pkg)
+            val uperfEnabled = ZuiControlClient.stateValue(scene, "editableSceneIsHome") == "true" || eligibility[pkg]==true
+            if(enabled && pkg !in eligibility && eligibilityLoading.add(pkg)) {
+                val version=FrontendPackages.version
+                FrontendTransport.reads.execute {
+                    val qualified=UperfAppPolicy.isConfigurable(packageManager,pkg)
+                    handler.post {
+                        eligibilityLoading.remove(pkg)
+                        if(version==FrontendPackages.version)eligibility[pkg]=qualified
+                        requestRefresh()
+                    }
+                }
+            }
             controls = NotificationQuickControlHelper.Snapshot(pkg, rate, mode, false, enabled, uperfEnabled)
             controlsDirty = false
         }
@@ -193,11 +208,12 @@ class ZuiControlQuickService : Service() {
         args.firstOrNull { it.startsWith("--trace-seconds=") }?.substringAfter('=')?.toIntOrNull()?.let {
             QuickControlTrace.enable(it); monitor?.trace(it)
         }
-        writer.println("quickCommandInFlight=$commandInFlight refreshPosted=$refreshPosted notificationPublishes=$notificationPublishes pendingIntentCreations=$pendingIntentCreations")
+        writer.println("quickCommandLane=PROCESS_SHARED refreshPosted=$refreshPosted notificationPublishes=$notificationPublishes pendingIntentCreations=$pendingIntentCreations")
         monitor?.dump(writer); QuickControlTrace.dump(writer)
     }
     override fun onDestroy() {
         ControlsState.remove(controlsChanged)
+        FrontendPackages.remove(packagesChanged)
         monitor?.close(); monitor = null
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()

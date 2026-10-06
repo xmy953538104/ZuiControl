@@ -51,6 +51,8 @@ object PackageNames{fun isValid(s:String)=s.contains('.')}
 object ZuiControlClient {
  enum class GpuPolicy{CUSTOM,DEFAULT_FOR_MODE}
  data class AppPolicyDraft(val packageName:String,val refreshHz:Int,val uperfMode:String,val gpuPolicy:GpuPolicy,val expectedGeneration:Long,val gpuMinMHz:Int?=null,val gpuMaxMHz:Int?=null)
+ data class AppPolicyRead(val draft:AppPolicyDraft,val effectiveMinMHz:Int,val effectiveMaxMHz:Int)
+ data class AppPolicies(val userId:Int,val generation:Long,val apps:List<AppPolicyRead>)
  data class Reply(val ok:Boolean,val text:String)
  fun replyIsOk(s:String)=s.lineSequence().firstOrNull()=="ok=1"
  fun stateValue(s:String,k:String)=s.lineSequence().firstOrNull{it.startsWith(k+"=")}?.substringAfter('=')
@@ -109,7 +111,7 @@ with tempfile.TemporaryDirectory(prefix='zui-gpu-lifecycle-') as directory:
  p=Path(directory)
  for name,text in sources.items():(p/name).write_text(text,encoding='utf8')
  cp=os.pathsep.join(map(str,[stdlib,gson,*annotations]))
- cmd=[java,'-cp',os.pathsep.join(map(str,[*jars,*annotations])),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',cp,'-d',str(p/'classes'),*[str(APP/n) for n in ('FrontendSession.kt','FrontendState.kt','GpuRanges.kt')],*map(str,p.glob('*.kt'))]
+ cmd=[java,'-cp',os.pathsep.join(map(str,[*jars,*annotations])),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',cp,'-d',str(p/'classes'),*[str(APP/n) for n in ('FrontendSession.kt','FrontendTransport.kt','FrontendState.kt','GpuRanges.kt')],*map(str,p.glob('*.kt'))]
  result=subprocess.run(cmd,capture_output=True,text=True,timeout=60)
  assert result.returncode==0,result.stdout+result.stderr
  result=subprocess.run([java,'-cp',os.pathsep.join([str(p/'classes'),cp]),'com.zui.zuicontrol.HarnessKt'],capture_output=True,text=True,timeout=20)

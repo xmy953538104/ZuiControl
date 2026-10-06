@@ -61,24 +61,23 @@ internal object OwnerWindow {
         }
     }
     /** Drawable overlay has no input/layout participation and ends transparent. */
+    private fun linear(v:Int)=if(v/255.0<=.04045)v/255.0/12.92 else Math.pow((v/255.0+.055)/1.055,2.4)
+    private fun channel(v:Double)=((if(v<=.0031308)12.92*v else 1.055*Math.pow(v,1/2.4)-.055)*255).roundToInt().coerceIn(0,255)
+    fun blend(a:Int,b:Int,t:Double):Int {
+        fun part(x:Int,y:Int)=channel(linear(x)*(1-t)+linear(y)*t)
+        return Color.argb((Color.alpha(a)*(1-t)+Color.alpha(b)*t).roundToInt(),part(Color.red(a),Color.red(b)),part(Color.green(a),Color.green(b)),part(Color.blue(a),Color.blue(b)))
+    }
     fun transitionSystemBars(activity:Activity,host:View,rail:View,master:View,
-        source:IntArray,target:IntArray,dark:Boolean,finished:()->Unit){
+        source:IntArray,target:IntArray,dark:Boolean,frame:(Float,IntArray)->Unit,finished:()->Unit){
         val top=host.rootWindowInsets?.let{insets->
             if(Build.VERSION.SDK_INT>=30)insets.getInsets(WindowInsets.Type.statusBars()).top else insets.systemWindowInsetTop
         } ?: 0
-        if(top<=0){updateSystemBarAppearance(activity,dark);finished();return}
         val origin=IntArray(2);host.getLocationOnScreen(origin)
         val railBounds=Rect();val masterBounds=Rect()
         rail.getGlobalVisibleRect(railBounds);master.getGlobalVisibleRect(masterBounds)
         val ends=intArrayOf(railBounds.right-origin[0],masterBounds.right-origin[0],host.width)
         // Linear-light interpolation preserves Owner region hues. At luminance
         // .179 both black and white endpoint inks exceed 4.5:1 contrast.
-        fun linear(v:Int)=if(v/255.0<=.04045)v/255.0/12.92 else Math.pow((v/255.0+.055)/1.055,2.4)
-        fun channel(v:Double)=((if(v<=.0031308)12.92*v else 1.055*Math.pow(v,1/2.4)-.055)*255).roundToInt().coerceIn(0,255)
-        fun blend(a:Int,b:Int,t:Double):Int {
-            fun part(x:Int,y:Int)=channel(linear(x)*(1-t)+linear(y)*t)
-            return Color.rgb(part(Color.red(a),Color.red(b)),part(Color.green(a),Color.green(b)),part(Color.blue(a),Color.blue(b)))
-        }
         fun luminance(c:Int)=.2126*linear(Color.red(c))+.7152*linear(Color.green(c))+.0722*linear(Color.blue(c))
         val midpoint=IntArray(3){i->blend(source[i],target[i],(.179-luminance(source[i]))/(luminance(target[i])-luminance(source[i])))}
         val paint=Paint();var colors=source
@@ -91,26 +90,27 @@ internal object OwnerWindow {
         bridge.setBounds(0,0,host.width,top);host.overlay.add(bridge)
         var inkChanged=false;var inkChangedAt=0L
         ValueAnimator.ofFloat(0f,1f).apply{
-            duration=480;interpolator=android.view.animation.LinearInterpolator()
+            duration=280;interpolator=android.view.animation.LinearInterpolator()
             addUpdateListener {animation->
                 val ms=animation.currentPlayTime
                 colors=when{
-                    ms<120->IntArray(3){i->blend(source[i],midpoint[i],ms/120.0)}
-                    ms<360->midpoint
-                    else->IntArray(3){i->blend(midpoint[i],target[i],((ms-360)/120.0).coerceAtMost(1.0))}
+                    ms<65->IntArray(3){i->blend(source[i],midpoint[i],ms/65.0)}
+                    ms<195->midpoint
+                    else->IntArray(3){i->blend(midpoint[i],target[i],((ms-195)/85.0).coerceAtMost(1.0))}
                 }
                 // ZUI's clock fades white -> black for about120ms while the
                 // other status icons switch independently. Its intermediate
                 // gray ink must not meet the neutral bridge. Keep the Owner
                 // source rail until the clock is in the interval where both
                 // source and target rail backgrounds contrast, then hand off
-                // once. Never animate the app tree or leave an opaque bar.
+                // once. App regions and the physical bridge consume these SAME colors.
                 if(!dark)colors[0]=if(!inkChanged || ms-inkChangedAt<60)source[0] else target[0]
+                frame(animation.animatedFraction,colors)
                 bridge.invalidateSelf()
-                if(ms>=120 && !inkChanged){inkChanged=true;inkChangedAt=ms;updateSystemBarAppearance(activity,dark)}
+                if(ms>=65 && !inkChanged){inkChanged=true;inkChangedAt=ms;updateSystemBarAppearance(activity,dark)}
             }
             addListener(object:android.animation.AnimatorListenerAdapter(){
-                override fun onAnimationEnd(animation:android.animation.Animator){host.overlay.remove(bridge);finished()}
+                override fun onAnimationEnd(animation:android.animation.Animator){frame(1f,target);host.overlay.remove(bridge);finished()}
             })
             start()
         }

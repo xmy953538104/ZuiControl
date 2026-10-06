@@ -761,7 +761,7 @@ class ProductionBindingTest(unittest.TestCase):
         self.assertIn('"editableDisplayHz"', self.quick)
         self.assertIn("ZuiControlClient.setCurrentSceneDisplayHz", self.quick)
         self.assertNotIn("cycleCurrentScene", self.quick)
-        self.assertIn('monitor?.toggle("full")', self.quick)
+        self.assertIn('mutate { check(PerformanceMonitor.command("full")', self.quick)
         self.assertNotIn('MONITOR_FPS', self.quick)
 
     def test_apply_success_order_and_failure_cleanup(self) -> None:
