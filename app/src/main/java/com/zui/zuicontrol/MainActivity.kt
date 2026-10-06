@@ -878,13 +878,15 @@ class MainActivity : Activity() {
         },gap())
         detail.addView(card().apply {
             setPadding(dp(18),dp(12),dp(18),dp(12))
-            addView(owner.label("规则库",11.5f,owner.muted,800))
+            addView(owner.label("规则库",11.5f,owner.muted,800),LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(4)})
             // Deferred feed has no manual-import affordance. Existing feed logic stays disabled.
             val previous=ZuioptRules.field(ruleState,"previous_generation").matches(Regex("g[0-9a-f]{24}"))
             addView(owner.domainRow("回退规则版本",if(previous)"回到上一代完整规则集" else "暂无可回退版本",R.drawable.owner_undo,"warn",true){confirm("回退规则版本？","上游基线和生效规则一起回退。"){
                 session.work("已回退"){ZuioptRules.command(applicationContext,"rollback",checkNotNull(snapshot).generation)}
             }}.apply{isEnabled=previous;alpha=if(previous)1f else .4f})
+            addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
             addView(owner.domainRow("高级兼容导入 · AppOpt","兼容转换与差异预览后确认",R.drawable.owner_appopt,"mute",true){if(!session.busy)document(Intent.ACTION_OPEN_DOCUMENT,102,"*/*")})
+            addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
             addView(owner.domainRow("规则集导出","导出当前生效规则集",R.drawable.owner_export,"zo",true){snapshot?.let{export(it.text.toByteArray(),"ZuiControl_rules.conf")}})
             addView(note("在线规则源尚未启用 · 兼容实验室验证后开放"))
             if(RuleRemoteConfig.configured && updateStatus.isNotEmpty())addView(note(updateStatus))
