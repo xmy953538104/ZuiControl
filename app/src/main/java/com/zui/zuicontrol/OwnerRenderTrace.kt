@@ -15,6 +15,14 @@ internal object OwnerRenderTrace {
     fun construct(vararg views:View){
         constructions++;event("SHELL_CONSTRUCTED")
         val root=views.first()
+        (root as android.view.ViewGroup).setOnHierarchyChangeListener(object:android.view.ViewGroup.OnHierarchyChangeListener{
+            override fun onChildViewAdded(parent:View,child:View){event("PHYSICAL_CHILD_ADDED")}
+            override fun onChildViewRemoved(parent:View,child:View){event("PHYSICAL_CHILD_REMOVED")}
+        })
+        views.forEach{view->view.addOnAttachStateChangeListener(object:View.OnAttachStateChangeListener{
+            override fun onViewAttachedToWindow(v:View){event("SHELL_ATTACHED",v.javaClass.simpleName)}
+            override fun onViewDetachedFromWindow(v:View){event("SHELL_DETACHED",v.javaClass.simpleName)}
+        })}
         root.viewTreeObserver.addOnDrawListener{if(enabled()){
             frame++;Log.v(TAG,JSONObject().put("kind","frame").put("frame",frame).put("constructions",constructions)
                 .put("uptime",android.os.SystemClock.uptimeMillis()).put("identities",JSONArray(views.map{System.identityHashCode(it)}))

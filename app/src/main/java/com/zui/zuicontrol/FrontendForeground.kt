@@ -27,7 +27,9 @@ internal object FrontendForeground : Application.ActivityLifecycleCallbacks {
     override fun onActivityStarted(activity:Activity){foreground.start()}
     override fun onActivityStopped(activity:Activity){
         val session=retained ?: return
-        if(foreground.stop(activity.isChangingConfigurations,session.ownedExternalFlow))session.returnHome()
+        if(foreground.stop(activity.isChangingConfigurations,session.ownedExternalFlow)){
+            session.returnHome();OwnerRenderTrace.event("HOME_RESET","${session.section}/${session.selected}/${session.analysisPage}/dirty=${session.dirty}")
+        }else OwnerRenderTrace.event("CONTEXT_RETAINED",activity.javaClass.simpleName)
     }
     override fun onActivityCreated(activity:Activity,savedInstanceState:Bundle?)=Unit
     override fun onActivityResumed(activity:Activity)=Unit

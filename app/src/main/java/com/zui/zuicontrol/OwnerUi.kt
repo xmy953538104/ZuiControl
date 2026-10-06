@@ -14,6 +14,7 @@ import android.widget.*
 import kotlin.math.*
 
 /** Native port of FRONTEND_FINAL_V83.html. Dimensions are Owner CSS pixels. */
+internal data class OwnerIcon(val resource:Int,val size:Int)
 internal class OwnerUi(val context: Context) {
     var dark = OwnerWindow.dark(context);private set
     private fun c(d: String, l: String) = Color.parseColor(if (dark) d else l)
@@ -77,6 +78,7 @@ internal class OwnerUi(val context: Context) {
         setSingleLine(true);ellipsize=android.text.TextUtils.TruncateAt.END
     }
     fun icon(id: Int,color: Int,size: Int=20)=ImageView(context).apply {
+        tag=OwnerIcon(id,size)
         setImageResource(id);imageTintList=android.content.res.ColorStateList.valueOf(color);importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
         layoutParams=LinearLayout.LayoutParams(px(size),px(size))
     }

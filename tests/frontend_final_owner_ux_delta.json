@@ -7,7 +7,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/FrontendForeground.kt",
       "before": null,
-      "after": "100644 blob e116e8293e1e76ea27d8dcd2542565bc5747aaeb\tapp/src/main/java/com/zui/zuicontrol/FrontendForeground.kt"
+      "after": "100644 blob 90b8c99ef3da493a2e6ddfb4681b2f5abd85d8c5\tapp/src/main/java/com/zui/zuicontrol/FrontendForeground.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
@@ -40,14 +40,19 @@
       "after": "100644 blob f85b97d3e39e2f51ae9c4bb988e9b831e2f09ba8\tapp/src/main/java/com/zui/zuicontrol/OwnerEffects.kt"
     },
     {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerGeometry.kt",
+      "before": "100644 blob ce153da8fe9a07c02772f434e570d4f539a87e07\tapp/src/main/java/com/zui/zuicontrol/OwnerGeometry.kt",
+      "after": "100644 blob 185f6dc03ee355fafd9972dc59107b64d07431b6\tapp/src/main/java/com/zui/zuicontrol/OwnerGeometry.kt"
+    },
+    {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerRenderTrace.kt",
       "before": null,
-      "after": "100644 blob 1ab19fcc693d3f5889f063c5e427bbaec3bf25c0\tapp/src/main/java/com/zui/zuicontrol/OwnerRenderTrace.kt"
+      "after": "100644 blob cd29bd3c50161a792eb7bd697405dcb222004636\tapp/src/main/java/com/zui/zuicontrol/OwnerRenderTrace.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
       "before": "100644 blob 436203c60a91368fe4c876090852db3345eb65b6\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
-      "after": "100644 blob 9d148d771e25b63bb0b5283243a6d4b1af6ef87e\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+      "after": "100644 blob 93bdca9cb5f3ffbd926fe3abf8b44e86ee45d545\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",

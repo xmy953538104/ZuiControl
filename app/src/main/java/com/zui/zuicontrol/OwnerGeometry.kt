@@ -37,6 +37,17 @@ internal object OwnerGeometry {
     fun theme(root:View,fraction:Int,tree:String) {
         if(!enabled())return
         fun visit(view:View,path:String) {
+            val icon=view.tag as? OwnerIcon
+            if(icon!=null && view is android.widget.ImageView){
+                val origin=IntArray(2);view.getLocationOnScreen(origin)
+                val bg=view.background as? android.graphics.drawable.GradientDrawable
+                Log.v(TAG,JSONObject().put("kind","icon").put("fraction",fraction).put("tree",tree).put("path",path)
+                    .put("resource",view.resources.getResourceEntryName(icon.resource)).put("size",icon.size)
+                    .put("bounds",JSONArray(listOf(view.left,view.top,view.right,view.bottom))).put("physicalOrigin",JSONArray(origin.toList()))
+                    .put("padding",JSONArray(listOf(view.paddingLeft,view.paddingTop,view.paddingRight,view.paddingBottom)))
+                    .put("foreground",view.imageTintList?.defaultColor).put("background",bg?.color?.defaultColor).put("cornerRadius",bg?.cornerRadius)
+                    .put("alpha",view.alpha).put("ancestorTransforms",transforms(view)).toString())
+            }
             if(view is TextView && view.text.toString() !in listOf("浅色","深色")) {
                 val location=IntArray(2);view.getLocationOnScreen(location)
                 Log.v(TAG,JSONObject().put("kind","theme").put("fraction",fraction).put("tree",tree).put("path",path)
