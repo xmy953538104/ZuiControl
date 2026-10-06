@@ -389,8 +389,14 @@ class MainActivity : Activity() {
         val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage/$recordThreads/${selectedThread?.optString("key")}/$rawPage/${preview?.hashCode()}/${caps.isNotEmpty()}/${session.appDraft!=null}/${session.ruleDraft!=null}/${selectedRecord?.optLong("recordId")}/${analysisPage && analysis!=null}"
         if(page!=shownPage) {
         shownPage=page;cpuSparklines.cancel();pageBindings.clear()
-        val previous=pageHost.getChildAt(pageHost.childCount-1)
-        for(i in pageHost.childCount-2 downTo 0)pageHost.removeViewAt(i)
+        // A read completion can interrupt an incoming page at alpha=0. Keep the
+        // actually visible outgoing page rather than deleting it for that child.
+        val previous=(0 until pageHost.childCount).map{pageHost.getChildAt(it)}.maxByOrNull{it.alpha}
+        for(i in pageHost.childCount-1 downTo 0){
+            val child=pageHost.getChildAt(i);child.animate().cancel()
+            if(child!==previous)pageHost.removeViewAt(i)
+        }
+        previous?.alpha=1f
         ownerControls.clear()
         handler.removeCallbacks(coreTicker); coreLabel = null;coreSlot=null;quietMeter = null; powerMeter = null
         quietLabel = null; powerLabel = null; powerReason = null; powerUnit = null; recordLabel = null; recordBanner = null; overlayButton = null
@@ -1326,7 +1332,8 @@ class MainActivity : Activity() {
         if(prefs.getString("theme","system")==theme)return
         OwnerGeometry.theme(ownerCanvas,0,"persistent")
         prefs.edit().putString("theme",theme).apply()
-        owner.applyTheme(physicalHost,OwnerWindow.dark(this));OwnerWindow.fullscreen(this)
+        OwnerWindow.fullscreen(this)
+        owner.applyTheme(physicalHost,OwnerWindow.dark(this))
         physicalHost.setBackgroundColor(owner.detail);ownerCanvas.setBackgroundColor(owner.detail)
         ownerHost.setBackgroundColor(owner.detail);shellRoot.setBackgroundColor(owner.detail)
         rail.setBackgroundColor(owner.rail);master.setBackgroundColor(owner.master)

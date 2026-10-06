@@ -30,8 +30,11 @@ internal object OwnerWindow {
     }
     fun fullscreen(activity:Activity)=with(activity.window){
         statusBarColor=Color.TRANSPARENT;navigationBarColor=Color.TRANSPARENT
-        decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        // Preserve the current bar ink while changing layout flags. The single
+        // appearance update below owns the next ink; clearing it first flashes.
+        val inkMask=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        decorView.systemUiVisibility=(decorView.systemUiVisibility and inkMask) or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
         val dark=dark(activity)
         if(Build.VERSION.SDK_INT>=30){
             setDecorFitsSystemWindows(false)
