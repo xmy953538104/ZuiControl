@@ -116,7 +116,7 @@ internal class OwnerUi(val context: Context) {
     fun title(title: String,subtitle: String,leading: View?=null,trailing: View?=null): View=row().apply {
         if(leading!=null)addView(leading,LinearLayout.LayoutParams(-2,-2).apply{marginEnd=px(14)})
         addView(column().apply {
-            addView(label(title,20f,text,800),LinearLayout.LayoutParams(-1,px(24)))
+            addView(label(title,20f,text,800),LinearLayout.LayoutParams(-1,px(27)))
             addView(label(subtitle,11.5f,muted),LinearLayout.LayoutParams(-1,px(14)).apply{topMargin=px(4)})
         },LinearLayout.LayoutParams(0,px(48),1f))
         if(trailing!=null)addView(trailing,LinearLayout.LayoutParams(-2,-2).apply{marginStart=px(14)})
