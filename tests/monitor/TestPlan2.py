@@ -64,6 +64,7 @@ class Plan2(unittest.TestCase):
   self.assertIn('targets.take(15)',spark);self.assertIn('newSingleThreadExecutor',spark)
   self.assertIn('put("thread",key)',spark);self.assertIn('data.optLong("recordId")==id',spark)
   self.assertIn('Paint.Style.STROKE',spark);self.assertNotIn('Paint.Style.FILL',spark)
-  for name in ('MainActivity.kt','PerformanceRecordActivity.kt'):self.assertIn('owner.cpuThreadTable(',read(name))
+  self.assertIn('owner.cpuThreadTable(',read('MainActivity.kt'))
+  self.assertIn('putExtra("openRecord",true)',read('PerformanceRecordActivity.kt'))
   self.assertNotIn('"查看 ›"',read('MainActivity.kt'))
 if __name__=='__main__':unittest.main(verbosity=2)

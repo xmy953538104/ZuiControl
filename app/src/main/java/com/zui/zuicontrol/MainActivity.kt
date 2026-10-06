@@ -144,6 +144,7 @@ class MainActivity : Activity() {
     private var analysisRead = 0
     private var analysisPage get()=session.analysisPage;set(v){session.analysisPage=v}
     private var reading = false
+    private var recordLaunch:Intent?=null
     private var boundGeneration = ""
     private var controlPresentationUntil = 0L
     private fun holdingControlPresentation() = session.controlsPending || SystemClock.uptimeMillis() < controlPresentationUntil
@@ -187,17 +188,21 @@ class MainActivity : Activity() {
     override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
         owner=OwnerUi(this)
+        var createdSession=false
         session = FrontendForeground.obtain(application,ZuiControlClient.currentUserId()) {
+            createdSession=true
             (lastNonConfigurationInstance as? FrontendSession)?.takeIf { it.userId == ZuiControlClient.currentUserId() }
                 ?: FrontendSession(V84FrontendGateway(applicationContext), ZuiControlClient.currentUserId())
         }
-        if (lastNonConfigurationInstance == null && saved != null) session.restore(saved)
+        if (createdSession && lastNonConfigurationInstance == null && saved != null) session.restore(saved)
+        if(intent.getBooleanExtra("openRecord",false))recordLaunch=intent
         OwnerWindow.fullscreen(this)
         val appContext = applicationContext
         Thread { runCatching { ZuiControlRequest.recoverPending(appContext) } }.start()
         render()
     }
     override fun onRetainNonConfigurationInstance(): Any = session
+    override fun onNewIntent(intent:Intent){super.onNewIntent(intent);if(intent.getBooleanExtra("openRecord",false)){recordLaunch=intent;if(visible)load()}}
     override fun onSaveInstanceState(out: Bundle) { session.save(out); super.onSaveInstanceState(out) }
     override fun onResume() {
         super.onResume(); visible = true; session.onChanged = changed; session.onControlsChanged = { if(visible) reconcileControlsLater() }
@@ -247,6 +252,17 @@ class MainActivity : Activity() {
                 }
                 if (session.ruleDraft == null && session.section == "thread" && session.selected.isNotEmpty()) openRule(session.selected)
                 render()
+                recordLaunch?.let{launch->
+                    recordLaunch=null
+                    guard{
+                        session.clearDrafts();session.section="monitor";session.selected=launch.getStringExtra("package").orEmpty();recordRequested=false;selectedRecord=null;selectedThread=null;recordThreads=false;analysisPage=false;rawPage=false
+                        render()
+                        if(session.selected.isNotEmpty())readRecord(session.selected,launch.getBooleanExtra("threads",false)){
+                            launch.getStringExtra("thread").orEmpty().takeIf{it.isNotEmpty()}?.let{readThread(it,launch.getStringExtra("name").orEmpty())}
+                        }
+                    }
+                    return@post
+                }
                 if (session.section == "thread" && session.selected.isNotEmpty() && analysis == null && analysisError.isEmpty()) loadAnalysis(session.selected)
                 if (session.section == "monitor" && session.selected.isNotEmpty() && !recordRequested) readRecord(session.selected)
             }
@@ -1165,7 +1181,7 @@ class MainActivity : Activity() {
         }, gap())
     }
 
-    private fun readRecord(pkg: String, threads: Boolean = false) { recordRequested = true; session.work {
+    private fun readRecord(pkg: String, threads: Boolean = false,completed:(()->Unit)?=null) { recordRequested = true; session.work(completed=completed) {
         selectedRecord = JSONObject(PerformanceMonitor.command("recordRead", JSONObject().put("package", pkg).put("threads", threads).put("thread", "").toString())); recordThreads = threads;selectedThread=null
     } }
     private fun readThread(key:String,name:String){
@@ -1225,7 +1241,7 @@ class MainActivity : Activity() {
             addView(chart(2,"温度 · quiet ℃",120),LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=dp(12)})
         },gap())
         detail.addView(note("功耗统计不含插电/不可用时段，曲线断档保留缺失；FPS 为 DISPLAY_MEASURED_FPS。"))
-        detail.addView(card().apply{addView(owner.domainRow("线程运行记录","Top15 入榜线程 · 点击查看 CPU 时间线",R.drawable.owner_thread_list){if(!session.busy)readRecord(session.selected,true)})},gap())
+        detail.addView(card().apply{setPadding(dp(18),dp(15),dp(18),dp(15));addView(owner.domainRow("线程运行记录","Top15 入榜线程 · 点击查看 CPU 时间线",R.drawable.owner_thread_list){if(!session.busy)readRecord(session.selected,true)})},gap())
     }
 
     private fun settingsPage() {

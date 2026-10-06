@@ -22,7 +22,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob e86a05897239a9ecf387c33daddd30ef9f709a91\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob e2432b77801d5945355750f60e8e8073a5428de8\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob ef081ac9269ce0db2449cb651867d9a53bf0b6a7\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerCpuPicker.kt",
@@ -47,12 +47,12 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
       "before": "100644 blob 436203c60a91368fe4c876090852db3345eb65b6\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
-      "after": "100644 blob 2f0edddafd48441330c1f82d9cdf49623c53dd8b\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+      "after": "100644 blob 9d148d771e25b63bb0b5283243a6d4b1af6ef87e\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
       "before": "100644 blob 41a8c5e0be41db859625a6a90e549dece014497b\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
-      "after": "100644 blob 04134eac1967f45331939cec37ac756bf2a42055\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
+      "after": "100644 blob ac3595d596ed4c3c525be78e809240d2669a94ab\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/RecordChart.kt",
