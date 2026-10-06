@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
+PLAN3_RESUME=json.loads((ROOT/'tests/product_plan3_resume_delta.json').read_text(encoding='utf-8'))
 PLAN3=json.loads((ROOT/'tests/product_plan3_functional_delta.json').read_text(encoding='utf-8'))
 FIDELITY=json.loads((ROOT/'tests/frontend_fidelity_recovery_delta.json').read_text(encoding='utf-8'))
 SYNC=json.loads((ROOT/'tests/frontend_visual_sync_delta.json').read_text(encoding='utf-8'))
@@ -27,6 +28,13 @@ INTEGRATION=json.loads((ROOT/'tests/backend_monitor_settings_delta.json').read_t
 MANIFEST=json.loads((ROOT/'tests/backend_abc_delta.json').read_text(encoding='utf-8'))
 
 def reverse_text(path,text):
+    change=next((r for r in PLAN3_RESUME['files'] if r['path']==path),None)
+    if change:
+        assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('R2 exact frontend bytes',path)
+        for h in reversed(change['hunks']):
+            assert text.count(h['after'])==1,('R2 authorized lifecycle delta',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==change['beforeSha256'],('R2 base identity',path)
     change=next((r for r in PLAN3['files'] if r['path']==path),None)
     if change:
         assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('Plan3 exact authorized bytes',path)
@@ -138,6 +146,12 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
+    assert PLAN3_RESUME['baseHead']=='a0c4b2e2b7e3cab2d59392cee7b85f142a0d3824'
+    for row in PLAN3_RESUME['files']:
+        assert row['path'] in {'app/src/main/java/com/zui/zuicontrol/MainActivity.kt','app/src/main/java/com/zui/zuicontrol/FrontendSession.kt','app/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt'}
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        after=row['after'].encode();assert result.count(after)==1,('R2 exact frontend lifecycle bytes',row['path'])
+        result.remove(after);result.append(row['before'].encode())
     assert PLAN3['baseHead']=='847d7f02f80a95f818930d5f0af0aa32256dba53'
     allowed={'app/src/main/java/com/zui/zuicontrol/MainActivity.kt','app/src/main/java/com/zui/zuicontrol/FrontendSession.kt','app/src/main/java/com/zui/zuicontrol/ZuiControlRequest.kt','app/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt','framework_patch/src/services/com/zui/server/control/MonitorCollector.java','framework_patch/src/services/com/zui/server/control/ZuiControlService.java','framework_patch/src/services/com/zui/server/control/UtilityTransport.java'}
     for row in PLAN3['files']:
