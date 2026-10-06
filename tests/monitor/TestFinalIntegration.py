@@ -22,11 +22,20 @@ for filename in ('MainActivity.kt', 'FrontendGateway.kt', 'FrontendSession.kt', 
     text = (APP / filename).read_text('utf8')
     assert all(bad not in text for bad in ('recordStart', 'analysisStart', 'analysisStop', 'FakeFrontendGateway', 'DemoBackend', 'Math.random'))
 backend_scopes = ['framework_patch', 'native', 'payload/system', 'payload/patches']
-assert not subprocess.check_output(['git', 'diff', '6d896f29812dab653e2e88c6ee989c972a343c97', 'HEAD', '--', *backend_scopes], cwd=ROOT)
+# Current Owner Plan3 deltas must reverse exactly to the immutable integration
+# baseline before the earlier freeze proofs are inherited.
+sys.path.insert(0,str(ROOT/'tests'))
+from BackendContract import entries,PLAN3
+current=entries(*backend_scopes)
+for row in PLAN3['files']:
+    if any(row['path'].startswith(scope+'/') for scope in backend_scopes):
+        assert current.count(row['after'].encode())==1
+        current.remove(row['after'].encode());current.append(row['before'].encode())
+assert sorted(current)==sorted(subprocess.check_output(['git','ls-tree','-r','6d896f29812dab653e2e88c6ee989c972a343c97','--',*backend_scopes],cwd=ROOT).splitlines())
 # BuildZUIopt deliberately replaces its tracked seed with the current CI ELF.
-# Every other working-tree runtime source must still match the committed freeze.
+# Current authorized runtime edits have already been byte-bound and reversed above.
 generated = subprocess.check_output(['git', 'diff', '--name-only', 'HEAD', '--', *backend_scopes], cwd=ROOT, text=True).splitlines()
-assert set(generated) <= {'payload/system/bin/ZUIopt'}, generated
+assert set(generated) <= {'payload/system/bin/ZUIopt'} | {r['path'] for r in PLAN3['files'] if any(r['path'].startswith(scope+'/') for scope in backend_scopes)}, generated
 
 stubs = {
     'Context.kt': 'package android.content\nclass Context\n',

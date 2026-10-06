@@ -60,6 +60,8 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     var onChanged: (() -> Unit)? = null
     var onControlsChanged: (() -> Unit)? = null
     private var closing = false
+    /** Reads consume their ACK-bound results before another queued command can replace the slot. */
+    fun read(task:()->Unit) { if(!closing)executor.execute(task) }
     private fun finishClose(){if(closing && !busy && !controlsPending)executor.shutdown()}
     val controlsPending get() = refresh.pending || mode.pending || overlay.pending
     /** UI thread intent, serialized existing terminal-ACK actions; no transport changes. */

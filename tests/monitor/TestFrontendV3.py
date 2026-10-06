@@ -7,6 +7,14 @@ ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zui
 def read(name):return (APP/name).read_text(encoding='utf-8')
 
 class FrontendV3(unittest.TestCase):
+    def test_shared_command_reads_use_existing_session_queue(self):
+        main=read('MainActivity.kt');session=read('FrontendSession.kt')
+        load=main.split('private fun load() {',1)[1].split('private fun observeGlobals()',1)[0]
+        self.assertIn('session.read {',load);self.assertNotIn('Thread {',load)
+        self.assertIn('ZuioptLibrary.baseline(applicationContext)',load)
+        self.assertIn('session.read { runCatching { ZuiControlRequest.recoverPending(appContext) } }',main)
+        self.assertIn('fun read(task:()->Unit) { if(!closing)executor.execute(task) }',session)
+        self.assertEqual(1,session.count('Executors.newSingleThreadExecutor()'))
     def test_one_monitor_owner_no_mock_sampler_or_hidden_network_poll(self):
         main=read('MainActivity.kt');gateway=read('FrontendGateway.kt');session=read('FrontendSession.kt')
         self.assertNotIn('monitor("register"',main)

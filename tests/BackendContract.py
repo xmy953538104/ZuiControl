@@ -139,7 +139,7 @@ def entries(*scopes):
 def reverse_entries(current,*scopes):
     result=list(current)
     assert PLAN3['baseHead']=='847d7f02f80a95f818930d5f0af0aa32256dba53'
-    allowed={'app/src/main/java/com/zui/zuicontrol/MainActivity.kt','app/src/main/java/com/zui/zuicontrol/FrontendSession.kt','app/src/main/java/com/zui/zuicontrol/ZuiControlRequest.kt','framework_patch/src/services/com/zui/server/control/MonitorCollector.java','framework_patch/src/services/com/zui/server/control/ZuiControlService.java','framework_patch/src/services/com/zui/server/control/UtilityTransport.java'}
+    allowed={'app/src/main/java/com/zui/zuicontrol/MainActivity.kt','app/src/main/java/com/zui/zuicontrol/FrontendSession.kt','app/src/main/java/com/zui/zuicontrol/ZuiControlRequest.kt','app/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt','framework_patch/src/services/com/zui/server/control/MonitorCollector.java','framework_patch/src/services/com/zui/server/control/ZuiControlService.java','framework_patch/src/services/com/zui/server/control/UtilityTransport.java'}
     for row in PLAN3['files']:
         assert row['path'] in allowed
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue

@@ -91,7 +91,7 @@ class CommandPlaneArchitectureTest(unittest.TestCase):
             r"return awaitTerminalAck\(context, requestId\)",
         )
         self.assertIn(
-            "Thread { runCatching { ZuiControlRequest.recoverPending(appContext) } }.start()",
+            "session.read { runCatching { ZuiControlRequest.recoverPending(appContext) } }",
             self.activity,
         )
         self.assertNotIn("ZuiControlRequest.kickPending(", self.activity)

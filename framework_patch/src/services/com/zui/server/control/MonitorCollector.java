@@ -46,6 +46,7 @@ class MonitorCollector {
     private boolean scheduled;
     private int expectedPowerPlugged=-1;
     private boolean powerConfirmationPending;
+    private int powerEventPlugged=-1,powerEventStatus=-1;
     private String finalizeError="";
     private long epoch,samples,threadReads,enumerations,lastThreadTime;
     private long recordScanTime=-1;
@@ -285,7 +286,18 @@ class MonitorCollector {
     synchronized void invalidatePower(){stop();schedule();}
     synchronized void invalidatePower(boolean connected){
         // Replace the pending edge on the existing clock; never retain pre-edge watts.
-        stop();expectedPowerPlugged=connected?1:0;powerConfirmationPending=true;schedule();
+        stop();expectedPowerPlugged=connected?1:0;powerConfirmationPending=true;
+        powerEventPlugged=powerEventStatus=-1;schedule();
+    }
+    private boolean powerEdgeSettled(int plugged,int status){
+        return expectedPowerPlugged==1?plugged>0:expectedPowerPlugged==0&&plugged==0&&status==3;
+    }
+    synchronized void onBatteryStateChanged(int plugged,int status){
+        // Only an unresolved edge can replace the normal clock. Level/current
+        // noise and duplicate power facts never create additional scalar work.
+        if(!powerEdgeSettled(plugged,status)||(powerEventPlugged==plugged&&powerEventStatus==status))return;
+        powerEventPlugged=plugged;powerEventStatus=status;
+        stop();schedule(); // Same worker, sticky-battery reader and snapshot authority.
     }
     synchronized String snapshot(){return lastSnapshot;}
     synchronized String state(){
@@ -337,7 +349,7 @@ class MonitorCollector {
                 }
             }
             if(expectedPowerPlugged!=-1){
-                boolean settled=expectedPowerPlugged==1?plugged>0:plugged==0&&batteryStatus==3;
+                boolean settled=powerEdgeSettled(plugged,batteryStatus);
                 if(settled){expectedPowerPlugged=-1;powerConfirmationPending=false;}
                 else{
                     power=-1;

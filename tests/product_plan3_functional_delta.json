@@ -6,12 +6,37 @@
   "bindingIdsChanged": [],
   "files": [
     {
+      "path": "app/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+      "before": "100644 blob 7c405799fc8ec5374bb4fccc7cc88086a2a87aeb\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+      "after": "100644 blob c22e1643e65154b246d71159e367d01a41380a37\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+      "beforeSha256": "f8f24125de69866dfc536a166310df198a63cfb2b71df35344d5622b790cf2b3",
+      "afterSha256": "8f11c07c2dd26d33cadc6084b8aac4a0957319460c3ef9aa04784ec07679578c",
+      "hunks": [
+        {
+          "before": "    var onChanged: (() -> Unit)? = null\n    var onControlsChanged: (() -> Unit)? = null\n    private var closing = false\n    private fun finishClose(){if(closing && !busy && !controlsPending)executor.shutdown()}\n    val controlsPending get() = refresh.pending || mode.pending || overlay.pending\n    /** UI thread intent, serialized existing terminal-ACK actions; no transport changes. */\n",
+          "after": "    var onChanged: (() -> Unit)? = null\n    var onControlsChanged: (() -> Unit)? = null\n    private var closing = false\n    /** Reads consume their ACK-bound results before another queued command can replace the slot. */\n    fun read(task:()->Unit) { if(!closing)executor.execute(task) }\n    private fun finishClose(){if(closing && !busy && !controlsPending)executor.shutdown()}\n    val controlsPending get() = refresh.pending || mode.pending || overlay.pending\n    /** UI thread intent, serialized existing terminal-ACK actions; no transport changes. */\n"
+        }
+      ]
+    },
+    {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob c93e65396a04ba8cba6938d725368edbb7e95fb9\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob df6be7e692de1c08ca98d1ab48446b6717d42d60\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob bccde7d39d376c0a437c695075f8da82aefc0584\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "beforeSha256": "1d62a039fa69ea86fe9632dd858e3bbbda5472d5faba363032d0464609072ee8",
-      "afterSha256": "a6f9be6fc5072f2db318b07cdca2ea628aba55aeaba4f77136fe0dc0e0fcb2bd",
+      "afterSha256": "8083e79e2eeb2cd813f5a93a4b33743c95b198a7a1d02221a68058fd7cfa8ef2",
       "hunks": [
+        {
+          "before": "        if(intent.getBooleanExtra(\"openRecord\",false))recordLaunch=intent\n        OwnerWindow.fullscreen(this)\n        val appContext = applicationContext\n        Thread { runCatching { ZuiControlRequest.recoverPending(appContext) } }.start()\n        render()\n    }\n    override fun onRetainNonConfigurationInstance(): Any = session\n",
+          "after": "        if(intent.getBooleanExtra(\"openRecord\",false))recordLaunch=intent\n        OwnerWindow.fullscreen(this)\n        val appContext = applicationContext\n        session.read { runCatching { ZuiControlRequest.recoverPending(appContext) } }\n        render()\n    }\n    override fun onRetainNonConfigurationInstance(): Any = session\n"
+        },
+        {
+          "before": "    private fun load() {\n        if (reading || session.busy || holdingControlPresentation()) return\n        reading = true\n        Thread {\n            val result = runCatching {\n                val state = ZuiControlClient.stateText(); this@MainActivity.state = state\n                caps = checkNotNull(ZuiControlManager.get()).getCapabilities()\n",
+          "after": "    private fun load() {\n        if (reading || session.busy || holdingControlPresentation()) return\n        reading = true\n        session.read {\n            val result = runCatching {\n                val state = ZuiControlClient.stateText(); this@MainActivity.state = state\n                caps = checkNotNull(ZuiControlManager.get()).getCapabilities()\n"
+        },
+        {
+          "before": "                if (session.section == \"thread\" && session.selected.isNotEmpty() && analysis == null && analysisError.isEmpty()) loadAnalysis(session.selected)\n                if (session.section == \"monitor\" && session.selected.isNotEmpty() && !recordRequested) readRecord(session.selected)\n            }\n        }.start()\n    }\n    private fun observeGlobals() {\n        val scene = ControlsState.snapshot\n",
+          "after": "                if (session.section == \"thread\" && session.selected.isNotEmpty() && analysis == null && analysisError.isEmpty()) loadAnalysis(session.selected)\n                if (session.section == \"monitor\" && session.selected.isNotEmpty() && !recordRequested) readRecord(session.selected)\n            }\n        }\n    }\n    private fun observeGlobals() {\n        val scene = ControlsState.snapshot\n"
+        },
         {
           "before": "                detail.addView(card().apply{\n                    setPadding(dp(18),dp(14),dp(18),dp(14));addView(owner.label(\"显示\",11.5f,owner.muted,800),owner.gap(4))\n                    val values=listOf(\"system\",\"dark\",\"light\")\n                    addView(owner.settingsRow(\"界面主题\",\"侧边栏按钮可快速切换深色 / 浅色\",segment(listOf(\"跟随系统\", \"深色\", \"浅色\"),values.indexOf(prefs.getString(\"theme\",\"system\"))){theme(values[it])}.apply{layoutParams=LinearLayout.LayoutParams(dp(220),dp(34))}))\n                },gap())\n            }\n            1 -> gpuDefaultsPage()\n",
           "after": "                detail.addView(card().apply{\n                    setPadding(dp(18),dp(14),dp(18),dp(14));addView(owner.label(\"显示\",11.5f,owner.muted,800),owner.gap(4))\n                    val values=listOf(\"system\",\"dark\",\"light\")\n                    val themeSegment=segment(listOf(\"跟随系统\", \"深色\", \"浅色\"),values.indexOf(prefs.getString(\"theme\",\"system\"))){theme(values[it])} as OwnerSegment\n                    addView(owner.settingsRow(\"界面主题\",\"侧边栏按钮可快速切换深色 / 浅色\",themeSegment.apply{layoutParams=LinearLayout.LayoutParams(dp(220),dp(34))}))\n                    bindPresentation{themeSegment.showSelection(values.indexOf(prefs.getString(\"theme\",\"system\")))}\n                },gap())\n            }\n            1 -> gpuDefaultsPage()\n"
@@ -19,6 +44,61 @@
         {
           "before": "    private fun theme(theme: String) {\n        if(prefs.getString(\"theme\",\"system\")==theme && OwnerWindow.dark(this)==owner.dark)return\n        prefs.edit().putString(\"theme\",theme).apply()\n        if(themeFramePending)return\n        themeFramePending=true\n        // Commit the palette and status-region bridge at the next presentation\n",
           "after": "    private fun theme(theme: String) {\n        if(prefs.getString(\"theme\",\"system\")==theme && OwnerWindow.dark(this)==owner.dark)return\n        prefs.edit().putString(\"theme\",theme).apply()\n        pageBindings.toList().forEach{it()}\n        if(themeFramePending)return\n        themeFramePending=true\n        // Commit the palette and status-region bridge at the next presentation\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+      "before": "100644 blob 693d1bd06259f657129e81060d47175e9b4e39b7\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+      "after": "100644 blob 8cc91015aaaacd5ef3f981964291a3535e4bb51a\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+      "beforeSha256": "47fb568d194f58c494e9195c953e12a98e83123a04717ff427e8361ac7708888",
+      "afterSha256": "5186006c3469317214f1c93f2d667cdccb4d1f8927efd960a15dcf78b15956fb",
+      "hunks": [
+        {
+          "before": "import java.util.concurrent.TimeUnit\n\nclass FrontendV3Test {\n    @Test fun rapidIntentCoalescesWithoutOverlappingActionsAndAckConfirmsCapturedValue() {\n        val callbacks=LinkedBlockingQueue<()->Unit>()\n        val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){callbacks.put(it)}\n",
+          "after": "import java.util.concurrent.TimeUnit\n\nclass FrontendV3Test {\n    /** Real pending-identity/ACK predicate; the platform transport is a counted boundary. */\n    private fun twoSavesWithRead(enqueue:(FrontendSession,()->Unit)->Unit,blocked:Boolean) {\n        val owner=FakeFrontendGateway().apply{succeed=true;authoritativeGeneration=365}\n        val request=java.util.concurrent.atomic.AtomicReference(\"\")\n        val ack=java.util.concurrent.atomic.AtomicReference(\"\")\n        val entered=java.util.concurrent.CountDownLatch(1);val release=java.util.concurrent.CountDownLatch(1)\n        val readFinished=java.util.concurrent.CountDownLatch(1);val callbacks=LinkedBlockingQueue<()->Unit>()\n        val saveThreads=java.util.Collections.synchronizedList(mutableListOf<Long>())\n        var readThread=0L;var terminalAcks=0;var rejected=0;val cas=mutableListOf<Long>()\n        val gateway=object:FrontendGateway by owner {\n            override fun saveGpuDefaultsAtomic(powersave:GpuRanges.Range,balance:GpuRanges.Range,performance:GpuRanges.Range,fast:GpuRanges.Range,expectedGeneration:Long):ZuiControlClient.Reply {\n                saveThreads.add(Thread.currentThread().id)\n                if(ZuiControlRequest.hasPendingRequest(request.get(),ack.get())) {\n                    rejected++;return ZuiControlClient.Reply(false,\"上一条系统命令尚未完成，已重新唤醒系统处理\")\n                }\n                check(expectedGeneration==owner.authoritativeGeneration){\"CAS\"};cas+=expectedGeneration\n                val reply=owner.saveGpuDefaultsAtomic(powersave,balance,performance,fast,expectedGeneration)\n                terminalAcks++;return reply\n            }\n        }\n        val session=FrontendSession(gateway,0,Executors.newSingleThreadExecutor()){callbacks.put(it)}\n        try {\n            session.gpuDraft=GpuDefaultsDraft(365,owner.authoritativeRanges).apply{restoreDefaults()}\n            session.saveGpu();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()\n            assertFalse(session.busy);assertFalse(session.gpuDraft!!.dirty);assertEquals(366L,session.gpuDraft!!.expectedGeneration)\n            enqueue(session) {\n                readThread=Thread.currentThread().id\n                request.set(\"read|zo_upstream_read||gd938e249d8a8784dc432585f|metadata:0\")\n                ack.set(\"read|running|zo_upstream_read|validating\");entered.countDown()\n                check(release.await(5,TimeUnit.SECONDS))\n                ack.set(\"read|done|zo_upstream_read|loaded\")\n                check(!ZuiControlRequest.hasPendingRequest(request.get(),ack.get()))\n                // Consumption completes before the next command can replace its slot.\n                readFinished.countDown()\n            }\n            check(entered.await(5,TimeUnit.SECONDS));session.gpuDraft!!.set(\"powersave\",GpuRanges.Range(231,422))\n            val dirty=session.gpuDraft!!.ranges.toMap();session.saveGpu()\n            if(blocked) {\n                checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()\n                assertEquals(1,rejected);assertTrue(session.gpuDraft!!.dirty);assertEquals(dirty,session.gpuDraft!!.ranges)\n                assertEquals(366L,session.gpuDraft!!.expectedGeneration);assertEquals(1,owner.calls)\n                assertTrue(session.error.contains(\"上一条系统命令\"))\n            } else {\n                assertTrue(session.busy);assertNull(callbacks.poll(100,TimeUnit.MILLISECONDS));assertEquals(1,owner.calls)\n            }\n            release.countDown();check(readFinished.await(5,TimeUnit.SECONDS))\n            if(blocked)session.saveGpu()\n            checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()\n            assertFalse(session.busy);assertFalse(session.gpuDraft!!.dirty);assertEquals(\"\",session.error)\n            assertEquals(367L,session.gpuDraft!!.expectedGeneration);assertEquals(listOf(365L,366L),cas)\n            assertEquals(2,owner.calls);assertEquals(2,terminalAcks);assertEquals(GpuDefaultsDraft.modes.map{dirty.getValue(it)},owner.gpu)\n            assertEquals(1,saveThreads.toSet().size)\n            if(!blocked){assertEquals(0,rejected);assertEquals(saveThreads.first(),readThread)}\n        }finally{release.countDown();session.close()}\n    }\n    @Test fun independentPageReadProvesExactPendingGateAndRetainsDirtySecondSave() {\n        twoSavesWithRead({_,read->Thread(read).start()},true)\n    }\n    @Test fun gpuImmediateSecondSaveWaitsForPageReadOnExistingQueue() {\n        twoSavesWithRead({session,read->session.read(read)},false)\n    }\n    @Test fun rapidIntentCoalescesWithoutOverlappingActionsAndAckConfirmsCapturedValue() {\n        val callbacks=LinkedBlockingQueue<()->Unit>()\n        val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){callbacks.put(it)}\n"
+        }
+      ]
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/MonitorCollector.java",
+      "before": "100644 blob 7c3c9ff1b8471ec1fbfee52f4d9464d239fdf7ff\tframework_patch/src/services/com/zui/server/control/MonitorCollector.java",
+      "after": "100644 blob ef6e07f3c7b189ba4fed78569ed03a6e9d72432e\tframework_patch/src/services/com/zui/server/control/MonitorCollector.java",
+      "beforeSha256": "608d26b4789232e0fdd84f8ac0c80a9e567be30d1c16c3b97d4539324e9496db",
+      "afterSha256": "e190cd7b789b317db79442e1050b30804cb77811a82b99959372c64bbbc062c8",
+      "hunks": [
+        {
+          "before": "    private boolean scheduled;\n    private int expectedPowerPlugged=-1;\n    private boolean powerConfirmationPending;\n    private String finalizeError=\"\";\n    private long epoch,samples,threadReads,enumerations,lastThreadTime;\n    private long recordScanTime=-1;\n",
+          "after": "    private boolean scheduled;\n    private int expectedPowerPlugged=-1;\n    private boolean powerConfirmationPending;\n    private int powerEventPlugged=-1,powerEventStatus=-1;\n    private String finalizeError=\"\";\n    private long epoch,samples,threadReads,enumerations,lastThreadTime;\n    private long recordScanTime=-1;\n"
+        },
+        {
+          "before": "    synchronized void invalidatePower(){stop();schedule();}\n    synchronized void invalidatePower(boolean connected){\n        // Replace the pending edge on the existing clock; never retain pre-edge watts.\n        stop();expectedPowerPlugged=connected?1:0;powerConfirmationPending=true;schedule();\n    }\n    synchronized String snapshot(){return lastSnapshot;}\n    synchronized String state(){\n",
+          "after": "    synchronized void invalidatePower(){stop();schedule();}\n    synchronized void invalidatePower(boolean connected){\n        // Replace the pending edge on the existing clock; never retain pre-edge watts.\n        stop();expectedPowerPlugged=connected?1:0;powerConfirmationPending=true;\n        powerEventPlugged=powerEventStatus=-1;schedule();\n    }\n    private boolean powerEdgeSettled(int plugged,int status){\n        return expectedPowerPlugged==1?plugged>0:expectedPowerPlugged==0&&plugged==0&&status==3;\n    }\n    synchronized void onBatteryStateChanged(int plugged,int status){\n        // Only an unresolved edge can replace the normal clock. Level/current\n        // noise and duplicate power facts never create additional scalar work.\n        if(!powerEdgeSettled(plugged,status)||(powerEventPlugged==plugged&&powerEventStatus==status))return;\n        powerEventPlugged=plugged;powerEventStatus=status;\n        stop();schedule(); // Same worker, sticky-battery reader and snapshot authority.\n    }\n    synchronized String snapshot(){return lastSnapshot;}\n    synchronized String state(){\n"
+        },
+        {
+          "before": "                }\n            }\n            if(expectedPowerPlugged!=-1){\n                boolean settled=expectedPowerPlugged==1?plugged>0:plugged==0&&batteryStatus==3;\n                if(settled){expectedPowerPlugged=-1;powerConfirmationPending=false;}\n                else{\n                    power=-1;\n",
+          "after": "                }\n            }\n            if(expectedPowerPlugged!=-1){\n                boolean settled=powerEdgeSettled(plugged,batteryStatus);\n                if(settled){expectedPowerPlugged=-1;powerConfirmationPending=false;}\n                else{\n                    power=-1;\n"
+        }
+      ]
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "before": "100644 blob c49e127370cea19c5e6a87cb4a87ecd627c21c53\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "after": "100644 blob a659d9c2337f64a323e4925d916e8042cbf7aeec\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "beforeSha256": "73decb4063a24594c8bd6ce0f1a48055c3b140c848634d0e1bca7be149dd455a",
+      "afterSha256": "2022778a4aacc651d3b8dcb396452df4ac9bdf86242061cd825960585d577cae",
+      "hunks": [
+        {
+          "before": "import android.hardware.display.DisplayManager;\nimport android.hardware.display.DisplayManagerInternal;\nimport android.os.Binder;\nimport android.os.Handler;\nimport android.os.HandlerThread;\nimport android.os.IBinder;\n",
+          "after": "import android.hardware.display.DisplayManager;\nimport android.hardware.display.DisplayManagerInternal;\nimport android.os.Binder;\nimport android.os.BatteryManager;\nimport android.os.Handler;\nimport android.os.HandlerThread;\nimport android.os.IBinder;\n"
+        },
+        {
+          "before": "            filter.addAction(Intent.ACTION_USER_PRESENT);\n            filter.addAction(Intent.ACTION_POWER_CONNECTED);\n            filter.addAction(Intent.ACTION_POWER_DISCONNECTED);\n            mContext.registerReceiver(new BroadcastReceiver() {\n                @Override\n                public void onReceive(Context context, Intent intent) {\n",
+          "after": "            filter.addAction(Intent.ACTION_USER_PRESENT);\n            filter.addAction(Intent.ACTION_POWER_CONNECTED);\n            filter.addAction(Intent.ACTION_POWER_DISCONNECTED);\n            filter.addAction(Intent.ACTION_BATTERY_CHANGED);\n            mContext.registerReceiver(new BroadcastReceiver() {\n                @Override\n                public void onReceive(Context context, Intent intent) {\n"
+        },
+        {
+          "before": "                        onScreenInteractiveChanged(false);\n                    } else if (Intent.ACTION_POWER_CONNECTED.equals(action) || Intent.ACTION_POWER_DISCONNECTED.equals(action)) {\n                        mMonitor.invalidatePower(Intent.ACTION_POWER_CONNECTED.equals(action));\n                    } else if (Intent.ACTION_USER_PRESENT.equals(action)) {\n                        refreshMonitor();\n                    }\n",
+          "after": "                        onScreenInteractiveChanged(false);\n                    } else if (Intent.ACTION_POWER_CONNECTED.equals(action) || Intent.ACTION_POWER_DISCONNECTED.equals(action)) {\n                        mMonitor.invalidatePower(Intent.ACTION_POWER_CONNECTED.equals(action));\n                    } else if (Intent.ACTION_BATTERY_CHANGED.equals(action)) {\n                        mMonitor.onBatteryStateChanged(intent.getIntExtra(BatteryManager.EXTRA_PLUGGED,-1),\n                                intent.getIntExtra(BatteryManager.EXTRA_STATUS,-1));\n                    } else if (Intent.ACTION_USER_PRESENT.equals(action)) {\n                        refreshMonitor();\n                    }\n"
         }
       ]
     }

@@ -10,6 +10,7 @@ import android.database.ContentObserver;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.DisplayManagerInternal;
 import android.os.Binder;
+import android.os.BatteryManager;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -1983,6 +1984,7 @@ public final class ZuiControlService extends Binder {
             filter.addAction(Intent.ACTION_USER_PRESENT);
             filter.addAction(Intent.ACTION_POWER_CONNECTED);
             filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
+            filter.addAction(Intent.ACTION_BATTERY_CHANGED);
             mContext.registerReceiver(new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, Intent intent) {
@@ -1993,6 +1995,9 @@ public final class ZuiControlService extends Binder {
                         onScreenInteractiveChanged(false);
                     } else if (Intent.ACTION_POWER_CONNECTED.equals(action) || Intent.ACTION_POWER_DISCONNECTED.equals(action)) {
                         mMonitor.invalidatePower(Intent.ACTION_POWER_CONNECTED.equals(action));
+                    } else if (Intent.ACTION_BATTERY_CHANGED.equals(action)) {
+                        mMonitor.onBatteryStateChanged(intent.getIntExtra(BatteryManager.EXTRA_PLUGGED,-1),
+                                intent.getIntExtra(BatteryManager.EXTRA_STATUS,-1));
                     } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
                         refreshMonitor();
                     }

@@ -199,7 +199,7 @@ class MainActivity : Activity() {
         if(intent.getBooleanExtra("openRecord",false))recordLaunch=intent
         OwnerWindow.fullscreen(this)
         val appContext = applicationContext
-        Thread { runCatching { ZuiControlRequest.recoverPending(appContext) } }.start()
+        session.read { runCatching { ZuiControlRequest.recoverPending(appContext) } }
         render()
     }
     override fun onRetainNonConfigurationInstance(): Any = session
@@ -228,7 +228,7 @@ class MainActivity : Activity() {
     private fun load() {
         if (reading || session.busy || holdingControlPresentation()) return
         reading = true
-        Thread {
+        session.read {
             val result = runCatching {
                 val state = ZuiControlClient.stateText(); this@MainActivity.state = state
                 caps = checkNotNull(ZuiControlManager.get()).getCapabilities()
@@ -272,7 +272,7 @@ class MainActivity : Activity() {
                 if (session.section == "thread" && session.selected.isNotEmpty() && analysis == null && analysisError.isEmpty()) loadAnalysis(session.selected)
                 if (session.section == "monitor" && session.selected.isNotEmpty() && !recordRequested) readRecord(session.selected)
             }
-        }.start()
+        }
     }
     private fun observeGlobals() {
         val scene = ControlsState.snapshot

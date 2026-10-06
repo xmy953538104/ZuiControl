@@ -8,6 +8,67 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 class FrontendV3Test {
+    /** Real pending-identity/ACK predicate; the platform transport is a counted boundary. */
+    private fun twoSavesWithRead(enqueue:(FrontendSession,()->Unit)->Unit,blocked:Boolean) {
+        val owner=FakeFrontendGateway().apply{succeed=true;authoritativeGeneration=365}
+        val request=java.util.concurrent.atomic.AtomicReference("")
+        val ack=java.util.concurrent.atomic.AtomicReference("")
+        val entered=java.util.concurrent.CountDownLatch(1);val release=java.util.concurrent.CountDownLatch(1)
+        val readFinished=java.util.concurrent.CountDownLatch(1);val callbacks=LinkedBlockingQueue<()->Unit>()
+        val saveThreads=java.util.Collections.synchronizedList(mutableListOf<Long>())
+        var readThread=0L;var terminalAcks=0;var rejected=0;val cas=mutableListOf<Long>()
+        val gateway=object:FrontendGateway by owner {
+            override fun saveGpuDefaultsAtomic(powersave:GpuRanges.Range,balance:GpuRanges.Range,performance:GpuRanges.Range,fast:GpuRanges.Range,expectedGeneration:Long):ZuiControlClient.Reply {
+                saveThreads.add(Thread.currentThread().id)
+                if(ZuiControlRequest.hasPendingRequest(request.get(),ack.get())) {
+                    rejected++;return ZuiControlClient.Reply(false,"上一条系统命令尚未完成，已重新唤醒系统处理")
+                }
+                check(expectedGeneration==owner.authoritativeGeneration){"CAS"};cas+=expectedGeneration
+                val reply=owner.saveGpuDefaultsAtomic(powersave,balance,performance,fast,expectedGeneration)
+                terminalAcks++;return reply
+            }
+        }
+        val session=FrontendSession(gateway,0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
+        try {
+            session.gpuDraft=GpuDefaultsDraft(365,owner.authoritativeRanges).apply{restoreDefaults()}
+            session.saveGpu();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertFalse(session.busy);assertFalse(session.gpuDraft!!.dirty);assertEquals(366L,session.gpuDraft!!.expectedGeneration)
+            enqueue(session) {
+                readThread=Thread.currentThread().id
+                request.set("read|zo_upstream_read||gd938e249d8a8784dc432585f|metadata:0")
+                ack.set("read|running|zo_upstream_read|validating");entered.countDown()
+                check(release.await(5,TimeUnit.SECONDS))
+                ack.set("read|done|zo_upstream_read|loaded")
+                check(!ZuiControlRequest.hasPendingRequest(request.get(),ack.get()))
+                // Consumption completes before the next command can replace its slot.
+                readFinished.countDown()
+            }
+            check(entered.await(5,TimeUnit.SECONDS));session.gpuDraft!!.set("powersave",GpuRanges.Range(231,422))
+            val dirty=session.gpuDraft!!.ranges.toMap();session.saveGpu()
+            if(blocked) {
+                checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+                assertEquals(1,rejected);assertTrue(session.gpuDraft!!.dirty);assertEquals(dirty,session.gpuDraft!!.ranges)
+                assertEquals(366L,session.gpuDraft!!.expectedGeneration);assertEquals(1,owner.calls)
+                assertTrue(session.error.contains("上一条系统命令"))
+            } else {
+                assertTrue(session.busy);assertNull(callbacks.poll(100,TimeUnit.MILLISECONDS));assertEquals(1,owner.calls)
+            }
+            release.countDown();check(readFinished.await(5,TimeUnit.SECONDS))
+            if(blocked)session.saveGpu()
+            checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertFalse(session.busy);assertFalse(session.gpuDraft!!.dirty);assertEquals("",session.error)
+            assertEquals(367L,session.gpuDraft!!.expectedGeneration);assertEquals(listOf(365L,366L),cas)
+            assertEquals(2,owner.calls);assertEquals(2,terminalAcks);assertEquals(GpuDefaultsDraft.modes.map{dirty.getValue(it)},owner.gpu)
+            assertEquals(1,saveThreads.toSet().size)
+            if(!blocked){assertEquals(0,rejected);assertEquals(saveThreads.first(),readThread)}
+        }finally{release.countDown();session.close()}
+    }
+    @Test fun independentPageReadProvesExactPendingGateAndRetainsDirtySecondSave() {
+        twoSavesWithRead({_,read->Thread(read).start()},true)
+    }
+    @Test fun gpuImmediateSecondSaveWaitsForPageReadOnExistingQueue() {
+        twoSavesWithRead({session,read->session.read(read)},false)
+    }
     @Test fun rapidIntentCoalescesWithoutOverlappingActionsAndAckConfirmsCapturedValue() {
         val callbacks=LinkedBlockingQueue<()->Unit>()
         val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
