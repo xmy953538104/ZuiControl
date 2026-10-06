@@ -132,7 +132,7 @@ def reverse_entries(current,*scopes):
     assert FINAL_UX['baseHead']=='9fccabb7a356b372f51242ddfa3a3638b6718c6f'
     allowed={'MainActivity.kt','OwnerUi.kt','OwnerEffects.kt','OwnerGeometry.kt','FrontendSession.kt','FrontendForeground.kt','OwnerCpuPicker.kt','OwnerRenderTrace.kt','GpuRangeBar.kt','RecordChart.kt','OwnerCpuSparklineView.kt','PerformanceRecordActivity.kt','FrontendV3Test.kt'}
     for row in FINAL_UX['files']:
-        assert row['path'].startswith('app/') and (Path(row['path']).name in allowed or row['path'] in {'app/src/main/res/drawable/owner_appopt.xml','app/src/main/res/drawable/owner_undo.xml','app/src/main/res/drawable/owner_thread_list.xml','app/src/main/res/drawable/owner_grip.xml'})
+        assert row['path'].startswith('app/') and (Path(row['path']).name in allowed or row['path'] in {'app/src/main/res/drawable/owner_appopt.xml','app/src/main/res/drawable/owner_undo.xml','app/src/main/res/drawable/owner_thread_list.xml','app/src/main/res/drawable/owner_grip.xml','app/src/main/res/drawable/owner_export.xml'})
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         after=row['after'].encode();assert result.count(after)==1,('R3 exact Owner frontend bytes',row['path'])
         result.remove(after)

@@ -70,6 +70,11 @@
       "after": "100644 blob 2093636a39ae2ac3d6a4125f21c77475b90a90dd\tapp/src/main/res/drawable/owner_appopt.xml"
     },
     {
+      "path": "app/src/main/res/drawable/owner_export.xml",
+      "before": "100644 blob 0eb22afaf311c37a4118df90dccaaea93836565b\tapp/src/main/res/drawable/owner_export.xml",
+      "after": "100644 blob fad9d1c16881036a92e789a255348a7835067c0b\tapp/src/main/res/drawable/owner_export.xml"
+    },
+    {
       "path": "app/src/main/res/drawable/owner_grip.xml",
       "before": "100644 blob 9bb5549231814225fcaf10cca73fb9ffc598f7ce\tapp/src/main/res/drawable/owner_grip.xml",
       "after": "100644 blob 73eb11bc1a92c4700f62e3bf7c88eb747b35d103\tapp/src/main/res/drawable/owner_grip.xml"
