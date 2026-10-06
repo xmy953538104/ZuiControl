@@ -7,6 +7,7 @@ SYNC=json.loads((ROOT/'tests/frontend_visual_sync_delta.json').read_text(encodin
 PLAN2=json.loads((ROOT/'tests/frontend_owner_polish_delta.json').read_text(encoding='utf-8'))
 VISUAL_CLOSURE=json.loads((ROOT/'tests/frontend_visual_closure_delta.json').read_text(encoding='utf-8'))
 FINAL_UX=json.loads((ROOT/'tests/frontend_final_owner_ux_delta.json').read_text(encoding='utf-8'))
+STATUS_CONTINUITY=json.loads((ROOT/'tests/frontend_status_continuity_delta.json').read_text(encoding='utf-8'))
 IDENTITY=json.loads((ROOT/'tests/integration_identity_delta.json').read_text(encoding='utf-8'))
 FINAL_FRONTEND=json.loads((ROOT/'tests/final_frontend_merge_delta.json').read_text(encoding='utf-8'))
 FRONTEND_INTEGRATION=json.loads((ROOT/'tests/backend_frontend_integration_delta.json').read_text(encoding='utf-8'))
@@ -129,6 +130,12 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
+    assert STATUS_CONTINUITY['baseHead']=='391826265eb2e6deba74c47426b793e2809733b4'
+    for row in STATUS_CONTINUITY['files']:
+        assert row['path'] in {'app/src/main/java/com/zui/zuicontrol/MainActivity.kt','app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt'}
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        after=row['after'].encode();assert result.count(after)==1,('R4 exact status presentation bytes',row['path'])
+        result.remove(after);result.append(row['before'].encode())
     assert FINAL_UX['baseHead']=='9fccabb7a356b372f51242ddfa3a3638b6718c6f'
     allowed={'MainActivity.kt','OwnerUi.kt','OwnerWindow.kt','OwnerEffects.kt','OwnerGeometry.kt','FrontendSession.kt','FrontendForeground.kt','OwnerCpuPicker.kt','OwnerRenderTrace.kt','GpuRangeBar.kt','RecordChart.kt','OwnerCpuSparklineView.kt','PerformanceRecordActivity.kt','FrontendV3Test.kt'}
     for row in FINAL_UX['files']:

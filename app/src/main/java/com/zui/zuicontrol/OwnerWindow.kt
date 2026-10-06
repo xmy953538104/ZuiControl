@@ -28,6 +28,7 @@ internal object OwnerWindow {
                 if(FrontendTheme.dark(theme,false))Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
         })
     }
+    /** Activity creation only. Theme changes use appearance without window setup. */
     fun fullscreen(activity:Activity)=with(activity.window){
         statusBarColor=Color.TRANSPARENT;navigationBarColor=Color.TRANSPARENT
         // Preserve the current bar ink while changing layout flags. The single
@@ -35,14 +36,22 @@ internal object OwnerWindow {
         val inkMask=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         decorView.systemUiVisibility=(decorView.systemUiVisibility and inkMask) or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
             View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-        val dark=dark(activity)
         if(Build.VERSION.SDK_INT>=30){
             setDecorFitsSystemWindows(false)
             insetsController?.show(WindowInsets.Type.systemBars())
+        }
+        isStatusBarContrastEnforced=false;isNavigationBarContrastEnforced=false
+        updateSystemBarAppearance(activity,dark(activity))
+    }
+    /** Ink only: preserve the existing viewport, visibility, layout and insets. */
+    fun updateSystemBarAppearance(activity:Activity,dark:Boolean)=with(activity.window){
+        if(Build.VERSION.SDK_INT>=30){
             val mask=WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
             insetsController?.setSystemBarsAppearance(if(dark)0 else mask,mask)
-        }else if(!dark){decorView.systemUiVisibility=decorView.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR}
-        isStatusBarContrastEnforced=false;isNavigationBarContrastEnforced=false
+        }else{
+            val mask=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            decorView.systemUiVisibility=(decorView.systemUiVisibility and mask.inv()) or if(dark)0 else mask
+        }
     }
     fun dark(context:Context):Boolean=FrontendTheme.dark(
         context.getSharedPreferences("frontend",Context.MODE_PRIVATE).getString("theme","system").orEmpty(),

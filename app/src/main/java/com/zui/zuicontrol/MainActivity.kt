@@ -1330,19 +1330,29 @@ class MainActivity : Activity() {
             }
         }
     }
+    private var themeFramePending=false
     private fun theme(theme: String) {
         if(prefs.getString("theme","system")==theme)return
-        OwnerGeometry.theme(ownerCanvas,0,"persistent")
         prefs.edit().putString("theme",theme).apply()
-        OwnerWindow.fullscreen(this)
-        owner.applyTheme(physicalHost,OwnerWindow.dark(this))
+        if(themeFramePending)return
+        themeFramePending=true
+        // View.postOnAnimation commits both presentation changes at the next
+        // Choreographer boundary. Pending requests read the latest local theme.
+        ownerCanvas.postOnAnimation {
+        themeFramePending=false
+        if(isDestroyed)return@postOnAnimation
+        OwnerGeometry.theme(ownerCanvas,0,"persistent")
+        val dark=OwnerWindow.dark(this)
+        OwnerWindow.updateSystemBarAppearance(this,dark)
+        owner.applyTheme(physicalHost,dark)
         physicalHost.setBackgroundColor(owner.detail);ownerCanvas.setBackgroundColor(owner.detail)
         ownerHost.setBackgroundColor(owner.detail);shellRoot.setBackgroundColor(owner.detail)
         rail.setBackgroundColor(owner.rail);master.setBackgroundColor(owner.master)
         railBindings.forEach{it()};masterSelectionBindings.forEach{it()};pageBindings.toList().forEach{it()};bindMonitor()
-        OwnerRenderTrace.event("PALETTE_CHANGED",theme)
+        OwnerRenderTrace.event("PALETTE_CHANGED",prefs.getString("theme","system").orEmpty())
         // Palette changes in one frame; no opacity dip or text/layout animation.
         ownerCanvas.post{OwnerGeometry.theme(ownerCanvas,100,"persistent")}
+        }
     }
     private fun monitorGuidance() {
         ownerModal?.open("监测记录指引","通过悬浮窗开始记录，在监测页可停止。",480,owner.column().apply{
