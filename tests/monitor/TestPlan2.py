@@ -33,7 +33,7 @@ class Plan2(unittest.TestCase):
   self.assertIn('bridge.setBounds(0,0,host.width,top)',bridge)
   self.assertIn('host.overlay.remove(bridge)',bridge)
   self.assertIn('ms-inkChangedAt<railHandoffMs',bridge)
-  self.assertIn('val railHandoffMs=if(!dark && session.section!="settings")50L else when(session.section){"tune"->45L;"thread"->30L;"monitor"->60L;else->65L}',theme)
+  self.assertIn('val railHandoffMs=if(!dark && session.section!="settings")50L else when(session.section){"tune"->30L;"thread"->30L;"monitor"->75L;else->65L}',theme)
   self.assertIn('registerFrameCommitCallback',bridge)
   self.assertIn('registerFrameCommitCallback(::changeInk)',bridge)
   self.assertLess(bridge.index('frame(ownerThemePaletteProgress(ms),colors)'),bridge.index('registerFrameCommitCallback(::changeInk)'))
