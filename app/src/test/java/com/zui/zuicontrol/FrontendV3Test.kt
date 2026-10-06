@@ -189,6 +189,13 @@ class FrontendV3Test {
         assertTrue(FrontendTheme.dark("dark", false)); assertFalse(FrontendTheme.dark("light", true))
         assertTrue(FrontendTheme.dark("system", true)); assertFalse(FrontendTheme.dark("system", false))
     }
+    @Test fun themePreservesOpaqueAndTranslucentWhiteControlInkWhenCardPaletteChanges() {
+        val recolor:(Int)->Int={0xff111927.toInt()}
+        assertEquals(0xffffffff.toInt(),ownerForegroundColor(0xffffffff.toInt(),recolor))
+        assertEquals(0xd9ffffff.toInt(),ownerForegroundColor(0xd9ffffff.toInt(),recolor))
+        assertEquals(0xd1ffffff.toInt(),ownerForegroundColor(0xd1ffffff.toInt(),recolor))
+        assertEquals(0xff111927.toInt(),ownerForegroundColor(0xff475569.toInt(),recolor))
+    }
     @Test fun genuineBackgroundReturnsToSectionHomeWithoutDiscardingEitherDraft() {
         val gateway=FakeFrontendGateway();val session=FrontendSession(gateway,0,Executors.newSingleThreadExecutor()){}
         try {

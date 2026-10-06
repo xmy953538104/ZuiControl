@@ -1399,6 +1399,7 @@ class MainActivity : Activity() {
         if(!::ownerHost.isInitialized){Toast.makeText(this,message,Toast.LENGTH_SHORT).show();return}
         toastView?.let{(it.parent as? ViewGroup)?.removeView(it)}
         val pill=owner.label(message,12f,owner.toastFg,700).apply{
+            tag="owner-toast-foreground"
             setPadding(owner.px(24),owner.px(11),owner.px(24),owner.px(11));background=owner.shape(owner.toastBg,999f)
             elevation=owner.px(12).toFloat();alpha=0f;translationY=owner.px(60).toFloat();importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_YES
         }

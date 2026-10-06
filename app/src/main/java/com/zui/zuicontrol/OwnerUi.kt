@@ -15,6 +15,8 @@ import kotlin.math.*
 
 /** Native port of FRONTEND_FINAL_V83.html. Dimensions are Owner CSS pixels. */
 internal data class OwnerIcon(val resource:Int,val size:Int)
+/** White control ink (including translucent units) is invariant across palettes. */
+internal fun ownerForegroundColor(value:Int,recolor:(Int)->Int)=if(value and 0xffffff==0xffffff)value else recolor(value)
 internal class OwnerUi(val context: Context) {
     var dark = OwnerWindow.dark(context);private set
     private fun c(d: String, l: String) = Color.parseColor(if (dark) d else l)
@@ -32,7 +34,8 @@ internal class OwnerUi(val context: Context) {
     val chipFg get()=intArrayOf(sub,c("#5EE0A8","#166534"),c("#8FB0FF","#1E40AF"),c("#FFAA70","#9A3412"),c("#FF8A96","#991B1B"))
     fun changeTheme(value:Boolean){dark=value}
     private val borders=java.util.WeakHashMap<GradientDrawable,Pair<Int?,Float>>()
-    private fun palette()=listOf(card,card2,text,sub,muted,code,accentSoft,accentGlow,toastBg,toastFg,accent,line,line2,zo,zoBg,zoFg)+tiers.toList()+inks.toList()+chipBg.toList()+chipFg.toList()
+    // Toast foreground has its own role: its light white aliases the card surface.
+    private fun palette()=listOf(card,card2,text,sub,muted,code,accentSoft,accentGlow,toastBg,accent,line,line2,zo,zoBg,zoFg)+tiers.toList()+inks.toList()+chipBg.toList()+chipFg.toList()
     /** Recolor attached views; their identities, font metrics and layout remain untouched. */
     fun applyTheme(root:View,value:Boolean){
         val old=palette();val wasDark=dark;val oldSoft=tiers.map{soft(it)}
@@ -47,10 +50,10 @@ internal class OwnerUi(val context: Context) {
         }
         fun visit(v:View){
             drawable(v.background)
-            if(v is TextView){if(v.currentTextColor!=Color.WHITE)v.setTextColor(color(v.currentTextColor));if(v is EditText)v.setHintTextColor(color(v.currentHintTextColor))
-                (v.text as? android.text.Spannable)?.let{s->s.getSpans(0,s.length,android.text.style.ForegroundColorSpan::class.java).forEach{span->val a=s.getSpanStart(span);val b=s.getSpanEnd(span);val flags=s.getSpanFlags(span);s.removeSpan(span);s.setSpan(android.text.style.ForegroundColorSpan(color(span.foregroundColor)),a,b,flags)}}
+            if(v is TextView){v.setTextColor(if(v.tag=="owner-toast-foreground")toastFg else ownerForegroundColor(v.currentTextColor,::color));if(v is EditText)v.setHintTextColor(color(v.currentHintTextColor))
+                (v.text as? android.text.Spannable)?.let{s->s.getSpans(0,s.length,android.text.style.ForegroundColorSpan::class.java).forEach{span->val a=s.getSpanStart(span);val b=s.getSpanEnd(span);val flags=s.getSpanFlags(span);s.removeSpan(span);s.setSpan(android.text.style.ForegroundColorSpan(ownerForegroundColor(span.foregroundColor,::color)),a,b,flags)}}
             }
-            if(v is ImageView)v.imageTintList?.defaultColor?.let{if(it!=Color.WHITE)v.imageTintList=android.content.res.ColorStateList.valueOf(color(it))}
+            if(v is ImageView)v.imageTintList?.defaultColor?.let{v.imageTintList=android.content.res.ColorStateList.valueOf(ownerForegroundColor(it,::color))}
             when(v){is OwnerCpuSparklineView->v.changeTheme(value);is GpuRangeBar->v.changeTheme(value);is RecordChart->v.changeTheme(value);is OwnerPing->v.retheme(::color);is OwnerMeter->v.retheme(::color);is OwnerCpuPicker->v.showSelection(v.selected)}
             if(v is ViewGroup)for(i in 0 until v.childCount)visit(v.getChildAt(i))
             v.invalidate()
