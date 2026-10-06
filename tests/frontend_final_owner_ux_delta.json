@@ -22,7 +22,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob e86a05897239a9ecf387c33daddd30ef9f709a91\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob 39ae6c5831dc597dc5ead5a4fa01b4178fb41950\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob a45504927e9def85d7c2423c80dbe242dd28fe20\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerCpuPicker.kt",

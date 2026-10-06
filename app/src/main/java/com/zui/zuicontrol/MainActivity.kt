@@ -1020,7 +1020,7 @@ class MainActivity : Activity() {
                 fun rebuildRules(){
                 rowsHost.removeAllViews();rowsBindings.clear()
                 val table=owner.column()
-                fun cell(parent:LinearLayout,view:View,width:Int){parent.addView(view,LinearLayout.LayoutParams(if(width==0)0 else dp(width),-2,if(width==0)1f else 0f).apply{marginStart=dp(10)})}
+                fun cell(parent:LinearLayout,view:View,width:Int,height:Int=-2){parent.addView(view,LinearLayout.LayoutParams(if(width==0)0 else dp(width),if(height<0)height else dp(height),if(width==0)1f else 0f).apply{marginStart=dp(10)})}
                 table.addView(owner.row().apply{
                     addView(View(this@MainActivity),LinearLayout.LayoutParams(dp(16),dp(22)))
                     cell(this,owner.label("匹配",11f,owner.muted,700),0);cell(this,owner.label("竞争组",11f,owner.muted,700),62)
@@ -1030,7 +1030,8 @@ class MainActivity : Activity() {
                 d.profile.rules.forEachIndexed{index,rule->
                     table.addView(owner.row().apply{
                         setPadding(0,dp(8),0,dp(8))
-                        addView(owner.icon(R.drawable.owner_grip,owner.muted,14).apply{
+                        addView(FrameLayout(this@MainActivity).apply{
+                            addView(owner.icon(R.drawable.owner_grip,owner.muted,14),FrameLayout.LayoutParams(dp(14),dp(14),Gravity.CENTER))
                             isFocusable=true;contentDescription="拖动调整规则顺序"
                             setOnLongClickListener{startDragAndDrop(ClipData.newPlainText("rule-order",index.toString()),View.DragShadowBuilder(this),index,0);true}
                             accessibilityDelegate=object:View.AccessibilityDelegate(){
@@ -1047,7 +1048,10 @@ class MainActivity : Activity() {
                         cell(this,owner.row().apply{addView(owner.chip(if(rule.selector=="all")"全部候选" else "第${rule.selector.substringAfter(':')}个").apply{background=owner.shape(owner.zoBg,5f);setTextColor(owner.zoFg)});setOnClickListener{editRule(index)}},84)
                         val picker=cpuPicker(rule.cpuMask){mask->mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.map{if(it.competitionClass==rule.competitionClass)it.copy(cpuMask=mask)else it});render()}} as OwnerCpuPicker
                         cell(this,picker,117);rowsBindings+={d.profile.rules.getOrNull(index)?.let{picker.showSelection(it.cpuMask)}}
-                        cell(this,owner.icon(R.drawable.owner_close,owner.muted,14).apply{isFocusable=true;contentDescription="删除规则 ${index+1}";setOnClickListener{mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.filterIndexed{i,_->i!=index});render()}}},22)
+                        cell(this,FrameLayout(this@MainActivity).apply{
+                            addView(owner.icon(R.drawable.owner_close,owner.muted,14),FrameLayout.LayoutParams(dp(14),dp(14),Gravity.CENTER))
+                            isFocusable=true;contentDescription="删除规则 ${index+1}";setOnClickListener{mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.filterIndexed{i,_->i!=index});render()}}
+                        },22,22)
                         setOnDragListener{_,event->when(event.action){DragEvent.ACTION_DRAG_STARTED->event.clipDescription?.label=="rule-order";DragEvent.ACTION_DROP->{(event.localState as? Int)?.let{moveRule(it,index)};true};else->true}}
                     })
                     table.addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
