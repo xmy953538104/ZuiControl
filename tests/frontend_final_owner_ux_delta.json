@@ -52,7 +52,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
       "before": "100644 blob 436203c60a91368fe4c876090852db3345eb65b6\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
-      "after": "100644 blob 089ec921b27c8ee90702d75ab240d11c651e4c01\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+      "after": "100644 blob babe8a8aeca6f807c636bd8fcc8dad1e9efe0b6b\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
