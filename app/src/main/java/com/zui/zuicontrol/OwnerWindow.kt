@@ -98,13 +98,12 @@ internal object OwnerWindow {
                     ms<195->midpoint
                     else->IntArray(3){i->blend(midpoint[i],target[i],((ms-195)/85.0).coerceAtMost(1.0))}
                 }
-                // ZUI's clock fades white -> black for about120ms while the
-                // other status icons switch independently. Its intermediate
-                // gray ink must not meet the neutral bridge. Keep the Owner
-                // source rail until the clock is in the interval where both
-                // source and target rail backgrounds contrast, then hand off
-                // once. App regions and the physical bridge consume these SAME colors.
-                if(!dark)colors[0]=if(!inkChanged || ms-inkChangedAt<60)source[0] else target[0]
+                // ZUI's clock and other icons change ink independently. Native
+                // R3 frames showed near-black clock ink before the old60ms rail
+                // handoff. Hand off20ms earlier on this same timeline, keeping
+                // intermediate clock ink away from the neutral bridge. App
+                // regions and the physical bridge consume these SAME colors.
+                if(!dark)colors[0]=if(!inkChanged || ms-inkChangedAt<40)source[0] else target[0]
                 frame(animation.animatedFraction,colors)
                 bridge.invalidateSelf()
                 if(ms>=65 && !inkChanged){inkChanged=true;inkChangedAt=ms;updateSystemBarAppearance(activity,dark)}
