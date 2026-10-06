@@ -33,7 +33,7 @@ class Plan2(unittest.TestCase):
   self.assertIn('bridge.setBounds(0,0,host.width,top)',bridge)
   self.assertIn('host.overlay.remove(bridge)',bridge)
   self.assertIn('ms-inkChangedAt<30',bridge)
-  self.assertIn('ms-inkChangedAt<50',bridge)
+  self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('frame(animation.animatedFraction,colors)'))
   for forbidden in ('addView(', 'setContentView', 'requestApplyInsets', 'setPadding', 'layoutParams', 'onTouch'):
    self.assertNotIn(forbidden,bridge)
  def test_theme_is_local_and_non_intercepting(self):
