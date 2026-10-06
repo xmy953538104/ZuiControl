@@ -1332,18 +1332,18 @@ class MainActivity : Activity() {
     }
     private var themeFramePending=false
     private fun theme(theme: String) {
-        if(prefs.getString("theme","system")==theme)return
+        if(prefs.getString("theme","system")==theme && OwnerWindow.dark(this)==owner.dark)return
         prefs.edit().putString("theme",theme).apply()
         if(themeFramePending)return
         themeFramePending=true
-        // View.postOnAnimation commits both presentation changes at the next
-        // Choreographer boundary. Pending requests read the latest local theme.
+        // Commit the palette and status-region bridge at the next presentation
+        // boundary. Pending requests read the latest local theme.
         ownerCanvas.postOnAnimation {
-        themeFramePending=false
         if(isDestroyed)return@postOnAnimation
-        OwnerGeometry.theme(ownerCanvas,0,"persistent")
         val dark=OwnerWindow.dark(this)
-        OwnerWindow.updateSystemBarAppearance(this,dark)
+        if(dark==owner.dark){themeFramePending=false;return@postOnAnimation}
+        OwnerGeometry.theme(ownerCanvas,0,"persistent")
+        val source=intArrayOf(owner.rail,owner.master,owner.detail)
         owner.applyTheme(physicalHost,dark)
         physicalHost.setBackgroundColor(owner.detail);ownerCanvas.setBackgroundColor(owner.detail)
         ownerHost.setBackgroundColor(owner.detail);shellRoot.setBackgroundColor(owner.detail)
@@ -1352,6 +1352,11 @@ class MainActivity : Activity() {
         OwnerRenderTrace.event("PALETTE_CHANGED",prefs.getString("theme","system").orEmpty())
         // Palette changes in one frame; no opacity dip or text/layout animation.
         ownerCanvas.post{OwnerGeometry.theme(ownerCanvas,100,"persistent")}
+        OwnerWindow.transitionSystemBars(this,physicalHost,rail,master,source,intArrayOf(owner.rail,owner.master,owner.detail),dark){
+            themeFramePending=false
+            val latest=prefs.getString("theme","system").orEmpty()
+            if(!isDestroyed && OwnerWindow.dark(this)!=owner.dark)theme(latest)
+        }
         }
     }
     private fun monitorGuidance() {

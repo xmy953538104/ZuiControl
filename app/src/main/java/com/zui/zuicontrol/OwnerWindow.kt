@@ -4,6 +4,13 @@ import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Canvas
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.PixelFormat
+import android.graphics.Rect
+import android.graphics.drawable.Drawable
+import android.animation.ValueAnimator
 import android.os.Build
 import android.view.View
 import android.view.WindowInsets
@@ -51,6 +58,54 @@ internal object OwnerWindow {
         }else{
             val mask=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
             decorView.systemUiVisibility=(decorView.systemUiVisibility and mask.inv()) or if(dark)0 else mask
+        }
+    }
+    /** Drawable overlay has no input/layout participation and ends transparent. */
+    fun transitionSystemBars(activity:Activity,host:View,rail:View,master:View,
+        source:IntArray,target:IntArray,dark:Boolean,finished:()->Unit){
+        val top=host.rootWindowInsets?.let{insets->
+            if(Build.VERSION.SDK_INT>=30)insets.getInsets(WindowInsets.Type.statusBars()).top else insets.systemWindowInsetTop
+        } ?: 0
+        if(top<=0){updateSystemBarAppearance(activity,dark);finished();return}
+        val origin=IntArray(2);host.getLocationOnScreen(origin)
+        val railBounds=Rect();val masterBounds=Rect()
+        rail.getGlobalVisibleRect(railBounds);master.getGlobalVisibleRect(masterBounds)
+        val ends=intArrayOf(railBounds.right-origin[0],masterBounds.right-origin[0],host.width)
+        // Linear-light interpolation preserves Owner region hues. At luminance
+        // .179 both black and white endpoint inks exceed 4.5:1 contrast.
+        fun linear(v:Int)=if(v/255.0<=.04045)v/255.0/12.92 else Math.pow((v/255.0+.055)/1.055,2.4)
+        fun channel(v:Double)=((if(v<=.0031308)12.92*v else 1.055*Math.pow(v,1/2.4)-.055)*255).roundToInt().coerceIn(0,255)
+        fun blend(a:Int,b:Int,t:Double):Int {
+            fun part(x:Int,y:Int)=channel(linear(x)*(1-t)+linear(y)*t)
+            return Color.rgb(part(Color.red(a),Color.red(b)),part(Color.green(a),Color.green(b)),part(Color.blue(a),Color.blue(b)))
+        }
+        fun luminance(c:Int)=.2126*linear(Color.red(c))+.7152*linear(Color.green(c))+.0722*linear(Color.blue(c))
+        val midpoint=IntArray(3){i->blend(source[i],target[i],(.179-luminance(source[i]))/(luminance(target[i])-luminance(source[i])))}
+        val paint=Paint();var colors=source
+        val bridge=object:Drawable(){
+            override fun draw(canvas:Canvas){var left=0f;for(i in 0..2){paint.color=colors[i];canvas.drawRect(left,0f,ends[i].toFloat(),top.toFloat(),paint);left=ends[i].toFloat()}}
+            override fun setAlpha(alpha:Int){}
+            override fun setColorFilter(filter:ColorFilter?){}
+            @Deprecated("Drawable opacity") override fun getOpacity()=PixelFormat.OPAQUE
+        }
+        bridge.setBounds(0,0,host.width,top);host.overlay.add(bridge)
+        var inkChanged=false
+        ValueAnimator.ofFloat(0f,1f).apply{
+            duration=480;interpolator=android.view.animation.LinearInterpolator()
+            addUpdateListener {animation->
+                val ms=animation.currentPlayTime
+                colors=when{
+                    ms<120->IntArray(3){i->blend(source[i],midpoint[i],ms/120.0)}
+                    ms<360->midpoint
+                    else->IntArray(3){i->blend(midpoint[i],target[i],((ms-360)/120.0).coerceAtMost(1.0))}
+                }
+                bridge.invalidateSelf()
+                if(ms>=120 && !inkChanged){inkChanged=true;updateSystemBarAppearance(activity,dark)}
+            }
+            addListener(object:android.animation.AnimatorListenerAdapter(){
+                override fun onAnimationEnd(animation:android.animation.Animator){host.overlay.remove(bridge);finished()}
+            })
+            start()
         }
     }
     fun dark(context:Context):Boolean=FrontendTheme.dark(

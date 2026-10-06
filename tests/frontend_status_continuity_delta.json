@@ -2,17 +2,17 @@
   "schema": "V84_FRONTEND_STATUS_CONTINUITY_DELTA_R4",
   "baseHead": "391826265eb2e6deba74c47426b793e2809733b4",
   "ownerWorkPackage": "V84_PRODUCT_PLAN2_STATUS_CONTINUITY_FINAL_R4",
-  "scope": "Frontend-only one-time window configuration and frame-boundary theme/system bar appearance; no Backend delta",
+  "scope": "Frontend-only one-time window setup, frame-boundary palette, physical status-bar-only Owner-color contrast bridge; no Backend delta",
   "files": [
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob 7485ecec9872224dae33faf87a1d66bd37979489\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob ec9bd3f6cbdd08a4b09d19b5934404aba29e8044\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob c93e65396a04ba8cba6938d725368edbb7e95fb9\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
       "before": "100644 blob e95044128a1279af54864f872ade979db745dee9\tapp/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
-      "after": "100644 blob d0598931432af05f70eaec942e40148dbd35b001\tapp/src/main/java/com/zui/zuicontrol/OwnerWindow.kt"
+      "after": "100644 blob fd4cb8befab5b0d5636cbb525f55e2f3e6dce9e1\tapp/src/main/java/com/zui/zuicontrol/OwnerWindow.kt"
     }
   ]
 }
