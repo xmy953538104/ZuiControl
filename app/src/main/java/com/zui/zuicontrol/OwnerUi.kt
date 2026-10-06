@@ -156,8 +156,8 @@ internal class OwnerUi(val context: Context) {
         setPadding(0,px(if(small)6 else 0),0,px(if(small)6 else 0));minimumHeight=px(if(small)46 else 40)
         addView(icon(icon,fg,glyph).apply{background=shape(bg,if(small)10f else 12f);val p=px((size-glyph)/2f);setPadding(p,p,p,p)},LinearLayout.LayoutParams(px(size),px(size)).apply{marginEnd=px(if(small)12 else 14)})
         addView(column().apply{
-            addView(label(title,if(small)13f else 14f,if(small)accent else text,800))
-            addView(label(subtitle,11f,muted),LinearLayout.LayoutParams(-1,-2).apply{topMargin=px(if(small)2 else 3)})
+            addView(label(title,if(small)13f else 14f,if(small)accent else text,800),LinearLayout.LayoutParams(-1,if(small)-2 else px(19)))
+            addView(label(subtitle,11f,muted),LinearLayout.LayoutParams(-1,if(small)-2 else px(15)).apply{topMargin=px(if(small)2 else 3)})
         },LinearLayout.LayoutParams(0,-2,1f))
         addView(icon(R.drawable.owner_chevron,muted,16).apply{alpha=.6f},LinearLayout.LayoutParams(px(16),px(16)).apply{marginStart=px(if(small)12 else 14)})
         isFocusable=true;contentDescription=title;setOnClickListener{action()};press(this)

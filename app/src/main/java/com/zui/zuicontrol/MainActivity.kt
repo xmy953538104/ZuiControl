@@ -1262,7 +1262,9 @@ class MainActivity : Activity() {
             addView(chart(2,"温度 · quiet ℃",120),LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=dp(12)})
         },gap())
         detail.addView(note("功耗统计不含插电/不可用时段，曲线断档保留缺失；FPS 为 DISPLAY_MEASURED_FPS。"))
-        detail.addView(card().apply{setPadding(dp(18),dp(15),dp(18),dp(15));addView(owner.domainRow("线程运行记录","Top15 入榜线程 · 点击查看 CPU 时间线",R.drawable.owner_thread_list){if(!session.busy)readRecord(session.selected,true)})},gap())
+        // #viewMonitor .card.row overrides the generic row padding to 12×18.
+        // Native stroke is inset, so include the Owner 1px border in content inset.
+        detail.addView(card().apply{setPadding(dp(19),dp(13),dp(19),dp(13));addView(owner.domainRow("线程运行记录","Top15 入榜线程 · 点击查看 CPU 时间线",R.drawable.owner_thread_list){if(!session.busy)readRecord(session.selected,true)})},gap())
     }
 
     private fun settingsPage() {

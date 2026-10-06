@@ -22,7 +22,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob e86a05897239a9ecf387c33daddd30ef9f709a91\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob ef87f76c725d0f102f9b7e76e63ff952b9f13058\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob 7485ecec9872224dae33faf87a1d66bd37979489\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerCpuPicker.kt",
@@ -52,7 +52,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
       "before": "100644 blob 436203c60a91368fe4c876090852db3345eb65b6\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
-      "after": "100644 blob a678a2d445ef94fee8097e56ec34b501ed61139b\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+      "after": "100644 blob 64133691c1a75dee869c9ac6726c34d43d4c98e0\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
