@@ -343,7 +343,8 @@ class MainActivity : Activity() {
         val fresh = monitor.optLong("elapsedMs") > 0 && SystemClock.elapsedRealtime() - monitor.optLong("elapsedMs") in 0..monitor.optLong("ttlMs", 3500)
         val q = if (fresh) monitor.optDouble("quietC", -1.0) else -1.0
         val p = if (fresh) monitor.optDouble("powerW", -1.0) else -1.0
-        quietLabel?.text = number(q); powerLabel?.text = if (p < 0) "--" else number(p)
+        quietLabel?.apply { val value=number(q);if(text.toString()!=value)text=value }
+        powerLabel?.apply { val value=if(p<0)"--" else number(p);if(text.toString()!=value)text=value }
         ownerQuiet?.apply { tone = if (q >= 45) owner.tiers[3] else if (q >= 40) owner.tiers[2] else owner.accent; setFraction(if(q < 0) 0f else ((q-20)/30).toFloat()) }
         ownerPower?.apply { tone = if (p >= 14) owner.tiers[3] else if (p >= 7) owner.tiers[2] else owner.accent; setFraction(if(p < 0) 0f else (p/20).toFloat()) }
         ownerSwitch?.animate()?.translationX(owner.px(if(overlay.displayed)18 else 0).toFloat())?.setDuration(300)?.setInterpolator(OwnerUi.spring)?.start()
@@ -619,7 +620,7 @@ class MainActivity : Activity() {
                 addView(owner.icon(listOf(R.drawable.owner_temperature,R.drawable.owner_power,R.drawable.owner_health)[i],owner.muted,16),LinearLayout.LayoutParams(owner.px(16),owner.px(16)).apply{marginEnd=owner.px(7)})
                 addView(owner.label(title,12f,owner.sub,700))
             },LinearLayout.LayoutParams(-1,owner.px(22)))
-            val metric=owner.label("--",if(i==2)20f else 28f,owner.text,800)
+            val metric=owner.label("--",if(i==2)20f else 28f,owner.text,800).apply{if(i<2)fontFeatureSettings="tnum"}
             val values=owner.row().apply{
                 if(i==2){
                     val slot=FrameLayout(this@MainActivity).apply{clipChildren=true;addView(metric,FrameLayout.LayoutParams(-1,-1))};coreSlot=slot

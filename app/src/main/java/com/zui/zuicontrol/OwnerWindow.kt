@@ -98,13 +98,16 @@ internal object OwnerWindow {
                     ms<195->midpoint
                     else->IntArray(3){i->blend(midpoint[i],target[i],((ms-195)/85.0).coerceAtMost(1.0))}
                 }
-                // ZUI's clock and other icons change ink independently. Native
-                // R3 frames proved both near-black ink on the old dark rail
-                // and disappearing clock ink on the neutral light-to-dark
-                // rail. Keep endpoint rail contrast in BOTH directions and
-                // hand off40ms after requesting ink on this same timeline.
-                // App regions and the physical bridge use these SAME colors.
-                colors[0]=if(!inkChanged || ms-inkChangedAt<40)source[0] else target[0]
+                // Native R3 frames show a delayed clock ink during dark-to-light
+                // handoff. Cross the rail between20–70ms after the ink request
+                // so neither a late white clock nor an early dark clock lands
+                // on its own endpoint. Light-to-dark keeps its qualified40ms
+                // handoff. App and physical bridge use the SAME rail color.
+                colors[0]=when{
+                    !inkChanged->source[0]
+                    dark->if(ms-inkChangedAt<40)source[0] else target[0]
+                    else->blend(source[0],target[0],((ms-inkChangedAt-20)/50.0).coerceIn(0.0,1.0))
+                }
                 frame(animation.animatedFraction,colors)
                 bridge.invalidateSelf()
                 if(ms>=65 && !inkChanged){inkChanged=true;inkChangedAt=ms;updateSystemBarAppearance(activity,dark)}
