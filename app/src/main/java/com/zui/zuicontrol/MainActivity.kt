@@ -208,6 +208,11 @@ class MainActivity : Activity() {
         super.onResume(); visible = true; session.onChanged = changed; session.onControlsChanged = { if(visible) reconcileControlsLater() }
         session.ownedExternalFlow=false
         render();ControlsState.observe(controlsChanged); MonitorPresentation.observe(monitorChanged); load()
+        if(session.section=="monitor" && recordThreads && selectedThread==null)selectedRecord?.let{record->
+            val targets=mutableListOf<Pair<String,OwnerCpuSparklineView>>()
+            fun visit(view:View){if(view is OwnerCpuSparklineView)targets+=view.tag.toString() to view;else if(view is ViewGroup)for(i in 0 until view.childCount)visit(view.getChildAt(i))}
+            visit(detail);cpuSparklines.show(record,targets)
+        }
         ZuiControlQuickService.start(this)
         presentPending()
     }
@@ -403,6 +408,7 @@ class MainActivity : Activity() {
         }
         val next=ScrollView(this).apply{isFillViewport=false;isVerticalScrollBarEnabled=false;clipToPadding=false;addView(detail)}
         pageHost.addView(next,FrameLayout.LayoutParams(-1,-1))
+        ownerCanvas.requestApplyInsets()
         if(previous!=null){
             previous.animate().cancel();previous.importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
             next.alpha=0f;next.translationY=owner.px(6).toFloat()

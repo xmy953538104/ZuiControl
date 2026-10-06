@@ -117,7 +117,7 @@ internal fun OwnerUi.cpuThreadTable(record:JSONObject,loader:OwnerCpuSparklineLo
         val row=rows.getJSONArray(i);val key=row.optString(0);val name=row.optString(1)
         val texts=listOf(name+(if((same[name] ?: 0)>1)" · 同名 ${same[name]}"else ""),
             key.split(':').getOrNull(2).orEmpty(),"${number(row.optDouble(2))}%","${number(row.optDouble(3))}%",row.optLong(4).toString())
-        val spark=OwnerCpuSparklineView(context)
+        val spark=OwnerCpuSparklineView(context).apply{tag=key}
         targets+=key to spark
         addView(tableRow(texts.map{label(it,13f,text,700)}+spark,widths).apply{if(open!=null){isFocusable=true;contentDescription="查看 $name CPU 时间线";setOnClickListener{open(key,name)}}})
     }

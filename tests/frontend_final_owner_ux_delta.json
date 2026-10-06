@@ -22,7 +22,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob e86a05897239a9ecf387c33daddd30ef9f709a91\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob ef081ac9269ce0db2449cb651867d9a53bf0b6a7\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+      "after": "100644 blob 271af797e7ab51ea34ee5e956bb65fac06cc48c4\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerCpuPicker.kt",
@@ -32,7 +32,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerCpuSparklineView.kt",
       "before": "100644 blob c702894338522450de2e5e81c25f0a2822b4961e\tapp/src/main/java/com/zui/zuicontrol/OwnerCpuSparklineView.kt",
-      "after": "100644 blob d6af7421c3c1c13cb2350d08d4b7564ac36df906\tapp/src/main/java/com/zui/zuicontrol/OwnerCpuSparklineView.kt"
+      "after": "100644 blob 1ec5d129cb8234fef0f15fd3742936587b0338b2\tapp/src/main/java/com/zui/zuicontrol/OwnerCpuSparklineView.kt"
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerEffects.kt",
