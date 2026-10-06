@@ -68,7 +68,7 @@ internal object OwnerWindow {
         return Color.argb((Color.alpha(a)*(1-t)+Color.alpha(b)*t).roundToInt(),part(Color.red(a),Color.red(b)),part(Color.green(a),Color.green(b)),part(Color.blue(a),Color.blue(b)))
     }
     fun transitionSystemBars(activity:Activity,host:View,rail:View,master:View,
-        source:IntArray,target:IntArray,dark:Boolean,frame:(Float,IntArray)->Unit,finished:()->Unit){
+        source:IntArray,target:IntArray,dark:Boolean,railHandoffMs:Long,frame:(Float,IntArray)->Unit,finished:()->Unit){
         val top=host.rootWindowInsets?.let{insets->
             if(Build.VERSION.SDK_INT>=30)insets.getInsets(WindowInsets.Type.statusBars()).top else insets.systemWindowInsetTop
         } ?: 0
@@ -111,7 +111,7 @@ internal object OwnerWindow {
                 // Anchor the ink request after the neutral App buffer is
                 // submitted, so palette work cannot delay that same frame.
                 // Continue the SAME animator and matching physical/App colors.
-                val railReady=inkChanged && !(ms-inkChangedAt<30)
+                val railReady=inkChanged && !(ms-inkChangedAt<railHandoffMs)
                 colors[0]=if(railReady)target[0] else source[0]
                 frame(animation.animatedFraction,colors)
                 bridge.invalidateSelf()
