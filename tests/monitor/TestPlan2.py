@@ -4,6 +4,19 @@ import unittest
 APP=Path(__file__).resolve().parents[2]/'app/src/main/java/com/zui/zuicontrol'
 def read(name):return (APP/name).read_text(encoding='utf8')
 class Plan2(unittest.TestCase):
+ def test_settings_theme_selection_follows_preference_on_same_palette(self):
+  main=read('MainActivity.kt')
+  settings=main.split('private fun settingsPage()',1)[1].split('private var themeFramePending',1)[0]
+  theme=main.split('private fun theme(theme: String)',1)[1].split('private fun monitorGuidance',1)[0]
+  self.assertEqual(settings.count('val themeSegment=segment('),1)
+  self.assertIn('bindPresentation{themeSegment.showSelection(values.indexOf(prefs.getString("theme","system")))}',settings)
+  pref=theme.index('prefs.edit().putString("theme",theme).apply()')
+  rebind=theme.index('pageBindings.toList().forEach{it()}')
+  self.assertLess(pref,rebind)
+  self.assertLess(rebind,theme.index('if(themeFramePending)return'))
+  self.assertLess(rebind,theme.index('if(dark==owner.dark)'))
+  for forbidden in ('render()', 'removeAllViews', 'recreate(', 'gateway', 'ZuiControlRequest'):
+   self.assertNotIn(forbidden,theme)
  def test_status_theme_does_not_reconfigure_window(self):
   main=read('MainActivity.kt');window=read('OwnerWindow.kt')
   theme=main.split('private fun theme(theme: String)',1)[1].split('private fun monitorGuidance',1)[0]

@@ -1286,7 +1286,9 @@ class MainActivity : Activity() {
                 detail.addView(card().apply{
                     setPadding(dp(18),dp(14),dp(18),dp(14));addView(owner.label("显示",11.5f,owner.muted,800),owner.gap(4))
                     val values=listOf("system","dark","light")
-                    addView(owner.settingsRow("界面主题","侧边栏按钮可快速切换深色 / 浅色",segment(listOf("跟随系统", "深色", "浅色"),values.indexOf(prefs.getString("theme","system"))){theme(values[it])}.apply{layoutParams=LinearLayout.LayoutParams(dp(220),dp(34))}))
+                    val themeSegment=segment(listOf("跟随系统", "深色", "浅色"),values.indexOf(prefs.getString("theme","system"))){theme(values[it])} as OwnerSegment
+                    addView(owner.settingsRow("界面主题","侧边栏按钮可快速切换深色 / 浅色",themeSegment.apply{layoutParams=LinearLayout.LayoutParams(dp(220),dp(34))}))
+                    bindPresentation{themeSegment.showSelection(values.indexOf(prefs.getString("theme","system")))}
                 },gap())
             }
             1 -> gpuDefaultsPage()
@@ -1334,6 +1336,7 @@ class MainActivity : Activity() {
     private fun theme(theme: String) {
         if(prefs.getString("theme","system")==theme && OwnerWindow.dark(this)==owner.dark)return
         prefs.edit().putString("theme",theme).apply()
+        pageBindings.toList().forEach{it()}
         if(themeFramePending)return
         themeFramePending=true
         // Commit the palette and status-region bridge at the next presentation

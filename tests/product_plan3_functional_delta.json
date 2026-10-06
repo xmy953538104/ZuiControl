@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "workPackage": "V84_PRODUCT_PLAN3_FUNCTIONAL_COMPLETION_R1",
+  "baseHead": "847d7f02f80a95f818930d5f0af0aa32256dba53",
+  "OwnerAuthorization": "Explicit Plan2 Settings microclosure followed by narrow Power/GPU functional corrections; preserve all historical manifests",
+  "bindingIdsChanged": [],
+  "files": [
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "before": "100644 blob c93e65396a04ba8cba6938d725368edbb7e95fb9\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob df6be7e692de1c08ca98d1ab48446b6717d42d60\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "beforeSha256": "1d62a039fa69ea86fe9632dd858e3bbbda5472d5faba363032d0464609072ee8",
+      "afterSha256": "a6f9be6fc5072f2db318b07cdca2ea628aba55aeaba4f77136fe0dc0e0fcb2bd",
+      "hunks": [
+        {
+          "before": "                detail.addView(card().apply{\n                    setPadding(dp(18),dp(14),dp(18),dp(14));addView(owner.label(\"显示\",11.5f,owner.muted,800),owner.gap(4))\n                    val values=listOf(\"system\",\"dark\",\"light\")\n                    addView(owner.settingsRow(\"界面主题\",\"侧边栏按钮可快速切换深色 / 浅色\",segment(listOf(\"跟随系统\", \"深色\", \"浅色\"),values.indexOf(prefs.getString(\"theme\",\"system\"))){theme(values[it])}.apply{layoutParams=LinearLayout.LayoutParams(dp(220),dp(34))}))\n                },gap())\n            }\n            1 -> gpuDefaultsPage()\n",
+          "after": "                detail.addView(card().apply{\n                    setPadding(dp(18),dp(14),dp(18),dp(14));addView(owner.label(\"显示\",11.5f,owner.muted,800),owner.gap(4))\n                    val values=listOf(\"system\",\"dark\",\"light\")\n                    val themeSegment=segment(listOf(\"跟随系统\", \"深色\", \"浅色\"),values.indexOf(prefs.getString(\"theme\",\"system\"))){theme(values[it])} as OwnerSegment\n                    addView(owner.settingsRow(\"界面主题\",\"侧边栏按钮可快速切换深色 / 浅色\",themeSegment.apply{layoutParams=LinearLayout.LayoutParams(dp(220),dp(34))}))\n                    bindPresentation{themeSegment.showSelection(values.indexOf(prefs.getString(\"theme\",\"system\")))}\n                },gap())\n            }\n            1 -> gpuDefaultsPage()\n"
+        },
+        {
+          "before": "    private fun theme(theme: String) {\n        if(prefs.getString(\"theme\",\"system\")==theme && OwnerWindow.dark(this)==owner.dark)return\n        prefs.edit().putString(\"theme\",theme).apply()\n        if(themeFramePending)return\n        themeFramePending=true\n        // Commit the palette and status-region bridge at the next presentation\n",
+          "after": "    private fun theme(theme: String) {\n        if(prefs.getString(\"theme\",\"system\")==theme && OwnerWindow.dark(this)==owner.dark)return\n        prefs.edit().putString(\"theme\",theme).apply()\n        pageBindings.toList().forEach{it()}\n        if(themeFramePending)return\n        themeFramePending=true\n        // Commit the palette and status-region bridge at the next presentation\n"
+        }
+      ]
+    }
+  ]
+}
