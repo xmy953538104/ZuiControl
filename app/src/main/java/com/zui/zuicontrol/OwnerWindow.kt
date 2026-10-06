@@ -89,7 +89,7 @@ internal object OwnerWindow {
             @Deprecated("Drawable opacity") override fun getOpacity()=PixelFormat.OPAQUE
         }
         bridge.setBounds(0,0,host.width,top);host.overlay.add(bridge)
-        var inkChanged=false
+        var inkChanged=false;var inkChangedAt=0L
         ValueAnimator.ofFloat(0f,1f).apply{
             duration=480;interpolator=android.view.animation.LinearInterpolator()
             addUpdateListener {animation->
@@ -99,8 +99,15 @@ internal object OwnerWindow {
                     ms<360->midpoint
                     else->IntArray(3){i->blend(midpoint[i],target[i],((ms-360)/120.0).coerceAtMost(1.0))}
                 }
+                // ZUI's clock fades white -> black for about120ms while the
+                // other status icons switch independently. Its intermediate
+                // gray ink must not meet the neutral bridge. Keep the Owner
+                // source rail until the clock is in the interval where both
+                // source and target rail backgrounds contrast, then hand off
+                // once. Never animate the app tree or leave an opaque bar.
+                if(!dark)colors[0]=if(!inkChanged || ms-inkChangedAt<60)source[0] else target[0]
                 bridge.invalidateSelf()
-                if(ms>=120 && !inkChanged){inkChanged=true;updateSystemBarAppearance(activity,dark)}
+                if(ms>=120 && !inkChanged){inkChanged=true;inkChangedAt=ms;updateSystemBarAppearance(activity,dark)}
             }
             addListener(object:android.animation.AnimatorListenerAdapter(){
                 override fun onAnimationEnd(animation:android.animation.Animator){host.overlay.remove(bridge);finished()}

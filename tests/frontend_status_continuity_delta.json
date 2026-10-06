@@ -12,7 +12,7 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
       "before": "100644 blob e95044128a1279af54864f872ade979db745dee9\tapp/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
-      "after": "100644 blob fd4cb8befab5b0d5636cbb525f55e2f3e6dce9e1\tapp/src/main/java/com/zui/zuicontrol/OwnerWindow.kt"
+      "after": "100644 blob bb9cb713f991153433859788dc0e81338c3001c9\tapp/src/main/java/com/zui/zuicontrol/OwnerWindow.kt"
     }
   ]
 }
