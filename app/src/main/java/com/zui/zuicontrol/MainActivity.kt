@@ -36,6 +36,7 @@ class MainActivity : Activity() {
     private lateinit var pageHost:FrameLayout
     private var masterSection=""
     private var masterFingerprint=""
+    private var masterSubtitle:TextView?=null
     private var masterList:LinearLayout?=null
     private val railBindings=mutableListOf<()->Unit>()
     private val masterSelectionBindings=mutableListOf<()->Unit>()
@@ -384,6 +385,7 @@ class MainActivity : Activity() {
             masterFingerprint=listFingerprint;masterList?.let{populateList(it)};OwnerRenderTrace.event("MASTER_LIST_CHANGED")
         }
         masterSelectionBindings.forEach{it()}
+        masterSubtitle?.text=masterSubtitleText()
         val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage/$recordThreads/${selectedThread?.optString("key")}/$rawPage/${preview?.hashCode()}/${caps.isNotEmpty()}/${session.appDraft!=null}/${session.ruleDraft!=null}/${selectedRecord?.optLong("recordId")}/${analysisPage && analysis!=null}"
         if(page!=shownPage) {
         shownPage=page;cpuSparklines.cancel();pageBindings.clear()
@@ -426,12 +428,12 @@ class MainActivity : Activity() {
     }
     private fun buildMaster() {
         val titles=mapOf("tune" to "应用策略","thread" to "线程策略","monitor" to "监测记录","settings" to "设置")
-        val subtitle=when(session.section){"tune"->"${policies?.apps?.size ?: 0} 个独立配置";"thread"->"${installed.count{model?.appProfile(it.packageName)!=null}} 个应用 · ${model?.profiles?.values?.sumOf{it.rules.size} ?: 0} 条特殊线程规则";"monitor"->"${records.length()} 条记录 · 每个应用保留最近一次";"settings"->"ZuiControl 偏好与工具";else->""}
         master.addView(owner.row().apply {
             setPadding(owner.px(18),owner.px(22),owner.px(18),owner.px(12))
             addView(owner.column().apply{
                 addView(owner.label(titles.getValue(session.section),19f,owner.text,800),LinearLayout.LayoutParams(-1,owner.px(24)))
-                addView(owner.label(subtitle,11f,owner.muted),LinearLayout.LayoutParams(-1,owner.px(14)).apply{topMargin=owner.px(3)})
+                masterSubtitle=owner.label(masterSubtitleText(),11f,owner.muted)
+                addView(masterSubtitle,LinearLayout.LayoutParams(-1,owner.px(14)).apply{topMargin=owner.px(3)})
             },LinearLayout.LayoutParams(0,-2,1f))
             if(session.section in setOf("tune","thread"))addView(owner.icon(R.drawable.owner_plus,Color.WHITE,18).apply{
                 background=owner.shadow(owner.shape(owner.accent,11f),11f,14f,6f,-4f,owner.accentGlow);setPadding(owner.px(8),owner.px(8),owner.px(8),owner.px(8))
@@ -456,6 +458,7 @@ class MainActivity : Activity() {
         }
         master.addView(ScrollView(this).apply{isVerticalScrollBarEnabled=false;addView(list)},LinearLayout.LayoutParams(-1,0,1f))
     }
+    private fun masterSubtitleText()=when(session.section){"tune"->"${policies?.apps?.size ?: 0} 个独立配置";"thread"->"${installed.count{model?.appProfile(it.packageName)!=null}} 个应用 · ${model?.profiles?.values?.sumOf{it.rules.size} ?: 0} 条特殊线程规则";"monitor"->"${records.length()} 条记录 · 每个应用保留最近一次";"settings"->"ZuiControl 偏好与工具";else->""}
     private fun ownerAppIcon(pkg: String,size: Int=40): View=ImageView(this).apply {
         runCatching{packageManager.getApplicationIcon(pkg)}.onSuccess{setImageDrawable(it)}
         scaleType=ImageView.ScaleType.FIT_CENTER;setPadding(0,0,0,0)
