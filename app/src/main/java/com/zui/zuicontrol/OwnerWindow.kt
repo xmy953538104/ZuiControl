@@ -88,6 +88,10 @@ internal object OwnerWindow {
             @Deprecated("Drawable opacity") override fun getOpacity()=PixelFormat.OPAQUE
         }
         bridge.setBounds(0,0,host.width,top);host.overlay.add(bridge)
+        fun traceCommit(kind:String,ms:Long){
+            if(Build.VERSION.SDK_INT>=29 && host.isHardwareAccelerated && android.util.Log.isLoggable("OwnerRenderTrace",android.util.Log.VERBOSE))
+                host.viewTreeObserver.registerFrameCommitCallback{OwnerRenderTrace.event(kind,"dark=$dark;playTime=$ms")}
+        }
         var inkChanged=false;var inkChangedAt=0L;var railChanged=false
         ValueAnimator.ofFloat(0f,1f).apply{
             duration=280;interpolator=android.view.animation.LinearInterpolator()
@@ -98,20 +102,25 @@ internal object OwnerWindow {
                 if(ms>=65 && !inkChanged){
                     inkChanged=true;inkChangedAt=ms;updateSystemBarAppearance(activity,dark)
                     OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;playTime=$ms")
+                    traceCommit("STATUS_INK_FRAME_COMMITTED",ms)
                 }
                 colors=when{
                     ms<65->IntArray(3){i->blend(source[i],midpoint[i],ms/65.0)}
                     ms<195->midpoint
                     else->IntArray(3){i->blend(midpoint[i],target[i],((ms-195)/85.0).coerceAtMost(1.0))}
                 }
-                // ZUI's120ms tint animation crosses intermediate rail shades.
-                // Keep endpoint contrast through the initial SystemUI tint frames.
-                // Both rail and its physical bridge use the SAME color.
-                val railReady=inkChanged && !(ms-inkChangedAt<30)
+                // Submit the rail on the next animation frame after the ink
+                // request. A second frame deadline also adds the App buffer's
+                // submission delay while SystemUI is already changing the ink.
+                // The physical bridge and App rail still consume the SAME color.
+                val railReady=inkChanged && ms>inkChangedAt
                 colors[0]=if(railReady)target[0] else source[0]
                 frame(animation.animatedFraction,colors)
                 bridge.invalidateSelf()
-                if(railReady && !railChanged){railChanged=true;OwnerRenderTrace.event("STATUS_RAIL_HANDOFF","dark=$dark;playTime=$ms")}
+                if(railReady && !railChanged){
+                    railChanged=true;OwnerRenderTrace.event("STATUS_RAIL_HANDOFF","dark=$dark;playTime=$ms")
+                    traceCommit("STATUS_RAIL_FRAME_COMMITTED",ms)
+                }
             }
             addListener(object:android.animation.AnimatorListenerAdapter(){
                 override fun onAnimationEnd(animation:android.animation.Animator){frame(1f,target);host.overlay.remove(bridge);finished()}
