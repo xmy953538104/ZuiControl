@@ -32,6 +32,19 @@
       ]
     },
     {
+      "path": "app/src/main/java/com/zui/zuicontrol/FrontendPackages.kt",
+      "before": null,
+      "after": "100644 blob 3983f3155dc92ead3ded2ce630b1dd37c48af0be\tapp/src/main/java/com/zui/zuicontrol/FrontendPackages.kt",
+      "beforeSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterSha256": "6977ce140e6ca36317d3f0400edb20dc62a175e58d3498fa85842370abab8b15",
+      "hunks": [
+        {
+          "before": "",
+          "after": "package com.zui.zuicontrol\n\nimport android.content.BroadcastReceiver\nimport android.content.Context\nimport android.content.Intent\nimport android.content.IntentFilter\nimport android.content.pm.ApplicationInfo\nimport android.graphics.drawable.Drawable\nimport java.util.Locale\n\n/** Process metadata cache; package events invalidate it, never policy events. */\ninternal object FrontendPackages {\n    data class Entry(val info:ApplicationInfo,val label:String,val icon:Drawable)\n    data class Inventory(val version:Long,val entries:List<Entry>)\n    @Volatile var version=0L;private set\n    @Volatile private var cached:Inventory?=null\n    private var registered=false\n    private val listeners=linkedSetOf<()->Unit>()\n    fun observe(context:Context,listener:()->Unit) {\n        listeners.add(listener)\n        if(registered)return\n        val filter=IntentFilter().apply{addAction(Intent.ACTION_PACKAGE_ADDED);addAction(Intent.ACTION_PACKAGE_REMOVED);addAction(Intent.ACTION_PACKAGE_CHANGED);addDataScheme(\"package\")}\n        context.applicationContext.registerReceiver(object:BroadcastReceiver(){\n            override fun onReceive(context:Context,intent:Intent){version++;cached=null;listeners.toList().forEach{it()}}\n        },filter)\n        registered=true\n    }\n    fun remove(listener:()->Unit){listeners.remove(listener)}\n    @Suppress(\"DEPRECATION\")\n    fun read(context:Context):Inventory {\n        cached?.takeIf{it.version==version}?.let{return it}\n        val observed=version;val pm=context.packageManager\n        val next=Inventory(observed,pm.getInstalledApplications(0).mapNotNull{info->runCatching{\n            Entry(info,info.loadLabel(pm).toString(),info.loadIcon(pm))\n        }.getOrNull()}.sortedBy{it.label.lowercase(Locale.ROOT)})\n        if(observed==version)cached=next\n        return next\n    }\n}\n"
+        }
+      ]
+    },
+    {
       "path": "app/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
       "before": "100644 blob 440274dbde9d292d0fc8040b709089f0dbd48076\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
       "after": "100644 blob 389288fe87c57869d78728218bbe420ab851dc78\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
@@ -53,11 +66,24 @@
       ]
     },
     {
+      "path": "app/src/main/java/com/zui/zuicontrol/FrontendTransport.kt",
+      "before": null,
+      "after": "100644 blob 04fc88d1cd3a16e782000fe4d7ccee3b664fb73e\tapp/src/main/java/com/zui/zuicontrol/FrontendTransport.kt",
+      "beforeSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterSha256": "8d69a3ef7e23dfa3e6c0f6350367d5279c706d7e281aad82a8d971af8cde7921",
+      "hunks": [
+        {
+          "before": "",
+          "after": "package com.zui.zuicontrol\n\nimport java.util.concurrent.Executors\nimport java.util.concurrent.LinkedBlockingQueue\nimport java.util.concurrent.ThreadPoolExecutor\nimport java.util.concurrent.TimeUnit\n\n/** MainActivity and QuickService share this process and the one durable request slot. */\ninternal object FrontendTransport {\n    val commands = Executors.newSingleThreadExecutor { Thread(it, \"ZuiCommandLane\") }\n    val reads = ThreadPoolExecutor(2, 2, 0, TimeUnit.MILLISECONDS, LinkedBlockingQueue(64),\n        { Thread(it, \"ZuiDirectRead\") }, ThreadPoolExecutor.AbortPolicy())\n}\n"
+        }
+      ]
+    },
+    {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": "100644 blob 39004c2473cae6523be3a6721b81f8924072d69a\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "after": "100644 blob 05f6f113f9386d1836216d21d0d6acd70ce920bc\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob 208e2acaeecc56700d766f71e964bda7c62b7839\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "beforeSha256": "129a4f4234cd88443d62f2ed758620ebb39c3a496e15d62d139acc4920ac9a99",
-      "afterSha256": "f8283daacdf0ae5642ea9272affb21d79cca8b0ffed4654fec632996755ffdb3",
+      "afterSha256": "55d82edcc8454e065b15b269332e2f7f722b8fa431934e83708d05f137c51084",
       "hunks": [
         {
           "before": "    private var ruleError = \"\"\n    private var records = JSONArray()\n    private var installed = emptyList<ApplicationInfo>()\n    private var query = \"\"\n    private var filter = 0\n    private var latest get() = session.latest; set(v) { session.latest = v }\n",
@@ -106,6 +132,10 @@
         {
           "before": "            list.addView(if(session.section == \"tune\") ownerListRow(pkg,title,subtitle,session.selected==pkg){selectWithGuard(pkg)}\n                else listRow(pkg, title, subtitle, session.selected == pkg) { selectWithGuard(pkg) })\n        }\n        if (list.childCount == 0) list.addView(note(if (reading) \"正在读取…\" else \"暂无应用\"))\n    }\n    private fun select(pkg: String) {\n        val restoring=session.selected!=pkg && session.hasDraftFor(session.section,pkg)\n        if(!restoring)session.clearDrafts()\n        selectedRecord = null;selectedThread=null;recordThreads=false;rawPage=false; recordRequested = false; analysis = null; analysisError = \"\"\n        session.selected = if (session.selected == pkg) \"\" else pkg\n        if (session.selected.isEmpty()) { render(); return }\n        when (session.section) {\n            \"tune\" -> { val d = policies?.apps?.firstOrNull { it.draft.packageName == pkg }?.draft ?: return\n                if(!restoring){session.originalApp = d; session.appDraft = d}; render() }\n            \"thread\" -> { if(!restoring)openRule(pkg); render(); loadAnalysis(pkg) }\n            else -> { render(); readRecord(pkg) }\n        }\n",
           "after": "            list.addView(if(session.section == \"tune\") ownerListRow(pkg,title,subtitle,session.selected==pkg){selectWithGuard(pkg)}\n                else listRow(pkg, title, subtitle, session.selected == pkg) { selectWithGuard(pkg) })\n        }\n        if (list.childCount == 0) list.addView(note(if (loading.isNotEmpty()) \"正在读取…\" else \"暂无应用\"))\n    }\n    private fun select(pkg: String) {\n        val restoring=session.selected!=pkg && session.hasDraftFor(session.section,pkg)\n        if(!restoring)session.clearDrafts()\n        selectedRecord = null;selectedThread=null;recordThreads=false;rawPage=false; recordRequested = false; analysis = null; analysisError = \"\"\n        session.selected = if (session.selected == pkg && session.section!=\"monitor\") \"\" else pkg\n        if (session.selected.isEmpty()) { render(); return }\n        when (session.section) {\n            \"tune\" -> { val d = policies?.apps?.firstOrNull { it.draft.packageName == pkg }?.draft ?: return\n                if(!restoring){session.originalApp = d; session.appDraft = d};loadAppMetadata(pkg); render() }\n            \"thread\" -> { if(!restoring)openRule(pkg); render(); loadAnalysis(pkg) }\n            else -> { render(); readRecord(pkg) }\n        }\n"
+        },
+        {
+          "before": "        bindPresentation{\n            val tier=GpuDefaultsDraft.modes.indexOf(mode.displayed).coerceAtLeast(0)\n            modeChip.background=owner.shape(owner.chipBg[tier+1],999f)\n            (modeChip.getChildAt(1) as TextView).apply{text=\"${modeTitle(mode.displayed)}模式\";setTextColor(owner.chipFg[tier+1])}\n        }\n        detail.addView(owner.title(\"系统全局状态\",\"系统关键性能参数与组件运行情况\",trailing=modeChip))\n        val stats=owner.row()\n",
+          "after": "        bindPresentation{\n            val tier=GpuDefaultsDraft.modes.indexOf(mode.displayed).coerceAtLeast(0)\n            modeChip.background=owner.shape(owner.chipBg[tier+1],999f)\n            (modeChip.getChildAt(1) as TextView).apply{val caption=\"${modeTitle(mode.displayed)}模式\";if(text.toString()!=caption)text=caption;setTextColor(owner.chipFg[tier+1])}\n        }\n        detail.addView(owner.title(\"系统全局状态\",\"系统关键性能参数与组件运行情况\",trailing=modeChip))\n        val stats=owner.row()\n"
         },
         {
           "before": "                    metric.text=if(health.all{it.state==BackendHealth.State.OK})\"5/5 正常\" else bad?.component ?: \"状态未知\"\n                    coreLabel=metric;if(bad!=null)metric.setTextColor(if(bad.state==BackendHealth.State.FAILED)owner.inks[3] else owner.inks[2])\n                    handler.postDelayed(coreTicker,2000);box.setOnClickListener{coreHealth()};box.contentDescription=\"核心组件详情\";box.isFocusable=true\n                    OwnerMeter(this,owner,segments=health.map{when(it.state){BackendHealth.State.OK->owner.accent;BackendHealth.State.DEGRADED->owner.tiers[2];BackendHealth.State.FAILED->owner.tiers[3];else->owner.line2}})\n                }\n            }\n            box.addView(meter,LinearLayout.LayoutParams(-1,owner.px(6)))\n",
@@ -312,32 +342,6 @@
         {
           "before": "import java.util.concurrent.TimeUnit\n\nclass FrontendV3Test {\n    private fun gpuState(generation:Long=458) = \"ok=1\\npolicyGeneration=$generation\\n\" +\n        GpuDefaultsDraft.modes.joinToString(\"\\n\") { \"gpuGlobal=0|$it|231|903\" }\n    @Test fun gpuSameContextNavigationPreservesCleanAndDirtyModels() {\n",
           "after": "import java.util.concurrent.TimeUnit\n\nclass FrontendV3Test {\n    @Test fun directReadDoesNotHoldCommandsOrMutationBusy() {\n        val entered=java.util.concurrent.CountDownLatch(1);val release=java.util.concurrent.CountDownLatch(1)\n        val callbacks=LinkedBlockingQueue<()->Unit>();val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){callbacks.put(it)}\n        try {\n            session.directRead{entered.countDown();check(release.await(5,TimeUnit.SECONDS))}\n            check(entered.await(5,TimeUnit.SECONDS));assertFalse(session.busy)\n            session.appDraft=ZuiControlClient.AppPolicyDraft(\"org.test.app\",120,\"balance\",ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,10)\n            session.originalApp=session.appDraft\n            session.appDraft=session.appDraft!!.copy(refreshHz=90);assertTrue(session.appDirty)\n            session.intent(session.refresh,60){ZuiControlClient.Reply(true,\"ACK\")}\n            checkNotNull(callbacks.poll(1,TimeUnit.SECONDS)).invoke()\n            assertEquals(60,session.refresh.confirmed);assertFalse(session.busy);assertTrue(session.appDirty)\n        }finally{release.countDown();session.close()}\n    }\n    @Test fun defaultSessionsAndNotificationUseOneProcessCommandLane() {\n        val entered=java.util.concurrent.CountDownLatch(1);val release=java.util.concurrent.CountDownLatch(1)\n        val complete=java.util.concurrent.CountDownLatch(1);val events=java.util.Collections.synchronizedList(mutableListOf<String>())\n        val callbacks=LinkedBlockingQueue<()->Unit>()\n        val first=FrontendSession(FakeFrontendGateway(),0,post={callbacks.put(it)})\n        val second=FrontendSession(FakeFrontendGateway(),0,post={callbacks.put(it)})\n        try {\n            first.read{events+=\"read-start\";entered.countDown();check(release.await(5,TimeUnit.SECONDS));events+=\"read-consumed\"}\n            check(entered.await(5,TimeUnit.SECONDS))\n            second.intent(second.refresh,90){events+=\"policy\";ZuiControlClient.Reply(true,\"ACK\")}\n            FrontendTransport.commands.execute{events+=\"quick\";complete.countDown()}\n            assertFalse(complete.await(100,TimeUnit.MILLISECONDS));assertEquals(listOf(\"read-start\"),events.toList())\n            first.close();release.countDown();check(complete.await(5,TimeUnit.SECONDS))\n            checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()\n            assertEquals(listOf(\"read-start\",\"read-consumed\",\"policy\",\"quick\"),events.toList());assertEquals(90,second.refresh.confirmed)\n        }finally{release.countDown();first.close();second.close()}\n    }\n    @Test fun selectedAppProjectionUpdatesCleanDetailAndPreservesDirtyCas() {\n        val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){}\n        try {\n            val old=ZuiControlClient.AppPolicyDraft(\"org.test.app\",120,\"balance\",ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,10)\n            session.selected=old.packageName;session.appDraft=old;session.originalApp=old\n            val fresh=old.copy(refreshHz=90,uperfMode=\"fast\",gpuPolicy=ZuiControlClient.GpuPolicy.CUSTOM,expectedGeneration=11,gpuMinMHz=422,gpuMaxMHz=903)\n            fun projection(d:ZuiControlClient.AppPolicyDraft)=ZuiControlClient.AppPolicies(0,d.expectedGeneration,listOf(ZuiControlClient.AppPolicyRead(d,422,903)))\n            session.observeAppPolicies(projection(fresh));assertEquals(fresh,session.appDraft);assertEquals(fresh,session.originalApp);assertFalse(session.appDirty)\n            val local=fresh.copy(refreshHz=60);session.appDraft=local\n            session.observeAppPolicies(projection(fresh.copy(expectedGeneration=12,refreshHz=165)))\n            assertEquals(local,session.appDraft);assertEquals(fresh,session.originalApp);assertEquals(12L,session.appAuthorityGeneration)\n            assertEquals(11L,session.appDraft!!.expectedGeneration);assertTrue(session.appDirty)\n            session.observeAppPolicies(projection(old));assertEquals(12L,session.appAuthorityGeneration)\n        }finally{session.close()}\n    }\n    private fun gpuState(generation:Long=458) = \"ok=1\\npolicyGeneration=$generation\\n\" +\n        GpuDefaultsDraft.modes.joinToString(\"\\n\") { \"gpuGlobal=0|$it|231|903\" }\n    @Test fun gpuSameContextNavigationPreservesCleanAndDirtyModels() {\n"
-        }
-      ]
-    },
-    {
-      "path": "app/src/main/java/com/zui/zuicontrol/FrontendTransport.kt",
-      "before": null,
-      "after": "100644 blob 04fc88d1cd3a16e782000fe4d7ccee3b664fb73e\tapp/src/main/java/com/zui/zuicontrol/FrontendTransport.kt",
-      "beforeSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "afterSha256": "8d69a3ef7e23dfa3e6c0f6350367d5279c706d7e281aad82a8d971af8cde7921",
-      "hunks": [
-        {
-          "before": "",
-          "after": "package com.zui.zuicontrol\n\nimport java.util.concurrent.Executors\nimport java.util.concurrent.LinkedBlockingQueue\nimport java.util.concurrent.ThreadPoolExecutor\nimport java.util.concurrent.TimeUnit\n\n/** MainActivity and QuickService share this process and the one durable request slot. */\ninternal object FrontendTransport {\n    val commands = Executors.newSingleThreadExecutor { Thread(it, \"ZuiCommandLane\") }\n    val reads = ThreadPoolExecutor(2, 2, 0, TimeUnit.MILLISECONDS, LinkedBlockingQueue(64),\n        { Thread(it, \"ZuiDirectRead\") }, ThreadPoolExecutor.AbortPolicy())\n}\n"
-        }
-      ]
-    },
-    {
-      "path": "app/src/main/java/com/zui/zuicontrol/FrontendPackages.kt",
-      "before": null,
-      "after": "100644 blob 3983f3155dc92ead3ded2ce630b1dd37c48af0be\tapp/src/main/java/com/zui/zuicontrol/FrontendPackages.kt",
-      "beforeSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "afterSha256": "6977ce140e6ca36317d3f0400edb20dc62a175e58d3498fa85842370abab8b15",
-      "hunks": [
-        {
-          "before": "",
-          "after": "package com.zui.zuicontrol\n\nimport android.content.BroadcastReceiver\nimport android.content.Context\nimport android.content.Intent\nimport android.content.IntentFilter\nimport android.content.pm.ApplicationInfo\nimport android.graphics.drawable.Drawable\nimport java.util.Locale\n\n/** Process metadata cache; package events invalidate it, never policy events. */\ninternal object FrontendPackages {\n    data class Entry(val info:ApplicationInfo,val label:String,val icon:Drawable)\n    data class Inventory(val version:Long,val entries:List<Entry>)\n    @Volatile var version=0L;private set\n    @Volatile private var cached:Inventory?=null\n    private var registered=false\n    private val listeners=linkedSetOf<()->Unit>()\n    fun observe(context:Context,listener:()->Unit) {\n        listeners.add(listener)\n        if(registered)return\n        val filter=IntentFilter().apply{addAction(Intent.ACTION_PACKAGE_ADDED);addAction(Intent.ACTION_PACKAGE_REMOVED);addAction(Intent.ACTION_PACKAGE_CHANGED);addDataScheme(\"package\")}\n        context.applicationContext.registerReceiver(object:BroadcastReceiver(){\n            override fun onReceive(context:Context,intent:Intent){version++;cached=null;listeners.toList().forEach{it()}}\n        },filter)\n        registered=true\n    }\n    fun remove(listener:()->Unit){listeners.remove(listener)}\n    @Suppress(\"DEPRECATION\")\n    fun read(context:Context):Inventory {\n        cached?.takeIf{it.version==version}?.let{return it}\n        val observed=version;val pm=context.packageManager\n        val next=Inventory(observed,pm.getInstalledApplications(0).mapNotNull{info->runCatching{\n            Entry(info,info.loadLabel(pm).toString(),info.loadIcon(pm))\n        }.getOrNull()}.sortedBy{it.label.lowercase(Locale.ROOT)})\n        if(observed==version)cached=next\n        return next\n    }\n}\n"
         }
       ]
     }

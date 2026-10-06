@@ -609,7 +609,7 @@ class MainActivity : Activity() {
         bindPresentation{
             val tier=GpuDefaultsDraft.modes.indexOf(mode.displayed).coerceAtLeast(0)
             modeChip.background=owner.shape(owner.chipBg[tier+1],999f)
-            (modeChip.getChildAt(1) as TextView).apply{text="${modeTitle(mode.displayed)}模式";setTextColor(owner.chipFg[tier+1])}
+            (modeChip.getChildAt(1) as TextView).apply{val caption="${modeTitle(mode.displayed)}模式";if(text.toString()!=caption)text=caption;setTextColor(owner.chipFg[tier+1])}
         }
         detail.addView(owner.title("系统全局状态","系统关键性能参数与组件运行情况",trailing=modeChip))
         val stats=owner.row()
