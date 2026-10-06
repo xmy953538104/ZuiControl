@@ -26,6 +26,7 @@ class GpuRangeBar(context: Context, initial: GpuRanges.Range) : View(context) {
     fun showRange(value:GpuRanges.Range){if(value!=range){range=value;animateRange(value)}}
     private val owner = OwnerUi(context)
     var tone: Int = owner.accent
+    fun changeTheme(dark:Boolean){val index=owner.tiers.indexOf(tone);owner.changeTheme(dark);tone=if(index>=0)owner.tiers[index]else owner.accent;invalidate()}
     private var shownMin = GpuRanges.opps.indexOf(initial.min).toFloat()
     private var shownMax = GpuRanges.opps.indexOf(initial.max).toFloat()
     private var motion: ValueAnimator? = null

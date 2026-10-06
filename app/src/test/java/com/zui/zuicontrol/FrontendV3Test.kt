@@ -189,6 +189,30 @@ class FrontendV3Test {
         assertTrue(FrontendTheme.dark("dark", false)); assertFalse(FrontendTheme.dark("light", true))
         assertTrue(FrontendTheme.dark("system", true)); assertFalse(FrontendTheme.dark("system", false))
     }
+    @Test fun genuineBackgroundReturnsToSectionHomeWithoutDiscardingEitherDraft() {
+        val gateway=FakeFrontendGateway();val session=FrontendSession(gateway,0,Executors.newSingleThreadExecutor()){}
+        try {
+            val saved=ZuiControlClient.AppPolicyDraft("org.example.one",120,"balance",ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,42)
+            session.section="tune";session.selected=saved.packageName;session.originalApp=saved;session.appDraft=saved.copy(refreshHz=165)
+            val edited=session.appDraft;session.returnHome()
+            assertEquals("tune",session.section);assertEquals("",session.selected);assertSame(edited,session.appDraft);assertTrue(session.appDirty)
+            assertTrue(session.hasDraftFor("tune",saved.packageName));assertFalse(session.hasDraftFor("tune","org.example.two"));assertEquals(0,gateway.calls)
+            val p=ZuioptRuleModel.Profile(setOf(0,1),emptyList());val base=ZuioptRuleModel(true,emptyMap(),emptyList())
+            val rule=RuleDraft(saved.packageName,base,"generation",p,p.copy(generalMask=setOf(7)))
+            session.ruleDraft=rule;session.section="thread";session.selected=saved.packageName;session.analysisPage=true;session.returnHome()
+            assertEquals("thread",session.section);assertEquals("",session.selected);assertFalse(session.analysisPage);assertSame(rule,session.ruleDraft);assertTrue(rule.dirty)
+            assertTrue(session.hasDraftFor("thread",saved.packageName));assertEquals(0,gateway.calls)
+        }finally{session.close()}
+    }
+    @Test fun foregroundTrackerExcludesInternalActivitiesConfigurationAndOwnedExternalFlows() {
+        val foreground=FrontendForegroundState()
+        foreground.start();foreground.start()
+        assertFalse(foreground.stop(false,false)) // Main -> internal record Activity.
+        assertTrue(foreground.stop(false,false)) // Last internal Activity -> Home.
+        foreground.start();assertFalse(foreground.stop(true,false))
+        foreground.start();assertFalse(foreground.stop(false,true)) // SAF/settings.
+        foreground.start();assertTrue(foreground.stop(false,false))
+    }
     private val bytes = "schema 2\nenabled true\ndebug false\n".toByteArray()
     private fun latest(revision: Long = 84, hash: String = RuleUpstreamFetcher.hash(bytes)) =
         RuleUpstreamFetcher.Latest(revision, "v84", "2026-10-04", "a".repeat(40), bytes.size, hash, "SM8650", "0-7", 2, "qualification-fixture")

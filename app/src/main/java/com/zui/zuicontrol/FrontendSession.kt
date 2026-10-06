@@ -11,6 +11,15 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     private val post: (() -> Unit) -> Unit = { android.os.Handler(android.os.Looper.getMainLooper()).post(it) }) {
     var section = "tune"
     var selected = ""
+    var analysisPage = false
+    var ownedExternalFlow = false
+    /** Visibility reset never discards drafts or writes an owner. */
+    fun returnHome() { if(section=="tune" || section=="thread"){selected="";analysisPage=false} }
+    fun hasDraftFor(section:String,pkg:String)=when(section){
+        "tune"->appDraft?.packageName==pkg
+        "thread"->ruleDraft?.packageName==pkg
+        else->false
+    }
     var settingsModule = 0
     var appDraft: ZuiControlClient.AppPolicyDraft? = null
     var originalApp: ZuiControlClient.AppPolicyDraft? = null
@@ -140,6 +149,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     fun close() { onChanged = null; onControlsChanged = null; closing = true; finishClose() }
     fun save(out: Bundle) {
         out.putInt("user", userId); out.putString("section", section); out.putString("selected", selected)
+        out.putBoolean("ownedFlow",ownedExternalFlow);out.putBoolean("analysisPage",analysisPage)
         out.putInt("module", settingsModule); out.putBoolean("newApp", newApp)
         out.putByteArray("export", exportBytes); out.putByteArray("backup", backupBytes); out.putInt("document", pendingDocument)
         pendingInspection?.let { out.putString("inspection", it.summary.toString()) }
@@ -158,6 +168,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     fun restore(saved: Bundle) {
         if (saved.getInt("user", -1) != userId) return
         section = saved.getString("section", "tune"); selected = saved.getString("selected", "")
+        ownedExternalFlow=saved.getBoolean("ownedFlow");analysisPage=saved.getBoolean("analysisPage")
         settingsModule = saved.getInt("module"); newApp = saved.getBoolean("newApp")
         exportBytes = saved.getByteArray("export") ?: byteArrayOf(); backupBytes = saved.getByteArray("backup") ?: byteArrayOf()
         pendingDocument = saved.getInt("document")
@@ -176,6 +187,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
                     readProfile(JSONObject(saved.getString("profile").orEmpty())), saved.getBoolean("clone"))
             }
         }.onFailure { error = "草稿恢复失败：${it.message}" }
+        if(!ownedExternalFlow && pendingDocument==0)returnHome()
     }
     private fun appJson(d: ZuiControlClient.AppPolicyDraft) = JSONObject().put("pkg", d.packageName).put("hz", d.refreshHz)
         .put("mode", d.uperfMode).put("policy", d.gpuPolicy.name).put("generation", d.expectedGeneration)
@@ -198,8 +210,8 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     }
 }
 
-class RuleDraft(val packageName: String, val base: ZuioptRuleModel, val generation: String,
-    val original: ZuioptRuleModel.Profile?, var profile: ZuioptRuleModel.Profile,
+class RuleDraft(val packageName: String, var base: ZuioptRuleModel, var generation: String,
+    var original: ZuioptRuleModel.Profile?, var profile: ZuioptRuleModel.Profile,
     var cloneConfirmed: Boolean = false) {
     val dirty get() = original == null || profile != original
     fun canonical(): String {

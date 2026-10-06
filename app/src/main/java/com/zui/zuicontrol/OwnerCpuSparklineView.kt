@@ -49,6 +49,7 @@ internal class OwnerCpuSparklineView(context:Context):View(context) {
         invalidate()
     }
     fun unavailable(){contentDescription="CPU 时间线暂不可读";invalidate()}
+    fun changeTheme(dark:Boolean){owner.changeTheme(dark);ink.color=owner.zo;invalidate()}
     override fun onDraw(canvas:Canvas) {
         super.onDraw(canvas)
         val pad=ink.strokeWidth/2;val high=maxOf(100.0,segments.flatten().maxOfOrNull{it.cpu} ?: 100.0)
@@ -103,7 +104,7 @@ internal class OwnerCpuSparklineLoader {
 }
 
 /** The same Owner table is used by the main page and the retained internal Activity. */
-internal fun OwnerUi.cpuThreadTable(record:JSONObject,loader:OwnerCpuSparklineLoader):View=card().apply {
+internal fun OwnerUi.cpuThreadTable(record:JSONObject,loader:OwnerCpuSparklineLoader,open:((String,String)->Unit)?=null):View=card().apply {
     setPadding(px(14),px(8),px(14),px(8))
     val rows=record.optJSONArray("threads") ?: JSONArray()
     val count=minOf(15,rows.length())
@@ -118,7 +119,7 @@ internal fun OwnerUi.cpuThreadTable(record:JSONObject,loader:OwnerCpuSparklineLo
             key.split(':').getOrNull(2).orEmpty(),"${number(row.optDouble(2))}%","${number(row.optDouble(3))}%",row.optLong(4).toString())
         val spark=OwnerCpuSparklineView(context)
         targets+=key to spark
-        addView(tableRow(texts.map{label(it,13f,text,700)}+spark,widths))
+        addView(tableRow(texts.map{label(it,13f,text,700)}+spark,widths).apply{if(open!=null){isFocusable=true;contentDescription="查看 $name CPU 时间线";setOnClickListener{open(key,name)}}})
     }
     if(count==0)addView(empty("暂无线程样本","断档表示未保存 Top15 样本，不代表 CPU=0。"))
     loader.show(record,targets)

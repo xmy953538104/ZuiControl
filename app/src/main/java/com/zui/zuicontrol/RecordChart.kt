@@ -15,6 +15,7 @@ import java.util.Locale
         private val values = (0 until rows.length()).map { rows.getJSONArray(it).optDouble(column, Double.NaN) }
         private val axis = RecordAxis.of(values)
         private val owner=OwnerUi(context)
+        fun changeTheme(dark:Boolean){owner.changeTheme(dark);invalidate()}
         init { contentDescription = "时间曲线；${values.count { it.isFinite() && it >= 0 }} 个有效汇总点" }
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)

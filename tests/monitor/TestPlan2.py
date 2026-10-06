@@ -7,7 +7,8 @@ class Plan2(unittest.TestCase):
  def test_theme_is_local_and_non_intercepting(self):
   main=read('MainActivity.kt');theme=main.split('private fun theme(theme: String)',1)[1].split('private fun monitorGuidance',1)[0]
   for forbidden in ('recreate','load()','gateway','ZuiControlRequest','isClickable=true'):self.assertNotIn(forbidden,theme)
-  self.assertIn('dispatchTouchEvent(event:MotionEvent)=false',theme);self.assertIn('setDuration(275)',theme)
+  self.assertIn('owner.applyTheme(physicalHost',theme)
+  for forbidden in ('render()', 'removeAllViews', 'addView(', 'OwnerUi(this)'):self.assertNotIn(forbidden,theme)
  def test_system_bars_icons_and_local_draft(self):
   window=read('OwnerWindow.kt');main=read('MainActivity.kt')
   for flag in ('SYSTEM_UI_FLAG_FULLSCREEN','SYSTEM_UI_FLAG_HIDE_NAVIGATION','SYSTEM_UI_FLAG_IMMERSIVE_STICKY','hide(WindowInsets'):self.assertNotIn(flag,window+main)
@@ -22,7 +23,7 @@ class Plan2(unittest.TestCase):
   main=read('MainActivity.kt')
   self.assertNotIn('listRow("","规则库"',main);self.assertNotIn('owner.label("职责边界"',main)
   self.assertIn('if(snapshot==null || session.section=="thread")runCatching',main)
-  self.assertIn('actionRow("规则集导出"',main);self.assertIn('规则源尚未启用',main)
+  self.assertIn('owner.domainRow("规则集导出"',main);self.assertIn('规则源尚未启用',main)
   self.assertIn('if(!enabled)addView(owner.button("系统通知设置"',main)
  def test_charts_keep_gap_semantics(self):
   chart=read('RecordChart.kt')
@@ -34,13 +35,30 @@ class Plan2(unittest.TestCase):
   self.assertIn('v.setPadding(0,0,0,0)',window)
   self.assertNotIn('v.setPadding(bars.left',window)
   self.assertIn('val dh=(650*unit).roundToInt()',ui)
-  self.assertIn('physicalHost.addView(fade',main)
-  self.assertNotIn('ownerHost.addView(fade',main)
+  self.assertNotIn('physicalHost.removeAllViews',main)
+  self.assertIn('private fun createShell()',main)
+  render=main.split('private fun render()',1)[1].split('private fun buildMaster',1)[0]
+  self.assertNotIn('OwnerDesignLayout(',render)
+  self.assertNotIn('setContentView',render)
   self.assertIn('weight,false)',ui);self.assertNotIn('if(weight==400)',ui)
   identity=ui.split('fun identityTitle',1)[1].split('fun section',1)[0]
   self.assertIn('maxLines=2;ellipsize=null',identity)
   self.assertIn('owner.identityTitle(name(d.packageName)',main)
   self.assertIn('owner.identityTitle(name(pkg)',main)
+  self.assertIn('},LinearLayout.LayoutParams(0,-2,1f))',identity)
+ def test_owner_subpage_navigation_and_explicit_icons(self):
+  main=read('MainActivity.kt');perf=read('PerformanceRecordActivity.kt')
+  self.assertNotIn('‹ 返回记录详情',main);self.assertNotIn('owner.button("返回"',perf)
+  self.assertNotIn('title.contains("线程")',main);self.assertNotIn('title.contains("规则")',main)
+  self.assertIn('R.drawable.owner_thread_list',main)
+  self.assertIn('R.drawable.owner_appopt',main);self.assertIn('R.drawable.owner_undo',main)
+  self.assertIn('selectedThread=data.put("key",key)',main)
+ def test_persistent_masks_and_foreground_draft_safety(self):
+  picker=read('OwnerCpuPicker.kt');foreground=read('FrontendForeground.kt');session=read('FrontendSession.kt')
+  self.assertNotIn('removeAllViews',picker)
+  self.assertIn('onActivityStopped',foreground);self.assertNotIn('onActivityPaused(activity:Activity){',foreground)
+  home=session.split('fun returnHome()',1)[1].split('fun hasDraftFor',1)[0]
+  for forbidden in ('clearDrafts','gateway','appDraft=null','ruleDraft=null'):self.assertNotIn(forbidden,home)
  def test_inline_cpu_has_bounded_existing_authority(self):
   spark=read('OwnerCpuSparklineView.kt')
   self.assertIn('targets.take(15)',spark);self.assertIn('newSingleThreadExecutor',spark)

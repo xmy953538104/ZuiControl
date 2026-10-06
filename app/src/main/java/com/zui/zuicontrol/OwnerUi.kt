@@ -15,25 +15,53 @@ import kotlin.math.*
 
 /** Native port of FRONTEND_FINAL_V83.html. Dimensions are Owner CSS pixels. */
 internal class OwnerUi(val context: Context) {
-    val dark = OwnerWindow.dark(context)
+    var dark = OwnerWindow.dark(context);private set
     private fun c(d: String, l: String) = Color.parseColor(if (dark) d else l)
-    val rail=c("#0D1320","#FFFFFF"); val master=c("#0D1320","#F6F8FB"); val detail=c("#090D15","#EEF2F7")
-    val card=c("#111927","#FFFFFF"); val card2=c("#1A2334","#F1F4F9")
-    val text=c("#E8EDF6","#0F172A"); val sub=c("#A5B0C3","#475569"); val muted=c("#6C7890","#8E9BAE")
-    val code=c("#0A101A","#F8FAFC")
-    val accentSoft=c("#245B8CFF","#173562C6"); val accentGlow=c("#665B8CFF","#4D3562C6")
-    val toastBg=c("#F0E8EDF6","#EB0F172A"); val toastFg=c("#0B1120","#FFFFFF")
-    val accent=c("#5B8CFF","#3562C6"); val line=c("#1A94A3B8","#E3E8EF"); val line2=c("#3894A3B8","#CBD5E1")
-    val zo=c("#22C3E6","#0891B2"); val zoBg=c("#0D3340","#CFFAFE"); val zoFg=c("#5FD9F3","#155E75")
-    val tiers=intArrayOf(c("#1ECB8E","#10B981"),accent,c("#FF8A3D","#EA580C"),c("#FF4D5E","#DC2626"))
-    val inks=intArrayOf(c("#3DDC9F","#047857"),c("#7FA5FF","#2B50A3"),c("#FFA163","#C2410C"),c("#FF7482","#B91C1C"))
-    val chipBg=intArrayOf(c("#1C2536","#F1F5F9"),c("#123A2E","#DCFCE7"),c("#1A2C52","#DBEAFE"),c("#3B2716","#FFEDD5"),c("#3E1B23","#FEE2E2"))
-    val chipFg=intArrayOf(sub,c("#5EE0A8","#166534"),c("#8FB0FF","#1E40AF"),c("#FFAA70","#9A3412"),c("#FF8A96","#991B1B"))
+    val rail get()=c("#0D1320","#FFFFFF"); val master get()=c("#0D1320","#F6F8FB"); val detail get()=c("#090D15","#EEF2F7")
+    val card get()=c("#111927","#FFFFFF"); val card2 get()=c("#1A2334","#F1F4F9")
+    val text get()=c("#E8EDF6","#0F172A"); val sub get()=c("#A5B0C3","#475569"); val muted get()=c("#6C7890","#8E9BAE")
+    val code get()=c("#0A101A","#F8FAFC")
+    val accentSoft get()=c("#245B8CFF","#173562C6"); val accentGlow get()=c("#665B8CFF","#4D3562C6")
+    val toastBg get()=c("#F0E8EDF6","#EB0F172A"); val toastFg get()=c("#0B1120","#FFFFFF")
+    val accent get()=c("#5B8CFF","#3562C6"); val line get()=c("#1A94A3B8","#E3E8EF"); val line2 get()=c("#3894A3B8","#CBD5E1")
+    val zo get()=c("#22C3E6","#0891B2"); val zoBg get()=c("#0D3340","#CFFAFE"); val zoFg get()=c("#5FD9F3","#155E75")
+    val tiers get()=intArrayOf(c("#1ECB8E","#10B981"),accent,c("#FF8A3D","#EA580C"),c("#FF4D5E","#DC2626"))
+    val inks get()=intArrayOf(c("#3DDC9F","#047857"),c("#7FA5FF","#2B50A3"),c("#FFA163","#C2410C"),c("#FF7482","#B91C1C"))
+    val chipBg get()=intArrayOf(c("#1C2536","#F1F5F9"),c("#123A2E","#DCFCE7"),c("#1A2C52","#DBEAFE"),c("#3B2716","#FFEDD5"),c("#3E1B23","#FEE2E2"))
+    val chipFg get()=intArrayOf(sub,c("#5EE0A8","#166534"),c("#8FB0FF","#1E40AF"),c("#FFAA70","#9A3412"),c("#FF8A96","#991B1B"))
+    fun changeTheme(value:Boolean){dark=value}
+    private val borders=java.util.WeakHashMap<GradientDrawable,Pair<Int?,Float>>()
+    private fun palette()=listOf(card,card2,text,sub,muted,code,accentSoft,accentGlow,toastBg,toastFg,accent,line,line2,zo,zoBg,zoFg)+tiers.toList()+inks.toList()+chipBg.toList()+chipFg.toList()
+    /** Recolor attached views; their identities, font metrics and layout remain untouched. */
+    fun applyTheme(root:View,value:Boolean){
+        val old=palette();val wasDark=dark;val oldSoft=tiers.map{soft(it)}
+        dark=value;val next=palette();val mapping=old.zip(next).toMap()+oldSoft.zip(tiers.map{soft(it)}).toMap()
+        fun color(v:Int):Int=mapping[v] ?: old.zip(next).firstOrNull{(a,_)->(a and 0xffffff)==(v and 0xffffff) && Color.alpha(a)==255}?.let{(_,b)->(v and -0x1000000) or (b and 0xffffff)} ?: v
+        fun drawable(d:android.graphics.drawable.Drawable?) {
+            when(d){
+                is OwnerShadowDrawable->d.retheme(value,::color,::drawable)
+                is GradientDrawable->{d.color?.defaultColor?.let{d.setColor(color(it))};borders[d]?.let{(border,width)->if(border!=null){val fresh=color(border);d.setStroke(px(width).coerceAtLeast(1),fresh);borders[d]=fresh to width}}}
+                is android.graphics.drawable.ColorDrawable->d.color=color(d.color)
+            }
+        }
+        fun visit(v:View){
+            drawable(v.background)
+            if(v is TextView){if(v.currentTextColor!=Color.WHITE)v.setTextColor(color(v.currentTextColor));if(v is EditText)v.setHintTextColor(color(v.currentHintTextColor))
+                (v.text as? android.text.Spannable)?.let{s->s.getSpans(0,s.length,android.text.style.ForegroundColorSpan::class.java).forEach{span->val a=s.getSpanStart(span);val b=s.getSpanEnd(span);val flags=s.getSpanFlags(span);s.removeSpan(span);s.setSpan(android.text.style.ForegroundColorSpan(color(span.foregroundColor)),a,b,flags)}}
+            }
+            if(v is ImageView)v.imageTintList?.defaultColor?.let{if(it!=Color.WHITE)v.imageTintList=android.content.res.ColorStateList.valueOf(color(it))}
+            when(v){is OwnerCpuSparklineView->v.changeTheme(value);is GpuRangeBar->v.changeTheme(value);is RecordChart->v.changeTheme(value);is OwnerPing->v.retheme(::color);is OwnerMeter->v.retheme(::color);is OwnerCpuPicker->v.showSelection(v.selected)}
+            if(v is ViewGroup)for(i in 0 until v.childCount)visit(v.getChildAt(i))
+            v.invalidate()
+        }
+        if(wasDark!=value)visit(root)
+    }
     val density=context.resources.displayMetrics.density
     fun px(v: Number)=(v.toFloat()*density).roundToInt()
     fun soft(color: Int, alpha: Int = if(dark)36 else if(color==tiers[0] || color==tiers[2])26 else 23)=(color and 0xffffff) or (alpha shl 24)
     fun shape(color: Int, radius: Float, border: Int? = null, stroke: Float=1f) = GradientDrawable().apply {
         setColor(color); cornerRadius=px(radius).toFloat(); if(border!=null)setStroke(px(stroke).coerceAtLeast(1),border)
+        borders[this]=border to stroke
     }
     fun shadow(surface:android.graphics.drawable.Drawable,radius:Float,blur:Float,offset:Float,spread:Float,tone:Int)=OwnerShadowDrawable(surface,density,radius,blur,offset,spread,tone)
     fun row()=LinearLayout(context).apply { orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;clipChildren=false;clipToPadding=false }
@@ -49,7 +77,7 @@ internal class OwnerUi(val context: Context) {
         setSingleLine(true);ellipsize=android.text.TextUtils.TruncateAt.END
     }
     fun icon(id: Int,color: Int,size: Int=20)=ImageView(context).apply {
-        setImageResource(id);setColorFilter(color);importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        setImageResource(id);imageTintList=android.content.res.ColorStateList.valueOf(color);importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
         layoutParams=LinearLayout.LayoutParams(px(size),px(size))
     }
     fun card(padding: Boolean=true)=column().apply {
@@ -92,18 +120,42 @@ internal class OwnerUi(val context: Context) {
         if(trailing!=null)addView(trailing,LinearLayout.LayoutParams(-2,-2).apply{marginStart=px(14)})
         layoutParams=gap()
     }
-    /** Identity subtitle spans the whole detail width; status chips only share the name row. */
-    fun identityTitle(title:String,pkg:String,leading:View?=null,trailing:View?=null):View=column().apply {
-        addView(row().apply {
-            if(leading!=null)addView(leading,LinearLayout.LayoutParams(-2,-2).apply{marginEnd=px(14)})
-            addView(label(title,20f,text,800),LinearLayout.LayoutParams(0,px(36),1f))
-            if(trailing!=null)addView(trailing,LinearLayout.LayoutParams(-2,-2).apply{marginStart=px(14)})
-        },LinearLayout.LayoutParams(-1,-2))
-        addView(label(pkg,11.5f,muted).apply {
-            tag="owner-package-id";setSingleLine(false);maxLines=2;ellipsize=null
-            setHorizontallyScrolling(false);breakStrategy=android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE
-        },LinearLayout.LayoutParams(-1,-2).apply{topMargin=px(4)})
+    /** Literal page-head: back / icon / vertical identity / trailing chips. */
+    fun identityTitle(title:String,pkg:String,leading:View?=null,trailing:View?=null):View=row().apply {
+        if(leading!=null)addView(leading,LinearLayout.LayoutParams(-2,-2).apply{marginEnd=px(14)})
+        addView(column().apply {
+            addView(label(title,20f,text,800),LinearLayout.LayoutParams(-1,px(24)))
+            addView(label(pkg,11.5f,muted).apply {
+                tag="owner-package-id";setSingleLine(false);maxLines=2;ellipsize=null
+                setHorizontallyScrolling(false);breakStrategy=android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE
+            },LinearLayout.LayoutParams(-1,-2).apply{topMargin=px(4)})
+        },LinearLayout.LayoutParams(0,-2,1f))
+        if(trailing!=null)addView(trailing,LinearLayout.LayoutParams(-2,-2).apply{marginStart=px(14)})
+        minimumHeight=px(48)
         layoutParams=gap()
+    }
+    fun back(description:String="返回",action:()->Unit)=icon(R.drawable.owner_back,sub,18).apply {
+        background=shape(card,11f,line);setPadding(px(9),px(9),px(9),px(9))
+        layoutParams=LinearLayout.LayoutParams(px(36),px(36));isFocusable=true;contentDescription=description
+        setOnClickListener{action()};press(this)
+    }
+    fun modeChip(value:String,tier:Int)=row().apply {
+        background=shape(chipBg[tier+1],999f);setPadding(px(11),0,px(13),0);minimumHeight=px(30)
+        addView(OwnerPing(context,this@OwnerUi,tiers[tier]),LinearLayout.LayoutParams(px(7),px(7)).apply{marginEnd=px(8)})
+        addView(label(value,12f,chipFg[tier+1],800));layoutParams=LinearLayout.LayoutParams(-2,px(30))
+    }
+    fun domainRow(title:String,subtitle:String,icon:Int,tone:String="zo",small:Boolean=false,action:()->Unit):View=row().apply {
+        val size=if(small)34 else 40;val glyph=if(small)17 else 20
+        val fg=when(tone){"mute"->muted;"warn"->chipFg[3];else->zoFg}
+        val bg=when(tone){"mute"->card2;"warn"->chipBg[3];else->zoBg}
+        setPadding(0,px(if(small)6 else 0),0,px(if(small)6 else 0));minimumHeight=px(if(small)46 else 40)
+        addView(icon(icon,fg,glyph).apply{background=shape(bg,if(small)10f else 12f);val p=px((size-glyph)/2f);setPadding(p,p,p,p)},LinearLayout.LayoutParams(px(size),px(size)).apply{marginEnd=px(12)})
+        addView(column().apply{
+            addView(label(title,if(small)13f else 14f,text,800))
+            addView(label(subtitle,11f,muted).apply{setSingleLine(false)},LinearLayout.LayoutParams(-1,-2).apply{topMargin=px(3)})
+        },LinearLayout.LayoutParams(0,-2,1f))
+        addView(icon(R.drawable.owner_chevron,muted,16),LinearLayout.LayoutParams(px(16),px(16)).apply{marginStart=px(12)})
+        isFocusable=true;contentDescription=title;setOnClickListener{action()};press(this)
     }
     fun section(title: String,subtitle: String,trailing: View?=null)=row().apply {
         addView(column().apply{
@@ -156,17 +208,7 @@ internal class OwnerUi(val context: Context) {
         addView(content);layoutParams=LinearLayout.LayoutParams(-1,px(height))
         minimumHeight=px(height)
     }
-    fun cpus(initial: Set<Int>,large:Boolean=false,action:(Set<Int>)->Boolean):View {
-        var selected=initial;val group=row().apply{tag="owner-control"}
-        fun bind(){group.removeAllViews();for(cpu in 0..7){
-            val on=cpu in selected
-            group.addView(label(if(large)cpu.toString()else "",10f,if(on)Color.parseColor("#04131A") else muted,700).apply{
-                gravity=Gravity.CENTER;background=shape(if(on)zo else card2,if(large)7f else 3f,if(on)null else line2)
-                isFocusable=true;contentDescription="CPU $cpu，${if(on)"已选择" else "未选择"}";isEnabled=true
-                setOnClickListener{val next=if(cpu in selected)selected-cpu else selected+cpu;if(action(next)){selected=next;bind()}};press(this)
-            },LinearLayout.LayoutParams(px(if(large)26 else 12),px(if(large)26 else 16)).apply{if(cpu>0)marginStart=px(if(large)5 else 3)})
-        }};bind();return group
-    }
+    fun cpus(initial: Set<Int>,large:Boolean=false,action:(Set<Int>)->Boolean)=OwnerCpuPicker(context,this,initial,large,action)
     fun check(value:String,checked:Boolean=false,action:(Boolean)->Unit):View=row().apply{
         var selected=checked;setPadding(px(6),px(8),px(6),px(8));isFocusable=true
         val mark=label(if(selected)"✓" else "",12f,Color.WHITE,700).apply{gravity=Gravity.CENTER;background=shape(if(selected)accent else Color.TRANSPARENT,4f,if(selected)accent else line2,2f)}
@@ -175,7 +217,7 @@ internal class OwnerUi(val context: Context) {
         fun describe(){contentDescription="$value，${if(selected)"已选择" else "未选择"}";isSelected=selected}
         describe();setOnClickListener{selected=!selected;mark.text=if(selected)"✓" else "";mark.background=shape(if(selected)accent else Color.TRANSPARENT,4f,if(selected)accent else line2,2f);background=shape(if(selected)soft(accent) else Color.TRANSPARENT,8f);describe();action(selected)}
     }
-    fun tiers(current: String,compact: Boolean=false,enabled: Boolean=true,action:(String)->Unit)=row().apply {
+    fun tiers(current: String,compact: Boolean=false,enabled: Boolean=true,reconcile:(((String)->Unit)->Unit)?=null,action:(String)->Unit)=row().apply {
         tag="owner-control"
         val group=this
         var selectedIndex=GpuDefaultsDraft.modes.indexOf(current)
@@ -209,6 +251,21 @@ internal class OwnerUi(val context: Context) {
                 };press(this)
             }
             addView(item,LinearLayout.LayoutParams(0,px(if(compact)46 else 64),1f).apply{if(i>0)marginStart=px(10)})
+        }
+        reconcile?.invoke{mode->
+            val index=GpuDefaultsDraft.modes.indexOf(mode)
+            if(index!=selectedIndex){selectedIndex=index
+                for(k in 0 until group.childCount){
+                    val target=group.getChildAt(k) as LinearLayout;val lit=k==index
+                    target.background=shape(if(lit)tiers[k] else card2,14f)
+                    if(lit)target.background=shadow(checkNotNull(target.background),14f,22f,10f,-10f,tiers[k])
+                    (target.getChildAt(0) as OwnerGauge).animateInk(lit)
+                    val labels=target.getChildAt(1) as LinearLayout
+                    (labels.getChildAt(0) as TextView).setTextColor(if(lit)Color.WHITE else text)
+                    if(!compact)(labels.getChildAt(1) as TextView).setTextColor(if(lit)0xd1ffffff.toInt() else muted)
+                    target.contentDescription="${names[k]}${if(lit)"，已选择" else ""}"
+                }
+            }
         }
     }
     companion object {
@@ -304,7 +361,8 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
 
 /** Literal .ping / .ping::after, presentation only. */
 @SuppressLint("ViewConstructor")
-internal class OwnerPing(context: Context,private val ui: OwnerUi,private val tone: Int):View(context) {
+internal class OwnerPing(context: Context,private val ui: OwnerUi,private var tone: Int):View(context) {
+    fun retheme(color:(Int)->Int){tone=color(tone);invalidate()}
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG);private var phase=0f;private var motion:ValueAnimator?=null
     override fun onAttachedToWindow(){super.onAttachedToWindow();motion=ValueAnimator.ofFloat(0f,1f).apply{
         duration=2000;repeatCount=ValueAnimator.INFINITE;interpolator=PathInterpolator(0f,0f,.58f,1f)
@@ -338,7 +396,8 @@ internal class OwnerGauge(context: Context,private val ui: OwnerUi,private val t
 }
 
 @SuppressLint("ViewConstructor")
-internal class OwnerMeter(context: Context,private val ui: OwnerUi,private val cuts: List<Float> = emptyList(),private val segments: List<Int>? = null): View(context) {
+internal class OwnerMeter(context: Context,private val ui: OwnerUi,private val cuts: List<Float> = emptyList(),private var segments: List<Int>? = null): View(context) {
+    fun retheme(color:(Int)->Int){tone=color(tone);segments=segments?.map(color);invalidate()}
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG);private var shown=0f;private var animator: ValueAnimator?=null
     private var segmentTime=0f
     override fun onAttachedToWindow(){super.onAttachedToWindow();if(segments!=null)animator=ValueAnimator.ofFloat(0f,840f).apply{duration=840;addUpdateListener{segmentTime=it.animatedValue as Float;invalidate()};start()}}
@@ -349,7 +408,8 @@ internal class OwnerMeter(context: Context,private val ui: OwnerUi,private val c
     }
     override fun onDraw(c: Canvas) {
         val h=height.toFloat();val r=ui.px(3).toFloat()
-        if(segments!=null){val w=(width-ui.px(4)*(segments.size-1)).toFloat()/segments.size;segments.forEachIndexed{i,color->paint.color=color;val l=i*(w+ui.px(4));val f=OwnerUi.smooth.getInterpolation(((segmentTime-i*60)/600f).coerceIn(0f,1f));c.drawRoundRect(l,0f,l+w*f,h,r,r,paint)};return}
+        val parts=segments
+        if(parts!=null){val w=(width-ui.px(4)*(parts.size-1)).toFloat()/parts.size;parts.forEachIndexed{i,color->paint.color=color;val l=i*(w+ui.px(4));val f=OwnerUi.smooth.getInterpolation(((segmentTime-i*60)/600f).coerceIn(0f,1f));c.drawRoundRect(l,0f,l+w*f,h,r,r,paint)};return}
         paint.color=ui.card2;c.drawRoundRect(0f,0f,width.toFloat(),h,r,r,paint)
         paint.color=tone;c.drawRoundRect(0f,0f,width*shown,h,r,r,paint)
         paint.color=ui.card;cuts.forEach{val x=it*width;c.drawRect(x-ui.px(1),0f,x+ui.px(1),h,paint)}

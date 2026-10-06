@@ -1,0 +1,88 @@
+{
+  "workPackage": "V84_PRODUCT_PLAN2_FINAL_OWNER_UX_CLOSURE_R3",
+  "baseHead": "9fccabb7a356b372f51242ddfa3a3638b6718c6f",
+  "visualAuthoritySha256": "d15293b30c5ae17ab4b3a82be5cb63c22441ae7e67cfd4943be7340a2eee2487",
+  "scope": "Owner R3 frontend-only persistent shell/navigation/header/icons/lifecycle; R2/historical receipts immutable",
+  "files": [
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/FrontendForeground.kt",
+      "before": null,
+      "after": "100644 blob e116e8293e1e76ea27d8dcd2542565bc5747aaeb\tapp/src/main/java/com/zui/zuicontrol/FrontendForeground.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+      "before": "100644 blob 163e4e906cf4df7e3e1a850ab81f1c661b500f95\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+      "after": "100644 blob 7c405799fc8ec5374bb4fccc7cc88086a2a87aeb\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
+      "before": "100644 blob c85762f1a2401e663fbfad9a285d704ac37227b4\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt",
+      "after": "100644 blob 0921e3f7fae5c249d20280608153f4053677b03e\tapp/src/main/java/com/zui/zuicontrol/GpuRangeBar.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "before": "100644 blob e86a05897239a9ecf387c33daddd30ef9f709a91\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob e2432b77801d5945355750f60e8e8073a5428de8\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerCpuPicker.kt",
+      "before": null,
+      "after": "100644 blob bb2e14e4a0f7801812cd3d0909bcf2f13521b513\tapp/src/main/java/com/zui/zuicontrol/OwnerCpuPicker.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerCpuSparklineView.kt",
+      "before": "100644 blob c702894338522450de2e5e81c25f0a2822b4961e\tapp/src/main/java/com/zui/zuicontrol/OwnerCpuSparklineView.kt",
+      "after": "100644 blob d6af7421c3c1c13cb2350d08d4b7564ac36df906\tapp/src/main/java/com/zui/zuicontrol/OwnerCpuSparklineView.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerEffects.kt",
+      "before": "100644 blob 05d814d46312e8ba6720569fb401b106a939a5cb\tapp/src/main/java/com/zui/zuicontrol/OwnerEffects.kt",
+      "after": "100644 blob f85b97d3e39e2f51ae9c4bb988e9b831e2f09ba8\tapp/src/main/java/com/zui/zuicontrol/OwnerEffects.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerRenderTrace.kt",
+      "before": null,
+      "after": "100644 blob 1ab19fcc693d3f5889f063c5e427bbaec3bf25c0\tapp/src/main/java/com/zui/zuicontrol/OwnerRenderTrace.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
+      "before": "100644 blob 436203c60a91368fe4c876090852db3345eb65b6\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt",
+      "after": "100644 blob 2f0edddafd48441330c1f82d9cdf49623c53dd8b\tapp/src/main/java/com/zui/zuicontrol/OwnerUi.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
+      "before": "100644 blob 41a8c5e0be41db859625a6a90e549dece014497b\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt",
+      "after": "100644 blob 04134eac1967f45331939cec37ac756bf2a42055\tapp/src/main/java/com/zui/zuicontrol/PerformanceRecordActivity.kt"
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/RecordChart.kt",
+      "before": "100644 blob 1d6d4b3013e1f2329eea6416b7b67da3ba402377\tapp/src/main/java/com/zui/zuicontrol/RecordChart.kt",
+      "after": "100644 blob 8d6897248a1f7d3025db5d174a3a46de54bc651b\tapp/src/main/java/com/zui/zuicontrol/RecordChart.kt"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_appopt.xml",
+      "before": null,
+      "after": "100644 blob 2093636a39ae2ac3d6a4125f21c77475b90a90dd\tapp/src/main/res/drawable/owner_appopt.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_grip.xml",
+      "before": "100644 blob 9bb5549231814225fcaf10cca73fb9ffc598f7ce\tapp/src/main/res/drawable/owner_grip.xml",
+      "after": "100644 blob 73eb11bc1a92c4700f62e3bf7c88eb747b35d103\tapp/src/main/res/drawable/owner_grip.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_thread_list.xml",
+      "before": null,
+      "after": "100644 blob 22527570a313b49f30442666419b8b4a37b11e1b\tapp/src/main/res/drawable/owner_thread_list.xml"
+    },
+    {
+      "path": "app/src/main/res/drawable/owner_undo.xml",
+      "before": null,
+      "after": "100644 blob 9b8e4d6f2b82fbadceb543786002437901f3ed4d\tapp/src/main/res/drawable/owner_undo.xml"
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+      "before": "100644 blob 44063087d8bbe938050352da3800d2b5507fee57\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+      "after": "100644 blob e1380cc8601cb357fef05f12e4474ff259bb3347\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt"
+    }
+  ]
+}

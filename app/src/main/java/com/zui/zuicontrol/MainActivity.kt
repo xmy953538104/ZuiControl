@@ -31,6 +31,16 @@ class MainActivity : Activity() {
     private lateinit var ownerHost: FrameLayout
     private lateinit var physicalHost: FrameLayout
     private lateinit var ownerCanvas: OwnerDesignLayout
+    private lateinit var shellRoot:LinearLayout
+    private lateinit var rail:LinearLayout
+    private lateinit var pageHost:FrameLayout
+    private var masterSection=""
+    private var masterFingerprint=""
+    private var masterList:LinearLayout?=null
+    private val railBindings=mutableListOf<()->Unit>()
+    private val masterSelectionBindings=mutableListOf<()->Unit>()
+    private val pageBindings=mutableListOf<()->Unit>()
+    private fun bindPresentation(bind:()->Unit){pageBindings+=bind;bind()}
     private val cpuSparklines=OwnerCpuSparklineLoader()
     private var ownerModal: OwnerModal? = null
     private var ownerQuiet: OwnerMeter? = null
@@ -125,12 +135,14 @@ class MainActivity : Activity() {
     private var exportBytes get() = session.exportBytes; set(v) { session.exportBytes = v }
     private var backupBytes get() = session.backupBytes; set(v) { session.backupBytes = v }
     private var selectedRecord: JSONObject? = null
+    private var selectedThread:JSONObject?=null
+    private var rawPage=false
     private var recordRequested = false
     private var recordThreads = false
     private var analysis: JSONObject? = null
     private var analysisError = ""
     private var analysisRead = 0
-    private var analysisPage = false
+    private var analysisPage get()=session.analysisPage;set(v){session.analysisPage=v}
     private var reading = false
     private var boundGeneration = ""
     private var controlPresentationUntil = 0L
@@ -142,7 +154,7 @@ class MainActivity : Activity() {
                 handler.postDelayed(this, maxOf(50L, controlPresentationUntil - SystemClock.uptimeMillis()))
                 return
             }
-            observeGlobals(); render(); load()
+            observeGlobals(); render()
         }
     }
     private fun reconcileControlsLater() {
@@ -175,8 +187,10 @@ class MainActivity : Activity() {
     override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
         owner=OwnerUi(this)
-        session = (lastNonConfigurationInstance as? FrontendSession)?.takeIf { it.userId == ZuiControlClient.currentUserId() }
-            ?: FrontendSession(V84FrontendGateway(applicationContext), ZuiControlClient.currentUserId())
+        session = FrontendForeground.obtain(application,ZuiControlClient.currentUserId()) {
+            (lastNonConfigurationInstance as? FrontendSession)?.takeIf { it.userId == ZuiControlClient.currentUserId() }
+                ?: FrontendSession(V84FrontendGateway(applicationContext), ZuiControlClient.currentUserId())
+        }
         if (lastNonConfigurationInstance == null && saved != null) session.restore(saved)
         OwnerWindow.fullscreen(this)
         val appContext = applicationContext
@@ -187,7 +201,8 @@ class MainActivity : Activity() {
     override fun onSaveInstanceState(out: Bundle) { session.save(out); super.onSaveInstanceState(out) }
     override fun onResume() {
         super.onResume(); visible = true; session.onChanged = changed; session.onControlsChanged = { if(visible) reconcileControlsLater() }
-        ControlsState.observe(controlsChanged); MonitorPresentation.observe(monitorChanged); load()
+        session.ownedExternalFlow=false
+        render();ControlsState.observe(controlsChanged); MonitorPresentation.observe(monitorChanged); load()
         ZuiControlQuickService.start(this)
         presentPending()
     }
@@ -198,7 +213,7 @@ class MainActivity : Activity() {
         handler.removeCallbacks(controlsSettled)
         cpuSparklines.cancel()
     }
-    override fun onDestroy() { cpuSparklines.close(); if (!isChangingConfigurations) session.close(); super.onDestroy() }
+    override fun onDestroy() { cpuSparklines.close(); super.onDestroy() }
     private fun load() {
         if (reading || session.busy || holdingControlPresentation()) return
         reading = true
@@ -276,41 +291,41 @@ class MainActivity : Activity() {
         val elapsed = if (active != null) active.optLong("duration") + (SystemClock.elapsedRealtime() - recordsReadAt).coerceAtLeast(0) else 0
         recordLabel?.text = "正在记录：${active?.optString("label") ?: "当前应用"} · ${duration(elapsed)}"
     }
-    private fun render() {
-        if (ownerModal?.isOpen == true) return
-        val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage"
-        val keepScroll=page==shownPage
-        val oldDetail=if(keepScroll && ::detail.isInitialized)(detail.parent as? ScrollView)?.scrollY ?: 0 else 0
-        val oldMaster=if(keepScroll && ::master.isInitialized)(0 until master.childCount).map{master.getChildAt(it)}.filterIsInstance<ScrollView>().firstOrNull()?.scrollY ?: 0 else 0
-        cpuSparklines.cancel()
-        ownerControls.clear()
-        handler.removeCallbacks(coreTicker); coreLabel = null;coreSlot=null;quietMeter = null; powerMeter = null
-        quietLabel = null; powerLabel = null; powerReason = null; powerUnit = null; recordLabel = null; recordBanner = null; overlayButton = null
-        ownerQuiet = null; ownerPower = null; ownerSwitch = null
-        val root = owner.row().apply { setBackgroundColor(owner.detail) }
-        fun navigate(key: String) { guard {
-            session.section = key; session.selected = ""; session.clearDrafts(); query = ""; selectedRecord = null; recordRequested = false; analysisPage=false;render();load()
-        } }
-        val rail = owner.column().apply { setPadding(0, owner.px(22), 0, owner.px(18)); setBackgroundColor(owner.rail); gravity = Gravity.CENTER_HORIZONTAL }
-        rail.addView(owner.column().apply {
-            gravity = Gravity.CENTER_HORIZONTAL
+    private fun createShell() {
+        check(!::physicalHost.isInitialized)
+        shellRoot=owner.row().apply{setBackgroundColor(owner.detail)}
+        rail=owner.column().apply{setPadding(0,owner.px(22),0,owner.px(18));setBackgroundColor(owner.rail);gravity=Gravity.CENTER_HORIZONTAL}
+        rail.addView(owner.column().apply{
+            gravity=Gravity.CENTER_HORIZONTAL
             addView(owner.label("ZUI",17f,owner.accent,900).apply{letterSpacing=.03f},LinearLayout.LayoutParams(-2,owner.px(17)))
             addView(owner.label("CONTROL",8f,owner.muted,700).apply{letterSpacing=.04f},LinearLayout.LayoutParams(-2,owner.px(8)).apply{topMargin=owner.px(4)})
         },LinearLayout.LayoutParams(-2,owner.px(29)).apply{topMargin=owner.px(6);bottomMargin=owner.px(30)})
-        fun nav(key: String,title: String,icon: Int,gap: Int=8,action:()->Unit) {
-            val selected=session.section==key
-            val frame=FrameLayout(this).apply {
-                val color=if(selected)owner.accent else owner.muted
-                addView(owner.column().apply {
-                    gravity=Gravity.CENTER;background=owner.shape(if(selected)owner.soft(owner.accent) else Color.TRANSPARENT,14f)
-                    addView(owner.icon(icon,color,20),LinearLayout.LayoutParams(owner.px(20),owner.px(20)))
-                    addView(owner.label(title,10.5f,color,700),LinearLayout.LayoutParams(-2,owner.px(13)).apply{topMargin=owner.px(4)})
-                    isFocusable=true;contentDescription=title;setOnClickListener{action()}
-                },FrameLayout.LayoutParams(owner.px(52),owner.px(52),Gravity.CENTER))
-                if(selected)addView(View(this@MainActivity).apply{background=owner.shape(owner.accent,3f)},FrameLayout.LayoutParams(owner.px(3),owner.px(24),Gravity.START or Gravity.CENTER_VERTICAL))
+        fun nav(key:String,title:String,icon:Int,gap:Int=8,action:()->Unit) {
+            val image=owner.icon(icon,owner.muted,20)
+            val text=owner.label(title,10.5f,owner.muted,700)
+            val cell=owner.column().apply{
+                gravity=Gravity.CENTER
+                addView(image,LinearLayout.LayoutParams(owner.px(20),owner.px(20)))
+                addView(text,LinearLayout.LayoutParams(-2,owner.px(13)).apply{topMargin=owner.px(4)})
+                isFocusable=true;contentDescription=title;setOnClickListener{action()}
+            }
+            val mark=View(this).apply{background=owner.shape(owner.accent,3f)}
+            val frame=FrameLayout(this).apply{
+                addView(cell,FrameLayout.LayoutParams(owner.px(52),owner.px(52),Gravity.CENTER))
+                addView(mark,FrameLayout.LayoutParams(owner.px(3),owner.px(24),Gravity.START or Gravity.CENTER_VERTICAL))
+            }
+            railBindings+={
+                val selected=session.section==key;val color=if(selected)owner.accent else owner.muted
+                image.imageTintList=android.content.res.ColorStateList.valueOf(color);text.setTextColor(color);mark.visibility=if(selected)View.VISIBLE else View.INVISIBLE
+                mark.background=owner.shape(owner.accent,3f);cell.background=owner.shape(if(selected)owner.soft(owner.accent) else Color.TRANSPARENT,14f)
+                if(key=="theme") {text.text=if(owner.dark)"浅色" else "深色";image.setImageResource(if(owner.dark)R.drawable.owner_sun else R.drawable.owner_moon);cell.contentDescription=text.text}
             }
             rail.addView(frame,LinearLayout.LayoutParams(-1,owner.px(52)).apply{bottomMargin=owner.px(gap)})
         }
+        fun navigate(key:String){guard{
+            session.section=key;session.selected="";session.clearDrafts();query="";selectedRecord=null;recordRequested=false;recordThreads=false;analysisPage=false
+            render();load()
+        }}
         nav("tune","调控",R.drawable.owner_tune){navigate("tune")}
         nav("thread","线程",R.drawable.owner_chip){navigate("thread")}
         nav("monitor","监测",R.drawable.owner_pulse){navigate("monitor")}
@@ -318,39 +333,71 @@ class MainActivity : Activity() {
         nav("theme",if(owner.dark)"浅色" else "深色",if(owner.dark)R.drawable.owner_sun else R.drawable.owner_moon,6){theme(if(owner.dark)"light" else "dark")}
         nav("settings","设置",R.drawable.owner_settings,0){navigate("settings")}
         OwnerWindow.safeContent(rail,22f,18f)
-        root.addView(owner.borderedColumn(rail,72),LinearLayout.LayoutParams(owner.px(72),-1))
+        shellRoot.addView(owner.borderedColumn(rail,72),LinearLayout.LayoutParams(owner.px(72),-1))
         master=owner.column().apply{setBackgroundColor(owner.master)}
-        root.addView(owner.borderedColumn(master,312),LinearLayout.LayoutParams(owner.px(312),-1))
+        shellRoot.addView(owner.borderedColumn(master,312),LinearLayout.LayoutParams(owner.px(312),-1))
+        pageHost=FrameLayout(this).apply{clipChildren=false;clipToPadding=false}
+        shellRoot.addView(pageHost,LinearLayout.LayoutParams(0,-1,1f))
+        ownerHost=FrameLayout(this).apply{setBackgroundColor(owner.detail);clipToOutline=false;clipChildren=false;clipToPadding=false;addView(shellRoot,FrameLayout.LayoutParams(-1,-1))}
+        ownerModal=OwnerModal(owner,ownerHost,shellRoot)
+        ownerCanvas=OwnerDesignLayout(this).apply{setBackgroundColor(owner.detail);clipChildren=false;clipToPadding=false;addView(ownerHost);OwnerWindow.inset(this)}
+        physicalHost=FrameLayout(this).apply{setBackgroundColor(owner.detail);addView(ownerCanvas,FrameLayout.LayoutParams(-1,-1))}
+        setContentView(physicalHost)
+        OwnerRenderTrace.construct(physicalHost,ownerCanvas,rail,master,pageHost)
+    }
+    /** Page changes are local; scalar/control/draft callbacks bind existing views. */
+    private fun render() {
+        if (ownerModal?.isOpen == true) return
+        if(!::physicalHost.isInitialized)createShell()
+        railBindings.forEach{it()}
+        val listFingerprint=when(session.section){
+            "tune"->policies?.apps?.map{it.draft.let{d->listOf(d.packageName,d.refreshHz,d.uperfMode,d.gpuPolicy,d.gpuMinMHz,d.gpuMaxMHz)}}.toString()
+            "thread"->"${snapshot?.generation}/${installed.map{it.packageName}}"
+            "monitor"->records.toString()
+            else->"settings"
+        }
+        if(masterSection!=session.section){
+            master.removeAllViews();masterSelectionBindings.clear();masterList=null;masterSection=session.section;masterFingerprint=listFingerprint;buildMaster()
+            OwnerRenderTrace.event("MASTER_SECTION_CHANGED")
+        }else if(masterFingerprint!=listFingerprint){
+            masterFingerprint=listFingerprint;masterList?.let{populateList(it)};OwnerRenderTrace.event("MASTER_LIST_CHANGED")
+        }
+        masterSelectionBindings.forEach{it()}
+        val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage/$recordThreads/${selectedThread?.optString("key")}/$rawPage/${preview?.hashCode()}/${caps.isNotEmpty()}/${session.appDraft!=null}/${session.ruleDraft!=null}/${selectedRecord?.optLong("recordId")}/${analysisPage && analysis!=null}"
+        if(page!=shownPage) {
+        shownPage=page;cpuSparklines.cancel();pageBindings.clear()
+        val previous=pageHost.getChildAt(pageHost.childCount-1)
+        for(i in pageHost.childCount-2 downTo 0)pageHost.removeViewAt(i)
+        ownerControls.clear()
+        handler.removeCallbacks(coreTicker); coreLabel = null;coreSlot=null;quietMeter = null; powerMeter = null
+        quietLabel = null; powerLabel = null; powerReason = null; powerUnit = null; recordLabel = null; recordBanner = null; overlayButton = null
+        ownerQuiet = null; ownerPower = null; ownerSwitch = null
         detail=owner.column().apply{setPadding(owner.px(22),owner.px(20),owner.px(22),owner.px(20))}
         OwnerWindow.safeContent(detail,20f)
-        root.addView(ScrollView(this).apply{isFillViewport=false;isVerticalScrollBarEnabled=false;clipToPadding=false;addView(detail)},LinearLayout.LayoutParams(0,-1,1f))
-        ownerHost=FrameLayout(this).apply{setBackgroundColor(owner.detail);clipToOutline=false;clipChildren=false;clipToPadding=false;addView(root,FrameLayout.LayoutParams(-1,-1))}
-        ownerModal=OwnerModal(owner,ownerHost,root)
-        ownerCanvas=OwnerDesignLayout(this).apply{setBackgroundColor(owner.detail);clipChildren=false;clipToPadding=false;addView(ownerHost);OwnerWindow.inset(this)}
-        if(!::physicalHost.isInitialized) {
-            physicalHost=FrameLayout(this);setContentView(physicalHost)
-        }
-        physicalHost.setBackgroundColor(owner.detail);physicalHost.removeAllViews()
-        physicalHost.addView(ownerCanvas,FrameLayout.LayoutParams(-1,-1))
-        buildMaster()
-        if(session.error.isNotEmpty()) detail.addView(owner.label(session.error,12f,owner.chipFg[3],600).apply{
+        val error=owner.label(session.error,12f,owner.chipFg[3],600).apply{
             setSingleLine(false);setPadding(owner.px(14),owner.px(10),owner.px(14),owner.px(10));background=owner.shape(owner.chipBg[3],12f)
-        },owner.gap())
+        };detail.addView(error,owner.gap());bindPresentation{error.text=session.error;error.visibility=if(session.error.isEmpty())View.GONE else View.VISIBLE}
         when(session.section) {
             "tune" -> if(session.selected.isEmpty())dashboard() else appPage()
-            "thread" -> if(preview!=null)updatePage() else if(session.selected.isEmpty())threadHome() else if(analysisPage){
-                detail.addView(owner.title("线程分析 · ${name(session.selected)}","读取已完成记录；CPU 放置由你决定",leading=owner.button("‹",small=true){analysisPage=false;render()}));analysisCard()
+            "thread" -> if(rawPage)rawPage() else if(preview!=null)updatePage() else if(session.selected.isEmpty())threadHome() else if(analysisPage){
+                detail.addView(owner.title("线程分析 · ${name(session.selected)}","读取已完成记录；CPU 放置由你决定",leading=owner.back(){analysisPage=false;render()}));analysisCard()
             }else threadApp()
             "monitor" -> monitorPage()
             "settings" -> settingsPage()
         }
-        if(page!=shownPage){shownPage=page;detail.alpha=0f;detail.translationY=owner.px(6).toFloat();detail.animate().alpha(1f).translationY(0f).setDuration(300).setInterpolator(OwnerUi.smooth).start()}
-        bindMonitor()
-        if(session.busy && !phaseOne)ownerPending()
-        if(keepScroll)ownerHost.post{
-            (detail.parent as? ScrollView)?.scrollTo(0,oldDetail)
-            (0 until master.childCount).map{master.getChildAt(it)}.filterIsInstance<ScrollView>().firstOrNull()?.scrollTo(0,oldMaster)
+        val next=ScrollView(this).apply{isFillViewport=false;isVerticalScrollBarEnabled=false;clipToPadding=false;addView(detail)}
+        pageHost.addView(next,FrameLayout.LayoutParams(-1,-1))
+        if(previous!=null){
+            previous.animate().cancel();previous.importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            next.alpha=0f;next.translationY=owner.px(6).toFloat()
+            next.animate().alpha(1f).translationY(0f).setDuration(300).setInterpolator(OwnerUi.smooth).start()
+            previous.animate().alpha(0f).setDuration(300).setInterpolator(OwnerUi.smooth).withEndAction{pageHost.removeView(previous)}.start()
         }
+        OwnerRenderTrace.event("PAGE_CHANGED",page)
+        }
+        pageBindings.toList().forEach{it()}
+        bindMonitor()
+        OwnerRenderTrace.bind(physicalHost,ownerCanvas,rail,master,pageHost)
         if(session.notice.isNotEmpty() && session.notice!=shownToast){shownToast=session.notice;toast(session.notice)}
         if(session.notice.isEmpty())shownToast=""
 
@@ -371,6 +418,7 @@ class MainActivity : Activity() {
         },LinearLayout.LayoutParams(-1,owner.px(82)))
         OwnerWindow.safeContent(master.getChildAt(0),22f)
         val list=owner.column().apply{setPadding(owner.px(14),owner.px(4),owner.px(14),owner.px(18))}
+        masterList=list
         if(session.section=="settings") {
             val icons=listOf(R.drawable.owner_monitor,R.drawable.owner_gpu,R.drawable.owner_data,R.drawable.owner_info)
             val rows=listOf("监测与显示" to "悬浮窗权限 · 通知 · 主题","GPU 默认范围" to "四档默认 GPU 频率区间","数据与维护" to "备份 · 恢复 · 维护","关于" to "Release · Build · Schema")
@@ -393,6 +441,7 @@ class MainActivity : Activity() {
         layoutParams=LinearLayout.LayoutParams(owner.px(size),owner.px(size))
     }
     private fun ownerListRow(pkg: String,title: String,subtitle: String,selected: Boolean,icon: Int?=null,action:()->Unit): View=owner.row().apply{
+        val item=this
         setPadding(owner.px(13),owner.px(12),owner.px(13),owner.px(12))
         background=owner.shape(owner.card,14f,if(selected)owner.accent else owner.line,if(selected)2f else 1f)
         if(selected)background=owner.shadow(checkNotNull(background),14f,24f,10f,-12f,owner.accentGlow)
@@ -415,10 +464,18 @@ class MainActivity : Activity() {
         },LinearLayout.LayoutParams(0,-2,1f))
         addView(owner.icon(R.drawable.owner_chevron,owner.muted,16).apply{alpha=.6f},LinearLayout.LayoutParams(owner.px(16),owner.px(16)).apply{marginStart=owner.px(12)})
         layoutParams=LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=owner.px(8)};isFocusable=true;contentDescription=title;setOnClickListener{action()}
+        masterSelectionBindings+={
+            val on=if(pkg.isNotEmpty())session.selected==pkg else if(session.section=="settings")session.settingsModule==listOf("监测与显示","GPU 默认范围","数据与维护","关于").indexOf(title) else false
+            item.isSelected=on
+            item.background=owner.shape(owner.card,14f,if(on)owner.accent else owner.line,if(on)2f else 1f)
+            if(on)item.background=owner.shadow(checkNotNull(item.background),14f,24f,10f,-12f,owner.accentGlow)
+            if(pkg.isEmpty() && image is ImageView){val tone=if(on)owner.accent else owner.sub;image.imageTintList=android.content.res.ColorStateList.valueOf(tone);image.background=owner.shape(if(on)owner.soft(owner.accent)else owner.card2,12f)}
+        }
     }
 
     private fun populateList(list: LinearLayout) {
         list.removeAllViews()
+        masterSelectionBindings.clear()
 
         val rows = when (session.section) {
             "tune" -> policies?.apps.orEmpty().map { Triple(it.draft.packageName, name(it.draft.packageName), "${it.draft.refreshHz} Hz · ${modeTitle(it.draft.uperfMode)}${if (model?.appProfile(it.draft.packageName) != null) " · 线程" else ""}") }
@@ -431,21 +488,27 @@ class MainActivity : Activity() {
                 Triple(r.getString("package"), r.optString("label", r.getString("package")), "${whenRecorded(r.optLong("wall"))} · ${duration(r.optLong("duration"))}") }
         }
         rows.filter { query.isBlank() || it.first.contains(query, true) || it.second.contains(query, true) }.forEach { (pkg, title, subtitle) ->
-            list.addView(if(session.section == "tune") ownerListRow(pkg,title,subtitle,session.selected==pkg){guard{select(pkg)}}
-                else listRow(pkg, title, subtitle, session.selected == pkg) { guard { select(pkg) } })
+            list.addView(if(session.section == "tune") ownerListRow(pkg,title,subtitle,session.selected==pkg){selectWithGuard(pkg)}
+                else listRow(pkg, title, subtitle, session.selected == pkg) { selectWithGuard(pkg) })
         }
         if (list.childCount == 0) list.addView(note(if (reading) "正在读取…" else "暂无应用"))
     }
     private fun select(pkg: String) {
-        session.clearDrafts(); selectedRecord = null; recordRequested = false; analysis = null; analysisError = ""
+        val restoring=session.selected!=pkg && session.hasDraftFor(session.section,pkg)
+        if(!restoring)session.clearDrafts()
+        selectedRecord = null;selectedThread=null;recordThreads=false;rawPage=false; recordRequested = false; analysis = null; analysisError = ""
         session.selected = if (session.selected == pkg) "" else pkg
         if (session.selected.isEmpty()) { render(); return }
         when (session.section) {
             "tune" -> { val d = policies?.apps?.firstOrNull { it.draft.packageName == pkg }?.draft ?: return
-                session.originalApp = d; session.appDraft = d; render() }
-            "thread" -> { openRule(pkg); render(); loadAnalysis(pkg) }
+                if(!restoring){session.originalApp = d; session.appDraft = d}; render() }
+            "thread" -> { if(!restoring)openRule(pkg); render(); loadAnalysis(pkg) }
             else -> { render(); readRecord(pkg) }
         }
+    }
+    private fun selectWithGuard(pkg:String){
+        if(!session.busy && session.selected.isEmpty() && session.hasDraftFor(session.section,pkg))select(pkg)
+        else guard{select(pkg)}
     }
     private fun dashboard() {
         val tier=GpuDefaultsDraft.modes.indexOf(mode.displayed).coerceAtLeast(0)
@@ -454,6 +517,11 @@ class MainActivity : Activity() {
             minimumHeight=owner.px(30)
             addView(OwnerPing(this@MainActivity,owner,owner.tiers[tier]),LinearLayout.LayoutParams(owner.px(7),owner.px(7)).apply{marginEnd=owner.px(8)})
             addView(owner.label("${modeTitle(mode.displayed)}模式",12f,owner.chipFg[tier+1],800));layoutParams=LinearLayout.LayoutParams(-2,owner.px(30))
+        }
+        bindPresentation{
+            val tier=GpuDefaultsDraft.modes.indexOf(mode.displayed).coerceAtLeast(0)
+            modeChip.background=owner.shape(owner.chipBg[tier+1],999f)
+            (modeChip.getChildAt(1) as TextView).apply{text="${modeTitle(mode.displayed)}模式";setTextColor(owner.chipFg[tier+1])}
         }
         detail.addView(owner.title("系统全局状态","系统关键性能参数与组件运行情况",trailing=modeChip))
         val stats=owner.row()
@@ -491,12 +559,12 @@ class MainActivity : Activity() {
         detail.addView(stats,owner.gap())
         detail.addView(owner.card().apply{
             addView(owner.section("全局刷新率","全局默认屏幕刷新率档位模式"))
-            val rates=supportedRates();addView(ownerControl(OwnerSegment(this@MainActivity,owner,rates.map{"$it Hz"},rates.indexOf(refresh.displayed)){i->
+            val rates=supportedRates();val refreshSelector=ownerControl(OwnerSegment(this@MainActivity,owner,rates.map{"$it Hz"},rates.indexOf(refresh.displayed)){i->
                 optimistic(refresh,rates[i]){target->session.gateway.setGlobal("refresh",value=target)}
-            }))
+            });addView(refreshSelector);bindPresentation{refreshSelector.showSelection(rates.indexOf(refresh.displayed))}
             if(refresh.confirmed==0)addView(owner.label("全局档位尚未确认",11f,owner.inks[2]))
             addView(owner.divider());addView(owner.section("全局性能档位","日常系统调度激进程度"))
-            addView(ownerControl(owner.tiers(mode.displayed){id->optimistic(mode,id){target->session.gateway.setGlobal("mode",mode=target)}}))
+            addView(ownerControl(owner.tiers(mode.displayed,reconcile={bind->pageBindings+={bind(mode.displayed)}}){id->optimistic(mode,id){target->session.gateway.setGlobal("mode",mode=target)}}))
         },owner.gap())
         detail.addView(owner.card(false).apply{
             orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(owner.px(19),owner.px(16),owner.px(19),owner.px(16))
@@ -561,10 +629,7 @@ class MainActivity : Activity() {
     private fun appPage() {
         val d=session.appDraft ?: return
         val leading=owner.row().apply{
-            addView(owner.icon(R.drawable.owner_back,owner.sub,18).apply{
-                background=owner.shape(owner.card,11f,owner.line);setPadding(owner.px(9),owner.px(9),owner.px(9),owner.px(9));isFocusable=true;contentDescription="返回全局"
-                setOnClickListener{guard{session.clearDrafts();session.selected="";render()}}
-            },LinearLayout.LayoutParams(owner.px(36),owner.px(36)).apply{marginEnd=owner.px(14)})
+            addView(owner.back("返回全局"){guard{session.clearDrafts();session.selected="";render()}},LinearLayout.LayoutParams(owner.px(36),owner.px(36)).apply{marginEnd=owner.px(14)})
             addView(ownerAppIcon(d.packageName,44))
         }
         val dirtyChip=owner.chip("未保存",3,true).apply{visibility=if(session.appDirty)View.VISIBLE else View.GONE}
@@ -573,6 +638,7 @@ class MainActivity : Activity() {
             dirtyChip.visibility=if(session.appDirty)View.VISIBLE else View.GONE
             saveButton?.let{it.isEnabled=!session.busy && session.appDirty;it.alpha=if(it.isEnabled)1f else .4f}
         }
+        pageBindings+={markDirty()}
         var syncGpu:()->Unit={}
         detail.addView(owner.identityTitle(name(d.packageName),d.packageName,leading,dirtyChip))
         val configurable=UperfAppPolicy.isConfigurable(packageManager,d.packageName)
@@ -641,10 +707,12 @@ class MainActivity : Activity() {
     private fun ownerUpdateReadout(view: LinearLayout,range: GpuRanges.Range){(view.getChildAt(0) as TextView).text="${range.min} – ${range.max}"}
     private fun gpuDefaultsPage() {
         val d=runCatching{session.gpuDraftFrom(state)}.getOrElse{heading("GPU 默认范围","各性能档位的默认 GPU 频率区间");detail.addView(note("默认范围暂不可用 · ${it.message}",orange));return}
+        val dirtyChip=owner.chip("未保存",3,true)
         val trailing=owner.row().apply{
-            if(d.dirty)addView(owner.chip("未保存",3,true),LinearLayout.LayoutParams(-2,owner.px(22)).apply{marginEnd=owner.px(10)})
-            addView(owner.button("恢复默认",small=true,enabled=!session.busy){d.restoreDefaults();render()})
+            addView(dirtyChip,LinearLayout.LayoutParams(-2,owner.px(22)).apply{marginEnd=owner.px(10)})
+            addView(owner.button("恢复默认",small=true,enabled=!session.busy){session.gpuDraft?.restoreDefaults();render()})
         }
+        bindPresentation{dirtyChip.visibility=if(session.gpuDraft?.dirty==true)View.VISIBLE else View.GONE}
         detail.addView(owner.title("GPU 默认范围","各性能档位的默认 GPU 频率区间",trailing=trailing))
         detail.addView(owner.card().apply{
             GpuDefaultsDraft.modes.forEachIndexed{i,id->
@@ -655,12 +723,17 @@ class MainActivity : Activity() {
                     addView(owner.label(modeTitle(id),13.5f,owner.text,800));addView(owner.label(OwnerUi.descriptions[i],11f,owner.muted,600),LinearLayout.LayoutParams(-2,-2).apply{marginStart=owner.px(6)})
                     addView(View(this@MainActivity),LinearLayout.LayoutParams(0,1,1f));addView(readout)
                 },LinearLayout.LayoutParams(-1,owner.px(30)).apply{bottomMargin=owner.px(10)})
-                val bar=GpuRangeBar(this@MainActivity,r).apply{tone=owner.tiers[i];isEnabled=!session.busy;onPreview={ownerUpdateReadout(readout,it)};onCommit={d.set(id,it);handler.postDelayed({if(visible)render()},320)}}
+                val bar=GpuRangeBar(this@MainActivity,r).apply{tone=owner.tiers[i];isEnabled=!session.busy;onPreview={ownerUpdateReadout(readout,it)};onCommit={session.gpuDraft?.set(id,it);render()}}
                 addView(bar,LinearLayout.LayoutParams(-1,bar.preferredHeight))
+                bindPresentation{session.gpuDraft?.ranges?.get(id)?.let{bar.showRange(it);ownerUpdateReadout(readout,it)};bar.isEnabled=!session.busy}
             }
         },owner.gap())
         detail.addView(owner.label("单应用选择“跟随档位默认”时会持续使用这里的区间，修改后这些应用随之更新。拖动后需确认才会保存。",11f,owner.muted).apply{setSingleLine(false);setPadding(owner.px(4),0,owner.px(4),0)},owner.gap())
-        detail.addView(owner.row().apply{gravity=Gravity.END;addView(owner.button(if(session.busy)"正在保存…" else "保存并生效","primary",enabled=!session.busy && d.dirty){saveDraft()})})
+        detail.addView(owner.row().apply{gravity=Gravity.END;addView(draftSave("保存并生效"){session.gpuDraft?.dirty==true})})
+    }
+    private fun draftSave(title:String,dirty:()->Boolean):View=owner.button(title,"primary",small=true,enabled=!session.busy && dirty()){saveDraft()}.also{button->
+        button.minimumHeight=dp(40)
+        bindPresentation{button.isEnabled=!session.busy && dirty();button.alpha=if(button.isEnabled)1f else .4f;((button as LinearLayout).getChildAt(0) as TextView).text=if(session.busy)"正在保存…" else title}
     }
 
     private fun saveDraft(after: (() -> Unit)? = null) {
@@ -672,7 +745,11 @@ class MainActivity : Activity() {
             when {
                 rule != null -> {
                     val bytes = rule.canonical().toByteArray(Charsets.UTF_8); val validation = ZuioptRules.validate(applicationContext, bytes, rule.generation)
-                    check(validation.valid) { validation.error }; ZuioptRules.upload(applicationContext, "user", bytes, expectedGeneration = rule.generation); session.ruleDraft = null
+                    check(validation.valid) { validation.error }; ZuioptRules.upload(applicationContext, "user", bytes, expectedGeneration = rule.generation)
+                    val fresh=ZuioptRules.userRules(applicationContext);val accepted=ZuioptRuleModel.parseNormalized(fresh.text)
+                    val profile=checkNotNull(accepted.appProfile(rule.packageName)){"RULE_POST_ACK_PROFILE_UNAVAILABLE"}
+                    check(fresh.generation!=rule.generation){"RULE_POST_ACK_READ_STALE"}
+                    rule.base=accepted;rule.generation=fresh.generation;rule.original=profile;rule.profile=profile
                 }
             }
         }
@@ -685,7 +762,14 @@ class MainActivity : Activity() {
             owner.button("保存","primary"){ownerModal?.close();saveDraft(next)}))
     }
     @Deprecated("Deprecated in Java")
-    override fun onBackPressed() { if(ownerModal?.isOpen==true){ownerModal?.close();return};guard { if (session.selected.isNotEmpty()) { session.clearDrafts(); session.selected = ""; render() } else finish() } }
+    override fun onBackPressed() {
+        if(ownerModal?.isOpen==true){ownerModal?.close();return}
+        if(rawPage){rawPage=false;render();return}
+        if(analysisPage){analysisPage=false;render();return}
+        if(session.section=="monitor" && selectedThread!=null){selectedThread=null;render();return}
+        if(session.section=="monitor" && recordThreads){readRecord(session.selected);return}
+        guard { if (session.selected.isNotEmpty()) { session.clearDrafts(); session.selected = ""; render() } else moveTaskToBack(true) }
+    }
     private fun picker() { ownerPicker() }
     private fun ownerPicker() {
         val box=owner.column();val list=owner.column();var system=false;var selected=""
@@ -738,7 +822,7 @@ class MainActivity : Activity() {
             health?.state==BackendHealth.State.DEGRADED -> "需关注"
             else -> "状态不可用"
         }
-        detail.addView(owner.title("线程调度","ZUIopt · 按线程 / 任务的 CPU 放置（cpuset / affinity）",trailing=owner.chip(status,when(health?.state){BackendHealth.State.OK->if(health.reason=="DISABLED_BY_OWNER")0 else 1;BackendHealth.State.FAILED->4;BackendHealth.State.DEGRADED->3;else->0},true)))
+        detail.addView(owner.title("线程调度","ZUIopt · 按线程 / 任务的 CPU 放置（cpuset / affinity）",trailing=if(health?.state==BackendHealth.State.OK && health.reason!="DISABLED_BY_OWNER")owner.modeChip(status,0)else owner.chip(status,when(health?.state){BackendHealth.State.FAILED->4;BackendHealth.State.DEGRADED->3;else->0},true)))
         if (ruleError.isNotEmpty()) detail.addView(owner.empty("规则暂不可用",ruleError,true), gap())
         if (ZuioptRules.field(ruleState, "failure") == "1") detail.addView(actionRow("ZUIopt 已进入故障保护", ZuioptRules.field(ruleState, "failure_reason") + " · 下次开机重新启用") {
             confirm("下次开机重新启用？", "本次开机继续由 Android 调度，不会立即重启。") { session.work("已安排") { ZuioptRules.command(applicationContext, "reset") } }
@@ -746,7 +830,8 @@ class MainActivity : Activity() {
         val b = baseline
         detail.addView(card().apply {
             addView(owner.section("当前规则集",b?.metadata?.let { listOf(it.optString("source").ifBlank{"来源未提供"},it.optString("sourceVersion")).filter{it.isNotBlank()}.joinToString(" · ") } ?: "规则集不可用",owner.row().apply {
-                addView(owner.button("查看原文",small=true){rawView()})
+                addView(owner.chip("规则源待验证",0,true),LinearLayout.LayoutParams(-2,dp(22)).apply{marginEnd=dp(10)})
+            addView(owner.button("查看原文",small=true,icon=R.drawable.owner_code){rawView()})
 
             }))
             addView(note(b?.let { listOf(it.metadata.optString("sourceDate"),it.metadata.optString("sourceCommit"),"生效 generation ${it.generation}").filter{it.isNotBlank()}.joinToString(" · ") } ?: "等待原生规则权威"))
@@ -754,24 +839,29 @@ class MainActivity : Activity() {
             val counts=listOf(apps.size,model?.profiles?.values?.sumOf{it.rules.size} ?: 0,apps.count{provenance(it.packageName) in setOf("USER_MODIFIED","USER_CREATED")})
             addView(owner.row().apply {
                 listOf("规则应用","特殊线程规则","我的修改 / 新建").forEachIndexed{i,title->
+                    if(i>0)addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(dp(1),dp(50)))
                     addView(owner.column().apply {
-                        if(i>0)setPadding(dp(18),0,0,0)
-                        addView(owner.label(counts[i].toString(),24f,owner.text,800),LinearLayout.LayoutParams(-1,dp(28)))
+                        setPadding(if(i>0)dp(18)else 0,dp(2),dp(18),dp(2))
+                        addView(owner.row().apply{
+                            addView(owner.label(counts[i].toString(),24f,owner.text,800))
+                            addView(owner.label(if(i==1)"条" else "个",12f,owner.sub,700),LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(3);topMargin=dp(8)})
+                        },LinearLayout.LayoutParams(-1,dp(24)))
                         addView(owner.label(title,11f,owner.muted),LinearLayout.LayoutParams(-1,dp(16)).apply{topMargin=dp(6)})
                     },LinearLayout.LayoutParams(0,-2,1f))
                 }
             },LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(16)})
         },gap())
         detail.addView(card().apply {
-            addView(owner.label("规则库",11f,owner.muted,800))
-            addView(actionRow("同步上游规则",if(!RuleRemoteConfig.configured)"规则源尚未启用" else latest?.let{"${it.version} · ${it.date}"} ?: "无待同步更新"){syncUpstream()}.apply{isEnabled=RuleRemoteConfig.configured && latest!=null;alpha=if(isEnabled)1f else .4f})
+            setPadding(dp(18),dp(12),dp(18),dp(12))
+            addView(owner.label("规则库",11.5f,owner.muted,800))
+            // Deferred feed has no manual-import affordance. Existing feed logic stays disabled.
             val previous=ZuioptRules.field(ruleState,"previous_generation").matches(Regex("g[0-9a-f]{24}"))
-            addView(actionRow("回退规则版本",if(previous)"回到上一代完整规则集" else "暂无可回退版本"){confirm("回退规则版本？","上游基线和生效规则一起回退。"){
+            addView(owner.domainRow("回退规则版本",if(previous)"回到上一代完整规则集" else "暂无可回退版本",R.drawable.owner_undo,"warn",true){confirm("回退规则版本？","上游基线和生效规则一起回退。"){
                 session.work("已回退"){ZuioptRules.command(applicationContext,"rollback",checkNotNull(snapshot).generation)}
             }}.apply{isEnabled=previous;alpha=if(previous)1f else .4f})
-            addView(actionRow("高级兼容导入 · AppOpt","兼容转换与差异预览后确认"){document(Intent.ACTION_OPEN_DOCUMENT,102,"*/*")})
-            addView(actionRow("规则集导出","导出当前生效规则集"){snapshot?.let{export(it.text.toByteArray(),"ZuiControl_rules.conf")}})
-            addView(actionRow("检查更新",if(RuleRemoteConfig.configured)updateStatus else "规则源尚未启用"){checkUpdates()}.apply{isEnabled=RuleRemoteConfig.configured;alpha=if(isEnabled)1f else .4f})
+            addView(owner.domainRow("高级兼容导入 · AppOpt","兼容转换与差异预览后确认",R.drawable.owner_appopt,"mute",true){if(!session.busy)document(Intent.ACTION_OPEN_DOCUMENT,102,"*/*")})
+            addView(owner.domainRow("规则集导出","导出当前生效规则集",R.drawable.owner_export,"zo",true){snapshot?.let{export(it.text.toByteArray(),"ZuiControl_rules.conf")}})
+            addView(note("在线规则源尚未启用 · 兼容实验室验证后开放"))
             if(RuleRemoteConfig.configured && updateStatus.isNotEmpty())addView(note(updateStatus))
         },gap())
     }
@@ -795,7 +885,7 @@ class MainActivity : Activity() {
     }
     private fun updatePage() {
         val p = preview ?: return
-        heading(if(appOpt)"高级兼容导入 · AppOpt" else "规则库更新", "转换结果需确认后才写入；不会整体替换当前规则集")
+        detail.addView(owner.title(if(appOpt)"高级兼容导入 · AppOpt" else "规则库更新", "转换结果需确认后才写入；不会整体替换当前规则集",leading=owner.back(){session.work("已放弃导入"){ZuioptLibrary.cancel(applicationContext,p);preview=null}}))
         detail.addView(card().apply{
             addView(owner.section("预览摘要","${p.apps.size} 个应用变化",owner.chip(if(p.apps.any{it.optBoolean("conflict")})"需要你决定" else "待确认",3,true)))
             addView(owner.row().apply{
@@ -861,15 +951,16 @@ class MainActivity : Activity() {
         val alias = (0..64).map { "user$it" }.first { it !in base.profiles }
         return base.copy(profiles = base.profiles + (alias to p), mappings = (listOf(ZuioptRuleModel.Mapping("exact", pkg, alias, 0)) + base.mappings).mapIndexed { i, m -> m.copy(priority = 100000 - i) })
     }
-    private fun rawView() {
+    private fun rawView() {rawPage=true;render()}
+    private fun rawPage() {
         val raw = snapshot?.text ?: return
+        detail.addView(owner.title("规则集原文 · 只读","完整 canonical 规则；编辑请进入单个应用。",leading=owner.back(){rawPage=false;render()},trailing=owner.chip("Schema 2 · 原文",0,true).apply{background=owner.shape(owner.zoBg,6f);setTextColor(owner.zoFg)}))
         val code=owner.row().apply {
             background=owner.shape(owner.code,12f,owner.line)
             addView(owner.label(raw.lines().indices.joinToString("\n"){(it+1).toString()},12f,owner.muted).apply{setSingleLine(false);typeface=Typeface.MONOSPACE;gravity=Gravity.TOP;setPadding(dp(12),dp(12),dp(8),dp(12))},LinearLayout.LayoutParams(dp(40),-2))
             addView(label(raw,12f,owner.text).apply{typeface=Typeface.MONOSPACE;setTextIsSelectable(true);gravity=Gravity.TOP;setPadding(dp(14),dp(12),dp(14),dp(12))},LinearLayout.LayoutParams(0,-2,1f))
         }
-        ownerModal?.open("规则集原文 · 只读","完整 canonical 规则；编辑请进入单个应用。",600,
-            owner.scroll(code,340),listOf(owner.button("关闭"){ownerModal?.close()}))
+        detail.addView(card().apply{addView(code)},gap())
     }
     private fun openRule(pkg: String) {
         analysisPage=false
@@ -880,14 +971,13 @@ class MainActivity : Activity() {
     private fun threadApp() {
         val pkg=session.selected;val d=session.ruleDraft
         val leading=owner.row().apply{
-            addView(owner.icon(R.drawable.owner_back,owner.sub,18).apply{
-                background=owner.shape(owner.card,11f,owner.line);setPadding(dp(9),dp(9),dp(9),dp(9));isFocusable=true;contentDescription="返回线程首页"
-                setOnClickListener{guard{session.clearDrafts();session.selected="";analysisPage=false;render()}}
-            },LinearLayout.LayoutParams(dp(36),dp(36)).apply{marginEnd=dp(14)})
+            addView(owner.back("返回线程首页"){guard{session.clearDrafts();session.selected="";analysisPage=false;render()}},LinearLayout.LayoutParams(dp(36),dp(36)).apply{marginEnd=dp(14)})
             addView(ownerAppIcon(pkg,44))
         }
+        val dirtyChip=owner.chip("未保存",3,true)
+        bindPresentation{dirtyChip.visibility=if(session.ruleDraft?.dirty==true)View.VISIBLE else View.GONE}
         detail.addView(owner.identityTitle(name(pkg),pkg,leading=leading,trailing=owner.row().apply{
-            addView(provenanceChip(pkg,true));if(d?.dirty==true)addView(owner.chip("未保存",3,true),LinearLayout.LayoutParams(-2,dp(22)).apply{marginStart=dp(6)})
+            addView(provenanceChip(pkg,true));addView(dirtyChip,LinearLayout.LayoutParams(-2,dp(22)).apply{marginStart=dp(6)})
         }))
         if(d==null)detail.addView(owner.empty("此规则暂不能无损显示","可查看完整原文。$ruleError",true),gap())
         else {
@@ -895,9 +985,15 @@ class MainActivity : Activity() {
             detail.addView(card().apply {
                 addView(owner.section("线程规则","Profile ${mapping?.profile ?: "新建"} · 按顺序匹配，可拖动调整"))
                 addView(owner.row().apply{
-                    addView(owner.column().apply{addView(owner.label("默认 CPU 范围",13f,owner.text,800));addView(note("未命中特殊规则的线程 · ${cpuRange(d.profile.generalMask)}"))},LinearLayout.LayoutParams(0,-2,1f))
-                    addView(cpuPicker(d.profile.generalMask){mask->mutateRule{d.profile=d.profile.copy(generalMask=mask);render()}})
+                    val caption=note("未命中特殊规则的线程 · ${cpuRange(d.profile.generalMask)}")
+                    addView(owner.column().apply{addView(owner.label("默认 CPU 范围",13f,owner.text,800));addView(caption)},LinearLayout.LayoutParams(0,-2,1f))
+                    val picker=cpuPicker(d.profile.generalMask){mask->mutateRule{d.profile=d.profile.copy(generalMask=mask);render()}} as OwnerCpuPicker
+                    addView(picker);bindPresentation{picker.showSelection(d.profile.generalMask);caption.text="未命中特殊规则的线程 · ${cpuRange(d.profile.generalMask)}"}
                 },LinearLayout.LayoutParams(-1,dp(48)))
+                val rowsHost=owner.column();val rowsBindings=mutableListOf<()->Unit>()
+                var structure=""
+                fun rebuildRules(){
+                rowsHost.removeAllViews();rowsBindings.clear()
                 val table=owner.column()
                 fun cell(parent:LinearLayout,view:View,width:Int){parent.addView(view,LinearLayout.LayoutParams(if(width==0)0 else dp(width),-2,if(width==0)1f else 0f).apply{marginStart=dp(10)})}
                 table.addView(owner.row().apply{
@@ -924,14 +1020,22 @@ class MainActivity : Activity() {
                         },0)
                         cell(this,owner.row().apply{addView(owner.chip("组 ${groupName(d,rule.competitionClass)}"));setOnClickListener{editRule(index)}},62)
                         cell(this,owner.row().apply{addView(owner.chip(if(rule.selector=="all")"全部候选" else "第${rule.selector.substringAfter(':')}个").apply{background=owner.shape(owner.zoBg,5f);setTextColor(owner.zoFg)});setOnClickListener{editRule(index)}},84)
-                        cell(this,cpuPicker(rule.cpuMask){mask->mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.map{if(it.competitionClass==rule.competitionClass)it.copy(cpuMask=mask)else it});render()}},117)
+                        val picker=cpuPicker(rule.cpuMask){mask->mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.map{if(it.competitionClass==rule.competitionClass)it.copy(cpuMask=mask)else it});render()}} as OwnerCpuPicker
+                        cell(this,picker,117);rowsBindings+={d.profile.rules.getOrNull(index)?.let{picker.showSelection(it.cpuMask)}}
                         cell(this,owner.icon(R.drawable.owner_close,owner.muted,14).apply{isFocusable=true;contentDescription="删除规则 ${index+1}";setOnClickListener{mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.filterIndexed{i,_->i!=index});render()}}},22)
                         setOnDragListener{_,event->when(event.action){DragEvent.ACTION_DRAG_STARTED->event.clipDescription?.label=="rule-order";DragEvent.ACTION_DROP->{(event.localState as? Int)?.let{moveRule(it,index)};true};else->true}}
                     })
                     table.addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
                     if(rule.cpuMask.isEmpty())table.addView(note("请选择 CPU 后再保存",orange))
                 }
-                addView(owner.scroll(table,minOf(214,28+d.profile.rules.size*40)))
+                rowsHost.addView(owner.scroll(table,minOf(214,28+d.profile.rules.size*40)))
+                }
+                bindPresentation{
+                    val next=d.profile.rules.map{listOf(it.competitionClass,it.matchKind,it.pattern,it.selector,it.priority,it.cpuMask.isEmpty())}.toString()
+                    if(next!=structure){structure=next;rebuildRules();OwnerRenderTrace.event("RULE_ROWS_CHANGED")}
+                    rowsBindings.forEach{it()}
+                }
+                addView(rowsHost)
                 addView(owner.button("添加特殊线程规则","dashed",small=true,icon=R.drawable.owner_plus){editRule(null)},LinearLayout.LayoutParams(-1,dp(34)).apply{topMargin=dp(8)})
             },gap())
             detail.addView(owner.row().apply{
@@ -943,13 +1047,13 @@ class MainActivity : Activity() {
                     }
                 }})
                 else addView(owner.button("放弃新建","danger",icon=R.drawable.owner_trash){guard{session.clearDrafts();session.selected="";render()}})
-                if(provenance(pkg)=="USER_MODIFIED")addView(owner.button("恢复上游"){confirm("恢复上游规则？","将放弃此应用的修改。"){
+                if(provenance(pkg)=="USER_MODIFIED")addView(owner.button("恢复上游",icon=R.drawable.owner_undo){confirm("恢复上游规则？","将放弃此应用的修改。"){
                     session.work("已恢复上游"){ZuioptLibrary.restoreApp(applicationContext,pkg,checkNotNull(this@MainActivity.baseline));session.ruleDraft=null}
                 }},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
                 addView(View(this@MainActivity),LinearLayout.LayoutParams(0,1,1f))
                 addView(owner.button("记录关联线程分析",small=true,icon=R.drawable.owner_pulse){analysisPage=true;render()}.apply{minimumHeight=dp(40)},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
                 addView(owner.button("原文预览",small=true,icon=R.drawable.owner_code){rawView()}.apply{minimumHeight=dp(40)},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
-                addView(owner.button("保存并应用","primary",small=true,enabled=!session.busy && d.dirty){saveDraft()}.apply{minimumHeight=dp(40)})
+                addView(draftSave("保存并应用"){session.ruleDraft?.dirty==true})
             },gap())
         }
         if(d==null)detail.addView(owner.button("查看原文 · 只读",small=true){rawView()},gap())
@@ -1062,8 +1166,16 @@ class MainActivity : Activity() {
     }
 
     private fun readRecord(pkg: String, threads: Boolean = false) { recordRequested = true; session.work {
-        selectedRecord = JSONObject(PerformanceMonitor.command("recordRead", JSONObject().put("package", pkg).put("threads", threads).put("thread", "").toString())); recordThreads = threads
+        selectedRecord = JSONObject(PerformanceMonitor.command("recordRead", JSONObject().put("package", pkg).put("threads", threads).put("thread", "").toString())); recordThreads = threads;selectedThread=null
     } }
+    private fun readThread(key:String,name:String){
+        val record=selectedRecord ?: return;val pkg=record.optString("package");val id=record.optLong("recordId")
+        session.work{
+            val data=JSONObject(PerformanceMonitor.command("recordRead",JSONObject().put("package",pkg).put("threads",false).put("thread",key).toString()))
+            check(data.optString("package")==pkg && data.optLong("recordId")==id && data.has("detail")){"记录线程身份不匹配"}
+            selectedThread=data.put("key",key).put("name",name)
+        }
+    }
     private fun monitorPage() {
         val r = selectedRecord
         if(r!=null && r.has("package")){
@@ -1073,7 +1185,7 @@ class MainActivity : Activity() {
                     session.work("已删除"){val reply=PerformanceMonitor.command("recordDelete",session.selected);check(reply.startsWith("ok=1")){reply};selectedRecord=null}
                 }},LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(8)})
             }
-            detail.addView(owner.title(if(recordThreads)"线程运行记录" else name(session.selected),"${whenRecorded(r.optLong("wall"))} · ${duration(r.optLong("duration"))} · ${if(r.optBoolean("complete"))"已结束" else r.optString("terminalReason","未完成")}",trailing=if(recordThreads)null else actions))
+            detail.addView(owner.title(selectedThread?.optString("name") ?: if(recordThreads)"线程运行记录" else name(session.selected),"${whenRecorded(r.optLong("wall"))} · ${duration(r.optLong("duration"))} · ${if(r.optBoolean("complete"))"已结束" else r.optString("terminalReason","未完成")}",leading=if(recordThreads)owner.back("返回记录详情"){if(selectedThread!=null){selectedThread=null;render()}else readRecord(session.selected)}else null,trailing=if(recordThreads)null else actions))
         }else heading("性能监测","通过性能监视悬浮窗开始记录")
         recordBanner = row().apply {
             background = shape(field, 14); recordLabel = label("", 13f, orange, true)
@@ -1082,10 +1194,16 @@ class MainActivity : Activity() {
             } }); visibility = View.GONE
         }; detail.addView(recordBanner, gap())
         if (r == null || !r.has("package")) { detail.addView(owner.empty("选择一条记录查看详情","暂无记录时，请先开启性能监视悬浮窗。"),gap()); detail.addView(button("记录指引") { monitorGuidance() }); return }
+        selectedThread?.let{thread->
+            detail.addView(card().apply{
+                addView(owner.section("CPU 时间线","入榜期间单核百分比；缺失样本保留断档"))
+                addView(RecordChart(this@MainActivity,thread.optJSONArray("detail") ?: JSONArray(),1,thread.optLong("duration")),LinearLayout.LayoutParams(-1,dp(208)))
+                addView(note(thread.optString("key")));addView(note("无已保存 Top15 样本不代表 CPU=0。"))
+            },gap());return
+        }
         if (recordThreads) {
-            detail.addView(button("‹ 返回记录详情") { readRecord(session.selected) }, gap())
             detail.addView(note("Top15 入榜线程；入榜均值不是整段平均。时间线断档表示无已保存的 Top15 样本，不代表 CPU=0。"), gap())
-            detail.addView(owner.cpuThreadTable(r,cpuSparklines),gap());return
+            detail.addView(owner.cpuThreadTable(r,cpuSparklines){key,name->if(!session.busy)readThread(key,name)},gap());return
         }
         val policy = r.optJSONObject("policySnapshot")
         detail.addView(note(if (policy == null || policy.length() == 0) "记录开始时未保存策略快照" else
@@ -1107,7 +1225,7 @@ class MainActivity : Activity() {
             addView(chart(2,"温度 · quiet ℃",120),LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=dp(12)})
         },gap())
         detail.addView(note("功耗统计不含插电/不可用时段，曲线断档保留缺失；FPS 为 DISPLAY_MEASURED_FPS。"))
-        detail.addView(card().apply{addView(actionRow("线程运行记录","Top15 入榜线程 · 点击查看 CPU 时间线"){readRecord(session.selected,true)})},gap())
+        detail.addView(card().apply{addView(owner.domainRow("线程运行记录","Top15 入榜线程 · 点击查看 CPU 时间线",R.drawable.owner_thread_list){if(!session.busy)readRecord(session.selected,true)})},gap())
     }
 
     private fun settingsPage() {
@@ -1123,7 +1241,7 @@ class MainActivity : Activity() {
                     addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
                     addView(owner.settingsRow("通知","故障保护与监测记录状态提醒",owner.row().apply{
                         addView(owner.chip(if(enabled)"已开启" else "已关闭",if(enabled)1 else 0,true))
-                        if(!enabled)addView(owner.button("系统通知设置",small=true){startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))},LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(8)})
+                        if(!enabled)addView(owner.button("系统通知设置",small=true){ownedActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,packageName))},LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(8)})
                     }))
                 },gap())
                 detail.addView(card().apply{
@@ -1175,51 +1293,29 @@ class MainActivity : Activity() {
     }
     private fun theme(theme: String) {
         if(prefs.getString("theme","system")==theme)return
-        val old=if(::ownerCanvas.isInitialized)ownerCanvas else null
+        OwnerGeometry.theme(ownerCanvas,0,"persistent")
         prefs.edit().putString("theme",theme).apply()
-        owner=OwnerUi(this);OwnerWindow.fullscreen(this)
-        render()
-        // Crossfade existing hardware views. No read, recreation or touch-blocking screenshot.
-        if(old!=null && old!==ownerCanvas){
-            (old.parent as? ViewGroup)?.removeView(old)
-            val fade=object:FrameLayout(this){override fun dispatchTouchEvent(event:MotionEvent)=false}
-            fade.importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-            fade.addView(old,FrameLayout.LayoutParams(-1,-1));physicalHost.addView(fade,FrameLayout.LayoutParams(-1,-1))
-            // Sibling physical hosts; each Owner canvas applies exactly one transform.
-            val next=ownerCanvas
-            next.viewTreeObserver.addOnPreDrawListener(object:ViewTreeObserver.OnPreDrawListener {
-                override fun onPreDraw():Boolean {
-                next.viewTreeObserver.removeOnPreDrawListener(this)
-                var measured=-1
-                fun frame(fraction:Int){
-                    if(fraction==measured)return
-                    measured=fraction
-                    OwnerGeometry.theme(old,fraction,"old");OwnerGeometry.theme(next,fraction,"new")
-                }
-                frame(0)
-                android.animation.ValueAnimator.ofFloat(1f,0f).apply {
-                    setDuration(275)
-                    addUpdateListener{fade.alpha=it.animatedValue as Float;frame((it.animatedFraction*4).toInt()*25)}
-                    addListener(object:android.animation.AnimatorListenerAdapter(){
-                        override fun onAnimationEnd(animation:android.animation.Animator){frame(100);physicalHost.removeView(fade)}
-                    });start()
-                }
-                return true
-                }
-            })
-        }
+        owner.applyTheme(physicalHost,OwnerWindow.dark(this));OwnerWindow.fullscreen(this)
+        physicalHost.setBackgroundColor(owner.detail);ownerCanvas.setBackgroundColor(owner.detail)
+        ownerHost.setBackgroundColor(owner.detail);shellRoot.setBackgroundColor(owner.detail)
+        rail.setBackgroundColor(owner.rail);master.setBackgroundColor(owner.master)
+        railBindings.forEach{it()};masterSelectionBindings.forEach{it()};pageBindings.toList().forEach{it()};bindMonitor()
+        OwnerRenderTrace.event("PALETTE_CHANGED",theme)
+        // Palette changes in one frame; no opacity dip or text/layout animation.
+        ownerCanvas.post{OwnerGeometry.theme(ownerCanvas,100,"persistent")}
     }
     private fun monitorGuidance() {
         ownerModal?.open("监测记录指引","通过悬浮窗开始记录，在监测页可停止。",480,owner.column().apply{
             listOf("轻触长条切换圆形，双击圆形开始记录。","记录中轻触悬浮窗，或在监测页点击停止。","切换业务应用、锁屏或满 30 分钟自动结束。","线程分析读取该记录产生的结果，CPU 放置由你选择。").forEach{addView(note("•  $it"),gap())}
         },listOf(owner.button("知道了","primary"){ownerModal?.close()}))
     }
-    private fun overlayPermission() { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
+    private fun ownedActivity(intent:Intent){session.ownedExternalFlow=true;try{startActivity(intent)}catch(e:RuntimeException){session.ownedExternalFlow=false;throw e}}
+    private fun overlayPermission() { ownedActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
     private fun export(bytes: ByteArray, title: String) { exportBytes = bytes; document(Intent.ACTION_CREATE_DOCUMENT, 101, "text/plain", title) }
     @Suppress("DEPRECATION")
-    private fun document(action: String, code: Int, mime: String, title: String = "") { startActivityForResult(Intent(action).apply {
+    private fun document(action: String, code: Int, mime: String, title: String = "") { session.ownedExternalFlow=true;try{startActivityForResult(Intent(action).apply {
         addCategory(Intent.CATEGORY_OPENABLE); type = mime; if (title.isNotEmpty()) putExtra(Intent.EXTRA_TITLE, title)
-    }, code) }
+    }, code)}catch(e:RuntimeException){session.ownedExternalFlow=false;throw e} }
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data); if (resultCode != RESULT_OK) return
@@ -1344,7 +1440,7 @@ class MainActivity : Activity() {
         if(!session.busy)action()else toast("操作处理中，请等待结果")
     }
     private fun segment(values: List<String>,selected: Int,enabled: Boolean=true,action:(Int)->Unit):View = OwnerSegment(this,owner,values,selected,true,enabled,action)
-    private fun tiers(current: String,enabled: Boolean,action:(String)->Unit):View = owner.tiers(current,false,enabled,action)
+    private fun tiers(current: String,enabled: Boolean,action:(String)->Unit):View = owner.tiers(current,false,enabled,action=action)
     private fun cpuPicker(initial: Set<Int>,large:Boolean=false,action:(Set<Int>)->Unit):View = owner.cpus(initial,large){next->
         if(next.isEmpty()){toast("至少保留一个 CPU");false}else{action(next);true}
     }
@@ -1361,7 +1457,7 @@ class MainActivity : Activity() {
     }
     private fun actionRow(title: String,subtitle: String,action:()->Unit)=owner.row().apply{
         minimumHeight=dp(46);setPadding(0,dp(6),0,dp(6))
-        val icon=when(title){"立即备份"->R.drawable.owner_backup;"从备份恢复"->R.drawable.owner_restore;"恢复出厂配置"->R.drawable.owner_reset;"导出运行日志"->R.drawable.owner_logs;"重启调度核心"->R.drawable.owner_restart;"使用帮助"->R.drawable.owner_help;else->if(title.contains("线程") || title.contains("规则"))R.drawable.owner_chip else R.drawable.owner_info}
+        val icon=when(title){"立即备份"->R.drawable.owner_backup;"从备份恢复"->R.drawable.owner_restore;"恢复出厂配置"->R.drawable.owner_reset;"导出运行日志"->R.drawable.owner_logs;"重启调度核心"->R.drawable.owner_restart;"使用帮助"->R.drawable.owner_help;"ZUIopt 已进入故障保护"->R.drawable.owner_warn;else->error("Owner row icon is required: $title")}
         val tone=when(title){"恢复出厂配置","重启调度核心"->owner.inks[3];"导出运行日志","使用帮助"->owner.muted;else->owner.accent}
         addView(owner.icon(icon,tone,16).apply{background=owner.shape(owner.soft(tone),10f);setPadding(dp(8),dp(8),dp(8),dp(8))},LinearLayout.LayoutParams(dp(32),dp(32)).apply{marginEnd=dp(12)})
         addView(owner.column().apply{addView(owner.label(title,13f,owner.text,800));addView(note(subtitle,owner.muted))},LinearLayout.LayoutParams(0,-2,1f))

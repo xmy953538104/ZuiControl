@@ -16,7 +16,9 @@ class OwnerVisualSync(unittest.TestCase):
   self.assertIn('body is ScrollView',ui)
  def test_frontend_motion_and_frozen_command_owners(self):
   main=read('MainActivity.kt');ui=read('OwnerUi.kt');gpu=read('GpuRangeBar.kt')
-  self.assertIn('override fun dispatchTouchEvent(event:MotionEvent)=false',main);self.assertIn('setDuration(275)',main)
+  theme=main.split('private fun theme(theme: String)',1)[1].split('private fun monitorGuidance',1)[0]
+  self.assertIn('owner.applyTheme(physicalHost',theme)
+  self.assertNotIn('render()',theme);self.assertNotIn('removeAllViews',theme)
   self.assertNotIn('recreate()',main);self.assertNotIn('themeReady',main)
   self.assertIn('saveApp(after)',main);self.assertIn('saveGpu(after)',main)
   self.assertIn('animateInk(lit)',ui);self.assertIn('pressThumb(false)',gpu)

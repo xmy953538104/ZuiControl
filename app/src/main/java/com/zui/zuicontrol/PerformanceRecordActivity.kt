@@ -75,7 +75,7 @@ class PerformanceRecordActivity : Activity() {
     private fun show(data: JSONObject) {
         val content = column().apply { setPadding(dp(24), dp(20), dp(24), dp(24)) }
         val title = when { pkg.isEmpty() -> "应用记录"; threadKey.isNotEmpty() -> intent.getStringExtra("name").orEmpty(); threadPage -> "线程记录"; else -> "最近一次记录" }
-        content.addView(owner.title(title,"当前用户已保存记录",leading=owner.button("返回",small=true,icon=R.drawable.owner_back){finish()}))
+        content.addView(owner.title(title,"当前用户已保存记录",leading=owner.back(){finish()}))
         when {
             pkg.isEmpty() -> showApps(content, data.optJSONArray("records") ?: JSONArray())
             !data.has("package") -> content.addView(label("该应用暂无记录"))
@@ -179,7 +179,7 @@ class PerformanceRecordActivity : Activity() {
             })
         }
         addCard(content, card().apply {
-            addView(label("线程记录   ›", 18f)); setOnClickListener { navigate(threads = true) }
+            addView(owner.domainRow("线程运行记录","Top15 入榜线程 · 点击查看 CPU 时间线",R.drawable.owner_thread_list){navigate(threads = true)})
         })
         content.addView(label("删除该应用记录", 14f).apply { setOnClickListener { deleteRecord() } })
     }
