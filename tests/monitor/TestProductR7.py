@@ -78,8 +78,9 @@ class ProductR7(unittest.TestCase):
         self.assertIn('暂无可用于线程分析的监测记录',main)
         self.assertIn('停止',main)
         record=app('PerformanceRecordActivity.kt')
-        self.assertIn('入榜期间 CPU 时间线',record)
-        self.assertIn('isVerticalScrollBarEnabled = false',record)
+        self.assertIn('Intent(this,MainActivity::class.java)',record)
+        self.assertIn('CPU 时间线',main);self.assertIn('入榜期间单核百分比',main)
+        self.assertIn('isVerticalScrollBarEnabled=false',main)
 
     def test_notification_visual_controls_not_a_sampler(self):
         # R10 Owner replaces the historical track/dot visuals; retained controller boundaries still apply.

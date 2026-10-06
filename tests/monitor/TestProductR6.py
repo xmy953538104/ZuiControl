@@ -100,11 +100,13 @@ class ProductR6(unittest.TestCase):
         for name in ['monitor_toggle','refresh_60','refresh_90','refresh_120','refresh_144','refresh_165','mode_powersave','mode_balance','mode_performance','mode_fast']:
             self.assertIn('@+id/'+name,layout);self.assertIn('R.id.'+name,renderer)
         record=source('PerformanceRecordActivity.kt')
-        for phrase in ('应用记录','最近一次记录','线程记录','最低','平均','最高','有效样本'):
-            self.assertIn(phrase,record)
-        detail=record.split('private fun showDetail(',1)[1].split('private fun showThreads(',1)[0]
-        self.assertNotIn('"threads"',detail)
-        self.assertIn('navigate(threads = true)',detail)
+        main=source('MainActivity.kt')
+        self.assertIn('Intent(this,MainActivity::class.java)',record)
+        for phrase in ('监测记录','线程运行记录','最低','平均','最高','有效样本'):
+            self.assertIn(phrase,main)
+        detail=main.split('private fun monitorPage()',1)[1].split('private fun settingsPage()',1)[0]
+        self.assertIn('readRecord(session.selected,true)',detail)
+        self.assertIn('owner.cpuThreadTable(r,cpuSparklines)',detail)
         self.assertIn('dp(208)',detail)
         self.assertIn('RecordAxis.of',source('RecordChart.kt'))
         self.assertNotIn('WebView',record)
