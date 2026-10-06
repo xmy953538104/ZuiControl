@@ -36,7 +36,7 @@ class Plan2(unittest.TestCase):
   self.assertIn('val railHandoffMs=if(!dark && session.section!="settings")50L else when(session.section){"tune"->45L;"thread"->30L;"monitor"->60L;else->65L}',theme)
   self.assertIn('registerFrameCommitCallback',bridge)
   self.assertIn('registerFrameCommitCallback(::changeInk)',bridge)
-  self.assertLess(bridge.index('frame(animation.animatedFraction,colors)'),bridge.index('registerFrameCommitCallback(::changeInk)'))
+  self.assertLess(bridge.index('frame(ownerThemePaletteProgress(ms),colors)'),bridge.index('registerFrameCommitCallback(::changeInk)'))
   for forbidden in ('addView(', 'setContentView', 'requestApplyInsets', 'setPadding', 'layoutParams', 'onTouch'):
    self.assertNotIn(forbidden,bridge)
  def test_theme_is_local_and_non_intercepting(self):

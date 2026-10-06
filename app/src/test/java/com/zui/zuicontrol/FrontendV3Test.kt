@@ -8,6 +8,14 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 class FrontendV3Test {
+    @Test fun themePaletteHasOneMonotonicNeutralHold() {
+        assertEquals(0f,ownerThemePaletteProgress(0),0f)
+        assertEquals(1f,ownerThemePaletteProgress(280),0f)
+        val progress=(-5L..300L).map(::ownerThemePaletteProgress)
+        assertTrue(progress.all{it in 0f..1f})
+        assertTrue(progress.zipWithNext().all{(a,b)->a<=b})
+        assertTrue((65L..195L).all{ownerThemePaletteProgress(it)==.5f})
+    }
     @Test fun directReadDoesNotHoldCommandsOrMutationBusy() {
         val entered=java.util.concurrent.CountDownLatch(1);val release=java.util.concurrent.CountDownLatch(1)
         val callbacks=LinkedBlockingQueue<()->Unit>();val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){callbacks.put(it)}

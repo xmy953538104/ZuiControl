@@ -21,6 +21,13 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+/** The App palette shares the status bridge's neutral hold on its one clock. */
+internal fun ownerThemePaletteProgress(ms:Long):Float=when {
+    ms<65->ms.coerceAtLeast(0)/130f
+    ms<195->.5f
+    else->.5f+((ms-195)/170f).coerceIn(0f,.5f)
+}
+
 /** Shared presentation only; no policy, producer or command ownership. */
 internal object OwnerWindow {
     private data class Safe(val top:Float,val bottom:Float,val height:Int)
@@ -113,7 +120,10 @@ internal object OwnerWindow {
                 // Continue the SAME animator and matching physical/App colors.
                 val railReady=inkChanged && !(ms-inkChangedAt<railHandoffMs)
                 colors[0]=if(railReady)target[0] else source[0]
-                frame(animation.animatedFraction,colors)
+                // Keep retained cards/text steady while neutral is submitted
+                // and SystemUI ink changes; do not repaint the full palette
+                // on every frame of this same animator's neutral plateau.
+                frame(ownerThemePaletteProgress(ms),colors)
                 bridge.invalidateSelf()
                 if(ms>=65 && !inkPending){
                     inkPending=true
