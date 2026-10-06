@@ -94,7 +94,7 @@ class NotificationRenderer(unittest.TestCase):
         quick=(APP/'ZuiControlQuickService.kt').read_text('utf8')
         monitor=(APP/'PerformanceMonitor.kt').read_text('utf8')
         helper=(APP/'NotificationQuickControlHelper.kt').read_text('utf8')
-        self.assertEqual(monitor.count('monitor("register", "", false, false, callback)'),1)
+        self.assertEqual(len(re.findall(r'monitor\("register",\s*"",\s*false,\s*false,\s*callback\)',monitor)),1)
         self.assertNotIn('monitor("register"',quick)
         for forbidden in ('BatteryManager','thermal_zone','readTasks','MonitorStore','Runtime.getRuntime'):
             self.assertNotIn(forbidden,quick+helper)
