@@ -1458,8 +1458,8 @@ class MainActivity : Activity() {
             rail.setBackgroundColor(owner.rail);master.setBackgroundColor(owner.master)
             railBindings.forEach{it()};masterSelectionBindings.forEach{it()};pageBindings.toList().forEach{it()};bindMonitor()
             OwnerRenderTrace.event("PALETTE_CHANGED",prefs.getString("theme","system").orEmpty())
-            OwnerGeometry.theme(ownerCanvas,100,"persistent")
         }){
+            OwnerGeometry.theme(ownerCanvas,100,"persistent")
             themeFramePending=false
             val latest=prefs.getString("theme","system").orEmpty()
             if(!isDestroyed && OwnerWindow.dark(this)!=owner.dark)theme(latest)

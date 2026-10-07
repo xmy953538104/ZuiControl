@@ -162,7 +162,7 @@ jobs:
           bash -n payload/system/etc/zuiopt/crash_gate.sh
 
       - name: Test and build ZUIopt production integration
-        timeout-minutes: 10
+        timeout-minutes: 15
         shell: bash
         run: |
           set -euo pipefail

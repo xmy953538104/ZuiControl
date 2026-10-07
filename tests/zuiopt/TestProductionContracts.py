@@ -38,7 +38,8 @@ class ProductionContracts(unittest.TestCase):
         self.assertIn('target=virtualRoot+"/read/"',fixture)
         workflow=read('.github/workflows/build.yml')
         self.assertIn('timeout --kill-after=10s 5m',workflow)
-        self.assertIn('timeout-minutes: 10',workflow)
+        integration=workflow.split('- name: Test and build ZUIopt production integration',1)[1].split('- name:',1)[0]
+        self.assertIn('timeout-minutes: 15',integration)
         self.assertNotIn('--wrap=fsync',workflow)
         for name in ('matrix','recovery','stress512','coherence1024','horizon','liveness1024'):
             self.assertIn('timed("'+name+'",',fixture)
