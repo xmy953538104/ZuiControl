@@ -9,6 +9,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import java.util.WeakHashMap
 import kotlin.math.max
 import kotlin.math.min
@@ -53,29 +54,37 @@ internal object OwnerWindow {
             decorView.systemUiVisibility=(decorView.systemUiVisibility and mask.inv()) or if(dark)0 else mask
         }
     }
-    /** Present the appearance request with the source palette before one target frame. */
+    /** Prepare once; retain the last buffer until the shared appearance traversal. */
     fun transitionSystemBars(activity:Activity,host:View,dark:Boolean,palette:()->Unit,finished:()->Unit){
         fun committed(action:()->Unit){
             if(Build.VERSION.SDK_INT>=29 && host.isHardwareAccelerated)host.viewTreeObserver.registerFrameCommitCallback{host.post{action()}}
             else host.postOnAnimation{action()}
         }
-        updateSystemBarAppearance(activity,dark)
-        OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;atomic=true")
-        committed {
-            OwnerRenderTrace.event("STATUS_APPEARANCE_FRAME_COMMITTED","dark=$dark")
-            host.postOnAnimation {
-                palette()
-                committed {
-                    OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
+        palette()
+        var armed=false
+        val observer=host.viewTreeObserver
+        val gate=object:ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw():Boolean {
+                if(!armed){
+                    armed=true
+                    OwnerRenderTrace.event("STATUS_APPEARANCE_TRAVERSAL","dark=$dark")
                     host.postOnAnimation {
                         host.postOnAnimation {
-                            finished()
+                            if(observer.isAlive)observer.removeOnPreDrawListener(this)
+                            committed {
+                                OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
+                                host.postOnAnimation {finished()}
+                            }
+                            host.invalidate()
                         }
                     }
                 }
-                host.invalidate()
+                return false
             }
         }
+        observer.addOnPreDrawListener(gate)
+        updateSystemBarAppearance(activity,dark)
+        OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;atomic=true")
         host.invalidate()
     }
     fun dark(context:Context):Boolean=FrontendTheme.dark(

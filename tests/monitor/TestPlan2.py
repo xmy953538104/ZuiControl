@@ -33,9 +33,10 @@ class Plan2(unittest.TestCase):
   self.assertIn('registerFrameCommitCallback',bridge)
   self.assertEqual(bridge.count('palette()'),1)
   self.assertEqual(theme.count('owner.applyTheme('),1)
-  self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('palette()'))
-  self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('committed {'))
-  self.assertLess(bridge.index('STATUS_APPEARANCE_FRAME_COMMITTED'),bridge.index('palette()'))
+  self.assertLess(bridge.index('palette()'),bridge.index('updateSystemBarAppearance(activity,dark)'))
+  self.assertLess(bridge.index('observer.addOnPreDrawListener(gate)'),bridge.index('updateSystemBarAppearance(activity,dark)'))
+  self.assertIn('return false',bridge)
+  self.assertLess(bridge.index('removeOnPreDrawListener(this)'),bridge.index('committed {'))
   self.assertIn('host.invalidate()',bridge)
   for forbidden in ('ValueAnimator','railHandoff','ownerThemePaletteProgress','session.section','frame('):
    self.assertNotIn(forbidden,bridge+theme)

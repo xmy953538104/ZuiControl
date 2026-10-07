@@ -1444,8 +1444,8 @@ class MainActivity : Activity() {
         pageBindings.toList().forEach{it()}
         if(themeFramePending)return
         themeFramePending=true
-        // Present the SystemUI appearance request before committing the complete
-        // palette. Pending requests read the latest local theme.
+        // Prepare the complete palette once; its draw gate owns publication.
+        // Pending requests read the latest local theme.
         ownerCanvas.postOnAnimation {
         if(isDestroyed)return@postOnAnimation
         val dark=OwnerWindow.dark(this)
