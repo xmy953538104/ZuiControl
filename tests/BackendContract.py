@@ -180,7 +180,7 @@ def reverse_entries(current,*scopes):
     result=list(current)
     assert PLAN3_OVERNIGHT['baseHead']=='8f3825fb4374bac892db96cb735f237aab23cb7c'
     allowed={'app/build.gradle.kts','app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java'}
-    allowed|={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('BackendHealth.kt','MainActivity.kt','FrontendTransport.kt','ZuioptLibrary.kt','ZuioptRules.kt','FrontendPackages.kt','OwnerUi.kt','OwnerWindow.kt')}
+    allowed|={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('BackendHealth.kt','MainActivity.kt','FrontendTransport.kt','ZuioptLibrary.kt','ZuioptRules.kt','FrontendPackages.kt','OwnerUi.kt','OwnerWindow.kt','OwnerEffects.kt')}
     allowed|={'app/src/main/res/'+n for n in ('drawable/owner_ping_vector.xml','drawable/owner_ping_halo.xml','animator/owner_ping_scale.xml','animator/owner_ping_fade.xml','interpolator/owner_ping_ease.xml')}
     allowed|={'app/src/test/java/com/zui/zuicontrol/'+n for n in ('BackendHealthTest.kt','FrontendTransportTest.kt')}
     for row in PLAN3_OVERNIGHT['files']:
