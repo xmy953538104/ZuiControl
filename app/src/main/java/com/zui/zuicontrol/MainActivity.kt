@@ -1444,8 +1444,8 @@ class MainActivity : Activity() {
         pageBindings.toList().forEach{it()}
         if(themeFramePending)return
         themeFramePending=true
-        // Commit the palette and status-region bridge at the next presentation
-        // boundary. Pending requests read the latest local theme.
+        // Present the SystemUI appearance request before committing the complete
+        // palette. Pending requests read the latest local theme.
         ownerCanvas.postOnAnimation {
         if(isDestroyed)return@postOnAnimation
         val dark=OwnerWindow.dark(this)

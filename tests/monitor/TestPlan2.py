@@ -34,6 +34,9 @@ class Plan2(unittest.TestCase):
   self.assertEqual(bridge.count('palette()'),1)
   self.assertEqual(theme.count('owner.applyTheme('),1)
   self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('palette()'))
+  self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('committed {'))
+  self.assertLess(bridge.index('STATUS_APPEARANCE_FRAME_COMMITTED'),bridge.index('palette()'))
+  self.assertIn('host.invalidate()',bridge)
   for forbidden in ('ValueAnimator','railHandoff','ownerThemePaletteProgress','session.section','frame('):
    self.assertNotIn(forbidden,bridge+theme)
   for forbidden in ('addView(', 'setContentView', 'requestApplyInsets', 'setPadding', 'layoutParams', 'onTouch'):

@@ -53,28 +53,27 @@ internal object OwnerWindow {
             decorView.systemUiVisibility=(decorView.systemUiVisibility and mask.inv()) or if(dark)0 else mask
         }
     }
-    /** Keep the complete source palette until one shared presentation boundary. */
+    /** Present the appearance request with the source palette before one target frame. */
     fun transitionSystemBars(activity:Activity,host:View,dark:Boolean,palette:()->Unit,finished:()->Unit){
         fun committed(action:()->Unit){
             if(Build.VERSION.SDK_INT>=29 && host.isHardwareAccelerated)host.viewTreeObserver.registerFrameCommitCallback{host.post{action()}}
             else host.postOnAnimation{action()}
         }
+        updateSystemBarAppearance(activity,dark)
+        OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;atomic=true")
         committed {
-            updateSystemBarAppearance(activity,dark)
-            OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;atomic=true")
+            OwnerRenderTrace.event("STATUS_APPEARANCE_FRAME_COMMITTED","dark=$dark")
             host.postOnAnimation {
-                host.postOnAnimation {
-                    palette()
-                    committed {
-                        OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
+                palette()
+                committed {
+                    OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
+                    host.postOnAnimation {
                         host.postOnAnimation {
-                            host.postOnAnimation {
-                                finished()
-                            }
+                            finished()
                         }
                     }
-                    host.invalidate()
                 }
+                host.invalidate()
             }
         }
         host.invalidate()
