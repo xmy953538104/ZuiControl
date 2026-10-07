@@ -39,6 +39,8 @@ class Plan2(unittest.TestCase):
   self.assertLess(bridge.index('palette()'),bridge.index('updateSystemBarAppearance(activity,dark)'))
   self.assertLess(bridge.index('host.overlay.add'),bridge.index('palette()'))
   self.assertLess(bridge.index('STATUS_SOURCE_FRAME_COMMITTED'),bridge.index('host.overlay.remove'))
+  self.assertLess(bridge.index('STATUS_SOURCE_FRAME_COMMITTED'),bridge.index('updateSystemBarAppearance(activity,dark)'))
+  self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('host.overlay.remove'))
   self.assertLess(bridge.index('host.overlay.remove'),bridge.index('THEME_APP_FRAME_COMMITTED'))
   self.assertNotIn('OnPreDrawListener',bridge)
   self.assertIn('host.invalidate()',bridge)

@@ -74,18 +74,16 @@ internal object OwnerWindow {
             }else null
             cover?.let{host.overlay.add(it)}
             palette()
-            updateSystemBarAppearance(activity,dark)
-            OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;atomic=true")
             committed {
                 OwnerRenderTrace.event("STATUS_SOURCE_FRAME_COMMITTED","dark=$dark")
-                host.postOnAnimation {
-                    cover?.let{host.overlay.remove(it)}
-                    committed {
-                        OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
-                        host.postOnAnimation {source.recycle();finished()}
-                    }
-                    host.invalidate()
+                updateSystemBarAppearance(activity,dark)
+                OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;atomic=true")
+                cover?.let{host.overlay.remove(it)}
+                committed {
+                    OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
+                    host.postOnAnimation {source.recycle();finished()}
                 }
+                host.invalidate()
             }
             host.invalidate()
         }
