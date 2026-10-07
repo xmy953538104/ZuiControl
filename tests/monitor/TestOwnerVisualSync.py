@@ -23,6 +23,11 @@ class OwnerVisualSync(unittest.TestCase):
   self.assertIn('bindPresentation{',status)
   for child in ('runningChip.visibility','statusChip.visibility','statusChip.text=status','statusChip.setTextColor','statusChip.background','statusHost.contentDescription'):
    self.assertIn(child,status)
+  load=main.split('private fun loadState()',1)[1].split('private fun loadInventory',1)[0]
+  self.assertIn('coreHealthBindings.toList().forEach{it()}',load)
+  health=main.split('private fun coreHealth()',1)[1].split('private fun appPage()',1)[0]
+  self.assertIn('bindHealth{val fresh=',health);self.assertIn('bindHealth{reason.text=',health)
+  self.assertIn('onDismiss={coreHealthBindings.clear()}',health)
  def test_fullscreen_shared_surface_and_no_platform_dialog(self):
   main=read('MainActivity.kt');record=read('PerformanceRecordActivity.kt');ui=read('OwnerUi.kt')
   for text in (main,):

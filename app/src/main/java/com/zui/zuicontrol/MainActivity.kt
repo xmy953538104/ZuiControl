@@ -41,6 +41,7 @@ class MainActivity : Activity() {
     private val railBindings=mutableListOf<()->Unit>()
     private val masterSelectionBindings=mutableListOf<()->Unit>()
     private val pageBindings=mutableListOf<()->Unit>()
+    private val coreHealthBindings=mutableListOf<()->Unit>()
     private val controlBindings=mutableMapOf<Any,MutableList<()->Unit>>()
     private fun bindPresentation(bind:()->Unit){pageBindings+=bind;bind()}
     private fun bindControl(control:Any,bind:()->Unit){controlBindings.getOrPut(control){mutableListOf()}+=bind;bindPresentation(bind)}
@@ -265,6 +266,7 @@ class MainActivity : Activity() {
     private fun loadState() = read("state",fetch={ZuiControlClient.stateText()},parse={it}) { fresh ->
         check(fresh.startsWith("ok=1")){fresh};state=fresh
         runCatching{GpuDefaultsDraft.fromState(state,session.userId)}.onSuccess(session::observeGpuDefaults)
+        if(visible)coreHealthBindings.toList().forEach{it()}
         if(visible)render()
     }
     private fun loadInventory(ready:(()->Unit)?=null) {
@@ -709,6 +711,8 @@ class MainActivity : Activity() {
         (ownerSwitch?.parent as? View)?.background=owner.shape(if(desired)owner.accent else owner.line2,13f)
     }
     private fun coreHealth() {
+        coreHealthBindings.clear()
+        fun bindHealth(bind:()->Unit){coreHealthBindings+=bind;bind()}
         loadState()
         val body=owner.column()
         val zuioptState=ruleState
@@ -722,14 +726,14 @@ class MainActivity : Activity() {
                 addView(FrameLayout(this@MainActivity).apply{
                     val status=owner.chip("",tone)
                     addView(status,FrameLayout.LayoutParams(-2,dp(18),Gravity.CENTER_VERTICAL))
-                    bindPresentation{val fresh=BackendHealth.components(state)[i];val tone=when(fresh.state){BackendHealth.State.OK->1;BackendHealth.State.DEGRADED->3;BackendHealth.State.FAILED->4;else->0}
+                    bindHealth{val fresh=BackendHealth.components(state)[i];val tone=when(fresh.state){BackendHealth.State.OK->1;BackendHealth.State.DEGRADED->3;BackendHealth.State.FAILED->4;else->0}
                         status.text=when(fresh.state){BackendHealth.State.OK->"正常";BackendHealth.State.DEGRADED->"降级";BackendHealth.State.FAILED->"故障";else->"未知"}
                         status.setTextColor(owner.chipFg[tone]);status.background=owner.shape(owner.chipBg[tone],5f)
                     }
                 },LinearLayout.LayoutParams(owner.px(72),owner.px(18)).apply{marginStart=owner.px(10)})
                 addView(owner.column().apply{
                     val reason=owner.label(h.reason,11.5f,owner.sub).apply{setSingleLine(false);setLineSpacing(0f,1.5f)};addView(reason)
-                    bindPresentation{reason.text=BackendHealth.components(state)[i].reason}
+                    bindHealth{reason.text=BackendHealth.components(state)[i].reason}
                 },LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=owner.px(10)})
                 addView(owner.label(if(h.component=="ZUIopt")"线程" else if(h.component=="监视服务")"悬浮窗" else "维护",11.5f,owner.accent,700).apply{
                     isFocusable=true;setOnClickListener{ownerModal?.close();guard{session.section=if(h.component=="ZUIopt")"thread" else "settings";session.settingsModule=if(h.component=="监视服务")0 else 2;session.selected="";session.clearDrafts();render()}}
@@ -742,7 +746,7 @@ class MainActivity : Activity() {
             session.work("故障已复位；下次重启生效"){ZuioptRules.command(this@MainActivity, "reset")}
         }}
         buttons+=owner.button("知道了","primary"){ownerModal?.close()}
-        ownerModal?.open("核心组件","5 个逻辑组件；其中部分是 system_server 内的逻辑组件，不是独立进程。",600,body,buttons)
+        ownerModal?.open("核心组件","5 个逻辑组件；其中部分是 system_server 内的逻辑组件，不是独立进程。",600,body,buttons,onDismiss={coreHealthBindings.clear()})
     }
 
     private fun appPage() {
