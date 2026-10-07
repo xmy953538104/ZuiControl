@@ -6,7 +6,7 @@ android {
     namespace = "com.zui.zuicontrol"
     compileSdk = 35
     buildFeatures.buildConfig = true
-    testBuildType = "release"
+    testBuildType = if(providers.gradleProperty("frontendProbe").isPresent) "release" else "debug"
 
     defaultConfig {
         applicationId = "com.zui.zuicontrol"

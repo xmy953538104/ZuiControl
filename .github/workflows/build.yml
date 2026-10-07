@@ -384,7 +384,7 @@ jobs:
         # It observes existing frontend objects and changes only test presentation.
         # Root/shell DUMP permission protects its temporary command receiver.
         run: |
-          gradle -p . :app:assembleReleaseAndroidTest \
+          gradle -p . :app:assembleReleaseAndroidTest -PfrontendProbe=true \
             -Pzuicontrol.storeFile="$RUNNER_TEMP/ZuiControl-release.jks" \
             -Pzuicontrol.storePassword="${{ secrets.KEYSTORE_PASSWORD }}" \
             -Pzuicontrol.keyAlias="${{ secrets.KEY_ALIAS }}" \
