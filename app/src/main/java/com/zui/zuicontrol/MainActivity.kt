@@ -1451,7 +1451,7 @@ class MainActivity : Activity() {
         val dark=OwnerWindow.dark(this)
         if(dark==owner.dark){themeFramePending=false;return@postOnAnimation}
         OwnerGeometry.theme(ownerCanvas,0,"persistent")
-        OwnerWindow.transitionSystemBars(this,physicalHost,dark,palette={
+        OwnerWindow.transitionSystemBars(this,physicalHost,ownerCanvas,dark,palette={
             owner.applyTheme(physicalHost,dark)
             physicalHost.setBackgroundColor(owner.detail);ownerCanvas.setBackgroundColor(owner.detail)
             ownerHost.setBackgroundColor(owner.detail);shellRoot.setBackgroundColor(owner.detail)

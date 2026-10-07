@@ -7,7 +7,6 @@ import android.graphics.Color
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.ClipDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -16,7 +15,6 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.ViewGroup
-import android.view.Gravity
 import java.util.WeakHashMap
 import kotlin.math.max
 import kotlin.math.min
@@ -61,8 +59,8 @@ internal object OwnerWindow {
             decorView.systemUiVisibility=(decorView.systemUiVisibility and mask.inv()) or if(dark)0 else mask
         }
     }
-    /** Prepare once beneath the source frame; retain only the old bar backdrop for handoff. */
-    fun transitionSystemBars(activity:Activity,host:View,dark:Boolean,palette:()->Unit,finished:()->Unit){
+    /** Pre-render one complete target tree; publish after the appearance-bearing source frame. */
+    fun transitionSystemBars(activity:Activity,host:View,target:View,dark:Boolean,palette:()->Unit,finished:()->Unit){
         fun committed(action:()->Unit){
             if(Build.VERSION.SDK_INT>=29 && host.isHardwareAccelerated)host.viewTreeObserver.registerFrameCommitCallback{host.post{action()}}
             else host.postOnAnimation{action()}
@@ -74,29 +72,29 @@ internal object OwnerWindow {
             val cover=if(result==PixelCopy.SUCCESS)BitmapDrawable(host.resources,source).apply{
                 setBounds(0,0,host.width,host.height)
             }else null
-            val barHeight=if(Build.VERSION.SDK_INT>=30)host.rootWindowInsets?.getInsets(WindowInsets.Type.statusBars())?.top ?: 0
-                else host.rootWindowInsets?.systemWindowInsetTop ?: 0
-            val barCover=cover?.let{ClipDrawable(BitmapDrawable(host.resources,source),Gravity.TOP,ClipDrawable.VERTICAL).apply{
-                setBounds(0,0,host.width,host.height)
-                level=((barHeight.toLong()*10000+host.height-1)/host.height).toInt().coerceIn(0,10000)
-            }}
             cover?.let{host.overlay.add(it)}
+            val previousLayer=target.layerType
+            if(target.isHardwareAccelerated)target.setLayerType(View.LAYER_TYPE_HARDWARE,null)
             palette()
+            if(target.isHardwareAccelerated)target.buildLayer()
             committed {
                 OwnerRenderTrace.event("STATUS_SOURCE_FRAME_COMMITTED","dark=$dark")
-                barCover?.let{host.overlay.add(it)}
-                cover?.let{host.overlay.remove(it)}
-                committed {
-                    OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
+                host.postOnAnimation {
                     updateSystemBarAppearance(activity,dark)
-                    OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;targetSubmitted=true")
-                    host.postOnAnimation {
-                        barCover?.let{host.overlay.remove(it)}
-                        committed {host.postOnAnimation {source.recycle();finished()}}
+                    OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;sourceSubmitted=true")
+                    committed {
+                        OwnerRenderTrace.event("STATUS_APPEARANCE_FRAME_COMMITTED","dark=$dark")
+                        cover?.let{host.overlay.remove(it)}
+                        committed {
+                            OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
+                            target.setLayerType(previousLayer,null)
+                            committed {host.postOnAnimation {source.recycle();finished()}}
+                            host.invalidate()
+                        }
                         host.invalidate()
                     }
+                    host.invalidate()
                 }
-                host.invalidate()
             }
             host.invalidate()
         }

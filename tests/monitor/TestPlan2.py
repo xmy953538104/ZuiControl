@@ -23,7 +23,7 @@ class Plan2(unittest.TestCase):
   appearance=window.split('fun updateSystemBarAppearance',1)[1].split('fun transitionSystemBars',1)[0]
   self.assertEqual(main.count('OwnerWindow.fullscreen(this)'),1)
   self.assertIn('ownerCanvas.postOnAnimation',theme)
-  self.assertIn('OwnerWindow.transitionSystemBars(this,physicalHost,dark,palette=',theme)
+  self.assertIn('OwnerWindow.transitionSystemBars(this,physicalHost,ownerCanvas,dark,palette=',theme)
   for forbidden in ('fullscreen(', 'requestApplyInsets', 'setContentView', 'recreate(', 'setDecorFitsSystemWindows', 'show(WindowInsets', 'LAYOUT_', 'statusBarColor=', 'navigationBarColor='):
    self.assertNotIn(forbidden,theme)
   for forbidden in ('setDecorFitsSystemWindows','show(','LAYOUT_','requestApplyInsets','statusBarColor','navigationBarColor'):
@@ -41,10 +41,14 @@ class Plan2(unittest.TestCase):
   self.assertLess(bridge.index('STATUS_SOURCE_FRAME_COMMITTED'),bridge.index('host.overlay.remove'))
   self.assertLess(bridge.index('STATUS_SOURCE_FRAME_COMMITTED'),bridge.index('updateSystemBarAppearance(activity,dark)'))
   self.assertLess(bridge.index('host.overlay.remove'),bridge.index('THEME_APP_FRAME_COMMITTED'))
-  self.assertLess(bridge.index('THEME_APP_FRAME_COMMITTED'),bridge.index('updateSystemBarAppearance(activity,dark)'))
-  self.assertIn('WindowInsets.Type.statusBars()',bridge)
-  self.assertIn('ClipDrawable.VERTICAL',bridge)
-  self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('barCover?.let{host.overlay.remove(it)}'))
+  self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('STATUS_APPEARANCE_FRAME_COMMITTED'))
+  self.assertLess(bridge.index('STATUS_APPEARANCE_FRAME_COMMITTED'),bridge.index('host.overlay.remove'))
+  self.assertIn('target.buildLayer()',bridge)
+  self.assertIn('target.setLayerType(previousLayer,null)',bridge)
+  self.assertEqual(bridge.count('target.buildLayer()'),1)
+  self.assertLess(bridge.index('palette()'),bridge.index('target.buildLayer()'))
+  self.assertLess(bridge.index('target.buildLayer()'),bridge.index('updateSystemBarAppearance(activity,dark)'))
+  self.assertNotIn('ClipDrawable',bridge)
   self.assertNotIn('OnPreDrawListener',bridge)
   self.assertIn('host.invalidate()',bridge)
   for forbidden in ('ValueAnimator','railHandoff','ownerThemePaletteProgress','session.section','frame('):
