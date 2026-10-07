@@ -1444,7 +1444,7 @@ class MainActivity : Activity() {
         pageBindings.toList().forEach{it()}
         if(themeFramePending)return
         themeFramePending=true
-        // Prepare the complete palette once; its draw gate owns publication.
+        // Prepare once beneath the captured source frame; publish the whole target.
         // Pending requests read the latest local theme.
         ownerCanvas.postOnAnimation {
         if(isDestroyed)return@postOnAnimation

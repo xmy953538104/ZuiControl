@@ -4,12 +4,17 @@ import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Bitmap
+import android.graphics.Rect
+import android.graphics.drawable.BitmapDrawable
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.ViewGroup
-import android.view.ViewTreeObserver
 import java.util.WeakHashMap
 import kotlin.math.max
 import kotlin.math.min
@@ -54,38 +59,41 @@ internal object OwnerWindow {
             decorView.systemUiVisibility=(decorView.systemUiVisibility and mask.inv()) or if(dark)0 else mask
         }
     }
-    /** Prepare once; retain the last buffer until the shared appearance traversal. */
+    /** Submit the captured source frame while preparing one complete target palette. */
     fun transitionSystemBars(activity:Activity,host:View,dark:Boolean,palette:()->Unit,finished:()->Unit){
         fun committed(action:()->Unit){
             if(Build.VERSION.SDK_INT>=29 && host.isHardwareAccelerated)host.viewTreeObserver.registerFrameCommitCallback{host.post{action()}}
             else host.postOnAnimation{action()}
         }
-        palette()
-        var armed=false
-        val observer=host.viewTreeObserver
-        val gate=object:ViewTreeObserver.OnPreDrawListener {
-            override fun onPreDraw():Boolean {
-                if(!armed){
-                    armed=true
-                    OwnerRenderTrace.event("STATUS_APPEARANCE_TRAVERSAL","dark=$dark")
-                    host.postOnAnimation {
-                        host.postOnAnimation {
-                            if(observer.isAlive)observer.removeOnPreDrawListener(this)
-                            committed {
-                                OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
-                                host.postOnAnimation {finished()}
-                            }
-                            host.invalidate()
-                        }
+        val source=Bitmap.createBitmap(host.width,host.height,Bitmap.Config.ARGB_8888)
+        fun copied(result:Int){
+            if(activity.isDestroyed || !host.isAttachedToWindow){source.recycle();return}
+            OwnerRenderTrace.event("THEME_SOURCE_COPY_RESULT","result=$result")
+            val cover=if(result==PixelCopy.SUCCESS)BitmapDrawable(host.resources,source).apply{
+                setBounds(0,0,host.width,host.height)
+            }else null
+            cover?.let{host.overlay.add(it)}
+            palette()
+            updateSystemBarAppearance(activity,dark)
+            OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;atomic=true")
+            committed {
+                OwnerRenderTrace.event("STATUS_SOURCE_FRAME_COMMITTED","dark=$dark")
+                host.postOnAnimation {
+                    cover?.let{host.overlay.remove(it)}
+                    committed {
+                        OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
+                        host.postOnAnimation {source.recycle();finished()}
                     }
+                    host.invalidate()
                 }
-                return false
             }
+            host.invalidate()
         }
-        observer.addOnPreDrawListener(gate)
-        updateSystemBarAppearance(activity,dark)
-        OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;atomic=true")
-        host.invalidate()
+        val location=IntArray(2);host.getLocationInWindow(location)
+        try{
+            PixelCopy.request(activity.window,Rect(location[0],location[1],location[0]+host.width,location[1]+host.height),
+                source,::copied,Handler(Looper.getMainLooper()))
+        }catch(_:IllegalArgumentException){copied(PixelCopy.ERROR_SOURCE_INVALID)}
     }
     fun dark(context:Context):Boolean=FrontendTheme.dark(
         context.getSharedPreferences("frontend",Context.MODE_PRIVATE).getString("theme","system").orEmpty(),

@@ -29,14 +29,18 @@ class Plan2(unittest.TestCase):
   for forbidden in ('setDecorFitsSystemWindows','show(','LAYOUT_','requestApplyInsets','statusBarColor','navigationBarColor'):
    self.assertNotIn(forbidden,appearance)
   bridge=window.split('fun transitionSystemBars',1)[1].split('fun dark(',1)[0]
-  self.assertNotIn('host.overlay.add',bridge)
+  self.assertIn('PixelCopy.request(activity.window',bridge)
+  self.assertIn('Bitmap.Config.ARGB_8888',bridge)
+  self.assertIn('setBounds(0,0,host.width,host.height)',bridge)
+  self.assertIn('result==PixelCopy.SUCCESS',bridge)
   self.assertIn('registerFrameCommitCallback',bridge)
   self.assertEqual(bridge.count('palette()'),1)
   self.assertEqual(theme.count('owner.applyTheme('),1)
   self.assertLess(bridge.index('palette()'),bridge.index('updateSystemBarAppearance(activity,dark)'))
-  self.assertLess(bridge.index('observer.addOnPreDrawListener(gate)'),bridge.index('updateSystemBarAppearance(activity,dark)'))
-  self.assertIn('return false',bridge)
-  self.assertLess(bridge.index('removeOnPreDrawListener(this)'),bridge.index('committed {'))
+  self.assertLess(bridge.index('host.overlay.add'),bridge.index('palette()'))
+  self.assertLess(bridge.index('STATUS_SOURCE_FRAME_COMMITTED'),bridge.index('host.overlay.remove'))
+  self.assertLess(bridge.index('host.overlay.remove'),bridge.index('THEME_APP_FRAME_COMMITTED'))
+  self.assertNotIn('OnPreDrawListener',bridge)
   self.assertIn('host.invalidate()',bridge)
   for forbidden in ('ValueAnimator','railHandoff','ownerThemePaletteProgress','session.section','frame('):
    self.assertNotIn(forbidden,bridge+theme)
