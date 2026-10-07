@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
+PLAN3_OVERNIGHT=json.loads((ROOT/'tests/product_plan3_overnight_delta.json').read_text(encoding='utf-8'))
 PLAN3_FINAL=json.loads((ROOT/'tests/product_plan3_final_integration_delta.json').read_text(encoding='utf-8'))
 PLAN3_VERTICAL=json.loads((ROOT/'tests/product_plan3_vertical_slice_delta.json').read_text(encoding='utf-8'))
 PLAN3_RESPONSIVENESS=json.loads((ROOT/'tests/product_plan3_responsiveness_delta.json').read_text(encoding='utf-8'))
@@ -31,6 +32,13 @@ INTEGRATION=json.loads((ROOT/'tests/backend_monitor_settings_delta.json').read_t
 MANIFEST=json.loads((ROOT/'tests/backend_abc_delta.json').read_text(encoding='utf-8'))
 
 def reverse_text(path,text):
+    change=next((r for r in PLAN3_OVERNIGHT['files'] if r['path']==path),None)
+    if change:
+        assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('R6 exact authorized bytes',path)
+        for h in reversed(change['hunks']):
+            assert text.count(h['after'])==1,('R6 authorized frontend delta',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==change['beforeSha256'],('R6 immutable R5 base',path)
     change=next((r for r in PLAN3_FINAL['files'] if r['path']==path),None)
     if change:
         assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('R5 exact presentation bytes',path)
