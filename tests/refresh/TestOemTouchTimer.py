@@ -10,6 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests'))
 from BackendContract import reverse_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE, CLOSURE as CLOSURE_SCOPE, OPTION_B, USER_DOMAIN, FRONTEND_DELTA
+from BackendContract import PLAN3_OVERNIGHT
 sys.path.insert(0, str(ROOT / 'scripts/build'))
 from ApplyZuiControlPayload import patch_oem_touch_timer
 
@@ -176,6 +177,14 @@ class OemTouchTimer(unittest.TestCase):
         identity_path = 'app/build.gradle.kts'
         old = identity['gradle_text'].encode()
         current = (ROOT/identity_path).read_bytes().replace(b'\r\n', b'\n')
+        # Reverse this Owner's exact test-build delta, preserving the V84 identity.
+        probe=next((r for r in PLAN3_OVERNIGHT['files'] if r['path']==identity_path),None)
+        if probe:
+            self.assertEqual(hashlib.sha256(current).hexdigest(),probe['afterSha256'])
+            for h in reversed(probe['hunks']):
+                self.assertEqual(current.count(h['after'].encode()),1)
+                current=current.replace(h['after'].encode(),h['before'].encode(),1)
+            self.assertEqual(hashlib.sha256(current).hexdigest(),probe['beforeSha256'])
         self.assertEqual(current, old.replace(b'versionCode = 60', b'versionCode = 84')
             .replace(b'versionName = "0.21.23"', b'versionName = "0.21.47"')
             .replace(b'targetSdk = 35', b'targetSdk = 30'))
@@ -249,7 +258,7 @@ class OemTouchTimer(unittest.TestCase):
             'HEAD','--','app','framework_patch'],text=True).splitlines()
         untracked = subprocess.check_output(['git','-C',str(ROOT),'ls-files','--others',
             '--exclude-standard','--','app','framework_patch'],text=True).splitlines()
-        self.assertLessEqual(set(changed+untracked), allowed | {r['path'] for r in FRONTEND_DELTA['files']} | {r['path'] for r in USER_DOMAIN['files']} | {r['path'] for r in CLOSURE_SCOPE['files']} | {r['path'] for r in ABC_SCOPE['files']} | {d['path'] for d in monitor['tree']}
+        self.assertLessEqual(set(changed+untracked), allowed | {r['path'] for r in PLAN3_OVERNIGHT['files']} | {r['path'] for r in FRONTEND_DELTA['files']} | {r['path'] for r in USER_DOMAIN['files']} | {r['path'] for r in CLOSURE_SCOPE['files']} | {r['path'] for r in ABC_SCOPE['files']} | {d['path'] for d in monitor['tree']}
                             | {d['path'] for d in polish['tree']} | {d['path'] for d in product['tree']}
                         | {d['path'] for d in stability['tree']} | {d['path'] for d in legacy['tree']}
                         | {d['path'] for d in json.loads((ROOT/'tests/monitor/r10_product_delta.json').read_text())['tree']} | {d['path'] for d in json.loads((ROOT/'tests/monitor/r11_product_delta.json').read_text())['tree']} | {d['path'] for d in json.loads((ROOT/'tests/monitor/r12_product_delta.json').read_text())['tree']} | {identity_path})

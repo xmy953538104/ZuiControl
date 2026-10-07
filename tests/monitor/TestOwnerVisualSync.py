@@ -11,11 +11,13 @@ class OwnerVisualSync(unittest.TestCase):
   bind=main.split('bindControl(mode){',1)[1].split('detail.addView(owner.title',1)[0]
   self.assertIn('(modeChip.getChildAt(0) as OwnerPing).setTone(owner.tiers[tier])',bind)
   setter=ui.split('fun setTone(color:Int)',1)[1].split('fun retheme',1)[0]
-  self.assertIn('tone=color;invalidate()',setter)
+  self.assertIn('tone=color;applyTone()',setter)
   for forbidden in ('ValueAnimator','motion','phase','requestLayout','addView','gateway'):
    self.assertNotIn(forbidden,setter)
   draw=ui.split('internal class OwnerPing',1)[1].split('override fun onDetachedFromWindow',1)[0]
-  self.assertIn('paint.color=tone',draw);self.assertIn('ui.soft(tone,',draw)
+  self.assertIn('setColor(tone)',draw);self.assertIn('motion.setTint(tone)',draw)
+  self.assertIn('if(next)motion.start()else motion.stop()',draw)
+  self.assertNotIn('addUpdateListener',draw);self.assertNotIn('postDelayed',draw)
   self.assertIn('masterSelectionBindings+={ruleMarker.visibility=',main)
   self.assertIn('summary.text=if(fresh!=null)',main)
   self.assertIn('rulesButton.contentDescription=title',main)

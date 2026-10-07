@@ -29,41 +29,12 @@ class Plan2(unittest.TestCase):
   for forbidden in ('setDecorFitsSystemWindows','show(','LAYOUT_','requestApplyInsets','statusBarColor','navigationBarColor'):
    self.assertNotIn(forbidden,appearance)
   bridge=window.split('fun transitionSystemBars',1)[1].split('fun dark(',1)[0]
-  self.assertIn('PixelCopy.request(activity.window',bridge)
-  self.assertIn('Bitmap.Config.ARGB_8888',bridge)
-  self.assertIn('setBounds(0,0,host.width,host.height)',bridge)
-  self.assertIn('result==PixelCopy.SUCCESS',bridge)
-  self.assertIn('registerFrameCommitCallback',bridge)
   self.assertEqual(bridge.count('palette()'),1)
   self.assertEqual(theme.count('owner.applyTheme('),1)
   self.assertLess(bridge.index('palette()'),bridge.index('updateSystemBarAppearance(activity,dark)'))
-  self.assertLess(bridge.index('host.overlay.add'),bridge.index('palette()'))
-  self.assertLess(bridge.index('STATUS_SOURCE_FRAME_COMMITTED'),bridge.index('host.overlay.remove'))
-  self.assertLess(bridge.index('STATUS_SOURCE_FRAME_COMMITTED'),bridge.index('updateSystemBarAppearance(activity,dark)'))
-  self.assertLess(bridge.index('host.overlay.remove'),bridge.index('THEME_APP_FRAME_COMMITTED'))
-  self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('STATUS_APPEARANCE_FRAME_COMMITTED'))
-  self.assertIn('host.postOnAnimation {\n                        OwnerRenderTrace.event("THEME_PUBLISH_BOUNDARY"',bridge)
-  self.assertLess(bridge.index('STATUS_INK_REQUEST'),bridge.index('THEME_PUBLISH_BOUNDARY'))
-  publication=bridge.split('THEME_PUBLISH_BOUNDARY',1)[1]
-  self.assertLess(publication.index('targetCover?.let{host.overlay.add(it)}'),publication.index('cover?.let{host.overlay.remove(it)}'))
-  self.assertIn('target.buildLayer()',bridge)
-  self.assertIn('target.setLayerType(previousLayer,null)',bridge)
-  self.assertEqual(bridge.count('target.buildLayer()'),1)
-  self.assertLess(bridge.index('palette()'),bridge.index('target.buildLayer()'))
-  self.assertLess(bridge.index('target.buildLayer()'),bridge.index('updateSystemBarAppearance(activity,dark)'))
-  self.assertIn('val targetFrame=try{nativeFrame(host)}finally',bridge)
-  self.assertLess(bridge.index('THEME_TARGET_COPY_RESULT'),bridge.index('updateSystemBarAppearance(activity,dark)'))
-  self.assertIn('Bitmap.wrapHardwareBuffer',bridge)
-  self.assertIn('host.draw(canvas)',bridge)
-  self.assertIn('setWaitForPresent(true).syncAndDraw()',bridge)
-  self.assertIn('targetFrame?.recycle()',bridge)
-  self.assertNotIn('ClipDrawable',bridge)
-  self.assertNotIn('OnPreDrawListener',bridge)
-  self.assertIn('host.invalidate()',bridge)
-  for forbidden in ('ValueAnimator','railHandoff','ownerThemePaletteProgress','session.section','frame('):
+  self.assertIn('host.postOnAnimation{finished()}',bridge)
+  for forbidden in ('PixelCopy','Bitmap','HardwareRenderer','ImageReader','postDelayed','overlay.add','session.section','railHandoff','ValueAnimator','recreate(', 'requestApplyInsets', 'setPadding', 'layoutParams'):
    self.assertNotIn(forbidden,bridge+theme)
-  for forbidden in ('addView(', 'setContentView', 'requestApplyInsets', 'setPadding', 'layoutParams', 'onTouch'):
-   self.assertNotIn(forbidden,bridge)
  def test_theme_is_local_and_non_intercepting(self):
   main=read('MainActivity.kt');theme=main.split('private fun theme(theme: String)',1)[1].split('private fun monitorGuidance',1)[0]
   for forbidden in ('recreate','load()','gateway','ZuiControlRequest','isClickable=true'):self.assertNotIn(forbidden,theme)

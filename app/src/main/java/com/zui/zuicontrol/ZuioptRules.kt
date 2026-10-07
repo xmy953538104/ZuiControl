@@ -49,9 +49,9 @@ object ZuioptRules {
         return id
     }
 
-    fun state(context: Context): String {
+    fun state(context: Context): String = FrontendTransport.commandRead {
         val id = command(context, "state")
-        return ZuiControlClient.utilityValue("result", "$id|rulesState").also { require(it.length <= 4608) { "状态响应过大" } }
+        ZuiControlClient.utilityValue("result", "$id|rulesState").also { require(it.length <= 4608) { "状态响应过大" } }
     }
 
     internal fun field(state: String, key: String): String = state.lineSequence()
@@ -67,8 +67,10 @@ object ZuioptRules {
         require(size in 1..RULE_LIMIT)
         val out = ByteArrayOutputStream()
         while (out.size() < size) {
-            val id = command(context, "read", generation, out.size().toString())
-            val response = ZuiControlClient.utilityValue("result", "$id|rulesChunk")
+            val response = FrontendTransport.commandRead {
+                val id = command(context, "read", generation, out.size().toString())
+                ZuiControlClient.utilityValue("result", "$id|rulesChunk")
+            }
             require(response.length <= 11000)
             val fields = response.split(':', limit = 3)
             check(fields.size == 3 && fields[0] == generation && fields[1] == out.size().toString()) { "读取期间规则发生变化，请重试" }

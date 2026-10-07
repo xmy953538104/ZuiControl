@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.AnimatedVectorDrawable
 import android.os.Build
 import android.util.TypedValue
 import android.view.*
@@ -366,18 +367,38 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
 
 /** Literal .ping / .ping::after, presentation only. */
 @SuppressLint("ViewConstructor")
-internal class OwnerPing(context: Context,private val ui: OwnerUi,private var tone: Int):View(context) {
-    fun setTone(color:Int){if(tone!=color){tone=color;invalidate()}}
-    fun retheme(color:(Int)->Int){tone=color(tone);invalidate()}
-    private val paint=Paint(Paint.ANTI_ALIAS_FLAG);private var phase=0f;private var motion:ValueAnimator?=null
-    override fun onAttachedToWindow(){super.onAttachedToWindow();motion=ValueAnimator.ofFloat(0f,1f).apply{
-        duration=2000;repeatCount=ValueAnimator.INFINITE;interpolator=PathInterpolator(0f,0f,.58f,1f)
-        addUpdateListener{phase=it.animatedValue as Float;invalidate()};start()
-    }}
-    override fun onDraw(c:Canvas){val radius=ui.px(7)/2f;paint.color=tone;c.drawCircle(width/2f,height/2f,radius,paint)
-        paint.color=ui.soft(tone,(140*(1-phase)).roundToInt());c.drawCircle(width/2f,height/2f,radius*(1+1.6f*phase),paint)
+internal class OwnerPing(context: Context,private val ui: OwnerUi,private var tone: Int):FrameLayout(context) {
+    private val dot=View(context)
+    private val motion=(context.getDrawable(R.drawable.owner_ping_halo) as AnimatedVectorDrawable).apply{mutate()}
+    private val halo=ImageView(context).apply{setImageDrawable(motion)}
+    private var pulsing=false
+    private var ready=false
+    init {
+        clipChildren=false;clipToPadding=false
+        addView(dot,LayoutParams(ui.px(7),ui.px(7),Gravity.CENTER))
+        addView(halo,LayoutParams(ui.px(7)*3,ui.px(7)*3,Gravity.CENTER));applyTone();ready=true
     }
-    override fun onDetachedFromWindow(){motion?.cancel();super.onDetachedFromWindow()}
+    private fun applyTone(){
+        dot.background=GradientDrawable().apply{shape=GradientDrawable.OVAL;setColor(tone)}
+        motion.setTint(tone)
+    }
+    fun setTone(color:Int){if(tone!=color){tone=color;applyTone()}}
+    fun retheme(color:(Int)->Int){setTone(color(tone))}
+    private fun updatePulse(){
+        if(!ready)return
+        val next=isAttachedToWindow && windowVisibility==VISIBLE && isShown
+        if(next==pulsing)return
+        pulsing=next
+        if(next)motion.start()else motion.stop()
+    }
+    override fun onLayout(changed:Boolean,left:Int,top:Int,right:Int,bottom:Int){
+        super.onLayout(changed,left,top,right,bottom)
+        halo.translationX=(width-halo.width)/2f-halo.left;halo.translationY=(height-halo.height)/2f-halo.top
+    }
+    override fun onAttachedToWindow(){super.onAttachedToWindow();updatePulse()}
+    override fun onWindowVisibilityChanged(visibility:Int){super.onWindowVisibilityChanged(visibility);updatePulse()}
+    override fun onVisibilityChanged(changedView:View,visibility:Int){super.onVisibilityChanged(changedView,visibility);updatePulse()}
+    override fun onDetachedFromWindow(){pulsing=false;motion.stop();super.onDetachedFromWindow()}
 }
 
 @SuppressLint("ViewConstructor")

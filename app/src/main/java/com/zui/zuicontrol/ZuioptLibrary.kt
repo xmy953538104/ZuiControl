@@ -21,8 +21,11 @@ object ZuioptLibrary {
         fun read(kind: String,size: Int): ByteArray {
             require(size in 1..65536);val out=ByteArrayOutputStream()
             while(out.size()<size){
-                val id=ZuioptRules.command(context,"upstream_read",generation,"$kind:${out.size()}")
-                val part=ZuiControlClient.utilityValue("result","$id|rulesChunk").split(':',limit=3)
+                val response=FrontendTransport.commandRead {
+                    val id=ZuioptRules.command(context,"upstream_read",generation,"$kind:${out.size()}")
+                    ZuiControlClient.utilityValue("result","$id|rulesChunk")
+                }
+                val part=response.split(':',limit=3)
                 check(part.size==3&&part[0]==generation&&part[1]==out.size().toString())
                 val bytes=Base64.getDecoder().decode(part[2]);require(bytes.size in 1..8192&&out.size()+bytes.size<=size);out.write(bytes)
             }

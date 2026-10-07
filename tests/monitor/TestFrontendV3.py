@@ -16,7 +16,9 @@ class FrontendV3(unittest.TestCase):
         self.assertIn('"thread"->{loadInventory();loadRules()}',load)
         self.assertNotIn('ZuioptLibrary.baseline',load)
         rules=main.split('private fun loadRules()',1)[1].split('private fun loadRecords()',1)[0]
-        self.assertIn('shared=true',rules);self.assertIn('snapshot?.generation==generation && baseline?.generation==generation',rules)
+        self.assertNotIn('shared=true',rules);self.assertIn('snapshot?.generation==generation && baseline?.generation==generation',rules)
+        self.assertIn('FrontendTransport.commandRead {',read('ZuioptRules.kt'))
+        self.assertIn('FrontendTransport.commandRead {',read('ZuioptLibrary.kt'))
         self.assertIn('ZuioptLibrary.baseline(applicationContext)',rules)
         self.assertIn('session.read { runCatching { ZuiControlRequest.recoverPending(appContext) } }',main)
         reader=session.split('fun read(task:()->Unit)',1)[1].split('private fun finishClose()',1)[0]

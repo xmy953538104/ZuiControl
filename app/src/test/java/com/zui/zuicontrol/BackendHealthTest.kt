@@ -2,7 +2,7 @@ package com.zui.zuicontrol
 import org.junit.Assert.*
 import org.junit.Test
 class BackendHealthTest {
-    private val healthy="systemServiceAlive=true\nschedulerActive=1\nuperfFailSafe=0\nuperfServiceState=running\nzuioptFailSafe=0\nzuioptServiceState=running\ngpuRuntime=READY\ngpuHandle=0\nmonitorMode=0\nmonitorError=\nmonitorFinalizeError="
+    private val healthy="systemServiceAlive=true\npolicyRecoveryRequired=false\npolicyRetentionError=\npolicyGeneration=543\nschedulerActive=1\nschedulerHealth=ok\nlastSchedulerError=none\nuperfMode=balance\nuperfFailSafe=0\nuperfServiceState=running\nzuioptFailSafe=0\nzuioptServiceState=running\nthreadManagerState=zuiopt_active\ngpuRuntime=READY\ngpuFailSafe=false\ngpuTransport=QTI_PerfLock\ngpuLastError=\ngpuHandle=0\nscreenInteractive=true\nmonitorMode=0\nmonitorActive=true\nmonitorTimer=true\nmonitorIntervalMs=5000\nmonitorRecordState=IDLE\nmonitorError=\nmonitorFinalizeError="
     @Test fun fiveComponentsAndIdleTruth(){
         val components=BackendHealth.components(healthy)
         assertEquals(5,components.size);assertTrue(components.all { it.state==BackendHealth.State.OK })
@@ -21,5 +21,20 @@ class BackendHealthTest {
         val finalize=rejected.replace("monitorFinalizeError=","monitorFinalizeError=record_finalize:SQLite")
         assertEquals(BackendHealth.State.DEGRADED,BackendHealth.components(finalize)[4].state)
         assertEquals(BackendHealth.State.OK,BackendHealth.components(finalize)[3].state)
+    }
+    @Test fun ownershipAndCoherenceFaultFixtures(){
+        fun changed(vararg edits:Pair<String,String>):List<BackendHealth.Component>{var text=healthy;edits.forEach{(a,b)->text=text.replace(a,b)};return BackendHealth.components(text)}
+        assertEquals(BackendHealth.State.FAILED,changed("uperfServiceState=running" to "uperfServiceState=stopped")[1].state)
+        assertEquals(BackendHealth.State.DEGRADED,changed("uperfFailSafe=0" to "uperfFailSafe=1")[1].state)
+        val disabled=changed("schedulerActive=1" to "schedulerActive=0","uperfServiceState=running" to "uperfServiceState=stopped","zuioptServiceState=running" to "zuioptServiceState=stopped","threadManagerState=zuiopt_active" to "threadManagerState=inactive_or_unhealthy")
+        assertEquals("DISABLED_BY_OWNER",disabled[1].reason);assertEquals("DISABLED_BY_OWNER",disabled[2].reason)
+        assertEquals(BackendHealth.State.DEGRADED,changed("threadManagerState=zuiopt_active" to "threadManagerState=android_default_failsafe","zuioptFailSafe=0" to "zuioptFailSafe=1","zuioptServiceState=running" to "zuioptServiceState=stopped")[2].state)
+        assertEquals(BackendHealth.State.DEGRADED,changed("gpuRuntime=READY" to "gpuRuntime=DEGRADED_FAIL_SAFE")[3].state)
+        assertEquals(BackendHealth.State.FAILED,changed("policyRecoveryRequired=false" to "policyRecoveryRequired=true")[0].state)
+        assertEquals(BackendHealth.State.DEGRADED,changed("monitorTimer=true" to "monitorTimer=false")[4].state)
+        assertEquals(BackendHealth.State.UNKNOWN,changed("threadManagerState=zuiopt_active\n" to "")[2].state)
+        assertEquals(BackendHealth.State.UNKNOWN,changed("policyRetentionError=\n" to "")[0].state)
+        assertTrue(changed("lastSchedulerError=none" to "lastSchedulerError=uperf_stopped_while_active").all{it.state==BackendHealth.State.OK})
+        val facts=BackendHealth.components(healthy);assertTrue(facts.all{it.facts.isNotEmpty()});assertTrue(facts[2].facts.contains("线程管理：ZUIopt 已接管"));assertTrue(facts[4].facts.contains("采样周期：5000 ms"))
     }
 }

@@ -296,7 +296,7 @@ class MainActivity : Activity() {
         }
         if(visible && value(ControlsState.snapshot,"policyGeneration").toLongOrNull()?.let{it>fresh.generation}==true)loadPolicies()
     }
-    private fun loadRules() = read("rules",shared=true,fetch={
+    private fun loadRules() = read("rules",fetch={
         val rs=ZuioptRules.state(applicationContext)
         val generation=ZuioptRules.field(rs,"generation")
         if(snapshot?.generation==generation && baseline?.generation==generation)Triple(rs,snapshot!!,baseline!!)
@@ -358,7 +358,10 @@ class MainActivity : Activity() {
         powerLabel?.apply { val value=if(p<0)"--" else number(p);if(text.toString()!=value)text=value }
         ownerQuiet?.apply { tone = if (q >= 45) owner.tiers[3] else if (q >= 40) owner.tiers[2] else owner.accent; setFraction(if(q < 0) 0f else ((q-20)/30).toFloat()) }
         ownerPower?.apply { tone = if (p >= 14) owner.tiers[3] else if (p >= 7) owner.tiers[2] else owner.accent; setFraction(if(p < 0) 0f else (p/20).toFloat()) }
-        ownerSwitch?.animate()?.translationX(owner.px(if(overlay.displayed)18 else 0).toFloat())?.setDuration(300)?.setInterpolator(OwnerUi.spring)?.start()
+        ownerSwitch?.let{knob->
+            val target=owner.px(if(overlay.displayed)18 else 0).toFloat()
+            if(knob.translationX!=target)knob.animate().translationX(target).setDuration(300).setInterpolator(OwnerUi.spring).start()
+        }
         controlBindings[overlay]?.toList()?.forEach{it()}
         quietMeter?.progress = if (q > 0) (q / 55 * 100).toInt().coerceIn(0, 100) else 0
         powerMeter?.progress = if (p > 0) (p / 20 * 100).toInt().coerceIn(0, 100) else 0
@@ -535,7 +538,7 @@ class MainActivity : Activity() {
     }
     private fun masterSubtitleText()=when(session.section){"tune"->"${policies?.apps?.size ?: 0} 个独立配置";"thread"->"${installed.count{model?.appProfile(it.packageName)!=null}} 个应用 · ${model?.profiles?.values?.sumOf{it.rules.size} ?: 0} 条特殊线程规则";"monitor"->"${records.length()} 条记录 · 每个应用保留最近一次";"settings"->"ZuiControl 偏好与工具";else->""}
     private fun ownerAppIcon(pkg: String,size: Int=40): View=ImageView(this).apply {
-        appMetadata[pkg]?.icon?.let{setImageDrawable(it.constantState?.newDrawable(resources) ?: it)}
+        appMetadata[pkg]?.let{setImageDrawable(FrontendPackages.icon(this@MainActivity,it))}
         scaleType=ImageView.ScaleType.FIT_CENTER;setPadding(0,0,0,0)
         importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
         layoutParams=LinearLayout.LayoutParams(owner.px(size),owner.px(size))
@@ -732,8 +735,8 @@ class MainActivity : Activity() {
                     }
                 },LinearLayout.LayoutParams(owner.px(72),owner.px(18)).apply{marginStart=owner.px(10)})
                 addView(owner.column().apply{
-                    val reason=owner.label(h.reason,11.5f,owner.sub).apply{setSingleLine(false);setLineSpacing(0f,1.5f)};addView(reason)
-                    bindHealth{reason.text=BackendHealth.components(state)[i].reason}
+                    val reason=owner.label(h.facts.joinToString("\n"),11.5f,owner.sub).apply{setSingleLine(false);setLineSpacing(0f,1.3f)};addView(reason)
+                    bindHealth{reason.text=BackendHealth.components(state)[i].facts.joinToString("\n")}
                 },LinearLayout.LayoutParams(0,-2,1f).apply{marginStart=owner.px(10)})
                 addView(owner.label(if(h.component=="ZUIopt")"线程" else if(h.component=="监视服务")"悬浮窗" else "维护",11.5f,owner.accent,700).apply{
                     isFocusable=true;setOnClickListener{ownerModal?.close();guard{session.section=if(h.component=="ZUIopt")"thread" else "settings";session.settingsModule=if(h.component=="监视服务")0 else 2;session.selected="";session.clearDrafts();render()}}
@@ -746,7 +749,8 @@ class MainActivity : Activity() {
             session.work("故障已复位；下次重启生效"){ZuioptRules.command(this@MainActivity, "reset")}
         }}
         buttons+=owner.button("知道了","primary"){ownerModal?.close()}
-        ownerModal?.open("核心组件","5 个逻辑组件；其中部分是 system_server 内的逻辑组件，不是独立进程。",600,body,buttons,onDismiss={coreHealthBindings.clear()})
+        val facts=ScrollView(this).apply{isVerticalScrollBarEnabled=false;minimumHeight=owner.px(380);addView(body)}
+        ownerModal?.open("核心组件","当前状态来自系统服务；历史错误单独列出。",600,facts,buttons,onDismiss={coreHealthBindings.clear()})
     }
 
     private fun appPage() {
@@ -767,7 +771,7 @@ class MainActivity : Activity() {
         detail.addView(identity)
         bindPresentation{
             ((identity.getChildAt(1) as LinearLayout).getChildAt(0) as TextView).text=name(d.packageName)
-            appMetadata[d.packageName]?.icon?.let{(leading.getChildAt(1) as ImageView).setImageDrawable(it.constantState?.newDrawable(resources)?.mutate() ?: it)}
+            appMetadata[d.packageName]?.let{(leading.getChildAt(1) as ImageView).setImageDrawable(FrontendPackages.icon(this,it))}
         }
         val configurable=configurableApps[d.packageName]==true
         loadAppMetadata(d.packageName)
@@ -914,7 +918,9 @@ class MainActivity : Activity() {
     }
     private fun picker() { loadInventory{if(visible)ownerPicker()} }
     private fun ownerPicker() {
-        val box=owner.column();val list=owner.column();var system=false;var selected=""
+        val box=owner.column();var system=false;var selected=""
+        var shownApps=emptyList<ApplicationInfo>()
+        data class PickerRow(val row:LinearLayout,val image:ImageView,val title:TextView,val subtitle:TextView,val badge:TextView,val dot:View,var pkg:String="")
         val (searchBox,search)=owner.search("搜索应用或包名")
         val next=owner.button("下一步","primary",enabled=false){
             if(selected.isEmpty())return@button
@@ -925,32 +931,52 @@ class MainActivity : Activity() {
             if(session.section=="tune"){session.appDraft=ZuiControlClient.AppPolicyDraft(selected,refresh.confirmed,mode.confirmed,ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,checkNotNull(authority).generation);session.newApp=true}else openRule(selected)
             ownerModal?.close();render();if(session.section=="thread")loadAnalysis(selected)
         }
-        fun populate() {
-            list.removeAllViews()
-            installed.filter{isSystem(it)==system && (search.text.isBlank() || it.packageName.contains(search.text.toString(),true) || name(it.packageName).contains(search.text.toString(),true))}.forEach{app->
+        val adapter=object:BaseAdapter(){
+            override fun getCount()=shownApps.size
+            override fun getItem(position:Int)=shownApps[position]
+            override fun getItemId(position:Int)=position.toLong()
+            override fun getView(position:Int,convertView:View?,parent:ViewGroup):View {
+                val cell=convertView ?: FrameLayout(this@MainActivity).apply{
+                    setPadding(0,0,0,owner.px(4))
+                    val row=owner.row().apply{setPadding(owner.px(10),owner.px(8),owner.px(10),owner.px(8))}
+                    val image=ImageView(this@MainActivity).apply{scaleType=ImageView.ScaleType.FIT_CENTER}
+                    val title=owner.label("",13.5f,owner.text,800);val subtitle=owner.label("",11f,owner.muted)
+                    val badge=owner.chip("已配置");val dot=View(this@MainActivity)
+                    row.addView(image,LinearLayout.LayoutParams(owner.px(36),owner.px(36)).apply{marginEnd=owner.px(12)})
+                    row.addView(owner.column().apply{addView(title);addView(subtitle)},LinearLayout.LayoutParams(0,-2,1f))
+                    row.addView(FrameLayout(this@MainActivity).apply{
+                        addView(badge,FrameLayout.LayoutParams(-2,-2,Gravity.CENTER))
+                        addView(dot,FrameLayout.LayoutParams(owner.px(18),owner.px(18),Gravity.CENTER))
+                    })
+                    addView(row,FrameLayout.LayoutParams(-1,-2));tag=PickerRow(row,image,title,subtitle,badge,dot)
+                }
+                val holder=cell.tag as PickerRow;val app=getItem(position)
                 val exists=if(session.section=="tune")policies?.apps?.any{it.draft.packageName==app.packageName}==true else model?.appProfile(app.packageName)!=null
-                list.addView(owner.row().apply{
-                    setPadding(owner.px(10),owner.px(8),owner.px(10),owner.px(8))
+                if(holder.pkg!=app.packageName){
+                    holder.image.setImageDrawable(appMetadata[app.packageName]?.let{FrontendPackages.icon(this@MainActivity,it)})
+                    holder.pkg=app.packageName
+                }
+                holder.title.text=name(app.packageName);holder.subtitle.text=if(exists)"已配置" else app.packageName
+                holder.badge.visibility=if(exists)View.VISIBLE else View.GONE;holder.dot.visibility=if(exists)View.GONE else View.VISIBLE
+                holder.dot.background=owner.shape(if(selected==app.packageName)owner.accent else Color.TRANSPARENT,99f,if(selected==app.packageName)owner.accent else owner.line2,2f)
+                holder.row.apply{
                     background=owner.shape(Color.TRANSPARENT,12f,if(selected==app.packageName)owner.accent else null,2f)
-                    addView(ownerAppIcon(app.packageName,36),LinearLayout.LayoutParams(owner.px(36),owner.px(36)).apply{marginEnd=owner.px(12)})
-                    addView(owner.column().apply{
-                        addView(owner.label(name(app.packageName),13.5f,owner.text,800));addView(owner.label(if(exists)"已配置" else app.packageName,11f,owner.muted))
-                    },LinearLayout.LayoutParams(0,-2,1f))
-                    if(exists)addView(owner.chip("已配置")) else addView(View(this@MainActivity).apply{
-                        background=owner.shape(if(selected==app.packageName)owner.accent else Color.TRANSPARENT,99f,if(selected==app.packageName)owner.accent else owner.line2,2f)
-                    },LinearLayout.LayoutParams(owner.px(18),owner.px(18)))
                     isEnabled=!exists;alpha=if(exists).45f else 1f;isFocusable=!exists;contentDescription=name(app.packageName)
-                    setOnClickListener{selected=app.packageName;next.isEnabled=true;next.alpha=1f;populate()}
-                },LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=owner.px(4)})
+                    setOnClickListener{selected=app.packageName;next.isEnabled=true;next.alpha=1f;notifyDataSetChanged()}
+                }
+                return cell
             }
-            if(list.childCount==0)list.addView(owner.empty("没有匹配的应用","尝试其他名称或包名"))
+        }
+        val list=ListView(this).apply{divider=null;selector=android.graphics.drawable.ColorDrawable(Color.TRANSPARENT);isVerticalScrollBarEnabled=false;overScrollMode=View.OVER_SCROLL_NEVER;this.adapter=adapter}
+        val empty=owner.empty("没有匹配的应用","尝试其他名称或包名")
+        fun populate() {
+            shownApps=installed.filter{isSystem(it)==system && (search.text.isBlank() || it.packageName.contains(search.text.toString(),true) || name(it.packageName).contains(search.text.toString(),true))}
+            adapter.notifyDataSetChanged()
         }
         box.addView(OwnerSegment(this,owner,listOf("用户应用","系统应用"),0,true){system=it==1;selected="";next.isEnabled=false;next.alpha=.4f;populate()},LinearLayout.LayoutParams(-1,owner.px(34)).apply{bottomMargin=owner.px(10)})
         box.addView(searchBox,LinearLayout.LayoutParams(-1,owner.px(38)).apply{bottomMargin=owner.px(10)})
-        search.addTextChangedListener(watcher{populate()});box.addView(ScrollView(this).apply{
-            isVerticalScrollBarEnabled=false;clipChildren=true;clipToPadding=true
-            addOnLayoutChangeListener{view,_,_,_,_,_,_,_,_->view.clipBounds=android.graphics.Rect(0,0,view.width,view.height)}
-            addView(list)
+        search.addTextChangedListener(watcher{populate()});box.addView(FrameLayout(this).apply{
+            addView(list,FrameLayout.LayoutParams(-1,-1));addView(empty);list.emptyView=empty
         },LinearLayout.LayoutParams(-1,owner.px(300)));populate()
         ownerModal?.open("添加应用",if(session.section=="tune")"选择一个应用，创建独立性能策略" else "选择一个应用，创建独立线程规则",440,box,listOf(owner.button("取消"){ownerModal?.close()},next))
     }

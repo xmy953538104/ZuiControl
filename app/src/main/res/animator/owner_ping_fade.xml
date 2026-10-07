@@ -1,0 +1,3 @@
+<objectAnimator xmlns:android="http://schemas.android.com/apk/res/android" android:propertyName="fillAlpha"
+    android:valueFrom="0.5490196" android:valueTo="0" android:valueType="floatType" android:duration="2000"
+    android:repeatCount="-1" android:interpolator="@interpolator/owner_ping_ease" />

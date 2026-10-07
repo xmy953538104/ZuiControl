@@ -4,19 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
-import android.graphics.Bitmap
-import android.graphics.Rect
-import android.graphics.RenderNode
-import android.graphics.HardwareRenderer
-import android.graphics.ColorSpace
-import android.graphics.PixelFormat
-import android.graphics.drawable.BitmapDrawable
-import android.hardware.HardwareBuffer
-import android.media.ImageReader
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.view.PixelCopy
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -65,88 +53,12 @@ internal object OwnerWindow {
             decorView.systemUiVisibility=(decorView.systemUiVisibility and mask.inv()) or if(dark)0 else mask
         }
     }
-    /** Publish one native GPU-rendered target frame, then expose the same retained tree. */
+    /** One retained palette and standard bar ink, in the same UI frame. */
     fun transitionSystemBars(activity:Activity,host:View,target:View,dark:Boolean,palette:()->Unit,finished:()->Unit){
-        fun committed(action:()->Unit){
-            if(Build.VERSION.SDK_INT>=29 && host.isHardwareAccelerated)host.viewTreeObserver.registerFrameCommitCallback{host.post{action()}}
-            else host.postOnAnimation{action()}
-        }
-        val source=Bitmap.createBitmap(host.width,host.height,Bitmap.Config.ARGB_8888)
-        fun copied(result:Int){
-            if(activity.isDestroyed || !host.isAttachedToWindow){source.recycle();return}
-            OwnerRenderTrace.event("THEME_SOURCE_COPY_RESULT","result=$result")
-            val cover=if(result==PixelCopy.SUCCESS)BitmapDrawable(host.resources,source).apply{
-                setBounds(0,0,host.width,host.height)
-            }else null
-            cover?.let{host.overlay.add(it)}
-            val previousLayer=target.layerType
-            if(target.isHardwareAccelerated)target.setLayerType(View.LAYER_TYPE_HARDWARE,null)
-            palette()
-            if(target.isHardwareAccelerated)target.buildLayer()
-            committed {
-                OwnerRenderTrace.event("STATUS_SOURCE_FRAME_COMMITTED","dark=$dark")
-                // Record actual native View/RenderNode drawing at window pixel
-                // resolution. The temporary source removal has no intervening
-                // window traversal; its source buffer stays on the display.
-                cover?.let{host.overlay.remove(it)}
-                val targetFrame=try{nativeFrame(host)}finally{cover?.let{host.overlay.add(it)}}
-                OwnerRenderTrace.event("THEME_TARGET_COPY_RESULT","success=${targetFrame!=null}")
-                val targetCover=targetFrame?.let{BitmapDrawable(host.resources,it).apply{setBounds(0,0,host.width,host.height)}}
-                host.postOnAnimation {
-                    updateSystemBarAppearance(activity,dark)
-                    OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;sourceSubmitted=true")
-                    committed {
-                        OwnerRenderTrace.event("STATUS_APPEARANCE_FRAME_COMMITTED","dark=$dark")
-                    }
-                    // Frame-commit delivery may run after the next animation
-                    // callback. Publish from Choreographer itself, independent
-                    // of callback delivery and retained page render cost.
-                    host.postOnAnimation {
-                        OwnerRenderTrace.event("THEME_PUBLISH_BOUNDARY","dark=$dark")
-                        targetCover?.let{host.overlay.add(it)}
-                        cover?.let{host.overlay.remove(it)}
-                        committed {
-                            OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
-                            target.setLayerType(previousLayer,null)
-                            targetCover?.let{host.overlay.remove(it)}
-                            committed {host.postOnAnimation {source.recycle();targetFrame?.recycle();finished()}}
-                            host.invalidate()
-                        }
-                        host.invalidate()
-                    }
-                    host.invalidate()
-                }
-            }
-            host.invalidate()
-        }
-        val location=IntArray(2);host.getLocationInWindow(location)
-        try{
-            PixelCopy.request(activity.window,Rect(location[0],location[1],location[0]+host.width,location[1]+host.height),
-                source,::copied,Handler(Looper.getMainLooper()))
-        }catch(_:IllegalArgumentException){copied(PixelCopy.ERROR_SOURCE_INVALID)}
-    }
-    /** Standard hardware renderer; no software Canvas raster or new product View. */
-    private fun nativeFrame(host:View):Bitmap? {
-        if(Build.VERSION.SDK_INT<29 || !host.isHardwareAccelerated)return null
-        val reader=ImageReader.newInstance(host.width,host.height,PixelFormat.RGBA_8888,2,
-            HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or HardwareBuffer.USAGE_GPU_COLOR_OUTPUT)
-        val renderer=HardwareRenderer()
-        val node=RenderNode("OwnerThemeFrame").apply{setPosition(0,0,host.width,host.height)}
-        try{
-            val canvas=node.beginRecording()
-            try{host.draw(canvas)}finally{node.endRecording()}
-            renderer.setSurface(reader.surface);renderer.setContentRoot(node)
-            val result=renderer.createRenderRequest().setWaitForPresent(true).syncAndDraw()
-            if(result!=HardwareRenderer.SYNC_OK)return null
-            val image=reader.acquireNextImage() ?: return null
-            try{
-                val buffer=image.hardwareBuffer ?: return null
-                try{return Bitmap.wrapHardwareBuffer(buffer,ColorSpace.get(ColorSpace.Named.SRGB))}
-                finally{buffer.close()}
-            }finally{image.close()}
-        }catch(e:RuntimeException){
-            OwnerRenderTrace.event("THEME_TARGET_COPY_ERROR",e.javaClass.simpleName);return null
-        }finally{renderer.destroy();node.discardDisplayList();reader.close()}
+        palette()
+        updateSystemBarAppearance(activity,dark)
+        OwnerRenderTrace.event("THEME_PALETTE_AND_BAR_REQUEST","dark=$dark")
+        host.postOnAnimation{finished()}
     }
     fun dark(context:Context):Boolean=FrontendTheme.dark(
         context.getSharedPreferences("frontend",Context.MODE_PRIVATE).getString("theme","system").orEmpty(),
