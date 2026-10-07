@@ -1449,7 +1449,7 @@ class MainActivity : Activity() {
         // Frame commit is submission, not display presentation. The measured
         // TB321FU clock window differs with these modules' render queues.
         // ponytail: four module offsets; remeasure if render work/SystemUI changes.
-        val railHandoffMs=if(!dark && session.section!="settings")50L else when(session.section){"tune"->30L;"thread"->30L;"monitor"->75L;else->65L}
+        val railHandoffMs=if(!dark && session.section!="settings")50L else when(session.section){"tune"->30L;"thread"->30L;"monitor"->65L;else->65L}
         OwnerWindow.transitionSystemBars(this,physicalHost,rail,master,source,target,dark,railHandoffMs,frame={progress,regions->
             owner.applyTheme(physicalHost,dark,progress)
             physicalHost.setBackgroundColor(regions[2]);ownerCanvas.setBackgroundColor(regions[2])
