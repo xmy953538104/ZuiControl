@@ -6,6 +6,7 @@ android {
     namespace = "com.zui.zuicontrol"
     compileSdk = 35
     buildFeatures.buildConfig = true
+    testBuildType = "release"
 
     defaultConfig {
         applicationId = "com.zui.zuicontrol"
@@ -13,6 +14,7 @@ android {
         targetSdk = 30
         versionCode = 84
         versionName = "0.21.47"
+        testInstrumentationRunner = "com.zui.zuicontrol.probe.ResourceProbe"
     }
 
     signingConfigs {
