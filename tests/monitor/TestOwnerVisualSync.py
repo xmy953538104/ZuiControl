@@ -29,7 +29,7 @@ class OwnerVisualSync(unittest.TestCase):
   self.assertIn('coreHealthBindings.toList().forEach{it()}',load)
   health=main.split('private fun coreHealth()',1)[1].split('private fun appPage()',1)[0]
   self.assertIn('bindHealth{val fresh=',health);self.assertIn('bindHealth{reason.text=',health)
-  self.assertIn('onDismiss={coreHealthBindings.clear()}',health)
+  self.assertIn('onDismiss={coreHealthBindings.clear();if(visible)render()}',health)
  def test_fullscreen_shared_surface_and_no_platform_dialog(self):
   main=read('MainActivity.kt');record=read('PerformanceRecordActivity.kt');ui=read('OwnerUi.kt')
   for text in (main,):

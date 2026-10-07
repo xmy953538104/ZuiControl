@@ -263,11 +263,15 @@ class MainActivity : Activity() {
         try { if(shared)session.read(task)else session.directRead(task) }
         catch(_:java.util.concurrent.RejectedExecutionException){loading.remove(name);finished();session.error="读取请求过多，请重试";if(visible)render()}
     }
-    private fun loadState() = read("state",fetch={ZuiControlClient.stateText()},parse={it}) { fresh ->
-        check(fresh.startsWith("ok=1")){fresh};state=fresh
-        runCatching{GpuDefaultsDraft.fromState(state,session.userId)}.onSuccess(session::observeGpuDefaults)
-        if(visible)coreHealthBindings.toList().forEach{it()}
-        if(visible)render()
+    private var stateRefreshPending=false
+    private fun loadState() {
+        if("state" in loading){stateRefreshPending=true;return}
+        read("state",fetch={ZuiControlClient.stateText()},parse={it},finished={if(stateRefreshPending){stateRefreshPending=false;handler.post{if(!isDestroyed)loadState()}}}) { fresh ->
+            check(fresh.startsWith("ok=1")){fresh};state=fresh
+            runCatching{GpuDefaultsDraft.fromState(state,session.userId)}.onSuccess(session::observeGpuDefaults)
+            if(visible)coreHealthBindings.toList().forEach{it()}
+            if(visible)render()
+        }
     }
     private fun loadInventory(ready:(()->Unit)?=null) {
         if(ready!=null)inventoryReady=ready
@@ -342,6 +346,8 @@ class MainActivity : Activity() {
         if (savedMode in GpuDefaultsDraft.modes) mode.observe(savedMode)
     }
     private fun acceptMonitor(next: JSONObject) {
+        fun healthKey(value:JSONObject)=listOf("producerEpoch","mode","intervalMs","recordState").map{value.optString(it)}
+        val healthChanged=healthKey(next)!=healthKey(monitor)
         val recordingChanged = next.optString("recordState") != monitor.optString("recordState")
         monitor = next; overlay.observe(next.optInt("mode") == 1); bindMonitor()
         if (recordingChanged) { analysisRead++; analysis = null; analysisError = "" }
@@ -349,6 +355,7 @@ class MainActivity : Activity() {
         handler.removeCallbacks(recordClock)
         if (next.optString("recordState") == "RECORDING") handler.postDelayed(recordClock, 1000)
         if (recordingChanged && session.section=="monitor") loadRecords()
+        if(healthChanged)loadState()
     }
     private fun bindMonitor() {
         val fresh = monitor.optLong("elapsedMs") > 0 && SystemClock.elapsedRealtime() - monitor.optLong("elapsedMs") in 0..monitor.optLong("ttlMs", 3500)
@@ -749,8 +756,8 @@ class MainActivity : Activity() {
             session.work("故障已复位；下次重启生效"){ZuioptRules.command(this@MainActivity, "reset")}
         }}
         buttons+=owner.button("知道了","primary"){ownerModal?.close()}
-        val facts=ScrollView(this).apply{isVerticalScrollBarEnabled=false;minimumHeight=owner.px(380);addView(body)}
-        ownerModal?.open("核心组件","当前状态来自系统服务；历史错误单独列出。",600,facts,buttons,onDismiss={coreHealthBindings.clear()})
+        val facts=owner.scroll(body,380)
+        ownerModal?.open("核心组件","当前状态来自系统服务；历史错误单独列出。",600,facts,buttons,onDismiss={coreHealthBindings.clear();if(visible)render()})
     }
 
     private fun appPage() {
