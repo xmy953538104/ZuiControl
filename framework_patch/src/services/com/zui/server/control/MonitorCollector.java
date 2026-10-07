@@ -45,8 +45,10 @@ class MonitorCollector {
     private Handler handler;
     private boolean scheduled;
     private int expectedPowerPlugged=-1;
-    private boolean powerConfirmationPending;
-    private int powerEventPlugged=-1,powerEventStatus=-1;
+    private long powerRecheckUntil;
+    private boolean powerWakePending;
+    private long edgeTraceUntil,edgeTraceDropped;
+    private final List<String> edgeTrace=new ArrayList<>();
     private String finalizeError="";
     private long epoch,samples,threadReads,enumerations,lastThreadTime;
     private long recordScanTime=-1;
@@ -201,6 +203,9 @@ class MonitorCollector {
             else if("circle".equals(action)||"bar".equals(action)){
                 if(callback==null||session.mode!=MonitorSession.FULL)return reject("not_visible");
                 session.circle="circle".equals(action);
+                lastSnapshot=new JSONObject(lastSnapshot).put("circle",session.circle).toString();
+                deliver(lastSnapshot);
+                return "ok=1"+state()+"\nmonitorSnapshot="+lastSnapshot;
             }
             else if("recordStart".equals(action)){
                 String[] token=arg.split(":",-1);
@@ -286,18 +291,62 @@ class MonitorCollector {
     synchronized void invalidatePower(){stop();schedule();}
     synchronized void invalidatePower(boolean connected){
         // Replace the pending edge on the existing clock; never retain pre-edge watts.
-        stop();expectedPowerPlugged=connected?1:0;powerConfirmationPending=true;
-        powerEventPlugged=powerEventStatus=-1;schedule();
+        expectedPowerPlugged=connected?1:0;
+        long receivedAt=SystemClock.elapsedRealtime();
+        powerRecheckUntil=receivedAt+2000;
+        String edgeFacts="receivedAt="+receivedAt+" expectedPlugged="+expectedPowerPlugged+" deadline="+powerRecheckUntil;
+        if(edgeTraceActive()){
+            Intent battery=context.registerReceiver(null,new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            BatteryManager manager=context.getSystemService(BatteryManager.class);
+            edgeFacts+=" factSource=STICKY_BATTERY_AT_POWER_EVENT plugged="+(battery==null?-1:battery.getIntExtra(BatteryManager.EXTRA_PLUGGED,-1))
+                    +" batteryStatus="+(battery==null?-1:battery.getIntExtra(BatteryManager.EXTRA_STATUS,-1))
+                    +" voltageMv="+(battery==null?-1:battery.getIntExtra(BatteryManager.EXTRA_VOLTAGE,-1))
+                    +" currentUa="+(manager==null?Long.MIN_VALUE:manager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW));
+        }
+        traceEdge(connected?"ACTION_POWER_CONNECTED":"ACTION_POWER_DISCONNECTED",
+                edgeFacts);
+        powerWakePending=scalarActive();
+        if(powerWakePending){stop();schedule();}
     }
-    private boolean powerEdgeSettled(int plugged,int status){
-        return expectedPowerPlugged==1?plugged>0:expectedPowerPlugged==0&&plugged==0&&status==3;
+    private boolean powerEdgeSettled(int plugged,int status,double watts){
+        return expectedPowerPlugged==1?plugged>0:
+                expectedPowerPlugged==0&&plugged==0&&status==3&&watts>=0;
     }
-    synchronized void onBatteryStateChanged(int plugged,int status){
-        // Only an unresolved edge can replace the normal clock. Level/current
-        // noise and duplicate power facts never create additional scalar work.
-        if(!powerEdgeSettled(plugged,status)||(powerEventPlugged==plugged&&powerEventStatus==status))return;
-        powerEventPlugged=plugged;powerEventStatus=status;
+    synchronized void onBatteryStateChanged(Intent battery){
+        if(battery==null||(expectedPowerPlugged==-1&&!edgeTraceActive()))return;
+        int plugged=battery.getIntExtra(BatteryManager.EXTRA_PLUGGED,-1);
+        int status=battery.getIntExtra(BatteryManager.EXTRA_STATUS,-1);
+        int voltage=battery.getIntExtra(BatteryManager.EXTRA_VOLTAGE,-1);
+        BatteryManager manager=context.getSystemService(BatteryManager.class);
+        long current=manager==null?Long.MIN_VALUE:manager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
+        traceEdge("ACTION_BATTERY_CHANGED","plugged="+plugged+" batteryStatus="+status
+                +" voltageMv="+voltage+" currentUa="+current+" expectedPlugged="+expectedPowerPlugged);
+        // Retain an unresolved discharge edge until the existing strict source is valid.
+        // A later current-only fact wakes this clock once, including after the bounded window.
+        if(powerWakePending||!scalarActive()||!powerEdgeSettled(plugged,status,
+                MonitorSources.batteryWatts(plugged,status,voltage,current)))return;
+        powerWakePending=true;
         stop();schedule(); // Same worker, sticky-battery reader and snapshot authority.
+    }
+    synchronized void armEdgeTrace(int seconds){
+        if(seconds<1||seconds>90)throw new IllegalArgumentException("edge trace seconds must be 1..90");
+        edgeTrace.clear();edgeTraceDropped=0;edgeTraceUntil=SystemClock.elapsedRealtime()+seconds*1000L;
+        traceEdge("ARM","until="+edgeTraceUntil);
+    }
+    private boolean edgeTraceActive(){return edgeTraceUntil!=0&&SystemClock.elapsedRealtime()<edgeTraceUntil;}
+    private void traceEdge(String kind,String fields){
+        if(!edgeTraceActive())return;
+        if(edgeTrace.size()>=512){edgeTraceDropped++;return;}
+        edgeTrace.add(SystemClock.elapsedRealtime()+" "+kind+" "+fields);
+    }
+    synchronized void traceUnlock(boolean interactive,boolean locked){
+        traceEdge("UNLOCK_CHECK","interactive="+interactive+" locked="+locked);
+    }
+    synchronized String edgeTrace(){
+        StringBuilder text=new StringBuilder("\nmonitorEdgeTraceActive="+edgeTraceActive()
+                +"\nmonitorEdgeTraceUntil="+edgeTraceUntil+"\nmonitorEdgeTraceDropped="+edgeTraceDropped);
+        for(int i=0;i<edgeTrace.size();i++)text.append("\nmonitorEdgeTrace[").append(i).append("]=").append(edgeTrace.get(i));
+        return text.toString();
     }
     synchronized String snapshot(){return lastSnapshot;}
     synchronized String state(){
@@ -317,6 +366,8 @@ class MonitorCollector {
     private void sample(long ticket){synchronized(this){
         if(ticket!=epoch||handler==null||(!scalarActive()&&analyses.isEmpty()))return;
         scheduled=false;
+        powerWakePending=false;
+        traceEdge("SAMPLE_START","expectedPlugged="+expectedPowerPlugged+" deadline="+powerRecheckUntil);
         long powerDelay=0;
         try{
             // End the recording before enumerating at or beyond its deadline.
@@ -349,11 +400,12 @@ class MonitorCollector {
                 }
             }
             if(expectedPowerPlugged!=-1){
-                boolean settled=powerEdgeSettled(plugged,batteryStatus);
-                if(settled){expectedPowerPlugged=-1;powerConfirmationPending=false;}
+                boolean settled=powerEdgeSettled(plugged,batteryStatus,power);
+                if(settled){expectedPowerPlugged=-1;powerRecheckUntil=0;}
                 else{
                     power=-1;
-                    if(powerConfirmationPending){powerDelay=400;powerConfirmationPending=false;}
+                    long remaining=powerRecheckUntil-SystemClock.elapsedRealtime();
+                    if(remaining>0)powerDelay=Math.min(400,remaining);
                 }
             }
             if(capture){
@@ -389,11 +441,15 @@ class MonitorCollector {
                 .put("batteryCurrentMagnitudeA",power<0?-1:Math.abs(microAmps/1000000.0))
                 .put("quietC",quiet).put("recordState",session.recordingState());
             lastSnapshot=data.toString();deliver(lastSnapshot);
+            traceEdge("SAMPLE_END","plugged="+plugged+" batteryStatus="+batteryStatus
+                    +" voltageMv="+milliVolts+" currentUa="+microAmps
+                    +" powerValidity="+(power<0?"UNAVAILABLE":"VALID")+" powerW="+power);
             // Only a completed sample proves pipeline recovery. Expected lack of demand or
             // charging power unavailability is not a source fault; failed demanded reads are.
             error=boundedError(!sources.quietError.isEmpty()?"quiet:"+sources.quietError:
                     fpsBlockedReason().isEmpty()&&fps<0?"fps:"+fpsValidity:"");
         }catch(Exception e){error=boundedError(e.getClass().getSimpleName()+":"+e.getMessage());
+            traceEdge("SAMPLE_END","error="+error);
             terminate("SOURCE_PIPELINE_FAILURE",true);stop();}
         reschedule(powerDelay);
     }}
@@ -413,6 +469,7 @@ class MonitorCollector {
                 delay=Math.min(delay,recordScanTime<0?1:Math.max(1,recordScanTime+ThreadAnalysis.INTERVAL-now));
                 delay=Math.min(delay,Math.max(1,session.recordingStart+MonitorSession.MAX_RECORD_MS-now));
             }
+            traceEdge("SCHEDULE","delayMs="+delay+" expectedPlugged="+expectedPowerPlugged);
             handler.postDelayed(()->sample(next),delay);
         }
     }

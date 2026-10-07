@@ -155,8 +155,10 @@ def entries(*scopes):
 def reverse_entries(current,*scopes):
     result=list(current)
     assert PLAN3_RESPONSIVENESS['baseHead']=='383649890092c4368ef4b571c09ba6ace8ba5ca6'
+    backend={'framework_patch/src/services/com/zui/server/control/MonitorCollector.java','framework_patch/src/services/com/zui/server/control/ZuiControlService.java'}
+    assert PLAN3_RESPONSIVENESS['BackendSourceChanged']==any(r['path'] in backend for r in PLAN3_RESPONSIVENESS['files'])
     for row in PLAN3_RESPONSIVENESS['files']:
-        assert row['path'].startswith('app/') and Path(row['path']).name in {'ControlsState.kt','FrontendTransport.kt','FrontendPackages.kt','FrontendSession.kt','MainActivity.kt','OwnerUi.kt','OwnerWindow.kt','PerformanceMonitor.kt','ZuiControlClient.kt','ZuiControlQuickService.kt','FrontendV3Test.kt'}
+        assert row['path'] in backend or (row['path'].startswith('app/') and Path(row['path']).name in {'ControlsState.kt','FrontendTransport.kt','FrontendPackages.kt','FrontendSession.kt','MainActivity.kt','OwnerUi.kt','OwnerWindow.kt','PerformanceMonitor.kt','ZuiControlClient.kt','ZuiControlQuickService.kt','FrontendV3Test.kt'})
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         after=row['after'].encode();assert result.count(after)==1,('R3 exact responsiveness bytes',row['path'])
         result.remove(after)

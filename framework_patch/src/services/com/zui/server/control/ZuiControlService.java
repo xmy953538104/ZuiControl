@@ -198,6 +198,8 @@ public final class ZuiControlService extends Binder {
     private int mRefreshApplyCount;
     private int mSkipSameCount;
     private boolean mScreenInteractive = true;
+    private long mMonitorUnlockEpoch;
+    private Runnable mMonitorUnlockRecheck;
     private long mCommandSequence;
     public ZuiControlService(Context context) {
         mContext = context;
@@ -743,7 +745,11 @@ public final class ZuiControlService extends Binder {
     @Override
     protected synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         int uid=Binder.getCallingUid();
-        if(uid==Process.ROOT_UID||uid==Process.SHELL_UID||uid==Process.SYSTEM_UID)pw.print(state());
+        if(uid==Process.ROOT_UID||uid==Process.SHELL_UID||uid==Process.SYSTEM_UID){
+            if(args!=null)for(String arg:args)if(arg.startsWith("--edge-trace-seconds="))
+                mMonitor.armEdgeTrace(Integer.parseInt(arg.substring("--edge-trace-seconds=".length())));
+            pw.print(state()+mMonitor.edgeTrace());
+        }
         else {enforceZuiControlCaller(uid);pw.print(callerState(false));}
     }
 
@@ -1188,7 +1194,9 @@ public final class ZuiControlService extends Binder {
         int user = mTopResumedState.stableUserId();
         android.app.KeyguardManager lock = mContext.getSystemService(android.app.KeyguardManager.class);
         boolean locked=lock==null||lock.isKeyguardLocked();
-        boolean eligible = mScreenInteractive && !locked
+        PowerManager power=mContext.getSystemService(PowerManager.class);
+        boolean interactive=mScreenInteractive&&power!=null&&power.isInteractive();
+        boolean eligible = interactive && !locked
                 && !SystemProperties.getBoolean(PROP_GLOBAL_DISABLE, false);
         // Visibility follows screen lifecycle; recording still requires the actual target App.
         // Keep editableScene, Refresh and Uperf transient-focus policy unchanged.
@@ -1196,7 +1204,7 @@ public final class ZuiControlService extends Binder {
         boolean recordEligible = eligible && !pkg.isEmpty() && !home.isEmpty() && !pkg.equals(home)
                 && (!isTransientPackage(pkg) || "com.zui.zuicontrol".equals(pkg));
         mMonitor.scene(pkg, user, eligible, recordEligible && mMonitorTaskId>=0,
-                !mScreenInteractive?"SCREEN_OFF":locked?"LOCKED":"VISIBILITY_BLOCKED",mMonitorTaskId,
+                !interactive?"SCREEN_OFF":locked?"LOCKED":"VISIBILITY_BLOCKED",mMonitorTaskId,
                 eligible && mMonitorTaskId>=0 && !pkg.isEmpty() && !mRawFocusTransient && !mImeVisible
                         && pkg.equals(mRawFocusedPackage) && user==mRawFocusedUserId
                         && mRawFocusedDisplayId==Display.DEFAULT_DISPLAY);
@@ -1996,10 +2004,9 @@ public final class ZuiControlService extends Binder {
                     } else if (Intent.ACTION_POWER_CONNECTED.equals(action) || Intent.ACTION_POWER_DISCONNECTED.equals(action)) {
                         mMonitor.invalidatePower(Intent.ACTION_POWER_CONNECTED.equals(action));
                     } else if (Intent.ACTION_BATTERY_CHANGED.equals(action)) {
-                        mMonitor.onBatteryStateChanged(intent.getIntExtra(BatteryManager.EXTRA_PLUGGED,-1),
-                                intent.getIntExtra(BatteryManager.EXTRA_STATUS,-1));
+                        mMonitor.onBatteryStateChanged(intent);
                     } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
-                        refreshMonitor();
+                        beginMonitorUnlockRecheck();
                     }
                 }
             }, filter, null, mWorker);
@@ -2008,12 +2015,42 @@ public final class ZuiControlService extends Binder {
         }
     }
 
+    private synchronized void cancelMonitorUnlockRecheck() {
+        mMonitorUnlockEpoch++;
+        if(mMonitorUnlockRecheck!=null)mWorker.removeCallbacks(mMonitorUnlockRecheck);
+        mMonitorUnlockRecheck=null;
+    }
+
+    private synchronized void beginMonitorUnlockRecheck() {
+        cancelMonitorUnlockRecheck();
+        refreshMonitor();
+        final long ticket=mMonitorUnlockEpoch,deadline=SystemClock.elapsedRealtime()+2000;
+        mMonitorUnlockRecheck=()->{
+            synchronized(ZuiControlService.this){
+                if(ticket!=mMonitorUnlockEpoch)return;
+                PowerManager power=mContext.getSystemService(PowerManager.class);
+                android.app.KeyguardManager lock=mContext.getSystemService(android.app.KeyguardManager.class);
+                boolean interactive=power!=null&&power.isInteractive();
+                boolean locked=lock==null||lock.isKeyguardLocked();
+                mMonitor.traceUnlock(interactive,locked);
+                if(!mScreenInteractive||!interactive){cancelMonitorUnlockRecheck();refreshMonitor();return;}
+                if(!locked){mMonitorUnlockRecheck=null;refreshMonitor();return;}
+                long remaining=deadline-SystemClock.elapsedRealtime();
+                if(remaining<=0){mMonitorUnlockRecheck=null;return;}
+                mWorker.postDelayed(mMonitorUnlockRecheck,Math.min(150,remaining));
+            }
+        };
+        mMonitorUnlockRecheck.run();
+    }
+
     private synchronized void onScreenInteractiveChanged(boolean interactive) {
         if (mScreenInteractive == interactive) {
+            if(interactive)beginMonitorUnlockRecheck();else cancelMonitorUnlockRecheck();
             return;
         }
         mScreenInteractive = interactive;
-        refreshMonitor();
+        if(interactive)beginMonitorUnlockRecheck();
+        else {cancelMonitorUnlockRecheck();refreshMonitor();}
         mUperfScenePolicy.onInteractiveChanged(interactive,
                 interactive ? "screenOn" : "screenOff", SystemClock.elapsedRealtimeNanos());
         publishState();
@@ -2458,6 +2495,7 @@ public final class ZuiControlService extends Binder {
         AppPolicyStore.Row row=authority==null?null:authority.apps.get(key(mCurrentUserId,pkg));
         String global=authority==null?"balance":authority.global(mCurrentUserId).uperfMode;
         return currentSceneState()+"\ncontrolsUser="+mCurrentUserId
+                +"\nsavedGlobalRefresh="+(!mPolicyReady||authority==null?0:authority.global(mCurrentUserId).refreshHz)
                 +"\nsavedGlobalUperf="+global+"\neditableUperfMode="+(row==null?global:row.uperfMode)
                 +"\neffectiveUperfMode="+mUperfScenePolicy.mDesiredMode
                 +"\nscreenInteractive="+mScreenInteractive;
