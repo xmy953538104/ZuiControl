@@ -833,9 +833,10 @@ class MainActivity : Activity() {
         })
         detail.addView(box,owner.gap())
         detail.addView(owner.row().apply{
-            if(!session.newApp)addView(owner.button("删除独立配置","danger",icon=R.drawable.owner_trash,enabled=!session.busy){confirm("删除独立配置？","回到全局策略，线程规则保留。"){
+            val delete=owner.button("删除独立配置","danger",icon=R.drawable.owner_trash,enabled=!session.busy){confirm("删除独立配置？","回到全局策略，线程规则保留。"){
                 session.work("已删除",feature="appPolicy"){val reply=ZuiControlClient.removePackageProfile(applicationContext,d.packageName);check(reply.ok){reply.text};session.clearDrafts();session.selected=""}
-            }})
+            }}
+            addView(delete);bindPresentation{delete.visibility=if(session.newApp)View.GONE else View.VISIBLE;delete.isEnabled=!session.busy;delete.alpha=if(delete.isEnabled)1f else .4f}
             addView(View(this@MainActivity),LinearLayout.LayoutParams(0,1,1f))
             saveButton=owner.button(if(session.busy && session.workFeature=="appPolicy")"正在保存…" else "保存并生效","primary",enabled=!session.busy && session.appDirty){saveDraft()};addView(saveButton)
         })
