@@ -40,8 +40,11 @@ class Plan2(unittest.TestCase):
   self.assertLess(bridge.index('host.overlay.add'),bridge.index('palette()'))
   self.assertLess(bridge.index('STATUS_SOURCE_FRAME_COMMITTED'),bridge.index('host.overlay.remove'))
   self.assertLess(bridge.index('STATUS_SOURCE_FRAME_COMMITTED'),bridge.index('updateSystemBarAppearance(activity,dark)'))
-  self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('host.overlay.remove'))
   self.assertLess(bridge.index('host.overlay.remove'),bridge.index('THEME_APP_FRAME_COMMITTED'))
+  self.assertLess(bridge.index('THEME_APP_FRAME_COMMITTED'),bridge.index('updateSystemBarAppearance(activity,dark)'))
+  self.assertIn('WindowInsets.Type.statusBars()',bridge)
+  self.assertIn('ClipDrawable.VERTICAL',bridge)
+  self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('barCover?.let{host.overlay.remove(it)}'))
   self.assertNotIn('OnPreDrawListener',bridge)
   self.assertIn('host.invalidate()',bridge)
   for forbidden in ('ValueAnimator','railHandoff','ownerThemePaletteProgress','session.section','frame('):
