@@ -59,7 +59,7 @@ internal object OwnerWindow {
             decorView.systemUiVisibility=(decorView.systemUiVisibility and mask.inv()) or if(dark)0 else mask
         }
     }
-    /** Pre-render one complete target tree; publish after the appearance-bearing source frame. */
+    /** Pre-render one complete target tree; publish at the shared next VSync boundary. */
     fun transitionSystemBars(activity:Activity,host:View,target:View,dark:Boolean,palette:()->Unit,finished:()->Unit){
         fun committed(action:()->Unit){
             if(Build.VERSION.SDK_INT>=29 && host.isHardwareAccelerated)host.viewTreeObserver.registerFrameCommitCallback{host.post{action()}}
@@ -84,6 +84,12 @@ internal object OwnerWindow {
                     OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;sourceSubmitted=true")
                     committed {
                         OwnerRenderTrace.event("STATUS_APPEARANCE_FRAME_COMMITTED","dark=$dark")
+                    }
+                    // Frame-commit delivery may run after the next animation
+                    // callback. Publish from Choreographer itself, independent
+                    // of callback delivery and retained page render cost.
+                    host.postOnAnimation {
+                        OwnerRenderTrace.event("THEME_PUBLISH_BOUNDARY","dark=$dark")
                         cover?.let{host.overlay.remove(it)}
                         committed {
                             OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
