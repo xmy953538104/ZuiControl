@@ -357,6 +357,7 @@ class MainActivity : Activity() {
         ownerQuiet?.apply { tone = if (q >= 45) owner.tiers[3] else if (q >= 40) owner.tiers[2] else owner.accent; setFraction(if(q < 0) 0f else ((q-20)/30).toFloat()) }
         ownerPower?.apply { tone = if (p >= 14) owner.tiers[3] else if (p >= 7) owner.tiers[2] else owner.accent; setFraction(if(p < 0) 0f else (p/20).toFloat()) }
         ownerSwitch?.animate()?.translationX(owner.px(if(overlay.displayed)18 else 0).toFloat())?.setDuration(300)?.setInterpolator(OwnerUi.spring)?.start()
+        controlBindings[overlay]?.toList()?.forEach{it()}
         quietMeter?.progress = if (q > 0) (q / 55 * 100).toInt().coerceIn(0, 100) else 0
         powerMeter?.progress = if (p > 0) (p / 20 * 100).toInt().coerceIn(0, 100) else 0
         quietLabel?.setTextColor(if (q >= 45) owner.inks[3] else if (q >= 40) owner.inks[2] else owner.text)
@@ -684,7 +685,11 @@ class MainActivity : Activity() {
                 ownerSwitch=View(this@MainActivity).apply{background=owner.shape(Color.WHITE,99f);elevation=owner.px(2).toFloat();translationX=owner.px(if(this@MainActivity.overlay.displayed)18 else 0).toFloat()}
                 addView(ownerSwitch,FrameLayout.LayoutParams(owner.px(20),owner.px(20)).apply{leftMargin=owner.px(3);topMargin=owner.px(3)})
             },LinearLayout.LayoutParams(owner.px(44),owner.px(26)).apply{marginStart=owner.px(14)})
-            isEnabled=true;alpha=1f;isFocusable=true;contentDescription="性能监视悬浮窗，${if(this@MainActivity.overlay.displayed)"已开启" else "已关闭"}";setOnClickListener{toggleOverlay()}
+            isEnabled=true;alpha=1f;isFocusable=true;setOnClickListener{toggleOverlay()}
+            bindControl(this@MainActivity.overlay){
+                contentDescription="性能监视悬浮窗，${if(this@MainActivity.overlay.displayed)"已开启" else "已关闭"}"
+                (ownerSwitch?.parent as? View)?.background=owner.shape(if(this@MainActivity.overlay.displayed)owner.accent else owner.line2,13f)
+            }
             tag="owner-control"
         },owner.gap())
     }
