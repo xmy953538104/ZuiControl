@@ -367,6 +367,7 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
 /** Literal .ping / .ping::after, presentation only. */
 @SuppressLint("ViewConstructor")
 internal class OwnerPing(context: Context,private val ui: OwnerUi,private var tone: Int):View(context) {
+    fun setTone(color:Int){if(tone!=color){tone=color;invalidate()}}
     fun retheme(color:(Int)->Int){tone=color(tone);invalidate()}
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG);private var phase=0f;private var motion:ValueAnimator?=null
     override fun onAttachedToWindow(){super.onAttachedToWindow();motion=ValueAnimator.ofFloat(0f,1f).apply{

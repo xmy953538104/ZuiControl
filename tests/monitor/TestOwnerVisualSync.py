@@ -6,6 +6,23 @@ from BackendContract import entries,reverse_entries
 APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
 def read(name):return (APP/name).read_text(encoding='utf8')
 class OwnerVisualSync(unittest.TestCase):
+ def test_retained_mode_ping_rebinds_without_restarting_motion(self):
+  main=read('MainActivity.kt');ui=read('OwnerUi.kt')
+  bind=main.split('bindControl(mode){',1)[1].split('detail.addView(owner.title',1)[0]
+  self.assertIn('(modeChip.getChildAt(0) as OwnerPing).setTone(owner.tiers[tier])',bind)
+  setter=ui.split('fun setTone(color:Int)',1)[1].split('fun retheme',1)[0]
+  self.assertIn('tone=color;invalidate()',setter)
+  for forbidden in ('ValueAnimator','motion','phase','requestLayout','addView','gateway'):
+   self.assertNotIn(forbidden,setter)
+  draw=ui.split('internal class OwnerPing',1)[1].split('override fun onDetachedFromWindow',1)[0]
+  self.assertIn('paint.color=tone',draw);self.assertIn('ui.soft(tone,',draw)
+  self.assertIn('masterSelectionBindings+={ruleMarker.visibility=',main)
+  self.assertIn('summary.text=if(fresh!=null)',main)
+  self.assertIn('rulesButton.contentDescription=title',main)
+  status=main.split('private fun threadHome()',1)[1].split('if (ruleError',1)[0]
+  self.assertIn('bindPresentation{',status)
+  for child in ('runningChip.visibility','statusChip.visibility','statusChip.text=status','statusChip.setTextColor','statusChip.background','statusHost.contentDescription'):
+   self.assertIn(child,status)
  def test_fullscreen_shared_surface_and_no_platform_dialog(self):
   main=read('MainActivity.kt');record=read('PerformanceRecordActivity.kt');ui=read('OwnerUi.kt')
   for text in (main,):

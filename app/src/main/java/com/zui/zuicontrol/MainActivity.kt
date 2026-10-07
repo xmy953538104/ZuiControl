@@ -554,7 +554,9 @@ class MainActivity : Activity() {
             if(d!=null && session.section=="tune"){
                 chips.addView(owner.chip("${d.refreshHz}Hz"));chips.addView(owner.chip(modeTitle(d.uperfMode),GpuDefaultsDraft.modes.indexOf(d.uperfMode)+1),LinearLayout.LayoutParams(-2,owner.px(18)).apply{marginStart=owner.px(6)})
                 if(session.newApp && session.appDraft?.packageName==pkg)chips.addView(owner.chip("未保存",3),LinearLayout.LayoutParams(-2,owner.px(18)).apply{marginStart=owner.px(6)})
-                if(model?.appProfile(pkg)!=null)chips.addView(owner.icon(R.drawable.owner_chip,owner.zoFg,12).apply{background=owner.shape(owner.zoBg,5f);setPadding(owner.px(3),owner.px(3),owner.px(3),owner.px(3))},LinearLayout.LayoutParams(owner.px(18),owner.px(18)).apply{marginStart=owner.px(6)})
+                val ruleMarker=owner.icon(R.drawable.owner_chip,owner.zoFg,12).apply{background=owner.shape(owner.zoBg,5f);setPadding(owner.px(3),owner.px(3),owner.px(3),owner.px(3));visibility=if(model?.appProfile(pkg)!=null)View.VISIBLE else View.GONE}
+                chips.addView(ruleMarker,LinearLayout.LayoutParams(owner.px(18),owner.px(18)).apply{marginStart=owner.px(6)})
+                masterSelectionBindings+={ruleMarker.visibility=if(model?.appProfile(pkg)!=null)View.VISIBLE else View.GONE}
             } else if(session.section=="thread" && pkg.isNotEmpty()){
                 chips.addView(provenanceChip(pkg))
                 chips.addView(owner.chip("${model?.appProfile(pkg)?.rules?.size ?: 0} 条规则"),LinearLayout.LayoutParams(-2,dp(18)).apply{marginStart=dp(6)})
@@ -620,6 +622,7 @@ class MainActivity : Activity() {
         bindControl(mode){
             val tier=GpuDefaultsDraft.modes.indexOf(mode.displayed).coerceAtLeast(0)
             modeChip.background=owner.shape(owner.chipBg[tier+1],999f)
+            (modeChip.getChildAt(0) as OwnerPing).setTone(owner.tiers[tier])
             (modeChip.getChildAt(1) as TextView).apply{val caption="${modeTitle(mode.displayed)}模式";if(text.toString()!=caption)text=caption;setTextColor(owner.chipFg[tier+1])}
         }
         detail.addView(owner.title("系统全局状态","系统关键性能参数与组件运行情况",trailing=modeChip))
@@ -810,11 +813,15 @@ class MainActivity : Activity() {
             addView(owner.icon(R.drawable.owner_chip,owner.zoFg).apply{background=owner.shape(owner.zoBg,12f);setPadding(owner.px(10),owner.px(10),owner.px(10),owner.px(10))},LinearLayout.LayoutParams(owner.px(40),owner.px(40)).apply{marginEnd=owner.px(12)})
             addView(owner.column().apply{
                 addView(owner.label("线程规则",13f,owner.text,800),LinearLayout.LayoutParams(-1,owner.px(18)))
-                addView(owner.label(if(profile!=null)"${profile.rules.size} 条特殊线程规则 · ${sourceTitle(provenance(d.packageName))}" else "尚未配置特殊线程规则",11f,owner.muted),LinearLayout.LayoutParams(-1,owner.px(14)).apply{topMargin=owner.px(3)})
+                val summary=owner.label("",11f,owner.muted)
+                addView(summary,LinearLayout.LayoutParams(-1,owner.px(14)).apply{topMargin=owner.px(3)})
+                bindPresentation{val fresh=model?.appProfile(d.packageName);summary.text=if(fresh!=null)"${fresh.rules.size} 条特殊线程规则 · ${sourceTitle(provenance(d.packageName))}" else "尚未配置特殊线程规则"}
             },LinearLayout.LayoutParams(0,-2,1f))
-            addView(owner.button(if(profile!=null)"查看规则" else "新建规则",small=true){guard{
+            val rulesButton=owner.button(if(profile!=null)"查看规则" else "新建规则",small=true){guard{
                 session.section="thread";session.selected=d.packageName;session.clearDrafts();openRule(d.packageName);render();loadInventory();loadRules();loadAnalysis(d.packageName)
-            }})
+            }}
+            addView(rulesButton)
+            bindPresentation{val title=if(model?.appProfile(d.packageName)!=null)"查看规则" else "新建规则";((rulesButton as LinearLayout).getChildAt(0) as TextView).text=title;rulesButton.contentDescription=title}
         })
         detail.addView(box,owner.gap())
         detail.addView(owner.row().apply{
@@ -945,6 +952,10 @@ class MainActivity : Activity() {
     }
 
     private fun threadHome() {
+        val runningChip=owner.modeChip("",0)
+        val statusChip=owner.chip("",0,true)
+        val statusHost=FrameLayout(this).apply{addView(runningChip);addView(statusChip)}
+        bindPresentation{
         val health=BackendHealth.components(state).firstOrNull{it.component=="ZUIopt"}
         val status=when {
             health?.reason=="DISABLED_BY_OWNER" -> "已关闭"
@@ -954,7 +965,17 @@ class MainActivity : Activity() {
             health?.state==BackendHealth.State.DEGRADED -> "需关注"
             else -> "状态不可用"
         }
-        detail.addView(owner.title("线程调度","ZUIopt · 按线程 / 任务的 CPU 放置（cpuset / affinity）",trailing=if(health?.state==BackendHealth.State.OK && health.reason!="DISABLED_BY_OWNER")owner.modeChip(status,0)else owner.chip(status,when(health?.state){BackendHealth.State.FAILED->4;BackendHealth.State.DEGRADED->3;else->0},true)))
+        val running=health?.state==BackendHealth.State.OK && health.reason!="DISABLED_BY_OWNER"
+        runningChip.visibility=if(running)View.VISIBLE else View.GONE
+        statusChip.visibility=if(running)View.GONE else View.VISIBLE
+        runningChip.background=owner.shape(owner.chipBg[1],999f)
+        (runningChip.getChildAt(0) as OwnerPing).setTone(owner.tiers[0])
+        (runningChip.getChildAt(1) as TextView).apply{text=status;setTextColor(owner.chipFg[1])}
+        val tone=when(health?.state){BackendHealth.State.FAILED->4;BackendHealth.State.DEGRADED->3;else->0}
+        statusChip.text=status;statusChip.setTextColor(owner.chipFg[tone]);statusChip.background=owner.shape(owner.chipBg[tone],6f)
+        statusHost.contentDescription="$status · ${health?.reason.orEmpty()}"
+        }
+        detail.addView(owner.title("线程调度","ZUIopt · 按线程 / 任务的 CPU 放置（cpuset / affinity）",trailing=statusHost))
         if (ruleError.isNotEmpty()) detail.addView(owner.empty("规则暂不可用",ruleError,true), gap())
         if (ZuioptRules.field(ruleState, "failure") == "1") detail.addView(actionRow("ZUIopt 已进入故障保护", ZuioptRules.field(ruleState, "failure_reason") + " · 下次开机重新启用") {
             confirm("下次开机重新启用？", "本次开机继续由 Android 调度，不会立即重启。") { session.work("已安排") { ZuioptRules.command(applicationContext, "reset") } }
