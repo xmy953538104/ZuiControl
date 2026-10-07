@@ -4,11 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
-import android.graphics.Canvas
-import android.graphics.ColorFilter
-import android.graphics.Paint
-import android.graphics.PixelFormat
-import android.graphics.drawable.Drawable
 import android.os.Build
 import android.view.View
 import android.view.WindowInsets
@@ -58,21 +53,8 @@ internal object OwnerWindow {
             decorView.systemUiVisibility=(decorView.systemUiVisibility and mask.inv()) or if(dark)0 else mask
         }
     }
-    /** Drawable overlay has no input/layout participation and ends transparent. */
+    /** Keep the complete source palette until one shared presentation boundary. */
     fun transitionSystemBars(activity:Activity,host:View,dark:Boolean,palette:()->Unit,finished:()->Unit){
-        val top=host.rootWindowInsets?.let{insets->
-            if(Build.VERSION.SDK_INT>=30)insets.getInsets(WindowInsets.Type.statusBars()).top else insets.systemWindowInsetTop
-        } ?: 0
-        // Status pixels alone bridge both black and white icon ink at >4.5:1.
-        // App regions retain their complete source palette until one switch.
-        val paint=Paint().apply{color=Color.rgb(117,117,117)}
-        val bridge=object:Drawable(){
-            override fun draw(canvas:Canvas){canvas.drawRect(bounds,paint)}
-            override fun setAlpha(alpha:Int){}
-            override fun setColorFilter(filter:ColorFilter?){}
-            @Deprecated("Drawable opacity") override fun getOpacity()=PixelFormat.OPAQUE
-        }
-        bridge.setBounds(0,0,host.width,top);host.overlay.add(bridge)
         fun committed(action:()->Unit){
             if(Build.VERSION.SDK_INT>=29 && host.isHardwareAccelerated)host.viewTreeObserver.registerFrameCommitCallback{host.post{action()}}
             else host.postOnAnimation{action()}
@@ -87,8 +69,6 @@ internal object OwnerWindow {
                         OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
                         host.postOnAnimation {
                             host.postOnAnimation {
-                                host.overlay.remove(bridge)
-                                OwnerRenderTrace.event("STATUS_BRIDGE_REMOVED","dark=$dark")
                                 finished()
                             }
                         }

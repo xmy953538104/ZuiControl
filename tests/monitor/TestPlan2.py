@@ -20,7 +20,7 @@ class Plan2(unittest.TestCase):
  def test_status_theme_does_not_reconfigure_window(self):
   main=read('MainActivity.kt');window=read('OwnerWindow.kt')
   theme=main.split('private fun theme(theme: String)',1)[1].split('private fun monitorGuidance',1)[0]
-  appearance=window.split('fun updateSystemBarAppearance',1)[1].split('/** Drawable overlay',1)[0]
+  appearance=window.split('fun updateSystemBarAppearance',1)[1].split('fun transitionSystemBars',1)[0]
   self.assertEqual(main.count('OwnerWindow.fullscreen(this)'),1)
   self.assertIn('ownerCanvas.postOnAnimation',theme)
   self.assertIn('OwnerWindow.transitionSystemBars(this,physicalHost,dark,palette=',theme)
@@ -29,9 +29,7 @@ class Plan2(unittest.TestCase):
   for forbidden in ('setDecorFitsSystemWindows','show(','LAYOUT_','requestApplyInsets','statusBarColor','navigationBarColor'):
    self.assertNotIn(forbidden,appearance)
   bridge=window.split('fun transitionSystemBars',1)[1].split('fun dark(',1)[0]
-  self.assertIn('WindowInsets.Type.statusBars()',bridge)
-  self.assertIn('bridge.setBounds(0,0,host.width,top)',bridge)
-  self.assertIn('host.overlay.remove(bridge)',bridge)
+  self.assertNotIn('host.overlay.add',bridge)
   self.assertIn('registerFrameCommitCallback',bridge)
   self.assertEqual(bridge.count('palette()'),1)
   self.assertEqual(theme.count('owner.applyTheme('),1)
