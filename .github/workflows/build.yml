@@ -45,6 +45,28 @@ jobs:
       - name: Install Android platform
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "build-tools;36.0.0" "ndk;27.2.12479018"
 
+      - name: Decode release keystore
+        run: |
+          printf '%s' "${{ secrets.KEYSTORE }}" | base64 -d > "$RUNNER_TEMP/ZuiControl-release.jks"
+
+      - name: Build frontend instrumentation
+        # The separately signed instrumentation APK never enters the payload.
+        # It observes existing frontend objects and changes only test presentation.
+        # Root/shell DUMP permission protects its temporary command receiver.
+        run: |
+          gradle -p . :app:assembleReleaseAndroidTest -PfrontendProbe=true \
+            -Pzuicontrol.storeFile="$RUNNER_TEMP/ZuiControl-release.jks" \
+            -Pzuicontrol.storePassword="${{ secrets.KEYSTORE_PASSWORD }}" \
+            -Pzuicontrol.keyAlias="${{ secrets.KEY_ALIAS }}" \
+            -Pzuicontrol.keyPassword="${{ secrets.KEY_PASSWORD }}"
+
+      - name: Upload frontend instrumentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: zui-control-frontend-probe
+          path: app/build/outputs/apk/androidTest/release/*.apk
+          if-no-files-found: error
+
       - name: Test Uperf process-lifetime supervisor
         shell: bash
         run: |
@@ -323,10 +345,6 @@ jobs:
           path: ${{ runner.temp }}/init-gate/receipt
           if-no-files-found: error
 
-      - name: Decode release keystore
-        run: |
-          printf '%s' "${{ secrets.KEYSTORE }}" | base64 -d > "$RUNNER_TEMP/ZuiControl-release.jks"
-
       - name: Test app
         run: |
           gradle -p . :app:testDebugUnitTest :app:lintDebug
@@ -378,24 +396,6 @@ jobs:
             -Pzuicontrol.storePassword="${{ secrets.KEYSTORE_PASSWORD }}" \
             -Pzuicontrol.keyAlias="${{ secrets.KEY_ALIAS }}" \
             -Pzuicontrol.keyPassword="${{ secrets.KEY_PASSWORD }}"
-
-      - name: Build frontend instrumentation
-        # The separately signed instrumentation APK never enters the payload.
-        # It observes existing frontend objects and changes only test presentation.
-        # Root/shell DUMP permission protects its temporary command receiver.
-        run: |
-          gradle -p . :app:assembleReleaseAndroidTest -PfrontendProbe=true \
-            -Pzuicontrol.storeFile="$RUNNER_TEMP/ZuiControl-release.jks" \
-            -Pzuicontrol.storePassword="${{ secrets.KEYSTORE_PASSWORD }}" \
-            -Pzuicontrol.keyAlias="${{ secrets.KEY_ALIAS }}" \
-            -Pzuicontrol.keyPassword="${{ secrets.KEY_PASSWORD }}"
-
-      - name: Upload frontend instrumentation
-        uses: actions/upload-artifact@v4
-        with:
-          name: zui-control-frontend-probe
-          path: app/build/outputs/apk/androidTest/release/*.apk
-          if-no-files-found: error
 
       - name: Stage payload APK
         run: |

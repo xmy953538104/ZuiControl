@@ -178,6 +178,16 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
+    assert PLAN3_OVERNIGHT['baseHead']=='8f3825fb4374bac892db96cb735f237aab23cb7c'
+    allowed={'app/build.gradle.kts','app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java'}
+    allowed|={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('BackendHealth.kt','MainActivity.kt','FrontendTransport.kt','ZuioptLibrary.kt','ZuioptRules.kt','FrontendPackages.kt','OwnerUi.kt','OwnerWindow.kt')}
+    allowed|={'app/src/test/java/com/zui/zuicontrol/'+n for n in ('BackendHealthTest.kt','FrontendTransportTest.kt')}
+    for row in PLAN3_OVERNIGHT['files']:
+        assert row['path'] in allowed,('R6 unscoped source',row['path'])
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['after'].encode())==1,('R6 exact authorized bytes',row['path'])
+        result.remove(row['after'].encode())
+        if row['before'] is not None:result.append(row['before'].encode())
     assert PLAN3_FINAL['baseHead']=='fb0cc54192e1769273a3199740347dd679b1811f'
     for row in PLAN3_FINAL['files']:
         assert row['path'] in {'app/src/main/java/com/zui/zuicontrol/MainActivity.kt','app/src/main/java/com/zui/zuicontrol/OwnerUi.kt'},('R5 unscoped source',row['path'])
