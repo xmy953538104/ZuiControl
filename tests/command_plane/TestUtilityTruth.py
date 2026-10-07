@@ -37,7 +37,7 @@ object FrontendTransport {
 }
 class Resolver(val mode:String){var bytes=ByteArrayOutputStream();fun openOutputStream(uri:String,access:String):OutputStream? =
  if(mode=="null")null else if(mode=="throw")object:OutputStream(){override fun write(b:Int){throw IOException("write failure")}} else bytes}
-class Session {var busy=false;var error="";var notice="";var onChanged:(()->Unit)?=null
+class Session {var busy=false;var error="";var notice="";var onChanged:(()->Unit)?=null;var workFeature="";var onReconciled:((String)->Unit)?=null
  // This export-only fixture has no global intent. Lifecycle code is copied literally.
  val controlsPending=false
  private val executor=object { fun execute(task:Runnable){task.run()};fun shutdown(){} };val post:(()->Unit)->Unit={it()}

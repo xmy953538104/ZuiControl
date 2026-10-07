@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets;
 import static com.zui.server.control.PolicyJson.*;
 
 public class UserTransportFixture {
-    static final String PROP_COMMAND_ID="id",PROP_COMMAND_SHA256="hash",PROP_COMMAND_SEQ="seq",SETTING_REQUEST_TEXT="request",TIMING_TAG="timing",TAG="test";
+    static final String PROP_COMMAND_ID="id",PROP_COMMAND_SHA256="hash",PROP_COMMAND_SEQ="seq",SETTING_REQUEST_TEXT="request",SETTING_UPERF_RULES="zui_control_uperf_rules_text",TIMING_TAG="timing",TAG="test";
     final AppPolicyFixture.Disk disk=new AppPolicyFixture.Disk();
     AppPolicyStore mAppPolicies;
     final Map<Integer,Long> inventory=new TreeMap<>();
@@ -14,7 +14,7 @@ public class UserTransportFixture {
     static class Binder {static int uid;static int getCallingUid(){return uid;}static long clearCallingIdentity(){return 1;}static void restoreCallingIdentity(long t){}}
     static class SystemClock {static long n;static long elapsedRealtimeNanos(){return ++n;}}
     static class Log {static void i(String a,String b){} }
-    static class SystemProperties {static Map<String,String> values=new HashMap<>();static String get(String k,String d){return values.getOrDefault(k,d);}static void set(String k,String v){values.put(k,v);}}
+    static class SystemProperties {static Map<String,String> values=new HashMap<>();static int kicks;static String get(String k,String d){return values.getOrDefault(k,d);}static void set(String k,String v){values.put(k,v);if(k.equals(PROP_COMMAND_SEQ))kicks++;}}
     Map<Integer,Long> policyUsers(){return inventory;}
     String getSettingForUser(String key,int user){reads.add(user);return settings.computeIfAbsent(user,u->new HashMap<>()).get(key);}
     boolean putSettingForUser(String key,String value,int user){writes.add(user);settings.computeIfAbsent(user,u->new HashMap<>()).put(key,value);return true;}
@@ -49,6 +49,73 @@ public class UserTransportFixture {
     void terminal(RequestIdentity identity)throws Exception{
         Map<String,Object> p=object(parse(disk.read("policy-request.json")));p.put("result","ok=1\npolicyGeneration=2");disk.write("policy-request.json",bytes(p));
         check(transport(identity,identity.user,"ack",identity.id+"|done|policy|ok").equals("ok=1"));
+    }
+    RequestIdentity utility(String request)throws Exception{
+        Binder.uid=10253;check(utilityCommand("submit",request).startsWith("ok=1"));
+        return RequestIdentity.read(object(parse(disk.read("control-admission.json"))).get("identity"));
+    }
+    boolean isTerminal()throws Exception{return Boolean.TRUE.equals(object(parse(disk.read("control-admission.json"))).get("terminal"));}
+    static void monotonicity()throws Exception{
+        UserTransportFixture f=new UserTransportFixture();String text="terminal_done|zo_state|||";
+        RequestIdentity id=f.utility(text);check(!f.isTerminal());
+        check(f.transport(id,0,"ack",id.id+"|processing|zo_state|running").equals("ok=1"));check(!f.isTerminal());
+        int busyKicks=SystemProperties.kicks;
+        check(f.utilityCommand("submit","different|zo_state|||").contains("request_busy"));
+        check(SystemProperties.kicks==busyKicks&&!f.isTerminal());
+        f.utilities().publish(id,"rulesState","generation=g"+"a".repeat(24));
+        String ack=id.id+"|done|zo_state|zuiopt=state";
+        check(f.transport(id,0,"ack",ack).equals("ok=1"));check(f.isTerminal());
+        byte[] slot=f.disk.read("utility-u0.json");String seq=SystemProperties.get("seq","");int kicks=SystemProperties.kicks;
+        for(int i=0;i<100;i++){
+            String replay=f.utilityCommand("submit",text);
+            check(replay.contains("ADMITTED_TERMINAL")&&replay.contains("ack="+ack));
+            check(f.isTerminal()&&Arrays.equals(slot,f.disk.read("utility-u0.json"))
+                    &&SystemProperties.kicks==kicks&&SystemProperties.get("seq","").equals(seq));
+        }
+        f.rejects(()->f.transport(id,0,"ack",id.id+"|processing|zo_state|late"));
+        f.rejects(()->f.utilities().publish(id,"rulesState","changed terminal result"));
+        Map<String,Object> contradiction=object(parse(f.disk.read("control-admission.json")));contradiction.put("terminal",false);
+        f.disk.write("control-admission.json",bytes(contradiction));
+        check(f.utilityCommand("submit",text).contains("ADMITTED_TERMINAL"));
+        check(f.isTerminal()&&SystemProperties.kicks==kicks&&Arrays.equals(slot,f.disk.read("utility-u0.json")));
+        f.disk.write("control-admission.json",bytes(contradiction));
+        f.retireSensitiveSettings(0);
+        check(f.isTerminal()&&SystemProperties.kicks==kicks&&Arrays.equals(slot,f.disk.read("utility-u0.json")));
+        check(!f.utilityCommand("submit",text.replace("|||","||changed|")).startsWith("ok=1"));
+        Binder.uid=1010253;check(!f.notifyControlRequest(id.id,id.sha,10).startsWith("ok=1"));
+        Binder.uid=10253;f.inventory.put(0,1L);check(!f.notifyControlRequest(id.id,id.sha,0).startsWith("ok=1"));f.inventory.put(0,0L);
+        // Different submit closes only exact old terminal facts before replacing its slot.
+        f.disk.write("control-admission.json",bytes(contradiction));
+        RequestIdentity failed=f.utility("terminal_failed|zo_validate|||");check(!f.isTerminal());
+        check(f.transport(failed,0,"ack",failed.id+"|failed|zo_validate|invalid_rule").equals("ok=1"));check(f.isTerminal());
+        byte[] failedSlot=f.disk.read("utility-u0.json");int failedKicks=SystemProperties.kicks;
+        check(f.utilityCommand("submit","terminal_failed|zo_validate|||").contains("ADMITTED_TERMINAL"));
+        check(f.isTerminal()&&failedKicks==SystemProperties.kicks&&Arrays.equals(failedSlot,f.disk.read("utility-u0.json")));
+        // Corrupt ACK identity/command and request hash never repair a false admission.
+        Map<String,Object> admission=object(parse(f.disk.read("control-admission.json")));admission.put("terminal",false);
+        for(String invalidAck:new String[]{"other|done|zo_validate|x",failed.id+"|done|other|x"}){
+            f.disk.write("control-admission.json",bytes(admission));Map<String,Object> bad=object(parse(failedSlot));bad.put("ack",invalidAck);f.disk.write("utility-u0.json",bytes(bad));
+            f.rejects(()->f.utilities().reconcileTerminal(0));check(!f.isTerminal());
+        }
+        f.disk.write("utility-u0.json",failedSlot);f.rejects(()->f.utilities().reconcileTerminal(10));check(!f.isTerminal());
+        f.inventory.put(0,1L);f.rejects(()->f.utilities().reconcileTerminal(0));f.inventory.put(0,0L);check(!f.isTerminal());
+        Map<String,Object> bad=object(parse(failedSlot));bad.put("request","terminal_failed|zo_validate||changed|");f.disk.write("utility-u0.json",bytes(bad));
+        f.rejects(()->f.utilities().reconcileTerminal(0));check(!f.isTerminal());
+        System.out.println("TERMINAL_MONOTONICITY_MATRIX=PASS SAME_ID_REPLAYS=100 ACTIVE_REPLAY_KICKS=0 TERMINAL_RESULT_MUTATIONS=0");
+    }
+    static void projectionIsolation()throws Exception{
+        UserTransportFixture f=new UserTransportFixture();AppPolicyStore.State s=f.mAppPolicies.current.copy();
+        s.apps.put("0:fixture.app",new AppPolicyStore.Row(90,"balance",231,903,"DEFAULT_FOR_MODE"));
+        byte[] before=bytes(f.appPolicyRows(s,0));
+        s.globals.put(0,new AppPolicyStore.Row(60,"fast",231,903));s.generation++;
+        check(Arrays.equals(before,bytes(f.appPolicyRows(s,0))));
+        s.apps.put("10:other.user",new AppPolicyStore.Row(165,"performance",231,903));
+        check(Arrays.equals(before,bytes(f.appPolicyRows(s,0))));
+        s.apps.put("0:fixture.app",new AppPolicyStore.Row(120,"balance",231,903,"DEFAULT_FOR_MODE"));
+        check(!Arrays.equals(before,bytes(f.appPolicyRows(s,0))));before=bytes(f.appPolicyRows(s,0));
+        s.defaults.put("0:balance",new GpuRange(422,903));
+        check(!Arrays.equals(before,bytes(f.appPolicyRows(s,0))));
+        System.out.println("APPPOLICY_PROJECTION_GLOBAL_AND_OTHER_USER_ISOLATION=PASS RELEVANT_APP_AND_RESOLVED_GPU_CHANGE=PASS");
     }
     public static void main(String[] args)throws Exception{
         UserTransportFixture f=new UserTransportFixture();
@@ -111,6 +178,7 @@ public class UserTransportFixture {
         f.utilities().publish(utility,"rulesState","current");f.utilities().acknowledge(utility,"allowed_utility|done|zo_state|ok");
         check(f.utilityCommand("ack","allowed_utility").contains("ADMITTED_TERMINAL"));
         check(f.utilityCommand("result","allowed_utility|rulesState").contains("ADMITTED_TERMINAL"));
+        monotonicity();projectionIsolation();
         java.lang.System.out.println("USER_TRANSPORT_PRODUCTION_GUARDS_PASS checks="+checks);
     }
 }

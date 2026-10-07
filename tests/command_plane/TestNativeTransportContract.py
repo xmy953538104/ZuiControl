@@ -9,6 +9,8 @@ class NativeTransportContract(unittest.TestCase):
         source=(BASE/'ZuiControlService.java').read_text(encoding='utf8')
         start=source.index('    private UtilityTransport utilities(')
         methods=source[start:source.index('    private Profile makeProfile(',start)]
+        start=source.index('    private void retireSensitiveSettings(')
+        methods+='\n'+source[start:source.index('    private synchronized String policyCommand(',start)]
         validators=source[source.index('    private static boolean validRequestId('):source.index('    private static int parseInt(')]
         harness=(Path(__file__).with_name('UserTransportFixture.java')).read_text('utf8')
         harness=harness.replace('/* PRODUCTION METHODS */',methods).replace('/* VALIDATORS */',validators)

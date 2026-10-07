@@ -8,9 +8,7 @@ import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.PixelFormat
-import android.graphics.Rect
 import android.graphics.drawable.Drawable
-import android.animation.ValueAnimator
 import android.os.Build
 import android.view.View
 import android.view.WindowInsets
@@ -20,13 +18,6 @@ import java.util.WeakHashMap
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-
-/** The App palette shares the status bridge's neutral hold on its one clock. */
-internal fun ownerThemePaletteProgress(ms:Long):Float=when {
-    ms<65->ms.coerceAtLeast(0)/130f
-    ms<195->.5f
-    else->.5f+((ms-195)/170f).coerceIn(0f,.5f)
-}
 
 /** Shared presentation only; no policy, producer or command ownership. */
 internal object OwnerWindow {
@@ -68,79 +59,45 @@ internal object OwnerWindow {
         }
     }
     /** Drawable overlay has no input/layout participation and ends transparent. */
-    private fun linear(v:Int)=if(v/255.0<=.04045)v/255.0/12.92 else Math.pow((v/255.0+.055)/1.055,2.4)
-    private fun channel(v:Double)=((if(v<=.0031308)12.92*v else 1.055*Math.pow(v,1/2.4)-.055)*255).roundToInt().coerceIn(0,255)
-    fun blend(a:Int,b:Int,t:Double):Int {
-        fun part(x:Int,y:Int)=channel(linear(x)*(1-t)+linear(y)*t)
-        return Color.argb((Color.alpha(a)*(1-t)+Color.alpha(b)*t).roundToInt(),part(Color.red(a),Color.red(b)),part(Color.green(a),Color.green(b)),part(Color.blue(a),Color.blue(b)))
-    }
-    fun transitionSystemBars(activity:Activity,host:View,rail:View,master:View,
-        source:IntArray,target:IntArray,dark:Boolean,railHandoffMs:Long,frame:(Float,IntArray)->Unit,finished:()->Unit){
+    fun transitionSystemBars(activity:Activity,host:View,dark:Boolean,palette:()->Unit,finished:()->Unit){
         val top=host.rootWindowInsets?.let{insets->
             if(Build.VERSION.SDK_INT>=30)insets.getInsets(WindowInsets.Type.statusBars()).top else insets.systemWindowInsetTop
         } ?: 0
-        val origin=IntArray(2);host.getLocationOnScreen(origin)
-        val railBounds=Rect();val masterBounds=Rect()
-        rail.getGlobalVisibleRect(railBounds);master.getGlobalVisibleRect(masterBounds)
-        val ends=intArrayOf(railBounds.right-origin[0],masterBounds.right-origin[0],host.width)
-        // Linear-light interpolation preserves Owner region hues. At luminance
-        // .179 both black and white endpoint inks exceed 4.5:1 contrast.
-        fun luminance(c:Int)=.2126*linear(Color.red(c))+.7152*linear(Color.green(c))+.0722*linear(Color.blue(c))
-        val midpoint=IntArray(3){i->blend(source[i],target[i],(.179-luminance(source[i]))/(luminance(target[i])-luminance(source[i])))}
-        val paint=Paint();var colors=source
+        // Status pixels alone bridge both black and white icon ink at >4.5:1.
+        // App regions retain their complete source palette until one switch.
+        val paint=Paint().apply{color=Color.rgb(117,117,117)}
         val bridge=object:Drawable(){
-            override fun draw(canvas:Canvas){var left=0f;for(i in 0..2){paint.color=colors[i];canvas.drawRect(left,0f,ends[i].toFloat(),top.toFloat(),paint);left=ends[i].toFloat()}}
+            override fun draw(canvas:Canvas){canvas.drawRect(bounds,paint)}
             override fun setAlpha(alpha:Int){}
             override fun setColorFilter(filter:ColorFilter?){}
             @Deprecated("Drawable opacity") override fun getOpacity()=PixelFormat.OPAQUE
         }
         bridge.setBounds(0,0,host.width,top);host.overlay.add(bridge)
-        fun traceCommit(kind:String,ms:Long){
-            if(Build.VERSION.SDK_INT>=29 && host.isHardwareAccelerated && android.util.Log.isLoggable("OwnerRenderTrace",android.util.Log.VERBOSE))
-                host.viewTreeObserver.registerFrameCommitCallback{OwnerRenderTrace.event(kind,"dark=$dark;playTime=$ms")}
+        fun committed(action:()->Unit){
+            if(Build.VERSION.SDK_INT>=29 && host.isHardwareAccelerated)host.viewTreeObserver.registerFrameCommitCallback{host.post{action()}}
+            else host.postOnAnimation{action()}
         }
-        var inkPending=false;var inkChanged=false;var inkChangedAt=0L;var railChanged=false
-        ValueAnimator.ofFloat(0f,1f).apply{
-            duration=280;interpolator=android.view.animation.LinearInterpolator()
-            fun changeInk(){
-                if(inkChanged)return
-                inkChanged=true;inkChangedAt=currentPlayTime;updateSystemBarAppearance(activity,dark)
-                OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;playTime=$inkChangedAt")
-                traceCommit("STATUS_INK_FRAME_COMMITTED",inkChangedAt)
-            }
-            addUpdateListener {animation->
-                val ms=animation.currentPlayTime
-                colors=when{
-                    ms<65->IntArray(3){i->blend(source[i],midpoint[i],ms/65.0)}
-                    ms<195->midpoint
-                    else->IntArray(3){i->blend(midpoint[i],target[i],((ms-195)/85.0).coerceAtMost(1.0))}
-                }
-                // Anchor the ink request after the neutral App buffer is
-                // submitted, so palette work cannot delay that same frame.
-                // Continue the SAME animator and matching physical/App colors.
-                val railReady=inkChanged && !(ms-inkChangedAt<railHandoffMs)
-                colors[0]=if(railReady)target[0] else source[0]
-                // Keep retained cards/text steady while neutral is submitted
-                // and SystemUI ink changes; do not repaint the full palette
-                // on every frame of this same animator's neutral plateau.
-                frame(ownerThemePaletteProgress(ms),colors)
-                bridge.invalidateSelf()
-                if(ms>=65 && !inkPending){
-                    inkPending=true
-                    if(Build.VERSION.SDK_INT>=29 && host.isHardwareAccelerated)
-                        host.viewTreeObserver.registerFrameCommitCallback(::changeInk)
-                    else changeInk()
-                }
-                if(railReady && !railChanged){
-                    railChanged=true;OwnerRenderTrace.event("STATUS_RAIL_HANDOFF","dark=$dark;playTime=$ms")
-                    traceCommit("STATUS_RAIL_FRAME_COMMITTED",ms)
+        committed {
+            updateSystemBarAppearance(activity,dark)
+            OwnerRenderTrace.event("STATUS_INK_REQUEST","dark=$dark;atomic=true")
+            host.postOnAnimation {
+                host.postOnAnimation {
+                    palette()
+                    committed {
+                        OwnerRenderTrace.event("THEME_APP_FRAME_COMMITTED","dark=$dark")
+                        host.postOnAnimation {
+                            host.postOnAnimation {
+                                host.overlay.remove(bridge)
+                                OwnerRenderTrace.event("STATUS_BRIDGE_REMOVED","dark=$dark")
+                                finished()
+                            }
+                        }
+                    }
+                    host.invalidate()
                 }
             }
-            addListener(object:android.animation.AnimatorListenerAdapter(){
-                override fun onAnimationEnd(animation:android.animation.Animator){changeInk();frame(1f,target);host.overlay.remove(bridge);finished()}
-            })
-            start()
         }
+        host.invalidate()
     }
     fun dark(context:Context):Boolean=FrontendTheme.dark(
         context.getSharedPreferences("frontend",Context.MODE_PRIVATE).getString("theme","system").orEmpty(),

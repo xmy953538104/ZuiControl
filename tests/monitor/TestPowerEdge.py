@@ -149,10 +149,12 @@ methods='\n'.join(service_method(s) for s in [
  'private synchronized void cancelMonitorUnlockRecheck()',
  'private synchronized void beginMonitorUnlockRecheck()',
  'private synchronized void onScreenInteractiveChanged(boolean interactive)',
- 'private synchronized String controlsSnapshot()'])
+ 'private synchronized String controlsSnapshot()',
+ 'private java.util.List<Object> appPolicyRows(',
+ 'private static String sha256('])
 user_present=service.split('} else if (Intent.ACTION_USER_PRESENT.equals(action)) {',1)[1].split('\n                    }',1)[0].strip()
 fixture='''package com.zui.server.control;
-import android.os.*;import android.content.*;import android.app.*;import java.util.*;
+import android.os.*;import android.content.*;import android.app.*;import java.util.*;import java.nio.charset.StandardCharsets;import java.security.MessageDigest;
 public class ZuiControlService {
  static void check(boolean b,String m){if(!b)throw new AssertionError(m);}
  static class Worker {

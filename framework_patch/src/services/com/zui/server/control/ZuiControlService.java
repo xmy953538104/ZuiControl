@@ -833,15 +833,17 @@ public final class ZuiControlService extends Binder {
     }
     private void retireSensitiveSettings(int user)throws Exception{
         UtilityTransport transport=utilities();byte[] receipt=mAppPolicies.disk.read("control-admission.json");
-        if(receipt.length!=0&&transport.request(user).isEmpty()){
+        if(receipt.length!=0){
             Map<String,Object> admission=PolicyJson.object(PolicyJson.parse(receipt));RequestIdentity prior=RequestIdentity.read(admission.get("identity"));
             if(prior.user==user&&java.util.Objects.equals(policyUsers().get(user),prior.serial)){
-                String request=safe(getSettingForUser(SETTING_REQUEST_TEXT,user));
-                if(sha256(request).equals(prior.sha)&&UtilityTransport.fields(request).id.equals(prior.id)){
-                    transport.stage(user,request);
-                    // Do not promote a mutable public ACK to private terminal truth.
-                    // A retained pending client re-kicks its exact identity; the
-                    // existing durable receipt / 1013 path republishes the result.
+                if(!transport.request(user).isEmpty()){
+                    if(transport.reconcileTerminal(user))Log.i(TAG,"utility_terminal_reconciled user="+user+" id="+prior.id);
+                }else{
+                    String request=safe(getSettingForUser(SETTING_REQUEST_TEXT,user));
+                    if(sha256(request).equals(prior.sha)&&UtilityTransport.fields(request).id.equals(prior.id)){
+                        transport.stage(user,request);
+                        // Public ACKs never establish private terminal truth.
+                    }
                 }
             }
         }
@@ -1404,6 +1406,15 @@ public final class ZuiControlService extends Binder {
         PolicyJson.require(mAppPolicies!=null&&mAppPolicies.current!=null,"policy_store_unavailable");
         return new UtilityTransport(mAppPolicies.disk,policyUsers());
     }
+    private java.util.List<Object> appPolicyRows(AppPolicyStore.State state,int user){
+        java.util.List<Object> rows=new java.util.ArrayList<>();
+        for(Map.Entry<String,AppPolicyStore.Row> e:state.apps.entrySet())if(e.getKey().startsWith(user+":")){
+            String pkg=e.getKey().substring(e.getKey().indexOf(':')+1);
+            rows.add(PolicyJson.map("packageName",pkg,"persisted",e.getValue().json(state.schema),
+                    "effective",state.resolved(user,pkg).json(state.schema)));
+        }
+        return rows;
+    }
     // Read-only observation of the native authority. Invalidated BEFORE any admitted writer.
     private volatile String mObservedRuleGeneration="UNAVAILABLE";
     private void observeRules(String state){
@@ -1452,12 +1463,7 @@ public final class ZuiControlService extends Binder {
                 result=transport.result(user,fields[0],fields[1]);category="ADMITTED_TERMINAL";
             }else if("appPolicies".equals(action)){
                 PolicyJson.require(argument.isEmpty(),"appPolicies argument");
-                AppPolicyStore.State state=mAppPolicies.current;java.util.List<Object> rows=new java.util.ArrayList<>();
-                for(Map.Entry<String,AppPolicyStore.Row> e:state.apps.entrySet())if(e.getKey().startsWith(user+":")){
-                    String pkg=e.getKey().substring(e.getKey().indexOf(':')+1);
-                    rows.add(PolicyJson.map("packageName",pkg,"persisted",e.getValue().json(state.schema),
-                            "effective",state.resolved(user,pkg).json(state.schema)));
-                }
+                AppPolicyStore.State state=mAppPolicies.current;java.util.List<Object> rows=appPolicyRows(state,user);
                 result=new String(PolicyJson.bytes(PolicyJson.map("schema",state.schema,"userId",user,
                         "generation",state.generation,"apps",rows)),StandardCharsets.UTF_8);
             }else{
@@ -1511,9 +1517,9 @@ public final class ZuiControlService extends Binder {
             PolicyJson.require(ack.length==4 && id.equals(ack[0]) && parsed.command.equals(ack[2])
                     && ("processing".equals(ack[1])||"done".equals(ack[1])||"failed".equals(ack[1])), "ACK identity/state");
             transport.acknowledge(admitted,value);
+            transport.reconcileTerminal(user);
             if("done".equals(ack[1])&&(parsed.command.equals("zo_state")||parsed.command.equals("zo_commit")||parsed.command.equals("zo_rollback")||parsed.command.equals("zo_restore_app")||parsed.command.equals("zo_enable")||parsed.command.equals("zo_disable")))
                 observeRules(transport.result(user,id,"rulesState"));
-            if(!"processing".equals(ack[1])){admission.put("terminal",true);mAppPolicies.disk.write("control-admission.json",PolicyJson.bytes(admission));}
             return "ok=1";
         } finally { Binder.restoreCallingIdentity(identity); }
     }
@@ -1551,12 +1557,16 @@ public final class ZuiControlService extends Binder {
             if(oldAdmission.length!=0){
                 Map<String,Object> old=PolicyJson.object(PolicyJson.parse(oldAdmission));
                 RequestIdentity prior=RequestIdentity.read(old.get("identity"));
-                if(id.equals(prior.id)){prior.verify(policyCallerUser,id,sha256,prior.sequence,inventory);admitted=prior;}
+                if(id.equals(prior.id)){
+                    prior.verify(policyCallerUser,id,sha256,prior.sequence,inventory);admitted=prior;
+                    if(utilities().reconcileTerminal(policyCallerUser)||Boolean.TRUE.equals(old.get("terminal")))
+                        return "ok=1\nresultCategory=ADMITTED_TERMINAL\nrequestId="+id+"\nack="+utilities().ack(policyCallerUser,id);
+                }
                 else if(!Boolean.TRUE.equals(old.get("terminal"))){
                     // A committed policy may have lost only the terminal root ACK.
                     byte[] oldPolicy=mAppPolicies.disk.read("policy-request.json");
                     Map<String,Object> completed=oldPolicy.length==0?new HashMap<>():PolicyJson.object(PolicyJson.parse(oldPolicy));
-                    if(!prior.id.equals(completed.get("id"))||!completed.containsKey("result"))return requestRefused(policyCallerUser,id,"request_busy");
+                    if(!utilities().reconcileTerminal(prior.user)&&(!prior.id.equals(completed.get("id"))||!completed.containsKey("result")))return requestRefused(policyCallerUser,id,"request_busy");
                 }
             }
             if ("policy".equals(request.command)) {
@@ -2498,6 +2508,8 @@ public final class ZuiControlService extends Binder {
                 +"\nsavedGlobalRefresh="+(!mPolicyReady||authority==null?0:authority.global(mCurrentUserId).refreshHz)
                 +"\nsavedGlobalUperf="+global+"\neditableUperfMode="+(row==null?global:row.uperfMode)
                 +"\neffectiveUperfMode="+mUperfScenePolicy.mDesiredMode
+                +"\nappPoliciesRevision="+(authority==null?"":PolicyJson.hash(PolicyJson.bytes(appPolicyRows(authority,mCurrentUserId))))
+                +"\ngpuDefaultsRevision="+(authority==null?"":sha256(AppPolicyStore.gpuDefaultsResult(authority,mCurrentUserId)))
                 +"\nscreenInteractive="+mScreenInteractive;
     }
     private synchronized String controlsCommand(String action,IBinder client,int user)throws RemoteException{

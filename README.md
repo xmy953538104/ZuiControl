@@ -56,6 +56,7 @@ clang++ -std=c++17 -O1 -Wall -Wextra -Werror -fsanitize=address,undefined tests/
 sudo /tmp/command-test
 python tests/command_plane/TestNativeProjectionParity.py /tmp/command-test
 python tests/command_plane/TestNativeTransportContract.py
+python tests/command_plane/TestTerminalReplayStress.py
 python tests/command_plane/TestPrivateUtility.py
 python tests/command_plane/TestDiagnosticDump.py
 python tests/command_plane/TestUploadRetention.py

@@ -25,9 +25,9 @@ backend_scopes = ['framework_patch', 'native', 'payload/system', 'payload/patche
 # Current Owner Plan3 deltas must reverse exactly to the immutable integration
 # baseline before the earlier freeze proofs are inherited.
 sys.path.insert(0,str(ROOT/'tests'))
-from BackendContract import entries,PLAN3,PLAN3_RESPONSIVENESS
+from BackendContract import entries,PLAN3,PLAN3_RESPONSIVENESS,PLAN3_VERTICAL
 current=entries(*backend_scopes)
-for row in PLAN3_RESPONSIVENESS['files']+PLAN3['files']:
+for row in PLAN3_VERTICAL['files']+PLAN3_RESPONSIVENESS['files']+PLAN3['files']:
     if any(row['path'].startswith(scope+'/') for scope in backend_scopes):
         assert current.count(row['after'].encode())==1
         current.remove(row['after'].encode());current.append(row['before'].encode())
@@ -35,7 +35,7 @@ assert sorted(current)==sorted(subprocess.check_output(['git','ls-tree','-r','6d
 # BuildZUIopt deliberately replaces its tracked seed with the current CI ELF.
 # Current authorized runtime edits have already been byte-bound and reversed above.
 generated = subprocess.check_output(['git', 'diff', '--name-only', 'HEAD', '--', *backend_scopes], cwd=ROOT, text=True).splitlines()
-assert set(generated) <= {'payload/system/bin/ZUIopt'} | {r['path'] for r in PLAN3_RESPONSIVENESS['files']+PLAN3['files'] if any(r['path'].startswith(scope+'/') for scope in backend_scopes)}, generated
+assert set(generated) <= {'payload/system/bin/ZUIopt'} | {r['path'] for r in PLAN3_VERTICAL['files']+PLAN3_RESPONSIVENESS['files']+PLAN3['files'] if any(r['path'].startswith(scope+'/') for scope in backend_scopes)}, generated
 
 stubs = {
     'Context.kt': 'package android.content\nclass Context\n',

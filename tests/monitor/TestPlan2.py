@@ -23,7 +23,7 @@ class Plan2(unittest.TestCase):
   appearance=window.split('fun updateSystemBarAppearance',1)[1].split('/** Drawable overlay',1)[0]
   self.assertEqual(main.count('OwnerWindow.fullscreen(this)'),1)
   self.assertIn('ownerCanvas.postOnAnimation',theme)
-  self.assertIn('OwnerWindow.transitionSystemBars(this,physicalHost,rail,master',theme)
+  self.assertIn('OwnerWindow.transitionSystemBars(this,physicalHost,dark,palette=',theme)
   for forbidden in ('fullscreen(', 'requestApplyInsets', 'setContentView', 'recreate(', 'setDecorFitsSystemWindows', 'show(WindowInsets', 'LAYOUT_', 'statusBarColor=', 'navigationBarColor='):
    self.assertNotIn(forbidden,theme)
   for forbidden in ('setDecorFitsSystemWindows','show(','LAYOUT_','requestApplyInsets','statusBarColor','navigationBarColor'):
@@ -32,11 +32,12 @@ class Plan2(unittest.TestCase):
   self.assertIn('WindowInsets.Type.statusBars()',bridge)
   self.assertIn('bridge.setBounds(0,0,host.width,top)',bridge)
   self.assertIn('host.overlay.remove(bridge)',bridge)
-  self.assertIn('ms-inkChangedAt<railHandoffMs',bridge)
-  self.assertIn('val railHandoffMs=if(!dark && session.section!="settings")50L else when(session.section){"tune"->30L;"thread"->30L;"monitor"->65L;else->65L}',theme)
   self.assertIn('registerFrameCommitCallback',bridge)
-  self.assertIn('registerFrameCommitCallback(::changeInk)',bridge)
-  self.assertLess(bridge.index('frame(ownerThemePaletteProgress(ms),colors)'),bridge.index('registerFrameCommitCallback(::changeInk)'))
+  self.assertEqual(bridge.count('palette()'),1)
+  self.assertEqual(theme.count('owner.applyTheme('),1)
+  self.assertLess(bridge.index('updateSystemBarAppearance(activity,dark)'),bridge.index('palette()'))
+  for forbidden in ('ValueAnimator','railHandoff','ownerThemePaletteProgress','session.section','frame('):
+   self.assertNotIn(forbidden,bridge+theme)
   for forbidden in ('addView(', 'setContentView', 'requestApplyInsets', 'setPadding', 'layoutParams', 'onTouch'):
    self.assertNotIn(forbidden,bridge)
  def test_theme_is_local_and_non_intercepting(self):

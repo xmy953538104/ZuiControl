@@ -8,13 +8,28 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 class FrontendV3Test {
-    @Test fun themePaletteHasOneMonotonicNeutralHold() {
-        assertEquals(0f,ownerThemePaletteProgress(0),0f)
-        assertEquals(1f,ownerThemePaletteProgress(280),0f)
-        val progress=(-5L..300L).map(::ownerThemePaletteProgress)
-        assertTrue(progress.all{it in 0f..1f})
-        assertTrue(progress.zipWithNext().all{(a,b)->a<=b})
-        assertTrue((65L..195L).all{ownerThemePaletteProgress(it)==.5f})
+    @Test fun unchangedAppRevisionAdvancesCleanCasButPreservesDirtyCas() {
+        val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){}
+        try {
+            val saved=ZuiControlClient.AppPolicyDraft("org.test.app",120,"balance",ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,10)
+            session.appDraft=saved;session.originalApp=saved
+            session.observeUnchangedAppGeneration(11)
+            assertEquals(saved.copy(expectedGeneration=11),session.appDraft);assertFalse(session.appDirty)
+            session.appDraft=session.appDraft!!.copy(refreshHz=60);val dirty=session.appDraft
+            session.observeUnchangedAppGeneration(12)
+            assertEquals(dirty,session.appDraft);assertEquals(11L,session.appDraft!!.expectedGeneration)
+            assertEquals(12L,session.appAuthorityGeneration);assertTrue(session.appDirty)
+        }finally{session.close()}
+    }
+    @Test fun globalTerminalRebindIdentifiesOnlyItsOwnControl() {
+        val callbacks=LinkedBlockingQueue<()->Unit>();val rebound=mutableListOf<Any>()
+        val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
+        try {
+            session.mode.observe("balance");session.onControlsChanged={rebound+=it}
+            session.intent(session.refresh,90){ZuiControlClient.Reply(true,"ACK")}
+            checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertEquals(listOf(session.refresh),rebound);assertEquals("balance",session.mode.confirmed);assertFalse(session.busy)
+        }finally{session.close()}
     }
     @Test fun directReadDoesNotHoldCommandsOrMutationBusy() {
         val entered=java.util.concurrent.CountDownLatch(1);val release=java.util.concurrent.CountDownLatch(1)

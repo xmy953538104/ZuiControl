@@ -115,6 +115,7 @@ jobs:
           python3 tests/gpu/TestGpuFailureIsolation.py
           python3 tests/command_plane/TestProjectionMode.py
           python3 tests/command_plane/TestNativeTransportContract.py
+          python3 tests/command_plane/TestTerminalReplayStress.py
           python3 tests/monitor/TestMonitor.py
           python3 tests/gpu/TestAtomicPolicy.py
           python3 tests/gpu/TestBackupInspection.py

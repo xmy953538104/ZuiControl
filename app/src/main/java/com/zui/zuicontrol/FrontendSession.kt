@@ -33,6 +33,11 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     var originalApp: ZuiControlClient.AppPolicyDraft? = null
     var newApp = false
     var appAuthorityGeneration=0L;private set
+    fun observeUnchangedAppGeneration(generation:Long){
+        if(generation<appAuthorityGeneration)return
+        appAuthorityGeneration=generation
+        if(!appDirty){appDraft=appDraft?.copy(expectedGeneration=generation);originalApp=appDraft}
+    }
     fun observeAppPolicies(fresh:ZuiControlClient.AppPolicies) {
         if(fresh.userId!=userId || fresh.generation<appAuthorityGeneration)return
         appAuthorityGeneration=fresh.generation
@@ -57,6 +62,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     }
     var ruleDraft: RuleDraft? = null
     var busy = false
+    var workFeature="";private set
     val refresh = OptimisticControl(0)
     val mode = OptimisticControl("")
     val overlay = OptimisticControl(false)
@@ -75,7 +81,8 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     val decisions = linkedMapOf<String, ZuioptLibrary.Decision>()
     var manual: ZuioptRuleModel? = null
     var onChanged: (() -> Unit)? = null
-    var onControlsChanged: (() -> Unit)? = null
+    var onReconciled: ((String) -> Unit)? = null
+    var onControlsChanged: ((Any) -> Unit)? = null
     @Volatile var onQueueEvent: ((String, String) -> Unit)? = null
     private val queueSequence = java.util.concurrent.atomic.AtomicLong()
     private var closing = false
@@ -112,7 +119,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
                 control.finish(reply.ok)
                 if (control.displayed != control.confirmed) queueIntent(control, control.displayed, false, action)
                 if (!reply.ok) error = reply.text
-                onControlsChanged?.invoke()
+                onControlsChanged?.invoke(control)
                 onQueueEvent?.invoke("CONFIRMED_REBIND", id)
                 finishClose()
             }
@@ -121,15 +128,17 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     val appDirty get() = appDraft != null && (newApp || appDraft != originalApp)
     val dirty get() = appDirty || gpuDraft?.dirty == true || ruleDraft?.dirty == true
     fun clearDrafts() { appDraft = null; originalApp = null; newApp = false; gpuDraft = null; ruleDraft = null }
-    fun work(success: String = "", completed: (() -> Unit)? = null, reconciled: (() -> Unit)? = null, task: () -> Unit) {
+    fun work(success: String = "", completed: (() -> Unit)? = null, reconciled: (() -> Unit)? = null, feature:String="rules", task: () -> Unit) {
         if (busy) return
-        busy = true; error = ""; notice = ""
+        busy = true;workFeature=feature; error = ""; notice = ""
         executor.execute {
             val result = runCatching(task)
             post {
                 busy = false
                 reconciled?.invoke()
                 result.onSuccess { notice = success; completed?.invoke() }.onFailure { error = it.message ?: "操作失败" }
+                onReconciled?.invoke(feature)
+                workFeature=""
                 onChanged?.invoke()
                 finishClose()
             }
@@ -141,12 +150,12 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
         var authority: ZuiControlClient.AppPolicyDraft? = null
         var accepted = false
         work("已保存并生效", completed, reconciled = {
-            authority?.let { fresh ->
+            authority?.takeIf{appDraft?.packageName==captured.packageName}?.let { fresh ->
                 originalApp = fresh
                 appDraft = if (accepted && appDraft == captured) fresh else appDraft?.copy(expectedGeneration = fresh.expectedGeneration)
                 if (accepted) newApp = false
             }
-        }) {
+        },feature="appPolicy") {
             val reply = gateway.saveAppPolicy(captured)
             val fresh = runCatching { gateway.readAppPolicy(captured.packageName) }
             authority = fresh.getOrNull()
@@ -164,7 +173,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
         onQueueEvent?.invoke("SAVE_INTENT", id)
         val r = captured.ranges.toMap()
         onQueueEvent?.invoke("SAVE_ENQUEUED", id)
-        work("已保存并生效", completed) {
+        work("已保存并生效", completed,feature="gpuDefaults") {
             onQueueEvent?.invoke("SAVE_DISPATCHED", id)
             val reply = gateway.saveGpuDefaultsAtomic(r.getValue("powersave"), r.getValue("balance"),
                 r.getValue("performance"), r.getValue("fast"), captured.expectedGeneration)
@@ -176,8 +185,8 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
                     check(fresh.expectedGeneration >= captured.expectedGeneration) { "GPU_CAS_REFRESH_STALE" }
                     observeGpuDefaults(fresh)
                     val authority = checkNotNull(gpuAuthority)
-                    gpuDraft = GpuDefaultsDraft(authority.expectedGeneration, authority.original).also {
-                        r.forEach { (mode, range) -> it.set(mode, range) }
+                    if(gpuDraft===captured)gpuDraft = GpuDefaultsDraft(authority.expectedGeneration, authority.original).also {
+                        captured.ranges.forEach { (mode, range) -> it.set(mode, range) }
                     }
                 }
                 error(reply.text)
@@ -189,10 +198,12 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
             onQueueEvent?.invoke("SAVE_POST_ACK_READ", "$id;fresh=${fresh.expectedGeneration}")
             observeGpuDefaults(fresh)
             val authority = checkNotNull(gpuAuthority)
-            gpuDraft = GpuDefaultsDraft(authority.expectedGeneration, authority.original)
+            if(gpuDraft===captured)gpuDraft = GpuDefaultsDraft(authority.expectedGeneration, authority.original).also {
+                if(captured.ranges!=r)captured.ranges.forEach{(mode,range)->it.set(mode,range)}
+            }
         }
     }
-    fun close() { onChanged = null; onControlsChanged = null; closing = true; finishClose() }
+    fun close() { onChanged = null;onReconciled=null; onControlsChanged = null; closing = true; finishClose() }
     fun save(out: Bundle) {
         out.putInt("user", userId); out.putString("section", section); out.putString("selected", selected)
         out.putBoolean("ownedFlow",ownedExternalFlow);out.putBoolean("analysisPage",analysisPage)
