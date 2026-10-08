@@ -436,6 +436,7 @@ class MainActivity : Activity() {
         ownerQuiet?.apply { tone = if (q >= 45) owner.tiers[3] else if (q >= 40) owner.tiers[2] else owner.accent; setFraction(if(q < 0) 0f else ((q-20)/30).toFloat()) }
         ownerPower?.apply { tone = if (p >= 14) owner.tiers[3] else if (p >= 7) owner.tiers[2] else owner.accent; setFraction(if(p < 0) 0f else (p/20).toFloat()) }
         ownerSwitch?.let{knob->
+            (knob.background as? GradientDrawable)?.let{if(it.color?.defaultColor!=Color.WHITE)it.setColor(Color.WHITE)}
             val target=owner.px(if(overlay.displayed)18 else 0).toFloat()
             if(knob.translationX!=target)knob.animate().translationX(target).setDuration(300).setInterpolator(OwnerUi.spring).start()
         }
