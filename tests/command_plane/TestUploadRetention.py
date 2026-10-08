@@ -24,6 +24,7 @@ public class RetentionFixture {
  }
  static class Monitor{void invalidatePower(){}}final Monitor mMonitor=new Monitor();
  void applyUnifiedPolicy(){}void publishPolicySettings(){}
+ AppPolicyStore.Owner policyOwner(IBinder remote,boolean force){return PolicyCommand.OWNER;}
  Set<String> policyExcluded(Map<Integer,Long> users){return Collections.emptySet();}
  boolean isTransientPackage(String pkg){return false;}
  String safe(String value){return value==null?"":value;}

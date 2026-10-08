@@ -167,6 +167,9 @@ class MainActivity : Activity() {
         val generation = value(ControlsState.snapshot, "policyGeneration")
         if (visible && generation.isNotEmpty() && generation != boundGeneration) {
             OwnerRenderTrace.event("POLICY_GENERATION_CALLBACK", generation)
+            OwnerRenderTrace.event("AUTHORITATIVE_CONTROLS_READBACK",JSONObject().put("generation",generation)
+                .put("savedGlobalRefresh",value(ControlsState.snapshot,"savedGlobalRefresh"))
+                .put("savedGlobalUperf",value(ControlsState.snapshot,"savedGlobalUperf")).toString())
             val apps=value(ControlsState.snapshot,"appPoliciesRevision")
             val gpu=value(ControlsState.snapshot,"gpuDefaultsRevision")
             if(apps!=appPoliciesRevision){appPoliciesRevision=apps;loadPolicies()}
@@ -628,13 +631,13 @@ class MainActivity : Activity() {
         val modeChip=owner.row().apply{
             background=owner.shape(owner.chipBg[tier+1],999f);setPadding(owner.px(11),0,owner.px(13),0)
             minimumHeight=owner.px(30)
-            addView(OwnerPing(this@MainActivity,owner,owner.tiers[tier]),LinearLayout.LayoutParams(owner.px(7),owner.px(7)).apply{marginEnd=owner.px(8)})
+            addView(OwnerStatusDot(this@MainActivity,owner.tiers[tier]),LinearLayout.LayoutParams(owner.px(7),owner.px(7)).apply{marginEnd=owner.px(8)})
             addView(owner.label("${modeTitle(mode.displayed)}模式",12f,owner.chipFg[tier+1],800));layoutParams=LinearLayout.LayoutParams(-2,owner.px(30))
         }
         bindControl(mode){
             val tier=GpuDefaultsDraft.modes.indexOf(mode.displayed).coerceAtLeast(0)
             modeChip.background=owner.shape(owner.chipBg[tier+1],999f)
-            (modeChip.getChildAt(0) as OwnerPing).setTone(owner.tiers[tier])
+            (modeChip.getChildAt(0) as OwnerStatusDot).setTone(owner.tiers[tier])
             (modeChip.getChildAt(1) as TextView).apply{val caption="${modeTitle(mode.displayed)}模式";if(text.toString()!=caption)text=caption;setTextColor(owner.chipFg[tier+1])}
         }
         detail.addView(owner.title("系统全局状态","系统关键性能参数与组件运行情况",trailing=modeChip))
@@ -1007,7 +1010,7 @@ class MainActivity : Activity() {
         runningChip.visibility=if(running)View.VISIBLE else View.GONE
         statusChip.visibility=if(running)View.GONE else View.VISIBLE
         runningChip.background=owner.shape(owner.chipBg[1],999f)
-        (runningChip.getChildAt(0) as OwnerPing).setTone(owner.tiers[0])
+        (runningChip.getChildAt(0) as OwnerStatusDot).setTone(owner.tiers[0])
         (runningChip.getChildAt(1) as TextView).apply{text=status;setTextColor(owner.chipFg[1])}
         val tone=when(health?.state){BackendHealth.State.FAILED->4;BackendHealth.State.DEGRADED->3;else->0}
         statusChip.text=status;statusChip.setTextColor(owner.chipFg[tone]);statusChip.background=owner.shape(owner.chipBg[tone],6f)

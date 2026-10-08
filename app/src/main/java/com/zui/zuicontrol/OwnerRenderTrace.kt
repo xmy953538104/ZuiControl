@@ -11,7 +11,7 @@ internal object OwnerRenderTrace {
     private var constructions=0
     private var frame=0L
     private fun enabled()=Log.isLoggable(TAG,Log.VERBOSE)
-    fun event(kind:String,page:String=""){if(enabled())Log.v(TAG,JSONObject().put("kind",kind).put("page",page).put("uptime",android.os.SystemClock.uptimeMillis()).toString())}
+    fun event(kind:String,page:String=""){if(enabled())Log.v(TAG,JSONObject().put("kind",kind).put("page",page).put("uptime",android.os.SystemClock.uptimeMillis()).put("elapsed_ns",android.os.SystemClock.elapsedRealtimeNanos()).toString())}
     fun construct(vararg views:View){
         constructions++;event("SHELL_CONSTRUCTED")
         val root=views.first()

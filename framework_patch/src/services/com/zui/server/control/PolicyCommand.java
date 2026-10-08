@@ -24,6 +24,10 @@ public final class PolicyCommand {
     static final String DESCRIPTOR = "android.zui.IZuiControl";
     static final String CALLBACK = "com.zui.server.control.IPolicyProjection";
     static final String UPERF = "/data/vendor/zui_control/uperf";
+    static final ThreadLocal<String> timingRequest=new ThreadLocal<>();
+    static void timing(String phase){
+        String id=timingRequest.get();if(id!=null)android.util.Log.i("ZuiControlTiming","id="+id+" phase="+phase+" ns="+SystemClock.elapsedRealtimeNanos());
+    }
     static final class Disk implements AppPolicyStore.Storage {
         final File directory;
         Disk(File path) throws Exception {
@@ -50,19 +54,25 @@ public final class PolicyCommand {
             String[] names=new String[files.length];for(int i=0;i<files.length;i++)names[i]=files[i].getName();return names;
         }
         public void remove(String name)throws Exception{File target=file(name);new AtomicFile(target).delete();require(!target.exists(),"retention delete");}
-        public byte[] read(String name) throws Exception {
+        public synchronized byte[] read(String name) throws Exception {
+            timing("DISK_READ_BEGIN_"+name);
+            try{
             File file = file(name); AtomicFile atomic = new AtomicFile(file);
             if (!file.exists() && !new File(directory, name + ".bak").exists()) return new byte[0];
             require(file.length() <= 262144, "policy file bound"); byte[] bytes = atomic.readFully(); require(bytes.length <= 262144, "policy read bound"); return bytes;
+            }finally{timing("DISK_READ_END_"+name);}
         }
-        public void write(String name, byte[] bytes) throws Exception {
+        public synchronized void write(String name, byte[] bytes) throws Exception {
+            timing("DISK_WRITE_BEGIN_"+name);
+            try{
             require(bytes.length <= 262144, "policy write bound"); AtomicFile file = new AtomicFile(file(name)); FileOutputStream out = null;
-            try { out = file.startWrite(); out.write(bytes); out.getFD().sync(); file.finishWrite(out); out = null;
+            try { out = file.startWrite(); out.write(bytes);timing("DISK_FSYNC_BEGIN_"+name);out.getFD().sync();timing("DISK_FSYNC_END_"+name);file.finishWrite(out); out = null;
                 Os.chmod(new File(directory, name).getPath(), 0600);
                 java.io.FileDescriptor dir = Os.open(directory.getPath(), OsConstants.O_RDONLY | OsConstants.O_NOFOLLOW, 0);
-                try { require(OsConstants.S_ISDIR(Os.fstat(dir).st_mode), "policy sync directory"); Os.fsync(dir); } finally { Os.close(dir); }
+                try { require(OsConstants.S_ISDIR(Os.fstat(dir).st_mode), "policy sync directory");timing("DIRECTORY_FSYNC_BEGIN_"+name); Os.fsync(dir);timing("DIRECTORY_FSYNC_END_"+name); } finally { Os.close(dir); }
                 require(Arrays.equals(read(name), bytes), "policy durable readback");
             } catch (Exception e) { if (out != null) file.failWrite(out); throw e; }
+            }finally{timing("DISK_WRITE_END_"+name);}
         }
     }
     private static byte[] legacy(String name) throws Exception {
@@ -173,9 +183,11 @@ public final class PolicyCommand {
                         java.io.FileDescriptor fd = Os.open(mode.getPath(), OsConstants.O_WRONLY | OsConstants.O_NOFOLLOW, 0);
                         try { StructStat st = Os.fstat(fd);
                             require(OsConstants.S_ISREG(st.st_mode) && st.st_uid == 0 && st.st_nlink == 1, "Uperf runtime file");
-                            Os.ftruncate(fd, 0);
-                            byte[] value = (desired + "\n").getBytes(StandardCharsets.US_ASCII); int offset = 0;
-                            while (offset < value.length) { int n = Os.write(fd, value, offset, value.length - offset); require(n > 0, "runtime mode write"); offset += n; }
+                            if(!new String(Files.readAllBytes(mode.toPath()),StandardCharsets.US_ASCII).trim().equals(desired)){
+                                Os.ftruncate(fd, 0);
+                                byte[] value = (desired + "\n").getBytes(StandardCharsets.US_ASCII); int offset = 0;
+                                while (offset < value.length) { int n = Os.write(fd, value, offset, value.length - offset); require(n > 0, "runtime mode write"); offset += n; }
+                            }
                             Os.fsync(fd);
                         } finally { Os.close(fd); }
                         require(new String(Files.readAllBytes(mode.toPath()), StandardCharsets.US_ASCII).trim().equals(desired), "Uperf runtime file ACK");

@@ -134,6 +134,8 @@ jobs:
           python3 tests/command_plane/TestCommandPlaneArchitecture.py
           python3 tests/command_plane/TestBinderOwnerContract.py
           python3 tests/command_plane/TestControlsCallbacks.py
+          python3 tests/command_plane/TestRuntimeDomains.py
+          python3 tests/command_plane/TestAckObservation.py
           python3 tests/gpu/TestGpuFailureIsolation.py
           python3 tests/command_plane/TestProjectionMode.py
           python3 tests/command_plane/TestNativeTransportContract.py

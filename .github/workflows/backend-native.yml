@@ -53,6 +53,7 @@ jobs:
           python3 tests/command_plane/TestNativeProjectionParity.py "$RUNNER_TEMP/command-native/test" 2>&1 | tee "$RUNNER_TEMP/command-native/parity.txt"
           python3 tests/command_plane/TestNativeTransportContract.py 2>&1 | tee "$RUNNER_TEMP/command-native/transport.txt"
           python3 tests/command_plane/TestPrivateUtility.py 2>&1 | tee "$RUNNER_TEMP/command-native/utility.txt"
+          python3 tests/command_plane/TestRuntimeDomains.py 2>&1 | tee "$RUNNER_TEMP/command-native/runtime-domains.txt"
           python3 tests/command_plane/TestDiagnosticDump.py 2>&1 | tee "$RUNNER_TEMP/command-native/dump.txt"
           python3 tests/command_plane/TestUploadRetention.py 2>&1 | tee "$RUNNER_TEMP/command-native/uploads.txt"
           python3 tests/command_plane/TestUtilityWireContract.py --native 2>&1 | tee "$RUNNER_TEMP/command-native/utility-wire.txt"

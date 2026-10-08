@@ -178,6 +178,14 @@ public class UserTransportFixture {
         f.utilities().publish(utility,"rulesState","current");f.utilities().acknowledge(utility,"allowed_utility|done|zo_state|ok");
         check(f.utilityCommand("ack","allowed_utility").contains("ADMITTED_TERMINAL"));
         check(f.utilityCommand("result","allowed_utility|rulesState").contains("ADMITTED_TERMINAL"));
+        byte[] beforeRead=f.disk.read("utility-u10.json");
+        check(f.utilityRead("ack","allowed_utility").contains("ADMITTED_TERMINAL"));
+        check(f.utilityRead("result","allowed_utility|rulesState").contains("ADMITTED_TERMINAL"));
+        check(Arrays.equals(beforeRead,f.disk.read("utility-u10.json")));
+        check(f.utilityRead("ack","different_id").contains("INDETERMINATE_OR_IN_PROGRESS"));
+        check(f.utilityRead("result","different_id|rulesState").contains("ok=0"));
+        f.inventory.put(10,43L);check(f.utilityRead("ack","allowed_utility").contains("ok=0"));f.inventory.put(10,42L);
+        Binder.uid=10042;check(!f.utilityRead("ack","allowed_utility").contains("ADMITTED_TERMINAL"));Binder.uid=1010042;
         monotonicity();projectionIsolation();
         java.lang.System.out.println("USER_TRANSPORT_PRODUCTION_GUARDS_PASS checks="+checks);
     }

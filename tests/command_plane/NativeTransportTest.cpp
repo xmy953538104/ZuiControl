@@ -88,7 +88,13 @@ void projections(){
     check(p.call("prepare",prepare(7))==sha256(policy(7)));check(runtime.read("effective_powermode.txt")=="fast\n");
     check(p.call("prepare",prepare(7))==sha256(policy(7)));rejects([&]{p.call("prepare",prepare(8));});
     check(p.call("apply",apply(7))==sha256(policy(7)));check(runtime.read("effective_powermode.txt")=="balance\n");
+    unsigned writes=0,same=0,readbacks=0;
+    p.point=[&](const char* point){std::string name(point);if(name=="before_runtime_mode_write")++writes;
+        if(name=="runtime_mode_unchanged")++same;if(name=="after_runtime_mode_readback")++readbacks;};
+    auto priorMode=runtime.read("effective_powermode.txt");
     check(p.call("apply",apply(7))==sha256(policy(7)));rejects([&]{p.call("apply",apply(8));});rejects([&]{p.call("apply",apply(7,"invalid"));});
+    check(writes==0&&same==1&&readbacks==1&&runtime.read("effective_powermode.txt")==priorMode);
+    check(p.stages.read("active.json")==policy(7)&&p.stages.read("applied.json")==apply(7)+"\n");
     p.stages.put("active.json",policy(8));rejects([&]{p.call("apply",apply(7));});check(p.stages.read("active.json")==policy(8));
 }
 void concurrentModeReadback(){

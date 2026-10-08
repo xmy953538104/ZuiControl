@@ -2,6 +2,12 @@
 from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
+PLAN3_DOMAIN=json.loads((ROOT/'tests/product_plan3_domain_latency_delta.json').read_text(encoding='utf-8'))
+DOMAIN_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','OwnerUi.kt','OwnerRenderTrace.kt','ZuiControlRequest.kt','FrontendGateway.kt')}
+DOMAIN_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('PolicyCommand.java','PolicyRuntimePlan.java','ZuiControlService.java')}
+DOMAIN_ALLOWED|={'native/command/Projection.h','payload/system/bin/zui_control_request'}
+DOMAIN_ALLOWED|={'app/src/main/res/'+n for n in ('animator/owner_ping_fade.xml','animator/owner_ping_scale.xml','drawable/owner_ping_halo.xml','drawable/owner_ping_vector.xml','interpolator/owner_ping_ease.xml')}
+assert set(PLAN3_DOMAIN['allowedPaths'])==DOMAIN_ALLOWED,'R7 explicit source boundary'
 PLAN3_OVERNIGHT=json.loads((ROOT/'tests/product_plan3_overnight_delta.json').read_text(encoding='utf-8'))
 PLAN3_FINAL=json.loads((ROOT/'tests/product_plan3_final_integration_delta.json').read_text(encoding='utf-8'))
 PLAN3_VERTICAL=json.loads((ROOT/'tests/product_plan3_vertical_slice_delta.json').read_text(encoding='utf-8'))
@@ -32,6 +38,14 @@ INTEGRATION=json.loads((ROOT/'tests/backend_monitor_settings_delta.json').read_t
 MANIFEST=json.loads((ROOT/'tests/backend_abc_delta.json').read_text(encoding='utf-8'))
 
 def reverse_text(path,text):
+    change=next((r for r in PLAN3_DOMAIN['files'] if r['path']==path),None)
+    if change:
+        assert change['path'] in PLAN3_DOMAIN['allowedPaths']
+        assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('R7 exact authorized bytes',path)
+        assert len(change['hunks'])==1 and change['hunks'][0]['after']==text
+        text=change['hunks'][0]['before']
+        assert text is not None,('R7 added file has no historical text',path)
+        assert hashlib.sha256(text.encode()).hexdigest()==change['beforeSha256'],('R7 immutable R6 base',path)
     change=next((r for r in PLAN3_OVERNIGHT['files'] if r['path']==path),None)
     if change:
         assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('R6 exact authorized bytes',path)
@@ -178,6 +192,15 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
+    assert PLAN3_DOMAIN['baseHead']=='62dc044cf4ea7912a6855df27ff3d106602dd01f'
+    for row in PLAN3_DOMAIN['files']:
+        assert row['path'] in PLAN3_DOMAIN['allowedPaths'],('R7 unscoped source',row['path'])
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        if row['after'] is not None:
+            assert result.count(row['after'].encode())==1,('R7 exact source bytes',row['path'])
+            result.remove(row['after'].encode())
+        else:assert not any(e.endswith(('\t'+row['path']).encode()) for e in result),('R7 deleted pulse resource',row['path'])
+        if row['before'] is not None:result.append(row['before'].encode())
     assert PLAN3_OVERNIGHT['baseHead']=='8f3825fb4374bac892db96cb735f237aab23cb7c'
     allowed={'app/build.gradle.kts','app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java'}
     allowed|={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('BackendHealth.kt','MainActivity.kt','FrontendTransport.kt','ZuioptLibrary.kt','ZuioptRules.kt','FrontendPackages.kt','OwnerUi.kt','OwnerWindow.kt','OwnerEffects.kt')}

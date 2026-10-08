@@ -110,6 +110,9 @@ public final class ZuiControlService extends Binder {
     private AppPolicyStore mAppPolicies;
     private volatile boolean mPolicyReady;
     private String mPolicyError = "not_bootstrapped";
+    private AppPolicyStore.State mRuntimePolicy;
+    private String mRuntimeContext="";
+    private long mPolicyRefreshApplies,mPolicyUperfApplies,mPolicyRefreshSkips,mPolicyUperfSkips;
     private final Handler mWorker;
     private final UperfScenePolicy mUperfScenePolicy;
     private final MonitorCollector mMonitor;
@@ -629,6 +632,7 @@ public final class ZuiControlService extends Binder {
                 data.enforceInterface(DESCRIPTOR);
                 if (Binder.getCallingUid() != Process.ROOT_UID || (flags & IBinder.FLAG_ONEWAY) != 0) throw new SecurityException("root policy owner required");
                 String id = data.readString(), hash = data.readString();
+                Log.i(TIMING_TAG,"id="+id+" phase=SERVER_BINDER_ENTRY ns="+SystemClock.elapsedRealtimeNanos());
                 String sequence="";int user=-1;
                 if(!"bootstrap".equals(id)){sequence=data.readString();user=Integer.parseInt(data.readString());}
                 IBinder owner = data.readStrongBinder();
@@ -666,7 +670,8 @@ public final class ZuiControlService extends Binder {
                     if((flags & IBinder.FLAG_ONEWAY)!=0)throw new IllegalArgumentException("utility reply required");
                     String utilityAction=data.readString(),utilityArgument=data.readString();
                     if(data.dataAvail()!=0)throw new IllegalArgumentException("utility trailing data");
-                    result=utilityCommand(utilityAction,utilityArgument);
+                    result=("ack".equals(utilityAction)||"result".equals(utilityAction))
+                            ?utilityRead(utilityAction,utilityArgument):utilityCommand(utilityAction,utilityArgument);
                     break;
                 case TX_CONTROLS:
                     enforceCommandCallerAllowed();
@@ -758,7 +763,9 @@ public final class ZuiControlService extends Binder {
                 + "\npolicyRecoveryRequired=" + (!mPolicyReady || mAppPolicies == null || mAppPolicies.recoveryRequired)
                 + "\npolicyRetentionError=" + (mAppPolicies==null?"":mAppPolicies.retentionError) + "\npolicyError=" + mPolicyError + "\npolicySceneGeneration=" + mTopResumedState.generation()
                 + "\npolicyScenePackage=" + mTopResumedState.stablePackage()
-                + "\npolicySceneUser=" + mTopResumedState.stableUserId();
+                + "\npolicySceneUser=" + mTopResumedState.stableUserId()
+                + "\npolicyRefreshRuntimeApplies="+mPolicyRefreshApplies+"\npolicyUperfRuntimeApplies="+mPolicyUperfApplies
+                + "\npolicyRefreshRuntimeSkips="+mPolicyRefreshSkips+"\npolicyUperfRuntimeSkips="+mPolicyUperfSkips;
     }
 
     private Map<Integer,Long> policyUsers() throws Exception {
@@ -810,11 +817,39 @@ public final class ZuiControlService extends Binder {
         mGpuGlobalRanges.putAll(state.defaults);
     }
 
-    private String applyUnifiedPolicy(AppPolicyStore.State state) {
+    private String policyRuntimeContext(){
+        return mTopResumedState.generation()+"|"+mRawFocusedPackage+"|"+mRawFocusedUserId+"|"+mRawFocusedDisplayId
+                +"|"+mRawFocusTransient+"|"+mImeVisible+"|"+mScreenInteractive+"|"+mGpuSystemUi+"|"+readRefreshDisableMask();
+    }
+    private AppPolicyStore.Owner policyOwner(IBinder remote,boolean force){
+        AppPolicyStore.Owner delegate=PolicyCommand.owner(remote,state->applyUnifiedPolicy(state,force));
+        return new AppPolicyStore.Owner(){
+            public void prepare(AppPolicyStore.State state,String tx)throws Exception{delegate.prepare(state,tx);}
+            public void apply(AppPolicyStore.State state,String tx)throws Exception{
+                try{delegate.apply(state,tx);mRuntimePolicy=state;mRuntimeContext=policyRuntimeContext();}
+                catch(Exception failure){mRuntimePolicy=null;throw failure;}
+            }
+        };
+    }
+    private String applyUnifiedPolicy(AppPolicyStore.State state,boolean force) {
+        boolean healthy=mPolicyReady&&mAppRequestOwned&&mRenderVoteOwned&&!mAppRequestHandoffPending
+                &&mLastApplyError.isEmpty()&&mLastAppliedDisplayId==mRawFocusedDisplayId
+                &&mRenderVoteHz==mLastAppliedDisplayHz&&mGpuPolicy.runtimeStatus().equals("READY")
+                &&SystemProperties.get(PROP_UPERF_MODE, "").equals(mUperfScenePolicy.mLastRequestedMode);
+        boolean full=force||!healthy||!policyRuntimeContext().equals(mRuntimeContext);
         mPolicyReady = true; // Only a validated committed/recovered generation reaches owner apply.
         projectPolicy(state);
-        String applied = reconcileFocusedProfile("unifiedPolicy", true);
-        mUperfScenePolicy.reconcile("unifiedPolicy", SystemClock.elapsedRealtimeNanos());
+        Profile refresh=focusedProfile();
+        PolicyRuntimePlan plan=PolicyRuntimePlan.between(mRuntimePolicy,state,refresh.userId,
+                refresh.packageName.equals(DEFAULT_SCENE)?"":refresh.packageName,
+                mUperfScenePolicy.mSceneUserId,mUperfScenePolicy.mScenePackage,mScreenInteractive,full);
+        String applied="unchanged";
+        if(plan.refresh){mPolicyRefreshApplies++;PolicyCommand.timing("RUNTIME_REFRESH_APPLY_BEGIN");
+            try{applied=applyProfile(refresh,"unifiedPolicy",plan.full);}finally{PolicyCommand.timing("RUNTIME_REFRESH_APPLY_END");}}
+        else mPolicyRefreshSkips++;
+        if(plan.uperf){mPolicyUperfApplies++;PolicyCommand.timing("RUNTIME_UPERF_APPLY_BEGIN");
+            try{mUperfScenePolicy.reconcile("unifiedPolicy",SystemClock.elapsedRealtimeNanos());}finally{PolicyCommand.timing("RUNTIME_UPERF_APPLY_END");}}
+        else {mPolicyUperfSkips++;mUperfScenePolicy.updateDesiredMode(state);}
         if ("failed".equals(applied))
             throw new IllegalStateException("policy runtime owner apply failed");
         if (!SystemProperties.get(PROP_UPERF_MODE, "").equals(mUperfScenePolicy.mDesiredMode))
@@ -827,7 +862,8 @@ public final class ZuiControlService extends Binder {
         Method put = Settings.System.class.getMethod("putStringForUser", android.content.ContentResolver.class, String.class, String.class, int.class);
         AppPolicyStore.State state = mAppPolicies.current;
         for (int user : state.users.keySet()) {
-            PolicyJson.require(Boolean.TRUE.equals(put.invoke(null, mContext.getContentResolver(), SETTING_UPERF_MODE, state.global(user).uperfMode, user)), "Uperf global projection");
+            if(!state.global(user).uperfMode.equals(getSettingForUser(SETTING_UPERF_MODE,user)))
+                PolicyJson.require(Boolean.TRUE.equals(put.invoke(null, mContext.getContentResolver(), SETTING_UPERF_MODE, state.global(user).uperfMode, user)), "Uperf global projection");
             retireSensitiveSettings(user);
         }
     }
@@ -849,19 +885,23 @@ public final class ZuiControlService extends Binder {
         }
         for(String key:new String[]{SETTING_REQUEST_TEXT,"zui_control_request_ack",SETTING_UPERF_RULES,
                 "zui_control_log_export","zui_control_zuiopt_state","zui_control_zuiopt_chunk"})
-            PolicyJson.require(putSettingForUser(key,null,user),"retire sensitive Settings");
+            if(getSettingForUser(key,user)!=null)PolicyJson.require(putSettingForUser(key,null,user),"retire sensitive Settings");
     }
 
     private synchronized String policyCommand(String requestId, String requestHash, IBinder remote) {
+        PolicyCommand.timingRequest.set(requestId);PolicyCommand.timing("SERVER_MONITOR_ACQUIRED");
         Log.i(TIMING_TAG,"id="+requestId+" phase=policy_server_start ns="+SystemClock.elapsedRealtimeNanos());
         long identity = Binder.clearCallingIdentity();
         try {
             PolicyJson.require(mAppPolicies != null, "policy store unavailable");
-            AppPolicyStore.Owner owner = PolicyCommand.owner(remote, this::applyUnifiedPolicy);
-            mAppPolicies.recover(owner);
-            new SettingsBackup(mAppPolicies).recover(owner,PolicyCommand.rules(remote));
-            Map<Integer,Long> users = policyUsers(); java.util.Set<String> excluded = policyExcluded(users);
+            AppPolicyStore.Owner owner = policyOwner(remote,"bootstrap".equals(requestId));
+            AppPolicyStore.Owner recoveryOwner=policyOwner(remote,true);
+            PolicyCommand.timing("POLICY_RECOVERY_BEGIN");mAppPolicies.recover(recoveryOwner);
+            new SettingsBackup(mAppPolicies).recover(recoveryOwner,PolicyCommand.rules(remote));
+            PolicyCommand.timing("POLICY_RECOVERY_END");PolicyCommand.timing("POLICY_VALIDATION_BEGIN");
+            Map<Integer,Long> users = policyUsers(); java.util.Set<String> excluded = new java.util.HashSet<>();
             if (mAppPolicies.current == null) {
+                excluded=policyExcluded(users);
                 Map<String,Object> raw = PolicyCommand.snapshot(remote);
                 byte[] saved = java.util.Base64.getDecoder().decode(PolicyJson.string(raw.get("saved")));
                 byte[] perapp = java.util.Base64.getDecoder().decode(PolicyJson.string(raw.get("perapp")));
@@ -909,10 +949,11 @@ public final class ZuiControlService extends Binder {
                     }else{
                         String pkg = PolicyJson.string(p.get("packageName")), action = PolicyJson.string(p.get("action")), scope = PolicyJson.string(p.get("scope"));
                         PolicyJson.require(user == mTopResumedState.stableUserId(), "STALE_SCENE_USER");
+                        String home=policyHome(user);
                         boolean global = AppPolicyStore.actionScope(PolicyJson.integer(p.get("sceneGeneration")), PolicyJson.string(p.get("scenePackage")),
-                                mTopResumedState.generation(), mTopResumedState.stablePackage(), pkg, scope, policyHome(user), action, mScreenInteractive);
-                        if (!global) PolicyJson.require(!excluded.contains(pkg) && !excluded.contains(key(user,pkg)) && !isTransientPackage(pkg) && AppPolicyStore.packageName(pkg), "excluded policy target");
-                        if (pkg.equals(policyHome(user))) PolicyJson.require(action.equals("refresh") || action.equals("mode"), "HOME global action");
+                                mTopResumedState.generation(), mTopResumedState.stablePackage(), pkg, scope, home, action, mScreenInteractive);
+                        if (!global) {excluded=policyExcluded(users);PolicyJson.require(!excluded.contains(pkg) && !excluded.contains(key(user,pkg)) && !isTransientPackage(pkg) && AppPolicyStore.packageName(pkg), "excluded policy target");}
+                        if (pkg.equals(home)) PolicyJson.require(action.equals("refresh") || action.equals("mode"), "HOME global action");
                         if(action.equals("save"))PolicyJson.require(!global&&scope.equals("APP"),"atomic draft APP scope");
                         next = action.equals("save")
                                 ?AppPolicyStore.draft(current,expected,user,pkg,PolicyJson.intValue(p.get("value")),
@@ -923,6 +964,7 @@ public final class ZuiControlService extends Binder {
                                 PolicyJson.intValue(p.get("min")), PolicyJson.intValue(p.get("max")), global);
                     }
                     request.put("previousHash", PolicyJson.hash(current.bytes()));
+                    PolicyCommand.timing("POLICY_VALIDATION_END");
                     request.put("targetHash", PolicyJson.hash(next.bytes())); mAppPolicies.disk.write("policy-request.json", PolicyJson.bytes(request));
                     mAppPolicies.commit(next, owner);
                 }
@@ -957,7 +999,8 @@ public final class ZuiControlService extends Binder {
             if (!"bootstrap".equals(requestId)) return reconcilePolicyRequest(requestId, requestHash, remote);
             return "ok=0\nerror=" + mPolicyError;
         } finally { Binder.restoreCallingIdentity(identity);
-            Log.i(TIMING_TAG,"id="+requestId+" phase=policy_server_end ns="+SystemClock.elapsedRealtimeNanos()); }
+            Log.i(TIMING_TAG,"id="+requestId+" phase=policy_server_end ns="+SystemClock.elapsedRealtimeNanos());
+            PolicyCommand.timing("SERVER_MONITOR_RELEASE");PolicyCommand.timingRequest.remove(); }
     }
 
     private synchronized String reconcilePolicyRequest(String id, String hash, IBinder remote) {
@@ -965,7 +1008,7 @@ public final class ZuiControlService extends Binder {
         try {
             PolicyJson.require(mAppPolicies != null, "policy store unavailable");
             PolicyJson.require(!new SettingsBackup(mAppPolicies).busy(), "settings recovery required");
-            return mAppPolicies.reconcileRequest(id, hash, PolicyCommand.owner(remote, this::applyUnifiedPolicy),
+            return mAppPolicies.reconcileRequest(id, hash, policyOwner(remote,true),
                     () -> { publishPolicySettings(); return null; });
         } catch (Exception e) {
             // Not a terminal failure: native retains claim, client retains pending.
@@ -978,7 +1021,7 @@ public final class ZuiControlService extends Binder {
         try{
             PolicyJson.require(mAppPolicies!=null&&mAppPolicies.current!=null,"policy not ready");
             SettingsBackup backup=new SettingsBackup(mAppPolicies);
-            AppPolicyStore.Owner owner=PolicyCommand.owner(remote,this::applyUnifiedPolicy);
+            AppPolicyStore.Owner owner=policyOwner(remote,true);
             mAppPolicies.recover(owner);backup.recover(owner,PolicyCommand.rules(remote));
             PolicyJson.require(mAppPolicies.current.users.equals(policyUsers()),"settings user inventory changed");
             if("sb_export".equals(action)){
@@ -1439,6 +1482,28 @@ public final class ZuiControlService extends Binder {
         }catch(Exception uncertain){ /* Unreadable admission evidence is never permission to forget a request. */ }
         return "ok=0\nerror="+error+"\nresultCategory="+category;
     }
+    /** Exact private reads share the disk's short AtomicFile lock, not the policy transaction monitor. */
+    private String utilityRead(String action,String argument){
+        final int user=Binder.getCallingUid()/100000;long token=Binder.clearCallingIdentity();
+        try{
+            Map<Integer,Long> inventory=policyUsers();
+            AppPolicyStore.State state=mAppPolicies==null?null:mAppPolicies.current;
+            PolicyJson.require(state!=null&&inventory.containsKey(user)
+                    &&(!state.users.containsKey(user)||java.util.Objects.equals(state.users.get(user),inventory.get(user))),"user_inventory_not_admitted");
+            String result,category="INDETERMINATE_OR_IN_PROGRESS";
+            UtilityTransport transport=new UtilityTransport(mAppPolicies.disk,inventory);
+            if("ack".equals(action)){
+                PolicyJson.require(validRequestId(argument),"utility request ID");result=transport.ack(user,argument);
+                String[] ack=result.split("\\|",-1);if(ack.length==4&&("done".equals(ack[1])||"failed".equals(ack[1])))category="ADMITTED_TERMINAL";
+            }else{
+                PolicyJson.require("result".equals(action),"utility read action");String[] fields=argument.split("\\|",-1);
+                PolicyJson.require(fields.length==2&&validRequestId(fields[0]),"utility result request");
+                result=transport.result(user,fields[0],fields[1]);category="ADMITTED_TERMINAL";
+            }
+            return "ok=1\nresultCategory="+category+"\ndata="+java.util.Base64.getEncoder().encodeToString(result.getBytes(StandardCharsets.UTF_8));
+        }catch(Exception e){return "ok=0\nerror=utility:"+e.getClass().getSimpleName()+":"+safe(e.getMessage())+"\nresultCategory=INDETERMINATE_OR_IN_PROGRESS";}
+        finally{Binder.restoreCallingIdentity(token);}
+    }
     private synchronized String utilityCommand(String action,String argument){
         final int user=Binder.getCallingUid()/100000;
         long token=Binder.clearCallingIdentity();String id="";
@@ -1646,12 +1711,14 @@ public final class ZuiControlService extends Binder {
         return new Profile(pkg, userId, displayHz, fpsCap, cleanMode);
     }
 
-    private String reconcileFocusedProfile(String reason, boolean force) {
-        Profile profile = mRawFocusTransient || mImeVisible || mRawFocusedPackage.isEmpty()
+    private Profile focusedProfile(){
+        return mRawFocusTransient || mImeVisible || mRawFocusedPackage.isEmpty()
                 || isTransientPackage(mRawFocusedPackage)
                 ? neutralProfile(mRawFocusedUserId)
                 : profileFor(mRawFocusedPackage, mRawFocusedUserId);
-        return applyProfile(profile, reason, force);
+    }
+    private String reconcileFocusedProfile(String reason, boolean force) {
+        return applyProfile(focusedProfile(), reason, force);
     }
 
     private String applyProfile(Profile profile, String reason, boolean force) {
@@ -2839,27 +2906,21 @@ public final class ZuiControlService extends Binder {
             }
         }
 
-        private void reconcile(String reason, long eventNanos) {
-            AppPolicyStore.State authority = mAppPolicies == null ? null : mAppPolicies.current;
-            if (mInteractive && (!mPolicyReady || authority == null)) { mLastReason = reason + ":policyRecoveryRequired"; mGpuPolicy.resolve("", "balance", null, false, false, false); return; }
+        private String updateDesiredMode(AppPolicyStore.State authority){
             if (authority != null) mGlobalMode = authority.global(mSceneUserId).uperfMode;
             AppPolicyStore.Row row = authority == null ? null : authority.apps.get(key(mSceneUserId, mScenePackage));
             String exact = row == null ? null : row.uperfMode;
             boolean hasExact = validUperfMode(exact);
             mSceneMode = hasExact ? exact : mGlobalMode;
-            String source;
-            if (!mInteractive) {
-                mDesiredMode = "powersave";
-                source = "screenOff";
-            } else if (hasExact) {
-                mDesiredMode = exact;
-                source = "exact:" + mScenePackage;
-            } else {
-                mDesiredMode = mGlobalMode;
-                source = "global";
-            }
+            mDesiredMode=!mInteractive?"powersave":mSceneMode;
+            return !mInteractive?"screenOff":hasExact?"exact:"+mScenePackage:"global";
+        }
+        private void reconcile(String reason, long eventNanos) {
+            AppPolicyStore.State authority = mAppPolicies == null ? null : mAppPolicies.current;
+            if (mInteractive && (!mPolicyReady || authority == null)) { mLastReason = reason + ":policyRecoveryRequired"; mGpuPolicy.resolve("", "balance", null, false, false, false); return; }
+            String source=updateDesiredMode(authority);
             refreshGpu();
-            if (mDesiredMode.equals(mLastRequestedMode)) {
+            if (mDesiredMode.equals(mLastRequestedMode)&&mDesiredMode.equals(SystemProperties.get(PROP_UPERF_MODE,""))) {
                 mLastReason = reason + ":" + source + ":sameTarget";
                 return;
             }

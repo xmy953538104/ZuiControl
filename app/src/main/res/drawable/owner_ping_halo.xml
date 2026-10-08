@@ -1,4 +1,0 @@
-<animated-vector xmlns:android="http://schemas.android.com/apk/res/android" android:drawable="@drawable/owner_ping_vector">
-    <target android:name="halo" android:animation="@animator/owner_ping_scale" />
-    <target android:name="ink" android:animation="@animator/owner_ping_fade" />
-</animated-vector>

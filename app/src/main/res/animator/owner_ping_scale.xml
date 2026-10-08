@@ -1,6 +1,0 @@
-<set xmlns:android="http://schemas.android.com/apk/res/android">
-    <objectAnimator android:propertyName="scaleX" android:valueFrom="1" android:valueTo="2.6" android:valueType="floatType"
-        android:duration="2000" android:repeatCount="-1" android:interpolator="@interpolator/owner_ping_ease" />
-    <objectAnimator android:propertyName="scaleY" android:valueFrom="1" android:valueTo="2.6" android:valueType="floatType"
-        android:duration="2000" android:repeatCount="-1" android:interpolator="@interpolator/owner_ping_ease" />
-</set>

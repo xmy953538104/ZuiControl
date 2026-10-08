@@ -7,6 +7,7 @@ import static com.zui.server.control.PolicyJson.*;
 
 /** Generated service slices are exact; platform scene/runtime inputs are isolated fixtures. */
 public class RecoveryFixture {
+    static final class PolicyCommand {static void timing(String phase){}}
     static final class Crash extends Error {}
     final Map<String,byte[]> files=new TreeMap<>();
     String fault="", ack="", phase="", currentId="X";
@@ -64,6 +65,7 @@ public class RecoveryFixture {
     }
     final Top mTopResumedState=new Top(); final boolean mScreenInteractive=true;
     String policyHome(int user){return "org.example.home";}
+    Set<String> policyExcluded(Map<Integer,Long> users){return Collections.emptySet();}
     static String key(int user,String pkg){return AppPolicyStore.key(user,pkg);}
     boolean isTransientPackage(String pkg){return false;}
     static final class Gpu {String runtimeStatus(){return "READY";}}

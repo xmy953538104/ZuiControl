@@ -94,16 +94,19 @@ object ZuiControlRequest {
         val requestCommand = requestCommandFromText(pending.requestText)
             ?: throw IllegalStateException("系统命令认证状态无效")
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        val fastPollUntil=SystemClock.elapsedRealtime()+ACK_FAST_WINDOW_MS
+        var queryCount=0
         var lastProgress: Ack? = null
         var retryCount = 0
         var nextKickAt = SystemClock.elapsedRealtime() + retryDelayMs(retryCount)
         do {
+            queryCount++
             val ack = parseAck(ZuiControlClient.utilityValue("ack", requestId))
             if (ack?.requestId == requestId && ack.command == requestCommand) {
                 if (ack.isTerminal) {
                     Log.i(
                         TIMING_TAG,
-                        "id=$requestId phase=T9 ns=${SystemClock.elapsedRealtimeNanos()}",
+                        "id=$requestId phase=T9 ns=${SystemClock.elapsedRealtimeNanos()} queries=$queryCount",
                     )
                     clearPending(context, requestId)
                     return ack
@@ -120,7 +123,7 @@ object ZuiControlRequest {
                 nextKickAt = now + retryDelayMs(retryCount)
             }
             val remaining = deadline - SystemClock.elapsedRealtime()
-            if (remaining > 0) Thread.sleep(minOf(ACK_POLL_MS, remaining))
+            if (remaining > 0) Thread.sleep(minOf(if(now<fastPollUntil)ACK_FAST_POLL_MS else ACK_POLL_MS, remaining))
         } while (SystemClock.elapsedRealtime() < deadline)
         throw IllegalStateException("等待系统命令完成超时")
     }
@@ -229,6 +232,8 @@ object ZuiControlRequest {
     private const val ACK_FAILED = "failed"
     private val ACK_STATES = setOf(ACK_PROCESSING, ACK_DONE, ACK_FAILED)
     private const val ACK_POLL_MS = 200L
+    private const val ACK_FAST_POLL_MS = 50L
+    private const val ACK_FAST_WINDOW_MS = 1000L
     private const val INITIAL_KICK_RETRY_MS = 1_000L
     private const val PREFS_NAME = "zui_control_pending_command"
     private const val PREF_REQUEST_ID = "request_id"

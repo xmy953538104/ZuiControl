@@ -125,8 +125,16 @@ struct Projection {
         auto desired=request.get("desiredMode").string();require(desired=="powersave"||desired=="balance"||desired=="performance"||desired=="fast","runtime mode");
         point("during_projection_apply");
         Fd file(openat(runtime.fd.value,"effective_powermode.txt",O_WRONLY|O_NOFOLLOW|O_CLOEXEC));Disk::identity(file.value,false);
-        require(ftruncate(file.value,0)==0,"mode truncate");writeAll(file.value,desired+"\n");require(fsync(file.value)==0,"mode sync");
+        if(!modeReadbackMatches(runtime.read("effective_powermode.txt"),desired)){
+            point("before_runtime_mode_write");
+            require(ftruncate(file.value,0)==0,"mode truncate");writeAll(file.value,desired+"\n");require(fsync(file.value)==0,"mode sync");
+            point("after_runtime_mode_write");
+        }else point("runtime_mode_unchanged");
+        // Equal contents still need the existing fsync/readback and exact generation
+        // receipt. Init may be finishing an independent truncate/write of this inode.
+        point("before_runtime_mode_readback");
         acknowledgeModeReadback(runtime,file.value,desired);
+        point("after_runtime_mode_readback");
         stages.put("active.json",prepared);stages.put("applied.json",request.raw+"\n");point("after_projection_applied");
         try{prune(tx+".json");}catch(const std::exception&){point("projection_retention_unavailable");}return hash;
     }

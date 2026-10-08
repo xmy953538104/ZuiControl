@@ -9,14 +9,15 @@ class OwnerVisualSync(unittest.TestCase):
  def test_retained_mode_ping_rebinds_without_restarting_motion(self):
   main=read('MainActivity.kt');ui=read('OwnerUi.kt')
   bind=main.split('bindControl(mode){',1)[1].split('detail.addView(owner.title',1)[0]
-  self.assertIn('(modeChip.getChildAt(0) as OwnerPing).setTone(owner.tiers[tier])',bind)
+  self.assertIn('(modeChip.getChildAt(0) as OwnerStatusDot).setTone(owner.tiers[tier])',bind)
   setter=ui.split('fun setTone(color:Int)',1)[1].split('fun retheme',1)[0]
   self.assertIn('tone=color;applyTone()',setter)
   for forbidden in ('ValueAnimator','motion','phase','requestLayout','addView','gateway'):
    self.assertNotIn(forbidden,setter)
-  draw=ui.split('internal class OwnerPing',1)[1].split('override fun onDetachedFromWindow',1)[0]
-  self.assertIn('setColor(tone)',draw);self.assertIn('motion.setTint(tone)',draw)
-  self.assertIn('if(next)motion.start()else motion.stop()',draw)
+  draw=ui.split('internal class OwnerStatusDot',1)[1].split('@SuppressLint',1)[0]
+  self.assertIn('setColor(tone)',draw)
+  for removed in ('OwnerPulseSurface','OwnerPing','dimPulses','owner_ping_halo','AnimatedVectorDrawable'):
+   self.assertNotIn(removed,ui)
   self.assertNotIn('addUpdateListener',draw);self.assertNotIn('postDelayed',draw)
   self.assertIn('masterSelectionBindings+={ruleMarker.visibility=',main)
   self.assertIn('summary.text=if(fresh!=null)',main)

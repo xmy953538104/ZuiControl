@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.AnimatedVectorDrawable
 import android.os.Build
 import android.util.TypedValue
 import android.view.*
@@ -55,7 +54,7 @@ internal class OwnerUi(val context: Context) {
                 (v.text as? android.text.Spannable)?.let{s->s.getSpans(0,s.length,android.text.style.ForegroundColorSpan::class.java).forEach{span->val a=s.getSpanStart(span);val b=s.getSpanEnd(span);val flags=s.getSpanFlags(span);s.removeSpan(span);s.setSpan(android.text.style.ForegroundColorSpan(ownerForegroundColor(span.foregroundColor,::color)),a,b,flags)}}
             }
             if(v is ImageView)v.imageTintList?.defaultColor?.let{v.imageTintList=android.content.res.ColorStateList.valueOf(ownerForegroundColor(it,::color))}
-            when(v){is OwnerCpuSparklineView->v.changeTheme(value);is GpuRangeBar->v.changeTheme(value);is RecordChart->v.changeTheme(value);is OwnerPing->v.retheme(::color);is OwnerMeter->v.retheme(::color);is OwnerCpuPicker->v.showSelection(v.selected)}
+            when(v){is OwnerCpuSparklineView->v.changeTheme(value);is GpuRangeBar->v.changeTheme(value);is RecordChart->v.changeTheme(value);is OwnerStatusDot->v.retheme(::color);is OwnerMeter->v.retheme(::color);is OwnerCpuPicker->v.showSelection(v.selected)}
             if(v is ViewGroup)for(i in 0 until v.childCount)visit(v.getChildAt(i))
             v.invalidate()
         }
@@ -147,7 +146,7 @@ internal class OwnerUi(val context: Context) {
     }
     fun modeChip(value:String,tier:Int)=row().apply {
         background=shape(chipBg[tier+1],999f);setPadding(px(11),0,px(13),0);minimumHeight=px(30)
-        addView(OwnerPing(context,this@OwnerUi,tiers[tier]),LinearLayout.LayoutParams(px(7),px(7)).apply{marginEnd=px(8)})
+        addView(OwnerStatusDot(context,tiers[tier]),LinearLayout.LayoutParams(px(7),px(7)).apply{marginEnd=px(8)})
         addView(label(value,12f,chipFg[tier+1],800));layoutParams=LinearLayout.LayoutParams(-2,px(30))
     }
     fun domainRow(title:String,subtitle:String,icon:Int,tone:String="zo",small:Boolean=false,action:()->Unit):View=row().apply {
@@ -367,88 +366,11 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
 
 /** Literal .ping / .ping::after, presentation only. */
 @SuppressLint("ViewConstructor")
-internal class OwnerPing(context: Context,private val ui: OwnerUi,private var tone: Int):FrameLayout(context) {
-    private val dot=View(context)
-    private val motion=(context.getDrawable(R.drawable.owner_ping_halo) as AnimatedVectorDrawable).apply{mutate()}
-    private val surface=if(Build.VERSION.SDK_INT>=33)OwnerPulseSurface(context,ui.px(7))else null
-    private val halo:View=surface ?: ImageView(context).apply{setImageDrawable(motion)}
-    private var pulsing=false
-    private var ready=false
-    init {
-        clipChildren=false;clipToPadding=false
-        addView(dot,LayoutParams(ui.px(7),ui.px(7),Gravity.CENTER))
-        addView(halo,LayoutParams(ui.px(7)*3,ui.px(7)*3,Gravity.CENTER));applyTone();ready=true
-    }
-    private fun applyTone(){
-        dot.background=GradientDrawable().apply{shape=GradientDrawable.OVAL;setColor(tone)}
-        motion.setTint(tone)
-        surface?.setTone(tone)
-    }
+internal class OwnerStatusDot(context: Context,private var tone: Int):View(context) {
+    init { applyTone();importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO }
+    private fun applyTone(){background=GradientDrawable().apply{shape=GradientDrawable.OVAL;setColor(tone)}}
     fun setTone(color:Int){if(tone!=color){tone=color;applyTone()}}
     fun retheme(color:(Int)->Int){setTone(color(tone))}
-    private fun updatePulse(){
-        if(!ready)return
-        val next=isAttachedToWindow && windowVisibility==VISIBLE && isShown
-        if(next==pulsing)return
-        pulsing=next
-        if(surface!=null)surface.setPulsing(next)else if(next)motion.start()else motion.stop()
-    }
-    override fun onLayout(changed:Boolean,left:Int,top:Int,right:Int,bottom:Int){
-        super.onLayout(changed,left,top,right,bottom)
-        halo.translationX=(width-halo.width)/2f-halo.left;halo.translationY=(height-halo.height)/2f-halo.top
-    }
-    override fun onAttachedToWindow(){super.onAttachedToWindow();updatePulse()}
-    override fun onWindowVisibilityChanged(visibility:Int){super.onWindowVisibilityChanged(visibility);updatePulse()}
-    override fun onVisibilityChanged(changedView:View,visibility:Int){super.onVisibilityChanged(changedView,visibility);updatePulse()}
-    fun dimHalo(value:Float){surface?.dim(value)}
-    override fun onDetachedFromWindow(){pulsing=false;surface?.setPulsing(false);motion.stop();super.onDetachedFromWindow()}
-}
-
-/** One tiny buffer; only compositor alpha/scale changes each frame, never the App canvas. */
-@android.annotation.TargetApi(33)
-private class OwnerPulseSurface(context:Context,private val dotSize:Int):SurfaceView(context),SurfaceHolder.Callback {
-    private var layer:SurfaceControl?=null
-    private var buffer:Surface?=null
-    private var transaction:SurfaceControl.Transaction?=null
-    private var tone=Color.TRANSPARENT
-    private var desired=false
-    private var phase=0f
-    private var dimAmount=1f
-    private val size=dotSize*3
-    private val motion=ValueAnimator.ofFloat(0f,1f).apply{
-        duration=2000;repeatCount=ValueAnimator.INFINITE;interpolator=PathInterpolator(0f,0f,.58f,1f)
-        addUpdateListener{phase=it.animatedValue as Float;compose()}
-    }
-    init {setZOrderOnTop(true);holder.setFormat(PixelFormat.TRANSLUCENT);holder.addCallback(this);importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO}
-    fun setTone(value:Int){if(value!=tone){tone=value;paintBuffer()}}
-    fun dim(value:Float){dimAmount=value;compose()}
-    fun setPulsing(value:Boolean){desired=value;if(value && layer!=null){if(!motion.isStarted)motion.start()}else{motion.cancel();compose()}}
-    private fun paintBuffer(){
-        val target=buffer?:return
-        val c=target.lockCanvas(null)
-        try{c.drawColor(Color.TRANSPARENT,PorterDuff.Mode.CLEAR);c.drawCircle(size/2f,size/2f,dotSize/2f*2.6f,Paint(Paint.ANTI_ALIAS_FLAG).apply{color=tone})}
-        finally{target.unlockCanvasAndPost(c)}
-    }
-    private fun compose(){
-        val target=layer?:return
-        val scale=(1f+1.6f*phase)/2.6f
-        transaction?.setScale(target,scale,scale)?.setPosition(target,(size-size*scale)/2f,(size-size*scale)/2f)
-            ?.setAlpha(target,if(desired)140/255f*(1f-phase)*dimAmount else 0f)?.apply()
-    }
-    override fun surfaceCreated(holder:SurfaceHolder){
-        val child=SurfaceControl.Builder().setName("Owner pulse halo").setParent(surfaceControl).setBufferSize(size,size).setFormat(PixelFormat.RGBA_8888).build()
-        layer=child;transaction=SurfaceControl.Transaction();buffer=Surface(child);paintBuffer()
-        transaction?.setLayer(child,1)?.setVisibility(child,true)?.apply();setPulsing(desired)
-    }
-    override fun surfaceChanged(holder:SurfaceHolder,format:Int,width:Int,height:Int){
-        val c=holder.lockCanvas()?:return
-        try{c.drawColor(Color.TRANSPARENT,PorterDuff.Mode.CLEAR)}finally{holder.unlockCanvasAndPost(c)}
-        compose()
-    }
-    override fun surfaceDestroyed(holder:SurfaceHolder){
-        motion.cancel();layer?.let{transaction?.setVisibility(it,false)?.reparent(it,null)?.apply()}
-        buffer?.release();buffer=null;layer?.release();layer=null;transaction?.close();transaction=null
-    }
 }
 
 @SuppressLint("ViewConstructor")
@@ -500,22 +422,16 @@ internal class OwnerModal(private val ui: OwnerUi,private val host: FrameLayout,
     private var overlay: FrameLayout?=null
     private var onDismiss:(()->Unit)?=null
     val isOpen get()=overlay!=null
-    private fun dimPulses(value:Float){
-        fun visit(v:View){if(v is OwnerPing)v.dimHalo(value);if(v is ViewGroup)for(i in 0 until v.childCount)visit(v.getChildAt(i))}
-        visit(content)
-    }
     fun close(){
         val current=overlay?:return;overlay=null
         val callback=onDismiss;onDismiss=null;callback?.invoke()
         if(Build.VERSION.SDK_INT>=31)content.setRenderEffect(null)
-        dimPulses(1f)
         current.animate().alpha(0f).setDuration(200).withEndAction{host.removeView(current)}.start()
     }
     fun open(title: String,subtitle: String,width: Int=440,body: View,buttons: List<View>,onDismiss:(()->Unit)?=null) {
         close()
         this.onDismiss=onDismiss
         if(Build.VERSION.SDK_INT>=31)content.setRenderEffect(RenderEffect.createBlurEffect(ui.px(3).toFloat(),ui.px(3).toFloat(),Shader.TileMode.CLAMP))
-        dimPulses(1f-140/255f)
         val mask=FrameLayout(ui.context).apply{clipChildren=false;setBackgroundColor(0x8c03060c.toInt());isClickable=true;setOnClickListener{close()}}
         val sheet=ui.column().apply{background=ui.shadow(ui.shape(ui.card,20f,ui.line2),20f,80f,30f,0f,0x73000000);setOnClickListener{};isClickable=true}
         sheet.addView(ui.row().apply{

@@ -93,6 +93,8 @@ Run from the repository root:
 python tests/command_plane/TestCommandPlaneArchitecture.py
 python tests/command_plane/TestBinderOwnerContract.py
 python tests/command_plane/TestControlsCallbacks.py
+python tests/command_plane/TestRuntimeDomains.py
+python tests/command_plane/TestAckObservation.py
 python tests/gpu/TestGpuFailureIsolation.py
 python tests/command_plane/TestProjectionMode.py
 python tests/gpu/TestGpuProof.py
