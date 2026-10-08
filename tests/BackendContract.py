@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parents[1]
 PLAN3_R9=json.loads((ROOT/'tests/product_plan3_autonomous_delta.json').read_text(encoding='utf-8'))
 R9_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','ZuioptRead.kt','ZuioptRules.kt','ZuioptLibrary.kt')}
 R9_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('ZuiControlService.java','ZuioptSceneAuthority.java')}
-R9_ALLOWED|={'native/zuiopt/'+n for n in ('ZUIopt_binder.h','ZUIopt_daemon.h','ZUIopt_scene.h','ZUIopt_store.h')}
+R9_ALLOWED|={'native/zuiopt/'+n for n in ('ZUIopt_binder.h','ZUIopt_daemon.h','ZUIopt_lifecycle.h','ZUIopt_scene.h','ZUIopt_store.h')}
 assert set(PLAN3_R9['allowedPaths'])==R9_ALLOWED,'R9 explicit source boundary'
 PLAN3_UX=json.loads((ROOT/'tests/product_plan3_device_ux_delta.json').read_text(encoding='utf-8'))
 UX_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','ZuioptLibrary.kt','ZuioptRules.kt')}

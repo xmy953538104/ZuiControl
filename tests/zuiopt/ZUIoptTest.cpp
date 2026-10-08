@@ -51,6 +51,7 @@ void lifecycleTests(const fs::path& parent){
     auto data=read((root/"fatal.v1").string());
     require(data.find("stage=RECONCILE\nstate=FAIL\nreason=proc_identity_open_failed\n")!=data.npos&&data.size()<1024,"exact fatal stage and reason");
     require(fatalReason(std::runtime_error("parcel/status=-13"))=="binder_status_-13","bounded Binder status");
+    require(fatalReason(std::runtime_error("factory read bound"))=="factory_read_bound","bounded factory read classified");
     require(fatalReason(std::runtime_error("journal release failed TID=12345"))=="journal_release_failed","release TID redacted");
     require(fatalReason(std::runtime_error("RECOVERY_UNKNOWN_TASK_FAIL_CLOSED tid=12345"))=="recovery_unknown_task_fail_closed","unknown task TID redacted");
     for(auto literal:{"committed lease identity mismatch","coherence unknown owned task","coherence external owner unavailable",
