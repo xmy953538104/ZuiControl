@@ -49,7 +49,7 @@ object ZuioptRules {
         return id
     }
 
-    fun state(context: Context): String = FrontendTransport.commandRead {
+    fun state(context: Context): String = ZuioptRead.state() ?: FrontendTransport.commandRead {
         val id = command(context, "state")
         ZuiControlClient.utilityValue("result", "$id|rulesState").also { require(it.length <= 4608) { "状态响应过大" } }
     }
@@ -62,6 +62,7 @@ object ZuioptRules {
     fun userRules(context: Context): Snapshot = userRules(context, state(context))
 
     internal fun userRules(context: Context, state: String): Snapshot {
+        ZuioptRead.snapshot(state)?.let { return Snapshot(field(it.state,"generation"),it.user) }
         val generation = field(state, "generation")
         require(generation.matches(Regex("g[0-9a-f]{24}")))
         val size = field(state, "user_size").toInt()

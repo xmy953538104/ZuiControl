@@ -27,6 +27,10 @@ binder_status_t AParcel_readString(const AParcel* p,void* context,bool(*allocate
     if(!allocate(context,static_cast<int32_t>(value.size()+1),&out))return STATUS_NO_MEMORY;
     memcpy(out,value.c_str(),value.size()+1);return STATUS_OK;
 }
+binder_status_t AParcel_writeString(AParcel* p,const char* data,int32_t size){
+    if(!p||size<0)return STATUS_BAD_VALUE;
+    p->atoms.push_back({'s',0,std::string(data,static_cast<size_t>(size))});return STATUS_OK;
+}
 binder_status_t AParcel_readStatusHeader(const AParcel* p,AStatus** out){*out=new AStatus{p->ok};return STATUS_OK;}
 bool AStatus_isOk(const AStatus* p){return p->ok;}
 void AStatus_delete(AStatus* p){delete p;}

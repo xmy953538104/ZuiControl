@@ -4,6 +4,7 @@
 #include "ZUIopt_owner.h"
 #include "ZUIopt_events.h"
 #include "ZUIopt_scene.h"
+#include "ZUIopt_store.h"
 #include <csignal>
 #include <deque>
 #include <memory>
@@ -175,7 +176,11 @@ public:
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::PACKAGE_ABI_OK);
         ZUIOPT_NOTE("ABI_GATE","PASS");phase=StartupStage::PLACEMENT;placement=std::make_unique<Placement>(counters,*journal);
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::PLACEMENT_OK);
-        sceneObserver=std::make_unique<SceneObserver>([this](int64_t seq){events.pushScene(eventFd,seq);});
+        sceneObserver=std::make_unique<SceneObserver>([this](int64_t seq){events.pushScene(eventFd,seq);},
+            [root=stateRoot](const std::string& argument){
+                auto factory=read("/system/etc/zuiopt/factory_rules.conf",true);require(factory.size()<=RULE_LIMIT,"factory read bound");
+                RuleStore store(root,factory,true);return store.readReply(argument);
+            });
         readScene();
         phase=StartupStage::RECONCILE;reconcile(initial);
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::RECONCILE_OK);

@@ -18,6 +18,44 @@ final class ZuioptSceneAuthority {
     private long mAck = -1;
     private Registration mRegistration;
 
+    static final class OwnerAbsentException extends IllegalStateException {}
+
+    /** Never hold the registry monitor across the daemon RPC or its nested scene ACK. */
+    String readRules(String argument) throws RemoteException {
+        if (!"state".equals(argument) && (argument == null
+                || !argument.matches("snapshot\\|g[0-9a-f]{24}"))) {
+            throw new IllegalArgumentException("rules read argument");
+        }
+        final Registration owner;
+        synchronized (this) {
+            owner = mRegistration;
+            if (owner == null || !owner.callback.isBinderAlive()) throw new OwnerAbsentException();
+        }
+        Parcel data = Parcel.obtain(), reply = Parcel.obtain();
+        long identity = Binder.clearCallingIdentity();
+        try {
+            data.writeInterfaceToken(CALLBACK_DESCRIPTOR);
+            data.writeString(argument);
+            if (!owner.callback.transact(2, data, reply, 0)) {
+                throw new IllegalStateException("rules read callback unsupported");
+            }
+            // Private NDK opcode 2 returns one plain String without a status header.
+            String result = reply.readString();
+            if (result == null || result.length() > 200000 || reply.dataAvail() != 0) {
+                throw new IllegalStateException("rules read reply bound");
+            }
+            synchronized (this) {
+                if (mRegistration != owner || !owner.callback.isBinderAlive()) {
+                    throw new IllegalStateException("rules read owner changed");
+                }
+            }
+            return result;
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+            reply.recycle(); data.recycle();
+        }
+    }
+
     private final class Registration implements IBinder.DeathRecipient {
         final IBinder callback;
         final int pid;

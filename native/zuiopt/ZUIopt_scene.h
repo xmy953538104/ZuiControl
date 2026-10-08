@@ -7,9 +7,29 @@ struct SceneObserver {
     static constexpr int REGISTER=1001,UNREGISTER=1002,ACK=1003,CURRENT=1004;
     Observer::Holder state;
     AIBinder* service=nullptr;AIBinder* callback=nullptr;bool registered=false;
-    static binder_status_t transact(AIBinder* binder,transaction_code_t code,const AParcel* in,AParcel*){
-        if(code!=1)return STATUS_UNKNOWN_TRANSACTION;
+    static binder_status_t transact(AIBinder* binder,transaction_code_t code,const AParcel* in,AParcel* out){
+        if(code!=1&&code!=2)return STATUS_UNKNOWN_TRANSACTION;
         if(AIBinder_getCallingUid()!=1000)return STATUS_PERMISSION_DENIED;
+        if(code==2){
+            try{
+                auto* holder=static_cast<Observer::Holder*>(AIBinder_getUserData(binder));if(!holder||!*holder)return STATUS_BAD_VALUE;
+                auto keep=*holder;if(!keep->supportsRules())return STATUS_UNKNOWN_TRANSACTION;
+                if(!out)return STATUS_BAD_VALUE;
+                std::string argument;
+                checked(AParcel_readString(in,&argument,[](void* p,int32_t size,char** data){
+                    if(size<1||size>129)return false;
+                    try{auto& s=*static_cast<std::string*>(p);s.resize(size);*data=s.data();return true;}catch(...){return false;}
+                }));
+                require(!argument.empty()&&argument.back()==0,"rules read terminator");argument.pop_back();
+                require(argument.find('\0')==std::string::npos&&AParcel_getDataPosition(in)==AParcel_getDataSize(in),"rules read trailing fields");
+                require(argument=="state"||(argument.size()==34&&argument.rfind("snapshot|g",0)==0&&
+                    argument.substr(10).find_first_not_of("0123456789abcdef")==std::string::npos),"rules read argument");
+                auto result=keep->readRules(argument);require(result.size()<=200000,"rules reply bound");
+                return AParcel_writeString(out,result.data(),static_cast<int32_t>(result.size()));
+            }catch(const BinderError& e){return e.status;}
+            catch(const std::bad_alloc&){return STATUS_NO_MEMORY;}
+            catch(...){return STATUS_FAILED_TRANSACTION;}
+        }
         int64_t seq=-1;
         if(AParcel_readInt64(in,&seq)||seq<0||AParcel_getDataPosition(in)!=AParcel_getDataSize(in))return STATUS_BAD_VALUE;
         try{auto* holder=static_cast<Observer::Holder*>(AIBinder_getUserData(binder));if(!holder||!*holder)return STATUS_BAD_VALUE;auto keep=*holder;keep->deliverScene(seq);}
@@ -17,7 +37,7 @@ struct SceneObserver {
         catch(...){return STATUS_FAILED_TRANSACTION;}
         return STATUS_OK;
     }
-    explicit SceneObserver(std::function<void(int64_t)> fn):state(std::make_shared<CallbackState>(std::move(fn))){
+    explicit SceneObserver(std::function<void(int64_t)> fn,std::function<std::string(const std::string&)> read={}):state(std::make_shared<CallbackState>(std::move(fn),std::move(read))){
         try{
             auto check=reinterpret_cast<AIBinder*(*)(const char*)>(dlsym(RTLD_DEFAULT,"AServiceManager_checkService"));
             require(check,"scene service API");service=check("zui_control");require(service,"scene service absent");

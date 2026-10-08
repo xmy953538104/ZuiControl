@@ -210,7 +210,7 @@ class ProductionContracts(unittest.TestCase):
         self.assertIn('pidfd_send_signal',binary)
         self.assertIn('root identity required',binary)
         store=read('native/zuiopt/ZUIopt_store.h')
-        for token in ('O_NOFOLLOW','st_nlink==1','flock(lockFd,LOCK_EX)','600000','PACK_COUNT','sha256(data)==f[3]','root.put("effective.conf",effective)'):
+        for token in ('O_NOFOLLOW','st_nlink==1','flock(lockFd,readOnly?LOCK_SH|LOCK_NB:LOCK_EX)','600000','PACK_COUNT','sha256(data)==f[3]','root.put("effective.conf",effective)'):
             self.assertIn(token,store)
 
     def test_factory_and_retained_binary_identity(self):

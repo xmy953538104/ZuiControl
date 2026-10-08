@@ -31,6 +31,8 @@ public class Parcel {
  public java.util.List<Integer> ints=new java.util.ArrayList<>(); public String pkg;
  public void writeInt(int v){ints.add(v);}
  public void writeString(String s){pkg=s;}
+ public String readString(){String s=pkg;pkg=null;return s;}
+ public int dataAvail(){return ints.size()+(pkg==null?0:1);}
  public void recycle(){}
 }''',
 }
@@ -42,10 +44,18 @@ public class SceneFixture {
  static void check(boolean ok){if(!ok)throw new AssertionError();}
  static class Peer implements IBinder {
   boolean alive=true,fail=false; List<Long> seqs=new ArrayList<>(); DeathRecipient death;
+  ZuioptSceneAuthority registry; Runnable readAction=()->{}; String readReply="native"; boolean unsupported=false,trailing=false;
   public void linkToDeath(DeathRecipient d,int f)throws RemoteException {if(!alive)throw new RemoteException(); death=d;}
   public boolean unlinkToDeath(DeathRecipient d,int f){if(death==d)death=null;return true;}
   public boolean isBinderAlive(){return alive;}
   public boolean transact(int code,Parcel p,Parcel reply,int flags)throws RemoteException {
+   if(code==2){
+    check(flags==0&&reply!=null&&!Thread.holdsLock(registry));
+    check(p.descriptor.equals(ZuioptSceneAuthority.CALLBACK_DESCRIPTOR));
+    check(p.pkg.equals("state")||p.pkg.matches("snapshot\\\\|g[0-9a-f]{24}"));
+    if(fail)throw new RemoteException();readAction.run();if(unsupported)return false;
+    reply.writeString(readReply);if(trailing)reply.writeInt(0);return true;
+   }
    check(code==1 && flags==FLAG_ONEWAY && reply==null);
    check(p.descriptor.equals(ZuioptSceneAuthority.CALLBACK_DESCRIPTOR));
    if(fail)throw new RemoteException(); seqs.add(p.seq); return true;
@@ -79,6 +89,29 @@ public class SceneFixture {
   rejected(()->s.writeCurrent(d,73,Parcel.obtain()));
   s.changed("",0);current=Parcel.obtain();s.writeCurrent(d,72,current);
   check(current.seq==148 && current.ints.equals(Arrays.asList(0,0)) && current.pkg.isEmpty());
+  ZuioptSceneAuthority read=new ZuioptSceneAuthority();Peer owner=new Peer();owner.registry=read;
+  try{read.readRules("state");throw new AssertionError();}catch(ZuioptSceneAuthority.OwnerAbsentException expected){}
+  read.register(owner,92);
+  owner.readAction=()->{read.changed("org.example.changed",0);read.ack(owner,92,1);};
+  check(read.readRules("state").equals("native")&&read.stateLines().contains("Ack=1"));
+  owner.readAction=()->{};owner.readReply="x".repeat(200000);
+  check(read.readRules("snapshot|g"+"a".repeat(24)).length()==200000);
+  for(String bad:new String[]{null,"","snapshot|g"+"A".repeat(24),"state|x","state\\u0000"}){
+   try{read.readRules(bad);throw new AssertionError();}catch(IllegalArgumentException expected){}
+  }
+  owner.readReply="x".repeat(200001);
+  try{read.readRules("state");throw new AssertionError();}catch(IllegalStateException expected){}
+  owner.readReply="native";owner.trailing=true;
+  try{read.readRules("state");throw new AssertionError();}catch(IllegalStateException expected){}
+  owner.trailing=false;owner.unsupported=true;
+  try{read.readRules("state");throw new AssertionError();}catch(IllegalStateException expected){}
+  owner.unsupported=false;owner.fail=true;
+  try{read.readRules("state");throw new AssertionError();}catch(RemoteException expected){}
+  owner.fail=false;owner.readAction=()->read.unregister(owner,92);
+  try{read.readRules("state");throw new AssertionError();}catch(IllegalStateException expected){check(!(expected instanceof ZuioptSceneAuthority.OwnerAbsentException));}
+  read.register(owner,92);owner.readAction=owner::die;
+  try{read.readRules("state");throw new AssertionError();}catch(IllegalStateException expected){check(!(expected instanceof ZuioptSceneAuthority.OwnerAbsentException));}
+  System.out.println("RULES_READ_REGISTERED_OWNER_RPC_OUTSIDE_LOCK_BOUNDS_DEATH_NO_AMBIGUOUS_FALLBACK=PASS");
   System.out.println("SCENE_EXPLICIT_CURRENT_VALID_NULL_USER_REGISTERED_READER=PASS");
   System.out.println("SCENE_REGISTRY_ONEWAY_LATEST_REPLAY_DEATH_REREGISTER_ACK=PASS transitions=147");
  }
@@ -124,8 +157,9 @@ class SceneAuthorityTests(unittest.TestCase):
     def test_event_contract_and_bounded_schedule(self):
         scene = (ROOT/'native/zuiopt/ZUIopt_scene.h').read_text()
         callback = scene.split('static binder_status_t transact(', 1)[1].split('explicit SceneObserver(', 1)[0]
-        for token in ('/proc', 'snapshot(', 'packagesForUid(', 'placement', 'journal', 'ack('):
+        for token in ('/proc', 'snapshot(', 'packagesForUid(', 'placement', 'journal'):
             self.assertNotIn(token, callback)
+        self.assertNotRegex(callback,r'\back\(')
         daemon = (ROOT/'native/zuiopt/ZUIopt_daemon.h').read_text()
         self.assertIn('sceneBurst.complete(now())&&events.latestScene(seq)', daemon)
         self.assertLess(daemon.index('reconcile(snapshot);'), daemon.index('sceneObserver->ack(seq)'))

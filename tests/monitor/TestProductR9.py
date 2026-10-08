@@ -14,11 +14,13 @@ class ProductR9(unittest.TestCase):
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicInteger
 class Context
+class JSONObject(val text:String)
+object ZuioptRead { fun snapshot(state:String):Bulk?=null;data class Bulk(val state:String,val user:String,val upstream:String,val metadata:String) }
 object SystemClock { fun elapsedRealtimeNanos()=System.nanoTime() }
 object OwnerRenderTrace { fun event(kind:String,value:String){} }
 class ZuioptRuleModel { companion object { fun parseNormalized(text:String)=ZuioptRuleModel() } }
 object ZuioptLibrary {
- data class Baseline(val generation:String,val rules:String)
+ data class Baseline(val generation:String,val rules:String){constructor(g:String,h:String,r:String,m:JSONObject):this(g,r)}
  var reads=AtomicInteger()
  fun baseline(context:Context,state:String):Baseline {reads.incrementAndGet();return Baseline(ZuioptRules.field(state,"generation"),"upstream")}
 }

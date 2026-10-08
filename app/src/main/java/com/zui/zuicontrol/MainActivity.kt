@@ -98,7 +98,12 @@ class MainActivity : Activity() {
             listOf("generation","canonical_sha256","user_sha256","user_size","effective_sha256",
                 "upstream_sha256","upstream_size","upstream_metadata_size").all {
                     ZuioptRules.field(state,it).isNotEmpty() && ZuioptRules.field(state,it)==ZuioptRules.field(fresh,it)
-                }
+                } &&
+            listOf(state,fresh).let { states ->
+                states.all { ZuioptRules.field(it,"upstream_metadata_sha256").isEmpty() } ||
+                    (ZuioptRules.field(state,"upstream_metadata_sha256").isNotEmpty() &&
+                     ZuioptRules.field(state,"upstream_metadata_sha256")==ZuioptRules.field(fresh,"upstream_metadata_sha256"))
+            }
     }
     private companion object {
         @Volatile var rulesCache:LoadedRules?=null
@@ -113,15 +118,16 @@ class MainActivity : Activity() {
                     val cached=rulesCache
                     val fresh=if(cached?.matches(rs)==true)cached.copy(state=rs) else {
                         progress("正在读取生效规则…")
-                        val current=ZuioptRules.userRules(context,rs)
+                        val bulk=ZuioptRead.snapshot(rs)
+                        val current=bulk?.let{ZuioptRules.Snapshot(ZuioptRules.field(it.state,"generation"),it.user)} ?: ZuioptRules.userRules(context,rs)
                         val userParse=SystemClock.elapsedRealtimeNanos();val parsed=ZuioptRuleModel.parseNormalized(current.text)
                         OwnerRenderTrace.event("RULES_USER_PARSED","parse_ms=${(SystemClock.elapsedRealtimeNanos()-userParse)/1e6}")
                         progress("生效规则已读取，正在校验上游来源…")
-                        val up=ZuioptLibrary.baseline(context,rs)
+                        val up=bulk?.let{ZuioptLibrary.Baseline(ZuioptRules.field(it.state,"generation"),ZuioptRules.field(it.state,"upstream_sha256"),it.upstream,JSONObject(it.metadata))} ?: ZuioptLibrary.baseline(context,rs)
                         check(current.generation==up.generation){"规则版本变化，请刷新"}
                         val upParse=SystemClock.elapsedRealtimeNanos();val upstream=ZuioptRuleModel.parseNormalized(up.rules)
                         OwnerRenderTrace.event("RULES_UPSTREAM_PARSED","parse_ms=${(SystemClock.elapsedRealtimeNanos()-upParse)/1e6}")
-                        LoadedRules(rs,current,parsed,up,upstream)
+                        LoadedRules(bulk?.state ?: rs,current,parsed,up,upstream)
                     }
                     fresh.also{rulesCache=it}
                 }.also{rulesRead=it;start=true}

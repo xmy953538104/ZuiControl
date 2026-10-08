@@ -8,13 +8,14 @@ source=(BASE/'ZuiControlService.java').read_text('utf8')
 start=source.index('    private synchronized String settingsCommand(')
 method=source[start:source.index('    private synchronized String setGlobalGpuRange(',start)]
 method=method.replace('android.os.Build.FINGERPRINT','"fixture-build"')
+observation=source[source.index('    private volatile String mObservedRuleGeneration'):source.index('    private static boolean rulesWriter')]
 harness='''package com.zui.server.control;
 import java.util.*;import java.nio.charset.StandardCharsets;
 import static com.zui.server.control.PolicyJson.*;
 public class RetentionFixture {
  final AppPolicyFixture.Disk disk=new AppPolicyFixture.Disk();AppPolicyStore mAppPolicies;
  final String mUploadEpoch="fixture-process";
- String mObservedRuleGeneration="UNAVAILABLE";
+ /* EXACT OBSERVATION */
  static class IBinder{}
  static class Binder{static long clearCallingIdentity(){return 0;}static void restoreCallingIdentity(long x){}}
  static class PolicyCommand{
@@ -33,7 +34,7 @@ public class RetentionFixture {
  static class SystemClock {static long time=1000;static long elapsedRealtime(){return time;}}
  Map<Integer,Long> policyUsers(){return Collections.singletonMap(0,0L);}
  RetentionFixture()throws Exception{disk.write(AppPolicyStore.ACTIVE,AppPolicyStore.migrate("version=1\\n".getBytes(),"balance\\n".getBytes(),new byte[0],"balance","",policyUsers(),Collections.emptySet()).state.bytes());mAppPolicies=new AppPolicyStore(disk);}
-'''+java_encoder()+method+'''
+'''.replace('/* EXACT OBSERVATION */',observation)+java_encoder()+method+'''
  public static void main(String[] args)throws Exception{
  RetentionFixture f=new RetentionFixture();byte[] payload=new byte[8192];Arrays.fill(payload,(byte)71);
  int accepted=0,rejected=0;

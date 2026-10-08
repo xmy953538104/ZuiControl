@@ -122,7 +122,7 @@ inline bool accountCrash(const PrivateDir& root){
 inline bool crashGate(const std::string& path){PrivateDir root(path);return accountCrash(root);}
 
 class RuleStore {
-    PrivateDir root,generations;int lockFd=-1;std::string factory,factorySha;
+    PrivateDir root,generations;int lockFd=-1;std::string factory,factorySha;bool readOnly;
     RuleState load(const std::string& effective){
         RuleState state;if(effective.empty())return state;rules(effective);auto id=generationOf(effective);PrivateDir d(generations,id);
         require(d.get("effective.conf",RULE_LIMIT)==effective,"generation commit content");state.effective=effective;
@@ -249,13 +249,14 @@ public:
     inline static bool testBeforeCommit=false;
     inline static bool testAfterCommit=false;
 #endif
-    RuleStore(const std::string& path,const std::string& factoryText):root(path),generations(root,"generations",true),factory(factoryText){
-        rules(factory);factorySha=sha256(factory);lockFd=openat(root.fd,"manager.lock",O_RDWR|O_CREAT|O_CLOEXEC|O_NOFOLLOW,0600);
-        try{PrivateDir::file(lockFd);require(flock(lockFd,LOCK_EX)==0,"rule manager lock");}catch(...){if(lockFd>=0)close(lockFd);lockFd=-1;throw;}
+    RuleStore(const std::string& path,const std::string& factoryText,bool onlyRead=false):root(path),generations(root,"generations",!onlyRead),factory(factoryText),readOnly(onlyRead){
+        rules(factory);factorySha=sha256(factory);lockFd=openat(root.fd,"manager.lock",(readOnly?O_RDONLY:O_RDWR|O_CREAT)|O_CLOEXEC|O_NOFOLLOW,0600);
+        try{PrivateDir::file(lockFd);require(flock(lockFd,readOnly?LOCK_SH|LOCK_NB:LOCK_EX)==0,readOnly?"RULES_READ_BUSY":"rule manager lock");}catch(...){if(lockFd>=0)close(lockFd);lockFd=-1;throw;}
     }
     ~RuleStore(){if(lockFd>=0)close(lockFd);}
     RuleState current(){return load(root.get("effective.conf",RULE_LIMIT,true));}
     void initialize(){
+        require(!readOnly,"read-only store");
         auto s=current();if(s.canonical&&s.library)return;
         if(s.canonical){s.provenance="migration=UPSTREAM_LIBRARY_SEED\nprevious_effective_sha256="+sha256(s.user)+"\n";commit(s,randomId(),generationOf(s.effective));return;}
         // load() above verifies exact V1 merge once. Its immutable inputs remain untouched.
@@ -270,14 +271,28 @@ public:
         if(!root.exists("migration_factory.conf"))root.put("migration_factory.conf",factory,true);
         commit(s,randomId(),s.effective.empty()?"none":generationOf(s.effective));
     }
-    std::string state(){
-        auto s=current();require(!s.effective.empty(),"store not initialized");std::ostringstream out;
+    std::string state(){return state(current());}
+    std::string state(const RuleState& s){
+        require(!s.effective.empty(),"store not initialized");std::ostringstream out;
         out<<"settings_pending="<<trim(root.get("settings.pending",64,true))<<"\nstore_schema=ZUIOPT_CANONICAL_STATE_V3\ncanonical_sha256="<<sha256(s.user)<<"\nloaded_generation="<<trim(root.get("loaded-generation.v2",256,true))<<"\ngeneration="<<generationOf(s.effective)<<"\ntransaction="<<s.transaction<<"\nfactory_sha256="<<factorySha<<"\nuser_size="<<s.user.size()<<"\nuser_sha256="<<sha256(s.user)<<"\neffective_sha256="<<sha256(s.effective)<<'\n';
         out<<"upstream_sha256="<<sha256(s.upstream)<<"\nupstream_size="<<s.upstream.size()<<"\nupstream_metadata_size="<<s.upstreamMetadata.size()<<"\n";
         PrivateDir active(generations,generationOf(s.effective));auto previous=active.get("last_good.conf",RULE_LIMIT,true);
         out<<"previous_generation="<<(previous.empty()?"none":generationOf(previous))<<'\n';
         for(const auto& [id,p]:s.packs)out<<"pack="<<id<<'|'<<p.manifest.at("pack_version").text<<'|'<<p.manifest.at("pack_priority").text<<'|'<<s.enabled.count(id)<<'|'<<p.manifest.at("source_type").text<<'\n';
         require(out.str().size()<=4096,"state response bound");return out.str();
+    }
+    /** Existing canonical parser/lock; no staging, persistence or runtime placement. */
+    std::string readReply(const std::string& argument){
+        require(readOnly,"read-only store required");
+        bool snapshot=argument.rfind("snapshot|",0)==0;
+        require(argument=="state"||(snapshot&&generationId(argument.substr(9))),"rules read argument");
+        auto s=current();require(s.canonical&&s.library,"canonical library required");
+        if(snapshot)require(generationOf(s.effective)==argument.substr(9),"rules read generation changed");
+        auto status=state(s)+failureState()+"upstream_metadata_sha256="+sha256(s.upstreamMetadata)+"\nrules_read_transport=DAEMON_SNAPSHOT_V1\n";
+        require(status.size()<=4608,"rules read state bound");
+        if(!snapshot)return status;
+        auto reply="ZUIOPT_READ_SNAPSHOT_V1\nstate="+base64(status)+"\nuser="+base64(s.user)+"\nupstream="+base64(s.upstream)+"\nmetadata="+base64(s.upstreamMetadata)+"\n";
+        require(reply.size()<=200000,"rules read snapshot bound");return reply;
     }
     bool loaded(){
         auto effective=current().effective;auto receipt=fields(trim(root.get("loaded-generation.v2",256,true)),':');
@@ -290,6 +305,7 @@ public:
         return generation+":"+offsetText+":"+base64(s.user.substr(offset,8192));
     }
     std::string settings(const std::string& action,const std::string& tx,const std::string& value){
+        require(!readOnly,"read-only store");
         require(hex(tx,24),"settings transaction");auto s=current();require(s.canonical,"canonical required");
         auto lease=trim(root.get("settings.pending",64,true));
         const auto before="settings-"+tx+"-before.conf",target="settings-"+tx+"-target.conf";
@@ -327,6 +343,7 @@ public:
         return "canonical_sha256="+sha256(wanted);
     }
     std::string apply(const std::string& action,const std::string& id,const std::string& value){
+        require(!readOnly||action=="upstream_read","read-only store");
         auto s=current();require(s.canonical,"canonical migration required");
         require(!root.exists("settings.pending"),"settings restore recovery required");
         if(action=="upstream_read"){
@@ -421,6 +438,7 @@ public:
         return result+"failure_reason="+reason.substr(0,96)+"\nfailure_evidence_unix_seconds="+std::to_string(info.st_mtime)+"\n";
     }
     void resetFailure(){
+        require(!readOnly,"read-only store");
         CrashLock lock(root);
         require(failed(),"no persistent failure");
         // Validate both before deleting either. Clear failure last; partial I/O
@@ -428,7 +446,7 @@ public:
         root.get("failure.v1",128);root.get("crashes.v1",256,true);
         root.remove("crashes.v1");root.remove("failure.v1");
     }
-    void failure(){crashFailure(root);}
-    bool crash(){return accountCrash(root);}
+    void failure(){require(!readOnly,"read-only store");crashFailure(root);}
+    bool crash(){require(!readOnly,"read-only store");return accountCrash(root);}
 };
 }

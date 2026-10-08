@@ -31,7 +31,7 @@ fun main(){
         fetch=main.split('fun sharedRules(',1)[1].split('private var rulesRefreshPending',1)[0]
         self.assertEqual(fetch.count('ZuioptRules.state(context)'),1)
         self.assertIn('ZuioptRules.userRules(context,rs)',fetch);self.assertIn('ZuioptLibrary.baseline(context,rs)',fetch)
-        self.assertLess(fetch.index('progress("生效规则已读取'),fetch.index('val up=ZuioptLibrary.baseline'))
+        self.assertLess(fetch.index('progress("生效规则已读取'),fetch.index('val up=bulk?.let'))
         self.assertIn('rulesQualified=false',loader);self.assertIn('rulesQualified=true',loader)
         self.assertIn('if(session.section=="thread" && !rulesQualified)ownerPending()',main)
         self.assertIn('if(!rulesQualified)return',main.split('private fun openRule',1)[1].split('private fun threadApp',1)[0])

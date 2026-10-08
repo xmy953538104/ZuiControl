@@ -3,7 +3,9 @@ from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
 PLAN3_R9=json.loads((ROOT/'tests/product_plan3_autonomous_delta.json').read_text(encoding='utf-8'))
-R9_ALLOWED={'app/src/main/java/com/zui/zuicontrol/MainActivity.kt'}
+R9_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','ZuioptRead.kt','ZuioptRules.kt','ZuioptLibrary.kt')}
+R9_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('ZuiControlService.java','ZuioptSceneAuthority.java')}
+R9_ALLOWED|={'native/zuiopt/'+n for n in ('ZUIopt_binder.h','ZUIopt_daemon.h','ZUIopt_scene.h','ZUIopt_store.h')}
 assert set(PLAN3_R9['allowedPaths'])==R9_ALLOWED,'R9 explicit source boundary'
 PLAN3_UX=json.loads((ROOT/'tests/product_plan3_device_ux_delta.json').read_text(encoding='utf-8'))
 UX_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','ZuioptLibrary.kt','ZuioptRules.kt')}
@@ -219,7 +221,8 @@ def reverse_entries(current,*scopes):
         assert row['path'] in R9_ALLOWED
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['after'].encode())==1,('R9 exact authorized source',row['path'])
-        result.remove(row['after'].encode());result.append(row['before'].encode())
+        result.remove(row['after'].encode())
+        if row['before'] is not None:result.append(row['before'].encode())
     assert PLAN3_UX['baseHead']=='9c84b5535fa002f5740359c1e5351cd0922a7cea'
     for row in PLAN3_UX['files']:
         assert row['path'] in UX_ALLOWED

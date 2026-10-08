@@ -143,7 +143,47 @@ void canonicalMigrationTests(const fs::path& parent){
     puts("ZUIOPT_V1_CANONICAL_PARITY_AND_ACK=PASS");
 }
 #include "LibraryTest.h"
+void readOnlyTests(const fs::path& root){
+        // Read-only construction never creates a generation/manager/stage or changes any bytes.
+        auto allFiles=[&]{std::map<std::string,std::string> files;
+            for(const auto& e:fs::recursive_directory_iterator(root))if(e.is_regular_file())files[e.path().string()]=read(e.path().string());
+            return files;};
+        auto readonlyBefore=allFiles();
+        {
+            RuleStore reader(root.string(),BASE,true),second(root.string(),BASE,true);
+            auto state=reader.readReply("state"),generation=generationOf(reader.current().effective);
+            require(state.find("rules_read_transport=DAEMON_SNAPSHOT_V1")!=std::string::npos,"read transport identity");
+            auto frame=reader.readReply("snapshot|"+generation);
+            auto parts=fields(frame,'\n');require(parts.size()==6&&parts[0]=="ZUIOPT_READ_SNAPSHOT_V1","snapshot frame");
+            require(unbase64(parts[1].substr(6))==state&&unbase64(parts[2].substr(5))==reader.current().user&&unbase64(parts[3].substr(9))==reader.current().upstream&&unbase64(parts[4].substr(9))==reader.current().upstreamMetadata,"exact canonical snapshot bytes");
+            require(second.readReply("state")==state,"two shared readers");
+            for(auto arg:{"","state|x","snapshot|none","snapshot|g000000000000000000000000"})rejects([&]{reader.readReply(arg);});
+            rejects([&]{reader.initialize();});rejects([&]{reader.crash();});rejects([&]{reader.resetFailure();});
+            rejects([&]{reader.settings("settings_finish",randomId(),"");});
+            rejects([&]{reader.apply("rollback",generation,"");});rejects([&]{reader.apply("begin",randomId(),"");});
+            int writer=open((root/"manager.lock").c_str(),O_RDWR|O_CLOEXEC);
+            require(writer>=0&&flock(writer,LOCK_EX|LOCK_NB)!=0,"shared read excludes writer");close(writer);
+        }
+        require(allFiles()==readonlyBefore,"read-only zero file-byte changes");
+        {
+            RuleStore writer(root.string(),BASE);bool busy=false;
+            try{RuleStore reader(root.string(),BASE,true);}catch(const std::exception& e){busy=std::string(e.what())=="RULES_READ_BUSY";}
+            require(busy,"read fails promptly while writer holds canonical lock");
+        }
+        require(allFiles()==readonlyBefore,"contention does not mutate files");
+        puts("RULES_READ_CANONICAL_SNAPSHOT_ZERO_WRITES_SHARED_LOCK_WRITER_EXCLUSION=PASS");
+}
+
 int main(int argc,char** argv){
+    if(argc==2&&std::string(argv[1])=="readonly"){
+        try{
+            const char* temp=getenv("TMPDIR");std::string prefix=std::string(temp?temp:"/tmp")+"/ZUIopt-read-fixture-XXXXXX";
+            std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);require(mkdtemp(path.data()),"exclusive read fixture");
+            auto root=fs::path(path.data());{RuleStore writer(root.string(),BASE);writer.initialize();}
+            readOnlyTests(root);fs::remove_all(root);puts("ZUIOPT_FOCUSED_READ_FIXTURE=PASS");return 0;
+        }catch(const std::exception& e){std::cerr<<"READ_FIXTURE_FAIL "<<e.what()<<'\n';return 1;}
+    }
+
     signal(SIGPIPE,SIG_IGN);
     try{
         if(argc>=3){
@@ -302,6 +342,7 @@ int main(int argc,char** argv){
             puts("ZUIOPT_1000_COMMITS_BOUNDED_RETENTION_LOADED_ROLLBACK_PARTIAL_GC=PASS");
 
         }
+        readOnlyTests(root);
         // Only the exclusively created fixture directory, never a provided state path.
         require(root.filename().string().rfind("ZUIopt-fixture-",0)==0&&!fs::is_symlink(root),"fixture cleanup boundary");fs::remove_all(root);
         puts("ZUIOPT_NATIVE_RULE_MANAGER_TRANSACTION_TESTS=PASS");return 0;

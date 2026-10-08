@@ -45,8 +45,9 @@ struct CallbackState {
     bool accepting=true;unsigned inflight=0;
     std::function<void(int,int,int,int)> handler;
     std::function<void(int64_t)> sceneHandler;
+    std::function<std::string(const std::string&)> rulesHandler;
     explicit CallbackState(std::function<void(int,int,int,int)> f):handler(std::move(f)){}
-    explicit CallbackState(std::function<void(int64_t)> f):sceneHandler(std::move(f)){}
+    explicit CallbackState(std::function<void(int64_t)> f,std::function<std::string(const std::string&)> read={}):sceneHandler(std::move(f)),rulesHandler(std::move(read)){}
     void deliver(int code,int pid,int user,int value){
         {std::lock_guard<std::mutex> lock(mutex);if(!accepting)return;inflight++;}
         try {handler(code,pid,user,value);}
@@ -59,8 +60,14 @@ struct CallbackState {
         try{sceneHandler(seq);}catch(...){finish();throw;}
         finish();
     }
+    bool supportsRules(){std::lock_guard<std::mutex> lock(mutex);return accepting&&bool(rulesHandler);}
+    std::string readRules(const std::string& argument){
+        std::function<std::string(const std::string&)> read;
+        {std::lock_guard<std::mutex> lock(mutex);require(accepting&&bool(rulesHandler),"rules reader retired");read=rulesHandler;inflight++;}
+        try{auto result=read(argument);finish();return result;}catch(...){finish();throw;}
+    }
     void stopAccepting(){std::lock_guard<std::mutex> lock(mutex);accepting=false;}
-    void drain(){std::unique_lock<std::mutex> lock(mutex);drained.wait(lock,[this]{return inflight==0;});handler={};sceneHandler={};}
+    void drain(){std::unique_lock<std::mutex> lock(mutex);drained.wait(lock,[this]{return inflight==0;});handler={};sceneHandler={};rulesHandler={};}
 };
 struct Observer {
     using Holder=std::shared_ptr<CallbackState>;

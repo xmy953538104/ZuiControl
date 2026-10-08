@@ -9,6 +9,10 @@ class NativeTransportContract(unittest.TestCase):
         source=(BASE/'ZuiControlService.java').read_text(encoding='utf8')
         start=source.index('    private UtilityTransport utilities(')
         methods=source[start:source.index('    private Profile makeProfile(',start)]
+        # The separate daemon-read callback is executed by TestReadTransport.
+        # This fixture executes durable admission/result/ACK and observational invalidation.
+        read_start=methods.index('    /** Same admitted caller/user and canonical native owner;')
+        methods=methods[:read_start]+methods[methods.index('    private String requestRefused',read_start):]
         start=source.index('    private void retireSensitiveSettings(')
         methods+='\n'+source[start:source.index('    private synchronized String policyCommand(',start)]
         validators=source[source.index('    private static boolean validRequestId('):source.index('    private static int parseInt(')]

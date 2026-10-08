@@ -69,8 +69,10 @@ struct SceneFixture:RuntimeFixture {
     std::map<int,uint64_t> ownerModel;
     std::string directory;std::unique_ptr<Journal> journal;
     SceneFixture(){
-        require(fd>=0,"scene fixture eventfd");char path[]="/tmp/zuiopt-scene-XXXXXX";
-        require(mkdtemp(path),"exclusive journal fixture directory");directory=path;
+        require(fd>=0,"scene fixture eventfd");const char* temp=getenv("TMPDIR");
+        std::string prefix=std::string(temp?temp:"/tmp")+"/zuiopt-scene-XXXXXX";
+        std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);
+        require(mkdtemp(path.data()),"exclusive journal fixture directory");directory=path.data();
         journal=std::make_unique<Journal>(directory);
     }
     ~SceneFixture(){close(fd);journal.reset();std::filesystem::remove_all(directory);}
@@ -167,6 +169,40 @@ void callbackLifecycle(){
     puts("SCENE_CALLBACK_ZERO_PROC_SNAPSHOT_PM_PLACEMENT_ACK=PASS;UNREGISTER_DRAIN_JOIN=PASS");
 }
 
+void readCallbackLifecycle(){
+    int scenes=0,reads=0;
+    Observer::Holder holder=std::make_shared<CallbackState>(std::function<void(int64_t)>([&](int64_t){scenes++;}),
+        [&](const std::string& argument){reads++;return "response="+argument;});
+    AIBinder binder{&holder};
+    auto send=[&](const std::string& argument,bool trailing=false){
+        AParcel in{{string(argument)},0,true},out;
+        if(trailing)in.atoms.push_back(integer(0));
+        auto status=SceneObserver::transact(&binder,2,&in,&out);
+        if(status==STATUS_OK)require(out.atoms.size()==1&&out.atoms[0].kind=='s'&&out.atoms[0].text=="response="+argument,"plain String reply");
+        return status;
+    };
+    require(send("state")==STATUS_OK&&send("snapshot|g"+std::string(24,'a'))==STATUS_OK&&reads==2,"finite read callback");
+    caller=2000;require(send("state")==STATUS_PERMISSION_DENIED&&reads==2,"read sender permission");caller=1000;
+    for(auto argument:std::vector<std::string>{"","state|x","snapshot|g"+std::string(24,'A'),std::string(129,'x'),std::string("state\0x",7)})
+        require(send(argument)!=STATUS_OK,"malformed read rejected");
+    require(send("state",true)!=STATUS_OK&&reads==2,"trailing read rejected before owner");
+    AParcel input{{integer(1)},0,true},output;
+    require(SceneObserver::transact(&binder,2,&input,&output)!=STATUS_OK,"wrong read wire type");
+    holder->rulesHandler=[](const std::string&)->std::string{throw std::runtime_error("RULES_READ_BUSY");};
+    require(send("state")==STATUS_FAILED_TRANSACTION,"writer contention fails closed");
+    std::promise<void> enter,leave;auto release=leave.get_future();
+    holder->rulesHandler=[&](const std::string& s){enter.set_value();release.wait();return "response="+s;};
+    std::thread read([&]{require(send("state")==STATUS_OK,"in-flight read completes");});enter.get_future().wait();
+    AParcel scene{{{'w',10,{}}},0,true};
+    require(SceneObserver::transact(&binder,1,&scene,nullptr)==STATUS_OK&&scenes==1,"read handler does not hold callback lock");
+    holder->stopAccepting();std::atomic<bool> drained{false};
+    std::thread shutdown([&]{holder->drain();drained=true;});
+    require(send("state")!=STATUS_OK&&!drained,"no new reads during shutdown");
+    leave.set_value();read.join();shutdown.join();
+    require(drained&&send("state")!=STATUS_OK,"drained read lifetime");
+    puts("RULES_READ_CALLBACK_UID_FRAME_BOUNDS_CONTENTION_INFLIGHT_DRAIN=PASS");
+}
+
 void stressAndIdle(){
     std::mt19937 random(0x21c054);int dropPrimary=0,dropScene=0;
     for(int mode=0;mode<2;mode++){
@@ -214,5 +250,5 @@ void registrationWireAndWake(){
     puts("SCENE_PRIVATE_REGISTER_ACK_UNREGISTER_WIRE=PASS;CONCURRENT_EVENTFD_NO_LOST_WAKE=PASS");
 }
 
-int main(){try{sceneCases();callbackLifecycle();stressAndIdle();registrationWireAndWake();puts("ZUIOPT_SCENE_NATIVE=PASS");return 0;}
+int main(){try{sceneCases();callbackLifecycle();readCallbackLifecycle();stressAndIdle();registrationWireAndWake();puts("ZUIOPT_SCENE_NATIVE=PASS");return 0;}
 catch(const std::exception& e){std::cerr<<"SCENE_FAIL "<<e.what()<<'\n';return 1;}}

@@ -670,7 +670,7 @@ public final class ZuiControlService extends Binder {
                     if((flags & IBinder.FLAG_ONEWAY)!=0)throw new IllegalArgumentException("utility reply required");
                     String utilityAction=data.readString(),utilityArgument=data.readString();
                     if(data.dataAvail()!=0)throw new IllegalArgumentException("utility trailing data");
-                    result=("ack".equals(utilityAction)||"result".equals(utilityAction))
+                    result="rulesRead".equals(utilityAction)?rulesRead(utilityArgument):("ack".equals(utilityAction)||"result".equals(utilityAction))
                             ?utilityRead(utilityAction,utilityArgument):utilityCommand(utilityAction,utilityArgument);
                     break;
                 case TX_CONTROLS:
@@ -1066,8 +1066,8 @@ public final class ZuiControlService extends Binder {
                     PolicyJson.require(!excluded.contains(pkg)&&!excluded.contains(key)&&!isTransientPackage(pkg),"restore excluded policy target");
                 }
                 backup.restore(archive,argument,owner,PolicyCommand.rules(remote));
-                try{mObservedRuleGeneration=PolicyJson.string(PolicyCommand.rules(remote).snapshot().get("generation"));}
-                catch(Exception unavailable){mObservedRuleGeneration="UNAVAILABLE";}
+                try{observeRules("generation="+PolicyJson.string(PolicyCommand.rules(remote).snapshot().get("generation")));}
+                catch(Exception unavailable){invalidateRulesObservation();}
                 meta.put("completed",true);mAppPolicies.disk.write("settings-upload-"+argument+".json",PolicyJson.bytes(meta));
                 mAppPolicies.pruneCompleted();
             }else PolicyJson.require("sb_recover".equals(action),"settings action");
@@ -1460,10 +1460,43 @@ public final class ZuiControlService extends Binder {
     }
     // Read-only observation of the native authority. Invalidated BEFORE any admitted writer.
     private volatile String mObservedRuleGeneration="UNAVAILABLE";
-    private void observeRules(String state){
+    private long mRulesObservationEpoch;
+    private synchronized void invalidateRulesObservation(){mRulesObservationEpoch++;mObservedRuleGeneration="UNAVAILABLE";}
+    private synchronized void observeRules(String state){
         String generation="UNAVAILABLE";
         for(String line:state.split("\n"))if(line.matches("generation=g[0-9a-f]{24}"))generation=line.substring(11);
-        mObservedRuleGeneration=generation;
+        mRulesObservationEpoch++;mObservedRuleGeneration=generation;
+    }
+    private static boolean rulesWriter(String command){
+        return java.util.Arrays.asList("zo_commit","zo_rollback","zo_restore_app","zo_enable","zo_disable","sb_restore","sb_reset").contains(command);
+    }
+    /** Same admitted caller/user and canonical native owner; no durable request slot or writer lane. */
+    private String rulesRead(String argument){
+        final int user=Binder.getCallingUid()/100000;long token=Binder.clearCallingIdentity();
+        try{
+            Map<Integer,Long> inventory=policyUsers();AppPolicyStore.State current=mAppPolicies==null?null:mAppPolicies.current;
+            PolicyJson.require(current!=null&&inventory.containsKey(user)
+                    &&(!current.users.containsKey(user)||java.util.Objects.equals(current.users.get(user),inventory.get(user))),"user_inventory_not_admitted");
+            final long epoch;synchronized(this){epoch=mRulesObservationEpoch;}
+            String result=mZuioptScene.readRules(argument);
+            String state=result;
+            if(!"state".equals(argument)){
+                String[] parts=result.split("\n",-1);
+                PolicyJson.require(parts.length==6&&parts[0].equals("ZUIOPT_READ_SNAPSHOT_V1")&&parts[1].startsWith("state="),"rules snapshot frame");
+                state=new String(java.util.Base64.getDecoder().decode(parts[1].substring(6)),StandardCharsets.UTF_8);
+            }
+            PolicyJson.require(state.length()<=4608&&state.contains("\nrules_read_transport=DAEMON_SNAPSHOT_V1\n"),"rules read state");
+            synchronized(this){
+                // Durable admission closes the admitted-before-native-lock window.
+                // Epoch changes on invalidation AND terminal observation reject older in-flight reads.
+                byte[] admission=mAppPolicies.disk.read("control-admission.json");
+                boolean settled=admission.length==0||Boolean.TRUE.equals(PolicyJson.object(PolicyJson.parse(admission)).get("terminal"));
+                if(epoch==mRulesObservationEpoch&&settled)observeRules(state);
+            }
+            return "ok=1\nresultCategory=AUTHORITATIVE_READ_ONLY\nreadData="+result;
+        }catch(ZuioptSceneAuthority.OwnerAbsentException absent){return "ok=0\nerror=rules_read_owner_absent";}
+        catch(Exception e){return "ok=0\nerror=rules_read:"+e.getClass().getSimpleName()+":"+safe(e.getMessage());}
+        finally{Binder.restoreCallingIdentity(token);}
     }
     private String requestRefused(int user,String id,String error){
         String category="INDETERMINATE_OR_IN_PROGRESS";
@@ -1515,7 +1548,7 @@ public final class ZuiControlService extends Binder {
             if("submit".equals(action)){
                 id=argument==null?"":argument.split("\\|",-1)[0];
                 UtilityTransport.Request request=UtilityTransport.fields(argument);
-                if(request.command.equals("zo_commit")||request.command.equals("zo_rollback")||request.command.equals("zo_restore_app")||request.command.equals("zo_enable")||request.command.equals("zo_disable")||request.command.equals("sb_restore")||request.command.equals("sb_reset"))mObservedRuleGeneration="UNAVAILABLE";
+                if(rulesWriter(request.command))invalidateRulesObservation();
                 if(user!=0&&((request.command.startsWith("sb_")&&!request.command.equals("sb_reset"))||request.command.equals("export_logs")))
                     return requestRefused(user,id,request.command.startsWith("sb_")?"settings_primary_user_required":"diagnostic_primary_user_required");
                 transport.stage(user,argument);
@@ -1681,6 +1714,7 @@ public final class ZuiControlService extends Binder {
                     &&activeToken.startsWith("u"+policyCallerUser+"_"+admitted.sequence+"_")
                     &&"running".equals(SystemProperties.get("init.svc.zui_control_request", "")))
                 return "ok=1\nresultCategory=INDETERMINATE_OR_IN_PROGRESS\nrequestId="+id+"\ncommandSeq="+activeToken;
+            if(rulesWriter(request.command))invalidateRulesObservation();
             mAppPolicies.disk.write("control-admission.json",PolicyJson.bytes(PolicyJson.map("identity",admitted.json(),"terminal",false)));
             String token="u"+policyCallerUser+"_"+admitted.sequence+"_"+Long.toHexString(SystemClock.elapsedRealtimeNanos());
             if (!id.equals(SystemProperties.get(PROP_COMMAND_ID, ""))) {
@@ -2568,6 +2602,7 @@ public final class ZuiControlService extends Binder {
                 + "\nfpsCapPhase=not_delivered"
                 + "\nintegrationSchema=V83\nappPolicySchema="+(mAppPolicies==null||mAppPolicies.current==null?"UNAVAILABLE":mAppPolicies.current.schema)
                 + "\nzuioptSchema=2\nthreadCpuIds=0,1,2,3,4,5,6,7\nthreadTopology=SM8650_LOGICAL_CPU_IDS"
+                + "\nrulesReadTransport=DAEMON_SNAPSHOT_V1"
                 + "\nthreadCpuConvention=ONE_CORE_100_PERCENT\nrecordThreadCoverage=TOP15_OBSERVED"
                 + "\nfpsSource=DISPLAY_MEASURED_FPS\npowerSource=DEVICE_BATTERY_DISCHARGE"
                 + "\nruleScope=DEVICE_GLOBAL_PACKAGE\nappPolicyScope=ANDROID_USER"

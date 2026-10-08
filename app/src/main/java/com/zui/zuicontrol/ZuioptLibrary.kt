@@ -19,6 +19,7 @@ object ZuioptLibrary {
     fun baseline(context: Context): Baseline = baseline(context, ZuioptRules.state(context))
 
     internal fun baseline(context: Context, state: String): Baseline {
+        ZuioptRead.snapshot(state)?.let { return Baseline(ZuioptRules.field(it.state,"generation"),ZuioptRules.field(it.state,"upstream_sha256"),it.upstream,JSONObject(it.metadata)) }
         val generation=ZuioptRules.field(state,"generation")
         require(generation.matches(Regex("g[0-9a-f]{24}")))
         fun read(kind: String,size: Int): ByteArray {
