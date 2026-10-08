@@ -6,6 +6,7 @@ PLAN3_DOMAIN=json.loads((ROOT/'tests/product_plan3_domain_latency_delta.json').r
 DOMAIN_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('BackendHealth.kt','MainActivity.kt','OwnerUi.kt','OwnerRenderTrace.kt','ZuiControlRequest.kt','FrontendGateway.kt')}
 DOMAIN_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('PolicyCommand.java','PolicyRuntimePlan.java','ZuiControlService.java')}
 DOMAIN_ALLOWED|={'native/command/Projection.h','payload/system/bin/zui_control_request'}
+DOMAIN_ALLOWED.add('app/src/test/java/com/zui/zuicontrol/BackendHealthTest.kt')
 DOMAIN_ALLOWED|={'app/src/main/res/'+n for n in ('animator/owner_ping_fade.xml','animator/owner_ping_scale.xml','drawable/owner_ping_halo.xml','drawable/owner_ping_vector.xml','interpolator/owner_ping_ease.xml')}
 assert set(PLAN3_DOMAIN['allowedPaths'])==DOMAIN_ALLOWED,'R7 explicit source boundary'
 PLAN3_OVERNIGHT=json.loads((ROOT/'tests/product_plan3_overnight_delta.json').read_text(encoding='utf-8'))
