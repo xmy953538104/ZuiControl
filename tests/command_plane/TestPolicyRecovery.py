@@ -28,7 +28,11 @@ def main(prefix):
     harness=Path(__file__).with_name('RecoveryFixture.java').read_text(encoding='utf8')
     harness=harness.replace('/* ADMISSION */',admission).replace('/* POLICY */',policy)
     start=source.index('    private String requestRefused(')
-    refusal=source[start:source.index('    private synchronized String utilityCommand(',start)]
+    end=source.index('{',start)+1
+    depth=1
+    while depth:
+        depth+=(source[end]=='{')-(source[end]=='}');end+=1
+    refusal=source[start:end]
     start=source.index('    private static boolean validRequestId(')
     refusal+=source[start:source.index('    private static boolean validSha256(',start)]
     harness=harness.replace('/* REFUSAL */',refusal)
