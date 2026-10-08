@@ -16,10 +16,10 @@ class FrontendV3(unittest.TestCase):
         self.assertIn('"thread"->{loadState();loadInventory();loadRules()}',load)
         self.assertNotIn('ZuioptLibrary.baseline',load)
         rules=main.split('private fun loadRules()',1)[1].split('private fun loadRecords()',1)[0]
-        self.assertNotIn('shared=true',rules);self.assertIn('cached?.matches(rs)==true',rules)
+        self.assertNotIn('shared=true',rules);self.assertIn('cached?.matches(rs)==true',main)
         self.assertIn('FrontendTransport.commandRead {',read('ZuioptRules.kt'))
         self.assertIn('FrontendTransport.commandRead {',read('ZuioptLibrary.kt'))
-        self.assertIn('ZuioptLibrary.baseline(applicationContext,rs)',rules)
+        self.assertIn('ZuioptLibrary.baseline(context,rs)',main)
         self.assertIn('session.read { runCatching { ZuiControlRequest.recoverPending(appContext) } }',main)
         reader=session.split('fun read(task:()->Unit)',1)[1].split('private fun finishClose()',1)[0]
         self.assertIn('if (closing) return',reader);self.assertIn('executor.execute',reader)

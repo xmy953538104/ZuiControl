@@ -2,6 +2,9 @@
 from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
+PLAN3_R9=json.loads((ROOT/'tests/product_plan3_autonomous_delta.json').read_text(encoding='utf-8'))
+R9_ALLOWED={'app/src/main/java/com/zui/zuicontrol/MainActivity.kt'}
+assert set(PLAN3_R9['allowedPaths'])==R9_ALLOWED,'R9 explicit source boundary'
 PLAN3_UX=json.loads((ROOT/'tests/product_plan3_device_ux_delta.json').read_text(encoding='utf-8'))
 UX_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','ZuioptLibrary.kt','ZuioptRules.kt')}
 UX_ALLOWED.add('framework_patch/src/services/com/zui/server/control/ZuiControlService.java')
@@ -43,6 +46,13 @@ INTEGRATION=json.loads((ROOT/'tests/backend_monitor_settings_delta.json').read_t
 MANIFEST=json.loads((ROOT/'tests/backend_abc_delta.json').read_text(encoding='utf-8'))
 
 def reverse_text(path,text):
+    change=next((r for r in PLAN3_R9['files'] if r['path']==path),None)
+    if change:
+        assert path in R9_ALLOWED
+        assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('R9 exact authorized bytes',path)
+        assert len(change['hunks'])==1 and change['hunks'][0]['after']==text
+        text=change['hunks'][0]['before']
+        assert hashlib.sha256(text.encode()).hexdigest()==change['beforeSha256'],('R9 immutable R8 base',path)
     change=next((r for r in PLAN3_UX['files'] if r['path']==path),None)
     if change:
         assert change['path'] in UX_ALLOWED
@@ -204,6 +214,12 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
+    assert PLAN3_R9['baseHead']=='5f7754404efdcf378a380fc1e1a2a54dc851d704'
+    for row in PLAN3_R9['files']:
+        assert row['path'] in R9_ALLOWED
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['after'].encode())==1,('R9 exact authorized source',row['path'])
+        result.remove(row['after'].encode());result.append(row['before'].encode())
     assert PLAN3_UX['baseHead']=='9c84b5535fa002f5740359c1e5351cd0922a7cea'
     for row in PLAN3_UX['files']:
         assert row['path'] in UX_ALLOWED

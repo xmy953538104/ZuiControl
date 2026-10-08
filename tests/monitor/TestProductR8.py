@@ -28,19 +28,20 @@ fun main(){
     def test_progress_and_stationary_page_contract(self):
         main=(APP/'MainActivity.kt').read_text('utf8');rules=(APP/'ZuioptRules.kt').read_text('utf8');up=(APP/'ZuioptLibrary.kt').read_text('utf8')
         loader=main.split('private fun loadRules()',1)[1].split('private fun loadRecords()',1)[0]
-        self.assertEqual(loader.count('ZuioptRules.state(applicationContext)'),1)
-        self.assertIn('ZuioptRules.userRules(applicationContext,rs)',loader);self.assertIn('ZuioptLibrary.baseline(applicationContext,rs)',loader)
-        self.assertLess(loader.index('progress("生效规则已读取'),loader.index('val up=ZuioptLibrary.baseline'))
+        fetch=main.split('fun sharedRules(',1)[1].split('private var rulesRefreshPending',1)[0]
+        self.assertEqual(fetch.count('ZuioptRules.state(context)'),1)
+        self.assertIn('ZuioptRules.userRules(context,rs)',fetch);self.assertIn('ZuioptLibrary.baseline(context,rs)',fetch)
+        self.assertLess(fetch.index('progress("生效规则已读取'),fetch.index('val up=ZuioptLibrary.baseline'))
         self.assertIn('rulesQualified=false',loader);self.assertIn('rulesQualified=true',loader)
         self.assertIn('if(session.section=="thread" && !rulesQualified)ownerPending()',main)
         self.assertIn('if(!rulesQualified)return',main.split('private fun openRule',1)[1].split('private fun threadApp',1)[0])
-        self.assertIn('else installed.mapNotNull',main)
+        self.assertIn('if(model==null)emptyList() else installed.mapNotNull',main)
         page=main.split('private fun render()',1)[1].split('private fun buildMaster()',1)[0]
         for forbidden in ('next.alpha=0','next.translationY','next.animate()', 'previous.animate()'):self.assertNotIn(forbidden,page)
         self.assertIn('pageHost.removeViewAt(i)',page);self.assertIn('OwnerRenderTrace.event("PAGE_CHANGED",page)',page)
         self.assertIn('check(digest(data) == field(state, "user_sha256"))',rules)
         self.assertIn('part[0]==generation&&part[1]==out.size().toString()',up)
         self.assertIn('check(ZuioptRules.digest(bytes)==hash)',up)
-        self.assertIn('RULES_USER_PARSED',loader);self.assertIn('RULES_UPSTREAM_PARSED',loader)
+        self.assertIn('RULES_USER_PARSED',fetch);self.assertIn('RULES_UPSTREAM_PARSED',fetch)
 
 if __name__=='__main__':unittest.main()

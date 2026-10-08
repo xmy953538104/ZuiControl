@@ -56,8 +56,13 @@ class MainActivity : Activity() {
     private var toastView: View? = null
     private val ownerControls=mutableListOf<View>()
     private fun <T:View> ownerControl(view:T):T {ownerControls+=view;return view}
+    private val rulesPendingViews=java.util.IdentityHashMap<View,Pair<Boolean,Float>>()
+    private fun restoreRulesPending() {
+        rulesPendingViews.forEach{(view,saved)->view.isEnabled=saved.first;view.alpha=saved.second}
+        rulesPendingViews.clear()
+    }
     private fun ownerPending() {
-        fun disable(v:View){v.isEnabled=false;if(v is ViewGroup)for(i in 0 until v.childCount)disable(v.getChildAt(i))}
+        fun disable(v:View){rulesPendingViews.putIfAbsent(v,v.isEnabled to v.alpha);v.isEnabled=false;if(v is ViewGroup)for(i in 0 until v.childCount)disable(v.getChildAt(i))}
         ownerControls.forEach{disable(it);it.alpha=.6f}
         fun visit(v:View){
             if(v is OwnerSegment || v is GpuRangeBar || v.tag=="owner-control" || v.tag=="owner-button"){
@@ -77,15 +82,15 @@ class MainActivity : Activity() {
     private var state = ""
     private var caps = ""
     private var policies: ZuiControlClient.AppPolicies? = null
-    private var snapshot: ZuioptRules.Snapshot? = null
-    private var model: ZuioptRuleModel? = null
-    private var baseline: ZuioptLibrary.Baseline? = null
-    private var upstreamModel: ZuioptRuleModel? = null
-    private var ruleState = ""
+    private var snapshot: ZuioptRules.Snapshot? = rulesCache?.current
+    private var model: ZuioptRuleModel? = rulesCache?.model
+    private var baseline: ZuioptLibrary.Baseline? = rulesCache?.baseline
+    private var upstreamModel: ZuioptRuleModel? = rulesCache?.upstream
+    private var ruleState = rulesCache?.state.orEmpty()
     private var ruleError = ""
     private var rulesQualified = false
     private var ruleLoadStage = "正在连接原生规则…"
-    /** Parsed immutable rules only; every reuse first validates fresh native identity. */
+    /** Last verified presentation; editing always waits for fresh native identity. */
     private data class LoadedRules(val state:String,val current:ZuioptRules.Snapshot,val model:ZuioptRuleModel,
         val baseline:ZuioptLibrary.Baseline,val upstream:ZuioptRuleModel) {
         fun matches(fresh:String):Boolean = current.generation==ZuioptRules.field(fresh,"generation") &&
@@ -95,7 +100,39 @@ class MainActivity : Activity() {
                     ZuioptRules.field(state,it).isNotEmpty() && ZuioptRules.field(state,it)==ZuioptRules.field(fresh,it)
                 }
     }
-    private companion object { @Volatile var rulesCache:LoadedRules?=null }
+    private companion object {
+        @Volatile var rulesCache:LoadedRules?=null
+        private var rulesRead:java.util.concurrent.FutureTask<LoadedRules>?=null
+        private val rulesReadLock=Any()
+        /** Coalesce only an in-flight read. Later visits still validate native identity. */
+        fun sharedRules(context:Context,progress:(String)->Unit):LoadedRules {
+            var start=false
+            val task=synchronized(rulesReadLock){
+                rulesRead?.takeUnless{it.isDone} ?: java.util.concurrent.FutureTask {
+                    val rs=ZuioptRules.state(context)
+                    val cached=rulesCache
+                    val fresh=if(cached?.matches(rs)==true)cached.copy(state=rs) else {
+                        progress("正在读取生效规则…")
+                        val current=ZuioptRules.userRules(context,rs)
+                        val userParse=SystemClock.elapsedRealtimeNanos();val parsed=ZuioptRuleModel.parseNormalized(current.text)
+                        OwnerRenderTrace.event("RULES_USER_PARSED","parse_ms=${(SystemClock.elapsedRealtimeNanos()-userParse)/1e6}")
+                        progress("生效规则已读取，正在校验上游来源…")
+                        val up=ZuioptLibrary.baseline(context,rs)
+                        check(current.generation==up.generation){"规则版本变化，请刷新"}
+                        val upParse=SystemClock.elapsedRealtimeNanos();val upstream=ZuioptRuleModel.parseNormalized(up.rules)
+                        OwnerRenderTrace.event("RULES_UPSTREAM_PARSED","parse_ms=${(SystemClock.elapsedRealtimeNanos()-upParse)/1e6}")
+                        LoadedRules(rs,current,parsed,up,upstream)
+                    }
+                    fresh.also{rulesCache=it}
+                }.also{rulesRead=it;start=true}
+            }
+            if(start)task.run()
+            try{return task.get()}
+            catch(error:java.util.concurrent.ExecutionException){throw error.cause ?: error}
+            finally{synchronized(rulesReadLock){if(rulesRead===task && task.isDone)rulesRead=null}}
+        }
+    }
+    private var rulesRefreshPending=false
     private var records = JSONArray()
     private var installed = emptyList<ApplicationInfo>()
     private var appMetadata=emptyMap<String,FrontendPackages.Entry>()
@@ -201,9 +238,9 @@ class MainActivity : Activity() {
         if(visible && !isDestroyed)when(feature){
             "appPolicy"->loadPolicies()
             "gpuDefaults"->loadState()
-            "rules"->loadRules()
+            "rules"->{rulesRefreshPending=true;loadRules()}
             "records"->loadRecords()
-            "restore"->{loadPolicies();loadRules();if(session.section=="settings" && session.settingsModule==1)loadState()}
+            "restore"->{loadPolicies();rulesRefreshPending=true;loadRules();if(session.section=="settings" && session.settingsModule==1)loadState()}
             "diagnostics"->loadState()
         }
     }
@@ -257,7 +294,7 @@ class MainActivity : Activity() {
     override fun onDestroy() { cpuSparklines.close(); super.onDestroy() }
     private val loading = mutableSetOf<String>()
     /** Each operation consumes its own transport result and presents on the main thread. */
-    private fun <T,R> read(name:String, shared:Boolean=false, accept:()->Boolean={true}, finished:()->Unit={}, fetch:()->T, parse:(T)->R, present:(R)->Unit) {
+    private fun <T,R> read(name:String, shared:Boolean=false, accept:()->Boolean={true}, finished:()->Unit={}, failed:(Throwable)->Unit={session.error=it.message.orEmpty();if(visible)render()}, fetch:()->T, parse:(T)->R, present:(R)->Unit) {
         if(!loading.add(name))return
         val queued=SystemClock.elapsedRealtimeNanos()
         val task={
@@ -268,7 +305,7 @@ class MainActivity : Activity() {
                 if(!isDestroyed && accept()) {
                     val presentationStart=SystemClock.elapsedRealtimeNanos()
                     finished()
-                    result.mapCatching{present(it)}.onFailure{session.error=it.message.orEmpty();if(visible)render()}
+                    result.mapCatching{present(it)}.onFailure(failed)
                     OwnerRenderTrace.event("READ_TIMING",JSONObject().put("operation",name).put("lane",if(shared)"SHARED_COMMAND_LANE" else "DIRECT_READ_LANE")
                         .put("queue_wait_ms",(start-queued)/1e6).put("binder_or_command_ms",(fetched-start)/1e6)
                         .put("parse_ms",(parsed-fetched)/1e6).put("presentation_ms",(SystemClock.elapsedRealtimeNanos()-presentationStart)/1e6).toString())
@@ -277,7 +314,7 @@ class MainActivity : Activity() {
             Unit
         }
         try { if(shared)session.read(task)else session.directRead(task) }
-        catch(_:java.util.concurrent.RejectedExecutionException){loading.remove(name);finished();session.error="读取请求过多，请重试";if(visible)render()}
+        catch(error:java.util.concurrent.RejectedExecutionException){loading.remove(name);finished();failed(IllegalStateException("读取请求过多，请重试",error))}
     }
     private var stateRefreshPending=false
     private fun loadState() {
@@ -318,39 +355,26 @@ class MainActivity : Activity() {
     }
     private fun loadRules() {
         if("rules" in loading)return
-        rulesQualified=false;ruleLoadStage="正在校验原生规则…";ruleError="";ruleState=""
-        snapshot=null;model=null;baseline=null;upstreamModel=null
+        rulesRefreshPending=false
+        rulesQualified=false;ruleLoadStage="正在校验原生规则…";ruleError=""
         if(visible && session.section=="thread")render()
-        fun progress(stage:String,rs:String,current:ZuioptRules.Snapshot?=null,parsed:ZuioptRuleModel?=null) {
+        fun progress(stage:String) {
             handler.post {
                 if(!isDestroyed) {
-                    ruleState=rs;ruleLoadStage=stage
-                    if(current!=null){snapshot=current;model=parsed}
+                    ruleLoadStage=stage
                     OwnerRenderTrace.event("RULES_STAGE",stage)
                     if(visible && session.section=="thread")render()
                 }
             }
         }
-        read("rules",fetch={
-        val rs=ZuioptRules.state(applicationContext)
-        val cached=rulesCache
-        if(cached?.matches(rs)==true)cached.copy(state=rs)
-        else {
-            progress("正在读取生效规则…",rs)
-            val current=ZuioptRules.userRules(applicationContext,rs)
-            val userParse=SystemClock.elapsedRealtimeNanos();val parsed=ZuioptRuleModel.parseNormalized(current.text)
-            OwnerRenderTrace.event("RULES_USER_PARSED","parse_ms=${(SystemClock.elapsedRealtimeNanos()-userParse)/1e6}")
-            progress("生效规则已读取，正在校验上游来源…",rs,current,parsed)
-            val up=ZuioptLibrary.baseline(applicationContext,rs)
-            check(current.generation==up.generation){"规则版本变化，请刷新"}
-            val upParse=SystemClock.elapsedRealtimeNanos();val upstream=ZuioptRuleModel.parseNormalized(up.rules)
-            OwnerRenderTrace.event("RULES_UPSTREAM_PARSED","parse_ms=${(SystemClock.elapsedRealtimeNanos()-upParse)/1e6}")
-            LoadedRules(rs,current,parsed,up,upstream)
-        }
-    },parse={it}) { fresh ->
+        read("rules",finished={if(rulesRefreshPending)handler.post{if(!isDestroyed)loadRules()}},failed={error->
+            rulesQualified=false;ruleError=error.message.orEmpty();ruleLoadStage="校验失败，可重试"
+            if(visible && session.section=="thread")render()
+        },fetch={sharedRules(applicationContext,::progress)},parse={it}) { fresh ->
         ruleState=fresh.state;snapshot=fresh.current;model=fresh.model;baseline=fresh.baseline;upstreamModel=fresh.upstream;ruleError=""
         rulesCache=fresh;rulesQualified=true;ruleLoadStage="";OwnerRenderTrace.event("RULES_STAGE","READY")
-        if(session.section=="thread" && session.selected.isNotEmpty() && session.ruleDraft==null)openRule(session.selected)
+        if(session.section=="thread" && session.selected.isNotEmpty() &&
+            (session.ruleDraft==null || session.ruleDraft?.let{!it.dirty && it.generation!=fresh.current.generation}==true))openRule(session.selected)
         if(visible)render()
         }
     }
@@ -483,11 +507,12 @@ class MainActivity : Activity() {
     /** Page changes are local; scalar/control/draft callbacks bind existing views. */
     private fun render() {
         if (ownerModal?.isOpen == true) return
+        restoreRulesPending()
         if(!::physicalHost.isInitialized)createShell()
         railBindings.forEach{it()}
         val listFingerprint=when(session.section){
             "tune"->"$inventoryVersion/${policies?.apps?.map{it.draft.let{d->listOf(d.packageName,d.refreshHz,d.uperfMode,d.gpuPolicy,d.gpuMinMHz,d.gpuMaxMHz)}}}/${if(session.newApp)session.appDraft else null}"
-            "thread"->"${snapshot?.generation}/$rulesQualified/${installed.map{it.packageName}}"
+            "thread"->"${snapshot?.generation}/$inventoryVersion"
             "monitor"->records.toString()
             else->"settings"
         }
@@ -503,7 +528,8 @@ class MainActivity : Activity() {
         // non-editable unavailable page; range edits never participate in page identity.
         if(session.section=="settings" && session.settingsModule==1 && session.gpuDraft==null)
             runCatching{session.gpuDraftFrom(state)}
-        val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage/$recordThreads/${selectedThread?.optString("key")}/$rawPage/${preview?.hashCode()}/${caps.isNotEmpty()}/${session.gpuAuthority!=null}/${session.appDraft!=null}/${session.ruleDraft!=null}/${session.gpuDraft!=null}/${selectedRecord?.optLong("recordId")}/$recordDetailLoading/$threadDetailLoading/${analysisPage && analysis!=null}/${if(session.section=="thread")ruleLoadStage else ""}"
+        val rulesPage=if(session.section=="thread")"${snapshot?.generation}/$ruleError/${ZuioptRules.field(ruleState,"failure")}/${ZuioptRules.field(ruleState,"failure_reason")}" else ""
+        val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage/$recordThreads/${selectedThread?.optString("key")}/$rawPage/${preview?.hashCode()}/${caps.isNotEmpty()}/${session.gpuAuthority!=null}/${session.appDraft!=null}/${session.ruleDraft!=null}/${session.gpuDraft!=null}/${selectedRecord?.optLong("recordId")}/$recordDetailLoading/$threadDetailLoading/${analysisPage && analysis!=null}/$rulesPage"
         if(page!=shownPage) {
         shownPage=page;cpuSparklines.cancel();pageBindings.clear();controlBindings.clear()
         for(i in pageHost.childCount-1 downTo 0){
@@ -623,7 +649,7 @@ class MainActivity : Activity() {
 
         val rows = when (session.section) {
             "tune" -> (policies?.apps.orEmpty().map{it.draft}+listOfNotNull(session.appDraft?.takeIf{session.newApp && policies?.apps.orEmpty().none{p->p.draft.packageName==it.packageName}})).map { Triple(it.packageName, name(it.packageName), "${it.refreshHz} Hz · ${modeTitle(it.uperfMode)}") }
-            "thread" -> if(!rulesQualified)emptyList() else installed.mapNotNull { app ->
+            "thread" -> if(model==null)emptyList() else installed.mapNotNull { app ->
                 val p = model?.appProfile(app.packageName) ?: return@mapNotNull null
                 val source = provenance(app.packageName)
                 if (filter == 1 && source != "UPSTREAM" || filter == 2 && source !in setOf("USER_MODIFIED", "USER_CREATED")) return@mapNotNull null
@@ -925,6 +951,7 @@ class MainActivity : Activity() {
 
     private fun saveDraft(after: (() -> Unit)? = null) {
         if (session.busy) return
+        if(session.section=="thread" && !rulesQualified){toast("规则校验尚未完成，请重试");return}
         val app = session.appDraft; val gpu = session.gpuDraft; val rule = session.ruleDraft
         if (app != null) { session.saveApp(after); return }
         if (gpu != null) { session.saveGpu(after); return }
@@ -1049,10 +1076,13 @@ class MainActivity : Activity() {
         statusHost.contentDescription="$status · ${health?.reason.orEmpty()}"
         }
         detail.addView(owner.title("线程调度","ZUIopt · 按线程 / 任务的 CPU 放置（cpuset / affinity）",trailing=statusHost))
-        if (ruleError.isNotEmpty()) detail.addView(owner.empty("规则暂不可用",ruleError,true), gap())
+        if (ruleError.isNotEmpty()) {
+            detail.addView(owner.empty("规则暂不可用",ruleError,true), gap())
+            detail.addView(owner.button("重试",small=true){loadRules()}.apply{tag="rules-retry"},gap())
+        }
         if (ZuioptRules.field(ruleState, "failure") == "1") detail.addView(actionRow("ZUIopt 已进入故障保护", ZuioptRules.field(ruleState, "failure_reason") + " · 下次开机重新启用") {
-            confirm("下次开机重新启用？", "本次开机继续由 Android 调度，不会立即重启。") { session.work("已安排") { ZuioptRules.command(applicationContext, "reset") } }
-        }, gap())
+            if(rulesQualified)confirm("下次开机重新启用？", "本次开机继续由 Android 调度，不会立即重启。") { if(rulesQualified)session.work("已安排") { ZuioptRules.command(applicationContext, "reset") } }
+        }.apply{tag="owner-control"}, gap())
         val b = baseline
         detail.addView(card().apply {
             addView(owner.section("当前规则集",b?.metadata?.let { listOf(it.optString("source").ifBlank{"来源未提供"},it.optString("sourceVersion")).filter{it.isNotBlank()}.joinToString(" · ") } ?: ruleLoadStage,owner.row().apply {
@@ -1060,16 +1090,22 @@ class MainActivity : Activity() {
             addView(owner.button("查看原文",small=true,icon=R.drawable.owner_code){rawView()})
 
             }))
-            addView(note(b?.let { listOf(it.metadata.optString("sourceDate"),it.metadata.optString("sourceCommit"),"生效 generation ${it.generation}").filter{it.isNotBlank()}.joinToString(" · ") } ?: ZuioptRules.field(ruleState,"generation").let{if(it.isEmpty())"规则校验完成后即可编辑；系统运行状态已单独读取" else "生效 generation $it · $ruleLoadStage"}))
-            val apps=installed.filter { model?.appProfile(it.packageName)!=null }
-            val counts=listOf(apps.size,model?.profiles?.values?.sumOf{it.rules.size} ?: 0,apps.count{provenance(it.packageName) in setOf("USER_MODIFIED","USER_CREATED")})
+            val metadata=note("");addView(metadata)
+            bindPresentation{metadata.text=if(!rulesQualified)listOfNotNull(snapshot?.generation?.let{"上次校验 generation $it"},ruleLoadStage).joinToString(" · ") else this@MainActivity.baseline?.let {
+                listOf(it.metadata.optString("sourceDate"),it.metadata.optString("sourceCommit"),"生效 generation ${it.generation}").filter{it.isNotBlank()}.joinToString(" · ")
+            }.orEmpty()}
             addView(owner.row().apply {
                 listOf("规则应用","特殊线程规则","我的修改 / 新建").forEachIndexed{i,title->
                     if(i>0)addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(dp(1),dp(50)))
                     addView(owner.column().apply {
                         setPadding(if(i>0)dp(18)else 0,dp(2),dp(18),dp(2))
                         addView(owner.row().apply{
-                            addView(owner.label(if(model==null || i==2 && !rulesQualified)"--" else counts[i].toString(),24f,owner.text,800))
+                            val count=owner.label("--",24f,owner.text,800);addView(count)
+                            bindPresentation{
+                                val apps=installed.filter { model?.appProfile(it.packageName)!=null }
+                                val value=when(i){0->apps.size;1->model?.profiles?.values?.sumOf{it.rules.size} ?: 0;else->apps.count{provenance(it.packageName) in setOf("USER_MODIFIED","USER_CREATED")}}
+                                count.text=if(model==null)"--" else value.toString()
+                            }
                             addView(owner.label(if(i==1)"条" else "个",12f,owner.sub,700),LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(3);topMargin=dp(8)})
                         },LinearLayout.LayoutParams(-1,dp(24)))
                         addView(owner.label(title,11f,owner.muted),LinearLayout.LayoutParams(-1,dp(16)).apply{topMargin=dp(6)})
@@ -1082,11 +1118,11 @@ class MainActivity : Activity() {
             addView(owner.label("规则库",11.5f,owner.muted,800),LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(4)})
             // Deferred feed has no manual-import affordance. Existing feed logic stays disabled.
             val previous=ZuioptRules.field(ruleState,"previous_generation").matches(Regex("g[0-9a-f]{24}"))
-            addView(owner.domainRow("回退规则版本",if(previous)"回到上一代完整规则集" else "暂无可回退版本",R.drawable.owner_undo,"warn",true){confirm("回退规则版本？","上游基线和生效规则一起回退。"){
-                session.work("已回退"){ZuioptRules.command(applicationContext,"rollback",checkNotNull(snapshot).generation)}
-            }}.apply{isEnabled=previous;alpha=if(previous)1f else .4f})
+            addView(owner.domainRow("回退规则版本",if(previous)"回到上一代完整规则集" else "暂无可回退版本",R.drawable.owner_undo,"warn",true){if(rulesQualified)confirm("回退规则版本？","上游基线和生效规则一起回退。"){
+                if(rulesQualified)session.work("已回退"){ZuioptRules.command(applicationContext,"rollback",checkNotNull(snapshot).generation)}
+            }}.apply{tag="owner-control";isEnabled=previous;alpha=if(previous)1f else .4f})
             addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
-            addView(owner.domainRow("高级兼容导入 · AppOpt","兼容转换与差异预览后确认",R.drawable.owner_appopt,"mute",true){if(!session.busy)document(Intent.ACTION_OPEN_DOCUMENT,102,"*/*")})
+            addView(owner.domainRow("高级兼容导入 · AppOpt","兼容转换与差异预览后确认",R.drawable.owner_appopt,"mute",true){if(rulesQualified && !session.busy)document(Intent.ACTION_OPEN_DOCUMENT,102,"*/*")}.apply{tag="owner-control"})
             addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
             addView(owner.domainRow("规则集导出","导出当前生效规则集",R.drawable.owner_export,"zo",true){snapshot?.let{export(it.text.toByteArray(),"ZuiControl_rules.conf")}})
             addView(note("在线规则源尚未启用 · 兼容实验室验证后开放"))
@@ -1150,7 +1186,7 @@ class MainActivity : Activity() {
             addView(button("放弃导入"){session.work("已放弃导入"){ZuioptLibrary.cancel(applicationContext,p);preview=null}})
             addView(View(this@MainActivity),LinearLayout.LayoutParams(0,1,1f))
             addView(button(if(appOpt)"写入转换结果" else "应用更新",true){confirm("应用规则更新？","全部变化作为一次新规则集写入，可整体回退。"){
-                session.work("已应用更新"){ZuioptLibrary.confirm(applicationContext,p);preview=null;if(!appOpt){latest=null;updateStatus="已是最新"}}
+                if(rulesQualified)session.work("已应用更新"){ZuioptLibrary.confirm(applicationContext,p);preview=null;if(!appOpt){latest=null;updateStatus="已是最新"}}
             }})
         },gap())
     }
@@ -1273,7 +1309,7 @@ class MainActivity : Activity() {
             },gap())
             detail.addView(owner.row().apply{
                 if(d.original!=null)addView(owner.button("删除规则","danger",icon=R.drawable.owner_trash){confirm("删除此应用规则？","只移除此应用的独立包映射。"){
-                    session.work("已删除"){
+                    if(rulesQualified)session.work("已删除"){
                         check(mapping?.matchKind=="exact"){"此应用由共享宽匹配映射覆盖，无法单独删除"}
                         val next=d.base.copy(mappings=d.base.mappings.filterNot{it.matchKind=="exact" && it.packageName==pkg})
                         ZuioptRules.upload(applicationContext,"user",next.normalized().toByteArray(),expectedGeneration=d.generation);session.ruleDraft=null
@@ -1281,7 +1317,7 @@ class MainActivity : Activity() {
                 }})
                 else addView(owner.button("放弃新建","danger",icon=R.drawable.owner_trash){guard{session.clearDrafts();session.selected="";render()}})
                 if(provenance(pkg)=="USER_MODIFIED")addView(owner.button("恢复上游",icon=R.drawable.owner_undo){confirm("恢复上游规则？","将放弃此应用的修改。"){
-                    session.work("已恢复上游"){ZuioptLibrary.restoreApp(applicationContext,pkg,checkNotNull(this@MainActivity.baseline));session.ruleDraft=null}
+                    if(rulesQualified)session.work("已恢复上游"){ZuioptLibrary.restoreApp(applicationContext,pkg,checkNotNull(this@MainActivity.baseline));session.ruleDraft=null}
                 }},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
                 addView(View(this@MainActivity),LinearLayout.LayoutParams(0,1,1f))
                 addView(owner.button("记录关联线程分析",small=true,icon=R.drawable.owner_pulse){analysisPage=true;render()}.apply{minimumHeight=dp(40)},LinearLayout.LayoutParams(-2,-2).apply{marginEnd=dp(8)})
@@ -1292,6 +1328,7 @@ class MainActivity : Activity() {
         if(d==null)detail.addView(owner.button("查看原文 · 只读",small=true){rawView()},gap())
     }
     private fun mutateRule(next: () -> Unit) {
+        if(!rulesQualified)return
         if (session.busy && session.workFeature=="rules") return
         val d = session.ruleDraft ?: return
         if (!d.cloneConfirmed && d.original != null) {
