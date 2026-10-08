@@ -2,6 +2,11 @@ package com.zui.zuicontrol
 
 /** Pure presentation facts from one existing state response. No polling or persistent history. */
 object BackendHealth {
+    /** A new collector sample invalidates a state snapshot taken while it was paused. */
+    fun collectorResumed(text:String,previousSampleTime:Long,nextSampleTime:Long):Boolean {
+        if(nextSampleTime<=0 || nextSampleTime<=previousSampleTime)return false
+        return text.lineSequence().any { it=="screenInteractive=false" || it=="monitorActive=false" || it=="monitorTimer=false" }
+    }
     enum class State { OK, DEGRADED, FAILED, UNKNOWN }
     data class Component(val component: String,val state: State,val reason: String,val facts:List<String> = emptyList())
     fun components(text: String): List<Component> {

@@ -350,7 +350,8 @@ class MainActivity : Activity() {
     }
     private fun acceptMonitor(next: JSONObject) {
         fun healthKey(value:JSONObject)=listOf("producerEpoch","mode","intervalMs","recordState").map{value.optString(it)}
-        val healthChanged=healthKey(next)!=healthKey(monitor)
+        val healthChanged=healthKey(next)!=healthKey(monitor) ||
+            BackendHealth.collectorResumed(state,monitor.optLong("elapsedMs"),next.optLong("elapsedMs"))
         val recordingChanged = next.optString("recordState") != monitor.optString("recordState")
         monitor = next; overlay.observe(next.optInt("mode") == 1); bindMonitor()
         if (recordingChanged) { analysisRead++; analysis = null; analysisError = "" }

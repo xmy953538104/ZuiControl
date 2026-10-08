@@ -37,4 +37,16 @@ class BackendHealthTest {
         assertTrue(changed("lastSchedulerError=none" to "lastSchedulerError=uperf_stopped_while_active").all{it.state==BackendHealth.State.OK})
         val facts=BackendHealth.components(healthy);assertTrue(facts.all{it.facts.isNotEmpty()});assertTrue(facts[2].facts.contains("线程管理：ZUIopt 已接管"));assertTrue(facts[4].facts.contains("采样周期：5000 ms"))
     }
+    @Test fun freshSampleRevalidatesPausedCollectorWithoutPollingHealthyState(){
+        for(paused in listOf("monitorTimer=true" to "monitorTimer=false","monitorActive=true" to "monitorActive=false","screenInteractive=true" to "screenInteractive=false")) {
+            val text=healthy.replace(paused.first,paused.second)
+            assertFalse(BackendHealth.collectorResumed(text,100,100))
+            assertFalse(BackendHealth.collectorResumed(text,100,99))
+            assertTrue(BackendHealth.collectorResumed(text,100,101))
+        }
+        assertFalse(BackendHealth.collectorResumed(healthy,100,101))
+        assertFalse(BackendHealth.collectorResumed(healthy.replace("monitorError=","monitorError=source_failure"),100,101))
+        assertFalse(BackendHealth.collectorResumed("monitorTimer=false",0,0))
+        assertEquals(BackendHealth.State.DEGRADED,BackendHealth.components(healthy.replace("monitorError=","monitorError=source_failure"))[4].state)
+    }
 }
