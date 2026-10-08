@@ -477,11 +477,16 @@ class MainActivity : Activity() {
                 addView(cell,FrameLayout.LayoutParams(owner.px(52),owner.px(52),Gravity.CENTER))
                 addView(mark,FrameLayout.LayoutParams(owner.px(3),owner.px(24),Gravity.START or Gravity.CENTER_VERTICAL))
             }
+            var shownRail:Pair<Boolean,Boolean>?=null
             railBindings+={
                 val selected=session.section==key;val color=if(selected)owner.accent else owner.muted
+                val next=selected to owner.dark
+                if(next!=shownRail){
                 image.imageTintList=android.content.res.ColorStateList.valueOf(color);text.setTextColor(color);mark.visibility=if(selected)View.VISIBLE else View.INVISIBLE
                 mark.background=owner.shape(owner.accent,3f);cell.background=owner.shape(if(selected)owner.soft(owner.accent) else Color.TRANSPARENT,14f)
                 if(key=="theme") {text.text=if(owner.dark)"浅色" else "深色";image.setImageResource(if(owner.dark)R.drawable.owner_sun else R.drawable.owner_moon);cell.contentDescription=text.text}
+                shownRail=next;OwnerRenderTrace.event("RAIL_SELECTION_BOUND","$key/$next")
+                }
             }
             rail.addView(frame,LinearLayout.LayoutParams(-1,owner.px(52)).apply{bottomMargin=owner.px(gap)})
         }
@@ -640,12 +645,17 @@ class MainActivity : Activity() {
         },LinearLayout.LayoutParams(0,-2,1f))
         addView(owner.icon(R.drawable.owner_chevron,owner.muted,16).apply{alpha=.6f},LinearLayout.LayoutParams(owner.px(16),owner.px(16)).apply{marginStart=owner.px(12)})
         layoutParams=LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=owner.px(8)};isFocusable=true;contentDescription=title;setOnClickListener{action()}
+        var shownSelection:Pair<Boolean,Boolean>?=null
         masterSelectionBindings+={
             val on=if(pkg.isNotEmpty())session.selected==pkg else if(session.section=="settings")session.settingsModule==listOf("监测与显示","GPU 默认范围","数据与维护","关于").indexOf(title) else false
+            val next=on to owner.dark
+            if(next!=shownSelection){
             item.isSelected=on
             item.background=owner.shape(owner.card,14f,if(on)owner.accent else owner.line,if(on)2f else 1f)
             if(on)item.background=owner.shadow(checkNotNull(item.background),14f,24f,10f,-12f,owner.accentGlow)
             if(pkg.isEmpty() && image is ImageView){val tone=if(on)owner.accent else owner.sub;image.imageTintList=android.content.res.ColorStateList.valueOf(tone);image.background=owner.shape(if(on)owner.soft(owner.accent)else owner.card2,12f)}
+            shownSelection=next;OwnerRenderTrace.event("MASTER_SELECTION_BOUND","$title/$next")
+            }
         }
     }
 
