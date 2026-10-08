@@ -25,8 +25,13 @@ backend_scopes = ['framework_patch', 'native', 'payload/system', 'payload/patche
 # Current Owner Plan3 deltas must reverse exactly to the immutable integration
 # baseline before the earlier freeze proofs are inherited.
 sys.path.insert(0,str(ROOT/'tests'))
-from BackendContract import entries,PLAN3,PLAN3_RESPONSIVENESS,PLAN3_VERTICAL,PLAN3_DOMAIN
+from BackendContract import entries,PLAN3,PLAN3_RESPONSIVENESS,PLAN3_VERTICAL,PLAN3_DOMAIN,PLAN3_UX
 current=entries(*backend_scopes)
+for row in PLAN3_UX['files']:
+    assert row['path'] in PLAN3_UX['allowedPaths']
+    if any(row['path'].startswith(scope+'/') for scope in backend_scopes):
+        assert current.count(row['after'].encode())==1
+        current.remove(row['after'].encode());current.append(row['before'].encode())
 for row in PLAN3_DOMAIN['files']:
     assert row['path'] in PLAN3_DOMAIN['allowedPaths']
     if any(row['path'].startswith(scope+'/') for scope in backend_scopes):

@@ -153,6 +153,7 @@ jobs:
           python3 tests/monitor/TestUiPolish.py
           python3 tests/monitor/TestProductR6.py
           python3 tests/monitor/TestProductR7.py
+          python3 tests/monitor/TestProductR8.py
           python3 tests/monitor/TestNotificationRenderer.py
           bash tests/uperf/TestConfigurableAppPolicy.sh
           python3 tests/monitor/TestRecordSql.py

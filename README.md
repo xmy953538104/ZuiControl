@@ -116,6 +116,7 @@ python tests/zuiopt/TestSchemaContract.py
 python tests/monitor/TestUiPolish.py
 python tests/monitor/TestProductR6.py
 python tests/monitor/TestProductR7.py
+python tests/monitor/TestProductR8.py
 python tests/monitor/TestNotificationRenderer.py
 python tests/monitor/TestDropdownSelection.py
 python tests/monitor/TestPendingIntentCache.py

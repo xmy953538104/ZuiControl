@@ -117,6 +117,25 @@ public class UserTransportFixture {
         check(!Arrays.equals(before,bytes(f.appPolicyRows(s,0))));
         System.out.println("APPPOLICY_PROJECTION_GLOBAL_AND_OTHER_USER_ISOLATION=PASS RELEVANT_APP_AND_RESOLVED_GPU_CHANGE=PASS");
     }
+    static void runningKick()throws Exception{
+        UserTransportFixture f=new UserTransportFixture();String text="active_retry|zo_state|||";
+        RequestIdentity id=f.utility(text);String token=SystemProperties.get("seq","");
+        SystemProperties.values.put("init.svc.zui_control_request","running");int kicks=SystemProperties.kicks;
+        for(int i=0;i<20;i++){
+            check(f.utilityCommand("submit",text).contains("commandSeq="+token));
+            check(SystemProperties.kicks==kicks&&SystemProperties.get("seq","").equals(token));
+        }
+        check(f.commandTransport(id.id,id.sha,id.sequence,0,token,"result:rulesState","qualified").equals("ok=1"));
+        check(f.commandTransport(id.id,id.sha,id.sequence,0,token,"ack",id.id+"|done|zo_state|ok").equals("ok=1"));
+        check(f.isTerminal());
+        RequestIdentity lost=f.utility("stopped_retry|zo_state|||");String old=SystemProperties.get("seq","");
+        SystemProperties.values.put("init.svc.zui_control_request","stopped");kicks=SystemProperties.kicks;
+        check(f.utilityCommand("submit","stopped_retry|zo_state|||").startsWith("ok=1"));
+        check(SystemProperties.kicks==kicks+1&&!SystemProperties.get("seq","").equals(old));
+        f.rejects(()->f.commandTransport(lost.id,lost.sha,lost.sequence,0,old,"ack",lost.id+"|done|zo_state|stale"));
+        SystemProperties.values.remove("init.svc.zui_control_request");
+        System.out.println("ACTIVE_SAME_ID_TOKEN_RETAINED=PASS retries20 STALE_STOPPED_TOKEN_REJECTED=PASS RECOVERY_KICK=PASS");
+    }
     public static void main(String[] args)throws Exception{
         UserTransportFixture f=new UserTransportFixture();
         Binder.uid=1010253;check(f.callerState(false).equals("ok=0\nerror=inactive_user"));
@@ -186,7 +205,7 @@ public class UserTransportFixture {
         check(f.utilityRead("result","different_id|rulesState").contains("ok=0"));
         f.inventory.put(10,43L);check(f.utilityRead("ack","allowed_utility").contains("ok=0"));f.inventory.put(10,42L);
         Binder.uid=10042;check(!f.utilityRead("ack","allowed_utility").contains("ADMITTED_TERMINAL"));Binder.uid=1010042;
-        monotonicity();projectionIsolation();
+        monotonicity();projectionIsolation();runningKick();
         java.lang.System.out.println("USER_TRANSPORT_PRODUCTION_GUARDS_PASS checks="+checks);
     }
 }

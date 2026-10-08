@@ -53,8 +53,8 @@ class Plan2(unittest.TestCase):
  def test_thread_ia_and_notification_conditional(self):
   main=read('MainActivity.kt')
   self.assertNotIn('listRow("","规则库"',main);self.assertNotIn('owner.label("职责边界"',main)
-  self.assertIn('"thread"->{loadInventory();loadRules()}',main)
-  self.assertIn('snapshot?.generation==generation && baseline?.generation==generation',main)
+  self.assertIn('"thread"->{loadState();loadInventory();loadRules()}',main)
+  self.assertIn('cached?.matches(rs)==true',main)
   self.assertIn('owner.domainRow("规则集导出"',main);self.assertIn('规则源尚未启用',main)
   self.assertIn('if(!enabled)addView(owner.button("系统通知设置"',main)
  def test_charts_keep_gap_semantics(self):

@@ -59,8 +59,9 @@ object ZuioptRules {
 
     data class Snapshot(val generation: String, val text: String)
 
-    fun userRules(context: Context): Snapshot {
-        val state = state(context)
+    fun userRules(context: Context): Snapshot = userRules(context, state(context))
+
+    internal fun userRules(context: Context, state: String): Snapshot {
         val generation = field(state, "generation")
         require(generation.matches(Regex("g[0-9a-f]{24}")))
         val size = field(state, "user_size").toInt()

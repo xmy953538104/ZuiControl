@@ -16,8 +16,11 @@ object ZuioptLibrary {
     data class Provenance(val source: String,val version: String,val date: String="",val commit: String="",val evidence: String)
     data class Baseline(val generation: String,val hash: String,val rules: String,val metadata: JSONObject)
     data class Preview(val transaction: String,val generation: String,val upstreamHash: String,val canonicalHash: String,val apps: List<JSONObject>)
-    fun baseline(context: Context): Baseline {
-        val state=ZuioptRules.state(context);val generation=ZuioptRules.field(state,"generation")
+    fun baseline(context: Context): Baseline = baseline(context, ZuioptRules.state(context))
+
+    internal fun baseline(context: Context, state: String): Baseline {
+        val generation=ZuioptRules.field(state,"generation")
+        require(generation.matches(Regex("g[0-9a-f]{24}")))
         fun read(kind: String,size: Int): ByteArray {
             require(size in 1..65536);val out=ByteArrayOutputStream()
             while(out.size()<size){

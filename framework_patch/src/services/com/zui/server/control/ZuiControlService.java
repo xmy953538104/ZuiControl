@@ -1673,6 +1673,14 @@ public final class ZuiControlService extends Binder {
             } else if ("set_uperf_mode".equals(request.command) || "set_uperf_app".equals(request.command) || "remove_uperf_app".equals(request.command)) {
                 return requestRefused(policyCallerUser,id,"unified_policy_generation_required");
             }
+            // A retry must not revoke the exact token still owned by the running
+            // finite worker. Stopped/lost workers receive the normal recovery kick.
+            String activeToken=SystemProperties.get(PROP_COMMAND_SEQ, "");
+            if(id.equals(SystemProperties.get(PROP_COMMAND_ID, ""))
+                    &&sha256.equals(SystemProperties.get(PROP_COMMAND_SHA256, ""))
+                    &&activeToken.startsWith("u"+policyCallerUser+"_"+admitted.sequence+"_")
+                    &&"running".equals(SystemProperties.get("init.svc.zui_control_request", "")))
+                return "ok=1\nresultCategory=INDETERMINATE_OR_IN_PROGRESS\nrequestId="+id+"\ncommandSeq="+activeToken;
             mAppPolicies.disk.write("control-admission.json",PolicyJson.bytes(PolicyJson.map("identity",admitted.json(),"terminal",false)));
             String token="u"+policyCallerUser+"_"+admitted.sequence+"_"+Long.toHexString(SystemClock.elapsedRealtimeNanos());
             if (!id.equals(SystemProperties.get(PROP_COMMAND_ID, ""))) {

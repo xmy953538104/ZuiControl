@@ -2,6 +2,10 @@
 from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
+PLAN3_UX=json.loads((ROOT/'tests/product_plan3_device_ux_delta.json').read_text(encoding='utf-8'))
+UX_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','ZuioptLibrary.kt','ZuioptRules.kt')}
+UX_ALLOWED.add('framework_patch/src/services/com/zui/server/control/ZuiControlService.java')
+assert set(PLAN3_UX['allowedPaths'])==UX_ALLOWED,'R8 explicit source boundary'
 PLAN3_DOMAIN=json.loads((ROOT/'tests/product_plan3_domain_latency_delta.json').read_text(encoding='utf-8'))
 DOMAIN_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('BackendHealth.kt','MainActivity.kt','OwnerUi.kt','OwnerRenderTrace.kt','ZuiControlRequest.kt','FrontendGateway.kt')}
 DOMAIN_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('PolicyCommand.java','PolicyRuntimePlan.java','ZuiControlService.java')}
@@ -39,6 +43,13 @@ INTEGRATION=json.loads((ROOT/'tests/backend_monitor_settings_delta.json').read_t
 MANIFEST=json.loads((ROOT/'tests/backend_abc_delta.json').read_text(encoding='utf-8'))
 
 def reverse_text(path,text):
+    change=next((r for r in PLAN3_UX['files'] if r['path']==path),None)
+    if change:
+        assert change['path'] in UX_ALLOWED
+        assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('R8 exact authorized bytes',path)
+        assert len(change['hunks'])==1 and change['hunks'][0]['after']==text
+        text=change['hunks'][0]['before']
+        assert hashlib.sha256(text.encode()).hexdigest()==change['beforeSha256'],('R8 immutable R7 base',path)
     change=next((r for r in PLAN3_DOMAIN['files'] if r['path']==path),None)
     if change:
         assert change['path'] in PLAN3_DOMAIN['allowedPaths']
@@ -193,6 +204,12 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
+    assert PLAN3_UX['baseHead']=='9c84b5535fa002f5740359c1e5351cd0922a7cea'
+    for row in PLAN3_UX['files']:
+        assert row['path'] in UX_ALLOWED
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['after'].encode())==1,('R8 exact authorized source',row['path'])
+        result.remove(row['after'].encode());result.append(row['before'].encode())
     assert PLAN3_DOMAIN['baseHead']=='62dc044cf4ea7912a6855df27ff3d106602dd01f'
     for row in PLAN3_DOMAIN['files']:
         assert row['path'] in PLAN3_DOMAIN['allowedPaths'],('R7 unscoped source',row['path'])
