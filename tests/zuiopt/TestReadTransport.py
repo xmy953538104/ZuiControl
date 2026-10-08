@@ -58,6 +58,13 @@ class ZuiControlManager {
 }'''
         compile_run({'Read.kt':source,'Manager.kt':manager,'ReadFixture.kt':fixture},'com.zui.zuicontrol.ReadFixtureKt',[])
 
+    def test_source_contracts_run_before_native_payload_staging(self):
+        workflow=(ROOT/'.github/workflows/build.yml').read_text('utf8')
+        native=workflow.index('- name: Test and build ZUIopt production integration')
+        self.assertLess(workflow.index('- name: Check scripts'),native)
+        self.assertLess(workflow.index('- name: Test app'),native)
+        self.assertLess(native,workflow.index('- name: Upload payload'))
+
     def test_exact_server_observation_interleavings(self):
         service=(ROOT/'framework_patch/src/services/com/zui/server/control/ZuiControlService.java').read_text('utf8')
         members=service[service.index('    private volatile String mObservedRuleGeneration'):service.index('    private String requestRefused')]
