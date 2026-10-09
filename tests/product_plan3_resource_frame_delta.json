@@ -1,0 +1,41 @@
+{
+  "phase": "V84_PLAN3_R10_RESOURCE_AND_FRAME_CAUSAL_CLOSURE",
+  "baseHead": "159a4144cceb68873cd48274d9fe737720ff229b",
+  "allowedPaths": [
+    "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+    "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt"
+  ],
+  "scope": "Current Owner-authorized inset application timing only. Identical inset geometry and immutable historical source identities.",
+  "files": [
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "before": "100644 blob 693b822489c866dfc09e6feacf9cf2a4cbf1ac1e\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "after": "100644 blob b902760f6f67b385b0c3df648deb4d6112c151d4\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "beforeSha256": "783e21f84adbcc93006f68fb1d94610e6eca40ee342f6dc1af0cce89710fd664",
+      "afterSha256": "2af7526f0d1a35932ed229cc721c637af1ee1df57e140d21201c43d0228d0f6d",
+      "hunks": [
+        {
+          "before": "            \"settings\" -> settingsPage()\n        }\n        val next=ScrollView(this).apply{isFillViewport=false;isVerticalScrollBarEnabled=false;clipToPadding=false;addView(detail)}\n        pageHost.addView(next,FrameLayout.LayoutParams(-1,-1))\n        ownerCanvas.requestApplyInsets()\n        OwnerRenderTrace.event(\"PAGE_CHANGED\",page)\n        }\n        pageBindings.toList().forEach{it()}\n        if(session.section==\"thread\" && !rulesQualified)ownerPending()\n",
+          "after": "            \"settings\" -> settingsPage()\n        }\n        val next=ScrollView(this).apply{isFillViewport=false;isVerticalScrollBarEnabled=false;clipToPadding=false;addView(detail)}\n        pageHost.addView(next,FrameLayout.LayoutParams(-1,-1))\n            OwnerWindow.refreshContentInsets(ownerCanvas)\n        OwnerRenderTrace.event(\"PAGE_CHANGED\",page)\n        }\n        pageBindings.toList().forEach{it()}\n        if(session.section==\"thread\" && !rulesQualified)ownerPending()\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
+      "before": "100644 blob cebc2ca4f3adeaca4afda63ef500ee592128b120\tapp/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
+      "after": "100644 blob 23e6330e15f81963406928ec161eb40198e71c4d\tapp/src/main/java/com/zui/zuicontrol/OwnerWindow.kt",
+      "beforeSha256": "49988fbc04ab2797d7ee10b6f818d0244075d7cf14a2161bd4156b4b0622375b",
+      "afterSha256": "065a75f73be72719f458e0aa25ed0d55724525a91dda42704e87815cf5ac05d4",
+      "hunks": [
+        {
+          "before": "    }\n    fun dark(context:Context):Boolean=FrontendTheme.dark(\n        context.getSharedPreferences(\"frontend\",Context.MODE_PRIVATE).getString(\"theme\",\"system\").orEmpty(),\n        context.applicationContext.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES)\n    fun inset(view:View){\n        view.addOnAttachStateChangeListener(object:View.OnAttachStateChangeListener{\n            override fun onViewAttachedToWindow(v:View){v.requestApplyInsets()}\n            override fun onViewDetachedFromWindow(v:View){}\n",
+          "after": "    }\n    fun dark(context:Context):Boolean=FrontendTheme.dark(\n        context.getSharedPreferences(\"frontend\",Context.MODE_PRIVATE).getString(\"theme\",\"system\").orEmpty(),\n        context.applicationContext.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES)\n    /** New page content receives the current whitespace before its first measure. */\n    fun refreshContentInsets(view:View){\n        val insets=view.rootWindowInsets\n        if(insets==null || !applyContentInsets(view,insets))view.requestApplyInsets()\n    }\n    private fun applyContentInsets(v:View,insets:WindowInsets):Boolean{\n        val top:Int;val bottom:Int\n        if(Build.VERSION.SDK_INT>=30){\n            val bars=insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())\n            top=bars.top;bottom=bars.bottom\n        }else{top=insets.systemWindowInsetTop;bottom=insets.systemWindowInsetBottom}\n        // Insets affect only existing content whitespace, never the Owner viewport.\n        v.setPadding(0,0,0,0)\n        val density=v.resources.displayMetrics.density\n        val width=if(v.width>0)v.width else v.rootView.width\n        val height=if(v.height>0)v.height else v.rootView.height\n        if(width<=0 || height<=0)return false\n        val logicalScale=min(width/1040f,height/650f).coerceAtLeast(.01f)\n        fun apply(target:View) {\n            safe[target]?.let{s->\n                val extra=max(0f,top/logicalScale-s.top+2f)\n                val b=if(s.bottom>0f)max(s.bottom,bottom/logicalScale+2f)else target.paddingBottom/density\n                val paddingTop=((s.top+extra)*density).roundToInt()\n                val paddingBottom=(b*density).roundToInt()\n                if(target.paddingTop!=paddingTop || target.paddingBottom!=paddingBottom)\n                    target.setPadding(target.paddingLeft,paddingTop,target.paddingRight,paddingBottom)\n                if(s.height>0){\n                    val height=s.height+(extra*density).roundToInt()\n                    if(target.layoutParams.height!=height)target.layoutParams=target.layoutParams.apply{this.height=height}\n                }\n            }\n            if(target is ViewGroup)for(i in 0 until target.childCount)apply(target.getChildAt(i))\n        }\n        apply(v)\n        return true\n    }\n    fun inset(view:View){\n        view.addOnAttachStateChangeListener(object:View.OnAttachStateChangeListener{\n            override fun onViewAttachedToWindow(v:View){v.requestApplyInsets()}\n            override fun onViewDetachedFromWindow(v:View){}\n"
+        },
+        {
+          "before": "            if(Build.VERSION.SDK_INT>=30){\n                val bars=insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())\n                top=bars.top;bottom=bars.bottom\n            }else{top=insets.systemWindowInsetTop;bottom=insets.systemWindowInsetBottom}\n            // Insets affect only existing content whitespace, never the Owner viewport.\n            v.setPadding(0,0,0,0)\n            val density=v.resources.displayMetrics.density\n            val width=if(v.width>0)v.width else v.rootView.width\n            val height=if(v.height>0)v.height else v.rootView.height\n            val logicalScale=min(width/1040f,height/650f).coerceAtLeast(.01f)\n            fun apply(target:View) {\n                safe[target]?.let{s->\n                    val extra=max(0f,top/logicalScale-s.top+2f)\n                    val b=if(s.bottom>0f)max(s.bottom,bottom/logicalScale+2f)else target.paddingBottom/density\n                    target.setPadding(target.paddingLeft,((s.top+extra)*density).roundToInt(),target.paddingRight,(b*density).roundToInt())\n                    if(s.height>0)target.layoutParams=target.layoutParams.apply{this.height=s.height+(extra*density).roundToInt()}\n                }\n                if(target is ViewGroup)for(i in 0 until target.childCount)apply(target.getChildAt(i))\n            }\n            if(width>0 && height>0)apply(v)else v.post{v.requestApplyInsets()}\n            v.post{OwnerGeometry.composition(v,top,bottom)}\n            insets\n        }\n        view.requestApplyInsets()\n",
+          "after": "            if(Build.VERSION.SDK_INT>=30){\n                val bars=insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())\n                top=bars.top;bottom=bars.bottom\n            }else{top=insets.systemWindowInsetTop;bottom=insets.systemWindowInsetBottom}\n            if(!applyContentInsets(v,insets))v.post{v.requestApplyInsets()}\n            v.post{OwnerGeometry.composition(v,top,bottom)}\n            insets\n        }\n        view.requestApplyInsets()\n"
+        }
+      ]
+    }
+  ]
+}

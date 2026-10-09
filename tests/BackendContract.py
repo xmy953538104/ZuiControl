@@ -2,6 +2,9 @@
 from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
+PLAN3_R10=json.loads((ROOT/'tests/product_plan3_resource_frame_delta.json').read_text(encoding='utf-8'))
+R10_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','OwnerWindow.kt')}
+assert set(PLAN3_R10['allowedPaths'])==R10_ALLOWED,'R10 explicit presentation-only source boundary'
 PLAN3_R9=json.loads((ROOT/'tests/product_plan3_autonomous_delta.json').read_text(encoding='utf-8'))
 R9_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','ZuioptRead.kt','ZuioptRules.kt','ZuioptLibrary.kt')}
 R9_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('ZuiControlService.java','ZuioptSceneAuthority.java')}
@@ -48,6 +51,14 @@ INTEGRATION=json.loads((ROOT/'tests/backend_monitor_settings_delta.json').read_t
 MANIFEST=json.loads((ROOT/'tests/backend_abc_delta.json').read_text(encoding='utf-8'))
 
 def reverse_text(path,text):
+    change=next((r for r in PLAN3_R10['files'] if r['path']==path),None)
+    if change:
+        assert path in R10_ALLOWED
+        assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('R10 exact authorized bytes',path)
+        for h in reversed(change['hunks']):
+            assert text.count(h['after'])==1,('R10 authorized inset timing delta',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==change['beforeSha256'],('R10 immutable R9 base',path)
     change=next((r for r in PLAN3_R9['files'] if r['path']==path),None)
     if change:
         assert path in R9_ALLOWED
@@ -216,6 +227,12 @@ def entries(*scopes):
 
 def reverse_entries(current,*scopes):
     result=list(current)
+    assert PLAN3_R10['baseHead']=='159a4144cceb68873cd48274d9fe737720ff229b'
+    for row in PLAN3_R10['files']:
+        assert row['path'] in R10_ALLOWED
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['after'].encode())==1,('R10 exact authorized source',row['path'])
+        result.remove(row['after'].encode());result.append(row['before'].encode())
     assert PLAN3_R9['baseHead']=='5f7754404efdcf378a380fc1e1a2a54dc851d704'
     for row in PLAN3_R9['files']:
         assert row['path'] in R9_ALLOWED

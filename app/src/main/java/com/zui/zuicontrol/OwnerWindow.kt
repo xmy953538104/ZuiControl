@@ -63,6 +63,42 @@ internal object OwnerWindow {
     fun dark(context:Context):Boolean=FrontendTheme.dark(
         context.getSharedPreferences("frontend",Context.MODE_PRIVATE).getString("theme","system").orEmpty(),
         context.applicationContext.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES)
+    /** New page content receives the current whitespace before its first measure. */
+    fun refreshContentInsets(view:View){
+        val insets=view.rootWindowInsets
+        if(insets==null || !applyContentInsets(view,insets))view.requestApplyInsets()
+    }
+    private fun applyContentInsets(v:View,insets:WindowInsets):Boolean{
+        val top:Int;val bottom:Int
+        if(Build.VERSION.SDK_INT>=30){
+            val bars=insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+            top=bars.top;bottom=bars.bottom
+        }else{top=insets.systemWindowInsetTop;bottom=insets.systemWindowInsetBottom}
+        // Insets affect only existing content whitespace, never the Owner viewport.
+        v.setPadding(0,0,0,0)
+        val density=v.resources.displayMetrics.density
+        val width=if(v.width>0)v.width else v.rootView.width
+        val height=if(v.height>0)v.height else v.rootView.height
+        if(width<=0 || height<=0)return false
+        val logicalScale=min(width/1040f,height/650f).coerceAtLeast(.01f)
+        fun apply(target:View) {
+            safe[target]?.let{s->
+                val extra=max(0f,top/logicalScale-s.top+2f)
+                val b=if(s.bottom>0f)max(s.bottom,bottom/logicalScale+2f)else target.paddingBottom/density
+                val paddingTop=((s.top+extra)*density).roundToInt()
+                val paddingBottom=(b*density).roundToInt()
+                if(target.paddingTop!=paddingTop || target.paddingBottom!=paddingBottom)
+                    target.setPadding(target.paddingLeft,paddingTop,target.paddingRight,paddingBottom)
+                if(s.height>0){
+                    val height=s.height+(extra*density).roundToInt()
+                    if(target.layoutParams.height!=height)target.layoutParams=target.layoutParams.apply{this.height=height}
+                }
+            }
+            if(target is ViewGroup)for(i in 0 until target.childCount)apply(target.getChildAt(i))
+        }
+        apply(v)
+        return true
+    }
     fun inset(view:View){
         view.addOnAttachStateChangeListener(object:View.OnAttachStateChangeListener{
             override fun onViewAttachedToWindow(v:View){v.requestApplyInsets()}
@@ -74,22 +110,7 @@ internal object OwnerWindow {
                 val bars=insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
                 top=bars.top;bottom=bars.bottom
             }else{top=insets.systemWindowInsetTop;bottom=insets.systemWindowInsetBottom}
-            // Insets affect only existing content whitespace, never the Owner viewport.
-            v.setPadding(0,0,0,0)
-            val density=v.resources.displayMetrics.density
-            val width=if(v.width>0)v.width else v.rootView.width
-            val height=if(v.height>0)v.height else v.rootView.height
-            val logicalScale=min(width/1040f,height/650f).coerceAtLeast(.01f)
-            fun apply(target:View) {
-                safe[target]?.let{s->
-                    val extra=max(0f,top/logicalScale-s.top+2f)
-                    val b=if(s.bottom>0f)max(s.bottom,bottom/logicalScale+2f)else target.paddingBottom/density
-                    target.setPadding(target.paddingLeft,((s.top+extra)*density).roundToInt(),target.paddingRight,(b*density).roundToInt())
-                    if(s.height>0)target.layoutParams=target.layoutParams.apply{this.height=s.height+(extra*density).roundToInt()}
-                }
-                if(target is ViewGroup)for(i in 0 until target.childCount)apply(target.getChildAt(i))
-            }
-            if(width>0 && height>0)apply(v)else v.post{v.requestApplyInsets()}
+            if(!applyContentInsets(v,insets))v.post{v.requestApplyInsets()}
             v.post{OwnerGeometry.composition(v,top,bottom)}
             insets
         }

@@ -567,7 +567,7 @@ class MainActivity : Activity() {
         }
         val next=ScrollView(this).apply{isFillViewport=false;isVerticalScrollBarEnabled=false;clipToPadding=false;addView(detail)}
         pageHost.addView(next,FrameLayout.LayoutParams(-1,-1))
-        ownerCanvas.requestApplyInsets()
+            OwnerWindow.refreshContentInsets(ownerCanvas)
         OwnerRenderTrace.event("PAGE_CHANGED",page)
         }
         pageBindings.toList().forEach{it()}
