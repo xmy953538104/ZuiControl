@@ -179,7 +179,7 @@ public:
         // CRC detects torn/corrupt storage; root-only DAC is the authenticity boundary.
         if(entries.empty()&&leases.empty()&&globals.empty()){
             require(unlinkat(dirFd,"owner_state.v1",0)==0||errno==ENOENT,"journal remove");
-            require(fsync(dirFd)==0,"journal directory sync");boot=currentBoot;commits++;return;
+            require(fsync(dirFd)==0,"journal directory sync");boot=currentBoot;runtimeVersion=waltVersion=false;commits++;return;
         }
         boot=currentBoot;std::ostringstream body;body<<boot<<'\n';
         for(const auto& [name,g]:globals){require(runtimeVersion&&((name=="rr_timeslice_ms"&&g.original>=1&&g.original<=1000&&g.expected==3)||(waltVersion&&name=="walt_read_pid"&&g.original>=0&&g.original<=4194304&&g.expected>0&&g.expected<=4194304)),"global journal fields");body<<"G "<<name<<' '<<g.original<<' '<<g.expected;if(waltVersion)body<<' '<<g.prior;body<<'\n';}
@@ -458,8 +458,12 @@ public:
         if(t.appliedMask==m){t.verified=now();return;}
         auto path=target(m);
         auto& r=it->second;
-        journal.runtimeVersion=true;
-        if(r.appliedMask!=m){r.priorMask=t.appliedMask?t.appliedMask:(r.appliedMask?r.appliedMask:r.savedMask);r.appliedMask=m;journal.commit();}
+        if(r.appliedMask!=m){
+            r.priorMask=t.appliedMask?t.appliedMask:r.savedMask;r.appliedMask=m;
+            // Schema2 retains its proved original-value journal. Keep intents in
+            // memory so a later runtime upgrade durably includes every live lease.
+            if(journal.runtimeVersion)journal.commit();
+        }
         fence(authority);
         bool moved=same(p,tid,t)&&write(path+"/tasks",std::to_string(tid),authority),placed=false;
         if(same(p,tid,t)){fence(authority);placed=setAffinity(tid,m);}

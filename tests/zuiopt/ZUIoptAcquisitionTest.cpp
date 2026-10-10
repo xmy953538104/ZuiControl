@@ -224,6 +224,19 @@ void kernelBacking(){
     Kernel::tasks.clear();require(ids("/proc/42/task").empty(),"dead process task list");
     puts("SYNTHETIC_KERNEL_CACHE_INVALIDATION=PASS;REAL_JOURNAL_DISK=PASS");
 }
+void runtimeUpgrade(){
+    AcquisitionFixture f;for(int tid=44;tid<242;tid++)Kernel::tasks[tid]={10,"/top-app",255};
+    f.start(2);f.confirm();auto commits=f.journal->commits;f.place();
+    require(!f.journal->runtimeVersion&&f.journal->commits==commits,"Schema2 per-thread journal amplification");
+    for(auto& [tid,r]:f.journal->entries)require(r.priorMask==255&&r.appliedMask==124&&f.p().tasks.at(tid).appliedMask==124,"live affinity intent missing");
+    f.journal->runtimeVersion=true;f.journal->commit();
+    auto path=Kernel::root+"/state";f.owner.reset();f.journal.reset();
+    {Journal reload(path);require(reload.runtimeVersion&&reload.entries.size()==200,"runtime upgrade reload");
+     Counters counters;Placement recovery(counters,reload);recovery.cleanup();
+     require(!reload.runtimeVersion&&!reload.waltVersion&&reload.entries.empty(),"empty runtime ownership version retained");}
+    for(auto& [_,t]:Kernel::tasks)require(t.group=="/top-app"&&t.mask==255,"runtime upgrade recovery residue");
+    puts("SCHEMA2_NO_JOURNAL_AMPLIFICATION_MIDLEASE_V3_ALL200_RECOVERY=PASS");
+}
 template<class F> void expectFailure(F action,const std::string& message){
     std::string observed="NO_EXCEPTION";try{action();}catch(const std::exception& e){observed=e.what();}
     if(observed.find(message)==observed.npos)throw std::runtime_error("strict guard expected="+message+" observed="+observed);
@@ -703,6 +716,7 @@ void timed(const char* name,void(*test)()){
 #ifndef ZUIOPT_ACQUISITION_LIBRARY
 int main(){try{std::cout<<std::unitbuf;require(getuid()==0,"isolated root fixture");
     timed("kernel_backing",kernelBacking);
+    timed("runtime_upgrade",runtimeUpgrade);
     timed("matrix",matrix);timed("recovery",recovery);timed("stress512",stress);timed("coherence1024",coherence);timed("horizon",horizon);timed("liveness1024",liveness);
     puts("ZUIOPT_BASELINE_NATIVE=PASS");return 0;}
 catch(const std::exception& e){std::cerr<<"BASELINE_FAIL "<<e.what()<<'\n';return 1;}}
