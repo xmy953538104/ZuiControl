@@ -230,6 +230,16 @@ void runtimeUpgrade(){
     require(!f.journal->runtimeVersion&&f.journal->commits==commits,"Schema2 per-thread journal amplification");
     for(auto& [tid,r]:f.journal->entries)require(r.priorMask==255&&r.appliedMask==124&&f.p().tasks.at(tid).appliedMask==124,"live affinity intent missing");
     f.journal->runtimeVersion=true;f.journal->commit();
+    std::map<int,Mask> masks;for(const auto& [tid,_]:f.p().tasks)masks[tid]=252;
+    commits=f.journal->commits;int checks=0;AuthorityFence stale{[&]{return ++checks<2;},[]{return true;}};
+    bool cancelled=false;try{f.owner->stageMasks(f.p(),masks,&stale);}catch(const StaleAuthorityScan&){cancelled=true;}
+    require(cancelled&&f.journal->commits==commits,"stale batch was persisted");
+    for(const auto& [_,r]:f.journal->entries)require(r.appliedMask==124,"stale batch left undurable intent");
+    f.owner->stageMasks(f.p(),masks);
+    require(f.journal->commits==commits+1,"runtime affinity intent batch not durable");
+    Kernel::beforeWrite=[&](int tid,bool,Mask){require(f.journal->entries.at(tid).appliedMask==252&&f.journal->commits==commits+1,"runtime write before batch intent");};
+    for(auto& [tid,t]:f.p().tasks)f.owner->apply(f.p(),tid,t,252,"runtime");
+    Kernel::beforeWrite={};require(f.journal->commits==commits+1,"runtime per-thread journal amplification");
     auto path=Kernel::root+"/state";f.owner.reset();f.journal.reset();
     {Journal reload(path);require(reload.runtimeVersion&&reload.entries.size()==200,"runtime upgrade reload");
      Counters counters;Placement recovery(counters,reload);recovery.cleanup();

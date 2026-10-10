@@ -203,11 +203,17 @@ public:
                 if(result==SchedulerResult::CONFLICT){rtReason="EXTERNAL_SCHEDULER_OWNER";rtContested=true;}
             }
         }
+        std::map<int,Mask> masks;
         for(auto& [tid,t]:p.tasks){
-            authority.check();auto it=selected.find(tid);auto* r=it==selected.end()?nullptr:it->second;
+            (void)t;auto it=selected.find(tid);auto* r=it==selected.end()?nullptr:it->second;
             Mask mask=r?r->mask:plan.general;
             if(profile->runtime.preset){mask=plan.effectiveMode==2?plan.general:tid==reps.c2?plan.c2:tid==reps.c1?plan.c1:plan.general;if(!mask)mask=r?r->mask:profile->general;}
-            placement->apply(p,tid,t,mask,r?r->cls:"default",&authority);
+            masks[tid]=mask;
+        }
+        if(journal->runtimeVersion)placement->stageMasks(p,masks,&authority);
+        for(auto& [tid,t]:p.tasks){
+            authority.check();auto it=selected.find(tid);
+            placement->apply(p,tid,t,masks.at(tid),it==selected.end()?"default":it->second->cls,&authority);
         }
         if(rtAllowed)for(int tid:{reps.c1,reps.c2})if(tid){
             authority.check();auto result=placement->realtime(p,tid,true,&authority);
@@ -225,7 +231,9 @@ public:
             }
             plan.effectiveMode=0;plan.general=0x7c;plan.c1=0x1c;plan.c2=0x80;plan.reason="RT_REQUIRED_FOR_WALT_VARIANT";
             reps=runtimeRepresentatives(candidates["C1"],candidates["C2"],profile->runtime.marker);
-            for(auto& [tid,t]:p.tasks){Mask mask=tid==reps.c2?plan.c2:tid==reps.c1?plan.c1:plan.general;placement->apply(p,tid,t,mask,"runtime_fallback",&authority);}
+            for(auto& [tid,t]:p.tasks){(void)t;masks[tid]=tid==reps.c2?plan.c2:tid==reps.c1?plan.c1:plan.general;}
+            placement->stageMasks(p,masks,&authority);
+            for(auto& [tid,t]:p.tasks)placement->apply(p,tid,t,masks.at(tid),"runtime_fallback",&authority);
         }
         if(!rtAllowed||!rtReadback)placement->retireRealtimeGlobal();
         placement->retireWaltGlobal();

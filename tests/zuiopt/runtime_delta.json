@@ -32,9 +32,9 @@
     {
       "path": "native/zuiopt/ZUIopt_daemon.h",
       "before": "100644 blob b0a0bc1e81fc043bf96f1f35e2743682db858649\tnative/zuiopt/ZUIopt_daemon.h",
-      "after": "100644 blob f5292ca35d86a8571dedcc44ebb25e2a64479520\tnative/zuiopt/ZUIopt_daemon.h",
+      "after": "100644 blob 905a574accf423b1890c487a7892de5f99a3638c\tnative/zuiopt/ZUIopt_daemon.h",
       "beforeSha256": "ea40ed1cdaa99a0e7454cec1ba429de9d0afbae4eef89f5edb9152d22f30d4fd",
-      "afterSha256": "fbec8d1d707d68dfa333aff56d6cac8f2d13ae664a372ad4ad92950625220a3e"
+      "afterSha256": "a04a592763a94fcd1997f7b71360ac9fa4942346ba5add1d5610c412e19514fd"
     },
     {
       "path": "native/zuiopt/ZUIopt_library.h",
@@ -53,9 +53,9 @@
     {
       "path": "native/zuiopt/ZUIopt_owner.h",
       "before": "100644 blob 911d958ae23ee7d976f2210420c1e7b4fb245b47\tnative/zuiopt/ZUIopt_owner.h",
-      "after": "100644 blob 9b11b33d31d0b10f2e982d82447703561d31c976\tnative/zuiopt/ZUIopt_owner.h",
+      "after": "100644 blob 1a76e63f47e8191256f966bdcdcfaf025815b0a4\tnative/zuiopt/ZUIopt_owner.h",
       "beforeSha256": "01c36ddfd8b89dc13721edb36092a04457a5233d08f492089a228f514c7d83e8",
-      "afterSha256": "09c962b5691f2ae842bf7c6934d07428299862c298811ad34bfaba45ad5310e7"
+      "afterSha256": "5406bbfea12548ab1e4298a6d8b95ddc15489d530a8cc58ae9264f2da130fd07"
     },
     {
       "path": "native/zuiopt/ZUIopt_rules.h",

@@ -444,6 +444,21 @@ public:
         if(changed)journal.commit(); // One durable batch, before any explicit placement in this scan.
         fence(authority);
     }
+    void stageMasks(ProcessState& p,const std::map<int,Mask>& masks,AuthorityFence* authority=nullptr){
+        std::map<int,std::pair<Mask,Mask>> intents;
+        for(const auto& [tid,mask]:masks){
+            fence(authority);auto task=p.tasks.find(tid);if(task==p.tasks.end()||!task->second.owned||!same(p,tid,task->second))continue;
+            auto& t=task->second;if(physicalRevoke(p,tid,t))throw PhysicalRevoke{};
+            auto it=journal.entries.find(tid);require(it!=journal.entries.end()&&journal.same(it->second),"write without durable owner identity");
+            const auto& r=it->second;if(r.appliedMask==mask)continue;
+            intents.emplace(tid,std::make_pair(t.appliedMask?t.appliedMask:r.savedMask,mask));
+        }
+        // A stale authority or physical handoff during preflight leaves no
+        // partially staged in-memory intents for a later scan to mistake as durable.
+        for(const auto& [tid,intent]:intents){auto& r=journal.entries.at(tid);r.priorMask=intent.first;r.appliedMask=intent.second;}
+        if(!intents.empty()&&journal.runtimeVersion)journal.commit(); // All intents durable before the first affinity syscall.
+        fence(authority);
+    }
     void apply(ProcessState& p,int tid,Task& t,Mask m,const std::string& cls,AuthorityFence* authority=nullptr){
         fence(authority);
         if(!p.writable())throw PhysicalRevoke{};
