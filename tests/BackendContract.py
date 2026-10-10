@@ -2,6 +2,22 @@
 from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
+RUNTIME=json.loads((ROOT/'tests/zuiopt/runtime_delta.json').read_text(encoding='utf-8'))
+RUNTIME_ALLOWED={'native/zuiopt/'+n for n in ('ZUIopt.cpp','ZUIopt_core.h','ZUIopt_daemon.h','ZUIopt_library.h','ZUIopt_lifecycle.h','ZUIopt_owner.h','ZUIopt_rules.h','ZUIopt_runtime.h')}
+RUNTIME_ALLOWED.add('payload/patches/plat_sepolicy_zui_control.cil')
+assert RUNTIME['phase']=='ZUIOPT_RUNTIME_EVOLUTION_ADCB_R1' and RUNTIME['baseHead']=='358ffe118c0e82e937d58e4e619ef25e04f48089'
+assert set(RUNTIME['allowedPaths'])==RUNTIME_ALLOWED
+
+def reverse_runtime_entries(current,*scopes):
+    result=list(current)
+    for row in RUNTIME['files']:
+        assert row['path'] in RUNTIME_ALLOWED
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['after'].encode())==1,('ADCB exact authorized source',row['path'])
+        result.remove(row['after'].encode())
+        if row['before'] is not None:result.append(row['before'].encode())
+    return result
+
 PLAN3_R10=json.loads((ROOT/'tests/product_plan3_resource_frame_delta.json').read_text(encoding='utf-8'))
 R10_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','OwnerWindow.kt')}
 assert set(PLAN3_R10['allowedPaths'])==R10_ALLOWED,'R10 explicit presentation-only source boundary'
@@ -50,7 +66,16 @@ BOOTSTRAP=json.loads((ROOT/'tests/backend_bootstrap_delta.json').read_text(encod
 INTEGRATION=json.loads((ROOT/'tests/backend_monitor_settings_delta.json').read_text(encoding='utf-8'))
 MANIFEST=json.loads((ROOT/'tests/backend_abc_delta.json').read_text(encoding='utf-8'))
 
+def reverse_runtime_text(path,text):
+    change=next((r for r in RUNTIME['files'] if r['path']==path),None)
+    if change:
+        assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('ADCB exact authorized bytes',path)
+        text=subprocess.check_output(['git','-C',str(ROOT),'show',RUNTIME['baseHead']+':'+path]).decode().replace('\r\n','\n')
+        assert hashlib.sha256(text.encode()).hexdigest()==change['beforeSha256'],('ADCB immutable base',path)
+    return text
+
 def reverse_text(path,text):
+    text=reverse_runtime_text(path,text)
     change=next((r for r in PLAN3_R10['files'] if r['path']==path),None)
     if change:
         assert path in R10_ALLOWED
@@ -226,7 +251,7 @@ def entries(*scopes):
     return result
 
 def reverse_entries(current,*scopes):
-    result=list(current)
+    result=reverse_runtime_entries(current,*scopes)
     assert PLAN3_R10['baseHead']=='159a4144cceb68873cd48274d9fe737720ff229b'
     for row in PLAN3_R10['files']:
         assert row['path'] in R10_ALLOWED

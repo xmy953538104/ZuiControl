@@ -28,9 +28,13 @@ class Core {
     EventSubstage substage=EventSubstage::NONE;
     uint64_t acceptedAuthority=0;
     SceneAuthority currentScene;
+    std::string runtimeStatus;
+    std::map<int,std::string> runtimeProcesses;
+    bool topologyQualified=false,waltQualified=false;
 public:
     Core(std::string path,const std::string& statePath):configPath(std::move(path)),stateRoot(statePath){
         available=cpus(read("/sys/devices/system/cpu/online"));loadedConfig=read(configPath);config=parseConfig(loadedConfig,available);ZUIOPT_debug=config.debug;
+        topologyQualified=sm8650Topology();waltQualified=qualifiedWaltIdentity();
         journal=std::make_unique<Journal>(statePath);
         sigset_t signals;sigemptyset(&signals);for(int s:{SIGTERM,SIGINT,SIGHUP,SIGUSR1})sigaddset(&signals,s);
         require(pthread_sigmask(SIG_BLOCK,&signals,nullptr)==0,"signal mask");
@@ -62,7 +66,13 @@ public:
     void release(ProcessState& p){
         substage=EventSubstage::BACKGROUND_RELEASE;
         placement->release(p,p.alive?ReleaseCause::AUTHORITY_BACKGROUND:ReleaseCause::PROCESS_DEATH);
+        if(!p.managed()){runtimeProcesses.erase(p.pid);publishRuntime();}
         if(p.releaseBlocked)blocked(RuntimeBlockerReason::BACKGROUND_RELEASE_BLOCKED);
+    }
+    void publishRuntime(){
+        std::ostringstream out;out<<"{\"schema\":1,\"boot\":"<<std::quoted(journal->currentBootId())<<",\"processes\":[";
+        bool comma=false;for(const auto& [_,state]:runtimeProcesses){if(comma)out<<',';comma=true;out<<state;}
+        out<<"]}\n";if(out.str()!=runtimeStatus){PrivateDir(stateRoot).put("runtime-status.v1",out.str());runtimeStatus=out.str();}
     }
     BaselineResult acquire(ProcessState& p){
         try{return placement->acquire(p);}
@@ -138,6 +148,19 @@ public:
         for(auto it=p.tasks.begin();it!=p.tasks.end();)if(!live.count(it->first))it=p.tasks.erase(it);else ++it;
         for(auto& [cls,items]:candidates){auto* rule=groups.at(cls);int tid=representative(items,rule->rank);if(tid)selected[tid]=rule;
             ZUIOPT_NOTE("REPRESENTATIVE","pid="+std::to_string(p.pid)+" class="+cls+" rank="+std::to_string(rule->rank)+" tid="+std::to_string(tid));}
+        auto plan=runtimePlan(*profile,config,topologyQualified,waltQualified);
+        RuntimeRepresentatives reps;
+        for(const auto& [tid,r]:selected){if(r->rank&&r->cls=="C1")reps.c1=tid;if(r->rank&&r->cls=="C2")reps.c2=tid;}
+        if(profile->runtime.preset){
+            reps=runtimeRepresentatives(candidates["C1"],candidates["C2"],profile->runtime.marker);
+            for(auto it=selected.begin();it!=selected.end();)if(it->second->cls=="C1"||it->second->cls=="C2")it=selected.erase(it);else ++it;
+            if(reps.c1&&groups.count("C1"))selected[reps.c1]=groups.at("C1");
+            // __DoubleMain C1 may be selected from a C2-only classifier.
+            if(reps.c1&&!groups.count("C1")&&groups.count("C2"))selected[reps.c1]=groups.at("C2");
+            if(reps.c2&&groups.count("C2"))selected[reps.c2]=groups.at("C2");
+        }
+        // Kana mode2 0x7ac4 suppresses the C1 slot; every thread retains the general mask.
+        if(plan.effectiveMode==2)reps.c1=0;
         authority.check();
         auto coherence=placement->verifyCoherence(p,start,&authority);
         if(coherence==CoherenceResult::REVOKED)throw PhysicalRevoke{};
@@ -146,7 +169,72 @@ public:
         if(!p.managed())return;
         substage=EventSubstage::SCAN_PREPARE;authority.check();placement->prepare(p,&authority);authority.check();
         substage=EventSubstage::SCAN_APPLY;
-        for(auto& [tid,t]:p.tasks){authority.check();auto it=selected.find(tid);auto* r=it==selected.end()?nullptr:it->second;placement->apply(p,tid,t,r?r->mask:profile->general,r?r->cls:"default",&authority);}
+        if(plan.requestedMode||plan.requestedRt)journal->runtimeVersion=true;
+        bool waltComplete=true;
+        for(auto& [tid,t]:p.tasks){
+            (void)t;authority.check();
+            if(plan.effectiveMode!=2||tid!=reps.c2){
+                auto result=placement->walt(p,tid,0,0,&authority);require(result!=SchedulerResult::UNAVAILABLE,"WALT revocation unresolved");
+            }
+        }
+        if(plan.effectiveMode==2){
+            if(!reps.c2){waltComplete=false;plan.reason="NO_C2_REPRESENTATIVE";}
+            else{
+                auto result=placement->walt(p,reps.c2,plan.requestedRt?2:1,plan.requestedRt?128:2,&authority);
+                waltComplete=result==SchedulerResult::APPLIED||result==SchedulerResult::UNCHANGED;
+                if(!waltComplete)plan.reason=result==SchedulerResult::CONFLICT?"EXTERNAL_WALT_OWNER":result==SchedulerResult::UNRESTORABLE?"WALT_ORIGINAL_UNRESTORABLE":"WALT_WRITE_OR_READBACK_FAILED";
+            }
+            if(!waltComplete){
+                if(reps.c2){auto result=placement->walt(p,reps.c2,0,0,&authority);require(result!=SchedulerResult::UNAVAILABLE,"partial WALT recovery unresolved");}
+                if(plan.reason=="EXTERNAL_WALT_OWNER"){p.transition(Ownership::REVOKE_PENDING);throw PhysicalRevoke{};}
+                plan.effectiveMode=0;plan.general=0x7c;plan.c1=0x1c;plan.c2=0x80;
+                reps=runtimeRepresentatives(candidates["C1"],candidates["C2"],profile->runtime.marker);
+            }
+        }
+        bool globalConflict=journal->globals.count("rr_timeslice_ms")&&trim(read("/proc/sys/kernel/sched_rr_timeslice_ms"))!="3";
+        bool rtAllowed=plan.requestedRt&&!globalConflict&&(reps.c1||reps.c2)&&placement->prepareRealtimeGlobal();
+        bool rtReadback=true,rtContested=globalConflict;std::string rtReason=globalConflict?"EXTERNAL_RT_GLOBAL_OWNER":plan.requestedRt&&!rtAllowed?"RT_BUDGET_OR_GLOBAL_UNAVAILABLE":"NONE";
+        // Revoke outgoing representatives BEFORE granting incoming ones.
+        for(auto& [tid,t]:p.tasks){
+            (void)t;authority.check();
+            if(!rtAllowed||(tid!=reps.c1&&tid!=reps.c2)){
+                auto result=placement->realtime(p,tid,false,&authority);
+                require(result!=SchedulerResult::UNAVAILABLE,"scheduler revocation unresolved");
+                if(result==SchedulerResult::CONFLICT){rtReason="EXTERNAL_SCHEDULER_OWNER";rtContested=true;}
+            }
+        }
+        for(auto& [tid,t]:p.tasks){
+            authority.check();auto it=selected.find(tid);auto* r=it==selected.end()?nullptr:it->second;
+            Mask mask=r?r->mask:plan.general;
+            if(profile->runtime.preset){mask=plan.effectiveMode==2?plan.general:tid==reps.c2?plan.c2:tid==reps.c1?plan.c1:plan.general;if(!mask)mask=r?r->mask:profile->general;}
+            placement->apply(p,tid,t,mask,r?r->cls:"default",&authority);
+        }
+        if(rtAllowed)for(int tid:{reps.c1,reps.c2})if(tid){
+            authority.check();auto result=placement->realtime(p,tid,true,&authority);
+            if(result==SchedulerResult::UNAVAILABLE||result==SchedulerResult::CONFLICT||result==SchedulerResult::DEAD){
+                rtReadback=false;rtContested=rtContested||result==SchedulerResult::CONFLICT;rtReason=rtContested?"EXTERNAL_SCHEDULER_OWNER":"RT_WRITE_OR_READBACK_FAILED";break;
+            }
+        }
+        if(!rtReadback)for(int tid:{reps.c1,reps.c2})if(tid){
+            auto result=placement->realtime(p,tid,false,&authority);require(result!=SchedulerResult::UNAVAILABLE,"partial RT recovery unresolved");
+        }
+        if(rtContested){p.transition(Ownership::REVOKE_PENDING);throw PhysicalRevoke{};}
+        if(plan.effectiveMode==2&&plan.requestedRt&&(!rtAllowed||!rtReadback)){
+            for(auto& [tid,t]:p.tasks){
+                (void)t;auto result=placement->walt(p,tid,0,0,&authority);require(result!=SchedulerResult::UNAVAILABLE,"mode2 RT fallback WALT recovery unresolved");
+            }
+            plan.effectiveMode=0;plan.general=0x7c;plan.c1=0x1c;plan.c2=0x80;plan.reason="RT_REQUIRED_FOR_WALT_VARIANT";
+            reps=runtimeRepresentatives(candidates["C1"],candidates["C2"],profile->runtime.marker);
+            for(auto& [tid,t]:p.tasks){Mask mask=tid==reps.c2?plan.c2:tid==reps.c1?plan.c1:plan.general;placement->apply(p,tid,t,mask,"runtime_fallback",&authority);}
+        }
+        if(!rtAllowed||!rtReadback)placement->retireRealtimeGlobal();
+        placement->retireWaltGlobal();
+        std::ostringstream status;
+        status<<"{\"schema\":1,\"boot\":"<<std::quoted(journal->currentBootId())<<",\"pid\":"<<p.pid<<",\"processStart\":"<<p.generation
+            <<",\"package\":"<<std::quoted(p.package)<<",\"requestedMode\":"<<plan.requestedMode<<",\"effectiveMode\":"<<plan.effectiveMode
+            <<",\"modeReason\":"<<std::quoted(plan.reason)<<",\"requestedRt\":"<<plan.requestedRt<<",\"effectiveRt\":"<<(rtAllowed&&rtReadback?1:0)
+            <<",\"rtReason\":"<<std::quoted(rtReason)<<",\"C1\":"<<reps.c1<<",\"C2\":"<<reps.c2<<"}";
+        runtimeProcesses[p.pid]=status.str();publishRuntime();
         finishScan(p,now(),coherence==CoherenceResult::REPAIR);
         ZUIOPT_NOTE("SCAN","pid="+std::to_string(p.pid)+" tids="+std::to_string(p.tasks.size())+" elapsed_ms="+std::to_string(now()-start)+" next="+std::to_string(p.next));
         }catch(const PhysicalRevoke&){
@@ -162,7 +250,11 @@ public:
         ZUIOPT_NOTE("STATS","events="+std::to_string(counters.events)+" snapshots="+std::to_string(counters.snapshots)+" scans="+std::to_string(counters.scans)+" comm="+std::to_string(counters.comm)+" schedstat="+std::to_string(counters.schedstat)+" placements="+std::to_string(counters.placements)+" releases="+std::to_string(counters.releases)+" wakeups="+std::to_string(counters.wakeups)+" reloads="+std::to_string(counters.reloads)+" active="+std::to_string(active)+" tasks="+std::to_string(tasks)+" journal_commits="+std::to_string(journal->commits));}
     void releaseAll(ReleaseCause cause=ReleaseCause::CRASH_RECOVERY){
         if(placement){for(auto& [_,p]:states)placement->release(p,cause);
-            substage=EventSubstage::CLEANUP;placement->cleanup();placement.reset();}stats();
+            placement->retireRealtimeGlobal();
+            placement->retireWaltGlobal();
+            substage=EventSubstage::CLEANUP;placement->cleanup();
+            for(const auto& [pid,p]:states)if(!p.managed())runtimeProcesses.erase(pid);
+            publishRuntime();placement.reset();}stats();
     }
     int run(){StartupStage phase=StartupStage::CORE_CONSTRUCTED;try{
         recordLifecycle(stateRoot,journal->currentBootId(),phase);

@@ -13,6 +13,8 @@ inline const Profile* appBehavior(const Config& c,const std::string& package){
     return nullptr;
 }
 inline std::string behavior(const Profile* p){return p?behavior(*p):"";}
+inline Profile libraryProfile(const Config& c,const Profile& p){return c.schema==3?resolvedProfile(p,c):p;}
+inline std::string behavior(const Config& c,const Profile* p){return p?behavior(libraryProfile(c,*p)):"";}
 struct LibraryChange {
     std::string package,provenance,decision;bool conflict=false,added=false,removed=false,changed=false;
     bool mappingChanged=false,cpuChanged=false,selectorClassChanged=false;int threadAdded=0,threadRemoved=0,threadChanged=0;
@@ -25,7 +27,7 @@ inline LibraryMerge mergeLibrary(const Config& old,const Config& current,const C
     std::set<std::string> names;for(const auto* c:{&old,&current,&incoming})for(const auto& m:c->packages)if(m.kind=="exact")names.insert(m.package);
     require(names.size()<=512,"library package bound");
     for(const auto& [name,decision]:decisions)require(names.count(name)&&(decision=="KEEP_MINE"||decision=="USE_UPSTREAM"||decision=="MANUAL_MERGE"),"library decision");
-    Config output;output.enabled=current.enabled;LibraryMerge result;
+    Config output;output.enabled=current.enabled;output.schema=current.schema;output.mode=current.mode;output.rt=current.rt;LibraryMerge result;
     std::map<std::string,std::string> aliases;
     auto append=[&](const Mapping& mapping,const Profile& profile){
         auto semantic=behavior(profile);auto it=aliases.find(semantic);std::string alias;
@@ -35,8 +37,8 @@ inline LibraryMerge mergeLibrary(const Config& old,const Config& current,const C
     };
     for(const auto& name:names){
         const auto* a=appBehavior(old,name);const auto* b=appBehavior(current,name);const auto* c=appBehavior(incoming,name);
-        if(partial&&!c){if(b)append({"exact",name,"",0},*b);continue;}
-        auto sa=behavior(a),sb=behavior(b),sc=behavior(c);LibraryChange change;change.package=name;
+        if(partial&&!c){if(b)append({"exact",name,"",0},libraryProfile(current,*b));continue;}
+        auto sa=behavior(old,a),sb=behavior(current,b),sc=behavior(incoming,c);LibraryChange change;change.package=name;
         change.provenance=sa.empty()?"USER_CREATED":sa==sb?"UPSTREAM":"USER_MODIFIED";
         change.conflict=partial?(b&&sb!=sc):sb!=sa&&sc!=sa&&sb!=sc;
         // User-created rows always survive a full upstream update unless explicitly selected otherwise.
@@ -70,10 +72,10 @@ inline LibraryMerge mergeLibrary(const Config& old,const Config& current,const C
             if(x.cls!=y.cls||x.rank!=y.rank||x.mask!=y.mask||i!=j)change.threadChanged++;
         }
         for(bool found:paired)if(!found)change.threadAdded++;
-        if(chosen)append({"exact",name,"",0},*chosen);result.changes.push_back(std::move(change));
+        if(chosen){const auto& source=chosen==b?current:chosen==c?incoming:*manual;append({"exact",name,"",0},libraryProfile(source,*chosen));}result.changes.push_back(std::move(change));
     }
     // Unknown Apps retain the same advanced wildcard order. Named Apps were resolved above.
-    for(const auto& m:current.packages)if(m.kind!="exact")append(m,current.profiles.at(m.profile));
+    for(const auto& m:current.packages)if(m.kind!="exact")append(m,libraryProfile(current,current.profiles.at(m.profile)));
     result.canonical=dumpRules(output);require(result.canonical.size()<=RULE_LIMIT,"merged canonical bound");return result;
 }
 struct LibraryPack {std::string upstream,manual,metadata;std::map<std::string,std::string> decisions;bool partial=false;};

@@ -1,4 +1,4 @@
-"""Cross-check the production importer against the accepted schema-2 Python reference."""
+"""Cross-check the production importer against the Schema2/3 Python reference."""
 from pathlib import Path
 import io,json,subprocess,sys,tempfile,zipfile
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/rules'))
@@ -30,6 +30,13 @@ def main(binary):
         factory=(ROOT/'payload/system/etc/zuiopt/factory_rules.conf').read_bytes()
         for rules in (BASE,OPEN,factory,OPEN.replace(b'Job.worker[AB]*',b'a?[0-9]*'),OPEN.replace(b'prefix Top',b'exact Top')):
             assert parse_rules(call('rules',rules))==parse_rules(rules)
+        for mode in range(3):
+            for rt in range(2):
+                runtime=OPEN.replace(b'schema 2',b'schema 3')+f'runtime_defaults {mode} {rt}\nruntime G -1 -1 preset double\n'.encode()
+                assert parse_rules(call('rules',runtime))==parse_rules(runtime)
+                assert call('merge',BASE,runtime)==merge(BASE,[],runtime)
+                runtime_pack=(manifest_for(runtime,'runtime'),runtime)
+                assert call('merge',BASE,b'',pack_bytes(*runtime_pack))==merge(BASE,[runtime_pack],b'')
         for bad in (b'',BASE.replace(b'2-6',b'0-8'),BASE.replace(b'schema 2',b'schema 1'),BASE+b'profile G 1\n',BASE+b'unknown true\n',OPEN.replace(b'selector=all',b'selector=rank:0'),OPEN.replace(b'selector=all',b'selector=rank:1025'),OPEN.replace(b' 20 7',b' 30 7'),OPEN.replace(b' R2 ',b' R1 ')):
             call('rules',bad,ok=False)
         for source in ('recovered_binary','appopt','zuiopt_native','user_export'):

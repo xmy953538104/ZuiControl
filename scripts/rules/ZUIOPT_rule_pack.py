@@ -59,7 +59,7 @@ def validate_glob(pattern):
 def parse_rules(data):
     if isinstance(data,str): data=data.encode('utf8')
     need(0<len(data)<=MAX_RULES and b'\0' not in data,'config size/NUL')
-    text=data.decode('ascii');profiles={};packages=[];headers={}
+    text=data.decode('ascii');profiles={};packages=[];headers={};runtime_defaults=None;runtime_profiles=set()
     for line in text.splitlines():
         line=line.strip()
         if not line or line.startswith('#'): continue
@@ -67,7 +67,15 @@ def parse_rules(data):
         t=shlex.split(line,comments=False,posix=True);k=t[0]
         if k in ('schema','enabled','debug'):
             need(len(t)==2 and k not in headers,'header syntax/duplicate')
-            need(t[1] in (('2',) if k=='schema' else ('true','false')),'header value');headers[k]=t[1]
+            need(t[1] in (('2','3') if k=='schema' else ('true','false')),'header value');headers[k]=t[1]
+        elif k=='runtime_defaults':
+            need(len(t)==3 and runtime_defaults is None and t[1] in ('0','1','2') and t[2] in ('0','1'),'runtime defaults')
+            runtime_defaults=(int(t[1]),int(t[2]))
+        elif k=='runtime':
+            need(len(t)==6 and t[1] in profiles and t[1] not in runtime_profiles,'runtime profile/duplicate')
+            need(t[2] in ('-1','0','1','2') and t[3] in ('-1','0','1') and t[4] in ('explicit','preset') and t[5] in ('none','dummy','double'),'runtime profile values')
+            need(t[4]=='preset' or t[5]=='none','marker requires mode preset')
+            profiles[t[1]]['runtime']=(int(t[2]),int(t[3]),t[4],t[5]);runtime_profiles.add(t[1])
         elif k=='profile':
             need(len(t)==3 and LABEL.fullmatch(t[1]) and t[1] not in profiles,'profile syntax/duplicate')
             profiles[t[1]]={'mask':mask(t[2]),'rules':[]}
@@ -92,18 +100,28 @@ def parse_rules(data):
             packages.append((t[1],t[2],t[3],priority))
         else: raise ValueError('unknown directive '+k)
         need(len(profiles)<=64 and len(packages)<=512,'config bound')
-    need(headers.get('schema')=='2' and 'enabled' in headers,'schema/enabled required')
+    need(headers.get('schema') in ('2','3') and 'enabled' in headers,'schema/enabled required')
+    need(headers['schema']=='3' or (runtime_defaults is None and not runtime_profiles),'runtime requires schema 3')
     for profile in profiles.values():
         need(len(profile['rules'])<=32,'rule count');profile['rules'].sort(key=lambda r:-r[4])
     packages.sort(key=lambda p:-p[3])
-    return dict(profiles=profiles,packages=packages,enabled=headers['enabled']=='true',debug=headers.get('debug')=='true')
+    result=dict(profiles=profiles,packages=packages,enabled=headers['enabled']=='true',debug=headers.get('debug')=='true')
+    if headers['schema']=='3':
+        result.update(schema=3,mode=(runtime_defaults or (0,0))[0],rt=(runtime_defaults or (0,0))[1])
+        for p in profiles.values():p.setdefault('runtime',(-1,-1,'explicit','none'))
+    return result
 
 def cpu_text(bits): return ','.join(str(n) for n in range(8) if bits&(1<<n))
 
 def dump_rules(config):
-    lines=['schema 2','enabled '+str(config['enabled']).lower(),'debug '+str(config.get('debug',False)).lower()]
+    runtime=config.get('schema')==3 or any('runtime' in p for p in config['profiles'].values())
+    lines=['schema '+('3' if runtime else '2'),'enabled '+str(config['enabled']).lower(),'debug '+str(config.get('debug',False)).lower()]
+    if runtime:lines.append(f'runtime_defaults {config.get("mode",0)} {config.get("rt",0)}')
     for name,p in sorted(config['profiles'].items()):
         lines.append('profile '+name+' '+cpu_text(p['mask']))
+        if runtime:
+            mode,rt,placement,marker=p.get('runtime',(-1,-1,'explicit','none'))
+            lines.append(f'runtime {name} {mode} {rt} {placement} {marker}')
         for group,kind,pattern,rank,priority,bits in p['rules']:
             lines.append(f'thread {name} {group} {kind} {json.dumps(pattern)} selector={"rank:"+str(rank) if rank else "all"} {priority} {cpu_text(bits)}')
     for kind,package,name,priority in config['packages']: lines.append(f'package {kind} {package} {name} {priority}')
@@ -142,7 +160,10 @@ def merge(factory,packs,user):
             if (kind,package) in seen: continue
             seen.add((kind,package))
             if profile not in aliases:
-                alias=f'p{len(result["profiles"]):04d}';aliases[profile]=alias;result['profiles'][alias]=c['profiles'][profile]
+                alias=f'p{len(result["profiles"]):04d}';aliases[profile]=alias;p=dict(c['profiles'][profile])
+                if c.get('schema')==3:
+                    mode,rt,placement,marker=p['runtime'];p['runtime']=(c['mode'] if mode<0 else mode,c['rt'] if rt<0 else rt,placement,marker);result['schema']=3
+                result['profiles'][alias]=p
             result['packages'].append((kind,package,aliases[profile],100000-len(result['packages'])))
     return dump_rules(result)
 

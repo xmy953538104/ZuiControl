@@ -27,7 +27,7 @@ int main(int argc,char** argv){
         if(argc==1){ZUIopt::require(selected(),"not this boot's task owner");ZUIopt::Core core(std::string(ROOT)+"/effective.conf",ROOT);return core.run();}
         if(argc==2&&std::string(argv[1])=="--recover"){
             ZUIopt::require(property("sys.zui_control.zuiopt_failed")=="1","recovery only after fail-safe stop");
-            ZUIopt::Journal journal(ROOT);ZUIopt::Counters counters;ZUIopt::Placement placement(counters,journal);placement.cleanup();return 0;
+            ZUIopt::Journal journal(ROOT);ZUIopt::Counters counters;ZUIopt::Placement placement(counters,journal);placement.cleanup();ZUIopt::PrivateDir(ROOT).remove("runtime-status.v1");return 0;
         }
         ZUIopt::require(argc==2||(argc==5&&std::string(argv[1])=="--control"),"invalid production command");
         if(argc==2&&std::string(argv[1])=="--crash"){puts(ZUIopt::crashGate(ROOT)?"1":"0");return 0;}
@@ -40,6 +40,11 @@ int main(int argc,char** argv){
         std::string command=argv[2],key=argv[3],value=argv[4],result;
         ZUIopt::require(command.size()<=16&&key.size()<=128&&value.size()<=(command=="settings_prepare"?90000u:10924u),"command bound");
         if(command=="state")result=store.state()+store.failureState();
+        else if(command=="runtime"){
+            ZUIopt::require(key.empty()&&value.empty(),"runtime read arguments");
+            result=ZUIopt::PrivateDir(ROOT).get("runtime-status.v1",32768,true);
+            if(result.empty())result="{\"schema\":1,\"processes\":[],\"status\":\"NO_RUNTIME_ACK\"}";
+        }
         else if(command=="read")result=store.userChunk(key,value);
         else if(command=="reset"){ZUIopt::require(key.empty()&&value.empty(),"reset arguments");store.resetFailure();result="NEXT_REBOOT_RETRIES_ZUIOPT";}
         else{result=command.rfind("settings_",0)==0?store.settings(command,key,value):store.apply(command,key,value);if(command=="commit"||command=="restore_app"||command=="rollback"||command=="settings_apply"||command=="settings_revert"){

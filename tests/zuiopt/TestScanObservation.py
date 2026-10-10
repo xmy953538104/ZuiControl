@@ -17,7 +17,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT/'tests'))
-from BackendContract import reverse_text
+from BackendContract import reverse_text,reverse_runtime_text
 
 
 def digest(text):
@@ -29,11 +29,12 @@ def between(text, start, end):
 
 
 def sources():
-    owner = (ROOT/'native/zuiopt/ZUIopt_owner.h').read_text(encoding='utf8')
-    core = (ROOT/'native/zuiopt/ZUIopt_core.h').read_text(encoding='utf8')
+    owner = reverse_runtime_text('native/zuiopt/ZUIopt_owner.h',(ROOT/'native/zuiopt/ZUIopt_owner.h').read_text(encoding='utf8'))
+    core = reverse_runtime_text('native/zuiopt/ZUIopt_core.h',(ROOT/'native/zuiopt/ZUIopt_core.h').read_text(encoding='utf8'))
     daemon = (ROOT/'native/zuiopt/ZUIopt_daemon.h').read_text(encoding='utf8')
     baseline = (ROOT/'tests/zuiopt/fixtures/PhysicalRevokeCandidate1.h').read_text(encoding='utf8')
     candidate = between(owner, '    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')
+    assert candidate==between((ROOT/'native/zuiopt/ZUIopt_owner.h').read_text(encoding='utf8'),'    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')
     # Replace ONLY the authorized function. This freezes every other owner byte,
     # including Journal, prepare, apply, release/recovery and pre-write live checks.
     assert digest(owner.replace(candidate, baseline, 1)) == '35f42c416f50c8c6f5a7d3fdd6966b81dc36cb947d2d80299a9f11600e05dac0'

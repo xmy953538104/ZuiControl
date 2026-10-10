@@ -68,7 +68,14 @@ inline std::string fatalReason(const std::exception& error) {
         "background physical owner unavailable",
         "illegal ownership transition","invalid physical owner","physical affinity unavailable",
         "ZUIopt requires root identity","state directory create","unsafe state directory","factory read bound",
-        "owner lock open","another ZUIopt owner holds journal lock","boot identity","signal mask","event descriptors"
+        "owner lock open","another ZUIopt owner holds journal lock","boot identity","signal mask","event descriptors",
+        "unsafe runtime affinity restore","global recovery unresolved","WALT recovery unresolved",
+        "runtime journal syntax","scheduler revocation unresolved","WALT journal syntax",
+        "partial RT recovery unresolved","background scheduler restore unresolved","global readback unavailable",
+        "journal extra fields","WALT journal values","background WALT restore unresolved",
+        "runtime journal masks","global journal syntax","mode2 RT fallback WALT recovery unresolved",
+        "partial WALT recovery unresolved","WALT revocation unresolved","WALT without durable placement identity",
+        "RT without durable placement identity","scheduler recovery unresolved","global journal fields","global prior intent"
     };
     for(auto reason:known)if(strcmp(text,reason)==0){
         std::string value(reason);

@@ -17,6 +17,10 @@ def main():
     suffix = '.exe' if os.name == 'nt' else ''
     tools = args.ndk / 'toolchains/llvm/prebuilt' / host
     source = repo / 'native/zuiopt/ZUIopt.cpp'
+    def source_identity():
+        return {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in sorted(source.parent.glob('*')) if p.is_file()}
+    before = source_identity()
     version = (args.ndk / 'source.properties').read_text()
     assert 'Pkg.Revision = 27.2.12479018' in version, version
     cmd = [str(tools / ('bin/clang++' + suffix)), '--target=aarch64-linux-android34',
@@ -30,11 +34,11 @@ def main():
     subprocess.run(cmd, check=True)
     strip = [str(tools / ('bin/llvm-strip' + suffix)), '--strip-all', str(args.output)]
     subprocess.run(strip, check=True)
+    assert source_identity() == before, 'build inputs changed during compilation'
     receipt = dict(command=cmd, strip=strip,
                    sha256=hashlib.sha256(args.output.read_bytes()).hexdigest(),
                    size=args.output.stat().st_size,
-                   sources={str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
-                            for p in sorted(source.parent.glob('*')) if p.is_file()})
+                   sources=before)
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     args.receipt.write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(dict(status='BUILT_NOT_INSTALLED', sha256=receipt['sha256'], size=receipt['size'])))

@@ -1,0 +1,80 @@
+{
+  "phase": "ZUIOPT_RUNTIME_EVOLUTION_ADCB_R1",
+  "baseHead": "358ffe118c0e82e937d58e4e619ef25e04f48089",
+  "allowedPaths": [
+    "native/zuiopt/ZUIopt.cpp",
+    "native/zuiopt/ZUIopt_core.h",
+    "native/zuiopt/ZUIopt_daemon.h",
+    "native/zuiopt/ZUIopt_library.h",
+    "native/zuiopt/ZUIopt_lifecycle.h",
+    "native/zuiopt/ZUIopt_owner.h",
+    "native/zuiopt/ZUIopt_rules.h",
+    "native/zuiopt/ZUIopt_runtime.h",
+    "payload/patches/plat_sepolicy_zui_control.cil"
+  ],
+  "files": [
+    {
+      "path": "native/zuiopt/ZUIopt.cpp",
+      "before": "100644 blob ffaa81c6b14bba9e28eb13bb1f62564b75f149aa\tnative/zuiopt/ZUIopt.cpp",
+      "after": "100644 blob 9de619800f21f883e4589e7c6f28bbd156b5d2f9\tnative/zuiopt/ZUIopt.cpp",
+      "beforeSha256": "b8f0c2653753f2d45929e8b9506a284637160e125e0d3664b2af21a72e737f25",
+      "afterSha256": "07b8ef9d99a03f68af7347ca3186618b09263647acfd371283da09f13987bc94"
+    },
+    {
+      "path": "native/zuiopt/ZUIopt_core.h",
+      "before": "100644 blob 4eaa0572d46adba2e9beef88df29dfca1cf04641\tnative/zuiopt/ZUIopt_core.h",
+      "after": "100644 blob 008cb2b471b19f27b21862763429bfc159c83e52\tnative/zuiopt/ZUIopt_core.h",
+      "beforeSha256": "bf977859edad2520fc0a8ac2f308b90becadd2c70bf99ee0525bbfde0344e21d",
+      "afterSha256": "e8609c8ed292ba1640374a9232237d9eb767b6c07366daf09f32b5dd575181ac"
+    },
+    {
+      "path": "native/zuiopt/ZUIopt_daemon.h",
+      "before": "100644 blob b0a0bc1e81fc043bf96f1f35e2743682db858649\tnative/zuiopt/ZUIopt_daemon.h",
+      "after": "100644 blob f5292ca35d86a8571dedcc44ebb25e2a64479520\tnative/zuiopt/ZUIopt_daemon.h",
+      "beforeSha256": "ea40ed1cdaa99a0e7454cec1ba429de9d0afbae4eef89f5edb9152d22f30d4fd",
+      "afterSha256": "fbec8d1d707d68dfa333aff56d6cac8f2d13ae664a372ad4ad92950625220a3e"
+    },
+    {
+      "path": "native/zuiopt/ZUIopt_library.h",
+      "before": "100644 blob 4fe01da1591919970ea586792c6bfb2f9dba9a7d\tnative/zuiopt/ZUIopt_library.h",
+      "after": "100644 blob 6d20a04194fac58f4cb63aa3cf23102c0680c83e\tnative/zuiopt/ZUIopt_library.h",
+      "beforeSha256": "7987dffdbcb2d9adb8e9ebf9ed6d52415cdffdb73ed464540328d232d6aeaa15",
+      "afterSha256": "2bf05a20f880f4f179ff184d407e3315d9a070536805283da6220e8a81e5eb74"
+    },
+    {
+      "path": "native/zuiopt/ZUIopt_lifecycle.h",
+      "before": "100644 blob 83689dd31565889aac28839aa2834eeb415ddd9b\tnative/zuiopt/ZUIopt_lifecycle.h",
+      "after": "100644 blob 71d8710e6b432577e006a04cc016ba9459b5adbf\tnative/zuiopt/ZUIopt_lifecycle.h",
+      "beforeSha256": "451e0b852ec845fa355cab4dfa68a5c74277366cd174aea2f9ca8ab68135bd96",
+      "afterSha256": "2a2717dd7deb114d5f82ce25a97da37d0de22e0f3670950be507c196b0ee0feb"
+    },
+    {
+      "path": "native/zuiopt/ZUIopt_owner.h",
+      "before": "100644 blob 911d958ae23ee7d976f2210420c1e7b4fb245b47\tnative/zuiopt/ZUIopt_owner.h",
+      "after": "100644 blob be043442ba10d0c839825db9888b9e2db6012b43\tnative/zuiopt/ZUIopt_owner.h",
+      "beforeSha256": "01c36ddfd8b89dc13721edb36092a04457a5233d08f492089a228f514c7d83e8",
+      "afterSha256": "256212368965eaf71ef3f5377bb618e1e583693bbfbb70903ee6ce57e4b01d32"
+    },
+    {
+      "path": "native/zuiopt/ZUIopt_rules.h",
+      "before": "100644 blob a8d82c3f89ce7faa4640cf4a99b8d3e172f7ff43\tnative/zuiopt/ZUIopt_rules.h",
+      "after": "100644 blob d0f05099f751f29e7e35dc798c33abc5d4128089\tnative/zuiopt/ZUIopt_rules.h",
+      "beforeSha256": "c0ddf3a91c4c1fd8dad9a784b544d32f8a87e5e63a65746bb2de7e1caedfddfb",
+      "afterSha256": "68d396720973c81d4d699fcd3e853e811a99c43cb719829529a33b961c36a012"
+    },
+    {
+      "path": "native/zuiopt/ZUIopt_runtime.h",
+      "before": null,
+      "after": "100644 blob 3955cd0e1fcbf2b04f8e092d3512ee47aa917b7c\tnative/zuiopt/ZUIopt_runtime.h",
+      "beforeSha256": null,
+      "afterSha256": "5bdfa98a8a967d424e7ddf638aa966fb1083f53c123c0659cee2c75075b4d6bf"
+    },
+    {
+      "path": "payload/patches/plat_sepolicy_zui_control.cil",
+      "before": "100644 blob 20d530f77904a742d603e772bc9f2ad3b7ad518e\tpayload/patches/plat_sepolicy_zui_control.cil",
+      "after": "100644 blob d77a4c8d81345639d03616e1e6d0fc75548f23ca\tpayload/patches/plat_sepolicy_zui_control.cil",
+      "beforeSha256": "ae096be872e51ca91ebd078599534e202b22d69d4c3635ed729350e3b249f1a1",
+      "afterSha256": "c25590e189b7efff00c60f177a0a954802b6dcf67edb9c9080829e465fd5631f"
+    }
+  ]
+}

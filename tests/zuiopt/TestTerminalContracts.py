@@ -10,7 +10,7 @@ from RuntimePurityAudit import audit_system
 
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests'))
-from BackendContract import reverse_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE
+from BackendContract import reverse_text, reverse_runtime_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE
 def read(name): return (ROOT/name).read_text(encoding='utf8')
 
 # Historical f98910e V21 identities; not retroactively replaced by V22 hashes.
@@ -41,7 +41,7 @@ class TerminalContracts(unittest.TestCase):
                          UNCHANGED_CORE_BASELINE_SHA,'unchanged_core_algorithms')
 
     def test_core_contract_rejects_mutations(self):
-        core=read('native/zuiopt/ZUIopt_core.h')
+        core=reverse_runtime_text('native/zuiopt/ZUIopt_core.h',read('native/zuiopt/ZUIopt_core.h'))
         # In-memory copies only: exercise the same guard used by the real source test.
         for old,new,guard in (
             ('struct Identity {uint64_t start=0','struct Identity {uint64_t start=1','unchanged_core_algorithms'),
@@ -94,9 +94,9 @@ class TerminalContracts(unittest.TestCase):
             if name=='ZUIopt_rules.h':text=reverse_text('native/zuiopt/'+name,text)
             self.assertEqual(hashlib.sha256(text.encode()).hexdigest(),sha,name)
         reverse_text('native/zuiopt/ZUIopt_daemon.h',read('native/zuiopt/ZUIopt_daemon.h'))
-        core=read('native/zuiopt/ZUIopt_core.h')
+        core=reverse_runtime_text('native/zuiopt/ZUIopt_core.h',read('native/zuiopt/ZUIopt_core.h'))
         self.assert_core_contract(core)
-        owner=read('native/zuiopt/ZUIopt_owner.h')
+        owner=reverse_runtime_text('native/zuiopt/ZUIopt_owner.h',read('native/zuiopt/ZUIopt_owner.h'))
         release=owner[owner.index('    void release(ProcessState& p,ReleaseCause'):]
         # V60 authorizes physical revocation and one OS-preserving release path.
         # All other algorithm/recovery hashes below remain the accepted baseline.

@@ -109,6 +109,18 @@ void journalTests(const fs::path& parent){
     require(!journal.same(OwnerRecord{999999,10000,999999,1,1,"org.example.game","org.example.game","/background",1}),"old boot cannot authorize live ownership");
     journal.commit();require(!directory.exists("owner_state.v1")&&journal.boot==current,"empty journal durable cleanup");
     put("ZUIOPT_OWNER_STATE_V1",current+"\n");journal.load();require(journal.entries.empty(),"empty legacy journal compatibility");
+    for(const auto& version:{std::string("ZUIOPT_OWNER_STATE_V3"),std::string("ZUIOPT_OWNER_STATE_V4")}){
+        auto fields=version=="ZUIOPT_OWNER_STATE_V4"?" 0":"";
+        put(version,current+"\nG rr_timeslice_ms 100 3"+fields+"\n");journal.load();
+        require(journal.runtimeVersion&&journal.globals.at("rr_timeslice_ms").original==100,"runtime global original roundtrip");
+        journal.commit();journal.globals.clear();journal.load();
+        require(journal.globals.at("rr_timeslice_ms").expected==3,"runtime global intent roundtrip");
+        journal.globals.clear();journal.commit();
+    }
+    for(auto fields:{"rr_timeslice_ms 100 -1","sched_rt_runtime_us 100 3","rr_timeslice_ms 0 3","walt_read_pid -1 17"}){
+        put("ZUIOPT_OWNER_STATE_V4",current+"\nG "+fields+" 0\n");rejects([&]{journal.load();});
+        require(journal.globals.empty(),"invalid runtime globals cannot authorize recovery");
+    }
     fs::remove(path/"owner_state.v1");fs::create_symlink(path/"owner.lock",path/"owner_state.v1");rejects([&]{journal.load();});fs::remove(path/"owner_state.v1");
     puts("ZUIOPT_CRASH_JOURNAL_FORMAT_LOCK_BOOT_GUARDS=PASS");
 }

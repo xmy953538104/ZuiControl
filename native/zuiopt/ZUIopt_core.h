@@ -167,10 +167,14 @@ inline bool authoritativeIdentity(const Snapshot& s,const std::vector<std::strin
     return s.name.rfind(p+":",0)==0&&label(s.name.substr(p.size()+1));
 }
 struct Rule {std::string cls,kind,pattern;int priority=0;Mask mask=0;unsigned rank=0;std::vector<GlobToken> glob;};
-struct Profile {Mask general=0;std::vector<Rule> rules;};
+struct RuntimeRequest {
+    int mode=-1,rt=-1;bool preset=false;std::string marker="none";
+};
+struct Profile {Mask general=0;std::vector<Rule> rules;RuntimeRequest runtime;};
 struct Mapping {std::string kind="exact",package,profile;int priority=0;};
 struct Config {
     bool enabled=true,debug=false;std::map<std::string,Profile> profiles;std::vector<Mapping> packages;
+    int schema=2,mode=0,rt=0;
     const Profile* find(const std::string& package) const {if(!enabled)return nullptr;for(auto& r:packages)if(match(r.kind,r.package,package))return &profiles.at(r.profile);return nullptr;}
 };
 inline bool eligibleSnapshot(const Snapshot& s,const Config& config){
@@ -184,14 +188,23 @@ inline Identity managedIdentity(const Snapshot& s,const Config& config,
     return probe(s.pid,0);
 }
 inline Config parseConfig(const std::string& text,Mask available){
-    require(!text.empty()&&text.size()<=65536&&text.find('\0')==text.npos,"config size/NUL");Config c;bool seenEnabled=false,seenSchema=false,seenDebug=false;std::istringstream all(text);std::string line;
+    require(!text.empty()&&text.size()<=65536&&text.find('\0')==text.npos,"config size/NUL");Config c;bool seenEnabled=false,seenSchema=false,seenDebug=false,seenRuntimeDefaults=false;std::set<std::string> runtimeProfiles;std::istringstream all(text);std::string line;
     while(std::getline(all,line)){
         line=trim(line);if(line.empty()||line[0]=='#')continue;require(line.size()<1024,"line length");
         std::istringstream in(line);std::string kind,extra;in>>kind;
-        if(kind=="schema"){std::string v;in>>v;require(!seenSchema&&v=="2","schema version");seenSchema=true;}
+        if(kind=="schema"){std::string v;in>>v;require(!seenSchema&&(v=="2"||v=="3"),"schema version");c.schema=number(v);seenSchema=true;}
         else if(kind=="enabled") {std::string v;in>>v;require(!seenEnabled&&(v=="true"||v=="false"),"enabled value");seenEnabled=true;c.enabled=v=="true";}
         else if(kind=="debug"){std::string v;in>>v;require(!seenDebug&&(v=="true"||v=="false"),"debug value");seenDebug=true;c.debug=v=="true";}
-        else if(kind=="profile"){
+        else if(kind=="runtime_defaults"){
+            std::string mode,rt;in>>mode>>rt;require(!seenRuntimeDefaults,"duplicate runtime defaults");seenRuntimeDefaults=true;
+            c.mode=number(mode);c.rt=number(rt);require(c.mode>=0&&c.mode<=2&&c.rt>=0&&c.rt<=1,"runtime defaults range");
+        }else if(kind=="runtime"){
+            std::string name,mode,rt,placement,marker;in>>name>>mode>>rt>>placement>>marker;
+            require(c.profiles.count(name)&&runtimeProfiles.insert(name).second,"runtime profile/duplicate");
+            auto& r=c.profiles.at(name).runtime;r.mode=number(mode);r.rt=number(rt);r.preset=placement=="preset";r.marker=marker;
+            require(r.mode>=-1&&r.mode<=2&&r.rt>=-1&&r.rt<=1&&(placement=="explicit"||r.preset)&&(marker=="none"||marker=="dummy"||marker=="double"),"runtime profile values");
+            require(r.preset||marker=="none","marker requires mode preset");
+        }else if(kind=="profile"){
             std::string name,cpu;in>>name>>cpu;require(label(name)&&!c.profiles.count(name),"duplicate/invalid profile");c.profiles[name].general=cpus(cpu);
         }else if(kind=="thread"){
             std::string name,cpu,priority,selector;Rule r;in>>name>>r.cls>>r.kind>>std::quoted(r.pattern)>>selector>>priority>>cpu;
@@ -212,8 +225,12 @@ inline Config parseConfig(const std::string& text,Mask available){
         require(!(in>>extra),"extra config fields");require(c.packages.size()<=512&&c.profiles.size()<=64,"config bound");
     }
     require(seenSchema&&seenEnabled,"missing schema/enabled header");
+    require(c.schema==3||(!seenRuntimeDefaults&&runtimeProfiles.empty()),"runtime requires schema 3");
     for(auto& [_,p]:c.profiles){require((p.general&available)==p.general,"unavailable default CPU");require(p.rules.size()<=32,"rule count");for(auto& r:p.rules)require((r.mask&available)==r.mask,"unavailable override CPU");std::sort(p.rules.begin(),p.rules.end(),[](auto& a,auto& b){return a.priority>b.priority;});}
     std::sort(c.packages.begin(),c.packages.end(),[](auto& a,auto& b){return a.priority>b.priority;});return c;
+}
+inline Profile resolvedProfile(Profile p,const Config& c){
+    p.runtime.mode=p.runtime.mode<0?c.mode:p.runtime.mode;p.runtime.rt=p.runtime.rt<0?c.rt:p.runtime.rt;return p;
 }
 inline const Rule* classify(const Profile& p,const std::string& name){for(auto& r:p.rules)if(r.kind=="glob"?globMatch(r.glob,name):match(r.kind,r.pattern,name))return &r;return nullptr;}
 struct RankedTask {uint64_t score=0;int tid=0;};

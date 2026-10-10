@@ -219,6 +219,10 @@ jobs:
             tests/zuiopt/ZUIoptTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-fixture"
           sudo "$RUNNER_TEMP/zuiopt-fixture" payload/system/etc/zuiopt/factory_rules.conf \
             | tee "$receipt/native_tests.txt" || native_failed=1
+          clang++ -std=c++17 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
+            tests/zuiopt/ZUIoptRuntimeTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-runtime-fixture"
+          "$RUNNER_TEMP/zuiopt-runtime-fixture" | tee "$receipt/runtime_contract_faults.txt" || native_failed=1
+          python3 tests/zuiopt/TestRuntimeSchema.py 2>&1 | tee "$receipt/runtime_schema.txt" || native_failed=1
           python3 tests/zuiopt/TestNativeRuleParity.py "$RUNNER_TEMP/zuiopt-fixture" \
             | tee "$receipt/native_reference_parity.txt" || native_failed=1
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \

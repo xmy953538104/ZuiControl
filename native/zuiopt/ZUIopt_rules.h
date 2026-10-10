@@ -38,8 +38,12 @@ inline std::string sha256(const std::string& data){
     return result.substr(0,64);
 }
 inline std::string dumpRules(const Config& c){
-    std::ostringstream out;out<<"schema 2\nenabled "<<(c.enabled?"true":"false")<<"\ndebug false\n";
+    bool runtime=c.schema==3||c.mode||c.rt;
+    for(const auto& [_,p]:c.profiles)runtime=runtime||p.runtime.mode>=0||p.runtime.rt>=0||p.runtime.preset||p.runtime.marker!="none";
+    std::ostringstream out;out<<"schema "<<(runtime?3:2)<<"\nenabled "<<(c.enabled?"true":"false")<<"\ndebug false\n";
+    if(runtime)out<<"runtime_defaults "<<c.mode<<' '<<c.rt<<'\n';
     for(const auto& [name,p]:c.profiles){out<<"profile "<<name<<' '<<cpuText(p.general)<<'\n';
+        if(runtime)out<<"runtime "<<name<<' '<<p.runtime.mode<<' '<<p.runtime.rt<<' '<<(p.runtime.preset?"preset":"explicit")<<' '<<p.runtime.marker<<'\n';
         for(const auto& r:p.rules)out<<"thread "<<name<<' '<<r.cls<<' '<<r.kind<<' '<<std::quoted(r.pattern)<<" selector="<<(r.rank?"rank:"+std::to_string(r.rank):"all")<<' '<<r.priority<<' '<<cpuText(r.mask)<<'\n';}
     for(const auto& r:c.packages)out<<"package "<<r.kind<<' '<<r.package<<' '<<r.profile<<' '<<r.priority<<'\n';
     auto text=out.str();parseConfig(text,255);return text;
@@ -210,7 +214,7 @@ inline std::string mergeRules(const std::string& factory,const std::vector<Pack>
     std::sort(layers.begin(),layers.end(),[](const Layer& a,const Layer& b){return a.tier!=b.tier?a.tier>b.tier:a.priority!=b.priority?a.priority>b.priority:a.id<b.id;});
     for(const auto& layer:layers){std::map<std::string,std::string> aliases;
         for(const auto& m:layer.config.packages){if(!seen.emplace(m.kind,m.package).second)continue;
-            if(!aliases.count(m.profile)){std::ostringstream name;name<<'p'<<std::setw(4)<<std::setfill('0')<<result.profiles.size();aliases[m.profile]=name.str();result.profiles[name.str()]=layer.config.profiles.at(m.profile);}
+            if(!aliases.count(m.profile)){std::ostringstream name;name<<'p'<<std::setw(4)<<std::setfill('0')<<result.profiles.size();aliases[m.profile]=name.str();auto p=layer.config.profiles.at(m.profile);if(layer.config.schema==3){p=resolvedProfile(p,layer.config);result.schema=3;}result.profiles[name.str()]=std::move(p);}
             result.packages.push_back({m.kind,m.package,aliases.at(m.profile),100000-static_cast<int>(result.packages.size())});
         }
     }return dumpRules(result);

@@ -27,7 +27,10 @@ def check():
  engine+='\n'+(ROOT/'native/zuiopt/ZUIopt.cpp').read_text(encoding='utf8')
  engine=re.sub(r'/\*.*?\*/|//[^\n]*','',engine,flags=re.S)
  assert 'sched_setaffinity(' in engine and ':cpuset:' in engine
- for forbidden in ('sched_setscheduler','sched_setparam','sched_setattr','setpriority','nice','SCHED_FIFO','SCHED_RR','UCLAMP_MIN','UCLAMP_MAX'):
+ for forbidden in ('sched_setscheduler','sched_setparam','setpriority','UCLAMP_MIN','UCLAMP_MAX'):
   assert not re.search(r'\b'+forbidden+r'\b',engine),forbidden
- print('SCHEMA_CONTRACT=PASS reference grammar + production placement-only source guard; native execution separate')
+ assert not re.search(r'\bnice\s*\(',engine)
+ # Owner ADCB explicitly adds sched_attr ownership. Schema2 still accepts no RT directives.
+ assert 'SYS_sched_getattr' in engine and 'SYS_sched_setattr' in engine
+ print('SCHEMA_CONTRACT=PASS schema2 grammar; explicit ADCB sched_attr ownership separately tested')
 if __name__=='__main__':check()

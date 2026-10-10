@@ -1,6 +1,6 @@
 // Durable write-ahead ownership. Unknown stale tasks are never assigned a guessed owner.
 #pragma once
-#include "ZUIopt_core.h"
+#include "ZUIopt_runtime.h"
 #include <sys/file.h>
 namespace ZUIopt {
 inline bool validCpusetScaffold(const struct stat& st){
@@ -11,6 +11,9 @@ struct OwnerRecord {
     uint64_t processStart=0,threadStart=0;
     std::string package,name,savedGroup;
     Mask savedMask=0;
+    Mask priorMask=0,appliedMask=0;
+    SchedulerOwnership scheduler{};
+    WaltOwnership walt{};
 };
 inline uint32_t checksum(const std::string& s){
     uint32_t crc=~uint32_t(0);
@@ -84,6 +87,10 @@ public:
     // Only threads of this TGID born after the floor and still in our cpuset are covered.
     std::map<int,OwnerRecord> leases;
     std::string boot;
+    bool runtimeVersion=false;
+    bool waltVersion=false;
+    struct GlobalOwner {int original=0,expected=0,prior=0;};
+    std::map<std::string,GlobalOwner> globals;
     uint64_t commits=0;
     explicit Journal(const std::string& path){
         try {
@@ -111,7 +118,13 @@ public:
         const auto& lease=it->second;auto id=identity(pid,tid);
         if(!id.start||id.start<lease.threadStart||identity(pid).start!=lease.processStart||uid(pid)!=lease.user||processName(pid)!=lease.name)return false;
         if(group(tid).rfind("/ZUIopt/",0)!=0)return false;
-        out=lease;out.tid=tid;out.threadStart=id.start;return true;
+        out=lease;out.tid=tid;out.threadStart=id.start;
+        if(runtimeVersion){
+            auto current=group(tid);auto mask=affinity(tid);std::ostringstream expected;expected<<"/ZUIopt/"<<std::hex<<mask;
+            auto text=trim(read("/dev/cpuset"+current+"/cpus"));
+            if(mask&&current==expected.str()&&!text.empty()&&cpus(text)==mask&&same(out))out.appliedMask=out.priorMask=mask;
+        }
+        return true;
     }
     void validate(const OwnerRecord& r) const {
         require(r.pid>0&&r.tid>0&&r.user>=0&&r.processStart&&r.threadStart,"journal identity");
@@ -130,37 +143,57 @@ public:
             require(n==0,"journal read");close(fd);fd=-1;
             auto newline=text.find('\n');require(newline!=text.npos,"journal truncated header");
             std::istringstream header(text.substr(0,newline));std::string magic,extra;uint64_t crc=0;
-            require(bool(header>>magic>>crc)&&(magic=="ZUIOPT_OWNER_STATE_V1"||magic=="ZUIOPT_OWNER_STATE_V2")&&!(header>>extra),"journal version/header");
+            require(bool(header>>magic>>crc)&&(magic=="ZUIOPT_OWNER_STATE_V1"||magic=="ZUIOPT_OWNER_STATE_V2"||magic=="ZUIOPT_OWNER_STATE_V3"||magic=="ZUIOPT_OWNER_STATE_V4")&&!(header>>extra),"journal version/header");
+            waltVersion=magic=="ZUIOPT_OWNER_STATE_V4";runtimeVersion=waltVersion||magic=="ZUIOPT_OWNER_STATE_V3";
             std::string body=text.substr(newline+1);require(crc==checksum(body),"journal checksum mismatch");
             std::istringstream in(body);std::string key,line;
             require(bool(std::getline(in,boot))&&boot.size()==36,"journal boot identity");
             while(std::getline(in,line)){
                 require(!line.empty()&&entries.size()<32768,"journal entry bound");
                 OwnerRecord r;std::istringstream row(line);
-                std::string type="T";if(magic=="ZUIOPT_OWNER_STATE_V2")row>>type;
+                std::string type="T";if(magic!="ZUIOPT_OWNER_STATE_V1")row>>type;
+                if(type=="G"){
+                    std::string name;GlobalOwner g;
+                    require(runtimeVersion&&bool(row>>name>>g.original>>g.expected),"global journal syntax");
+                    if(waltVersion)require(bool(row>>g.prior)&&g.prior>=0&&g.prior<=4194304,"global prior intent");
+                    require(!(row>>extra)&&
+                        ((name=="rr_timeslice_ms"&&g.original>=1&&g.original<=1000&&g.expected==3)||
+                        (waltVersion&&name=="walt_read_pid"&&g.original>=0&&g.original<=4194304&&g.expected>0&&g.expected<=4194304))&&globals.emplace(name,g).second,"global journal syntax");continue;
+                }
                 require(type=="L"||type=="T","journal record type");
-                require(bool(row>>r.pid>>r.processStart>>r.user>>r.tid>>r.threadStart>>std::quoted(r.package)>>std::quoted(r.name)>>std::quoted(r.savedGroup)>>r.savedMask)&&!(row>>extra),"journal entry syntax");
+                require(bool(row>>r.pid>>r.processStart>>r.user>>r.tid>>r.threadStart>>std::quoted(r.package)>>std::quoted(r.name)>>std::quoted(r.savedGroup)>>r.savedMask),"journal entry syntax");
+                if(runtimeVersion&&type=="T"){
+                    int active=0;
+                    require(bool(row>>r.priorMask>>r.appliedMask>>active)&&(active==0||active==1)&&parseScheduler(row,r.scheduler.original)&&parseScheduler(row,r.scheduler.expected),"runtime journal syntax");r.scheduler.active=active;
+                    require((r.priorMask&~Mask(255))==0&&(r.appliedMask&~Mask(255))==0,"runtime journal masks");
+                    if(waltVersion){int waltActive=0;require(bool(row>>waltActive>>r.walt.kind>>r.walt.original>>r.walt.expected)&&(waltActive==0||waltActive==1),"WALT journal syntax");r.walt.active=waltActive;require(!r.walt.active||(waltValue(r.walt.kind,r.walt.original)&&waltValue(r.walt.kind,r.walt.expected)),"WALT journal values");}
+                }
+                require(!(row>>extra),"journal extra fields");
                 validate(r);
                 if(type=="L"){require(r.tid==r.pid&&leases.size()<128,"journal inheritance lease");require(leases.emplace(r.pid,r).second,"duplicate process lease");}
                 else require(entries.emplace(r.tid,r).second,"duplicate journal TID");
             }
-        }catch(...){if(fd>=0)close(fd);entries.clear();leases.clear();throw;}
+        }catch(...){if(fd>=0)close(fd);entries.clear();leases.clear();globals.clear();throw;}
     }
     void commit(){
         // CRC detects torn/corrupt storage; root-only DAC is the authenticity boundary.
-        if(entries.empty()&&leases.empty()){
+        if(entries.empty()&&leases.empty()&&globals.empty()){
             require(unlinkat(dirFd,"owner_state.v1",0)==0||errno==ENOENT,"journal remove");
             require(fsync(dirFd)==0,"journal directory sync");boot=currentBoot;commits++;return;
         }
         boot=currentBoot;std::ostringstream body;body<<boot<<'\n';
+        for(const auto& [name,g]:globals){require(runtimeVersion&&((name=="rr_timeslice_ms"&&g.original>=1&&g.original<=1000&&g.expected==3)||(waltVersion&&name=="walt_read_pid"&&g.original>=0&&g.original<=4194304&&g.expected>0&&g.expected<=4194304)),"global journal fields");body<<"G "<<name<<' '<<g.original<<' '<<g.expected;if(waltVersion)body<<' '<<g.prior;body<<'\n';}
         for(auto& [_,r]:leases){validate(r);body<<"L "<<r.pid<<' '<<r.processStart<<' '<<r.user<<' '<<r.tid<<' '<<r.threadStart<<' '<<std::quoted(r.package)<<' '<<std::quoted(r.name)<<' '<<std::quoted(r.savedGroup)<<' '<<r.savedMask<<'\n';}
         for(auto& [_,r]:entries){
             validate(r);
             body<<"T "<<r.pid<<' '<<r.processStart<<' '<<r.user<<' '<<r.tid<<' '<<r.threadStart<<' '
-                <<std::quoted(r.package)<<' '<<std::quoted(r.name)<<' '<<std::quoted(r.savedGroup)<<' '<<r.savedMask<<'\n';
+                <<std::quoted(r.package)<<' '<<std::quoted(r.name)<<' '<<std::quoted(r.savedGroup)<<' '<<r.savedMask;
+            if(runtimeVersion){body<<' '<<r.priorMask<<' '<<r.appliedMask<<' '<<r.scheduler.active<<' ';schedulerText(body,r.scheduler.original);body<<' ';schedulerText(body,r.scheduler.expected);}
+            if(waltVersion)body<<' '<<r.walt.active<<' '<<r.walt.kind<<' '<<r.walt.original<<' '<<r.walt.expected;
+            body<<'\n';
         }
         auto data=body.str();require(data.size()<=4*1024*1024,"journal size bound");
-        data="ZUIOPT_OWNER_STATE_V2 "+std::to_string(checksum(data))+"\n"+data;
+        data=std::string(waltVersion?"ZUIOPT_OWNER_STATE_V4 ":runtimeVersion?"ZUIOPT_OWNER_STATE_V3 ":"ZUIOPT_OWNER_STATE_V2 ")+std::to_string(checksum(data))+"\n"+data;
         int fd=openat(dirFd,"owner_state.v1.new",O_WRONLY|O_CREAT|O_CLOEXEC|O_NOFOLLOW,0600);
         require(fd>=0,"journal staging open");
         try {
@@ -203,12 +236,26 @@ class Placement {
         std::vector<int> v;std::istringstream in(text);int tid;
         while(in>>tid){require(tid>0,"cpuset task identity");v.push_back(tid);}require(in.eof(),"cpuset tasks parse");return v;
     }
-    void restore(const OwnerRecord& r){
+    void restore(OwnerRecord& r){
         if(!journal.same(r))return;
+        WaltKernel waltKernel{[&](int tid){return selectWalt(tid);}};
+        auto waltResult=restoreWalt(r.walt,r.tid,waltKernel,[&]{journal.commit();},[&]{return journal.same(r);});
+        require(waltResult!=SchedulerResult::UNAVAILABLE,"WALT recovery unresolved");
+        SchedulerKernel kernel;
+        auto result=restoreScheduler(r.scheduler,r.tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);});
+        require(result!=SchedulerResult::UNAVAILABLE,"scheduler recovery unresolved");
         auto current=group(r.tid);auto destination=normalGroup(current)?current:r.savedGroup;
         require(normalGroup(destination),"invalid Android release owner");
         bool moved=current==destination||(journal.same(r)&&write("/dev/cpuset"+destination+"/tasks",std::to_string(r.tid)));
-        bool restored=journal.same(r)&&setAffinity(r.tid,r.savedMask);
+        bool restored=true;
+        auto mask=affinity(r.tid);
+        if(!journal.runtimeVersion){
+            restored=journal.same(r)&&setAffinity(r.tid,r.savedMask);
+        }else if(mask==r.appliedMask||mask==r.priorMask){
+            auto allowed=cpus(read("/dev/cpuset"+destination+"/cpus"));auto restoreMask=r.savedMask&allowed;
+            require(restoreMask!=0,"unsafe runtime affinity restore");
+            restored=journal.same(r)&&setAffinity(r.tid,restoreMask);
+        }
         if((!moved||!restored)&&journal.same(r))throw std::runtime_error("journal release failed TID="+std::to_string(r.tid));
         count.releases++;ZUIOPT_NOTE("RELEASE","pid="+std::to_string(r.pid)+" tid="+std::to_string(r.tid)+" group="+destination);
     }
@@ -248,10 +295,83 @@ public:
             for(int pass=0;pass<8&&coverRemaining();pass++)for(auto& [_,r]:journal.entries)if(group(r.tid).rfind("/ZUIopt/",0)==0)restore(r);
             require(!coverRemaining(),"RECOVERY_BUSY_FAIL_CLOSED");created=groups();cleanup();
         }
-        journal.entries.clear();journal.leases.clear();journal.commit();
+        restoreGlobals();journal.entries.clear();journal.leases.clear();journal.commit();
         ZUIOPT_NOTE("RECOVERY_OK","restored="+std::to_string(restored)+" discarded="+std::to_string(discarded)+" remaining_tasks=0");
         require(write(root+"/mems",trim(read("/dev/cpuset/mems")))&&
                 write(root+"/cpus",trim(read("/dev/cpuset/cpus"))),"cpuset initialization");
+    }
+    bool finiteRtBudget() const {
+        auto period=trim(read("/proc/sys/kernel/sched_rt_period_us")),runtime=trim(read("/proc/sys/kernel/sched_rt_runtime_us"));
+        if(period.empty()||runtime.empty())return false;
+        int p=number(period),r=number(runtime);return p>0&&p<=1500000&&r>0&&r<p&&int64_t(r)*100<=int64_t(p)*95;
+    }
+    void restoreGlobals(const std::string& only={}){
+        if(journal.boot!=journal.currentBootId()){journal.globals.clear();return;}
+        for(auto it=journal.globals.begin();it!=journal.globals.end();){
+            if(!only.empty()&&it->first!=only){++it;continue;}
+            auto path=it->first=="walt_read_pid"?"/proc/sys/walt/sched_task_read_pid":"/proc/sys/kernel/sched_rr_timeslice_ms";
+            auto current=trim(read(path));require(!current.empty(),"global readback unavailable");
+            if(number(current)==it->second.expected||(it->first=="walt_read_pid"&&number(current)==it->second.prior)){
+                require(write(path,std::to_string(it->second.original))&&number(trim(read(path)))==it->second.original,"global recovery unresolved");
+            }
+            it=journal.globals.erase(it);journal.commit();
+        }
+    }
+    bool selectWalt(int tid){
+        if(tid<=0||tid>4194304)return false;
+        const char* path="/proc/sys/walt/sched_task_read_pid";auto currentText=trim(read(path));if(currentText.empty())return false;
+        int current=number(currentText);auto it=journal.globals.find("walt_read_pid");
+        if(it!=journal.globals.end()&&current!=it->second.expected&&current!=it->second.prior)return false; // A foreign query Owner wins.
+        if(current==tid)return true;
+        journal.runtimeVersion=true;journal.waltVersion=true;
+        if(it==journal.globals.end())it=journal.globals.emplace("walt_read_pid",Journal::GlobalOwner{current,tid,current}).first;
+        else{it->second.prior=current;it->second.expected=tid;}
+        journal.commit();
+        if(trim(read(path))!=currentText)return false;
+        return write(path,std::to_string(tid))&&trim(read(path))==std::to_string(tid);
+    }
+    SchedulerResult walt(ProcessState& p,int tid,int kind,int value,AuthorityFence* authority=nullptr){
+        fence(authority);auto it=journal.entries.find(tid);
+        if(it==journal.entries.end()&&!identity(p.pid,tid).start)return SchedulerResult::DEAD;
+        require(it!=journal.entries.end(),"WALT without durable placement identity");auto& r=it->second;
+        WaltKernel kernel{[&](int target){return selectWalt(target);}};
+        if(!kind)return restoreWalt(r.walt,tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);});
+        if(!qualifiedWaltIdentity())return SchedulerResult::UNAVAILABLE;
+        journal.runtimeVersion=true;journal.waltVersion=true;
+        return applyWalt(r.walt,kind,tid,value,kernel,[&]{journal.commit();},[&]{
+            fence(authority);auto task=p.tasks.find(tid);
+            if(task!=p.tasks.end()&&physicalRevoke(p,tid,task->second))throw PhysicalRevoke{};
+            return p.writable()&&journal.same(r)&&processName(p.pid)==p.name;
+        });
+    }
+    bool prepareRealtimeGlobal(){
+        if(!finiteRtBudget())return false;
+        if(journal.globals.count("rr_timeslice_ms"))return trim(read("/proc/sys/kernel/sched_rr_timeslice_ms"))=="3";
+        auto current=trim(read("/proc/sys/kernel/sched_rr_timeslice_ms"));if(current.empty())return false;
+        int original=number(current);if(original<1||original>1000)return false;if(original==3)return true;
+        journal.runtimeVersion=true;journal.globals.emplace("rr_timeslice_ms",Journal::GlobalOwner{original,3});journal.commit();
+        if(trim(read("/proc/sys/kernel/sched_rr_timeslice_ms"))!=current)return false;
+        return write("/proc/sys/kernel/sched_rr_timeslice_ms","3")&&trim(read("/proc/sys/kernel/sched_rr_timeslice_ms"))=="3";
+    }
+    SchedulerResult realtime(ProcessState& p,int tid,bool requested,AuthorityFence* authority=nullptr){
+        fence(authority);auto it=journal.entries.find(tid);
+        if(it==journal.entries.end()&&!identity(p.pid,tid).start)return SchedulerResult::DEAD;
+        require(it!=journal.entries.end(),"RT without durable placement identity");auto& r=it->second;
+        SchedulerKernel kernel;auto same=[&]{
+            fence(authority);auto task=p.tasks.find(tid);
+            if(task!=p.tasks.end()&&physicalRevoke(p,tid,task->second))throw PhysicalRevoke{};
+            return p.writable()&&journal.same(r)&&processName(p.pid)==p.name;
+        };
+        if(!requested)return restoreScheduler(r.scheduler,tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);});
+        journal.runtimeVersion=true;return applyRealtime(r.scheduler,tid,kernel,[&]{journal.commit();},same);
+    }
+    void retireRealtimeGlobal(){
+        for(const auto& [_,r]:journal.entries)if(r.scheduler.active&&journal.same(r))return;
+        restoreGlobals("rr_timeslice_ms");
+    }
+    void retireWaltGlobal(){
+        for(const auto& [_,r]:journal.entries)if(r.walt.active&&journal.same(r))return;
+        restoreGlobals("walt_read_pid");
     }
     std::string target(Mask m){
         std::ostringstream n;n<<std::hex<<m;auto p=root+"/"+n.str();
@@ -337,6 +457,10 @@ public:
         // Do not take a second observation and then ignore its revocation signal.
         if(t.appliedMask==m){t.verified=now();return;}
         auto path=target(m);
+        auto& r=it->second;
+        journal.runtimeVersion=true;
+        if(r.appliedMask!=m){r.priorMask=t.appliedMask?t.appliedMask:(r.appliedMask?r.appliedMask:r.savedMask);r.appliedMask=m;journal.commit();}
+        fence(authority);
         bool moved=same(p,tid,t)&&write(path+"/tasks",std::to_string(tid),authority),placed=false;
         if(same(p,tid,t)){fence(authority);placed=setAffinity(tid,m);}
         if(placed)t.appliedMask=m; // Preserve exact residue even if authority changes inside the syscall.
@@ -430,8 +554,14 @@ public:
         };
         cover();
         bool pending=false;
-        for(auto& [tid,r]:journal.entries){
+        for(auto& entry:journal.entries){auto tid=entry.first;auto& r=entry.second;
             if(r.pid!=p.pid||r.processStart!=p.generation||!journal.same(r))continue;
+            WaltKernel waltKernel{[&](int target){return selectWalt(target);}};
+            auto waltResult=restoreWalt(r.walt,tid,waltKernel,[&]{journal.commit();},[&]{return journal.same(r);});
+            require(waltResult!=SchedulerResult::UNAVAILABLE,"background WALT restore unresolved");
+            SchedulerKernel kernel;
+            auto schedule=restoreScheduler(r.scheduler,tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);});
+            require(schedule!=SchedulerResult::UNAVAILABLE,"background scheduler restore unresolved");
             journal.validate(r);
             auto g=group(tid);if(!journal.same(r))continue;
             if(owned(g)){
@@ -500,7 +630,7 @@ public:
         if(pending||!remaining.empty()||residue)return false;
         for(auto it=journal.entries.begin();it!=journal.entries.end();)
             if(it->second.pid==p.pid&&it->second.processStart==p.generation)it=journal.entries.erase(it);else ++it;
-        journal.leases.erase(p.pid);journal.commit();p.tasks.clear();p.transition(Ownership::ANDROID_OWNED);discardAcquisition(p);
+        journal.leases.erase(p.pid);journal.commit();retireRealtimeGlobal();retireWaltGlobal();p.tasks.clear();p.transition(Ownership::ANDROID_OWNED);discardAcquisition(p);
         p.releaseParked=false;p.releaseBlocked=false;p.releaseRearmed=false;p.coherenceEpisodes=0;
         count.releases++;return true;
     }
