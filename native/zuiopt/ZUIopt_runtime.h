@@ -3,6 +3,7 @@
 #include "ZUIopt_core.h"
 #include <sys/syscall.h>
 #include <sys/utsname.h>
+#include <sys/resource.h>
 namespace ZUIopt {
 inline constexpr size_t RUNTIME_STATUS_LIMIT=32768;
 inline std::string runtimeEnvelope(const std::string& boot,const std::map<int,std::string>& processes){
@@ -26,7 +27,10 @@ inline bool operator==(const SchedulerState& a,const SchedulerState& b){
 }
 inline bool schedulerState(int tid,SchedulerState& state){
     state=SchedulerState{};
-    return syscall(SYS_sched_getattr,tid,&state,sizeof(state),0)==0&&state.size>=56;
+    if(syscall(SYS_sched_getattr,tid,&state,sizeof(state),0)!=0||state.size<56)return false;
+    // sched_getattr omits nice for RT; read the actual saved nice before preserving it.
+    errno=0;int nice=getpriority(PRIO_PROCESS,tid);if(errno!=0)return false;
+    state.nice=nice;return true;
 }
 inline bool restorableScheduler(const SchedulerState& state){
     return (state.policy==SCHED_OTHER||state.policy==SCHED_BATCH||state.policy==SCHED_IDLE||

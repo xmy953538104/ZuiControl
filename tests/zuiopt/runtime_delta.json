@@ -67,9 +67,9 @@
     {
       "path": "native/zuiopt/ZUIopt_runtime.h",
       "before": null,
-      "after": "100644 blob 5d38dd00eb3d972e663e84af47058f2067bb8013\tnative/zuiopt/ZUIopt_runtime.h",
+      "after": "100644 blob 5bb1ad1c620ceb87069bba99d6d91836e2f18f80\tnative/zuiopt/ZUIopt_runtime.h",
       "beforeSha256": null,
-      "afterSha256": "ed97a18a1ad14f166b5a6166b20e5655ce533e915b788034dd59ac75d2b5b51d"
+      "afterSha256": "656560acbd6aece051f5ff9e10cd2f3696964ac9391a41ad3b1efa6e99152a59"
     },
     {
       "path": "payload/patches/plat_sepolicy_zui_control.cil",
