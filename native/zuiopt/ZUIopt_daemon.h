@@ -70,9 +70,8 @@ public:
         if(p.releaseBlocked)blocked(RuntimeBlockerReason::BACKGROUND_RELEASE_BLOCKED);
     }
     void publishRuntime(){
-        std::ostringstream out;out<<"{\"schema\":1,\"boot\":"<<std::quoted(journal->currentBootId())<<",\"processes\":[";
-        bool comma=false;for(const auto& [_,state]:runtimeProcesses){if(comma)out<<',';comma=true;out<<state;}
-        out<<"]}\n";if(out.str()!=runtimeStatus){PrivateDir(stateRoot).put("runtime-status.v1",out.str());runtimeStatus=out.str();}
+        auto out=runtimeEnvelope(journal->currentBootId(),runtimeProcesses);
+        if(out!=runtimeStatus){PrivateDir(stateRoot).put("runtime-status.v1",out);runtimeStatus=std::move(out);}
     }
     BaselineResult acquire(ProcessState& p){
         try{return placement->acquire(p);}

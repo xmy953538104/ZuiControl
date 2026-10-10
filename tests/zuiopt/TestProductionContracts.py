@@ -15,7 +15,7 @@ class ProductionContracts(unittest.TestCase):
         self.assertIn('const auto token=acceptedAuthority',scan)
         self.assertNotIn('token=events.authorityEpoch()',scan)
         self.assertIn('for(int tid:tids){\n            authority.check();',scan)
-        for call in ('verifyCoherence(p,start,&authority)','prepare(p,&authority)','r?r->cls:"default",&authority)'):
+        for call in ('verifyCoherence(p,start,&authority)','prepare(p,&authority)','stageMasks(p,masks,&authority)','placement->apply(p,tid,t,masks.at(tid),it==selected.end()?"default":it->second->cls,&authority)'):
             self.assertIn(call,scan)
         self.assertIn('catch(const StaleAuthorityScan&)',scan)
         self.assertIn('if(authority.background){p.activity_foreground=false;release(p);}',scan)

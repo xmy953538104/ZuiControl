@@ -4,6 +4,17 @@
 #include <sys/syscall.h>
 #include <sys/utsname.h>
 namespace ZUIopt {
+inline constexpr size_t RUNTIME_STATUS_LIMIT=32768;
+inline std::string runtimeEnvelope(const std::string& boot,const std::map<int,std::string>& processes){
+    std::ostringstream header;header<<"{\"schema\":1,\"boot\":"<<std::quoted(boot)<<",\"totalProcesses\":"<<processes.size()<<",\"processes\":[";
+    auto out=header.str();bool comma=false,truncated=false;
+    for(const auto& [_,state]:processes){
+        if(out.size()+state.size()+64>RUNTIME_STATUS_LIMIT){truncated=true;break;}
+        if(comma)out+=',';comma=true;out+=state;
+    }
+    out+=truncated?"],\"truncated\":true}\n":"],\"truncated\":false}\n";
+    return out;
+}
 struct SchedulerState {
     uint32_t size=56,policy=0;uint64_t flags=0;int32_t nice=0;uint32_t priority=0;
     uint64_t runtime=0,deadline=0,period=0;uint32_t utilMin=0,utilMax=1024;

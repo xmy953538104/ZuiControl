@@ -42,7 +42,7 @@ int main(int argc,char** argv){
         if(command=="state")result=store.state()+store.failureState();
         else if(command=="runtime"){
             ZUIopt::require(key.empty()&&value.empty(),"runtime read arguments");
-            result=ZUIopt::PrivateDir(ROOT).get("runtime-status.v1",32768,true);
+            result=ZUIopt::PrivateDir(ROOT).get("runtime-status.v1",ZUIopt::RUNTIME_STATUS_LIMIT,true);
             if(result.empty())result="{\"schema\":1,\"processes\":[],\"status\":\"NO_RUNTIME_ACK\"}";
         }
         else if(command=="read")result=store.userChunk(key,value);

@@ -241,8 +241,8 @@ void runtimeUpgrade(){
     for(auto& [tid,t]:f.p().tasks)f.owner->apply(f.p(),tid,t,252,"runtime");
     Kernel::beforeWrite={};require(f.journal->commits==commits+1,"runtime per-thread journal amplification");
     auto path=Kernel::root+"/state";f.owner.reset();f.journal.reset();
-    {Journal reload(path);require(reload.runtimeVersion&&reload.entries.size()==200,"runtime upgrade reload");
-     Counters counters;Placement recovery(counters,reload);recovery.cleanup();
+    {Journal reload(path);reload.load();require(reload.runtimeVersion&&reload.entries.size()==200,"runtime upgrade reload");}
+    {Journal reload(path);Counters counters;Placement recovery(counters,reload);recovery.cleanup();
      require(!reload.runtimeVersion&&!reload.waltVersion&&reload.entries.empty(),"empty runtime ownership version retained");}
     for(auto& [_,t]:Kernel::tasks)require(t.group=="/top-app"&&t.mask==255,"runtime upgrade recovery residue");
     puts("SCHEMA2_NO_JOURNAL_AMPLIFICATION_MIDLEASE_V3_ALL200_RECOVERY=PASS");
