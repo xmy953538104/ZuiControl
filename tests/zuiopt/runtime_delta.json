@@ -10,7 +10,8 @@
     "native/zuiopt/ZUIopt_owner.h",
     "native/zuiopt/ZUIopt_rules.h",
     "native/zuiopt/ZUIopt_runtime.h",
-    "payload/patches/plat_sepolicy_zui_control.cil"
+    "payload/patches/plat_sepolicy_zui_control.cil",
+    "scripts/rules/ZUIOPT_rule_pack.py"
   ],
   "files": [
     {
@@ -75,6 +76,13 @@
       "after": "100644 blob d77a4c8d81345639d03616e1e6d0fc75548f23ca\tpayload/patches/plat_sepolicy_zui_control.cil",
       "beforeSha256": "ae096be872e51ca91ebd078599534e202b22d69d4c3635ed729350e3b249f1a1",
       "afterSha256": "c25590e189b7efff00c60f177a0a954802b6dcf67edb9c9080829e465fd5631f"
+    },
+    {
+      "path": "scripts/rules/ZUIOPT_rule_pack.py",
+      "before": "100644 blob ac35d7324511fa60a5099193c12b9d8ae8a625e2\tscripts/rules/ZUIOPT_rule_pack.py",
+      "after": "100644 blob f4193b9aa72d67d7b0c91463c563599860975541\tscripts/rules/ZUIOPT_rule_pack.py",
+      "beforeSha256": "630fa2c09a8cf9b831fa311baa828ff399dc281962817ef4118a8edc790666cc",
+      "afterSha256": "8b702efef567d7370b9913a076808e88d6b7feb3ca9f350558d11031bffec6b5"
     }
   ]
 }
