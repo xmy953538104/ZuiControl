@@ -6,6 +6,7 @@ RUNTIME=json.loads((ROOT/'tests/zuiopt/runtime_delta.json').read_text(encoding='
 RUNTIME_ALLOWED={'native/zuiopt/'+n for n in ('ZUIopt.cpp','ZUIopt_core.h','ZUIopt_daemon.h','ZUIopt_library.h','ZUIopt_lifecycle.h','ZUIopt_owner.h','ZUIopt_rules.h','ZUIopt_runtime.h')}
 RUNTIME_ALLOWED.add('payload/patches/plat_sepolicy_zui_control.cil')
 RUNTIME_ALLOWED.add('scripts/rules/ZUIOPT_rule_pack.py')
+RUNTIME_ALLOWED.add('scripts/build/ApplyZuiControlPayload.py')
 assert RUNTIME['phase']=='ZUIOPT_RUNTIME_EVOLUTION_ADCB_R1' and RUNTIME['baseHead']=='358ffe118c0e82e937d58e4e619ef25e04f48089'
 assert set(RUNTIME['allowedPaths'])==RUNTIME_ALLOWED
 

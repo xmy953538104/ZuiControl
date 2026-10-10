@@ -355,6 +355,17 @@ def patch_plat_sepolicy(unpack, payload, dry_run, report):
     ]
     removed = remove_lines_containing(target, obsolete, dry_run)
     patch_lines = read_patch_lines(patch)
+    # These stock labels must be replaced, never duplicated; preserve other genfs entries.
+    for name in ("sched_rt_period_us", "sched_rt_runtime_us"):
+        old = '(genfscon proc "/sys/kernel/' + name + '" (u object_r proc_sched ((s0) (s0))))'
+        new = old.replace("proc_sched", "zuiopt_rt_budget_proc")
+        if new not in patch_lines:
+            continue
+        key = '(genfscon proc "/sys/kernel/' + name + '" '
+        matches = [line for line in target.read_text(encoding="utf-8").splitlines() if line.startswith(key)]
+        if len(matches) > 1 or any(line not in (old, new) for line in matches):
+            raise ValueError("unqualified RT budget genfs label: " + name)
+        removed += remove_lines_containing(target, [old], dry_run)
     additions = append_unique_lines(target, patch_lines, dry_run)
     report["plat_sepolicy_removed"] = removed
     report["plat_sepolicy_added"] = additions

@@ -70,6 +70,8 @@
 (genfscon proc "/sys/kernel/sched_rt_runtime_us" (u object_r zuiopt_rt_budget_proc ((s0) (s0))))
 (genfscon proc "/sys/kernel/sched_rr_timeslice_ms" (u object_r zuiopt_rr_proc ((s0) (s0))))
 (genfscon sysfs "/module/sched_walt/notes/.note.gnu.build-id" (u object_r zuiopt_walt_identity_sysfs ((s0) (s0))))
+;; Preserve init's original proc_sched write edge on the two retagged budget nodes.
+(allow init zuiopt_rt_budget_proc (file (write lock append map open)))
 (allow system_server zui_control_service (service_manager (add find)))
 (allow priv_app zui_control_service (service_manager (find)))
 (allow system_server zui_control_uperf_mode_prop (property_service (set)))
