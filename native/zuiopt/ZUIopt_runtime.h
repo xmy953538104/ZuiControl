@@ -50,6 +50,11 @@ inline bool parseScheduler(std::istream& in,SchedulerState& s){
 }
 struct SchedulerOwnership {bool active=false;SchedulerState original,expected;};
 enum class SchedulerResult {UNCHANGED,APPLIED,RESTORED,DEAD,CONFLICT,UNAVAILABLE,UNRESTORABLE};
+inline bool schedulerControlSame(const SchedulerState& a,const SchedulerState& b){
+    // RR owns these fields. OEM nice/uclamp updates must neither strand RR nor be overwritten.
+    return a.policy==b.policy&&a.flags==b.flags&&a.priority==b.priority&&
+        a.runtime==b.runtime&&a.deadline==b.deadline&&a.period==b.period;
+}
 template<class Kernel,class Persist,class Same>
 SchedulerResult restoreScheduler(SchedulerOwnership& owned,int tid,Kernel& kernel,Persist persist,Same same){
     if(!owned.active)return SchedulerResult::UNCHANGED;
@@ -57,15 +62,21 @@ SchedulerResult restoreScheduler(SchedulerOwnership& owned,int tid,Kernel& kerne
     SchedulerState current;
     if(!kernel.get(tid,current))return same()?SchedulerResult::UNAVAILABLE:SchedulerResult::DEAD;
     if(!same()){owned.active=false;persist();return SchedulerResult::DEAD;}
-    if(!(current==owned.expected)){
+    if(!schedulerControlSame(current,owned.expected)){
         // The original value means a crash before apply or a completed restore.
-        auto result=current==owned.original?SchedulerResult::RESTORED:SchedulerResult::CONFLICT;
+        auto result=schedulerControlSame(current,owned.original)?SchedulerResult::RESTORED:SchedulerResult::CONFLICT;
         owned.active=false;persist();return result;
     }
+    auto restored=current;restored.policy=owned.original.policy;restored.flags=owned.original.flags;
+    restored.priority=owned.original.priority;restored.runtime=owned.original.runtime;
+    restored.deadline=owned.original.deadline;restored.period=owned.original.period;
+    SchedulerState checked;
     if(!same())return SchedulerResult::DEAD;
-    if(!kernel.set(tid,owned.original))return SchedulerResult::UNAVAILABLE;
+    if(!kernel.get(tid,checked)||!(checked==current))return SchedulerResult::UNAVAILABLE;
+    if(!same())return SchedulerResult::DEAD;
+    if(!kernel.set(tid,restored))return SchedulerResult::UNAVAILABLE;
     if(!same()){owned.active=false;persist();return SchedulerResult::DEAD;}
-    if(!kernel.get(tid,current)||!(current==owned.original))return SchedulerResult::UNAVAILABLE;
+    if(!kernel.get(tid,current)||!schedulerControlSame(current,restored))return SchedulerResult::UNAVAILABLE;
     owned.active=false;persist();return SchedulerResult::RESTORED;
 }
 template<class Kernel,class Persist,class Same>
@@ -74,18 +85,23 @@ SchedulerResult applyRealtime(SchedulerOwnership& owned,int tid,Kernel& kernel,P
     SchedulerState current;
     if(!kernel.get(tid,current)||!restorableScheduler(current))return SchedulerResult::UNAVAILABLE;
     if(!same())return SchedulerResult::DEAD;
-    if(owned.active)return current==owned.expected?SchedulerResult::UNCHANGED:SchedulerResult::CONFLICT;
+    if(owned.active)return schedulerControlSame(current,owned.expected)?SchedulerResult::UNCHANGED:SchedulerResult::CONFLICT;
     auto expected=realtimeState(current);
     if(current==expected)return SchedulerResult::UNCHANGED; // Existing external RT is not ours to revoke.
     owned={true,current,expected};persist(); // Intent+original durable BEFORE the syscall.
     if(!same())return SchedulerResult::DEAD;
-    if(!kernel.get(tid,current)||!(current==owned.original)){
+    if(!kernel.get(tid,current)||!schedulerControlSame(current,owned.original)){
         owned.active=false;persist();return SchedulerResult::CONFLICT;
     }
+    expected=realtimeState(current);
+    if(!(expected==owned.expected)){owned.expected=expected;persist();}
+    SchedulerState checked;
+    if(!same())return SchedulerResult::DEAD;
+    if(!kernel.get(tid,checked)||!(checked==current))return SchedulerResult::UNAVAILABLE;
     if(!same())return SchedulerResult::DEAD;
     if(!kernel.set(tid,expected))return SchedulerResult::UNAVAILABLE;
     if(!same())return SchedulerResult::DEAD;
-    if(!kernel.get(tid,current)||!(current==expected))return SchedulerResult::UNAVAILABLE;
+    if(!kernel.get(tid,current)||!schedulerControlSame(current,expected))return SchedulerResult::UNAVAILABLE;
     return SchedulerResult::APPLIED;
 }
 struct SchedulerKernel {

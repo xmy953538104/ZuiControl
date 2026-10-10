@@ -3,7 +3,8 @@
 using namespace ZUIopt;
 struct FakeKernel {
     SchedulerState state;bool readDenied=false,writeDenied=false;int writes=0,reads=0;
-    bool get(int,SchedulerState& out){reads++;if(readDenied)return false;out=state;return true;}
+    std::function<void(int)> beforeRead;
+    bool get(int,SchedulerState& out){reads++;if(beforeRead)beforeRead(reads);if(readDenied)return false;out=state;return true;}
     bool set(int,const SchedulerState& value){if(writeDenied)return false;writes++;state=value;return true;}
 };
 void schedulerCases(){
@@ -34,7 +35,42 @@ void schedulerCases(){
     }
     {
         FakeKernel k;SchedulerOwnership o;applyRealtime(o,9,k,[]{},[]{return true;});k.state.nice=9;auto foreign=k.state;
-        require(restoreScheduler(o,9,k,[]{},[]{return true;})==SchedulerResult::CONFLICT&&k.state==foreign&&!o.active,"foreign scheduler preserved");
+        require(applyRealtime(o,9,k,[]{},[]{return true;})==SchedulerResult::UNCHANGED&&o.active,"OEM nice update retains RR ownership");
+        require(restoreScheduler(o,9,k,[]{},[]{return true;})==SchedulerResult::RESTORED&&k.state.policy==0&&k.state.priority==0&&k.state.flags==0&&!o.active,"OEM nice change does not strand RR");
+        require(k.state.nice==foreign.nice,"later OEM nice preserved");
+    }
+    {
+        FakeKernel k;k.state.nice=-10;SchedulerOwnership o;applyRealtime(o,9,k,[]{},[]{return true;});
+        k.state.nice=0;k.state.utilMin=17;k.state.utilMax=800;auto later=k.state;
+        require(applyRealtime(o,9,k,[]{},[]{return true;})==SchedulerResult::UNCHANGED&&o.active,"foreground OEM metadata does not revoke RR ownership");
+        require(restoreScheduler(o,9,k,[]{},[]{return true;})==SchedulerResult::RESTORED,"background RR withdrawal");
+        require(k.state.policy==0&&k.state.flags==0&&k.state.priority==0&&k.state.nice==later.nice&&k.state.utilMin==later.utilMin&&k.state.utilMax==later.utilMax,"captured device nice transition and later clamps preserved");
+    }
+    for(unsigned policy:{0u,1u,2u,3u,5u}){
+        FakeKernel k;SchedulerOwnership o;applyRealtime(o,9,k,[]{},[]{return true;});k.state.policy=policy;k.state.priority=(policy==1||policy==2)?7:0;auto foreign=k.state;
+        auto result=restoreScheduler(o,9,k,[]{},[]{return true;});
+        require((result==SchedulerResult::CONFLICT||result==SchedulerResult::RESTORED)&&k.state==foreign&&!o.active,"foreign policy/priority never overwritten");
+    }
+    {
+        FakeKernel k;SchedulerOwnership o;int commits=0;
+        auto persist=[&]{if(++commits==1){k.state.nice=8;k.state.utilMin=19;k.state.utilMax=700;}};
+        require(applyRealtime(o,9,k,persist,[]{return true;})==SchedulerResult::APPLIED&&commits==2,"OEM update during journal commit refreshes durable intent");
+        require(k.state.nice==8&&k.state.utilMin==19&&k.state.utilMax==700&&k.state==o.expected,"grant preserves latest OEM fields");
+        require(restoreScheduler(o,9,k,[]{},[]{return true;})==SchedulerResult::RESTORED&&k.state.nice==8&&k.state.utilMin==19&&k.state.utilMax==700,"withdrawal preserves fields changed before grant");
+    }
+    {
+        FakeKernel k;SchedulerOwnership o;
+        k.beforeRead=[&](int read){if(read==4)k.state.nice=6;};
+        require(applyRealtime(o,9,k,[]{},[]{return true;})==SchedulerResult::APPLIED&&o.active&&k.state.nice==6,"OEM update at grant readback retains ownership");
+        int readback=k.reads+3;k.beforeRead=[&](int read){if(read==readback){k.state.nice=2;k.state.utilMax=800;}};
+        require(restoreScheduler(o,9,k,[]{},[]{return true;})==SchedulerResult::RESTORED&&!o.active&&k.state.nice==2&&k.state.utilMax==800,"OEM update at withdrawal readback is preserved");
+    }
+    {
+        FakeKernel k;SchedulerOwnership o;applyRealtime(o,9,k,[]{},[]{return true;});int writes=k.writes,race=k.reads+2;
+        k.beforeRead=[&](int read){if(read==race)k.state.nice=3;};
+        require(restoreScheduler(o,9,k,[]{},[]{return true;})==SchedulerResult::UNAVAILABLE&&o.active&&k.writes==writes,"prewrite race retains journal without overwriting OEM");
+        k.beforeRead={};
+        require(restoreScheduler(o,9,k,[]{},[]{return true;})==SchedulerResult::RESTORED&&k.state.nice==3,"retry uses newest OEM field");
     }
     {
         FakeKernel k;SchedulerOwnership o;applyRealtime(o,9,k,[]{},[]{return true;});int writes=k.writes;
