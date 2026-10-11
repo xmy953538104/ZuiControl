@@ -46,9 +46,16 @@ void sameTickAndCreation(){
         Kernel::journalWriteError=false;f.reload();require(f.journal->entries.empty()&&f.journal->leases.empty(),"failed root commit became a live lease");}
     {DescendantFixture f;f.start(2);f.confirm();int creates=0;
         Kernel::beforeCreate=[&](const std::string& path){auto evidence=read(Kernel::root+"/state/owner_state.v1");
-            require(evidence.rfind("ZUIOPT_OWNER_STATE_V5 ",0)==0&&evidence.find("L 42 ")!=evidence.npos&&evidence.find("T 42 ")!=evidence.npos&&
-                    evidence.find("T 43 ")!=evidence.npos&&evidence.find(f.journal->leases.at(42).placementLease)!=evidence.npos,
-                    "unique group create before durable root L/T");
+            auto newline=evidence.find('\n');require(newline!=evidence.npos,"group create before durable journal header");
+            auto body=evidence.substr(newline+1);
+            require(evidence.substr(0,newline)=="ZUIOPT_OWNER_STATE_V5 "+std::to_string(checksum(body)),"group create before valid durable V5 CRC");
+            require(body.find("\nL 42 ")!=body.npos,"group create before durable root lease");
+            for(int tid:{42,43}){const auto& r=f.journal->entries.at(tid);
+                // T rows start with TGID; the separately recorded TID is field five.
+                auto prefix="\nT "+std::to_string(r.pid)+' '+std::to_string(r.processStart)+' '+std::to_string(r.user)+' '+
+                    std::to_string(r.tid)+' '+std::to_string(r.threadStart)+' ';
+                require(body.find(prefix)!=body.npos,"group create before durable own PID/TID birth");}
+            require(body.find(f.journal->leases.at(42).placementLease)!=body.npos,"group create before durable acquisition token");
             require(path.find(f.journal->leases.at(42).placementLease)!=path.npos,"created group not bound to durable lease");creates++;};
         f.place();require(creates==1,"expected one flat group creation");f.background();f.empty();}
     {DescendantFixture f;f.start(2);f.confirm();auto group=f.owned(124);
