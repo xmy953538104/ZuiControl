@@ -321,12 +321,17 @@ void matrix(){
     for(int mode=0;mode<5;mode++){
         AcquisitionFixture f;Kernel::tasks.at(43).mask=67;f.start(2);f.noOwnership();
         if(mode==0){Kernel::tasks.clear();f.tick(100);}
-        if(mode==1){Kernel::tasks.at(42).birth=20;f.tick(100);}
+        if(mode==1){
+            // Reusing a TGID replaces its old threads with the new process population.
+            for(auto& [_,task]:Kernel::tasks)task.birth=20;
+            f.tick(100);}
         if(mode==2)f.background();
         if(mode==3){f.app.flags=0;f.app.state=19;f.scene.accept(12,10);f.tick(10);}
         if(mode==4){for(auto& [_,p]:f.states)f.release(p);f.owner->cleanup();}
         f.noOwnership();require(!f.p().acquiring()&&!f.p().next,"pending deadline survived cancellation");
-        if(mode==1){f.generation=20;Kernel::tasks.at(43).mask=255;f.primary();f.tick(100);f.confirm();require(f.p().managed()&&f.journal->leases.at(42).processStart==20,"stale PID acquired");f.background();}
+        if(mode==1){f.generation=20;Kernel::tasks.at(43).mask=255;f.primary();f.tick(100);f.confirm();require(f.p().managed()&&f.journal->leases.at(42).processStart==20,"stale PID acquired");
+            for(const auto& [_,r]:f.journal->entries)require(r.processStart==20&&r.threadStart==20&&f.journal->same(r),"reused PID retained old thread birth");
+            f.background();}
     }
     puts("BASELINE_CASES_A_TO_P=PASS;PENDING_RELEASE_NOOP=PASS;ZERO_WRITE_PROBE=PASS");
 }
