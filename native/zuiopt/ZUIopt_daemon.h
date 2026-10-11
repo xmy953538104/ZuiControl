@@ -28,7 +28,7 @@ class Core {
     EventSubstage substage=EventSubstage::NONE;
     uint64_t acceptedAuthority=0;
     SceneAuthority currentScene;
-    std::string runtimeStatus;
+    std::string runtimeStatus,loadedIdentity;bool runtimePending=true;
     std::map<int,std::string> runtimeProcesses;
     bool topologyQualified=false,waltQualified=false;
 public:
@@ -36,6 +36,7 @@ public:
         available=cpus(read("/sys/devices/system/cpu/online"));loadedConfig=read(configPath);config=parseConfig(loadedConfig,available);ZUIOPT_debug=config.debug;
         topologyQualified=sm8650Topology();waltQualified=qualifiedWaltIdentity();
         journal=std::make_unique<Journal>(statePath);
+        loadedIdentity=loadedGenerationIdentity(loadedConfig,journal->currentBootId(),getpid(),identity(getpid()).start);
         sigset_t signals;sigemptyset(&signals);for(int s:{SIGTERM,SIGINT,SIGHUP,SIGUSR1})sigaddset(&signals,s);
         require(pthread_sigmask(SIG_BLOCK,&signals,nullptr)==0,"signal mask");
         signalFd=signalfd(-1,&signals,SFD_CLOEXEC|SFD_NONBLOCK);eventFd=eventfd(0,EFD_CLOEXEC|EFD_NONBLOCK);
@@ -63,14 +64,21 @@ public:
     }
     bool sceneForeground(const ProcessState& p,bool)const{return currentScene.wants(p.package,p.uid);}
     std::vector<Snapshot> activitySnapshot(){readScene();counters.snapshots++;return observer->snapshot();}
+    void release(ProcessState& p,ReleaseCause cause){
+        placement->release(p,cause);
+        if(!p.managed()){runtimeProcesses.erase(p.pid);publishRuntime();}
+        else if(!p.writable())publishRuntime();
+    }
     void release(ProcessState& p){
         substage=EventSubstage::BACKGROUND_RELEASE;
-        placement->release(p,p.alive?ReleaseCause::AUTHORITY_BACKGROUND:ReleaseCause::PROCESS_DEATH);
-        if(!p.managed()){runtimeProcesses.erase(p.pid);publishRuntime();}
+        release(p,p.alive?ReleaseCause::AUTHORITY_BACKGROUND:ReleaseCause::PROCESS_DEATH);
         if(p.releaseBlocked)blocked(RuntimeBlockerReason::BACKGROUND_RELEASE_BLOCKED);
     }
+    void invalidateRuntime(){runtimePending=true;runtimeProcesses.clear();publishRuntime();}
     void publishRuntime(){
-        auto out=runtimeEnvelope(journal->currentBootId(),runtimeProcesses);
+        bool pending=runtimePending;
+        for(const auto& [_,p]:states)pending=pending||p.acquiring()||(p.managed()&&!p.writable());
+        auto out=runtimeEnvelope(journal->currentBootId(),loadedIdentity,pending,runtimeProcesses);
         if(out!=runtimeStatus){PrivateDir(stateRoot).put("runtime-status.v1",out);runtimeStatus=std::move(out);}
     }
     BaselineResult acquire(ProcessState& p){
@@ -238,10 +246,11 @@ public:
         placement->retireWaltGlobal();
         std::ostringstream status;
         status<<"{\"schema\":1,\"boot\":"<<std::quoted(journal->currentBootId())<<",\"pid\":"<<p.pid<<",\"processStart\":"<<p.generation
-            <<",\"package\":"<<std::quoted(p.package)<<",\"requestedMode\":"<<plan.requestedMode<<",\"effectiveMode\":"<<plan.effectiveMode
+            <<",\"uid\":"<<p.uid<<",\"package\":"<<std::quoted(p.package)<<",\"requestedMode\":"<<plan.requestedMode<<",\"effectiveMode\":"<<plan.effectiveMode
             <<",\"modeReason\":"<<std::quoted(plan.reason)<<",\"requestedRt\":"<<plan.requestedRt<<",\"effectiveRt\":"<<(rtAllowed&&rtReadback?1:0)
-            <<",\"rtReason\":"<<std::quoted(rtReason)<<",\"C1\":"<<reps.c1<<",\"C2\":"<<reps.c2<<"}";
-        runtimeProcesses[p.pid]=status.str();publishRuntime();
+            <<",\"rtReason\":"<<std::quoted(rtReason)<<",\"C1\":"<<reps.c1<<",\"C1Start\":"<<(reps.c1?p.tasks.at(reps.c1).generation:0)
+            <<",\"C2\":"<<reps.c2<<",\"C2Start\":"<<(reps.c2?p.tasks.at(reps.c2).generation:0)<<"}";
+        runtimeProcesses[p.pid]=status.str();runtimePending=false;publishRuntime();
         finishScan(p,now(),coherence==CoherenceResult::REPAIR);
         ZUIOPT_NOTE("SCAN","pid="+std::to_string(p.pid)+" tids="+std::to_string(p.tasks.size())+" elapsed_ms="+std::to_string(now()-start)+" next="+std::to_string(p.next));
         }catch(const PhysicalRevoke&){
@@ -256,7 +265,7 @@ public:
     void stats(){size_t active=0,tasks=0;for(auto& [_,p]:states){active+=p.managed();tasks+=p.tasks.size();}
         ZUIOPT_NOTE("STATS","events="+std::to_string(counters.events)+" snapshots="+std::to_string(counters.snapshots)+" scans="+std::to_string(counters.scans)+" comm="+std::to_string(counters.comm)+" schedstat="+std::to_string(counters.schedstat)+" placements="+std::to_string(counters.placements)+" releases="+std::to_string(counters.releases)+" wakeups="+std::to_string(counters.wakeups)+" reloads="+std::to_string(counters.reloads)+" active="+std::to_string(active)+" tasks="+std::to_string(tasks)+" journal_commits="+std::to_string(journal->commits));}
     void releaseAll(ReleaseCause cause=ReleaseCause::CRASH_RECOVERY){
-        if(placement){for(auto& [_,p]:states)placement->release(p,cause);
+        if(placement){for(auto& [_,p]:states)release(p,cause);
             placement->retireRealtimeGlobal();
             placement->retireWaltGlobal();
             substage=EventSubstage::CLEANUP;placement->cleanup();
@@ -275,6 +284,7 @@ public:
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::PACKAGE_ABI_OK);
         ZUIOPT_NOTE("ABI_GATE","PASS");phase=StartupStage::PLACEMENT;placement=std::make_unique<Placement>(counters,*journal);
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::PLACEMENT_OK);
+        invalidateRuntime(); // A previous owner's observations cannot describe this registration.
         sceneObserver=std::make_unique<SceneObserver>([this](int64_t seq){events.pushScene(eventFd,seq);},
             [root=stateRoot](const std::string& argument){
                 auto factory=read("/system/etc/zuiopt/factory_rules.conf",true);require(factory.size()<=RULE_LIMIT,"factory read bound");
@@ -284,7 +294,7 @@ public:
         phase=StartupStage::RECONCILE;reconcile(initial);
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::RECONCILE_OK);
         phase=StartupStage::READY;prctl(PR_SET_NAME,"ZUIopt",0,0,0);ZUIOPT_NOTE("READY","pid="+std::to_string(getpid()));
-        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::READY);recordLoadedGeneration(stateRoot,loadedConfig);bool stop=false;
+        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::READY);recordLoadedIdentity(stateRoot,loadedIdentity);bool stop=false;
         while(!stop){
             phase=StartupStage::EVENT_LOOP; // In-memory only; there are no steady-state receipt writes.
             auto epoch=events.authorityEpoch();
@@ -313,7 +323,7 @@ public:
                 if(s.ssi_signo==SIGTERM||s.ssi_signo==SIGINT){stop=true;break;}if(s.ssi_signo==SIGUSR1)stats();
                 if(s.ssi_signo==SIGHUP){
                     Config next;std::string nextBytes;bool valid=false;try{nextBytes=read(configPath);next=parseConfig(nextBytes,available);valid=true;}catch(const std::exception& e){ZUIOPT_NOTE("RELOAD_REJECTED",e.what());}
-                    if(valid){phase=StartupStage::RELOAD;substage=EventSubstage::RELOAD_RELEASE;for(auto& [_,p]:states)placement->release(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP);config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;reconcile(observer->snapshot());loadedConfig=std::move(nextBytes);recordLoadedGeneration(stateRoot,loadedConfig);ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
+                    if(valid){phase=StartupStage::RELOAD;substage=EventSubstage::RELOAD_RELEASE;invalidateRuntime();for(auto& [_,p]:states)release(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP);config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;loadedConfig=std::move(nextBytes);loadedIdentity=loadedGenerationIdentity(loadedConfig,journal->currentBootId(),getpid(),identity(getpid()).start);publishRuntime();reconcile(observer->snapshot());recordLoadedIdentity(stateRoot,loadedIdentity);ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
                 }
             }}
         }

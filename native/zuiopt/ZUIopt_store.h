@@ -66,10 +66,15 @@ public:
 };
 // This receipt is emitted only after the existing engine has accepted and reconciled a config.
 // It adds no timer, process scan, scheduling decision or new runtime owner.
+inline std::string loadedGenerationIdentity(const std::string& bytes,const std::string& boot,int pid,uint64_t birth){
+    return generationOf(bytes)+":"+boot+":"+std::to_string(pid)+":"+std::to_string(birth)+":"+sha256(bytes);
+}
+inline void recordLoadedIdentity(const std::string& root,const std::string& identity) noexcept {
+    try{PrivateDir(root).put("loaded-generation.v2",identity+"\n");}catch(...){}
+}
 inline void recordLoadedGeneration(const std::string& root,const std::string& bytes) noexcept {
-    try{PrivateDir d(root);d.put("loaded-generation.v2",generationOf(bytes)+":"+
-        trim(read("/proc/sys/kernel/random/boot_id"))+":"+std::to_string(getpid())+":"+
-        std::to_string(identity(getpid()).start)+":"+sha256(bytes)+"\n");}catch(...){}
+    try{recordLoadedIdentity(root,loadedGenerationIdentity(bytes,
+        trim(read("/proc/sys/kernel/random/boot_id")),getpid(),identity(getpid()).start));}catch(...){}
 }
 struct RuleState {std::map<std::string,Pack> packs;std::set<std::string> enabled;std::string user="schema 2\nenabled true\n",effective,transaction,provenance,source,upstream,upstreamMetadata;bool canonical=false,library=false;};
 inline std::string base64(const std::string& s){

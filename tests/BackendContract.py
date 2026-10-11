@@ -3,7 +3,7 @@ from pathlib import Path
 import hashlib,json,subprocess
 ROOT=Path(__file__).resolve().parents[1]
 RUNTIME=json.loads((ROOT/'tests/zuiopt/runtime_delta.json').read_text(encoding='utf-8'))
-RUNTIME_ALLOWED={'native/zuiopt/'+n for n in ('ZUIopt.cpp','ZUIopt_core.h','ZUIopt_daemon.h','ZUIopt_library.h','ZUIopt_lifecycle.h','ZUIopt_owner.h','ZUIopt_rules.h','ZUIopt_runtime.h')}
+RUNTIME_ALLOWED={'native/zuiopt/'+n for n in ('ZUIopt.cpp','ZUIopt_core.h','ZUIopt_daemon.h','ZUIopt_library.h','ZUIopt_lifecycle.h','ZUIopt_owner.h','ZUIopt_rules.h','ZUIopt_runtime.h','ZUIopt_store.h')}
 RUNTIME_ALLOWED.add('payload/patches/plat_sepolicy_zui_control.cil')
 RUNTIME_ALLOWED.add('scripts/rules/ZUIOPT_rule_pack.py')
 RUNTIME_ALLOWED.add('scripts/build/ApplyZuiControlPayload.py')

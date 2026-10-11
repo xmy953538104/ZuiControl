@@ -138,12 +138,24 @@ void waltCases(){
 }
 void runtimeEnvelopeCases(){
     const std::string boot="00000000-0000-0000-0000-000000000000";
+    const std::string owner="g"+std::string(24,'a')+":"+boot+":17:123:"+std::string(64,'b');
     std::map<int,std::string> states;
-    require(runtimeEnvelope(boot,states).find("\"processes\":[],\"truncated\":false")!=std::string::npos,"empty runtime envelope");
+    auto pending=runtimeEnvelope(boot,owner,true,states);
+    require(pending.find("\"processes\":[],\"truncated\":false")!=std::string::npos&&
+        pending.find("\"status\":\"PENDING_OWNER_ACK\"")!=std::string::npos&&runtimeOwnerMatches(pending,boot,owner),"new owner pending envelope");
+    auto idle=runtimeEnvelope(boot,owner,false,states);
+    require(idle.find("\"status\":\"NO_RUNTIME_OBSERVATIONS\"")!=std::string::npos&&runtimeOwnerMatches(idle,boot,owner),"empty captured observation envelope");
     for(int i=0;i<4096;i++)states[i]="{\"pid\":"+std::to_string(i)+",\"package\":\""+std::string(128,'a')+"\"}";
-    auto text=runtimeEnvelope(boot,states);
-    require(text.size()<=RUNTIME_STATUS_LIMIT&&text.find("\"totalProcesses\":4096")!=std::string::npos&&text.find("],\"truncated\":true}")!=std::string::npos,"runtime observation bound/truncation");
+    auto text=runtimeEnvelope(boot,owner,false,states);
+    require(text.size()<=RUNTIME_STATUS_LIMIT&&text.find("\"totalProcesses\":4096")!=std::string::npos&&text.find("],\"truncated\":true}")!=std::string::npos&&runtimeOwnerMatches(text,boot,owner),"runtime observation bound/truncation");
     states.clear();states[42]="{\"pid\":42}";
-    require(runtimeEnvelope(boot,states).find("\"processes\":[{\"pid\":42}],\"truncated\":false")!=std::string::npos,"complete runtime envelope");
+    auto complete=runtimeEnvelope(boot,owner,false,states);
+    require(complete.find("\"processes\":[{\"pid\":42}],\"truncated\":false")!=std::string::npos&&complete.find("\"status\":\"ACKNOWLEDGED_RUNTIME\"")!=std::string::npos&&runtimeOwnerMatches(complete,boot,owner),"complete owner-bound runtime envelope");
+    for(auto wrong:std::vector<std::string>{owner+"x","g"+std::string(24,'c')+owner.substr(25),owner.substr(0,owner.size()-1)+"c"})
+        require(!runtimeOwnerMatches(complete,boot,wrong),"wrong rule generation/hash owner rejected");
+    require(!runtimeOwnerMatches(complete,"10000000-0000-0000-0000-000000000000",owner)&&
+        !runtimeOwnerMatches(complete,boot,"")&&!runtimeOwnerMatches(complete+"\n",boot,owner)&&
+        !runtimeOwnerMatches(complete.substr(0,complete.size()-1),boot,owner)&&
+        !runtimeOwnerMatches("{\"schema\":1,\"boot\":\""+boot+"\",\"processes\":[]}\n",boot,owner),"stale/malformed runtime header rejected");
 }
 int main(){schedulerCases();grammarCases();waltCases();runtimeEnvelopeCases();puts("RUNTIME_CONTRACT_AND_FAULTS=PASS fake-kernel fixture; not physical RT proof");}

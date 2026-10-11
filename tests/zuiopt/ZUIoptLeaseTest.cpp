@@ -48,7 +48,7 @@ struct LeaseFixture:ReentryFixture {
         if(order==1){accepted={seq+1,0,true,"org.example.launcher"};primary();}
         if(mutation==1){Kernel::tasks.erase(45);}
         if(mutation==2){Kernel::tasks[46]={90000,"/background",67};reused.insert(46);}
-        if(mutation==3){Kernel::tasks[300]={p().ownershipFloor+1,"/ZUIopt/7c",124};}
+        if(mutation==3){Kernel::tasks[300]={p().ownershipFloor+1,Kernel::ownedGroup(0x7c),124};}
         if(mutation==4){Kernel::tasks[301]={p().ownershipFloor+1,"/background",67};}
         handoff(percent,kind);
         if(order!=1){

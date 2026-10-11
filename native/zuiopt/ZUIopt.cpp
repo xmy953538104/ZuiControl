@@ -42,8 +42,14 @@ int main(int argc,char** argv){
         if(command=="state")result=store.state()+store.failureState();
         else if(command=="runtime"){
             ZUIopt::require(key.empty()&&value.empty(),"runtime read arguments");
-            result=ZUIopt::PrivateDir(ROOT).get("runtime-status.v1",ZUIopt::RUNTIME_STATUS_LIMIT,true);
-            if(result.empty())result="{\"schema\":1,\"processes\":[],\"status\":\"NO_RUNTIME_ACK\"}";
+            result="{\"schema\":2,\"processes\":[],\"status\":\"NO_RUNTIME_ACK\"}";
+            if(selected()&&store.loaded()){
+                ZUIopt::PrivateDir directory(ROOT);
+                auto owner=ZUIopt::trim(directory.get("loaded-generation.v2",256,true));
+                auto snapshot=directory.get("runtime-status.v1",ZUIopt::RUNTIME_STATUS_LIMIT,true);
+                if(ZUIopt::runtimeOwnerMatches(snapshot,ZUIopt::trim(ZUIopt::read("/proc/sys/kernel/random/boot_id")),owner)&&
+                    store.loaded()&&selected()&&ZUIopt::trim(directory.get("loaded-generation.v2",256,true))==owner)result=std::move(snapshot);
+            }
         }
         else if(command=="read")result=store.userChunk(key,value);
         else if(command=="reset"){ZUIopt::require(key.empty()&&value.empty(),"reset arguments");store.resetFailure();result="NEXT_REBOOT_RETRIES_ZUIOPT";}

@@ -14,7 +14,27 @@ struct OwnerRecord {
     Mask priorMask=0,appliedMask=0;
     SchedulerOwnership scheduler{};
     WaltOwnership walt{};
+    std::string placementLease{};
 };
+inline bool placementToken(const std::string& token,std::array<uint64_t,5>* values=nullptr){
+    if(token.empty()||token.front()!='l'||token.size()>100)return false;
+    std::array<uint64_t,5> parsed{};std::istringstream in(token.substr(1));std::string field;
+    size_t index=0;for(auto& value:parsed){
+        if(!std::getline(in,field,'-')||field.empty()||field.size()>16||field.find_first_not_of("0123456789abcdef")!=field.npos)return false;
+        try{size_t used=0;value=std::stoull(field,&used,16);if(used!=field.size()||(!value&&index!=2))return false;}catch(...){return false;}++index;
+    }
+    if(std::getline(in,field,'-')||token.back()=='-')return false;
+    if(values)*values=parsed;return true;
+}
+inline std::string placementGroup(const std::string& lease,Mask mask){
+    std::ostringstream out;out<<"/ZUIopt/";if(!lease.empty())out<<lease<<"-m";out<<std::hex<<mask;return out.str();
+}
+inline bool placementGroup(const std::string& group,std::string& lease,Mask& mask){
+    if(group.rfind("/ZUIopt/",0)!=0)return false;auto name=group.substr(8);auto split=name.rfind("-m");
+    if(split==name.npos)return false;lease=name.substr(0,split);auto field=name.substr(split+2);
+    if(!placementToken(lease)||field.empty()||field.size()>16||field.find_first_not_of("0123456789abcdef")!=field.npos)return false;
+    try{size_t used=0;mask=std::stoull(field,&used,16);return used==field.size()&&mask&&placementGroup(lease,mask)==group;}catch(...){return false;}
+}
 inline uint32_t checksum(const std::string& s){
     uint32_t crc=~uint32_t(0);
     for(unsigned char c:s){crc^=c;for(int i=0;i<8;i++)crc=(crc>>1)^(0xedb88320u&uint32_t(-int(crc&1)));}
@@ -84,11 +104,12 @@ class Journal {
 public:
     std::map<int,OwnerRecord> entries;
     // L record: process generation + birth floor + verified common Android inheritance baseline.
-    // Only threads of this TGID born after the floor and still in our cpuset are covered.
+    // V5 binds each flat cpuset to one lease, including post-lease fork descendants.
     std::map<int,OwnerRecord> leases;
     std::string boot;
     bool runtimeVersion=false;
     bool waltVersion=false;
+    bool placementVersion=false;
     struct GlobalOwner {int original=0,expected=0,prior=0;};
     std::map<std::string,GlobalOwner> globals;
     uint64_t commits=0;
@@ -111,9 +132,36 @@ public:
     bool same(const OwnerRecord& r) const {
         return boot==currentBoot&&identity(r.pid).start==r.processStart&&uid(r.pid)==r.user&&identity(r.pid,r.tid).start==r.threadStart;
     }
+    const OwnerRecord* rootLease(const std::string& token) const {
+        for(const auto& [_,r]:leases)if(r.placementLease==token)return &r;return nullptr;
+    }
+    bool belongs(const OwnerRecord& r,const ProcessState& p) const {
+        if(!placementVersion)return r.pid==p.pid&&r.processStart==p.generation;
+        auto lease=leases.find(p.pid);return lease!=leases.end()&&lease->second.processStart==p.generation&&r.placementLease==lease->second.placementLease;
+    }
+    bool placementMatches(const OwnerRecord& r,const std::string& current) const {
+        if(!placementVersion)return current.rfind("/ZUIopt/",0)==0;
+        std::string token;Mask mask=0;return placementGroup(current,token,mask)&&token==r.placementLease;
+    }
     bool inherited(int tid,OwnerRecord& out) const {
         int pid=0;std::istringstream status(read("/proc/"+std::to_string(tid)+"/status"));std::string line;
         while(std::getline(status,line))if(line.rfind("Tgid:",0)==0){std::istringstream(line.substr(5))>>pid;break;}
+        if(placementVersion){
+            std::string token;Mask allowed=0;auto current=group(tid);
+            if(boot!=currentBoot||!placementGroup(current,token,allowed))return false;
+            const OwnerRecord* lease=nullptr;for(const auto& [_,candidate]:leases)if(candidate.placementLease==token){lease=&candidate;break;}
+            if(!lease)return false;auto process=identity(pid),thread=identity(pid,tid);
+            if(!process.start||!thread.start||uid(pid)!=lease->user)return false;
+            bool original=pid==lease->pid&&process.start==lease->processStart;
+            // A unique group exists only after durable L/T commit; inheritance admits same-tick births.
+            if(original?thread.start<lease->threadStart:process.start<lease->threadStart||thread.start<process.start)return false;
+            auto cpuset=trim(read("/dev/cpuset"+current+"/cpus"));if(cpuset.empty()||cpus(cpuset)!=allowed)return false;
+            out=*lease;out.pid=pid;out.processStart=process.start;out.tid=tid;out.threadStart=thread.start;
+            // Kernel RESET_ON_FORK/WALT defaults are not copies of the parent's ownership.
+            out.scheduler={};out.walt={};out.priorMask=out.appliedMask=0;
+            auto mask=affinity(tid);if(mask==allowed)out.priorMask=out.appliedMask=mask;
+            return same(out)&&group(tid)==current;
+        }
         auto it=leases.find(pid);if(it==leases.end()||boot!=currentBoot)return false;
         const auto& lease=it->second;auto id=identity(pid,tid);
         if(!id.start||id.start<lease.threadStart||identity(pid).start!=lease.processStart||uid(pid)!=lease.user||processName(pid)!=lease.name)return false;
@@ -133,6 +181,19 @@ public:
         require(r.savedMask&&(r.savedMask&online)==r.savedMask,"journal affinity");
         require(access(("/dev/cpuset"+r.savedGroup+"/tasks").c_str(),F_OK)==0,"journal destination absent");
     }
+    void validatePlacement() const {
+        if(!placementVersion)return;std::set<std::string> tokens;
+        for(const auto& [_,r]:leases){
+            std::array<uint64_t,5> values{};
+            require(placementToken(r.placementLease,&values)&&values[0]==static_cast<uint64_t>(r.pid)&&values[1]==r.processStart&&
+                    values[2]==static_cast<uint64_t>(r.user)&&values[3]==r.threadStart&&tokens.insert(r.placementLease).second,"journal inheritance lease");
+        }
+        for(const auto& [_,r]:entries){
+            auto lease=rootLease(r.placementLease);require(lease&&r.user==lease->user&&r.package==lease->package&&r.name==lease->name&&r.threadStart>=r.processStart,"journal identity");
+            if(r.pid!=lease->pid||r.processStart!=lease->processStart)
+                require(r.processStart>=lease->threadStart&&r.savedGroup==lease->savedGroup&&r.savedMask==lease->savedMask,"journal inheritance lease");
+        }
+    }
     void load(){
         int fd=openat(dirFd,"owner_state.v1",O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
         if(fd<0){require(errno==ENOENT,"journal open");return;}
@@ -143,8 +204,8 @@ public:
             require(n==0,"journal read");close(fd);fd=-1;
             auto newline=text.find('\n');require(newline!=text.npos,"journal truncated header");
             std::istringstream header(text.substr(0,newline));std::string magic,extra;uint64_t crc=0;
-            require(bool(header>>magic>>crc)&&(magic=="ZUIOPT_OWNER_STATE_V1"||magic=="ZUIOPT_OWNER_STATE_V2"||magic=="ZUIOPT_OWNER_STATE_V3"||magic=="ZUIOPT_OWNER_STATE_V4")&&!(header>>extra),"journal version/header");
-            waltVersion=magic=="ZUIOPT_OWNER_STATE_V4";runtimeVersion=waltVersion||magic=="ZUIOPT_OWNER_STATE_V3";
+            require(bool(header>>magic>>crc)&&(magic=="ZUIOPT_OWNER_STATE_V1"||magic=="ZUIOPT_OWNER_STATE_V2"||magic=="ZUIOPT_OWNER_STATE_V3"||magic=="ZUIOPT_OWNER_STATE_V4"||magic=="ZUIOPT_OWNER_STATE_V5")&&!(header>>extra),"journal version/header");
+            placementVersion=magic=="ZUIOPT_OWNER_STATE_V5";waltVersion=placementVersion||magic=="ZUIOPT_OWNER_STATE_V4";runtimeVersion=waltVersion||magic=="ZUIOPT_OWNER_STATE_V3";
             std::string body=text.substr(newline+1);require(crc==checksum(body),"journal checksum mismatch");
             std::istringstream in(body);std::string key,line;
             require(bool(std::getline(in,boot))&&boot.size()==36,"journal boot identity");
@@ -168,32 +229,36 @@ public:
                     require((r.priorMask&~Mask(255))==0&&(r.appliedMask&~Mask(255))==0,"runtime journal masks");
                     if(waltVersion){int waltActive=0;require(bool(row>>waltActive>>r.walt.kind>>r.walt.original>>r.walt.expected)&&(waltActive==0||waltActive==1),"WALT journal syntax");r.walt.active=waltActive;require(!r.walt.active||(waltValue(r.walt.kind,r.walt.original)&&waltValue(r.walt.kind,r.walt.expected)),"WALT journal values");}
                 }
+                if(placementVersion)require(bool(row>>r.placementLease),"journal inheritance lease");
                 require(!(row>>extra),"journal extra fields");
                 validate(r);
                 if(type=="L"){require(r.tid==r.pid&&leases.size()<128,"journal inheritance lease");require(leases.emplace(r.pid,r).second,"duplicate process lease");}
                 else require(entries.emplace(r.tid,r).second,"duplicate journal TID");
             }
+            validatePlacement();
         }catch(...){if(fd>=0)close(fd);entries.clear();leases.clear();globals.clear();throw;}
     }
     void commit(){
         // CRC detects torn/corrupt storage; root-only DAC is the authenticity boundary.
         if(entries.empty()&&leases.empty()&&globals.empty()){
             require(unlinkat(dirFd,"owner_state.v1",0)==0||errno==ENOENT,"journal remove");
-            require(fsync(dirFd)==0,"journal directory sync");boot=currentBoot;runtimeVersion=waltVersion=false;commits++;return;
+            require(fsync(dirFd)==0,"journal directory sync");boot=currentBoot;runtimeVersion=waltVersion=placementVersion=false;commits++;return;
         }
+        validatePlacement();
         boot=currentBoot;std::ostringstream body;body<<boot<<'\n';
         for(const auto& [name,g]:globals){require(runtimeVersion&&((name=="rr_timeslice_ms"&&g.original>=1&&g.original<=1000&&g.expected==3)||(waltVersion&&name=="walt_read_pid"&&g.original>=0&&g.original<=4194304&&g.expected>0&&g.expected<=4194304)),"global journal fields");body<<"G "<<name<<' '<<g.original<<' '<<g.expected;if(waltVersion)body<<' '<<g.prior;body<<'\n';}
-        for(auto& [_,r]:leases){validate(r);body<<"L "<<r.pid<<' '<<r.processStart<<' '<<r.user<<' '<<r.tid<<' '<<r.threadStart<<' '<<std::quoted(r.package)<<' '<<std::quoted(r.name)<<' '<<std::quoted(r.savedGroup)<<' '<<r.savedMask<<'\n';}
+        for(auto& [_,r]:leases){validate(r);body<<"L "<<r.pid<<' '<<r.processStart<<' '<<r.user<<' '<<r.tid<<' '<<r.threadStart<<' '<<std::quoted(r.package)<<' '<<std::quoted(r.name)<<' '<<std::quoted(r.savedGroup)<<' '<<r.savedMask;if(placementVersion)body<<' '<<r.placementLease;body<<'\n';}
         for(auto& [_,r]:entries){
             validate(r);
             body<<"T "<<r.pid<<' '<<r.processStart<<' '<<r.user<<' '<<r.tid<<' '<<r.threadStart<<' '
                 <<std::quoted(r.package)<<' '<<std::quoted(r.name)<<' '<<std::quoted(r.savedGroup)<<' '<<r.savedMask;
             if(runtimeVersion){body<<' '<<r.priorMask<<' '<<r.appliedMask<<' '<<r.scheduler.active<<' ';schedulerText(body,r.scheduler.original);body<<' ';schedulerText(body,r.scheduler.expected);}
             if(waltVersion)body<<' '<<r.walt.active<<' '<<r.walt.kind<<' '<<r.walt.original<<' '<<r.walt.expected;
+            if(placementVersion)body<<' '<<r.placementLease;
             body<<'\n';
         }
         auto data=body.str();require(data.size()<=4*1024*1024,"journal size bound");
-        data=std::string(waltVersion?"ZUIOPT_OWNER_STATE_V4 ":runtimeVersion?"ZUIOPT_OWNER_STATE_V3 ":"ZUIOPT_OWNER_STATE_V2 ")+std::to_string(checksum(data))+"\n"+data;
+        data=std::string(placementVersion?"ZUIOPT_OWNER_STATE_V5 ":waltVersion?"ZUIOPT_OWNER_STATE_V4 ":runtimeVersion?"ZUIOPT_OWNER_STATE_V3 ":"ZUIOPT_OWNER_STATE_V2 ")+std::to_string(checksum(data))+"\n"+data;
         int fd=openat(dirFd,"owner_state.v1.new",O_WRONLY|O_CREAT|O_CLOEXEC|O_NOFOLLOW,0600);
         require(fd>=0,"journal staging open");
         try {
@@ -223,7 +288,9 @@ class Placement {
             struct stat st{};auto p=root+"/"+n;
             if(lstat(p.c_str(),&st)!=0||S_ISLNK(st.st_mode)){closedir(dir);throw std::runtime_error("unsafe cpuset entry");}
             if(S_ISDIR(st.st_mode)){
-                if(n.find_first_not_of("0123456789abcdef")!=n.npos||paths.size()>=256){closedir(dir);throw std::runtime_error("unknown cpuset directory");}
+                std::string lease;Mask mask=0;
+                bool legacy=!n.empty()&&n.find_first_not_of("0123456789abcdef")==n.npos;
+                if((!legacy&&!placementGroup(p.substr(11),lease,mask))||paths.size()>=256){closedir(dir);throw std::runtime_error("unknown cpuset directory");}
                 paths.insert(p);
             }
         }closedir(dir);return paths;
@@ -244,9 +311,10 @@ class Placement {
         SchedulerKernel kernel;
         auto result=restoreScheduler(r.scheduler,r.tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);});
         require(result!=SchedulerResult::UNAVAILABLE,"scheduler recovery unresolved");
-        auto current=group(r.tid);auto destination=normalGroup(current)?current:r.savedGroup;
+        auto current=group(r.tid);if(journal.placementVersion&&!normalGroup(current))require(journal.placementMatches(r,current),"invalid Android release owner");
+        auto destination=normalGroup(current)?current:r.savedGroup;
         require(normalGroup(destination),"invalid Android release owner");
-        bool moved=current==destination||(journal.same(r)&&write("/dev/cpuset"+destination+"/tasks",std::to_string(r.tid)));
+        bool moved=current==destination||(journal.same(r)&&(!journal.placementVersion||group(r.tid)==current)&&write("/dev/cpuset"+destination+"/tasks",std::to_string(r.tid)));
         bool restored=true;
         auto mask=affinity(r.tid);
         if(!journal.runtimeVersion){
@@ -263,7 +331,9 @@ class Placement {
         auto paths=groups();paths.insert(root);bool remaining=false,added=false;
         for(auto& p:paths)for(int tid:members(p)){
             auto it=journal.entries.find(tid);
-            if(it!=journal.entries.end()&&journal.same(it->second)){remaining=true;continue;}
+            if(it!=journal.entries.end()&&journal.same(it->second)){
+                if(journal.placementVersion&&!journal.placementMatches(it->second,group(tid)))throw std::runtime_error("RECOVERY_UNKNOWN_TASK_FAIL_CLOSED tid="+std::to_string(tid));remaining=true;continue;
+            }
             OwnerRecord inherited;
             if(journal.inherited(tid,inherited)){journal.entries[tid]=inherited;added=true;remaining=true;}
             else {
@@ -373,8 +443,9 @@ public:
         for(const auto& [_,r]:journal.entries)if(r.walt.active&&journal.same(r))return;
         restoreGlobals("walt_read_pid");
     }
-    std::string target(Mask m){
-        std::ostringstream n;n<<std::hex<<m;auto p=root+"/"+n.str();
+    std::string target(const ProcessState& owner,Mask m){
+        auto lease=journal.leases.find(owner.pid);require(lease!=journal.leases.end()&&lease->second.processStart==owner.generation,"committed lease identity mismatch");
+        auto p="/dev/cpuset"+placementGroup(lease->second.placementLease,m);
         if(!created.count(p)){
             require(mkdir(p.c_str(),0755)==0,"cpuset child create");created.insert(p);
             require(write(p+"/mems",trim(read(root+"/mems")))&&write(p+"/cpus",cpuText(m)),"cpuset child initialize");
@@ -382,6 +453,8 @@ public:
     }
     template<class Proc> BaselineResult acquire(ProcessState& p,Proc& proc){
         requireUncommitted(p);require(p.acquiring(),"acquisition not pending");
+        // Old live records must be retired by strict recovery, never relabeled V5.
+        require(journal.placementVersion||(journal.entries.empty()&&journal.leases.empty()&&journal.globals.empty()),"uncommitted journal state");
         AndroidBaseline baseline;auto result=probeBaseline(p,proc,baseline);
         if(result!=BaselineResult::STABLE){p.baselineCandidate={};return result;}
         auto time=proc.time();auto& candidate=p.baselineCandidate;
@@ -403,7 +476,9 @@ public:
         if(proc.process(p.pid).start!=p.generation||proc.user(p.pid)!=p.uid)return BaselineResult::STALE;
         const auto floor=proc.floor(); // Actual commit boundary, NOT activate()/first retry.
         journal.leases[p.pid]=OwnerRecord{p.pid,p.uid,p.pid,p.generation,floor,p.package,p.name,baseline.group,baseline.mask};
-        for(auto& [tid,t]:tasks)journal.entries[tid]=OwnerRecord{p.pid,p.uid,tid,p.generation,t.generation,p.package,p.name,t.savedGroup,t.savedMask};
+        std::ostringstream token;token<<'l'<<std::hex<<p.pid<<'-'<<p.generation<<'-'<<p.uid<<'-'<<floor<<'-'<<p.acquisitionEpoch;
+        journal.leases.at(p.pid).placementLease=token.str();journal.runtimeVersion=journal.waltVersion=journal.placementVersion=true;
+        for(auto& [tid,t]:tasks){OwnerRecord r{p.pid,p.uid,tid,p.generation,t.generation,p.package,p.name,t.savedGroup,t.savedMask};r.placementLease=token.str();journal.entries[tid]=r;}
         journal.commit();
         p.androidGroup=std::move(baseline.group);p.androidMask=baseline.mask;p.ownershipFloor=floor;p.tasks=std::move(tasks);
         p.transition(Ownership::ZUIOPT_OWNED);p.acquireStarted=0;p.acquireStep=0;p.baselineCandidate={};armCoherence(p,time);
@@ -439,6 +514,7 @@ public:
                 t.savedGroup=inherited.savedGroup;t.savedMask=inherited.savedMask;
             }
             OwnerRecord r{p.pid,p.uid,tid,p.generation,t.generation,p.package,p.name,t.savedGroup,t.savedMask};
+            if(journal.placementVersion)r.placementLease=lease->second.placementLease;
             journal.validate(r);journal.entries[tid]=r;t.owned=true;changed=true;
         }}catch(const StaleAuthorityScan&){if(changed)journal.commit();throw;}
         if(changed)journal.commit(); // One durable batch, before any explicit placement in this scan.
@@ -471,7 +547,7 @@ public:
         // physicalRevoke already validated the last-applied physical state.
         // Do not take a second observation and then ignore its revocation signal.
         if(t.appliedMask==m){t.verified=now();return;}
-        auto path=target(m);
+        auto path=target(p,m);
         auto& r=it->second;
         if(r.appliedMask!=m){
             r.priorMask=t.appliedMask?t.appliedMask:r.savedMask;r.appliedMask=m;
@@ -507,9 +583,9 @@ public:
                 "write without durable owner identity");
         auto g=group(tid);auto m=affinity(tid);
         if(!same(p,tid,t))return false;
-        std::ostringstream expected;expected<<"/ZUIopt/"<<std::hex<<t.appliedMask;
-        if(g==expected.str()&&m==t.appliedMask)return false;
-        require(normalGroup(g)||g==expected.str(),"invalid physical owner");
+        auto expected=placementGroup(r.placementLease,t.appliedMask);
+        if(g==expected&&m==t.appliedMask)return false;
+        require(normalGroup(g)||g==expected,"invalid physical owner");
         require(m!=0,"physical affinity unavailable");
         p.transition(Ownership::REVOKE_PENDING);p.next=0;
         return true;
@@ -549,7 +625,9 @@ public:
                     throw std::runtime_error("background physical owner unavailable");
                 }
                 auto e=journal.entries.find(tid);OwnerRecord r;
-                if(e!=journal.entries.end()&&journal.same(e->second))r=e->second;
+                if(e!=journal.entries.end()&&journal.same(e->second)){
+                    r=e->second;require(!journal.placementVersion||journal.placementMatches(r,current),"background unknown owned task");
+                }
                 else if(journal.inherited(tid,r)){
                     journal.entries[tid]=r;added=true;
                     if(r.pid==p.pid&&r.processStart==p.generation){
@@ -566,7 +644,7 @@ public:
                     if(identity(tid).start!=id.start||normalGroup(group(tid)))continue;
                     throw std::runtime_error("background unknown owned task");
                 }
-                if(r.pid==p.pid&&r.processStart==p.generation)ours.insert(tid);
+                if(journal.belongs(r,p))ours.insert(tid);
             }
             if(added)journal.commit(); // Durable before the first inherited write.
             return ours;
@@ -574,7 +652,7 @@ public:
         cover();
         bool pending=false;
         for(auto& entry:journal.entries){auto tid=entry.first;auto& r=entry.second;
-            if(r.pid!=p.pid||r.processStart!=p.generation||!journal.same(r))continue;
+            if(!journal.belongs(r,p)||!journal.same(r))continue;
             WaltKernel waltKernel{[&](int target){return selectWalt(target);}};
             auto waltResult=restoreWalt(r.walt,tid,waltKernel,[&]{journal.commit();},[&]{return journal.same(r);});
             require(waltResult!=SchedulerResult::UNAVAILABLE,"background WALT restore unresolved");
@@ -589,7 +667,7 @@ public:
                 int fd=open(("/dev/cpuset"+r.savedGroup+"/tasks").c_str(),O_WRONLY|O_CLOEXEC|O_NOFOLLOW);
                 require(fd>=0,"background release destination open");
                 bool moved=true;int moveError=0;
-                try{if(journal.same(r)&&owned(group(tid))){
+                try{if(journal.same(r)&&owned(group(tid))&&(!journal.placementVersion||journal.placementMatches(r,group(tid)))){
                     auto value=std::to_string(tid);auto n=::write(fd,value.data(),value.size());
                     moved=n==static_cast<ssize_t>(value.size());if(!moved)moveError=n<0?errno:EIO;
                 }}catch(...){close(fd);throw;}
@@ -606,8 +684,9 @@ public:
             require(normalGroup(g),"invalid Android release owner");
             auto t=p.tasks.find(tid);
             // No known last-applied/inherited constraint: no guessed affinity write.
-            Mask applied=t!=p.tasks.end()&&t->second.generation==r.threadStart?t->second.appliedMask:0;
             auto mask=affinity(tid);if(!journal.same(r))continue;
+            Mask applied=t!=p.tasks.end()&&t->second.generation==r.threadStart?t->second.appliedMask:
+                journal.placementVersion&&mask==r.appliedMask?r.appliedMask:journal.placementVersion&&mask==r.priorMask?r.priorMask:0;
             if(!mask){pending=true;continue;}
             if(!applied||mask!=applied||mask==r.savedMask)continue;
             auto allowedText=read("/dev/cpuset"+g+"/cpus");
@@ -631,13 +710,15 @@ public:
         // Fresh read proves completion; never clear on the basis of successful
         // writes alone. Heterogeneous Android groups/masks are legitimate here.
         for(auto& [tid,r]:journal.entries){
-            if(r.pid!=p.pid||r.processStart!=p.generation||!journal.same(r))continue;
+            if(!journal.belongs(r,p)||!journal.same(r))continue;
             auto g=group(tid);auto mask=affinity(tid);if(!journal.same(r))continue;
             if(owned(g)){remaining.insert(tid);continue;}
             if(g.empty()||!mask){residue=true;continue;}
             require(normalGroup(g),"invalid Android release owner");
             auto t=p.tasks.find(tid);
-            if(t!=p.tasks.end()&&t->second.generation==r.threadStart&&t->second.appliedMask&&mask==t->second.appliedMask){
+            Mask applied=t!=p.tasks.end()&&t->second.generation==r.threadStart?t->second.appliedMask:
+                journal.placementVersion&&mask==r.appliedMask?r.appliedMask:journal.placementVersion&&mask==r.priorMask?r.priorMask:0;
+            if(applied&&mask==applied){
                 auto allowedText=read("/dev/cpuset"+g+"/cpus");
                 if(trim(allowedText).empty()){residue=true;continue;}
                 Mask safe=r.savedMask&cpus(allowedText);
@@ -647,8 +728,24 @@ public:
         }
         if(finalPass)require(remaining.empty(),"background unrecoverable owned task");
         if(pending||!remaining.empty()||residue)return false;
+        if(journal.placementVersion){
+            // rmdir is the kernel's final emptiness fence; a late fork keeps the lease durable.
+            const auto token=lease->second.placementLease;
+            for(const auto& path:groups()){
+                std::string owner;Mask mask=0;if(!placementGroup(path.substr(11),owner,mask)||owner!=token)continue;
+                if(!members(path).empty())return false;
+                if(rmdir(path.c_str())!=0){
+                    int error=errno;if(error==EBUSY||error==EINTR||error==EAGAIN)return false;
+                    require(error==ENOENT,"cpuset child removal");
+                }
+                created.erase(path);
+            }
+            for(const auto& path:groups()){
+                std::string owner;Mask mask=0;if(placementGroup(path.substr(11),owner,mask)&&owner==token)return false;
+            }
+        }
         for(auto it=journal.entries.begin();it!=journal.entries.end();)
-            if(it->second.pid==p.pid&&it->second.processStart==p.generation)it=journal.entries.erase(it);else ++it;
+            if(journal.belongs(it->second,p))it=journal.entries.erase(it);else ++it;
         journal.leases.erase(p.pid);journal.commit();retireRealtimeGlobal();retireWaltGlobal();p.tasks.clear();p.transition(Ownership::ANDROID_OWNED);discardAcquisition(p);
         p.releaseParked=false;p.releaseBlocked=false;p.releaseRearmed=false;p.coherenceEpisodes=0;
         count.releases++;return true;

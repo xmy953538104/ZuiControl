@@ -1,10 +1,18 @@
 """The original RT budget labels are replaced exactly without changing other nodes."""
 from pathlib import Path
-import sys,tempfile,unittest
+import re,sys,tempfile,unittest
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts/build'))
 from ApplyZuiControlPayload import patch_plat_sepolicy
 
 class RuntimePolicy(unittest.TestCase):
+ def test_original_oem_task_walt_access_preserved_narrowly(self):
+  policy=(ROOT/'payload/patches/plat_sepolicy_zui_control.cil').read_text('utf8')
+  grants=re.findall(r'\(allow vendor_hal_perf_default (\S+) \(file \(([^)]+)\)\)\)',policy)
+  self.assertEqual(grants,[('zuiopt_walt_task_proc','getattr open read write')])
+  nodes=re.findall(r'\(genfscon proc "([^"]+)" \(u object_r zuiopt_walt_task_proc ',policy)
+  self.assertEqual(set(nodes),{'/sys/walt/sched_per_task_boost','/sys/walt/task_reduce_affinity'})
+  self.assertNotIn('(typeattributeset proc_34_0 (zuiopt_walt_task_proc))',policy)
+
  def test_exact_replacement_idempotence_and_dry_run(self):
   with tempfile.TemporaryDirectory() as folder:
    root=Path(folder);base=root/'system_a/system/etc/selinux';(base/'mapping').mkdir(parents=True)

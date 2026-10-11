@@ -105,7 +105,7 @@ void reentryDeterministic(){
     {ReentryFixture f;f.setup();f.park();f.safe();for(auto& [_,t]:Kernel::tasks)t.birth=900;
         auto writes=Kernel::moves+Kernel::affinities;f.foreground(2250,2);
         require(f.p().generation==900&&Kernel::moves+Kernel::affinities==writes&&f.journal->entries.empty(),"STALE_PID");f.acquireG07(2250);}
-    {ReentryFixture f;f.setup();f.park();Kernel::tasks[300]={1,"/ZUIopt/7c",0x7c};
+    {ReentryFixture f;f.setup();f.park();Kernel::tasks[300]={1,Kernel::ownedGroup(0x7c),0x7c};
         expectFailure([&]{f.foreground(2250,1);},"background unknown owned task");require(!f.journal->entries.empty(),"unknown rearm clear");}
     puts("RELEASE_REARM_A_TO_L=PASS;PRIMARY_REARM=PASS;SCENE_BACKSTOP_REARM=PASS;DUPLICATE_REARM_LOOP=0;IDLE_BACKGROUND_RELEASE_POLLING=0;DURABLE_BLOCKER_ON_BACKGROUND_ONLY_TIMEOUT=NO;TERMINAL_BLOCKER_AFTER_FAILED_FOREGROUND_REARM=ONCE;STICKY_RELEASE_OUTAGE=0;G07_REENTRY=PASS");
 }
@@ -115,8 +115,8 @@ void reentryStress(){
         ReentryFixture f;f.setup(4+random()%29);int delay=random()%2001,mode=random()%3;bool reverse=random()%2;
         Kernel::stuck=true;f.background();
         int subset=random()%101;handoff(subset,random()%3);
-        if(random()%2){bool inherited=std::any_of(Kernel::tasks.begin(),Kernel::tasks.end(),[](const auto& t){return t.second.group=="/ZUIopt/7c";});
-            Kernel::tasks[300]={f.p().ownershipFloor+1,inherited?"/ZUIopt/7c":"/background",inherited?Mask(0x7c):Mask(255)};}
+        if(random()%2){bool inherited=std::any_of(Kernel::tasks.begin(),Kernel::tasks.end(),[](const auto& t){return t.second.group==Kernel::ownedGroup(0x7c);});
+            Kernel::tasks[300]={f.p().ownershipFloor+1,inherited?Kernel::ownedGroup(0x7c):"/background",inherited?Mask(0x7c):Mask(255)};}
         if(random()%2)Kernel::tasks.erase(45);
         int64_t time=251+random()%2001,safeAt=250+delay;
         for(int dt:{50,100,250,500})if(250+dt<time){if(250+dt>=safeAt)f.safe();f.tick(250+dt);}

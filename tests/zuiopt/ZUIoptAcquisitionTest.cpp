@@ -17,31 +17,33 @@
 #include <sys/wait.h>
 namespace fs=std::filesystem;
 namespace Kernel {
-struct Thread {uint64_t birth=10;std::string group="/top-app";Mask mask=255;};
+struct Thread {uint64_t birth=10;std::string group="/top-app";Mask mask=255;int tgid=42,user=10001;std::string name="org.example.game";};
 std::map<int,Thread> tasks;std::map<int,std::string> fds;
-std::map<std::string,std::string> procFiles;std::vector<int> listedTasks;
+std::map<std::string,std::string> procFiles;std::map<int,std::vector<int>> listedTasks;
 uint64_t procMaterializations=0,taskMaterializations=0;
 std::string root,virtualRoot;int user=10001;int64_t time=0;int reads=0,moves=0,affinities=0;
 int groupReads=0,identityReads=0,uidReads=0,affinityReads=0;
 bool stuck=false;int moveError=0;std::function<void(const std::string&)> hook;
 std::function<void(int,bool,Mask)> beforeWrite;
 std::function<void(int,bool,Mask)> afterWrite;
+std::function<void(const std::string&)> beforeRemove;
+std::function<void(const std::string&)> beforeCreate;
+int removeError=0;
+bool journalWriteError=false;
 std::string mapped(const std::string& path){
-    if(path.rfind("/dev/cpuset",0)==0||path=="/proc/42"||path.rfind("/proc/42/",0)==0)return virtualRoot+path;
+    if(path.rfind("/dev/cpuset",0)==0||(path.rfind("/proc/",0)==0&&path.size()>6&&path[6]>='0'&&path[6]<='9'))return virtualRoot+path;
     return path;
 }
 void put(const std::string& path,const std::string& data){
     fs::create_directories(fs::path(path).parent_path());std::ofstream out(path,std::ios::binary);out<<data;require(out.good(),"synthetic file");
 }
 std::string statText(int tid){
-    auto it=tasks.find(tid);if(it==tasks.end()||!tasks.count(42))return {};
+    auto it=tasks.find(tid);if(it==tasks.end()||!tasks.count(it->second.tgid))return {};
     std::ostringstream s;s<<tid<<" (fixture) S";for(int i=1;i<19;i++)s<<" 0";s<<' '<<it->second.birth<<"\n";return s.str();
 }
 bool procText(const std::string& path,std::string& text){
     if(path=="/sys/devices/system/cpu/online"){text="0-7\n";return true;}
     if(path=="/proc/uptime"){text=std::to_string(100.+time/1000.)+" 0\n";return true;}
-    if(path=="/proc/42/cmdline"){text="org.example.game";text.push_back(0);return true;}
-    if(path=="/proc/42/status"){text="Tgid:\t42\n";return true;}
     if(path.rfind("/proc/",0)==0){
         auto slash=path.find('/',6);auto number=path.substr(6,slash-6);
         if(slash!=std::string::npos&&!number.empty()&&number.find_first_not_of("0123456789")==std::string::npos){
@@ -49,15 +51,22 @@ bool procText(const std::string& path,std::string& text){
             if(it!=tasks.end()){
                 if(suffix=="/stat"){text=statText(it->first);return true;}
                 if(suffix=="/cgroup"){text="1:cpuset:"+it->second.group+"\n";return true;}
-                if(suffix=="/status"){text="Tgid:\t42\n";return true;}
+                if(suffix=="/status"){text="Tgid:\t"+std::to_string(it->second.tgid)+"\n";return true;}
+                if(suffix=="/cmdline"){text=it->second.name;text.push_back(0);return true;}
+                if(suffix.rfind("/task/",0)==0&&suffix.size()>5&&suffix.substr(suffix.size()-5)=="/stat"){
+                    auto task=tasks.find(std::stoi(suffix.substr(6)));text=task!=tasks.end()&&task->second.tgid==it->first?statText(task->first):"";return true;
+                }
             }
         }
     }
-    if(path=="/proc/42/stat"){text=statText(42);return true;}
-    if(path.rfind("/proc/42/task/",0)==0&&path.size()>5&&path.substr(path.size()-5)=="/stat"){
-        text=statText(std::stoi(path.substr(14)));return true;
-    }
     return false;
+}
+std::string ownedGroup(Mask mask){
+    std::string token;Mask observed=0;auto leader=tasks.find(42);
+    if(leader!=tasks.end()&&placementGroup(leader->second.group,token,observed))return placementGroup(token,mask);
+    auto dir=virtualRoot+"/dev/cpuset/ZUIopt";
+    if(fs::exists(dir))for(const auto& entry:fs::directory_iterator(dir))if(entry.is_directory()&&placementGroup("/ZUIopt/"+entry.path().filename().string(),token,observed))return placementGroup(token,mask);
+    return placementGroup({},mask);
 }
 void initialize(){
     char path[]="/tmp/zuiopt-acquire-XXXXXX";require(mkdtemp(path),"exclusive synthetic kernel root");root=path;
@@ -66,7 +75,7 @@ void initialize(){
     char ram[]="/dev/shm/zuiopt-kernel-XXXXXX";require(mkdtemp(ram),"exclusive virtual kernel root");virtualRoot=ram;
     struct statfs storage{};require(statfs(virtualRoot.c_str(),&storage)==0&&storage.f_type==0x01021994,"virtual kernel must be tmpfs");
     require(statfs(root.c_str(),&storage)==0&&storage.f_type!=0x01021994,"journal must remain disk-backed");
-    tasks={{42,{}},{43,{}}};fds.clear();procFiles.clear();listedTasks.clear();user=10001;time=0;reads=moves=affinities=0;stuck=false;moveError=0;hook={};beforeWrite={};afterWrite={};
+    tasks={{42,{}},{43,{}}};fds.clear();procFiles.clear();listedTasks.clear();user=10001;time=0;reads=moves=affinities=0;stuck=journalWriteError=false;moveError=removeError=0;hook={};beforeWrite={};afterWrite={};beforeRemove={};beforeCreate={};
     for(auto g:{"","/top-app","/background","/foreground","/ZUIopt"})for(auto f:{"tasks","mems","cpus"})put(virtualRoot+"/dev/cpuset"+g+"/"+f,f==std::string("mems")?"0":"0-7");
     fs::permissions(virtualRoot+"/dev/cpuset/ZUIopt",fs::perms::owner_all|fs::perms::group_read|fs::perms::group_exec|fs::perms::others_read|fs::perms::others_exec);
     fs::create_directories(virtualRoot+"/proc/42/task");
@@ -106,6 +115,11 @@ int __wrap_open(const char* path,int flags,...){
 int __wrap_close(int fd){Kernel::fds.erase(fd);return __real_close(fd);}
 ssize_t __wrap_write(int fd,const void* bytes,size_t size){
     using namespace Kernel;auto it=fds.find(fd);
+    if(journalWriteError){
+        // Journal uses real openat; identify its real descriptor without mocking durability.
+        char path[64],target[4096];snprintf(path,sizeof(path),"/proc/self/fd/%d",fd);auto n=readlink(path,target,sizeof(target));
+        if(n>=18&&std::string(target+n-18,18)=="owner_state.v1.new"){errno=EIO;return -1;}
+    }
     if(it!=fds.end()&&it->second.rfind("/dev/cpuset",0)==0){
         auto path=it->second;
         if(path.substr(path.size()-6)=="/tasks"){
@@ -124,31 +138,40 @@ ssize_t __wrap_write(int fd,const void* bytes,size_t size){
     return __real_write(fd,bytes,size);
 }
 int __wrap_stat(const char* path,struct stat* st){
-    if(!Kernel::root.empty()&&std::string(path)=="/proc/42"){
+    std::string original=path;
+    if(!Kernel::root.empty()&&original.rfind("/proc/",0)==0&&original.size()>6&&original.find_first_not_of("0123456789",6)==original.npos){
         Kernel::uidReads++;
-        if(!Kernel::tasks.count(42)){errno=ENOENT;return -1;}memset(st,0,sizeof(*st));st->st_uid=Kernel::user;st->st_mode=S_IFDIR|0555;return 0;
+        auto task=Kernel::tasks.find(std::stoi(original.substr(6)));if(task==Kernel::tasks.end()||task->second.tgid!=task->first){errno=ENOENT;return -1;}
+        memset(st,0,sizeof(*st));st->st_uid=task->first==42?Kernel::user:task->second.user;st->st_mode=S_IFDIR|0555;return 0;
     }return __real_stat(Kernel::root.empty()?path:Kernel::mapped(path).c_str(),st);
 }
 int __wrap_lstat(const char* path,struct stat* st){return __real_lstat(Kernel::root.empty()?path:Kernel::mapped(path).c_str(),st);}
 int __wrap_access(const char* path,int mode){return __real_access(Kernel::root.empty()?path:Kernel::mapped(path).c_str(),mode);}
 DIR* __wrap_opendir(const char* path){
-    if(!Kernel::root.empty()&&std::string(path)=="/proc/42/task"){
-        std::vector<int> current;if(Kernel::tasks.count(42))for(auto& [tid,_]:Kernel::tasks)current.push_back(tid);
-        if(current!=Kernel::listedTasks){
+    std::string original=path;
+    if(!Kernel::root.empty()&&original.rfind("/proc/",0)==0&&original.size()>11&&original.substr(original.size()-5)=="/task"){
+        int pid=std::stoi(original.substr(6));std::vector<int> current;if(Kernel::tasks.count(pid))for(auto& [tid,t]:Kernel::tasks)if(t.tgid==pid)current.push_back(tid);
+        if(!Kernel::listedTasks.count(pid)||current!=Kernel::listedTasks.at(pid)){
             auto dest=Kernel::mapped(path);fs::remove_all(dest);fs::create_directories(dest);
             for(int tid:current)fs::create_directories(dest+"/"+std::to_string(tid));
-            Kernel::listedTasks=std::move(current);
+            Kernel::listedTasks[pid]=std::move(current);
             Kernel::taskMaterializations++;
         }
     }return __real_opendir(Kernel::root.empty()?path:Kernel::mapped(path).c_str());
 }
 int __wrap_mkdir(const char* path,mode_t mode){
+    if(std::string(path).rfind("/dev/cpuset/ZUIopt/",0)==0){auto callback=Kernel::beforeCreate;if(callback)callback(path);}
     auto dest=Kernel::root.empty()?std::string(path):Kernel::mapped(path);int rc=__real_mkdir(dest.c_str(),mode);
     if(rc==0&&std::string(path).rfind("/dev/cpuset/ZUIopt/",0)==0)for(auto f:{"tasks","cpus","mems"})Kernel::put(dest+"/"+f,"");return rc;
 }
 int __wrap_rmdir(const char* path){
     auto dest=Kernel::root.empty()?std::string(path):Kernel::mapped(path);
-    if(std::string(path).rfind("/dev/cpuset/ZUIopt/",0)==0)for(auto f:{"tasks","cpus","mems"})fs::remove(dest+"/"+f);
+    if(std::string(path).rfind("/dev/cpuset/ZUIopt/",0)==0){
+        auto callback=Kernel::beforeRemove;if(callback)callback(path);
+        if(Kernel::removeError){errno=Kernel::removeError;return -1;}
+        for(const auto& [_,t]:Kernel::tasks)if(t.group==std::string(path).substr(11)){errno=EBUSY;return -1;}
+        for(auto f:{"tasks","cpus","mems"})fs::remove(dest+"/"+f);
+    }
     return __real_rmdir(dest.c_str());
 }
 int __wrap_sched_getaffinity(pid_t tid,size_t size,cpu_set_t* set){
@@ -177,7 +200,7 @@ struct AcquisitionFixture:RuntimeFixture {
         Kernel::initialize();journal=std::make_unique<Journal>(Kernel::root+"/state");
         owner=std::make_unique<Placement>(count,*journal);initialCommits=journal->commits;
     }
-    ~AcquisitionFixture(){owner.reset();journal.reset();Kernel::hook={};auto dir=Kernel::root;Kernel::root.clear();fs::remove_all(dir);fs::remove_all(Kernel::virtualRoot);Kernel::virtualRoot.clear();}
+    ~AcquisitionFixture(){owner.reset();journal.reset();Kernel::hook={};Kernel::beforeWrite={};Kernel::afterWrite={};Kernel::beforeRemove={};Kernel::beforeCreate={};Kernel::journalWriteError=false;auto dir=Kernel::root;Kernel::root.clear();fs::remove_all(dir);fs::remove_all(Kernel::virtualRoot);Kernel::virtualRoot.clear();}
     void activate(ProcessState& p){if(!p.activity_foreground){release(p);return;}beginAcquisition(p,Kernel::time);}
     void release(ProcessState& p){owner->release(p);}
     BaselineResult acquire(ProcessState& p){probes++;TimedProc proc;return owner->acquire(p,proc);}
@@ -203,7 +226,8 @@ struct AcquisitionFixture:RuntimeFixture {
         for(auto& [_,t]:Kernel::tasks)require(t.group.find("/ZUIopt")==std::string::npos,"pending cpuset membership");
     }
     void confirm(){auto base=p().acquireStarted;for(int dt:{100,250,500,750})if(!p().managed())tick(base+dt);require(p().managed(),"fixture temporal confirmation");}
-    void place(){if(!p().managed())confirm();owner->prepare(p());for(auto& [tid,t]:p().tasks)owner->apply(p(),tid,t,cpus("2-6"),"default");}
+    void place(){if(!p().managed())confirm();owner->prepare(p());std::map<int,Mask> masks;for(const auto& [tid,_]:p().tasks)masks[tid]=124;
+        owner->stageMasks(p(),masks);for(auto& [tid,t]:p().tasks)owner->apply(p(),tid,t,124,"default");}
     void background(){app.state=19;app.flags=0;primary();}
     void empty(){require(journal->entries.empty()&&journal->leases.empty()&&!p().managed()&&!p().acquiring(),"release owner leak");}
 };
@@ -227,7 +251,7 @@ void kernelBacking(){
 void runtimeUpgrade(){
     AcquisitionFixture f;for(int tid=44;tid<242;tid++)Kernel::tasks[tid]={10,"/top-app",255};
     f.start(2);f.confirm();auto commits=f.journal->commits;f.place();
-    require(!f.journal->runtimeVersion&&f.journal->commits==commits,"Schema2 per-thread journal amplification");
+    require(f.journal->placementVersion&&f.journal->runtimeVersion&&f.journal->commits==commits+1,"Schema2 V5 intent batch/per-thread journal amplification");
     for(auto& [tid,r]:f.journal->entries)require(r.priorMask==255&&r.appliedMask==124&&f.p().tasks.at(tid).appliedMask==124,"live affinity intent missing");
     f.journal->runtimeVersion=true;f.journal->commit();
     std::map<int,Mask> masks;for(const auto& [tid,_]:f.p().tasks)masks[tid]=252;
@@ -245,7 +269,7 @@ void runtimeUpgrade(){
     {Journal reload(path);Counters counters;Placement recovery(counters,reload);recovery.cleanup();
      require(!reload.runtimeVersion&&!reload.waltVersion&&reload.entries.empty(),"empty runtime ownership version retained");}
     for(auto& [_,t]:Kernel::tasks)require(t.group=="/top-app"&&t.mask==255,"runtime upgrade recovery residue");
-    puts("SCHEMA2_NO_JOURNAL_AMPLIFICATION_MIDLEASE_V3_ALL200_RECOVERY=PASS");
+    puts("SCHEMA2_V5_ONE_INTENT_BATCH_ZERO_PER_THREAD_ALL200_RECOVERY=PASS");
 }
 template<class F> void expectFailure(F action,const std::string& message){
     std::string observed="NO_EXCEPTION";try{action();}catch(const std::exception& e){observed=e.what();}
@@ -309,18 +333,18 @@ void matrix(){
 void recovery(){
     // P + V2/CRC/late-spawn/scaffold/unknown/busy: real production release/recovery.
     {AcquisitionFixture f;f.start(2);f.place();auto floor=f.p().ownershipFloor;
-        Kernel::tasks[44]={floor+1,"/ZUIopt/7c",124};OwnerRecord record;
+        Kernel::tasks[44]={floor+1,Kernel::ownedGroup(0x7c),124};OwnerRecord record;
         require(f.journal->inherited(44,record)&&record.savedMask==255,"postcommit late child coverage");
         auto saved=f.journal->entries;f.journal->entries.clear();f.journal->leases.clear();f.journal->load();require(f.journal->entries.size()==saved.size(),"V2 durable reload");
         f.background();f.empty();for(auto& [_,t]:Kernel::tasks)require(t.group=="/top-app"&&t.mask==255,"strict original restore changed");}
-    {AcquisitionFixture f;f.start(2);f.place();Kernel::tasks[44]={f.p().ownershipFloor+1,"/ZUIopt/7c",124};Kernel::stuck=true;
+    {AcquisitionFixture f;f.start(2);f.place();Kernel::tasks[44]={f.p().ownershipFloor+1,Kernel::ownedGroup(0x7c),124};Kernel::stuck=true;
         expectFailure([&]{f.background();},"background unrecoverable owned task");Kernel::stuck=false;f.background();f.empty();}
     {AcquisitionFixture f;f.start(2);f.place();auto r=f.journal->entries.at(42);f.journal->entries.erase(42);expectFailure([&]{f.owner->prepare(f.p());},"durable owner identity");f.journal->entries[42]=r;
         auto lease=f.journal->leases.at(42);f.journal->leases.at(42).processStart++;expectFailure([&]{f.owner->prepare(f.p());},"lease identity mismatch");f.journal->leases[42]=lease;f.background();}
-    {AcquisitionFixture f;Kernel::tasks.at(43).group="/ZUIopt/7c";expectFailure([&]{f.start(2);},"initial Android owner unavailable");require(!Kernel::moves&&!Kernel::affinities&&f.journal->leases.empty(),"unknown acquisition wrote ownership");}
+    {AcquisitionFixture f;Kernel::tasks.at(43).group=Kernel::ownedGroup(0x7c);expectFailure([&]{f.start(2);},"initial Android owner unavailable");require(!Kernel::moves&&!Kernel::affinities&&f.journal->leases.empty(),"unknown acquisition wrote ownership");}
     {AcquisitionFixture f;auto& p=f.states[42];p.pid=42;p.tasks[43].owned=true;expectFailure([&]{f.release(p);},"uncommitted owned task");}
     {AcquisitionFixture f;f.start(2);f.place();auto floor=f.p().ownershipFloor;f.owner.reset();f.journal.reset();
-        Kernel::tasks[44]={floor+1,"/ZUIopt/7c",124};
+        Kernel::tasks[44]={floor+1,Kernel::ownedGroup(0x7c),124};
         pid_t child=fork();require(child>=0,"crash fixture fork");
         if(child==0){Journal locked(Kernel::root+"/state");kill(getpid(),SIGKILL);_exit(1);}
         int status=0;require(waitpid(child,&status,0)==child&&WIFSIGNALED(status)&&WTERMSIG(status)==SIGKILL,"real SIGKILL fixture");
@@ -392,13 +416,14 @@ struct CoherenceFixture:AcquisitionFixture {
         if(result==CoherenceResult::CONTESTED){contested++;receipt.record(Kernel::root+"/state",journal->currentBootId(),RuntimeBlockerReason::OWNERSHIP_CONTESTED);}
         if(!p().managed()){if(p().acquiring())advanceAcquisition(p(),time,*this);return;}
         owner->prepare(p());
+        std::map<int,Mask> masks;for(const auto& [tid,_]:p().tasks)masks[tid]=desired(tid);owner->stageMasks(p(),masks);
         for(auto& [tid,t]:p().tasks)owner->apply(p(),tid,t,desired(tid),"fixture_G07");
         finishScan(p(),time,result==CoherenceResult::REPAIR);
     }
     void managed(){
         require(p().managed(),"coherence managed miss");
-        for(auto& [tid,t]:Kernel::tasks){std::ostringstream expected;expected<<"/ZUIopt/"<<std::hex<<desired(tid);
-            require(t.group==expected.str()&&t.mask==desired(tid),"silent journal/physical divergence");
+        for(auto& [tid,t]:Kernel::tasks){
+            require(t.group==Kernel::ownedGroup(desired(tid))&&t.mask==desired(tid),"silent journal/physical divergence");
             require(journal->entries.count(tid)&&journal->same(journal->entries.at(tid)),"unknown owned task");
         }
     }
@@ -465,13 +490,13 @@ void coherence(){
         f.scanAt(f.p().next);require(f.p().acquiring()&&!f.p().managed()&&f.contested==0,"heterogeneous handoff not stabilized");
         require(f.journal->entries.empty()&&Kernel::tasks.at(43).group=="/foreground","safe external handoff rewritten");
         f.uniform("/top-app",255);f.settle();f.background();}
-    {CoherenceFixture f;f.boot();Kernel::tasks[60]={1,"/ZUIopt/7c",124};f.overwrite(75,2);
+    {CoherenceFixture f;f.boot();Kernel::tasks[60]={1,Kernel::ownedGroup(0x7c),124};f.overwrite(75,2);
         auto commits=f.journal->commits;auto moves=Kernel::moves;
         expectFailure([&]{f.scanAt(f.p().next);},"background unknown owned task");
         require(f.journal->commits==commits&&Kernel::moves==moves&&!f.journal->entries.empty(),"unknown coherence owner cleared");
         Kernel::tasks.erase(60);f.uniform("/top-app",255);f.owner->relinquishCoherence(f.p());f.empty();}
     // Late inherited, death and reuse safety during a coherence release.
-    {CoherenceFixture f;f.boot();Kernel::tasks[60]={f.p().ownershipFloor+1,"/ZUIopt/7c",124};f.overwrite(75,2);
+    {CoherenceFixture f;f.boot();Kernel::tasks[60]={f.p().ownershipFloor+1,Kernel::ownedGroup(0x7c),124};f.overwrite(75,2);
         f.scanAt(f.p().next);require(f.p().acquiring()&&Kernel::tasks.at(60).group=="/top-app"&&Kernel::tasks.at(60).mask==255,"late owned leak");f.settle();f.background();}
     {CoherenceFixture f;f.boot();Kernel::tasks.clear();f.owner->relinquishCoherence(f.p());f.empty();}
     {CoherenceFixture f;f.boot();f.uniform("/top-app",255);Kernel::tasks.at(42).birth++;

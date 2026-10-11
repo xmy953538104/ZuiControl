@@ -81,7 +81,7 @@ struct AuthorityFixture:ReentryFixture {
             if(result==CoherenceResult::REVOKED)throw PhysicalRevoke{};
             require(result==CoherenceResult::CLEAN,"unexpected pretransition drift");
             if(point==4)inject();guard.check();owner->prepare(p(),&guard);guard.check();
-            if(point==5)Kernel::hook=[&](const std::string& path){if(path=="/dev/cpuset/ZUIopt/80/tasks"){Kernel::hook={};inject();}};
+            if(point==5)Kernel::hook=[&](const std::string& path){if(path=="/dev/cpuset"+Kernel::ownedGroup(0x80)+"/tasks"){Kernel::hook={};inject();}};
             at=0;
             for(auto& [tid,t]:p().tasks){
                 if(point==6&&at++==index)inject();guard.check();

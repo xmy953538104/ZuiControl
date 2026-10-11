@@ -6,8 +6,12 @@
 #include <sys/resource.h>
 namespace ZUIopt {
 inline constexpr size_t RUNTIME_STATUS_LIMIT=32768;
-inline std::string runtimeEnvelope(const std::string& boot,const std::map<int,std::string>& processes){
-    std::ostringstream header;header<<"{\"schema\":1,\"boot\":"<<std::quoted(boot)<<",\"totalProcesses\":"<<processes.size()<<",\"processes\":[";
+inline std::string runtimeOwnerHeader(const std::string& boot,const std::string& owner){
+    std::ostringstream out;out<<"{\"schema\":2,\"boot\":"<<std::quoted(boot)<<",\"owner\":"<<std::quoted(owner)<<',';return out.str();
+}
+inline std::string runtimeEnvelope(const std::string& boot,const std::string& owner,bool pending,const std::map<int,std::string>& processes){
+    std::ostringstream header;header<<runtimeOwnerHeader(boot,owner)<<"\"status\":"<<std::quoted(pending?"PENDING_OWNER_ACK":processes.empty()?"NO_RUNTIME_OBSERVATIONS":"ACKNOWLEDGED_RUNTIME")
+        <<",\"totalProcesses\":"<<processes.size()<<",\"processes\":[";
     auto out=header.str();bool comma=false,truncated=false;
     for(const auto& [_,state]:processes){
         if(out.size()+state.size()+64>RUNTIME_STATUS_LIMIT){truncated=true;break;}
@@ -15,6 +19,21 @@ inline std::string runtimeEnvelope(const std::string& boot,const std::map<int,st
     }
     out+=truncated?"],\"truncated\":true}\n":"],\"truncated\":false}\n";
     return out;
+}
+inline bool runtimeOwnerMatches(const std::string& text,const std::string& boot,const std::string& owner){
+    if(owner.empty()||text.empty()||text.size()>RUNTIME_STATUS_LIMIT||text.back()!='\n'||text.find_first_of("\r\0",0,2)!=text.npos)return false;
+    const auto prefix=runtimeOwnerHeader(boot,owner)+"\"status\":";
+    size_t countStart=0;
+    for(const char* value:{"PENDING_OWNER_ACK","NO_RUNTIME_OBSERVATIONS","ACKNOWLEDGED_RUNTIME"}){
+        auto header=prefix+'"'+value+"\",\"totalProcesses\":";
+        if(text.rfind(header,0)==0){countStart=header.size();break;}
+    }
+    auto countEnd=text.find(",\"processes\":[",countStart);
+    if(!countStart||countEnd==text.npos)return false;
+    auto count=text.substr(countStart,countEnd-countStart);
+    return !count.empty()&&count.size()<=10&&count.find_first_not_of("0123456789")==count.npos&&(count.size()==1||count[0]!='0')&&
+        (text.size()>=21&&(text.compare(text.size()-21,21,"],\"truncated\":false}\n")==0||
+            text.compare(text.size()-20,20,"],\"truncated\":true}\n")==0));
 }
 struct SchedulerState {
     uint32_t size=56,policy=0;uint64_t flags=0;int32_t nice=0;uint32_t priority=0;

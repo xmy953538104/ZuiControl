@@ -58,7 +58,7 @@ void deterministic(){
         Kernel::hook=[&](const std::string& path){
             if(path!="affinity/43")return;Kernel::hook={};
             if(action==0)Kernel::tasks.erase(43);
-            if(action==1)Kernel::tasks[300]={f.p().ownershipFloor+1,"/ZUIopt/7c",0x7c};
+            if(action==1)Kernel::tasks[300]={f.p().ownershipFloor+1,Kernel::ownedGroup(0x7c),0x7c};
             if(action==2)Kernel::tasks[301]={f.p().ownershipFloor+1,"/background",67};
             if(action==3){Kernel::tasks[43]={90000,"/background",67};f.reused.insert(43);}
             if(action==4)Kernel::tasks.clear();
@@ -96,7 +96,7 @@ void deterministic(){
     std::cout<<"BACKGROUND_DETERMINISTIC_A_TO_O=PASS;CASES="<<cases<<";INITIAL_TASKS=200;LOCAL_BLOCKER_IDLE_POLLING=0;CATCH_CLEANUP_IDEMPOTENT=PASS\n";
 }
 void strictBoundaries(){
-    {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,"/ZUIopt/7c",0x7c};
+    {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,Kernel::ownedGroup(0x7c),0x7c};
         expectFailure([&]{f.background();},"background unknown owned task");require(!f.journal->entries.empty(),"unknown clear");}
     {BackgroundFixture f;f.setup(200);f.journal->leases.at(42).processStart++;
         expectFailure([&]{f.background();},"committed lease identity mismatch");}
@@ -110,11 +110,11 @@ void strictBoundaries(){
     {BackgroundFixture f;f.setup(200);Kernel::moveError=EACCES;
         expectFailure([&]{f.background();},"background owned release failed");
         expectFailure([&]{f.owner->release(f.p(),ReleaseCause::CRASH_RECOVERY);},"background owned release failed");}
-    {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,"/ZUIopt/7c",0x7c};
+    {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,Kernel::ownedGroup(0x7c),0x7c};
         Kernel::hook=[](const std::string& path){if(path=="/proc/300/cgroup"){Kernel::hook={};Kernel::tasks.at(300).group.clear();}};
         expectFailure([&]{f.background();},"background physical owner unavailable");
         require(!f.journal->entries.empty(),"unobservable live physical owner ignored");}
-    {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,"/ZUIopt/7c",0x7c};f.owner.reset();
+    {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,Kernel::ownedGroup(0x7c),0x7c};f.owner.reset();
         f.journal->entries.clear();f.journal->leases.clear();
         expectFailure([&]{Placement recovery(f.count,*f.journal);},"RECOVERY_UNKNOWN_TASK_FAIL_CLOSED");}
     puts("BACKGROUND_TRUE_FATAL_BOUNDARIES=PASS;CRASH_RECOVERY_STRICT=PASS");
@@ -134,8 +134,8 @@ void backgroundStress(){
             }
             if(action==0&&n>2)Kernel::tasks.erase(44);
             if(action==1){
-                bool parentOwned=std::any_of(Kernel::tasks.begin(),Kernel::tasks.end(),[](const auto& item){return item.second.group=="/ZUIopt/7c";});
-                Kernel::tasks[300]={f.p().ownershipFloor+1,parentOwned?"/ZUIopt/7c":"/background",parentOwned?Mask(0x7c):Mask(67)};
+                bool parentOwned=std::any_of(Kernel::tasks.begin(),Kernel::tasks.end(),[](const auto& item){return item.second.group==Kernel::ownedGroup(0x7c);});
+                Kernel::tasks[300]={f.p().ownershipFloor+1,parentOwned?Kernel::ownedGroup(0x7c):"/background",parentOwned?Mask(0x7c):Mask(67)};
             }
             if(action==2)Kernel::tasks[301]={f.p().ownershipFloor+1,"/background",67};
             if(action==3&&n>2){Kernel::tasks[44]={90000,"/foreground",31};f.reused.insert(44);}

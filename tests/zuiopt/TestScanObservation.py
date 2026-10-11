@@ -34,7 +34,17 @@ def sources():
     daemon = (ROOT/'native/zuiopt/ZUIopt_daemon.h').read_text(encoding='utf8')
     baseline = (ROOT/'tests/zuiopt/fixtures/PhysicalRevokeCandidate1.h').read_text(encoding='utf8')
     candidate = between(owner, '    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')
-    assert candidate==between((ROOT/'native/zuiopt/ZUIopt_owner.h').read_text(encoding='utf8'),'    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')
+    current = between((ROOT/'native/zuiopt/ZUIopt_owner.h').read_text(encoding='utf8'),'    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')
+    # V5 changes only the resource name in this pinned historical scan model.
+    # The actual lease paths/recovery execute in ZUIoptDescendantTest.cpp.
+    old_group = ('        std::ostringstream expected;expected<<"/ZUIopt/"<<std::hex<<t.appliedMask;\n'
+                 '        if(g==expected.str()&&m==t.appliedMask)return false;\n'
+                 '        require(normalGroup(g)||g==expected.str(),"invalid physical owner");\n')
+    lease_group = ('        auto expected=placementGroup(r.placementLease,t.appliedMask);\n'
+                   '        if(g==expected&&m==t.appliedMask)return false;\n'
+                   '        require(normalGroup(g)||g==expected,"invalid physical owner");\n')
+    assert current.count(lease_group)==1 and candidate.count(old_group)==1
+    assert candidate==current.replace(lease_group,old_group,1)
     # Replace ONLY the authorized function. This freezes every other owner byte,
     # including Journal, prepare, apply, release/recovery and pre-write live checks.
     assert digest(owner.replace(candidate, baseline, 1)) == '35f42c416f50c8c6f5a7d3fdd6966b81dc36cb947d2d80299a9f11600e05dac0'

@@ -224,6 +224,8 @@ jobs:
           "$RUNNER_TEMP/zuiopt-runtime-fixture" | tee "$receipt/runtime_contract_faults.txt" || native_failed=1
           python3 tests/zuiopt/TestRuntimeSchema.py 2>&1 | tee "$receipt/runtime_schema.txt" || native_failed=1
           python3 tests/zuiopt/TestRuntimePolicy.py 2>&1 | tee "$receipt/runtime_policy.txt" || native_failed=1
+          python3 tests/zuiopt/TestRuntimeStatus.py --compiler clang++ --output "$receipt/runtime-status" \
+            2>&1 | tee "$receipt/runtime_status.txt" || native_failed=1
           python3 tests/zuiopt/TestNativeRuleParity.py "$RUNNER_TEMP/zuiopt-fixture" \
             | tee "$receipt/native_reference_parity.txt" || native_failed=1
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
@@ -273,6 +275,13 @@ jobs:
             -o "$RUNNER_TEMP/zuiopt-lease-fixture"
           sudo /usr/bin/time -v -o "$receipt/lease_resources.txt" timeout --kill-after=10s 5m \
             "$RUNNER_TEMP/zuiopt-lease-fixture" | tee "$receipt/os_authority_lease_fixtures.txt" || native_failed=1
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
+            -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptDescendantTest.cpp -lz \
+            -Wl,--wrap=open,--wrap=close,--wrap=write,--wrap=stat,--wrap=lstat,--wrap=access \
+            -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
+            -o "$RUNNER_TEMP/zuiopt-descendant-fixture"
+          sudo timeout --kill-after=10s 5m "$RUNNER_TEMP/zuiopt-descendant-fixture" \
+            | tee "$receipt/descendant_recovery_fixtures.txt" || native_failed=1
           test "$native_failed" -eq 0
           python3 scripts/build/BuildZUIopt.py \
             --ndk "$ANDROID_SDK_ROOT/ndk/27.2.12479018" \

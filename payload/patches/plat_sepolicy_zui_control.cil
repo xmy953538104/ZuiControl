@@ -128,6 +128,8 @@
 (allow performanced zui_scheduler_proc (file (getattr open read write append setattr)))
 ;; Preserve the existing Uperf capability; its sched module remains disabled.
 (allow performanced zuiopt_walt_task_proc (file (getattr open read write append setattr)))
+;; These two nodes previously used proc, writable by the OEM performance HAL.
+(allow vendor_hal_perf_default zuiopt_walt_task_proc (file (getattr open read write)))
 (dontaudit performanced domain (dir (getattr search)))
 (allow init shell_data_file (dir (getattr open read search setattr relabelfrom)))
 (allow init shell_data_file (file (getattr open read relabelfrom)))

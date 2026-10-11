@@ -145,14 +145,14 @@ jobs:
           git rev-parse HEAD | tee "$receipt/tested-head.txt"
           # Linux fixtures only. Binder APIs are typed models, not Android integration.
           failed=0
-          for name in Binder Scene Acquisition Background ReleaseReentry Authority Lease; do
+          for name in Binder Scene Acquisition Background ReleaseReentry Authority Lease Descendant; do
             options=()
             case "$name" in
               Scene) options=(-pthread -ldl -Wl,--export-dynamic) ;;
-              Acquisition|Background|ReleaseReentry|Authority|Lease)
+              Acquisition|Background|ReleaseReentry|Authority|Lease|Descendant)
                 options=(-Wl,--wrap=open,--wrap=close,--wrap=write,--wrap=stat,--wrap=lstat,--wrap=access
                   -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity)
-                if [[ "$name" != Acquisition ]]; then options+=(-Wl,--wrap=unlinkat); fi ;;
+                if [[ "$name" != Acquisition && "$name" != Descendant ]]; then options+=(-Wl,--wrap=unlinkat); fi ;;
             esac
             binary="$RUNNER_TEMP/zuiopt-$name"
             if clang++ -std=c++17 -O1 -Wall -Wextra -Werror -I tests/zuiopt/fixtures/binder_ndk \
@@ -170,6 +170,7 @@ jobs:
           failed=0
           python3 tests/zuiopt/TestStatParser.py --compiler clang++ --output "$receipt/parser" 2>&1 | tee "$receipt/parser.log" || failed=1
           python3 tests/zuiopt/TestScanObservation.py --compiler clang++ --output "$receipt/scan" 2>&1 | tee "$receipt/scan.log" || failed=1
+          python3 tests/zuiopt/TestRuntimeStatus.py --compiler clang++ --output "$receipt/runtime-status" 2>&1 | tee "$receipt/runtime-status.log" || failed=1
           sudo python3 host_retirement/TestRetirement.py 2>&1 | tee "$receipt/retirement.log" || failed=1
           test "$failed" -eq 0
       - uses: actions/upload-artifact@v4
