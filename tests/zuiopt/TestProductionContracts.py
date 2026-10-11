@@ -1,12 +1,26 @@
 """Source fences for the reviewed V21 integration; no device or image writes."""
 from pathlib import Path
 import hashlib
+import os
 import re
+import shutil
+import subprocess
+import tempfile
+import textwrap
 import unittest
 from TestCanonicalDocs import verify_repository_docs
 
 ROOT=Path(__file__).resolve().parents[2]
 def read(path): return (ROOT/path).read_text(encoding='utf-8')
+
+INTEGRATION_STAGE1='Test and build ZUIopt production integration'
+INTEGRATION_STAGE2='Test remaining ZUIopt integration and build production binary'
+
+def integration_step(name):
+    return read('.github/workflows/build.yml').split('- name: '+name,1)[1].split('\n      - ',1)[0]
+
+def integration_script(name):
+    return textwrap.dedent(integration_step(name).split('        run: |\n',1)[1])
 
 class ProductionContracts(unittest.TestCase):
     def test_authority_epoch_scan_and_write_fences(self):
@@ -38,11 +52,61 @@ class ProductionContracts(unittest.TestCase):
         self.assertIn('target=virtualRoot+"/read/"',fixture)
         workflow=read('.github/workflows/build.yml')
         self.assertIn('timeout --kill-after=10s 5m',workflow)
-        integration=workflow.split('- name: Test and build ZUIopt production integration',1)[1].split('- name:',1)[0]
-        self.assertIn('timeout-minutes: 15',integration)
+        for name in (INTEGRATION_STAGE1,INTEGRATION_STAGE2):
+            self.assertIn('timeout-minutes: 15',integration_step(name))
         self.assertNotIn('--wrap=fsync',workflow)
         for name in ('matrix','recovery','stress512','coherence1024','horizon','liveness1024'):
             self.assertIn('timed("'+name+'",',fixture)
+
+    def test_ci_split_keeps_fixture_order_bounds_and_failure_gate(self):
+        first=integration_script(INTEGRATION_STAGE1);second=integration_script(INTEGRATION_STAGE2)
+        self.assertIn('id: zuiopt_integration_stage1',integration_step(INTEGRATION_STAGE1))
+        self.assertIn('if: ${{ !cancelled() }}',integration_step(INTEGRATION_STAGE2))
+        self.assertIn('INTEGRATION_STAGE1_OUTCOME: ${{ steps.zuiopt_integration_stage1.outcome }}',integration_step(INTEGRATION_STAGE2))
+        self.assertLess(first.index("printf 'INCOMPLETE\\n'"),first.index('clang++ --version'))
+        self.assertLess(first.index('release_reentry_fixtures.txt'),first.index("printf '%s\\n' \"$native_failed\""))
+        self.assertEqual(first.count('test "$native_failed" -eq 0'),1)
+        self.assertEqual(first.count('native_failed=0'),1)
+        self.assertEqual(second.count('native_failed=0'),1)
+        self.assertEqual(second.count('native_failed=1'),4)
+        self.assertNotIn('BuildZUIopt.py',first)
+        scripts=first+second
+        fixtures=['ZUIoptTest.cpp','ZUIoptRuntimeTest.cpp','ZUIoptBinderTest.cpp','ZUIoptSceneTest.cpp','ZUIoptAcquisitionTest.cpp','ZUIoptBackgroundTest.cpp','ZUIoptReleaseReentryTest.cpp','ZUIoptAuthorityTest.cpp','ZUIoptLeaseTest.cpp','ZUIoptDescendantTest.cpp']
+        positions=[scripts.index('tests/zuiopt/'+name) for name in fixtures]
+        self.assertEqual(positions,sorted(positions))
+        for name in fixtures:self.assertEqual(scripts.count('tests/zuiopt/'+name),1)
+        self.assertEqual(scripts.count('timeout --kill-after=10s 5m'),6)
+        self.assertEqual(first.count('timeout --kill-after=10s 5m'),3)
+        self.assertEqual(second.count('timeout --kill-after=10s 5m'),3)
+        self.assertNotIn('ZUIoptAuthorityTest.cpp',first)
+        self.assertIn('ZUIoptAuthorityTest.cpp',second)
+        self.assertLess(second.index('test "$native_failed" -eq 0'),second.index('python3 scripts/build/BuildZUIopt.py'))
+        self.assertIn('if: always()',read('.github/workflows/build.yml').split('- name: Upload ZUIopt gate',1)[1].split('\n      - ',1)[0])
+        self.assertIn('name: zui-control-zuiopt-gate',read('.github/workflows/build.yml'))
+
+    def test_ci_split_actual_shell_guard_never_clears_first_failure(self):
+        bash=shutil.which('bash')
+        if not bash and os.name=='nt':
+            bash=next((str(p) for p in (Path('C:/Program Files/Git/bin/bash.exe'),Path('C:/Program Files/Git/usr/bin/bash.exe')) if p.is_file()),None)
+        self.assertIsNotNone(bash,'bash is required to exercise the production CI failure guard')
+        script=integration_script(INTEGRATION_STAGE2)
+        guard=script.split('clang++ -std=c++17',1)[0]
+        final_gate=next(line for line in script.splitlines(keepends=True) if line.strip()=='test "$native_failed" -eq 0')
+        self.assertEqual(script.count(final_gate.strip()),1)
+        cases=[('pass','success',b'0\n',False,True),('first failed','failure',b'0\n',False,False),('fixture failed','success',b'1\n',False,False),('incomplete','success',b'INCOMPLETE\n',False,False),('missing','success',None,False,False),('malformed','success',b'0\n\n',False,False),('skipped','skipped',b'0\n',False,False),('second failed','success',b'0\n',True,False)]
+        for name,outcome,state,second_failed,allowed in cases:
+            with self.subTest(name=name),tempfile.TemporaryDirectory(prefix='zuiopt-ci-guard-') as temporary:
+                root=Path(temporary);receipt=root/'zuiopt-gate';receipt.mkdir()
+                if state is not None:(receipt/'integration_stage1.status').write_bytes(state)
+                # Execute only the extracted admission/final gates and harmless evidence markers.
+                body=guard+'printf "remaining evidence\\n" > "$receipt/remaining-evidence.txt"\n'
+                if second_failed:body+='native_failed=1\n'
+                body+=final_gate+'printf "build reached\\n" > "$receipt/build-reached.txt"\n'
+                env=os.environ|dict(RUNNER_TEMP=root.as_posix(),INTEGRATION_STAGE1_OUTCOME=outcome)
+                result=subprocess.run([bash,'-c',body],env=env,capture_output=True,text=True,timeout=10)
+                self.assertTrue((receipt/'remaining-evidence.txt').is_file())
+                self.assertEqual(result.returncode==0,allowed,result.stderr)
+                self.assertEqual((receipt/'build-reached.txt').exists(),allowed)
 
     def test_versioned_apk_staging_matches_app_and_payload_consumer(self):
         version=re.search(r'versionCode\s*=\s*(\d+)',read('app/build.gradle.kts'))[1]

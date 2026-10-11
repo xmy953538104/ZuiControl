@@ -205,6 +205,7 @@ jobs:
           done
 
       - name: Test and build ZUIopt production integration
+        id: zuiopt_integration_stage1
         timeout-minutes: 15
         shell: bash
         run: |
@@ -212,6 +213,7 @@ jobs:
           receipt="$RUNNER_TEMP/zuiopt-gate"
           native_failed=0
           mkdir -p "$receipt"
+          printf 'INCOMPLETE\n' > "$receipt/integration_stage1.status"
           clang++ --version > "$receipt/host_compiler.txt"
           python3 tests/zuiopt/TestStatParser.py --compiler clang++ --output "$receipt/parser-differential"
           python3 tests/zuiopt/TestScanObservation.py --compiler clang++ --output "$receipt/scan-observation"
@@ -259,6 +261,24 @@ jobs:
             -o "$RUNNER_TEMP/zuiopt-release-reentry-fixture"
           sudo timeout --kill-after=10s 5m "$RUNNER_TEMP/zuiopt-release-reentry-fixture" \
             | tee "$receipt/release_reentry_fixtures.txt" || native_failed=1
+          printf '%s\n' "$native_failed" > "$receipt/integration_stage1.status"
+          test "$native_failed" -eq 0
+
+      - name: Test remaining ZUIopt integration and build production binary
+        if: ${{ !cancelled() }}
+        timeout-minutes: 15
+        shell: bash
+        env:
+          INTEGRATION_STAGE1_OUTCOME: ${{ steps.zuiopt_integration_stage1.outcome }}
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/zuiopt-gate"
+          native_failed=1
+          mkdir -p "$receipt"
+          if [[ "$INTEGRATION_STAGE1_OUTCOME" == success ]] && \
+              cmp -s "$receipt/integration_stage1.status" <(printf '0\n'); then
+            native_failed=0
+          fi
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptAuthorityTest.cpp -lz \
             -Wl,--wrap=unlinkat \

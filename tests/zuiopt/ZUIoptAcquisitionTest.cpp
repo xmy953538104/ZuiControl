@@ -506,13 +506,17 @@ void coherence(){
     {CoherenceFixture f;f.boot();Kernel::tasks.clear();f.owner->relinquishCoherence(f.p());f.empty();}
     {CoherenceFixture f;f.boot();f.uniform("/top-app",255);Kernel::tasks.at(42).birth++;
         auto writes=Kernel::moves+Kernel::affinities;f.owner->relinquishCoherence(f.p());f.empty();require(Kernel::moves+Kernel::affinities==writes,"stale PID write");}
-    // End probation: cache suppresses writes, not R2's mandatory per-task observation.
+    // End probation: V5 intent preflight and cached apply each observe every task.
     {CoherenceFixture f;f.boot();auto base=Kernel::time;for(int dt:coherenceSchedule)f.scanAt(base+dt);
+        require(f.journal->placementVersion&&f.journal->runtimeVersion&&f.journal->waltVersion,"cached fixture requires V5 intent preflight");
         require(!forceCoherence(f.p()),"probation never ended");auto reads=Kernel::reads;
         auto groups=Kernel::groupReads,affinities=Kernel::affinityReads,writes=Kernel::moves+Kernel::affinities;
         auto journalCommits=f.journal->commits;
         f.scanAt(base+7000);
-        require(Kernel::groupReads-groups==8&&Kernel::affinityReads-affinities==8,"cached per-task observation missing");
+        auto expected=2*static_cast<int>(f.p().tasks.size());
+        std::cout<<"CACHED_V5_TASKS="<<f.p().tasks.size()<<";GROUP_READS="<<Kernel::groupReads-groups
+            <<";AFFINITY_GET="<<Kernel::affinityReads-affinities<<";EXPECTED_TWO_PASSES="<<expected<<'\n';
+        require(expected==16&&Kernel::groupReads-groups==expected&&Kernel::affinityReads-affinities==expected,"cached V5 per-task observation missing");
         require(Kernel::moves+Kernel::affinities==writes&&f.journal->commits==journalCommits&&!forceCoherence(f.p()),"cached apply rearmed or wrote");
         f.overwrite(100,2);armCoherence(f.p(),base+7100);f.scanAt(base+7100);require(f.drift==1,"authority invalidation absent");f.settle();f.background();
         reads=Kernel::reads;auto commits=f.journal->commits;for(int t=100000;t<101000;t++)f.scanAt(t);
@@ -598,14 +602,15 @@ void horizon(){
         for(int dt:coherenceSchedule)f.scanAt(committed+dt);
         f.managed();require(!forceCoherence(f.p()),"broad re-acquisition timer unbounded");f.background();f.empty();
     }
-    // Count actual production verify/prepare/apply POSIX operations for 200 tasks.
+    // Count actual production verify/prepare/stage/apply POSIX operations for 200 tasks.
     // Core discovery/rank reads are unchanged and accounted separately in report.
     {CoherenceFixture f;f.boot(200);auto base=Kernel::time;
         int g=Kernel::groupReads,a=Kernel::affinityReads,id=Kernel::identityReads,u=Kernel::uidReads,s=f.scans;
         for(int dt:coherenceSchedule)f.scanAt(base+dt);
         int groups=Kernel::groupReads-g,affinity=Kernel::affinityReads-a,identities=Kernel::identityReads-id,users=Kernel::uidReads-u;
-        require(f.scans-s==14&&groups==5600&&affinity==5600,"bounded scan/group/affinity count");
-        std::cout<<"ACTIVE_200_THREADS:SCANS="<<f.scans-s<<";GROUP_READS="<<groups<<";AFFINITY_GET="<<affinity<<";IDENTITY_READS="<<identities<<";UID_READS="<<users<<'\n';
+        auto expected=3*200*14; // Probation verify, V5 intent preflight and apply.
+        std::cout<<"ACTIVE_200_THREADS:SCANS="<<f.scans-s<<";GROUP_READS="<<groups<<";AFFINITY_GET="<<affinity<<";EXPECTED_THREE_PASSES="<<expected<<";IDENTITY_READS="<<identities<<";UID_READS="<<users<<'\n';
+        require(f.p().tasks.size()==200&&f.scans-s==14&&groups==expected&&affinity==expected,"bounded V5 scan/group/affinity count");
         auto original=f.p().activated;auto commits=f.journal->commits;auto moves=Kernel::moves+Kernel::affinities;
         require(f.p().leaseScene==f.sceneIdentity.sequence,"initial scene was not arbitrated");
         auto scansBeforeDuplicates=f.scans;
@@ -613,9 +618,11 @@ void horizon(){
         for(int i=0;i<1000;i++){f.primary();f.scanAt(base+6001+i);}
         require(!forceCoherence(f.p())&&f.p().activated==original&&commits==f.journal->commits&&moves==Kernel::moves+Kernel::affinities,"duplicate rearm/write");
         f.scanAt(base+8000);
-        // The R2 contract requires one fresh physical observation per task even
-        // on cache hits; cache still prevents extra writes and journal commits.
-        auto mandatoryReads=200*(f.scans-scansBeforeDuplicates);
+        // Cached V5 preflight and apply still observe each task without writes.
+        auto mandatoryReads=2*200*(f.scans-scansBeforeDuplicates);
+        std::cout<<"CACHED_V5_200_THREADS:SCANS="<<f.scans-scansBeforeDuplicates
+            <<";GROUP_READS="<<Kernel::groupReads-g-groups<<";AFFINITY_GET="<<Kernel::affinityReads-a-affinity
+            <<";EXPECTED_TWO_PASSES="<<mandatoryReads<<'\n';
         require(Kernel::groupReads==g+groups+mandatoryReads&&Kernel::affinityReads==a+affinity+mandatoryReads,"per-task revoke observation count");
         puts("ACQUISITION_HORIZON=PASS;DUPLICATE_REARM_WRITE=0;INITIAL_SCENE_ARBITRATION=PASS");
         f.background();f.empty();auto reads=Kernel::reads;commits=f.journal->commits;
