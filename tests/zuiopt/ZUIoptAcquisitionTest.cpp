@@ -69,10 +69,17 @@ std::string ownedGroup(Mask mask){
     return placementGroup({},mask);
 }
 void initialize(){
-    char path[]="/tmp/zuiopt-acquire-XXXXXX";require(mkdtemp(path),"exclusive synthetic kernel root");root=path;
+#ifdef __ANDROID__
+    char path[]="/data/local/tmp/zuiopt-acquire-XXXXXX";
+    char ram[]="/dev/zuiopt-kernel-XXXXXX";
+#else
+    char path[]="/tmp/zuiopt-acquire-XXXXXX";
+    char ram[]="/dev/shm/zuiopt-kernel-XXXXXX";
+#endif
+    require(mkdtemp(path),"exclusive synthetic kernel root");root=path;
     // Only emulated proc/cpuset files live in RAM, like the real kernel files.
-    // Journal/CRC/fsync/rename/locks/SIGKILL still use the disk-backed /tmp root.
-    char ram[]="/dev/shm/zuiopt-kernel-XXXXXX";require(mkdtemp(ram),"exclusive virtual kernel root");virtualRoot=ram;
+    // Journal/CRC/fsync/rename/locks/SIGKILL remain on disk-backed storage.
+    require(mkdtemp(ram),"exclusive virtual kernel root");virtualRoot=ram;
     struct statfs storage{};require(statfs(virtualRoot.c_str(),&storage)==0&&storage.f_type==0x01021994,"virtual kernel must be tmpfs");
     require(statfs(root.c_str(),&storage)==0&&storage.f_type!=0x01021994,"journal must remain disk-backed");
     tasks={{42,{}},{43,{}}};fds.clear();procFiles.clear();listedTasks.clear();user=10001;time=0;reads=moves=affinities=0;stuck=journalWriteError=false;moveError=removeError=0;hook={};beforeWrite={};afterWrite={};beforeRemove={};beforeCreate={};

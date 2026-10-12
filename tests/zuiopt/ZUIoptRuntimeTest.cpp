@@ -92,6 +92,16 @@ void grammarCases(){
     require(dumpRules(old).rfind("schema 2\n",0)==0,"no automatic Schema2 upgrade");
     std::string base="schema 3\nenabled true\nruntime_defaults 1 1\nprofile G 2-6\nruntime G -1 0 preset double\nthread G C2 contains Work selector=rank:1 10 7\npackage exact org.example.app G 100\n";
     auto c=rules(base);require(resolvedProfile(c.profiles.at("G"),c).runtime.mode==1&&resolvedProfile(c.profiles.at("G"),c).runtime.rt==0,"global/perApp override");
+    auto placement=old.profiles.at("G"),runtimeOnly=placement;runtimeOnly.runtime={1,1,true,"double"};
+    require(samePlacementContract(placement,runtimeOnly),"runtime-only changes retain trustworthy live placement originals");
+    auto changed=runtimeOnly;changed.rules.at(0).rank=1;
+    require(!samePlacementContract(placement,changed),"selector change requires existing full retirement path");
+    changed=runtimeOnly;changed.rules.at(0).mask=128;
+    require(!samePlacementContract(placement,changed),"explicit mask change cannot use runtime-only lease reuse");
+    changed=runtimeOnly;changed.general=124;
+    require(!samePlacementContract(placement,changed),"general mask change requires retirement");
+    changed=runtimeOnly;changed.rules.at(0).pattern="Other";
+    require(!samePlacementContract(placement,changed),"classifier change requires retirement");
     require(dumpRules(rules(dumpRules(c)))==dumpRules(c),"schema3 canonical roundtrip");
     for(auto bad:{base+"runtime_defaults 0 0\n",base+"runtime G 0 1 explicit none\n",base+"opt 1\n",std::string("schema 2\nenabled true\nruntime_defaults 0 0\n")}){
         bool rejected=false;try{rules(bad);}catch(...){rejected=true;}require(rejected,"new grammar rejects invalid");
@@ -99,7 +109,7 @@ void grammarCases(){
     for(int mode=0;mode<3;mode++)for(int rt=0;rt<2;rt++){
         Profile p;p.general=3;p.runtime={mode,rt,true,"none"};Config cfg;
         auto plan=runtimePlan(p,cfg,true,mode==2);require(plan.requestedRt==rt&&plan.effectiveMode==mode,"six runtime variants");
-        require(plan.general==(mode?252:124)&&plan.c1==(mode?252:28)&&plan.c2==128,"proved topology masks");
+        require(plan.general==(mode?252:124)&&plan.c1==(mode?252:28)&&plan.c2==(mode==1?252:128),"Kana ELF-bound topology masks");
         p.runtime.preset=false;plan=runtimePlan(p,cfg,true,true);require(plan.general==3&&plan.effectiveMode==0,"explicit masks win");
     }
     Profile p;p.runtime={2,1,true,"none"};Config cfg;

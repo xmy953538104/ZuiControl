@@ -225,6 +225,7 @@ jobs:
             tests/zuiopt/ZUIoptRuntimeTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-runtime-fixture"
           "$RUNNER_TEMP/zuiopt-runtime-fixture" | tee "$receipt/runtime_contract_faults.txt" || native_failed=1
           python3 tests/zuiopt/TestRuntimeSchema.py 2>&1 | tee "$receipt/runtime_schema.txt" || native_failed=1
+          python3 tests/zuiopt/TestRuntimeRecoveryScope.py 2>&1 | tee "$receipt/runtime_recovery_scope.txt" || native_failed=1
           python3 tests/zuiopt/TestRuntimePolicy.py 2>&1 | tee "$receipt/runtime_policy.txt" || native_failed=1
           python3 tests/zuiopt/TestRuntimeStatus.py --compiler clang++ --output "$receipt/runtime-status" \
             2>&1 | tee "$receipt/runtime_status.txt" || native_failed=1

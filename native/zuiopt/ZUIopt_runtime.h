@@ -135,8 +135,8 @@ struct WaltOwnership {bool active=false;int kind=0,original=0,expected=0;};
 inline bool waltValue(int kind,int value){return kind==1?(value>=0&&value<=3):kind==2&&(value>=-1&&value<=255);}
 inline const char* waltPath(int kind){return kind==1?"/proc/sys/walt/sched_per_task_boost":kind==2?"/proc/sys/walt/task_reduce_affinity":"";}
 inline bool qualifiedWaltIdentity(){
-    struct utsname kernel{};
-    if(uname(&kernel)!=0||std::string(kernel.release)!="6.1.112-android14-11-gd03cb1d7abcd-ab12592111")return false;
+    // Module identity selects this audited interface adapter. Runtime capability
+    // still requires a journaled write/read/restore probe in the execution domain.
     auto note=read("/sys/module/sched_walt/notes/.note.gnu.build-id");
     const unsigned char expected[]={0x04,0,0,0,0x14,0,0,0,0x03,0,0,0,'G','N','U',0,
         0xbf,0xc7,0xdf,0xdc,0xde,0x5f,0x81,0xb4,0x3c,0x7f,0xe5,0x29,0x51,0x2b,0xcb,0x29,0x7a,0x6a,0x13,0x3c};
@@ -190,6 +190,14 @@ struct RuntimePlan {
     int requestedMode=0,effectiveMode=0,requestedRt=0;Mask general=0,c1=0,c2=0;
     std::string reason="NONE";
 };
+inline bool samePlacementContract(const Profile& before,const Profile& after){
+    if(before.general!=after.general||before.rules.size()!=after.rules.size())return false;
+    for(size_t i=0;i<before.rules.size();i++){
+        const auto& a=before.rules[i];const auto& b=after.rules[i];
+        if(a.cls!=b.cls||a.kind!=b.kind||a.pattern!=b.pattern||a.priority!=b.priority||a.mask!=b.mask||a.rank!=b.rank)return false;
+    }
+    return true; // Runtime mode/RT/marker use the existing diff-and-revoke engine.
+}
 inline bool sm8650Topology(){
     for(auto [policy,mask]:std::array<std::pair<int,Mask>,4>{{{0,3},{2,28},{5,96},{7,128}}}){
         auto value=trim(read("/sys/devices/system/cpu/cpufreq/policy"+std::to_string(policy)+"/related_cpus"));
@@ -205,6 +213,7 @@ inline RuntimePlan runtimePlan(const Profile& p,const Config& c,bool topology,bo
     if(request.mode==2&&!qualifiedWalt){out.reason="WALT_UNQUALIFIED";return out;}
     out.effectiveMode=request.mode;
     if(request.mode){out.general=0xfc;out.c1=0xfc;}
+    if(request.mode==1)out.c2=0xfc; // Kana 2ac898... 0x56b0 -> 0x586c -> C2 syscall table slot.
     return out;
 }
 struct RuntimeRepresentatives {int c1=0,c2=0;};

@@ -9,9 +9,25 @@ RUNTIME_ALLOWED.add('scripts/rules/ZUIOPT_rule_pack.py')
 RUNTIME_ALLOWED.add('scripts/build/ApplyZuiControlPayload.py')
 assert RUNTIME['phase']=='ZUIOPT_RUNTIME_EVOLUTION_ADCB_R1' and RUNTIME['baseHead']=='358ffe118c0e82e937d58e4e619ef25e04f48089'
 assert set(RUNTIME['allowedPaths'])==RUNTIME_ALLOWED
+RECOVERY_R2=json.loads((ROOT/'tests/zuiopt/runtime_recovery_r2_delta.json').read_text(encoding='utf-8'))
+RECOVERY_R2_ALLOWED={'native/zuiopt/'+n for n in ('ZUIopt_daemon.h','ZUIopt_owner.h','ZUIopt_runtime.h','ZUIopt_lifecycle.h')}
+assert RECOVERY_R2['phase']=='DEVICE_LOCAL_TEST_AND_RUNTIME_RECOVERY_R2' and RECOVERY_R2['baseHead']=='7a3620ac42481459480f49cc9e517ce059eaeeaf'
+assert set(RECOVERY_R2['allowedPaths'])==RECOVERY_R2_ALLOWED and {row['path'] for row in RECOVERY_R2['files']}==RECOVERY_R2_ALLOWED
+
+def reverse_recovery_r2(path,text):
+    change=next((r for r in RECOVERY_R2['files'] if r['path']==path),None)
+    if change:
+        assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('R2 exact authorized bytes',path)
+        assert hashlib.sha256(change['before'].encode()).hexdigest()==change['beforeSha256'],('R2 immutable base bytes',path)
+        text=change['before']
+    return text
 
 def reverse_runtime_entries(current,*scopes):
     result=list(current)
+    for row in RECOVERY_R2['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['after'].encode())==1,('R2 exact authorized source',row['path'])
+        result.remove(row['after'].encode());result.append(row['before'].encode())
     for row in RUNTIME['files']:
         assert row['path'] in RUNTIME_ALLOWED
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
@@ -69,6 +85,7 @@ INTEGRATION=json.loads((ROOT/'tests/backend_monitor_settings_delta.json').read_t
 MANIFEST=json.loads((ROOT/'tests/backend_abc_delta.json').read_text(encoding='utf-8'))
 
 def reverse_runtime_text(path,text):
+    text=reverse_recovery_r2(path,text)
     change=next((r for r in RUNTIME['files'] if r['path']==path),None)
     if change:
         assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('ADCB exact authorized bytes',path)

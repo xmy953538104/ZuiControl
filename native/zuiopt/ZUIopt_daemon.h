@@ -31,10 +31,11 @@ class Core {
     std::string runtimeStatus,loadedIdentity;bool runtimePending=true;
     std::map<int,std::string> runtimeProcesses;
     bool topologyQualified=false,waltQualified=false;
+    std::string waltCapabilityReason="WALT_PROBE_NOT_RUN";
 public:
     Core(std::string path,const std::string& statePath):configPath(std::move(path)),stateRoot(statePath){
         available=cpus(read("/sys/devices/system/cpu/online"));loadedConfig=read(configPath);config=parseConfig(loadedConfig,available);ZUIOPT_debug=config.debug;
-        topologyQualified=sm8650Topology();waltQualified=qualifiedWaltIdentity();
+        topologyQualified=sm8650Topology();
         journal=std::make_unique<Journal>(statePath);
         loadedIdentity=loadedGenerationIdentity(loadedConfig,journal->currentBootId(),getpid(),identity(getpid()).start);
         sigset_t signals;sigemptyset(&signals);for(int s:{SIGTERM,SIGINT,SIGHUP,SIGUSR1})sigaddset(&signals,s);
@@ -156,6 +157,7 @@ public:
         for(auto& [cls,items]:candidates){auto* rule=groups.at(cls);int tid=representative(items,rule->rank);if(tid)selected[tid]=rule;
             ZUIOPT_NOTE("REPRESENTATIVE","pid="+std::to_string(p.pid)+" class="+cls+" rank="+std::to_string(rule->rank)+" tid="+std::to_string(tid));}
         auto plan=runtimePlan(*profile,config,topologyQualified,waltQualified);
+        if(plan.reason=="WALT_UNQUALIFIED")plan.reason=waltCapabilityReason;
         RuntimeRepresentatives reps;
         for(const auto& [tid,r]:selected){if(r->rank&&r->cls=="C1")reps.c1=tid;if(r->rank&&r->cls=="C2")reps.c2=tid;}
         if(profile->runtime.preset){
@@ -284,6 +286,7 @@ public:
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::PACKAGE_ABI_OK);
         ZUIOPT_NOTE("ABI_GATE","PASS");phase=StartupStage::PLACEMENT;placement=std::make_unique<Placement>(counters,*journal);
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::PLACEMENT_OK);
+        waltCapabilityReason=placement->recoveryHeld()?"WALT_RECOVERY_QUARANTINE":placement->probeWaltCapability();waltQualified=waltCapabilityReason=="WALT_CAPABILITY_WRITE_READ_RESTORE_PASS";
         invalidateRuntime(); // A previous owner's observations cannot describe this registration.
         sceneObserver=std::make_unique<SceneObserver>([this](int64_t seq){events.pushScene(eventFd,seq);},
             [root=stateRoot](const std::string& argument){
@@ -323,7 +326,16 @@ public:
                 if(s.ssi_signo==SIGTERM||s.ssi_signo==SIGINT){stop=true;break;}if(s.ssi_signo==SIGUSR1)stats();
                 if(s.ssi_signo==SIGHUP){
                     Config next;std::string nextBytes;bool valid=false;try{nextBytes=read(configPath);next=parseConfig(nextBytes,available);valid=true;}catch(const std::exception& e){ZUIOPT_NOTE("RELOAD_REJECTED",e.what());}
-                    if(valid){phase=StartupStage::RELOAD;substage=EventSubstage::RELOAD_RELEASE;invalidateRuntime();for(auto& [_,p]:states)release(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP);config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;loadedConfig=std::move(nextBytes);loadedIdentity=loadedGenerationIdentity(loadedConfig,journal->currentBootId(),getpid(),identity(getpid()).start);publishRuntime();reconcile(observer->snapshot());recordLoadedIdentity(stateRoot,loadedIdentity);ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
+                    if(valid){phase=StartupStage::RELOAD;substage=EventSubstage::RELOAD_RELEASE;invalidateRuntime();
+                        for(auto& [_,p]:states){
+                            const auto* before=config.find(p.package);const auto* after=next.find(p.package);
+                            if(p.writable()&&before&&after&&samePlacementContract(*before,*after))p.next=now();
+                            else release(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP);
+                        }
+                        config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;loadedConfig=std::move(nextBytes);
+                        loadedIdentity=loadedGenerationIdentity(loadedConfig,journal->currentBootId(),getpid(),identity(getpid()).start);
+                        publishRuntime();reconcile(observer->snapshot());recordLoadedIdentity(stateRoot,loadedIdentity);
+                        ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
                 }
             }}
         }

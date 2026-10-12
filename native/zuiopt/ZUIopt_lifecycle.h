@@ -75,7 +75,13 @@ inline std::string fatalReason(const std::exception& error) {
         "journal extra fields","WALT journal values","background WALT restore unresolved",
         "runtime journal masks","global journal syntax","mode2 RT fallback WALT recovery unresolved",
         "partial WALT recovery unresolved","WALT revocation unresolved","WALT without durable placement identity",
-        "RT without durable placement identity","scheduler recovery unresolved","global journal fields","global prior intent"
+        "RT without durable placement identity","scheduler recovery unresolved","global journal fields","global prior intent",
+        "normalization journal field","normalized ordinary return scope","normalization classification required",
+        "normalization receipt bound","normalization receipt read","normalization receipt unavailable",
+        "normalization receipt open","normalization receipt sync","normalization receipt replace",
+        "recovery quarantine bound","recovery receipt name",
+        "capability receipt open","capability receipt bound","capability receipt sync","capability receipt replace",
+        "probe before live leases only","probe current dedicated thread","probe thread remains live"
     };
     for(auto reason:known)if(strcmp(text,reason)==0){
         std::string value(reason);

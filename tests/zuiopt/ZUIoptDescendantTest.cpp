@@ -127,11 +127,20 @@ void unknownFailClosed(){
         if(kind==2){auto token=f.journal->leases.at(42).placementLease+"0";auto group=placementGroup(token,28);
             for(auto file:{"tasks","mems","cpus"})Kernel::put(Kernel::virtualRoot+"/dev/cpuset"+group+"/"+file,file==std::string("cpus")?"2-4":"0");Kernel::tasks.at(150).group=group;}
         if(kind==3){Kernel::tasks.at(150).tgid=42;Kernel::tasks.at(150).birth=f.p().ownershipFloor-1;}
-        auto moves=Kernel::moves,affinity=Kernel::affinities;auto commits=f.journal->commits;
-        expectFailure([&]{f.background();},"background unknown owned task");
-        require(Kernel::moves==moves&&Kernel::affinities==affinity&&f.journal->commits==commits&&f.journal->leases.count(42),"unknown descendant wrote kernel or cleared evidence");
+        if(kind==0||kind==3){
+            OwnerRecord normalized;require(f.journal->normalizedOrdinary(150,normalized)&&!normalized.scheduler.active&&!normalized.walt.active,"ordinary normalization only placement fields");
+            f.background();f.empty();f.safe(150);
+            require(read(Kernel::root+"/state/normalized-placement.v1").find("DEGRADED_ANDROID_APP_RETURN")!=std::string::npos,"durable normalization classification");continue;
+        }
+        auto before=Kernel::tasks.at(150);int foreignWrites=0;
+        Kernel::beforeWrite=[&](int tid,bool,Mask){if(tid==150)foreignWrites++;};
+        f.background();require(f.owner->recoveryHeld()&&!foreignWrites&&Kernel::tasks.at(150).group==before.group&&Kernel::tasks.at(150).mask==before.mask,
+                "unresolved ordinary task was guessed instead of held");
+        if(kind==1)require(f.p().releaseParked&&f.p().releaseBlocked&&f.journal->leases.count(42),"held lease did not park local release");
+        f.reload();require(f.owner->recoveryHeld()&&!foreignWrites,"ordinary hold became fatal or wrote foreign task on restart");
+        f.safe(42);f.safe(43);
     }
-    puts("DESCENDANT_PRELEASE_PROCESS_THREAD_WRONG_UID_UNBOUND_PATH_FAIL_CLOSED_ZERO_WRITES=PASS");
+    puts("DESCENDANT_ORDINARY_NORMALIZED_FOREIGN_UID_UNBOUND_QUARANTINE_RESTART_ZERO_FOREIGN_WRITES=PASS");
 }
 void twoBaselines(){
     DescendantFixture f;f.boot();f.child(150,124);Kernel::tasks.at(150).group=f.owned(124);
@@ -146,6 +155,23 @@ void twoBaselines(){
     f.safe(300,67,"/background");f.safe(200,67,"/background");require(f.journal->entries.empty()&&f.journal->leases.empty(),"two-baseline journal leak");
     puts("DESCENDANT_EQUAL_MASK_DIFFERENT_ORIGINAL_BASELINES_NO_CROSS_OWNER_RESTORE=PASS");
 }
+void normalizedRestart(){
+    for(bool afterMove:{false,true}){
+        DescendantFixture f;f.boot();f.child(150,28,10001,f.p().ownershipFloor-1);
+        auto interrupted=[&](int tid,bool move,Mask){if(tid==150&&move)throw std::runtime_error("normalized crash boundary");};
+        if(afterMove)Kernel::afterWrite=interrupted;else Kernel::beforeWrite=interrupted;
+        expectFailure([&]{f.background();},"normalized crash boundary");
+        auto text=read(Kernel::root+"/state/owner_state.v1");
+        require(text.rfind("ZUIOPT_OWNER_STATE_V6 ",0)==0&&f.journal->entries.at(150).normalizedPlacement,
+                "normalized return not durable before write");
+        require(!f.journal->entries.at(150).scheduler.active&&!f.journal->entries.at(150).walt.active,
+                "normalized return copied scheduler ownership");
+        Kernel::beforeWrite={};Kernel::afterWrite={};f.reload();f.safe(150);f.safe(42);f.safe(43);
+        require(f.journal->entries.empty()&&f.journal->leases.empty()&&!f.journal->normalizationVersion,
+                "V6 restart did not drain normalized lease");
+    }
+    puts("DESCENDANT_V6_NORMALIZATION_CRASH_BEFORE_AFTER_MOVE_LIVE_RESTORE_AND_DRAIN=PASS");
+}
 void legacyRead(){
     for(int version=1;version<=4;version++)for(bool fork:{false,true}){
         DescendantFixture f;f.boot();auto legacy=placementGroup({},124);
@@ -157,11 +183,12 @@ void legacyRead(){
             std::getline(rows,line);body=line+'\n';while(std::getline(rows,line))if(line.rfind("T ",0)==0)body+=line.substr(2)+'\n';
             Kernel::put(Kernel::root+"/state/owner_state.v1","ZUIOPT_OWNER_STATE_V1 "+std::to_string(checksum(body))+"\n"+body);}
         if(fork)Kernel::tasks[150]={f.p().ownershipFloor+1,legacy,124,150,10001,"legacy-unproved-fork"};
-        auto writes=Kernel::moves+Kernel::affinities;auto evidence=read(Kernel::root+"/state/owner_state.v1");
-        if(fork){expectFailure([&]{f.reload();},"RECOVERY_UNKNOWN_TASK_FAIL_CLOSED");require(Kernel::moves+Kernel::affinities==writes&&read(Kernel::root+"/state/owner_state.v1")==evidence,"legacy unknown was guessed or journal changed");}
+        if(fork){int writes=0;Kernel::beforeWrite=[&](int tid,bool,Mask){if(tid==150)writes++;};
+            f.reload();require(f.owner->recoveryHeld()&&!writes&&Kernel::tasks.at(150).group==legacy&&Kernel::tasks.at(150).mask==124,"legacy ordinary task was guessed or became fatal");
+            f.safe(42);f.safe(43);f.reload();require(f.owner->recoveryHeld()&&!writes,"legacy hold restart lost scope");}
         else{f.reload();f.safe(42);f.safe(43);require(f.journal->entries.empty()&&f.journal->leases.empty(),"legacy known recovery changed");}
     }
-    puts("DESCENDANT_V1_V2_V3_V4_READ_KNOWN_RESTORE_UNKNOWN_FORK_IMMUTABLE_FAIL_CLOSED=PASS");
+    puts("DESCENDANT_V1_V2_V3_V4_KNOWN_RESTORE_UNKNOWN_ORDINARY_LOCAL_HOLD_NO_RESTART_LOOP=PASS");
 }
 void formatGuards(){
     for(int kind=0;kind<3;kind++){
@@ -193,6 +220,7 @@ int main(){try{std::cout<<std::unitbuf;require(getuid()==0,"isolated root descen
     timed("DESCENDANT_FORK_EXEC",forkExec);timed("DESCENDANT_DEATH_CRASH",parentDeathAndCrash);timed("DESCENDANT_BUSY_LATE",busyAndLateFork);
     timed("DESCENDANT_FOREIGN_REUSE",foreignAndReuse);timed("DESCENDANT_UNKNOWN",unknownFailClosed);timed("DESCENDANT_TWO_BASELINES",twoBaselines);timed("DESCENDANT_LEGACY",legacyRead);
     timed("DESCENDANT_DURABLE_FAILURE",durableFailure);timed("DESCENDANT_FORMAT_GUARDS",formatGuards);
+    timed("DESCENDANT_NORMALIZED_RESTART",normalizedRestart);
     timed("DESCENDANT_SAME_TICK_AND_CREATION",sameTickAndCreation);
     puts("ZUIOPT_DESCENDANT_NATIVE=PASS");return 0;
 }catch(const std::exception& e){std::cerr<<"DESCENDANT_FAIL "<<e.what()<<'\n';return 1;}}

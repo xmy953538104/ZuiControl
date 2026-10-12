@@ -140,5 +140,6 @@ void authorityStress(){
     }catch(const std::exception& e){throw std::runtime_error("authority case="+std::to_string(i)+" "+e.what());}
     puts("AUTHORITY_RANDOM_STRESS_COUNT=2000;RECOVERABLE_GLOBAL_FATAL=0;STATUS3_RECOVERABLE=0;STALE_AUTHORITY_SCAN_FATAL=0;PLACEMENT_AFTER_STALE_AUTHORITY=0;OWNER_LEAK=0;STALE_PID=0;JOURNAL_CLEAR_WITH_LIVE_ZUIOPT_TASK=0;G07_REENTRY=PASS");
 }
-int main(){try{std::cout<<std::unitbuf;timed("AUTHORITY_DETERMINISTIC",authorityDeterministic);timed("AUTHORITY_RANDOM",authorityStress);return 0;}
+int main(int argc,char** argv){try{require(argc==1||(argc==2&&std::string(argv[1])=="--deterministic-only"),"authority fixture arguments");
+    std::cout<<std::unitbuf;timed("AUTHORITY_DETERMINISTIC",authorityDeterministic);if(argc==1)timed("AUTHORITY_RANDOM",authorityStress);return 0;}
     catch(const std::exception& e){std::cerr<<"AUTHORITY_FAIL "<<e.what()<<'\n';return 1;}}

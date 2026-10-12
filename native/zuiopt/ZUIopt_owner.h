@@ -2,6 +2,8 @@
 #pragma once
 #include "ZUIopt_runtime.h"
 #include <sys/file.h>
+#include <atomic>
+#include <thread>
 namespace ZUIopt {
 inline bool validCpusetScaffold(const struct stat& st){
     return S_ISDIR(st.st_mode)&&st.st_uid==0&&st.st_gid==0&&(st.st_mode&07777)==0755;
@@ -15,6 +17,7 @@ struct OwnerRecord {
     SchedulerOwnership scheduler{};
     WaltOwnership walt{};
     std::string placementLease{};
+    bool normalizedPlacement=false;
 };
 inline bool placementToken(const std::string& token,std::array<uint64_t,5>* values=nullptr){
     if(token.empty()||token.front()!='l'||token.size()>100)return false;
@@ -110,6 +113,7 @@ public:
     bool runtimeVersion=false;
     bool waltVersion=false;
     bool placementVersion=false;
+    bool normalizationVersion=false;
     struct GlobalOwner {int original=0,expected=0,prior=0;};
     std::map<std::string,GlobalOwner> globals;
     uint64_t commits=0;
@@ -174,6 +178,41 @@ public:
         }
         return true;
     }
+    bool normalizedOrdinary(int tid,OwnerRecord& out) const {
+        // This is a legal ordinary-App return policy, not an exact original.
+        if(!placementVersion||boot!=currentBoot)return false;
+        std::string token;Mask ownedMask=0;auto current=group(tid);
+        if(!placementGroup(current,token,ownedMask))return false;
+        auto* lease=rootLease(token);if(!lease||lease->user<10000||lease->user>=20000)return false;
+        int pid=0;std::string line;std::istringstream status(read("/proc/"+std::to_string(tid)+"/status"));
+        while(std::getline(status,line))if(line.rfind("Tgid:",0)==0){std::istringstream(line.substr(5))>>pid;break;}
+        auto process=identity(pid),thread=identity(pid,tid);
+        if(!process.start||thread.start<process.start||uid(pid)!=lease->user||affinity(tid)!=ownedMask)return false;
+        auto destination=group(pid);
+        if(!normalGroup(destination)&&identity(lease->pid).start==lease->processStart)destination=group(lease->pid);
+        if(!normalGroup(destination))destination=lease->savedGroup;
+        if(!normalGroup(destination))return false;
+        auto cpuset=trim(read("/dev/cpuset"+destination+"/cpus"));if(cpuset.empty())return false;
+        out=*lease;out.pid=pid;out.tid=tid;out.processStart=process.start;out.threadStart=thread.start;
+        out.savedGroup=destination;out.savedMask=cpus(cpuset);out.priorMask=out.appliedMask=ownedMask;
+        out.scheduler={};out.walt={};out.normalizedPlacement=true;
+        return same(out)&&group(tid)==current&&affinity(tid)==ownedMask;
+    }
+    void recordNormalization(const OwnerRecord& r){
+        require(r.normalizedPlacement,"normalization classification required");normalizationVersion=true;
+        // V6 marks the durable T row as normalized; this bounded receipt explains it.
+        std::string previous;int prior=openat(dirFd,"normalized-placement.v1",O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
+        if(prior>=0){secureFile(prior);char chunk[1024];ssize_t n;while((n=::read(prior,chunk,sizeof(chunk)))>0){previous.append(chunk,n);if(previous.size()>16384){close(prior);throw std::runtime_error("normalization receipt bound");}}close(prior);require(n==0,"normalization receipt read");}
+        else require(errno==ENOENT,"normalization receipt unavailable");
+        std::vector<std::string> rows;std::string row;std::istringstream in(previous);while(std::getline(in,row))rows.push_back(row);
+        if(rows.size()>63)rows.erase(rows.begin(),rows.end()-63);
+        int fd=openat(dirFd,"normalized-placement.v1.new",O_WRONLY|O_CREAT|O_CLOEXEC|O_NOFOLLOW,0600);
+        require(fd>=0,"normalization receipt open");
+        try{secureFile(fd);std::ostringstream line;for(auto& old:rows)line<<old<<'\n';line<<currentBoot<<' '<<r.pid<<' '<<r.processStart<<' '<<r.tid<<' '<<r.threadStart<<' '<<r.user<<' '<<r.placementLease
+            <<" DEGRADED_ANDROID_APP_RETURN "<<r.savedGroup<<' '<<r.savedMask<<'\n';auto bytes=line.str();require(bytes.size()<=16384&&ftruncate(fd,0)==0,"normalization receipt bound");writeAll(fd,bytes);require(fsync(fd)==0,"normalization receipt sync");close(fd);fd=-1;
+            require(renameat(dirFd,"normalized-placement.v1.new",dirFd,"normalized-placement.v1")==0&&fsync(dirFd)==0,"normalization receipt replace");}
+        catch(...){if(fd>=0)close(fd);throw;}
+    }
     void validate(const OwnerRecord& r) const {
         require(r.pid>0&&r.tid>0&&r.user>=0&&r.processStart&&r.threadStart,"journal identity");
         require(label(r.package)&&!r.name.empty()&&r.name.size()<256&&normalGroup(r.savedGroup),"journal owner fields");
@@ -190,7 +229,8 @@ public:
         }
         for(const auto& [_,r]:entries){
             auto lease=rootLease(r.placementLease);require(lease&&r.user==lease->user&&r.package==lease->package&&r.name==lease->name&&r.threadStart>=r.processStart,"journal identity");
-            if(r.pid!=lease->pid||r.processStart!=lease->processStart)
+            if(r.normalizedPlacement)require(normalizationVersion&&r.user>=10000&&r.user<20000&&!r.scheduler.active&&!r.walt.active&&normalGroup(r.savedGroup),"normalized ordinary return scope");
+            else if(r.pid!=lease->pid||r.processStart!=lease->processStart)
                 require(r.processStart>=lease->threadStart&&r.savedGroup==lease->savedGroup&&r.savedMask==lease->savedMask,"journal inheritance lease");
         }
     }
@@ -204,8 +244,8 @@ public:
             require(n==0,"journal read");close(fd);fd=-1;
             auto newline=text.find('\n');require(newline!=text.npos,"journal truncated header");
             std::istringstream header(text.substr(0,newline));std::string magic,extra;uint64_t crc=0;
-            require(bool(header>>magic>>crc)&&(magic=="ZUIOPT_OWNER_STATE_V1"||magic=="ZUIOPT_OWNER_STATE_V2"||magic=="ZUIOPT_OWNER_STATE_V3"||magic=="ZUIOPT_OWNER_STATE_V4"||magic=="ZUIOPT_OWNER_STATE_V5")&&!(header>>extra),"journal version/header");
-            placementVersion=magic=="ZUIOPT_OWNER_STATE_V5";waltVersion=placementVersion||magic=="ZUIOPT_OWNER_STATE_V4";runtimeVersion=waltVersion||magic=="ZUIOPT_OWNER_STATE_V3";
+            require(bool(header>>magic>>crc)&&(magic=="ZUIOPT_OWNER_STATE_V1"||magic=="ZUIOPT_OWNER_STATE_V2"||magic=="ZUIOPT_OWNER_STATE_V3"||magic=="ZUIOPT_OWNER_STATE_V4"||magic=="ZUIOPT_OWNER_STATE_V5"||magic=="ZUIOPT_OWNER_STATE_V6")&&!(header>>extra),"journal version/header");
+            normalizationVersion=magic=="ZUIOPT_OWNER_STATE_V6";placementVersion=normalizationVersion||magic=="ZUIOPT_OWNER_STATE_V5";waltVersion=placementVersion||magic=="ZUIOPT_OWNER_STATE_V4";runtimeVersion=waltVersion||magic=="ZUIOPT_OWNER_STATE_V3";
             std::string body=text.substr(newline+1);require(crc==checksum(body),"journal checksum mismatch");
             std::istringstream in(body);std::string key,line;
             require(bool(std::getline(in,boot))&&boot.size()==36,"journal boot identity");
@@ -230,6 +270,7 @@ public:
                     if(waltVersion){int waltActive=0;require(bool(row>>waltActive>>r.walt.kind>>r.walt.original>>r.walt.expected)&&(waltActive==0||waltActive==1),"WALT journal syntax");r.walt.active=waltActive;require(!r.walt.active||(waltValue(r.walt.kind,r.walt.original)&&waltValue(r.walt.kind,r.walt.expected)),"WALT journal values");}
                 }
                 if(placementVersion)require(bool(row>>r.placementLease),"journal inheritance lease");
+                if(normalizationVersion&&type=="T"){int normalized=0;require(bool(row>>normalized)&&(normalized==0||normalized==1),"normalization journal field");r.normalizedPlacement=normalized;}
                 require(!(row>>extra),"journal extra fields");
                 validate(r);
                 if(type=="L"){require(r.tid==r.pid&&leases.size()<128,"journal inheritance lease");require(leases.emplace(r.pid,r).second,"duplicate process lease");}
@@ -242,7 +283,7 @@ public:
         // CRC detects torn/corrupt storage; root-only DAC is the authenticity boundary.
         if(entries.empty()&&leases.empty()&&globals.empty()){
             require(unlinkat(dirFd,"owner_state.v1",0)==0||errno==ENOENT,"journal remove");
-            require(fsync(dirFd)==0,"journal directory sync");boot=currentBoot;runtimeVersion=waltVersion=placementVersion=false;commits++;return;
+            require(fsync(dirFd)==0,"journal directory sync");boot=currentBoot;runtimeVersion=waltVersion=placementVersion=normalizationVersion=false;commits++;return;
         }
         validatePlacement();
         boot=currentBoot;std::ostringstream body;body<<boot<<'\n';
@@ -255,10 +296,11 @@ public:
             if(runtimeVersion){body<<' '<<r.priorMask<<' '<<r.appliedMask<<' '<<r.scheduler.active<<' ';schedulerText(body,r.scheduler.original);body<<' ';schedulerText(body,r.scheduler.expected);}
             if(waltVersion)body<<' '<<r.walt.active<<' '<<r.walt.kind<<' '<<r.walt.original<<' '<<r.walt.expected;
             if(placementVersion)body<<' '<<r.placementLease;
+            if(normalizationVersion)body<<' '<<r.normalizedPlacement;
             body<<'\n';
         }
         auto data=body.str();require(data.size()<=4*1024*1024,"journal size bound");
-        data=std::string(placementVersion?"ZUIOPT_OWNER_STATE_V5 ":waltVersion?"ZUIOPT_OWNER_STATE_V4 ":runtimeVersion?"ZUIOPT_OWNER_STATE_V3 ":"ZUIOPT_OWNER_STATE_V2 ")+std::to_string(checksum(data))+"\n"+data;
+        data=std::string(normalizationVersion?"ZUIOPT_OWNER_STATE_V6 ":placementVersion?"ZUIOPT_OWNER_STATE_V5 ":waltVersion?"ZUIOPT_OWNER_STATE_V4 ":runtimeVersion?"ZUIOPT_OWNER_STATE_V3 ":"ZUIOPT_OWNER_STATE_V2 ")+std::to_string(checksum(data))+"\n"+data;
         int fd=openat(dirFd,"owner_state.v1.new",O_WRONLY|O_CREAT|O_CLOEXEC|O_NOFOLLOW,0600);
         require(fd>=0,"journal staging open");
         try {
@@ -268,6 +310,15 @@ public:
             require(fsync(dirFd)==0,"journal directory sync");commits++;
         }catch(...){if(fd>=0)close(fd);throw;}
     }
+    void recordAuxiliary(const std::string& name,const std::string& data){
+        require(name=="walt-capability.json"||name=="recovery-quarantine.json","recovery receipt name");
+        int fd=openat(dirFd,(name+".new").c_str(),O_WRONLY|O_CREAT|O_CLOEXEC|O_NOFOLLOW,0600);
+        require(fd>=0,"capability receipt open");
+        try{secureFile(fd);require(data.size()<8192&&ftruncate(fd,0)==0,"capability receipt bound");writeAll(fd,data);
+            require(fsync(fd)==0,"capability receipt sync");close(fd);fd=-1;
+            require(renameat(dirFd,(name+".new").c_str(),dirFd,name.c_str())==0&&fsync(dirFd)==0,"capability receipt replace");}
+        catch(...){if(fd>=0)close(fd);throw;}
+    }
 };
 enum class CoherenceResult {CLEAN,REPAIR,REACQUIRE,CONTESTED,REVOKED};
 class Placement {
@@ -275,6 +326,28 @@ class Placement {
     std::set<std::string> created;
     Journal& journal;
     Counters& count;
+    bool waltCapable=false;
+    std::map<std::string,std::string> quarantined;
+    bool quarantineOrdinary(int tid,const std::string& path){
+        // No guessed writes to a foreign UID, an explicit external mask, or an
+        // unbound resource. Keep this group/lease and stop only its acquisition.
+        int pid=0;std::string line;std::istringstream status(read("/proc/"+std::to_string(tid)+"/status"));
+        while(std::getline(status,line))if(line.rfind("Tgid:",0)==0){std::istringstream(line.substr(5))>>pid;break;}
+        auto process=identity(pid),thread=identity(pid,tid);int user=uid(pid);
+        if(!process.start||thread.start<process.start||user<10000||user>=20000||"/dev/cpuset"+group(tid)!=path)return false;
+        if(quarantined.count(path))return true;
+        require(quarantined.size()<32,"recovery quarantine bound");
+        std::ostringstream task;task<<"{\"tid\":"<<tid<<",\"birth\":"<<thread.start<<",\"uid\":"<<user<<",\"group\":"<<std::quoted(path.substr(11))<<"}";
+        quarantined.emplace(path,task.str());std::ostringstream out;out<<"{\"schema\":1,\"boot\":"<<std::quoted(journal.currentBootId())<<",\"owner_pid\":"<<getpid()
+            <<",\"owner_birth\":"<<identity(getpid()).start<<",\"status\":\"HELD_NO_TRUSTED_ORIGINAL\",\"tasks\":[";bool comma=false;
+        for(const auto& [_,row]:quarantined){out<<(comma?",":"")<<row;comma=true;}out<<"]}\n";journal.recordAuxiliary("recovery-quarantine.json",out.str());return true;
+    }
+    bool heldLease(const OwnerRecord& r)const{
+        if(quarantined.count(root))return true;
+        if(!journal.placementVersion&&!quarantined.empty())return true; // Shared legacy groups have no lease token.
+        for(const auto& [path,_]:quarantined){std::string token;Mask mask=0;if(placementGroup(path.substr(11),token,mask)&&token==r.placementLease)return true;}
+        return false;
+    }
     void requireScaffold(){
         struct stat st{};
         require(lstat(root.c_str(),&st)==0&&validCpusetScaffold(st),"init cpuset scaffold absent or unsafe");
@@ -336,9 +409,11 @@ class Placement {
             }
             OwnerRecord inherited;
             if(journal.inherited(tid,inherited)){journal.entries[tid]=inherited;added=true;remaining=true;}
+            else if(journal.normalizedOrdinary(tid,inherited)){journal.recordNormalization(inherited);journal.entries[tid]=inherited;added=true;remaining=true;}
             else {
                 // A task disappearing during enumeration is not an unknown live owner.
                 if(!identity(tid).start)continue;
+                if(quarantineOrdinary(tid,p))continue;
                 throw std::runtime_error("RECOVERY_UNKNOWN_TASK_FAIL_CLOSED tid="+std::to_string(tid));
             }
         }
@@ -359,17 +434,20 @@ public:
         // Init owns the top-level scaffold. Never create, repair or remove it here.
         requireScaffold();journal.load();
         size_t restored=0,discarded=0;
-        coverRemaining(); // Preflight all before any restore; never guess unknown membership.
+        coverRemaining(); // Unknown ordinary groups are held; known identities still recover.
         for(auto& [_,r]:journal.entries){if(journal.same(r)){restore(r);restored++;}else discarded++;}
         {
             for(int pass=0;pass<8&&coverRemaining();pass++)for(auto& [_,r]:journal.entries)if(group(r.tid).rfind("/ZUIopt/",0)==0)restore(r);
             require(!coverRemaining(),"RECOVERY_BUSY_FAIL_CLOSED");created=groups();cleanup();
         }
-        restoreGlobals();journal.entries.clear();journal.leases.clear();journal.commit();
-        ZUIOPT_NOTE("RECOVERY_OK","restored="+std::to_string(restored)+" discarded="+std::to_string(discarded)+" remaining_tasks=0");
-        require(write(root+"/mems",trim(read("/dev/cpuset/mems")))&&
-                write(root+"/cpus",trim(read("/dev/cpuset/cpus"))),"cpuset initialization");
+        restoreGlobals();journal.entries.clear();
+        for(auto it=journal.leases.begin();it!=journal.leases.end();)if(!heldLease(it->second))it=journal.leases.erase(it);else ++it;
+        journal.commit();
+        ZUIOPT_NOTE(quarantined.empty()?"RECOVERY_OK":"RECOVERY_DEGRADED","restored="+std::to_string(restored)+" discarded="+std::to_string(discarded)+" quarantined_groups="+std::to_string(quarantined.size()));
+        if(!quarantined.count(root))for(auto file:{"mems","cpus"}){auto expected=trim(read("/dev/cpuset/"+std::string(file)));
+            if(trim(read(root+"/"+file))!=expected)require(write(root+"/"+file,expected),"cpuset initialization");}
     }
+    bool recoveryHeld()const{return !quarantined.empty();}
     bool finiteRtBudget() const {
         auto period=trim(read("/proc/sys/kernel/sched_rt_period_us")),runtime=trim(read("/proc/sys/kernel/sched_rt_runtime_us"));
         if(period.empty()||runtime.empty())return false;
@@ -400,13 +478,54 @@ public:
         if(trim(read(path))!=currentText)return false;
         return write(path,std::to_string(tid))&&trim(read(path))==std::to_string(tid);
     }
+    std::string probeWaltCapability(){
+        require(journal.entries.empty()&&journal.leases.empty()&&journal.globals.empty(),"probe before live leases only");
+        auto began=now();std::string reason="WALT_ADAPTER_UNKNOWN";int original=-1,observed=-1,restored=-1,reduce=-2;
+        if(qualifiedWaltIdentity()){
+            std::atomic<int> target{0};std::atomic<bool> stop{false};
+            std::thread worker([&]{target=static_cast<int>(syscall(SYS_gettid));auto end=now()+3000;
+                while(!stop&&now()<end)std::this_thread::sleep_for(std::chrono::milliseconds(2));});
+            struct Finish{std::atomic<bool>& stop;std::thread& worker;~Finish(){stop=true;if(worker.joinable())worker.join();}} finish{stop,worker};
+            auto readyEnd=now()+250;while(!target&&now()<readyEnd)usleep(1000);
+            int tid=target;WaltKernel kernel{[&](int t){return selectWalt(t);}};
+            if(tid){
+                OwnerRecord r;r.pid=getpid();r.processStart=identity(r.pid).start;r.user=getuid();r.tid=tid;r.threadStart=identity(r.pid,tid).start;
+                r.package="org.zuicontrol.waltprobe";r.name=processName(r.pid);r.savedGroup=group(tid);r.savedMask=affinity(tid);
+                require(journal.same(r)&&normalGroup(r.savedGroup),"probe current dedicated thread");
+                journal.runtimeVersion=journal.waltVersion=true;journal.entries[tid]=r;journal.commit();
+                auto& owned=journal.entries.at(tid).walt;
+                try{
+                    bool readOk=kernel.get(1,tid,original)&&kernel.get(2,tid,reduce);
+                    int wanted=original==2?1:2;
+                    auto applied=readOk?applyWalt(owned,1,tid,wanted,kernel,[&]{journal.commit();},[&]{return journal.same(r);}):SchedulerResult::UNAVAILABLE;
+                    bool appliedOk=applied==SchedulerResult::APPLIED&&kernel.get(1,tid,observed)&&observed==wanted;
+                    auto recovered=restoreWalt(owned,tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);});
+                    bool recoveredOk=recovered!=SchedulerResult::UNAVAILABLE&&kernel.get(1,tid,restored)&&restored==original&&journal.same(r);
+                    waltCapable=readOk&&appliedOk&&recoveredOk;
+                    reason=waltCapable?"WALT_CAPABILITY_WRITE_READ_RESTORE_PASS":!readOk?"WALT_INTERFACE_READ_UNAVAILABLE":!appliedOk?"WALT_CONTROL_WRITE_UNAVAILABLE":"WALT_PROBE_RECOVERY_FAILED";
+                }catch(const std::exception&){reason="WALT_PROBE_OPERATION_FAILED";waltCapable=false;}
+                // Ending this dedicated boost-only task bounds even a failed probe.
+                // Drop its record only after the thread has actually terminated.
+                stop=true;worker.join();
+                require(!identity(r.pid,tid).start,"probe thread remains live");
+                journal.entries.erase(tid);journal.commit();retireWaltGlobal();
+            }else reason="WALT_PROBE_READY_UNAVAILABLE";
+        }
+        struct utsname kernel{};uname(&kernel);auto domain=read("/proc/self/attr/current");domain.erase(std::find(domain.begin(),domain.end(),'\0'),domain.end());domain=trim(domain);
+        auto note=read("/sys/module/sched_walt/notes/.note.gnu.build-id");std::ostringstream noteHex;for(unsigned char c:note)noteHex<<std::hex<<std::setw(2)<<std::setfill('0')<<unsigned(c);
+        std::ostringstream result;result<<"{\"schema\":1,\"boot\":"<<std::quoted(journal.currentBootId())<<",\"pid\":"<<getpid()<<",\"birth\":"<<identity(getpid()).start
+            <<",\"execution_domain\":"<<std::quoted(domain)<<",\"kernel_release\":"<<std::quoted(kernel.release)<<",\"module_note_hex\":"<<std::quoted(noteHex.str())
+            <<",\"capable\":"<<(waltCapable?"true":"false")<<",\"reason\":"<<std::quoted(reason)<<",\"local_elapsed_ms\":"<<now()-began<<",\"boost_original\":"<<original
+            <<",\"boost_written_readback\":"<<observed<<",\"boost_restored_while_alive\":"<<restored<<",\"reduce_original\":"<<reduce<<",\"negative_reduce_normalization_qualified\":false}\n";
+        journal.recordAuxiliary("walt-capability.json",result.str());return reason;
+    }
     SchedulerResult walt(ProcessState& p,int tid,int kind,int value,AuthorityFence* authority=nullptr){
         fence(authority);auto it=journal.entries.find(tid);
         if(it==journal.entries.end()&&!identity(p.pid,tid).start)return SchedulerResult::DEAD;
         require(it!=journal.entries.end(),"WALT without durable placement identity");auto& r=it->second;
         WaltKernel kernel{[&](int target){return selectWalt(target);}};
         if(!kind)return restoreWalt(r.walt,tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);});
-        if(!qualifiedWaltIdentity())return SchedulerResult::UNAVAILABLE;
+        if(!waltCapable||!qualifiedWaltIdentity())return SchedulerResult::UNAVAILABLE;
         journal.runtimeVersion=true;journal.waltVersion=true;
         return applyWalt(r.walt,kind,tid,value,kernel,[&]{journal.commit();},[&]{
             fence(authority);auto task=p.tasks.find(tid);
@@ -452,6 +571,9 @@ public:
         }return p;
     }
     template<class Proc> BaselineResult acquire(ProcessState& p,Proc& proc){
+        if(recoveryHeld()&&!journal.placementVersion&&(!journal.leases.empty()||!journal.entries.empty()||!journal.globals.empty()))return BaselineResult::DEFER;
+        auto prior=journal.leases.find(p.pid);if(prior!=journal.leases.end()&&heldLease(prior->second))return BaselineResult::DEFER;
+        if(quarantined.count(root))return BaselineResult::DEFER;
         requireUncommitted(p);require(p.acquiring(),"acquisition not pending");
         // Old live records must be retired by strict recovery, never relabeled V5.
         require(journal.placementVersion||(journal.entries.empty()&&journal.leases.empty()&&journal.globals.empty()),"uncommitted journal state");
@@ -523,7 +645,14 @@ public:
     void stageMasks(ProcessState& p,const std::map<int,Mask>& masks,AuthorityFence* authority=nullptr){
         std::map<int,std::pair<Mask,Mask>> intents;
         for(const auto& [tid,mask]:masks){
-            fence(authority);auto task=p.tasks.find(tid);if(task==p.tasks.end()||!task->second.owned||!same(p,tid,task->second))continue;
+            fence(authority);auto task=p.tasks.find(tid);if(task==p.tasks.end()||!task->second.owned)continue;
+            auto entry=journal.entries.find(tid);require(entry!=journal.entries.end(),"write without durable owner identity");
+            const auto& prior=entry->second;
+            require(prior.pid==p.pid&&prior.processStart==p.generation&&prior.user==p.uid&&prior.threadStart==task->second.generation,"write without durable owner identity");
+            // No intent mutation needs no duplicate proc/cpuset preflight. apply
+            // still checks physical ownership, including on its no-op path.
+            if(prior.appliedMask==mask)continue;
+            if(!same(p,tid,task->second))continue;
             auto& t=task->second;if(physicalRevoke(p,tid,t))throw PhysicalRevoke{};
             auto it=journal.entries.find(tid);require(it!=journal.entries.end()&&journal.same(it->second),"write without durable owner identity");
             const auto& r=it->second;if(r.appliedMask==mask)continue;
@@ -598,8 +727,8 @@ public:
         fence(authority);return CoherenceResult::CLEAN;
     }
     void relinquishCoherence(ProcessState& p){release(p,ReleaseCause::COHERENCE_RELINQUISH);}
-    // One finite pass, never an acquisition baseline probe. Crash recovery above
-    // deliberately retains its original strict restore/coverRemaining contract.
+    // One finite pass. Exact records, ordinary normalization, and quarantined
+    // resources remain distinct; unresolved ordinary membership is a local hold.
     bool backgroundPass(ProcessState& p,bool finalPass){
         auto lease=journal.leases.find(p.pid);
         require(p.managed()&&lease!=journal.leases.end()&&lease->second.processStart==p.generation&&
@@ -628,7 +757,7 @@ public:
                 if(e!=journal.entries.end()&&journal.same(e->second)){
                     r=e->second;require(!journal.placementVersion||journal.placementMatches(r,current),"background unknown owned task");
                 }
-                else if(journal.inherited(tid,r)){
+                else if(journal.inherited(tid,r)||([&]{if(!journal.normalizedOrdinary(tid,r))return false;journal.recordNormalization(r);return true;})()){
                     journal.entries[tid]=r;added=true;
                     if(r.pid==p.pid&&r.processStart==p.generation){
                         // A child born inside a known mask cpuset inherits that
@@ -642,6 +771,7 @@ public:
                 }
                 else {
                     if(identity(tid).start!=id.start||normalGroup(group(tid)))continue;
+                    if(quarantineOrdinary(tid,path))continue;
                     throw std::runtime_error("background unknown owned task");
                 }
                 if(journal.belongs(r,p))ours.insert(tid);
@@ -733,7 +863,7 @@ public:
             const auto token=lease->second.placementLease;
             for(const auto& path:groups()){
                 std::string owner;Mask mask=0;if(!placementGroup(path.substr(11),owner,mask)||owner!=token)continue;
-                if(!members(path).empty())return false;
+                if(!members(path).empty()){if(quarantined.count(path)){p.releaseParked=true;p.releaseBlocked=true;}return false;}
                 if(rmdir(path.c_str())!=0){
                     int error=errno;if(error==EBUSY||error==EINTR||error==EAGAIN)return false;
                     require(error==ENOENT,"cpuset child removal");
@@ -778,9 +908,9 @@ public:
     }
     void cleanup(){
         requireScaffold();
-        require(members(root).empty(),"remaining root tasks");
-        for(auto& p:created){require(members(p).empty(),"remaining owned tasks");require(rmdir(p.c_str())==0,"cpuset child removal");}
-        created.clear();require(groups().empty(),"remaining cpuset children");
+        if(!quarantined.count(root))require(members(root).empty(),"remaining root tasks");
+        for(auto& p:created){if(quarantined.count(p))continue;require(members(p).empty(),"remaining owned tasks");require(rmdir(p.c_str())==0,"cpuset child removal");}
+        created.clear();for(auto& p:groups())require(quarantined.count(p),"remaining cpuset children");
         // KEEP_ROOT: init's scaffold survives graceful stop, recovery and restart.
     }
 };
