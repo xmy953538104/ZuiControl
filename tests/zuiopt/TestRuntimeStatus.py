@@ -31,8 +31,11 @@ def fixture():
     startup=daemon[daemon.index('phase=StartupStage::PLACEMENT;'):daemon.index('phase=StartupStage::RECONCILE;')]
     assert startup.index('placement=std::make_unique<Placement>')<startup.index('invalidateRuntime();')<startup.index('sceneObserver=std::make_unique<SceneObserver>')
     assert 'try{' not in startup[startup.index('invalidateRuntime();'):startup.index('sceneObserver=')]
-    reload=next(line for line in daemon.splitlines() if 'if(valid){phase=StartupStage::RELOAD;' in line)
-    assert reload.index('invalidateRuntime();')<reload.index('for(auto& [_,p]:states)release(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP)')<reload.index('config=std::move(next)')
+    reload=method(daemon,'if(valid){phase=StartupStage::RELOAD;')
+    assert reload.index('invalidateRuntime();')<reload.index('for(auto& [_,p]:states){')<reload.index('config=std::move(next)')
+    assert 'if(p.writable()&&before&&after&&samePlacementContract(*before,*after))p.next=now();' in reload
+    assert 'else release(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP);' in reload
+    assert reload.index('const auto* before=config.find(p.package);const auto* after=next.find(p.package);')<reload.index('samePlacementContract(')<reload.index('config=std::move(next)')
     assert reload.index('loadedConfig=std::move(nextBytes)')<reload.index('loadedIdentity=loadedGenerationIdentity(')<reload.index('publishRuntime();')<reload.index('reconcile(observer->snapshot())')<reload.index('recordLoadedIdentity(')
     assert daemon.count('placement->release(')==1
     assert 'for(auto& [_,p]:states)release(p,cause)' in daemon

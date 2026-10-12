@@ -13,8 +13,24 @@ RECOVERY_R2=json.loads((ROOT/'tests/zuiopt/runtime_recovery_r2_delta.json').read
 RECOVERY_R2_ALLOWED={'native/zuiopt/'+n for n in ('ZUIopt_daemon.h','ZUIopt_owner.h','ZUIopt_runtime.h','ZUIopt_lifecycle.h')}
 assert RECOVERY_R2['phase']=='DEVICE_LOCAL_TEST_AND_RUNTIME_RECOVERY_R2' and RECOVERY_R2['baseHead']=='7a3620ac42481459480f49cc9e517ce059eaeeaf'
 assert set(RECOVERY_R2['allowedPaths'])==RECOVERY_R2_ALLOWED and {row['path'] for row in RECOVERY_R2['files']}==RECOVERY_R2_ALLOWED
+QUARANTINE_R2=json.loads((ROOT/'tests/zuiopt/runtime_quarantine_r2_delta.json').read_text(encoding='utf8'))
+assert QUARANTINE_R2['phase']=='R2_QUARANTINE_ACQUISITION_GUARD' and QUARANTINE_R2['baseHead']=='22191e73a072b2e0bca847cff0d26167d88e7359'
+assert QUARANTINE_R2['allowedPaths']==['native/zuiopt/ZUIopt_owner.h'] and len(QUARANTINE_R2['files'])==1
+assert QUARANTINE_R2['files'][0]['path']=='native/zuiopt/ZUIopt_owner.h'
+assert QUARANTINE_R2['files'][0]['beforeSha256']==next(row['afterSha256'] for row in RECOVERY_R2['files'] if row['path']=='native/zuiopt/ZUIopt_owner.h')
+
+def reverse_quarantine_r2(path,text):
+    change=QUARANTINE_R2['files'][0]
+    if path==change['path']:
+        assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('R2 quarantine exact bytes',path)
+        for hunk in reversed(change['hunks']):
+            assert text.count(hunk['after'])==1,('R2 quarantine exact guard',path)
+            text=text.replace(hunk['after'],hunk['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==change['beforeSha256'],('R2 quarantine immutable base',path)
+    return text
 
 def reverse_recovery_r2(path,text):
+    text=reverse_quarantine_r2(path,text)
     change=next((r for r in RECOVERY_R2['files'] if r['path']==path),None)
     if change:
         assert hashlib.sha256(text.encode()).hexdigest()==change['afterSha256'],('R2 exact authorized bytes',path)
@@ -22,12 +38,24 @@ def reverse_recovery_r2(path,text):
         text=change['before']
     return text
 
-def reverse_runtime_entries(current,*scopes):
+def reverse_recovery_entries(current,*scopes):
     result=list(current)
+    for row in QUARANTINE_R2['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('R2 quarantine exact source',row['path'])
+        result.remove(row['afterEntry'].encode());result.append(row['beforeEntry'].encode())
     for row in RECOVERY_R2['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
-        assert result.count(row['after'].encode())==1,('R2 exact authorized source',row['path'])
-        result.remove(row['after'].encode());result.append(row['before'].encode())
+        def entry(text):
+            data=text.encode();oid=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+            return ('100644 blob '+oid+'\t'+row['path']).encode()
+        after=entry(row['after']);before=entry(row['before'])
+        assert result.count(after)==1,('R2 exact authorized source',row['path'])
+        result.remove(after);result.append(before)
+    return result
+
+def reverse_runtime_entries(current,*scopes):
+    result=reverse_recovery_entries(current,*scopes)
     for row in RUNTIME['files']:
         assert row['path'] in RUNTIME_ALLOWED
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue

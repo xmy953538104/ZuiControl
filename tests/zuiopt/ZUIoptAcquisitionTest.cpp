@@ -365,8 +365,10 @@ void recovery(){
         for(auto& [_,t]:Kernel::tasks)require(t.group=="/top-app"&&t.mask==255,"SIGKILL late-spawn strict restore");
         require(fs::is_directory(Kernel::virtualRoot+"/dev/cpuset/ZUIopt"),"KEEP_ROOT scaffold");}
     {AcquisitionFixture f;Kernel::tasks.at(43).group="/ZUIopt";f.owner.reset();f.journal.reset();
-        f.journal=std::make_unique<Journal>(Kernel::root+"/state");expectFailure([&]{Placement unknown(f.count,*f.journal);},"RECOVERY_UNKNOWN_TASK_FAIL_CLOSED");require(!Kernel::moves&&!Kernel::affinities,"unknown recovery wrote kernel");}
-    puts("BASELINE_JOURNAL_SIGKILL_LATE_SPAWN_STRICT_RELEASE=PASS;UNKNOWN_LIVE_AND_BUSY_FAIL_CLOSED=PASS");
+        f.journal=std::make_unique<Journal>(Kernel::root+"/state");Placement unknown(f.count,*f.journal);
+        require(!Kernel::moves&&!Kernel::affinities&&Kernel::tasks.at(43).group=="/ZUIopt","unknown ordinary recovery changed kernel");
+        require(read(Kernel::root+"/state/recovery-quarantine.json").find("HELD_NO_TRUSTED_ORIGINAL")!=std::string::npos,"unknown ordinary quarantine missing");}
+    puts("BASELINE_JOURNAL_SIGKILL_LATE_SPAWN_STRICT_RELEASE=PASS;UNKNOWN_ORDINARY_QUARANTINE_ZERO_WRITES=PASS;BUSY_FAIL_CLOSED=PASS");
 }
 void stress(){
     std::mt19937 random(0x55ba5e);constexpr int windows[]={0,20,50,80,120,200,400,700};int deferrals=0;
@@ -520,10 +522,10 @@ void coherence(){
         auto groups=Kernel::groupReads,affinities=Kernel::affinityReads,writes=Kernel::moves+Kernel::affinities;
         auto journalCommits=f.journal->commits;
         f.scanAt(base+7000);
-        auto expected=2*static_cast<int>(f.p().tasks.size());
+        auto expected=static_cast<int>(f.p().tasks.size());
         std::cout<<"CACHED_V5_TASKS="<<f.p().tasks.size()<<";GROUP_READS="<<Kernel::groupReads-groups
-            <<";AFFINITY_GET="<<Kernel::affinityReads-affinities<<";EXPECTED_TWO_PASSES="<<expected<<'\n';
-        require(expected==16&&Kernel::groupReads-groups==expected&&Kernel::affinityReads-affinities==expected,"cached V5 per-task observation missing");
+            <<";AFFINITY_GET="<<Kernel::affinityReads-affinities<<";EXPECTED_PHYSICAL_APPLY_PASS="<<expected<<'\n';
+        require(expected==8&&Kernel::groupReads-groups==expected&&Kernel::affinityReads-affinities==expected,"cached V5 physical apply observation missing");
         require(Kernel::moves+Kernel::affinities==writes&&f.journal->commits==journalCommits&&!forceCoherence(f.p()),"cached apply rearmed or wrote");
         f.overwrite(100,2);armCoherence(f.p(),base+7100);f.scanAt(base+7100);require(f.drift==1,"authority invalidation absent");f.settle();f.background();
         reads=Kernel::reads;auto commits=f.journal->commits;for(int t=100000;t<101000;t++)f.scanAt(t);
@@ -615,8 +617,8 @@ void horizon(){
         int g=Kernel::groupReads,a=Kernel::affinityReads,id=Kernel::identityReads,u=Kernel::uidReads,s=f.scans;
         for(int dt:coherenceSchedule)f.scanAt(base+dt);
         int groups=Kernel::groupReads-g,affinity=Kernel::affinityReads-a,identities=Kernel::identityReads-id,users=Kernel::uidReads-u;
-        auto expected=3*200*14; // Probation verify, V5 intent preflight and apply.
-        std::cout<<"ACTIVE_200_THREADS:SCANS="<<f.scans-s<<";GROUP_READS="<<groups<<";AFFINITY_GET="<<affinity<<";EXPECTED_THREE_PASSES="<<expected<<";IDENTITY_READS="<<identities<<";UID_READS="<<users<<'\n';
+        auto expected=2*200*14; // Probation verify and physical apply; unchanged intents skip duplicate preflight.
+        std::cout<<"ACTIVE_200_THREADS:SCANS="<<f.scans-s<<";GROUP_READS="<<groups<<";AFFINITY_GET="<<affinity<<";EXPECTED_COHERENCE_AND_APPLY_PASSES="<<expected<<";IDENTITY_READS="<<identities<<";UID_READS="<<users<<'\n';
         require(f.p().tasks.size()==200&&f.scans-s==14&&groups==expected&&affinity==expected,"bounded V5 scan/group/affinity count");
         auto original=f.p().activated;auto commits=f.journal->commits;auto moves=Kernel::moves+Kernel::affinities;
         require(f.p().leaseScene==f.sceneIdentity.sequence,"initial scene was not arbitrated");
@@ -625,11 +627,11 @@ void horizon(){
         for(int i=0;i<1000;i++){f.primary();f.scanAt(base+6001+i);}
         require(!forceCoherence(f.p())&&f.p().activated==original&&commits==f.journal->commits&&moves==Kernel::moves+Kernel::affinities,"duplicate rearm/write");
         f.scanAt(base+8000);
-        // Cached V5 preflight and apply still observe each task without writes.
-        auto mandatoryReads=2*200*(f.scans-scansBeforeDuplicates);
+        // Cached intents skip preflight; physical apply still observes each task.
+        auto mandatoryReads=200*(f.scans-scansBeforeDuplicates);
         std::cout<<"CACHED_V5_200_THREADS:SCANS="<<f.scans-scansBeforeDuplicates
             <<";GROUP_READS="<<Kernel::groupReads-g-groups<<";AFFINITY_GET="<<Kernel::affinityReads-a-affinity
-            <<";EXPECTED_TWO_PASSES="<<mandatoryReads<<'\n';
+            <<";EXPECTED_PHYSICAL_APPLY_PASS="<<mandatoryReads<<'\n';
         require(Kernel::groupReads==g+groups+mandatoryReads&&Kernel::affinityReads==a+affinity+mandatoryReads,"per-task revoke observation count");
         puts("ACQUISITION_HORIZON=PASS;DUPLICATE_REARM_WRITE=0;INITIAL_SCENE_ARBITRATION=PASS");
         f.background();f.empty();auto reads=Kernel::reads;commits=f.journal->commits;
@@ -769,9 +771,11 @@ void timed(const char* name,void(*test)()){
 }
 #ifndef ZUIOPT_ACQUISITION_LIBRARY
 int main(){try{std::cout<<std::unitbuf;require(getuid()==0,"isolated root fixture");
-    timed("kernel_backing",kernelBacking);
-    timed("runtime_upgrade",runtimeUpgrade);
-    timed("matrix",matrix);timed("recovery",recovery);timed("stress512",stress);timed("coherence1024",coherence);timed("horizon",horizon);timed("liveness1024",liveness);
+    int failed=0;auto collect=[&](auto phase){try{phase();}catch(const std::exception& e){std::cerr<<"BASELINE_PHASE_FAIL "<<e.what()<<'\n';failed++;}};
+    collect([]{timed("kernel_backing",kernelBacking);});collect([]{timed("runtime_upgrade",runtimeUpgrade);});
+    collect([]{timed("matrix",matrix);});collect([]{timed("recovery",recovery);});collect([]{timed("stress512",stress);});
+    collect([]{timed("coherence1024",coherence);});collect([]{timed("horizon",horizon);});collect([]{timed("liveness1024",liveness);});
+    require(failed==0,"one or more isolated acquisition phases failed");
     puts("ZUIOPT_BASELINE_NATIVE=PASS");return 0;}
 catch(const std::exception& e){std::cerr<<"BASELINE_FAIL "<<e.what()<<'\n';return 1;}}
 #endif

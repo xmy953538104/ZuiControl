@@ -574,6 +574,13 @@ public:
         if(recoveryHeld()&&!journal.placementVersion&&(!journal.leases.empty()||!journal.entries.empty()||!journal.globals.empty()))return BaselineResult::DEFER;
         auto prior=journal.leases.find(p.pid);if(prior!=journal.leases.end()&&heldLease(prior->second))return BaselineResult::DEFER;
         if(quarantined.count(root))return BaselineResult::DEFER;
+        if(recoveryHeld()){
+            if(quarantined.count("/dev/cpuset"+proc.cpuset(p.pid)))return BaselineResult::DEFER;
+            for(const auto& [path,_]:quarantined){std::string token;Mask mask=0;std::array<uint64_t,5> owner{};
+                if(placementGroup(path.substr(11),token,mask)&&placementToken(token,&owner)&&
+                   owner[0]==static_cast<uint64_t>(p.pid)&&owner[1]==p.generation&&owner[2]==static_cast<uint64_t>(p.uid))return BaselineResult::DEFER;
+            }
+        }
         requireUncommitted(p);require(p.acquiring(),"acquisition not pending");
         // Old live records must be retired by strict recovery, never relabeled V5.
         require(journal.placementVersion||(journal.entries.empty()&&journal.leases.empty()&&journal.globals.empty()),"uncommitted journal state");

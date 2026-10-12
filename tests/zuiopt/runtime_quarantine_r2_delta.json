@@ -1,0 +1,22 @@
+{
+  "phase": "R2_QUARANTINE_ACQUISITION_GUARD",
+  "baseHead": "22191e73a072b2e0bca847cff0d26167d88e7359",
+  "allowedPaths": [
+    "native/zuiopt/ZUIopt_owner.h"
+  ],
+  "files": [
+    {
+      "path": "native/zuiopt/ZUIopt_owner.h",
+      "beforeSha256": "f6662c2a95df5861edfe3ce95f64e8344fe7a5e8e65a5ca5998cb7d0eada71e2",
+      "afterSha256": "65866866b7ebda73c865c53ba8086de3fba8debc0ce7f6f5e37abb28a4edc982",
+      "beforeEntry": "100644 blob 756d50fed865064705bf6ab3b744135e69536d46\tnative/zuiopt/ZUIopt_owner.h",
+      "afterEntry": "100644 blob 8071318c213e91ad670be4718820df047fa5c4c4\tnative/zuiopt/ZUIopt_owner.h",
+      "hunks": [
+        {
+          "before": "        if(quarantined.count(root))return BaselineResult::DEFER;\n        requireUncommitted(p);require(p.acquiring(),\"acquisition not pending\");",
+          "after": "        if(quarantined.count(root))return BaselineResult::DEFER;\n        if(recoveryHeld()){\n            if(quarantined.count(\"/dev/cpuset\"+proc.cpuset(p.pid)))return BaselineResult::DEFER;\n            for(const auto& [path,_]:quarantined){std::string token;Mask mask=0;std::array<uint64_t,5> owner{};\n                if(placementGroup(path.substr(11),token,mask)&&placementToken(token,&owner)&&\n                   owner[0]==static_cast<uint64_t>(p.pid)&&owner[1]==p.generation&&owner[2]==static_cast<uint64_t>(p.uid))return BaselineResult::DEFER;\n            }\n        }\n        requireUncommitted(p);require(p.acquiring(),\"acquisition not pending\");"
+        }
+      ]
+    }
+  ]
+}

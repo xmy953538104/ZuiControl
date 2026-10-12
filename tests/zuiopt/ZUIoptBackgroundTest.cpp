@@ -4,7 +4,7 @@
 #include "ZUIoptAcquisitionTest.cpp"
 extern "C" int __real_unlinkat(int,const char*,int);
 extern "C" int __wrap_unlinkat(int fd,const char* name,int flags){
-    if(!Kernel::root.empty()&&std::string(name)=="owner_state.v1")
+    if(!Kernel::root.empty()&&std::string(name)=="owner_state.v1"&&faccessat(fd,name,F_OK,0)==0)
         for(auto& [_,t]:Kernel::tasks)require(t.group.rfind("/ZUIopt",0)!=0,"JOURNAL_CLEAR_WITH_LIVE_ZUIOPT_TASK");
     return __real_unlinkat(fd,name,flags);
 }
@@ -117,7 +117,20 @@ void strictBoundaries(){
     {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={1,Kernel::ownedGroup(0x7c),0x7c};f.owner.reset();
         f.journal->entries.clear();f.journal->leases.clear();
         expectFailure([&]{Placement recovery(f.count,*f.journal);},"RECOVERY_UNKNOWN_TASK_FAIL_CLOSED");}
-    puts("BACKGROUND_TRUE_FATAL_BOUNDARIES=PASS;CRASH_RECOVERY_STRICT=PASS");
+    {BackgroundFixture f;f.setup(200);Kernel::tasks[300]={10,Kernel::ownedGroup(0x7c),0x7c};f.owner.reset();
+        Journal unbound(Kernel::root+"/unknown-state");
+        auto moves=Kernel::moves,affinities=Kernel::affinities;Placement recovery(f.count,unbound);
+        require(Kernel::moves==moves&&Kernel::affinities==affinities,"unbound ordinary quarantine wrote kernel");
+        require(read(Kernel::root+"/unknown-state/recovery-quarantine.json").find("HELD_NO_TRUSTED_ORIGINAL")!=std::string::npos,"unbound ordinary quarantine missing");
+        ProcessState pending;pending.pid=42;pending.uid=10001;pending.generation=10;pending.name=pending.package="org.example.game";beginAcquisition(pending,Kernel::time);
+        AcquisitionFixture::TimedProc proc;require(recovery.acquire(pending,proc)==BaselineResult::DEFER,"quarantined process re-entered global fatal acquisition");
+        Kernel::tasks.at(42).group="/top-app";Kernel::tasks.at(42).mask=255;
+        require(recovery.acquire(pending,proc)==BaselineResult::DEFER,"quarantined orphan lease re-enabled root process");
+        Kernel::tasks[400]={20,"/top-app",255,400,10002,"org.other.game"};
+        ProcessState other;other.pid=400;other.uid=10002;other.generation=20;other.name=other.package="org.other.game";beginAcquisition(other,Kernel::time);
+        require(recovery.acquire(other,proc)==BaselineResult::DEFER,"other App first baseline dwell");Kernel::time+=250;
+        require(recovery.acquire(other,proc)==BaselineResult::STABLE,"ordinary quarantine blocked unrelated App");}
+    puts("BACKGROUND_TRUE_FATAL_BOUNDARIES=PASS;UNKNOWN_ORDINARY_QUARANTINE=PASS;CRASH_RECOVERY_STRICT=PASS");
 }
 void backgroundStress(){
     std::mt19937 random(0x58bac);int total=1024;
@@ -148,7 +161,9 @@ void backgroundStress(){
     std::cout<<"RANDOM_RELEASE_STRESS_COUNT="<<total<<";GLOBAL_FATAL_RECOVERABLE=0;STATUS3_RECOVERABLE=0;OWNER_LEAK=0;STALE_PID=0;UNKNOWN_TASK_FALSE_POSITIVE=0;UNSAFE_CPUSET_REWRITE=0;UNSAFE_AFFINITY_REWRITE=0;JOURNAL_CLEAR_WITH_LIVE_ZUIOPT_TASK=0\n";
 }
 #ifndef ZUIOPT_BACKGROUND_LIBRARY
-int main(){try{std::cout<<std::unitbuf;timed("BACKGROUND_DETERMINISTIC",deterministic);timed("BACKGROUND_STRICT",strictBoundaries);timed("BACKGROUND_STRESS",backgroundStress);
+int main(){try{std::cout<<std::unitbuf;int failed=0;auto collect=[&](auto phase){try{phase();}catch(const std::exception& e){std::cerr<<"BACKGROUND_PHASE_FAIL "<<e.what()<<'\n';failed++;}};
+    collect([]{timed("BACKGROUND_DETERMINISTIC",deterministic);});collect([]{timed("BACKGROUND_STRICT",strictBoundaries);});collect([]{timed("BACKGROUND_STRESS",backgroundStress);});
+    require(failed==0,"one or more isolated background phases failed");
     puts("NORMAL_BACKGROUND_RELEASE_STATUS3=0;BACKGROUND_RELEASE_FIXTURES=PASS");return 0;
 }catch(const std::exception& e){std::cerr<<"BACKGROUND_FAIL "<<e.what()<<'\n';return 1;}}
 #endif

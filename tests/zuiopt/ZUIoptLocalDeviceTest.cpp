@@ -71,7 +71,7 @@ std::string currentLabEvents(int user){
 void snapshot(const Target& t,const std::string& phase){SchedulerState s;require(same(t)&&schedulerState(t.tid,s),"live target readback");std::ostringstream row;
     row<<"pid="<<t.pid<<" tid="<<t.tid<<" birth="<<t.threadBirth<<" mask="<<affinity(t.tid)<<" group="<<group(t.tid)<<" scheduler=";schedulerText(row,s);event(phase,row.str());}
 template<class F>void until(F f,int ms,const char* why){auto end=now()+ms;while(!f()){require(now()<end,why);std::this_thread::sleep_for(std::chrono::milliseconds(30));}}
-void injectOrdinaryRecordLoss(const Target& target){
+void injectOrdinaryRecordLoss(const Target& target,bool unbound=false){
     const std::string directory="/data/vendor/zui_control/zuiopt",path=directory+"/owner_state.v1";
     auto originalJournal=read(path);auto split=originalJournal.find('\n');require(split!=originalJournal.npos,"fault journal header");
     std::istringstream header(originalJournal.substr(0,split));std::string version;uint32_t crc=0;require(bool(header>>version>>crc)&&(version=="ZUIOPT_OWNER_STATE_V5"||version=="ZUIOPT_OWNER_STATE_V6")&&checksum(originalJournal.substr(split+1))==crc,"exact candidate fault journal");
@@ -79,11 +79,11 @@ void injectOrdinaryRecordLoss(const Target& target){
     while(std::getline(rows,row)){
         std::istringstream in(row);char type=0;int pid=0,user=0,tid=0;uint64_t pb=0,tb=0;
         if(!(in>>type>>pid>>pb>>user>>tid>>tb)||(type!='L'&&type!='T')){retained<<row<<'\n';continue;}
-        if(type=='L'&&pid==target.pid){require(pb==target.processBirth&&uid(pid)==user&&target.threadBirth<tb,"pre-lease ordinary target provenance");leaseSeen=true;}
-        if(type=='T'&&tid==target.tid){
+        if(type=='L'&&pid==target.pid){require(pb==target.processBirth&&uid(pid)==user&&target.threadBirth<tb,"pre-lease ordinary target provenance");leaseSeen=true;if(unbound)continue;}
+        if(type=='T'&&(unbound?pid==target.pid:tid==target.tid)){
             std::string package,name,group,token;Mask mask=0,prior=0,appliedMask=0;int active=0,waltActive=0,kind=0,raw=0,expected=0;SchedulerState before,after;
             require(bool(in>>std::quoted(package)>>std::quoted(name)>>std::quoted(group)>>mask>>prior>>appliedMask>>active)&&parseScheduler(in,before)&&parseScheduler(in,after)&&bool(in>>waltActive>>kind>>raw>>expected>>token),"fault record fields");
-            require(!removed&&pid==target.pid&&pb==target.processBirth&&tb==target.threadBirth&&user==uid(pid)&&package=="org.zuicontrol.adcblab"&&group==target.cpuset&&mask==target.mask&&!active&&!waltActive&&same(target),"only dedicated noRT/noWALT placement may lose record");removed=true;continue;
+            require((unbound||!removed)&&pid==target.pid&&pb==target.processBirth&&(unbound||tb==target.threadBirth)&&user==uid(pid)&&package=="org.zuicontrol.adcblab"&&group==target.cpuset&&mask==target.mask&&!active&&!waltActive&&same(target),"only dedicated noRT/noWALT placement may lose record");removed=true;continue;
         }retained<<row<<'\n';
     }
     require(removed&&leaseSeen,"one pre-lease ordinary row selected");
@@ -94,7 +94,7 @@ void injectOrdinaryRecordLoss(const Target& target){
     int fd=openat(dir,"owner_state.v1.r2-fault",O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600);require(fd>=0,"fault exclusive staging");
     writeAll(fd,modified);require(fsync(fd)==0,"fault staging durable");close(fd);
     require(renameat(dir,"owner_state.v1.r2-fault",dir,"owner_state.v1")==0&&fsync(dir)==0,"fault atomic journal row loss");close(dir);
-    event("injected-one-noRT-placement-record-loss",std::to_string(target.tid)+":"+std::to_string(target.threadBirth));
+    event(unbound?"injected-dedicated-noRT-lease-record-loss":"injected-one-noRT-placement-record-loss",std::to_string(target.tid)+":"+std::to_string(target.threadBirth));
 }
 }
 int main(int argc,char** argv){
@@ -103,7 +103,8 @@ int main(int argc,char** argv){
         puts("LOCAL_DEVICE_SELFTEST=PASS");return 0;
     }
     std::string action=argc==3?argv[2]:"";bool development=action.rfind("--dev-",0)==0;
-    bool recordLoss=action=="--dev-provenance-loss";
+    bool unboundQuarantine=action=="--dev-provenance-unbound";
+    bool recordLoss=action=="--dev-provenance-loss"||unboundQuarantine;
     bool hang=development&&(action.find("hang")!=action.npos||recordLoss);
     bool crash=development||action=="--crash"||action=="--rt-crash";
     bool rt=action=="--rt"||action=="--rt-crash"||action=="--mode2-rt"||action=="--mode1-rt"||(development&&action.find("-rt-")!=action.npos);
@@ -165,15 +166,21 @@ int main(int argc,char** argv){
             int boundary=open((outDir+"/fault-boundary.txt").c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC,0600);
             auto text=std::to_string(old)+":"+std::to_string(birth)+"\n";require(boundary>=0&&::write(boundary,text.data(),text.size())==static_cast<ssize_t>(text.size())&&fsync(boundary)==0,"durable fault boundary");close(boundary);
             if(hang){require(syscall(SYS_pidfd_send_signal,fd,SIGSTOP,nullptr,0)==0,"finite hang injection");stopSignals++;injections++;event("finite-hang-start");usleep(250000);
-                if(recordLoss){try{require(!rt,"no RT ownership in placement-loss experiment");injectOrdinaryRecordLoss(a);}catch(...){syscall(SYS_pidfd_send_signal,fd,SIGCONT,nullptr,0);close(fd);throw;}}}
+                if(recordLoss){try{require(!rt,"no RT ownership in placement-loss experiment");injectOrdinaryRecordLoss(a,unboundQuarantine);}catch(...){syscall(SYS_pidfd_send_signal,fd,SIGCONT,nullptr,0);close(fd);throw;}}}
             require(syscall(SYS_pidfd_send_signal,fd,SIGKILL,nullptr,0)==0,"one directed fault episode");killSignals++;if(!hang)injections++;pollfd dead{fd,POLLIN,0};require(poll(&dead,1,2000)>0,"old Native exit");close(fd);
             until([&]{try{auto s=state();auto loaded=fields(s.at("loaded_generation"),':');if(loaded.size()!=5)return false;
                 int candidate=number(loaded[2]);if(candidate==old||!identity(candidate).start||std::to_string(identity(candidate).start)!=loaded[3])return false;
                 if(processName(candidate)!=candidateExecutable)return false;
                 if(command({"/system/bin/getprop","init.svc.zui_zuiopt"})!=(development?"stopped":"running"))return false;
                 newNative=candidate;return applied(a,28,rt)&&applied(b,128,rt);}catch(...){return false;}},8500,development?"manual supervisor current Native recovery/reapply timeout":"real init current Native recovery/reapply timeout");
-            event(development?"manual-supervisor-recovered-and-reapplied":"init-recovered-and-reapplied",std::to_string(newNative));snapshot(a,"restart-C1");snapshot(b,"restart-C2");
-            if(recordLoss){auto receipt=read("/data/vendor/zui_control/zuiopt/normalized-placement.v1");auto prefix=trim(read("/proc/sys/kernel/random/boot_id"))+" "+std::to_string(pid)+" "+std::to_string(a.processBirth)+" "+std::to_string(a.tid)+" "+std::to_string(a.threadBirth)+" ";
+            event(unboundQuarantine?"manual-supervisor-quarantine-current-owner":development?"manual-supervisor-recovered-and-reapplied":"init-recovered-and-reapplied",std::to_string(newNative));snapshot(a,"restart-C1");snapshot(b,"restart-C2");
+            if(unboundQuarantine){auto ownerBirth=identity(newNative).start;auto receipt=read("/data/vendor/zui_control/zuiopt/recovery-quarantine.json");
+                require(receipt.find("\"owner_pid\":"+std::to_string(newNative)+",")!=receipt.npos&&receipt.find("\"owner_birth\":"+std::to_string(ownerBirth)+",")!=receipt.npos&&receipt.find("HELD_NO_TRUSTED_ORIGINAL")!=receipt.npos,"current owner quarantine receipt");
+                event("current-unbound-quarantine-receipt",receipt);auto end=now()+3500;
+                while(now()<end){require(identity(newNative).start==ownerBirth&&same(a)&&same(b)&&applied(a,28)&&applied(b,128),"unbound ordinary task caused restart or unsafe rewrite");usleep(50000);}
+                require(read("/data/vendor/zui_control/zuiopt/owner_state.v1").find("L "+std::to_string(pid)+" ")==std::string::npos,"held target was silently re-leased");event("quarantined-owner-stable-no-new-lease");
+            }
+            else if(recordLoss){auto receipt=read("/data/vendor/zui_control/zuiopt/normalized-placement.v1");auto prefix=trim(read("/proc/sys/kernel/random/boot_id"))+" "+std::to_string(pid)+" "+std::to_string(a.processBirth)+" "+std::to_string(a.tid)+" "+std::to_string(a.threadBirth)+" ";
                 require(receipt.find(prefix)!=receipt.npos&&receipt.find("DEGRADED_ANDROID_APP_RETURN")!=receipt.npos,"current live target normalization receipt");event("candidate-degraded-ordinary-return",receipt);}
         }
         if(rt){commit(grantOff,sha256(grant));until([&]{return applied(a,28)&&applied(b,128)&&trim(read("/proc/sys/kernel/sched_rr_timeslice_ms"))==rrBefore;},2000,"live RT-off/global original restore timeout");event("live-RT-off-originals");snapshot(a,"RT-off-C1");snapshot(b,"RT-off-C2");}
