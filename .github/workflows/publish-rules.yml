@@ -1,4 +1,4 @@
-name: Publish upstream Schema2 rules
+name: Publish upstream Schema2/3 rules
 run-name: Rules publisher · ${{ github.sha }}
 
 on:
@@ -36,10 +36,6 @@ on:
         description: Publish dedicated GitHub distribution branch after validation
         type: boolean
         default: false
-      mirror_gitee:
-        description: Also push the accepted GitHub commit one way to configured Gitee
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -68,16 +64,14 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Enforce manual publishing branch and mirror gate
+      - name: Enforce manual publishing branch
         env:
           WANT_PUBLISH: ${{ inputs.publish }}
-          WANT_MIRROR: ${{ inputs.mirror_gitee }}
           REF_NAME: ${{ github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           test "$WANT_PUBLISH" != true || test "$REF_NAME" = "$DEFAULT_BRANCH"
-          test "$WANT_MIRROR" != true || test "$WANT_PUBLISH" = true
       - name: Build or publish two-file upstream snapshot
         id: rules
         env:
@@ -99,24 +93,6 @@ jobs:
           receipt=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'publish-receipt.json').read_text())
           print('commit='+receipt['publicationCommit'])
           PY
-      - name: Optional one-way Gitee mirror
-        if: inputs.publish && inputs.mirror_gitee
-        env:
-          GITEE_DEPLOY_KEY: ${{ secrets.GITEE_DEPLOY_KEY }}
-          GITEE_KNOWN_HOSTS: ${{ secrets.GITEE_KNOWN_HOSTS }}
-          GITEE_SSH_URL: ${{ vars.GITEE_SSH_URL }}
-          PUBLICATION_COMMIT: ${{ steps.rules.outputs.commit }}
-        run: |
-          set -euo pipefail
-          test -n "$GITEE_DEPLOY_KEY" && test -n "$GITEE_KNOWN_HOSTS"
-          [[ "$GITEE_SSH_URL" =~ ^git@gitee\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$ ]]
-          umask 077
-          key="$RUNNER_TEMP/gitee-key"
-          hosts="$RUNNER_TEMP/gitee-known-hosts"
-          printf '%s\n' "$GITEE_DEPLOY_KEY" > "$key"
-          printf '%s\n' "$GITEE_KNOWN_HOSTS" > "$hosts"
-          export GIT_SSH_COMMAND="ssh -i $key -o UserKnownHostsFile=$hosts -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes"
-          git push "$GITEE_SSH_URL" "$PUBLICATION_COMMIT:refs/heads/rules-published"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

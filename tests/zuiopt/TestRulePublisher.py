@@ -12,6 +12,8 @@ def rejects(call):
     raise AssertionError('invalid publisher input accepted')
 
 def main(native=None):
+    workflow=(ROOT/'.github/workflows/publish-rules.yml').read_text()
+    assert 'GITEE' not in workflow and 'mirror_gitee' not in workflow and 'default: false' in workflow and "github.event_name == 'workflow_dispatch'" in workflow
     factory=(ROOT/'payload/system/etc/zuiopt/factory_rules.conf').read_bytes();original=factory
     args=('canonical',8,'zuiopt-upstream','0.84','2026-10-04','a'*40)
     metadata,rules=build(factory,*args);manifest=latest(metadata)
