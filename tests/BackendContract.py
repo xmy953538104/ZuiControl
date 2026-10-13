@@ -14,6 +14,28 @@ RECOVERY_R2_ALLOWED={'native/zuiopt/'+n for n in ('ZUIopt_daemon.h','ZUIopt_owne
 assert RECOVERY_R2['phase']=='DEVICE_LOCAL_TEST_AND_RUNTIME_RECOVERY_R2' and RECOVERY_R2['baseHead']=='7a3620ac42481459480f49cc9e517ce059eaeeaf'
 assert set(RECOVERY_R2['allowedPaths'])==RECOVERY_R2_ALLOWED and {row['path'] for row in RECOVERY_R2['files']}==RECOVERY_R2_ALLOWED
 QUARANTINE_R2=json.loads((ROOT/'tests/zuiopt/runtime_quarantine_r2_delta.json').read_text(encoding='utf8'))
+FRONTEND_RUNTIME_R2=json.loads((ROOT/'tests/zuiopt/runtime_frontend_r2_delta.json').read_text(encoding='utf8'))
+FRONTEND_RUNTIME_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+name for name in ('FrontendSession.kt','MainActivity.kt','ZuioptRead.kt','ZuioptRuleModel.kt')}
+FRONTEND_RUNTIME_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+name for name in ('ZuiControlService.java','ZuioptSceneAuthority.java')}
+FRONTEND_RUNTIME_ALLOWED|={'native/zuiopt/'+name for name in ('ZUIopt_scene.h','ZUIopt_store.h')}
+assert set(FRONTEND_RUNTIME_R2['allowedPaths'])==FRONTEND_RUNTIME_ALLOWED,'R2 C/B explicit source scope'
+assert {r['path'] for r in FRONTEND_RUNTIME_R2['testFiles']}=={'app/src/test/java/com/zui/zuicontrol/ZuioptRuleModelTest.kt'},'R2 explicit App unit regression scope'
+def reverse_frontend_runtime_r2(path,text):
+    row=next((r for r in FRONTEND_RUNTIME_R2['files']+FRONTEND_RUNTIME_R2['testFiles'] if r['path']==path),None)
+    if row:
+        assert hashlib.sha256(text.encode()).hexdigest()==row['afterSha256'],('R2 C/B exact authorized bytes',path)
+        for h in reversed(row['hunks']):
+            assert text.count(h['after'])==1,('R2 C/B exact authorized hunk',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==row['beforeSha256'],('R2 C/B immutable source base',path)
+    return text
+def reverse_frontend_runtime_entries(current,*scopes):
+    result=list(current)
+    for row in FRONTEND_RUNTIME_R2['files']+FRONTEND_RUNTIME_R2['testFiles']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('R2 C/B exact source entry',row['path'])
+        result.remove(row['afterEntry'].encode());result.append(row['beforeEntry'].encode())
+    return result
 assert QUARANTINE_R2['phase']=='R2_QUARANTINE_ACQUISITION_GUARD' and QUARANTINE_R2['baseHead']=='22191e73a072b2e0bca847cff0d26167d88e7359'
 assert QUARANTINE_R2['allowedPaths']==['native/zuiopt/ZUIopt_owner.h'] and len(QUARANTINE_R2['files'])==1
 assert QUARANTINE_R2['files'][0]['path']=='native/zuiopt/ZUIopt_owner.h'
@@ -30,6 +52,7 @@ def reverse_quarantine_r2(path,text):
     return text
 
 def reverse_recovery_r2(path,text):
+    text=reverse_frontend_runtime_r2(path,text)
     text=reverse_quarantine_r2(path,text)
     change=next((r for r in RECOVERY_R2['files'] if r['path']==path),None)
     if change:
@@ -39,7 +62,7 @@ def reverse_recovery_r2(path,text):
     return text
 
 def reverse_recovery_entries(current,*scopes):
-    result=list(current)
+    result=reverse_frontend_runtime_entries(current,*scopes)
     for row in QUARANTINE_R2['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['afterEntry'].encode())==1,('R2 quarantine exact source',row['path'])

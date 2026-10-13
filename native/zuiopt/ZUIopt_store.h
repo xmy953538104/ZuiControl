@@ -1,6 +1,7 @@
 // Root-only, descriptor-relative transactions. effective.conf is the sole commit record.
 #pragma once
 #include "ZUIopt_library.h"
+#include "ZUIopt_runtime.h"
 #include <sys/file.h>
 #include <sys/random.h>
 
@@ -290,11 +291,22 @@ public:
     std::string readReply(const std::string& argument){
         require(readOnly,"read-only store required");
         bool snapshot=argument.rfind("snapshot|",0)==0;
-        require(argument=="state"||(snapshot&&generationId(argument.substr(9))),"rules read argument");
+        bool runtime=argument.rfind("runtime|",0)==0;
+        require(argument=="state"||(snapshot&&generationId(argument.substr(9)))||(runtime&&generationId(argument.substr(8))),"rules read argument");
         auto s=current();require(s.canonical&&s.library,"canonical library required");
         if(snapshot)require(generationOf(s.effective)==argument.substr(9),"rules read generation changed");
+        if(runtime)require(generationOf(s.effective)==argument.substr(8),"runtime read generation changed");
         auto status=state(s)+failureState()+"upstream_metadata_sha256="+sha256(s.upstreamMetadata)+"\nrules_read_transport=DAEMON_SNAPSHOT_V1\n";
         require(status.size()<=4608,"rules read state bound");
+        if(runtime){
+            auto body=root.get("runtime-status.v1",RUNTIME_STATUS_LIMIT);std::string owner;
+            for(const auto& line:fields(status,'\n'))if(line.rfind("loaded_generation=",0)==0)owner=line.substr(18);
+            auto identityFields=fields(owner,':');
+            require(identityFields.size()==5&&identityFields[0]==argument.substr(8)&&identityFields[2]==std::to_string(getpid())&&identityFields[3]==std::to_string(identity(getpid()).start),"runtime current daemon identity");
+            require(runtimeOwnerMatches(body,trim(read("/proc/sys/kernel/random/boot_id")),owner),"runtime owner frame");
+            auto reply="ZUIOPT_RUNTIME_SNAPSHOT_V1\nstate="+base64(status)+"\nruntime="+base64(body)+"\n";
+            require(reply.size()<=51000,"runtime read frame bound");return reply;
+        }
         if(!snapshot)return status;
         auto reply="ZUIOPT_READ_SNAPSHOT_V1\nstate="+base64(status)+"\nuser="+base64(s.user)+"\nupstream="+base64(s.upstream)+"\nmetadata="+base64(s.upstreamMetadata)+"\n";
         require(reply.size()<=200000,"rules read snapshot bound");return reply;

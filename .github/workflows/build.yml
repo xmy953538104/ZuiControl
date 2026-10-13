@@ -156,6 +156,8 @@ jobs:
           python3 tests/monitor/TestProductR8.py
           python3 tests/monitor/TestProductR9.py
           python3 tests/zuiopt/TestReadTransport.py
+          python3 tests/zuiopt/TestRuntimeFrontendModel.py
+          python3 tests/zuiopt/TestRuntimeFrontendScope.py
           python3 tests/monitor/TestNotificationRenderer.py
           bash tests/uperf/TestConfigurableAppPolicy.sh
           python3 tests/monitor/TestRecordSql.py
@@ -226,6 +228,8 @@ jobs:
           "$RUNNER_TEMP/zuiopt-runtime-fixture" | tee "$receipt/runtime_contract_faults.txt" || native_failed=1
           python3 tests/zuiopt/TestRuntimeSchema.py 2>&1 | tee "$receipt/runtime_schema.txt" || native_failed=1
           python3 tests/zuiopt/TestRuntimeRecoveryScope.py 2>&1 | tee "$receipt/runtime_recovery_scope.txt" || native_failed=1
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptRuntimeReadTest.cpp -lz -o "$RUNNER_TEMP/runtime-read-fixture"
+          "$RUNNER_TEMP/runtime-read-fixture" "$RUNNER_TEMP/runtime-read-store" 2>&1 | tee "$receipt/runtime_read_store.txt" || native_failed=1
           python3 tests/zuiopt/TestRuntimePolicy.py 2>&1 | tee "$receipt/runtime_policy.txt" || native_failed=1
           python3 tests/zuiopt/TestRuntimeStatus.py --compiler clang++ --output "$receipt/runtime-status" \
             2>&1 | tee "$receipt/runtime_status.txt" || native_failed=1

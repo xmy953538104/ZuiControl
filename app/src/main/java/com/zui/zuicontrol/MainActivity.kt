@@ -87,12 +87,14 @@ class MainActivity : Activity() {
     private var baseline: ZuioptLibrary.Baseline? = rulesCache?.baseline
     private var upstreamModel: ZuioptRuleModel? = rulesCache?.upstream
     private var ruleState = rulesCache?.state.orEmpty()
+    private var runtimeReadback: JSONObject? = null
+    private var runtimeReadError = ""
     private var ruleError = ""
     private var rulesQualified = false
     private var ruleLoadStage = "正在连接原生规则…"
     /** Last verified presentation; editing always waits for fresh native identity. */
     private data class LoadedRules(val state:String,val current:ZuioptRules.Snapshot,val model:ZuioptRuleModel,
-        val baseline:ZuioptLibrary.Baseline,val upstream:ZuioptRuleModel) {
+        val baseline:ZuioptLibrary.Baseline,val upstream:ZuioptRuleModel,val runtime:JSONObject?=null,val runtimeError:String="") {
         fun matches(fresh:String):Boolean = current.generation==ZuioptRules.field(fresh,"generation") &&
             baseline.generation==current.generation &&
             listOf("generation","canonical_sha256","user_sha256","user_size","effective_sha256",
@@ -129,7 +131,8 @@ class MainActivity : Activity() {
                         OwnerRenderTrace.event("RULES_UPSTREAM_PARSED","parse_ms=${(SystemClock.elapsedRealtimeNanos()-upParse)/1e6}")
                         LoadedRules(bulk?.state ?: rs,current,parsed,up,upstream)
                     }
-                    fresh.also{rulesCache=it}
+                    val runtime=runCatching{ZuioptRead.runtime(fresh.state)}
+                    fresh.copy(runtime=runtime.getOrNull(),runtimeError=runtime.exceptionOrNull()?.message.orEmpty()).also{rulesCache=it}
                 }.also{rulesRead=it;start=true}
             }
             if(start)task.run()
@@ -378,6 +381,7 @@ class MainActivity : Activity() {
             if(visible && session.section=="thread")render()
         },fetch={sharedRules(applicationContext,::progress)},parse={it}) { fresh ->
         ruleState=fresh.state;snapshot=fresh.current;model=fresh.model;baseline=fresh.baseline;upstreamModel=fresh.upstream;ruleError=""
+        runtimeReadback=fresh.runtime;runtimeReadError=fresh.runtimeError
         rulesCache=fresh;rulesQualified=true;ruleLoadStage="";OwnerRenderTrace.event("RULES_STAGE","READY")
         if(session.section=="thread" && session.selected.isNotEmpty() &&
             (session.ruleDraft==null || session.ruleDraft?.let{!it.dirty && it.generation!=fresh.current.generation}==true))openRule(session.selected)
@@ -970,6 +974,16 @@ class MainActivity : Activity() {
         if (session.busy) return
         if(session.section=="thread" && !rulesQualified){toast("规则校验尚未完成，请重试");return}
         val app = session.appDraft; val gpu = session.gpuDraft; val rule = session.ruleDraft
+        val defaults=session.ruleDefaultsDraft
+        if(defaults!=null && session.section=="thread" && session.selected.isEmpty()) {
+            session.work("已保存并生效",completed=after,feature="rules") {
+                val bytes=defaults.canonical().toByteArray(Charsets.UTF_8);val validation=ZuioptRules.validate(applicationContext,bytes,defaults.generation)
+                check(validation.valid){validation.error};ZuioptRules.upload(applicationContext,"user",bytes,expectedGeneration=defaults.generation)
+                val fresh=ZuioptRules.userRules(applicationContext);val accepted=ZuioptRuleModel.parseNormalized(fresh.text)
+                check(fresh.generation!=defaults.generation && accepted.mode==defaults.mode && accepted.rt==defaults.rt){"RUNTIME_DEFAULTS_POST_ACK_MISMATCH"}
+                if(session.ruleDefaultsDraft===defaults)session.ruleDefaultsDraft=null
+            };return
+        }
         if (app != null) { session.saveApp(after); return }
         if (gpu != null) { session.saveGpu(after); return }
         session.work("已保存并生效", completed = after) {
@@ -1133,6 +1147,7 @@ class MainActivity : Activity() {
         detail.addView(card().apply {
             setPadding(dp(18),dp(12),dp(18),dp(12))
             addView(owner.label("规则库",11.5f,owner.muted,800),LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(4)})
+            addView(owner.domainRow("全局调度默认","mode ${model?.mode ?: 0} · RT ${model?.rt ?: 0}",R.drawable.owner_settings,"zo",true){if(rulesQualified&&!session.busy)runtimeDefaultsDialog()}.apply{tag="owner-control"})
             // Deferred feed has no manual-import affordance. Existing feed logic stays disabled.
             val previous=ZuioptRules.field(ruleState,"previous_generation").matches(Regex("g[0-9a-f]{24}"))
             addView(owner.domainRow("回退规则版本",if(previous)"回到上一代完整规则集" else "暂无可回退版本",R.drawable.owner_undo,"warn",true){if(rulesQualified)confirm("回退规则版本？","上游基线和生效规则一起回退。"){
@@ -1210,18 +1225,22 @@ class MainActivity : Activity() {
     private fun mergeDialog(pkg: String) {
         if(appOpt){mergeAppOpt(pkg);return}
         val mine=model?.appProfile(pkg)
-        val up=runCatching{ZuioptRuleModel.parseNormalized(incoming.toString(Charsets.UTF_8)).appProfile(pkg)}.getOrNull()
+        val incomingModel=runCatching{ZuioptRuleModel.parseNormalized(incoming.toString(Charsets.UTF_8))}.getOrNull()
+        val up=incomingModel?.appProfile(pkg)
         if(mine==null || up==null){toast("新增 / 删除应用请选择保留我的或采用上游");return}
-        var upMask=false;var upRules=false
+        var upMask=false;var upRules=false;var upRuntime=false
         val box=column().apply{
             addView(owner.section("默认 CPU","当前 ${mine.generalMask.sorted()} · 上游 ${up.generalMask.sorted()}"))
             addView(segment(listOf("我的默认 CPU","上游默认 CPU"),0){upMask=it==1})
             addView(owner.section("特殊线程规则","当前 ${mine.rules.size} 条 · 上游 ${up.rules.size} 条"),LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(18)})
             addView(segment(listOf("我的特殊规则","上游特殊规则"),0){upRules=it==1})
+            addView(owner.section("高级调度","模式、RT 与模板控制一起保留"),LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(18)})
+            addView(segment(listOf("我的高级调度","上游高级调度"),0){upRuntime=it==1})
         }
         ownerModal?.open("手动合并 · ${name(pkg)}","选择各组内容后重新生成原生预览",480,box,listOf(owner.button("取消"){ownerModal?.close()},owner.button("重新预览","primary"){
             ownerModal?.close();session.work{
-                val chosen=ZuioptRuleModel.Profile(if(upMask)up.generalMask else mine.generalMask,if(upRules)up.rules else mine.rules)
+                val chosen=ZuioptRuleModel.Profile(if(upMask)up.generalMask else mine.generalMask,if(upRules)up.rules else mine.rules,
+                    if(upRuntime)checkNotNull(incomingModel).effectiveRuntime(up) else checkNotNull(model).effectiveRuntime(mine))
                 val current=manual ?: ZuioptRuleModel(true,emptyMap(),emptyList())
                 manual=if(current.appProfile(pkg)!=null)current.editApp(pkg){chosen}else addProfile(current,pkg,chosen)
                 decisions[pkg]=ZuioptLibrary.Decision.MANUAL_MERGE;stagePreview(checkNotNull(this@MainActivity.baseline))
@@ -1267,10 +1286,10 @@ class MainActivity : Activity() {
             detail.addView(card().apply {
                 addView(owner.section("线程规则","Profile ${mapping?.profile ?: "新建"} · 按顺序匹配，可拖动调整"))
                 addView(owner.row().apply{
-                    val caption=note("未命中特殊规则的线程 · ${cpuRange(d.profile.generalMask)}")
+                    val caption=note("")
                     addView(owner.column().apply{addView(owner.label("默认 CPU 范围",13f,owner.text,800));addView(caption)},LinearLayout.LayoutParams(0,-2,1f))
                     val picker=cpuPicker(d.profile.generalMask){mask->mutateRule{d.profile=d.profile.copy(generalMask=mask);render()}} as OwnerCpuPicker
-                    addView(picker);bindPresentation{picker.showSelection(d.profile.generalMask);caption.text="未命中特殊规则的线程 · ${cpuRange(d.profile.generalMask)}"}
+                    addView(picker);bindPresentation{picker.showSelection(d.profile.generalMask);caption.text="${if(d.profile.runtime.placement=="preset")"自定义 CPU 时使用" else "未命中特殊规则的线程"} · ${cpuRange(d.profile.generalMask)}"}
                 },LinearLayout.LayoutParams(-1,dp(48)))
                 val rowsHost=owner.column();val rowsBindings=mutableListOf<()->Unit>()
                 var structure=""
@@ -1301,7 +1320,7 @@ class MainActivity : Activity() {
                             addView(owner.label(rule.pattern,12.5f,owner.text,600).apply{typeface=Typeface.MONOSPACE},LinearLayout.LayoutParams(0,dp(22),1f).apply{marginStart=dp(6)})
                             setOnClickListener{editRule(index)}
                         },0)
-                        cell(this,owner.row().apply{addView(owner.chip("组 ${groupName(d,rule.competitionClass)}"));setOnClickListener{editRule(index)}},62)
+                        cell(this,owner.row().apply{addView(owner.chip(if(rule.competitionClass in setOf("C1","C2"))"${rule.competitionClass}代表" else "组 ${groupName(d,rule.competitionClass)}"));setOnClickListener{editRule(index)}},62)
                         cell(this,owner.row().apply{addView(owner.chip(if(rule.selector=="all")"全部候选" else "第${rule.selector.substringAfter(':')}个").apply{background=owner.shape(owner.zoBg,5f);setTextColor(owner.zoFg)});setOnClickListener{editRule(index)}},84)
                         val picker=cpuPicker(rule.cpuMask){mask->mutateRule{d.profile=d.profile.copy(rules=d.profile.rules.map{if(it.competitionClass==rule.competitionClass)it.copy(cpuMask=mask)else it});render()}} as OwnerCpuPicker
                         cell(this,picker,117);rowsBindings+={d.profile.rules.getOrNull(index)?.let{picker.showSelection(it.cpuMask)}}
@@ -1323,6 +1342,11 @@ class MainActivity : Activity() {
                 }
                 addView(rowsHost)
                 addView(owner.button("添加特殊线程规则","dashed",small=true,icon=R.drawable.owner_plus){editRule(null)},LinearLayout.LayoutParams(-1,dp(34)).apply{topMargin=dp(8)})
+                val advanced=owner.button("高级调度 · ${runtimeSummary(d.profile.runtime)}",small=true){runtimeRuleDialog(d)}
+                addView(advanced,LinearLayout.LayoutParams(-1,dp(34)).apply{topMargin=dp(8)})
+                bindPresentation{((advanced as LinearLayout).getChildAt(0) as TextView).text="高级调度 · ${runtimeSummary(d.profile.runtime)}"}
+                val runtime=note("");addView(runtime,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8)})
+                bindPresentation{runtime.text=runtimeStatusText(d.packageName,d.profile.runtime)}
             },gap())
             detail.addView(owner.row().apply{
                 if(d.original!=null)addView(owner.button("删除规则","danger",icon=R.drawable.owner_trash){confirm("删除此应用规则？","只移除此应用的独立包映射。"){
@@ -1343,6 +1367,64 @@ class MainActivity : Activity() {
             },gap())
         }
         if(d==null)detail.addView(owner.button("查看原文 · 只读",small=true){rawView()},gap())
+    }
+    private fun runtimeSummary(runtime: ZuioptRuleModel.Runtime)="mode ${if(runtime.mode<0)"继承" else runtime.mode.toString()} · RT ${if(runtime.rt<0)"继承" else runtime.rt.toString()} · ${if(runtime.placement=="preset")"模式预设" else "自定义 CPU"}"
+    private fun runtimeStatusText(packageName: String, draft: ZuioptRuleModel.Runtime): String {
+        val requested="草稿：${runtimeSummary(draft)}"
+        if(!rulesQualified)return "$requested\n实际运行态待规则身份校验"
+        val root=runtimeReadback ?: return "$requested\n${if(runtimeReadError.isEmpty())"此系统尚未提供实际运行态读取" else "实际运行态读取失败，请刷新重试"}"
+        if(root.optString("status")!="ACKNOWLEDGED_RUNTIME")return "$requested\n${if(root.optString("status")=="PENDING_OWNER_ACK")"原生所有者正在确认，尚不能判断生效" else "当前没有作用范围内的运行读回"}"
+        val rows=root.getJSONArray("processes")
+        val row=(0 until rows.length()).map{rows.getJSONObject(it)}.firstOrNull{it.optString("package")==packageName && it.optInt("pid")>0 && it.optLong("processStart")>0}
+            ?: return "$requested\n此应用当前不在作用范围内，实际生效值暂未提供"
+        fun reason(value: String)=when(value){
+            "WALT_ORIGINAL_UNRESTORABLE"->"内核原始 WALT 值无法可靠恢复，已回退"
+            "NO_C2_REPRESENTATIVE","NO_REPRESENTATIVES"->"未找到所需代表线程"
+            "WALT_INTERFACE_UNAVAILABLE","WALT_WRITE_OR_READBACK_FAILED"->"WALT 接口未通过实际写入与读回"
+            "EXTERNAL_WALT_OWNER","EXTERNAL_SCHEDULER_OWNER"->"保留其他所有者的调度状态"
+            "EXTERNAL_RT_GLOBAL_OWNER"->"保留其他所有者的全局 RT 设置"
+            "RT_BUDGET_OR_GLOBAL_UNAVAILABLE"->"RT 预算或全局参数当前不可用"
+            "RT_WRITE_OR_READBACK_FAILED"->"RT 写入或读回未完成"
+            "EXPLICIT_MASKS"->"保留自定义 CPU 掩码，未使用模式预设"
+            "TOPOLOGY_UNQUALIFIED"->"CPU 拓扑未通过预设资格"
+            "WALT_UNQUALIFIED"->"WALT 能力未通过当前执行域资格，已回退"
+            "RT_REQUIRED_FOR_WALT_VARIANT"->"当前 WALT 组合未满足 RT 条件，已回退"
+            "NONE","OK","RT_DISABLED","CUSTOM_MASKS"->""
+            else->value
+        }
+        val details=listOf(reason(row.optString("modeReason")),reason(row.optString("rtReason"))).filter{it.isNotBlank()}.distinct().joinToString(" · ")
+        return "$requested\n本次原生读回：请求 mode${row.getInt("requestedMode")}/RT${row.getInt("requestedRt")} → 生效 mode${row.getInt("effectiveMode")}/RT${row.getInt("effectiveRt")}${if(details.isEmpty())"" else "\n$details"}"
+    }
+    private fun runtimeRuleDialog(d: RuleDraft) {
+        if(!rulesQualified||session.busy)return
+        var mode=d.profile.runtime.mode;var rt=d.profile.runtime.rt;var placement=d.profile.runtime.placement;var marker=d.profile.runtime.marker
+        val box=column().apply {
+            addView(owner.section("调度模式","mode0 兼容 · mode1 Kana · mode2 WALT"))
+            addView(segment(listOf("继承全局","mode0","mode1","mode2"),mode+1){mode=it-1})
+            addView(owner.section("RT","只作用于所选代表线程，关闭后归还原调度状态"),gap())
+            addView(segment(listOf("继承全局","关闭","开启"),rt+1){rt=it-1})
+            addView(owner.section("CPU 放置","自定义 CPU 保留规则掩码；模式预设使用已验证的预设"),gap())
+            addView(segment(listOf("自定义 CPU","模式预设"),if(placement=="preset")1 else 0){placement=if(it==1)"preset" else "explicit"})
+            addView(owner.section("模板控制","仅模式预设使用；不根据线程名自动推荐 RT"),gap())
+            addView(segment(listOf("普通","DummyMain","DoubleMain"),listOf("none","dummy","double").indexOf(marker)){marker=listOf("none","dummy","double")[it]})
+        }
+        ownerModal?.open("高级调度 · ${name(d.packageName)}","先更新本地草稿，保存并应用后确认终态",520,box,listOf(owner.button("取消"){ownerModal?.close()},owner.button("应用到草稿","primary"){
+            ownerModal?.close();mutateRule { check(session.ruleDraft===d);d.profile=d.profile.copy(runtime=ZuioptRuleModel.Runtime(mode,rt,placement,if(placement=="preset")marker else "none"));render() }
+        }))
+    }
+    private fun runtimeDefaultsDialog() {
+        if(!rulesQualified||session.busy)return
+        val draft=session.ruleDefaultsDraft ?: RuleDefaultsDraft(checkNotNull(model),checkNotNull(snapshot).generation).also{session.ruleDefaultsDraft=it}
+        val box=column().apply {
+            addView(owner.section("全局模式","每应用的显式设置优先；继承项跟随此处"))
+            addView(segment(listOf("mode0","mode1","mode2"),draft.mode){draft.mode=it})
+            addView(owner.section("全局 RT","默认关闭；能力不足时保留明确回退结果"),gap())
+            addView(segment(listOf("关闭","开启"),draft.rt){draft.rt=it})
+        }
+        ownerModal?.open("全局调度默认","修改先留在本地草稿，保存使用当前规则 generation CAS",480,box,listOf(owner.button("取消"){session.ruleDefaultsDraft=null;ownerModal?.close()},owner.button("保存并应用","primary"){
+            if(!rulesQualified||session.busy)return@button
+            ownerModal?.close();saveDraft()
+        }))
     }
     private fun mutateRule(next: () -> Unit) {
         if(!rulesQualified)return
@@ -1372,6 +1454,7 @@ class MainActivity : Activity() {
             val kinds=listOf("exact","prefix","contains","glob");var kind=old?.matchKind ?: "exact"
             val pattern=input("线程名，例如 GameThread",old?.pattern.orEmpty())
             val classes=d.profile.rules.map{it.competitionClass}.distinct().toMutableList()
+            for(role in listOf("C1","C2"))if(role !in classes)classes.add(role)
             val newClass=(0..64).map{"group$it"}.first{it !in classes};classes+=newClass
             var cls=old?.competitionClass ?: newClass;var selector=old?.selector ?: "all";var mask=old?.cpuMask ?: emptySet()
             val rank=input("",selector.substringAfter(':',"1")).apply{
@@ -1393,7 +1476,7 @@ class MainActivity : Activity() {
             box.addView(owner.formRow("匹配内容",pattern))
             box.addView(owner.formRow("竞争组",HorizontalScrollView(this@MainActivity).apply{
                 isHorizontalScrollBarEnabled=false
-                addView(segment(classes.mapIndexed{i,_->"组 ${('A'.code+i).toChar()}"},classes.indexOf(cls)){cls=classes[it]},android.widget.FrameLayout.LayoutParams(dp(classes.size*52),dp(34)))
+                addView(segment(classes.mapIndexed{i,key->if(key in setOf("C1","C2"))"${key}代表" else "组 ${('A'.code+i).toChar()}"},classes.indexOf(cls)){cls=classes[it]},android.widget.FrameLayout.LayoutParams(dp(classes.size*52),dp(34)))
             }))
             box.addView(owner.formRow("竞争选择",owner.row().apply{
                 addView(segment(listOf("全部候选","按排名"),if(selector=="all")0 else 1){selector=if(it==0)"all" else "rank";stepper.visibility=if(it==0)View.GONE else View.VISIBLE},LinearLayout.LayoutParams(dp(200),dp(32)))

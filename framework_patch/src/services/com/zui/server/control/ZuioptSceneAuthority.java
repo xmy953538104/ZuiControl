@@ -23,7 +23,7 @@ final class ZuioptSceneAuthority {
     /** Never hold the registry monitor across the daemon RPC or its nested scene ACK. */
     String readRules(String argument) throws RemoteException {
         if (!"state".equals(argument) && (argument == null
-                || !argument.matches("snapshot\\|g[0-9a-f]{24}"))) {
+                || !argument.matches("(?:snapshot|runtime)\\|g[0-9a-f]{24}"))) {
             throw new IllegalArgumentException("rules read argument");
         }
         final Registration owner;

@@ -13,6 +13,7 @@ class ProductR8(unittest.TestCase):
 object ZuioptRules{data class Snapshot(val generation:String,val text:String);fun field(s:String,k:String)=s.lineSequence().firstOrNull{it.startsWith("$k=")}?.substringAfter('=') ?: ""}
 object ZuioptLibrary{data class Baseline(val generation:String)}
 class ZuioptRuleModel
+class JSONObject
 CACHE
 fun main(){
  val g="g"+"a".repeat(24);val keys=listOf("generation","canonical_sha256","user_sha256","user_size","effective_sha256","upstream_sha256","upstream_size","upstream_metadata_size")

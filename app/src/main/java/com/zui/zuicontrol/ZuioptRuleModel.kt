@@ -1,27 +1,40 @@
 package com.zui.zuicontrol
 
 /** Draft/view model only. Native validation and generation CAS remain authoritative. */
-data class ZuioptRuleModel(val enabled: Boolean, val profiles: Map<String, Profile>, val mappings: List<Mapping>) {
+data class ZuioptRuleModel(val enabled: Boolean, val profiles: Map<String, Profile>, val mappings: List<Mapping>,
+    val schema: Int = 2, val mode: Int = 0, val rt: Int = 0) {
     data class Rule(val competitionClass: String, val matchKind: String, val pattern: String,
                     val selector: String, val priority: Int, val cpuMask: Set<Int>)
-    data class Profile(val generalMask: Set<Int>, val rules: List<Rule>)
+    data class Runtime(val mode: Int = -1, val rt: Int = -1, val placement: String = "explicit", val marker: String = "none") {
+        init { require(mode in -1..2 && rt in -1..1 && placement in setOf("explicit","preset") && marker in setOf("none","dummy","double") && (placement=="preset" || marker=="none")) }
+    }
+    data class Profile(val generalMask: Set<Int>, val rules: List<Rule>, val runtime: Runtime = Runtime())
     data class Mapping(val matchKind: String, val packageName: String, val profile: String, val priority: Int)
 
     fun appProfile(packageName: String): Profile? = mappings.sortedByDescending { it.priority }.firstOrNull {
         when(it.matchKind){"exact"->it.packageName==packageName;"prefix"->packageName.startsWith(it.packageName);else->packageName.contains(it.packageName)}
     }?.let { profiles.getValue(it.profile) }
+    fun effectiveRuntime(profile: Profile): Runtime = profile.runtime.copy(
+        mode=profile.runtime.mode.takeIf{it>=0} ?: mode,rt=profile.runtime.rt.takeIf{it>=0} ?: rt)
 
     /** Same semantic comparison as the native library: profile labels and absolute priorities are not behavior. */
     fun provenance(packageName: String, upstream: ZuioptRuleModel): String? {
-        fun behavior(profile: Profile?) = profile?.copy(rules=profile.rules.sortedByDescending { it.priority }.mapIndexed { i,r -> r.copy(priority=100000-i) })
-        val effective=behavior(appProfile(packageName));val baseline=behavior(upstream.appProfile(packageName))
+        fun behavior(model: ZuioptRuleModel, profile: Profile?) = profile?.let {
+            val runtime=if(model.schema==3)model.effectiveRuntime(it) else it.runtime
+            it.copy(runtime=runtime,rules=it.rules.sortedByDescending { row->row.priority }.mapIndexed { i,r -> r.copy(priority=100000-i) })
+        }
+        val effective=behavior(this,appProfile(packageName));val baseline=behavior(upstream,upstream.appProfile(packageName))
         return when { effective==null->null;baseline==null->"USER_CREATED";effective==baseline->"UPSTREAM";else->"USER_MODIFIED" }
     }
 
     fun normalized(): String = buildString {
-        append("schema 2\nenabled $enabled\ndebug false\n")
+        require(schema in 2..3 && mode in 0..2 && rt in 0..1)
+        val runtime=schema==3 || mode!=0 || rt!=0 || profiles.values.any { it.runtime!=Runtime() }
+        append("schema ${if(runtime)3 else 2}\nenabled $enabled\ndebug false\n")
+        if(runtime)append("runtime_defaults $mode $rt\n")
         for ((name, profile) in profiles.toSortedMap()) {
             append("profile $name ${maskText(profile.generalMask)}\n")
+            if(runtime)profile.runtime.let { append("runtime $name ${it.mode} ${it.rt} ${it.placement} ${it.marker}\n") }
             for (r in profile.rules.sortedByDescending { it.priority })
                 append("thread $name ${r.competitionClass} ${r.matchKind} ${quote(r.pattern)} selector=${r.selector} ${r.priority} ${maskText(r.cpuMask)}\n")
         }
@@ -84,6 +97,7 @@ data class ZuioptRuleModel(val enabled: Boolean, val profiles: Map<String, Profi
         fun parse(text: String): ZuioptRuleModel {
             require(text.length in 1..65536 && text.all { it == '\n' || it == '\r' || it == '\t' || it.code in 32..126 })
             val headers = mutableMapOf<String, String>(); val profiles = linkedMapOf<String, Profile>(); val mappings = mutableListOf<Mapping>()
+            var defaults: Pair<Int,Int>? = null;val runtimeProfiles=mutableSetOf<String>()
             for ((index, raw) in text.lineSequence().withIndex()) {
                 val line = raw.trim(); if (line.isEmpty() || line.startsWith('#')) continue
                 require(line.length < 1024) { "Line ${index + 1}: too long" }
@@ -91,6 +105,8 @@ data class ZuioptRuleModel(val enabled: Boolean, val profiles: Map<String, Profi
                 when (t[0]) {
                     "schema", "enabled", "debug" -> { require(t.size == 2 && t[0] !in headers); headers[t[0]] = t[1] }
                     "profile" -> { require(t.size == 3 && label.matches(t[1]) && t[1] !in profiles); profiles[t[1]] = Profile(mask(t[2]), emptyList()) }
+                    "runtime_defaults" -> { require(t.size==3 && defaults==null);val mode=t[1].toInt();val rt=t[2].toInt();require(mode in 0..2 && rt in 0..1);defaults=mode to rt }
+                    "runtime" -> { require(t.size==6 && t[1] in profiles && runtimeProfiles.add(t[1]));profiles[t[1]]=profiles.getValue(t[1]).copy(runtime=Runtime(t[2].toInt(),t[3].toInt(),t[4],t[5])) }
                     "thread" -> {
                         require(t.size == 8 && t[1] in profiles && label.matches(t[2]) && t[3] in setOf("exact", "prefix", "contains", "glob"))
                         require(t[4].length <= 64 && (t[4].isNotEmpty() || t[3] == "contains"))
@@ -109,8 +125,9 @@ data class ZuioptRuleModel(val enabled: Boolean, val profiles: Map<String, Profi
                 }
                 require(profiles.size <= 64 && mappings.size <= 512)
             }
-            require(headers["schema"] == "2" && headers["enabled"] in setOf("true", "false") && headers["debug"] in setOf(null, "false"))
-            return ZuioptRuleModel(headers["enabled"] == "true", profiles.toSortedMap(), mappings.sortedByDescending { it.priority })
+            require(headers["schema"] in setOf("2","3") && headers["enabled"] in setOf("true", "false") && headers["debug"] in setOf(null, "false"))
+            require(headers["schema"]=="3" || (defaults==null && runtimeProfiles.isEmpty()))
+            return ZuioptRuleModel(headers["enabled"] == "true", profiles.toSortedMap(), mappings.sortedByDescending { it.priority },headers.getValue("schema").toInt(),defaults?.first ?: 0,defaults?.second ?: 0)
         }
     }
 }

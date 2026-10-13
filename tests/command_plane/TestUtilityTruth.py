@@ -2,7 +2,7 @@
 from pathlib import Path
 import os,subprocess,tempfile,sys
 ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
-def compile_run(files,main,args):
+def compile_run(files,main,args,extra_classpath=()):
     cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1'
     compiler=list((cache/'org.jetbrains.kotlin/kotlin-compiler-embeddable').glob('*/*/*.jar'))
     assert len(compiler)==1,'Resolve exact existing Kotlin compiler first'
@@ -16,9 +16,9 @@ def compile_run(files,main,args):
         for name,text in files.items():
             p=tmp/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text,encoding='utf8');sources.append(str(p))
         subprocess.run(['java','-cp',os.pathsep.join(map(str,jars)),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler',
-            '-no-stdlib','-no-reflect','-classpath',os.pathsep.join(map(str,[stdlib,*annotations])),
+            '-no-stdlib','-no-reflect','-classpath',os.pathsep.join(map(str,[stdlib,*annotations,*extra_classpath])),
             '-d',str(tmp/'classes'),*sources],check=True,timeout=60)
-        subprocess.run(['java','-cp',os.pathsep.join(map(str,[tmp/'classes',stdlib])),main,*args],check=True,timeout=20)
+        subprocess.run(['java','-cp',os.pathsep.join(map(str,[tmp/'classes',stdlib,*extra_classpath])),main,*args],check=True,timeout=20)
 
 def saf(case):
     source=(APP/'MainActivity.kt').read_text('utf8')

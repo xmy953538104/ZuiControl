@@ -1,6 +1,6 @@
 """Execute the bounded Kotlin wire decoder and exact SystemServer observation race guard."""
 from pathlib import Path
-import sys,unittest,subprocess,tempfile,shutil
+import sys,unittest,subprocess,tempfile,shutil,os
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests/command_plane'))
 from TestUtilityTruth import compile_run
@@ -46,6 +46,16 @@ fun main(){
  manager.reply="ok=1\nresultCategory=AUTHORITATIVE_READ_ONLY\nreadData=$good";check(ZuioptRead.snapshot(s)?.upstream==up)
  manager.caps="ok=0\n";reject{ZuioptRead.state()};manager.caps="ok=1\nrulesReadTransport=unknown\n";reject{ZuioptRead.state()}
  manager.caps="ok=1\nrulesReadTransport=DAEMON_SNAPSHOT_V1\nrulesReadTransport=DAEMON_SNAPSHOT_V1\n";reject{ZuioptRead.state()}
+ val boot="12345678-1234-1234-1234-123456789abc";val owner="$g:$boot:12:34:${"b".repeat(64)}";val runtimeState=s+"loaded_generation=$owner\n"
+ val row="""{"schema":1,"boot":"$boot","pid":78,"processStart":90,"uid":10254,"package":"org.example.app","requestedMode":2,"effectiveMode":0,"modeReason":"WALT_ORIGINAL_UNRESTORABLE","requestedRt":1,"effectiveRt":1,"rtReason":"NONE","C1":79,"C1Start":91,"C2":80,"C2Start":92}"""
+ fun runtimeBody(rows:String=row,total:Int=1)="""{"schema":2,"boot":"$boot","owner":"$owner","status":"ACKNOWLEDGED_RUNTIME","totalProcesses":$total,"processes":[$rows],"truncated":false}"""+"\n"
+ fun runtimeFrame(body:String=runtimeBody(),state:String=runtimeState)="ZUIOPT_RUNTIME_SNAPSHOT_V1\nstate=${b64(state)}\nruntime=${b64(body)}\n"
+ check(ZuioptRead.decodeRuntime(runtimeFrame(),runtimeState).getJSONArray("processes").getJSONObject(0).getInt("effectiveMode")==0)
+ for(body in listOf(runtimeBody().replace(boot,"87654321-1234-1234-1234-123456789abc"),runtimeBody().replace(owner,"foreign-owner"),runtimeBody().replace("ACKNOWLEDGED_RUNTIME","UNKNOWN"),runtimeBody().replace("\"effectiveMode\":0","\"effectiveMode\":3"),runtimeBody().replace("\"C1Start\":91","\"C1Start\":0"),runtimeBody("$row,$row",2),runtimeBody(row,2),runtimeBody().replace("\"uid\":10254","\"uid\":1000"),runtimeBody()+"\u0000"))reject{ZuioptRead.decodeRuntime(runtimeFrame(body),runtimeState)}
+ reject{ZuioptRead.decodeRuntime(runtimeFrame()+"\n",runtimeState)};reject{ZuioptRead.decodeRuntime(runtimeFrame().replace("runtime=","unknown="),runtimeState)}
+ reject{ZuioptRead.decodeRuntime(runtimeFrame(state=runtimeState.replace(g,"g"+"c".repeat(24))),runtimeState)}
+ manager.caps="ok=1\nrulesReadTransport=DAEMON_SNAPSHOT_V1\n";check(ZuioptRead.runtime(runtimeState)==null)
+ manager.caps+="rulesRuntimeReadTransport=DAEMON_RUNTIME_V1\n";manager.reply="ok=1\nresultCategory=AUTHORITATIVE_READ_ONLY\nreadData=${runtimeFrame()}";check(ZuioptRead.runtime(runtimeState)!=null)
  println("EXACT_RULE_READ_KOTLIN_FRAME_MAX_UTF8_HASH_GENERATION_DUPLICATE_LEGACY_ABSENCE_FAIL_CLOSED=PASS")
 }
 '''
@@ -56,7 +66,9 @@ class ZuiControlManager {
  fun utility(action:String,arg:String):String{check(action=="rulesRead");calls++;return reply}
  companion object {val instance=ZuiControlManager();fun get():ZuiControlManager?=instance}
 }'''
-        compile_run({'Read.kt':source,'Manager.kt':manager,'ReadFixture.kt':fixture},'com.zui.zuicontrol.ReadFixtureKt',[])
+        cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1'
+        json_jars=list((cache/'org.json/json').glob('*/*/*.jar'));self.assertEqual(1,len(json_jars),'resolve the existing JSON test library')
+        compile_run({'Read.kt':source,'Manager.kt':manager,'ReadFixture.kt':fixture},'com.zui.zuicontrol.ReadFixtureKt',[],json_jars)
 
     def test_source_contracts_run_before_native_payload_staging(self):
         workflow=(ROOT/'.github/workflows/build.yml').read_text('utf8')

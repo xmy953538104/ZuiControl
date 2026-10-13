@@ -23,7 +23,7 @@ struct SceneObserver {
                 require(!argument.empty()&&argument.back()==0,"rules read terminator");argument.pop_back();
                 require(argument.find('\0')==std::string::npos&&AParcel_getDataPosition(in)==AParcel_getDataSize(in),"rules read trailing fields");
                 require(argument=="state"||(argument.size()==34&&argument.rfind("snapshot|g",0)==0&&
-                    argument.substr(10).find_first_not_of("0123456789abcdef")==std::string::npos),"rules read argument");
+                    argument.substr(10).find_first_not_of("0123456789abcdef")==std::string::npos)||(argument.size()==33&&argument.rfind("runtime|g",0)==0&&argument.substr(9).find_first_not_of("0123456789abcdef")==std::string::npos),"rules read argument");
                 auto result=keep->readRules(argument);require(result.size()<=200000,"rules reply bound");
                 return AParcel_writeString(out,result.data(),static_cast<int32_t>(result.size()));
             }catch(const BinderError& e){return e.status;}

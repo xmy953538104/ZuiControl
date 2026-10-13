@@ -15,7 +15,12 @@ import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicInteger
 class Context
 class JSONObject(val text:String)
-object ZuioptRead { fun snapshot(state:String):Bulk?=null;data class Bulk(val state:String,val user:String,val upstream:String,val metadata:String) }
+object ZuioptRead {
+ var runtimeText="first";var runtimeFail=false;var runtimeCalls=AtomicInteger()
+ fun snapshot(state:String):Bulk?=null
+ fun runtime(state:String):JSONObject?{runtimeCalls.incrementAndGet();if(runtimeFail)error("RUNTIME_READ_FAILED");return JSONObject(runtimeText)}
+ data class Bulk(val state:String,val user:String,val upstream:String,val metadata:String)
+}
 object SystemClock { fun elapsedRealtimeNanos()=System.nanoTime() }
 object OwnerRenderTrace { fun event(kind:String,value:String){} }
 class ZuioptRuleModel { companion object { fun parseNormalized(text:String)=ZuioptRuleModel() } }
@@ -51,7 +56,8 @@ fun main() {
   ZuioptRules.release.countDown()
   check(a.get(5,TimeUnit.SECONDS)===b.get(5,TimeUnit.SECONDS));check(ZuioptRules.calls.get()==1)
   check(ZuioptRules.userReads.get()==1 && ZuioptLibrary.reads.get()==1)
-  Loader.sharedRules(context){};check(ZuioptRules.calls.get()==2);check(ZuioptRules.userReads.get()==1)
+  check(ZuioptRead.runtimeCalls.get()==1);ZuioptRead.runtimeText="second"
+  check(Loader.sharedRules(context){}.runtime!!.text=="second");check(ZuioptRules.calls.get()==2);check(ZuioptRules.userReads.get()==1 && ZuioptRead.runtimeCalls.get()==2)
   ZuioptRules.generation="g"+"b".repeat(24)
   val fresh=Loader.sharedRules(context){};check(fresh.current.generation==ZuioptRules.generation)
   check(ZuioptRules.userReads.get()==2 && ZuioptLibrary.reads.get()==2)
@@ -59,6 +65,7 @@ fun main() {
   check(Loader.rulesCache===fresh)
   ZuioptRules.fail=false;check(Loader.sharedRules(context){}.current.generation==fresh.current.generation)
   check(ZuioptRules.calls.get()==5 && ZuioptRules.userReads.get()==2)
+  ZuioptRead.runtimeFail=true;val missing=Loader.sharedRules(context){};check(missing.runtime==null && missing.runtimeError=="RUNTIME_READ_FAILED" && ZuioptRules.userReads.get()==2)
   println("EXACT_RULE_SHARED_READ_PASS coalesced=2 native=1 later_identity=4 changed_generation=1 failure_retry=1 cached_bytes_preserved=true")
  }finally{pool.shutdownNow()}
 }

@@ -61,6 +61,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
             .let { checkNotNull(gpuDraft) }
     }
     var ruleDraft: RuleDraft? = null
+    var ruleDefaultsDraft: RuleDefaultsDraft? = null
     var busy = false
     var workFeature="";private set
     val refresh = OptimisticControl(0)
@@ -126,8 +127,8 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
         }
     }
     val appDirty get() = appDraft != null && (newApp || appDraft != originalApp)
-    val dirty get() = appDirty || gpuDraft?.dirty == true || ruleDraft?.dirty == true
-    fun clearDrafts() { appDraft = null; originalApp = null; newApp = false; gpuDraft = null; ruleDraft = null }
+    val dirty get() = appDirty || gpuDraft?.dirty == true || ruleDraft?.dirty == true || ruleDefaultsDraft?.dirty==true
+    fun clearDrafts() { appDraft = null; originalApp = null; newApp = false; gpuDraft = null; ruleDraft = null; ruleDefaultsDraft=null }
     fun work(success: String = "", completed: (() -> Unit)? = null, reconciled: (() -> Unit)? = null, feature:String="rules", task: () -> Unit) {
         if (busy) return
         busy = true;workFeature=feature; error = ""; notice = ""
@@ -221,6 +222,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
             out.putString("rulePackage", d.packageName); out.putBoolean("clone", d.cloneConfirmed)
             out.putString("profile", profileJson(d.profile).toString())
         }
+        ruleDefaultsDraft?.let { d->out.putString("runtimeBase",d.base.normalized());out.putString("runtimeGeneration",d.generation);out.putInt("runtimeMode",d.mode);out.putInt("runtimeRt",d.rt) }
     }
     fun restore(saved: Bundle) {
         if (saved.getInt("user", -1) != userId) return
@@ -243,6 +245,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
                 ruleDraft = RuleDraft(pkg, base, saved.getString("ruleGeneration").orEmpty(), base.appProfile(pkg),
                     readProfile(JSONObject(saved.getString("profile").orEmpty())), saved.getBoolean("clone"))
             }
+            saved.getString("runtimeBase")?.let { text->ruleDefaultsDraft=RuleDefaultsDraft(ZuioptRuleModel.parseNormalized(text),saved.getString("runtimeGeneration").orEmpty(),saved.getInt("runtimeMode"),saved.getInt("runtimeRt")) }
         }.onFailure { error = "草稿恢复失败：${it.message}" }
         if(!ownedExternalFlow && pendingDocument==0)returnHome()
     }
@@ -256,15 +259,22 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     private fun readRanges(j: JSONObject) = GpuDefaultsDraft.modes.associateWith { m ->
         val p = j.getString(m).split(',').map(String::toInt); GpuRanges.Range(p[0], p[1]) }
     private fun profileJson(p: ZuioptRuleModel.Profile) = JSONObject().put("mask", JSONArray(p.generalMask.toList()))
+        .put("runtime",JSONObject().put("mode",p.runtime.mode).put("rt",p.runtime.rt).put("placement",p.runtime.placement).put("marker",p.runtime.marker))
         .put("rules", JSONArray(p.rules.map { r -> JSONObject().put("class", r.competitionClass).put("kind", r.matchKind)
             .put("pattern", r.pattern).put("selector", r.selector).put("priority", r.priority).put("mask", JSONArray(r.cpuMask.toList())) }))
     private fun readProfile(j: JSONObject): ZuioptRuleModel.Profile {
         fun mask(a: JSONArray) = (0 until a.length()).map { a.getInt(it) }.toSet()
         val rows = j.getJSONArray("rules")
+        val runtime=j.optJSONObject("runtime")?.let { ZuioptRuleModel.Runtime(it.getInt("mode"),it.getInt("rt"),it.getString("placement"),it.getString("marker")) } ?: ZuioptRuleModel.Runtime()
         return ZuioptRuleModel.Profile(mask(j.getJSONArray("mask")), (0 until rows.length()).map {
             val r = rows.getJSONObject(it); ZuioptRuleModel.Rule(r.getString("class"), r.getString("kind"), r.getString("pattern"),
-                r.getString("selector"), r.getInt("priority"), mask(r.getJSONArray("mask"))) })
+                r.getString("selector"), r.getInt("priority"), mask(r.getJSONArray("mask"))) },runtime)
     }
+}
+
+class RuleDefaultsDraft(val base: ZuioptRuleModel,val generation: String,var mode: Int=base.mode,var rt: Int=base.rt) {
+    val dirty get()=mode!=base.mode || rt!=base.rt
+    fun canonical()=base.copy(schema=3,mode=mode,rt=rt).normalized().also{ZuioptRuleModel.parseNormalized(it)}
 }
 
 class RuleDraft(val packageName: String, var base: ZuioptRuleModel, var generation: String,

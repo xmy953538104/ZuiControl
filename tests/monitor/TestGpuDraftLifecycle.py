@@ -38,6 +38,7 @@ class JSONObject(val value:JsonObject=JsonObject()) {
  fun getString(k:String)=value[k].asString;fun getInt(k:String)=value[k].asInt
  fun getLong(k:String)=value[k].asLong;fun getBoolean(k:String)=value[k].asBoolean
  fun has(k:String)=value.has(k);fun getJSONArray(k:String)=JSONArray(value[k].asJsonArray)
+ fun optJSONObject(k:String)=value[k]?.takeIf{it.isJsonObject}?.let{JSONObject(it.asJsonObject)}
  override fun toString()=value.toString()
 }
 class JSONArray(val value:JsonArray=JsonArray()) {
@@ -66,14 +67,6 @@ interface FrontendGateway {
 object SettingsBackup{data class Inspection(val transaction:String,val hash:String,val summary:org.json.JSONObject)}
 object RuleUpstreamFetcher{class Latest}
 object ZuioptLibrary{class Preview;class Provenance;class Decision}
-data class ZuioptRuleModel(val profiles:Map<String,Profile> = emptyMap(),val mappings:List<Mapping> = emptyList()) {
- data class Profile(val generalMask:Set<Int>,val rules:List<Rule>)
- data class Rule(val competitionClass:String,val matchKind:String,val pattern:String,val selector:String,val priority:Int,val cpuMask:Set<Int>)
- data class Mapping(val kind:String,val pattern:String,val profile:String,val priority:Int)
- fun appProfile(s:String):Profile?=error("unused");fun editApp(s:String,f:()->Profile)=error("unused") as ZuioptRuleModel
- fun normalized():String=error("unused")
- companion object{fun parseNormalized(s:String)=error("unused") as ZuioptRuleModel}
-}
 ''',
 'Harness.kt':'''package com.zui.zuicontrol
 import android.os.Bundle
@@ -102,6 +95,16 @@ fun main(){
   check(!restored.changeContext("settings") && !restored.changeContext("settings",1))
   restored.returnHome();check(restored.gpuDraft!!.dirty)
   otherUser.restore(saved);check(otherUser.gpuDraft==null)
+  first.clearDrafts();first.section="thread"
+  val ruleModel=ZuioptRuleModel.parse("schema 3\\nenabled true\\ndebug false\\nruntime_defaults 1 0\\nprofile P 2-6\\nruntime P -1 -1 preset double\\npackage exact org.first.app P 100\\n")
+  val original=checkNotNull(ruleModel.appProfile("org.first.app"));val edited=original.copy(runtime=original.runtime.copy(mode=2,rt=1))
+  first.ruleDraft=RuleDraft("org.first.app",ruleModel,"g"+"a".repeat(24),original,edited,true)
+  first.ruleDefaultsDraft=RuleDefaultsDraft(ruleModel,"g"+"a".repeat(24),2,1)
+  val runtimeSaved=Bundle();first.save(runtimeSaved);check(runtimeSaved.getString("profile")!!.contains("double"));restored.restore(runtimeSaved)
+  check(restored.ruleDraft!!.profile==edited && restored.ruleDraft!!.base==ruleModel && restored.ruleDraft!!.dirty)
+  check(restored.ruleDefaultsDraft!!.mode==2 && restored.ruleDefaultsDraft!!.rt==1 && restored.ruleDefaultsDraft!!.dirty)
+  check(ZuioptRuleModel.parseNormalized(restored.ruleDefaultsDraft!!.canonical()).profiles==ruleModel.profiles)
+  otherUser.restore(runtimeSaved);check(otherUser.ruleDraft==null && otherUser.ruleDefaultsDraft==null)
   check(writes==0)
   println("ACTUAL_SESSION_BUNDLE_GPU_RESTORATION_HOST_BOUNDARY=PASS;WRITE_COUNT=0;OTHER_USER_REJECTED=true")
  }finally{first.close();restored.close();otherUser.close()}
@@ -111,7 +114,7 @@ with tempfile.TemporaryDirectory(prefix='zui-gpu-lifecycle-') as directory:
  p=Path(directory)
  for name,text in sources.items():(p/name).write_text(text,encoding='utf8')
  cp=os.pathsep.join(map(str,[stdlib,gson,*annotations]))
- cmd=[java,'-cp',os.pathsep.join(map(str,[*jars,*annotations])),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',cp,'-d',str(p/'classes'),*[str(APP/n) for n in ('FrontendSession.kt','FrontendTransport.kt','FrontendState.kt','GpuRanges.kt')],*map(str,p.glob('*.kt'))]
+ cmd=[java,'-cp',os.pathsep.join(map(str,[*jars,*annotations])),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',cp,'-d',str(p/'classes'),*[str(APP/n) for n in ('FrontendSession.kt','FrontendTransport.kt','FrontendState.kt','GpuRanges.kt','ZuioptRuleModel.kt')],*map(str,p.glob('*.kt'))]
  result=subprocess.run(cmd,capture_output=True,text=True,timeout=60)
  assert result.returncode==0,result.stdout+result.stderr
  result=subprocess.run([java,'-cp',os.pathsep.join([str(p/'classes'),cp]),'com.zui.zuicontrol.HarnessKt'],capture_output=True,text=True,timeout=20)

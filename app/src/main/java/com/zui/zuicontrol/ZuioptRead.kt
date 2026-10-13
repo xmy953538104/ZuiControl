@@ -13,13 +13,18 @@ internal object ZuioptRead {
         "effective_sha256", "upstream_sha256", "upstream_size", "upstream_metadata_size", "upstream_metadata_sha256")
     data class Snapshot(val state: String, val user: String, val upstream: String, val metadata: String)
 
-    private fun request(argument: String): String? {
+    private fun request(argument: String, runtime: Boolean=false): String? {
         val manager = checkNotNull(ZuiControlManager.get()) { "系统规则服务不可用" }
         val capabilities = manager.getCapabilities()
         check(capabilities.length <= 8192 && capabilities.startsWith("ok=1\n")) { "规则读取能力不可用" }
         val transports = capabilities.lineSequence().filter { it.startsWith("rulesReadTransport=") }.toList()
         if (transports.isEmpty()) return null // Explicit old-ROM compatibility.
         check(transports == listOf("rulesReadTransport=$TRANSPORT")) { "规则读取能力不匹配" }
+        if(runtime){
+            val support=capabilities.lineSequence().filter{it.startsWith("rulesRuntimeReadTransport=")}.toList()
+            if(support.isEmpty())return null
+            check(support==listOf("rulesRuntimeReadTransport=DAEMON_RUNTIME_V1")){"运行态读取能力不匹配"}
+        }
         val result = manager.utility("rulesRead", argument)
         if (result == "ok=0\nerror=rules_read_owner_absent") return null
         check(result.length <= PREFIX.length + 200000 && result.startsWith(PREFIX)) {
@@ -29,6 +34,41 @@ internal object ZuioptRead {
     }
 
     fun state(): String? = request("state")?.also(::validateState)
+    fun runtime(state: String): org.json.JSONObject? {
+        validateState(state)
+        val frame=request("runtime|${ZuioptRules.field(state,"generation")}",true) ?: return null
+        return decodeRuntime(frame,state)
+    }
+    internal fun decodeRuntime(frame: String, expected: String): org.json.JSONObject {
+        validateState(expected);require(frame.length<=51000 && '\r' !in frame && '\u0000' !in frame)
+        val parts=frame.split('\n');require(parts.size==4 && parts[0]=="ZUIOPT_RUNTIME_SNAPSHOT_V1" && parts[3].isEmpty())
+        fun decoded(index: Int,key: String,limit: Int): String {
+            require(parts[index].startsWith("$key="));val encoded=parts[index].removePrefix("$key=")
+            require(encoded.length<=4*((limit+2)/3));val data=Base64.getDecoder().decode(encoded);require(data.size in 1..limit)
+            return Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(data)).toString()
+        }
+        val state=decoded(1,"state",4608);validateState(state)
+        for(key in identities+"loaded_generation")require(ZuioptRules.field(state,key)==ZuioptRules.field(expected,key)){"运行态规则身份已变化"}
+        val owner=ZuioptRules.field(state,"loaded_generation");val identity=owner.split(':')
+        require(identity.size==5 && identity[0]==ZuioptRules.field(state,"generation") && identity[1].matches(Regex("[0-9a-f-]{36}")) && identity[2].toInt()>0 && identity[3].toLong()>0 && identity[4]==ZuioptRules.field(state,"effective_sha256"))
+        val text=decoded(2,"runtime",32768);require(text.endsWith('\n') && '\r' !in text && '\u0000' !in text)
+        val json=org.json.JSONObject(text)
+        require(json.keys().asSequence().toSet()==setOf("schema","boot","owner","status","totalProcesses","processes","truncated") && json.getInt("schema")==2 && json.getString("owner")==owner && json.getString("boot")==identity[1])
+        require(json.getString("status") in setOf("PENDING_OWNER_ACK","NO_RUNTIME_OBSERVATIONS","ACKNOWLEDGED_RUNTIME"))
+        val processes=json.getJSONArray("processes");require(processes.length()<=json.getInt("totalProcesses") && json.getInt("totalProcesses")>=0 && (json.getBoolean("truncated") || processes.length()==json.getInt("totalProcesses")))
+        val pids=mutableSetOf<Int>()
+        for(i in 0 until processes.length()){
+            val row=processes.getJSONObject(i)
+            require(row.keys().asSequence().toSet()==setOf("schema","boot","pid","processStart","uid","package","requestedMode","effectiveMode","modeReason","requestedRt","effectiveRt","rtReason","C1","C1Start","C2","C2Start"))
+            require(row.getInt("schema")==1 && row.getString("boot")==identity[1] && row.getInt("pid")>0 && pids.add(row.getInt("pid")) && row.getLong("processStart")>0 && row.getInt("uid")>=10000)
+            require(row.getString("package").matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]*)+")))
+            for(key in listOf("requestedMode","effectiveMode"))require(row.getInt(key) in 0..2)
+            for(key in listOf("requestedRt","effectiveRt"))require(row.getInt(key) in 0..1)
+            for(key in listOf("modeReason","rtReason"))require(row.getString(key).length<=128)
+            for(key in listOf("C1","C2"))require(row.getInt(key)>=0 && (row.getInt(key)==0)==(row.getLong(key+"Start")==0L) && row.getLong(key+"Start")>=0)
+        }
+        return json
+    }
 
     fun snapshot(state: String): Snapshot? {
         if (ZuioptRules.field(state, "rules_read_transport") != TRANSPORT) return null
