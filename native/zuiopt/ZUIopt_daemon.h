@@ -77,6 +77,12 @@ public:
         if(p.releaseBlocked)blocked(RuntimeBlockerReason::BACKGROUND_RELEASE_BLOCKED);
     }
     void invalidateRuntime(){runtimePending=true;runtimeProcesses.clear();publishRuntime();}
+    void acknowledgeRuntime(){
+        recordLoadedIdentity(stateRoot,loadedIdentity);
+        if(PrivateDir(stateRoot).get("loaded-generation.v2",256,true)==loadedIdentity+"\n"){
+            runtimePending=false;publishRuntime();
+        }
+    }
     void publishRuntime(){
         bool pending=runtimePending;
         for(const auto& [_,p]:states)pending=pending||p.acquiring()||(p.managed()&&!p.writable());
@@ -303,7 +309,7 @@ public:
         phase=StartupStage::RECONCILE;reconcile(initial);
         recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::RECONCILE_OK);
         phase=StartupStage::READY;prctl(PR_SET_NAME,"ZUIopt",0,0,0);ZUIOPT_NOTE("READY","pid="+std::to_string(getpid()));
-        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::READY);recordLoadedIdentity(stateRoot,loadedIdentity);bool stop=false;
+        recordLifecycle(stateRoot,journal->currentBootId(),StartupStage::READY);acknowledgeRuntime();bool stop=false;
         while(!stop){
             phase=StartupStage::EVENT_LOOP; // In-memory only; there are no steady-state receipt writes.
             auto epoch=events.authorityEpoch();
@@ -361,7 +367,7 @@ public:
                         }
                         config=std::move(next);ZUIOPT_debug=config.debug;counters.reloads++;loadedConfig=std::move(nextBytes);
                         loadedIdentity=loadedGenerationIdentity(loadedConfig,journal->currentBootId(),getpid(),identity(getpid()).start);
-                        publishRuntime();reconcile(observer->snapshot());recordLoadedIdentity(stateRoot,loadedIdentity);
+                        publishRuntime();reconcile(observer->snapshot());acknowledgeRuntime();
                         ZUIOPT_NOTE("RELOAD_OK","last-known-good replaced");}
                 }
             }}

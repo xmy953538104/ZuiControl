@@ -36,11 +36,14 @@ def fixture():
     assert 'if(p.writable()&&before&&after&&samePlacementContract(*before,*after))p.next=now();' in reload
     assert 'else release(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP);' in reload
     assert reload.index('const auto* before=config.find(p.package);const auto* after=next.find(p.package);')<reload.index('samePlacementContract(')<reload.index('config=std::move(next)')
-    assert reload.index('loadedConfig=std::move(nextBytes)')<reload.index('loadedIdentity=loadedGenerationIdentity(')<reload.index('publishRuntime();')<reload.index('reconcile(observer->snapshot())')<reload.index('recordLoadedIdentity(')
+    assert reload.index('loadedConfig=std::move(nextBytes)')<reload.index('loadedIdentity=loadedGenerationIdentity(')<reload.index('publishRuntime();')<reload.index('reconcile(observer->snapshot())')<reload.index('acknowledgeRuntime();')
     assert daemon.count('placement->release(')==1
     assert 'for(auto& [_,p]:states)release(p,cause)' in daemon
     assert daemon.count('loadedIdentity=loadedGenerationIdentity(')==2
-    assert daemon.count('recordLoadedIdentity(stateRoot,loadedIdentity)')==2 and 'recordLoadedGeneration(stateRoot,' not in daemon
+    assert 'recordLoadedGeneration(stateRoot,' not in daemon
+    ack=method(daemon,'    void acknowledgeRuntime()') if '    void acknowledgeRuntime()' in daemon else '    void acknowledgeRuntime(){recordLoadedIdentity(stateRoot,loadedIdentity);}'
+    if '    void acknowledgeRuntime()' in daemon:
+        assert daemon.count('recordLoadedIdentity(stateRoot,loadedIdentity)')==1 and daemon.count('acknowledgeRuntime();')==2
     publish=method(daemon,'    void publishRuntime()')
     assert 'sha256' not in publish and 'loadedGenerationIdentity' not in publish
     scan=daemon[daemon.index('void scan('):daemon.index('    void stats()')]
@@ -50,6 +53,7 @@ def fixture():
     definitions='\n'.join(method(runtime,signature) for signature in ('inline std::string runtimeOwnerHeader(','inline std::string runtimeEnvelope(','inline bool runtimeOwnerMatches('))
     definitions+='\n'+'\n'.join(method(source,signature) for source,signature in ((rules,'inline bool hex('),(store,'inline bool generationId('),(store,'inline std::string generationOf('),(store,'inline std::string loadedGenerationIdentity(')))
     seams='\n'.join(method(daemon,signature) for signature in ('    void release(ProcessState& p,ReleaseCause cause)','    void release(ProcessState& p)','    void invalidateRuntime()','    void publishRuntime()'))
+    seams+='\n'+ack
     receipt=method(store,'inline void recordLoadedIdentity(')
     envelope_cases=method(sources[paths[5]],'void runtimeEnvelopeCases()')
     branch=method(cli,'        else if(command=="runtime")')
@@ -112,6 +116,9 @@ int main(){try{
  test("BOUNDED_EXACT_PRODUCTION_ENVELOPE_IDENTITY_CASES",runtimeEnvelopeCases);
  test("STARTUP_RETIRES_SAME_BOOT_PREVIOUS_OWNER",[]{StatusCore old("startup");old.seed();StatusCore fresh("startup");fresh.loadedIdentity="g"+std::string(24,'a')+":"+BOOT+":29:456:"+std::string(64,'b');int admitted=0;fresh.invalidateRuntime();admitted++;require(admitted==1&&fresh.file().find("\"processes\":[]")!=std::string::npos&&fresh.file().find("PENDING_OWNER_ACK")!=std::string::npos&&runtimeOwnerMatches(fresh.file(),BOOT,fresh.loadedIdentity)&&!runtimeOwnerMatches(fresh.file(),BOOT,OWNER),"new owner invalidation");require(fresh.j.entries==2&&fresh.j.globals==1&&fresh.j.commits==0&&fresh.pl.calls==0,"invalidation touched kernel/journal");});
  test("STARTUP_WRITE_FAILURE_PREVENTS_CALLBACK",[]{StatusCore c("writefail");stores[c.stateRoot].fail=true;int callbacks=0;try{c.invalidateRuntime();callbacks++;}catch(const std::runtime_error&){}require(callbacks==0&&c.runtimeStatus.empty(),"admitted after failed publication");});
+ test("LOADED_ACK_EMPTY_TARGETS_RETIRE_PENDING",[]{StatusCore c("empty_ack");c.invalidateRuntime();c.acknowledgeRuntime();require(!c.runtimePending&&c.file().find("NO_RUNTIME_OBSERVATIONS")!=std::string::npos&&stores[c.stateRoot].files["loaded-generation.v2"]==OWNER+"\n","registered current empty owner remains pending");require(c.j.commits==0&&c.pl.calls==0,"ack touched kernel recovery");});
+ test("LOADED_ACK_BLOCKED_TARGETS_STILL_PENDING",[]{StatusCore c("blocked_ack");c.states[42].acquiringFlag=true;c.invalidateRuntime();c.acknowledgeRuntime();require(!c.runtimePending&&c.file().find("PENDING_OWNER_ACK")!=std::string::npos&&c.j.entries==2,"active acquisition promoted or journal cleared");});
+ test("FAILED_LOADED_ACK_RETAINS_PENDING",[]{StatusCore c("failed_ack");c.invalidateRuntime();stores[c.stateRoot].fail=true;c.acknowledgeRuntime();require(c.runtimePending&&c.file().find("PENDING_OWNER_ACK")!=std::string::npos,"failed identity receipt promoted");});
  test("TERMINAL_CAUSE_AWARE_ERASE_PRESERVES_SUBSTAGE",[]{StatusCore c("release");c.seed();c.substage=EventSubstage::RELOAD_RELEASE;c.release(c.states.at(42),ReleaseCause::RELOAD_OR_CONTROLLED_STOP);require(!c.states.at(42).managed()&&c.runtimeProcesses.empty()&&c.file().find("NO_RUNTIME_OBSERVATIONS")!=std::string::npos,"terminal bookkeeping");require(c.substage==EventSubstage::RELOAD_RELEASE&&c.pl.last==ReleaseCause::RELOAD_OR_CONTROLLED_STOP,"cause/substage changed");});
  test("BACKGROUND_DEATH_CAUSE_AND_BLOCKER_UNCHANGED",[]{for(bool alive:{true,false}){StatusCore c(alive?"bg":"death");c.seed();auto& p=c.states.at(42);p.alive=alive;p.releaseBlocked=true;c.release(p);require(c.substage==EventSubstage::BACKGROUND_RELEASE&&c.blockers==1&&c.pl.last==(alive?ReleaseCause::AUTHORITY_BACKGROUND:ReleaseCause::PROCESS_DEATH),"default release changed");}});
  test("CONTENDED_RELEASE_HAS_PENDING_STATUS_AND_RETAINS_JOURNAL",[]{StatusCore c("pending");c.seed();c.pl.contention=true;c.release(c.states.at(42),ReleaseCause::RELOAD_OR_CONTROLLED_STOP);require(c.states.at(42).managed()&&c.runtimeProcesses.count(42)&&c.file().find("PENDING_OWNER_ACK")!=std::string::npos&&c.j.entries==2&&c.j.globals==1&&c.j.commits==0,"pending release hidden or journal deleted");});
@@ -146,7 +153,7 @@ def run(output,compiler):
     print(executed.stdout,end='',flush=True)
     assert executed.returncode==0,executed.stderr
     assert hashes=={path:hashlib.sha256((ROOT/path).read_text('utf8').encode()).hexdigest() for path in hashes},'tested source changed during run'
-    (output/'RESULT.json').write_text(json.dumps(dict(result='PASS_EXACT_PRODUCTION_RUNTIME_STATUS_SEAMS',cases=17,sourceSha256=hashes,placementStorageLivenessMocked=True,physicalRecoveryProved=False,deviceTouched=False,transportAdded=False),indent=2),encoding='utf8')
+    (output/'RESULT.json').write_text(json.dumps(dict(result='PASS_EXACT_PRODUCTION_RUNTIME_STATUS_SEAMS',cases=20,sourceSha256=hashes,placementStorageLivenessMocked=True,physicalRecoveryProved=False,deviceTouched=False,transportAdded=False),indent=2),encoding='utf8')
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--compiler',default=shutil.which('clang++') or 'clang++');parser.add_argument('--output',type=Path)
