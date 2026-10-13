@@ -225,6 +225,13 @@ class ProductionContracts(unittest.TestCase):
         binder=read('native/zuiopt/ZUIopt_binder.h')
         self.assertLess(binder.index('*phase=StartupStage::REGISTER_PROCESS_OBSERVER'),binder.index('registered=true;registration(120)'))
 
+    def test_ci_collects_all_script_failures_without_waiving_gate(self):
+        workflow=read('.github/workflows/build.yml')
+        for step,var in (('Test app','app_failed'),('Check scripts','scripts_failed')):
+            section=workflow.split('      - name: '+step+'\n',1)[1].split('      - name:',1)[0]
+            self.assertIn(var+'=0',section)
+            self.assertIn('test "$'+var+'" -eq 0',section)
+            self.assertIn(' || '+var+'=1',section)
     def test_canonical_docs(self):
         verify_repository_docs(ROOT)
 

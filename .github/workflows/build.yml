@@ -119,94 +119,99 @@ jobs:
 
       - name: Test app
         run: |
-          gradle -p . :app:testDebugUnitTest :app:lintDebug
-          python3 tests/monitor/TestFrontendV3.py
-          python3 tests/monitor/TestGpuDraftLifecycle.py
-          python3 tests/monitor/TestOwnerVisualSync.py
-          python3 tests/monitor/TestPlan2.py
-          python3 tests/monitor/TestFinalIntegration.py
-          python3 tests/zuiopt/TestRulePublisher.py
-          python3 tests/gpu/TestGpuTouch.py
-          python3 tests/monitor/TestDropdownSelection.py
-          python3 tests/monitor/TestPendingIntentCache.py
+          app_failed=0
+          gradle -p . :app:testDebugUnitTest :app:lintDebug || app_failed=1
+          python3 tests/monitor/TestFrontendV3.py || app_failed=1
+          python3 tests/monitor/TestGpuDraftLifecycle.py || app_failed=1
+          python3 tests/monitor/TestOwnerVisualSync.py || app_failed=1
+          python3 tests/monitor/TestPlan2.py || app_failed=1
+          python3 tests/monitor/TestFinalIntegration.py || app_failed=1
+          python3 tests/zuiopt/TestRulePublisher.py || app_failed=1
+          python3 tests/gpu/TestGpuTouch.py || app_failed=1
+          python3 tests/monitor/TestDropdownSelection.py || app_failed=1
+          python3 tests/monitor/TestPendingIntentCache.py || app_failed=1
           for case in null empty throw ok rejection; do
-            python3 tests/command_plane/TestUtilityTruth.py "$case"
+            python3 tests/command_plane/TestUtilityTruth.py "$case" || app_failed=1
           done
+          test "$app_failed" -eq 0
 
       - name: Check scripts
         run: |
-          python3 -m py_compile scripts/build/ApplyZuiControlPayload.py
-          python3 -m py_compile scripts/build/PatchZuiControlFramework.py
-          python3 -m py_compile scripts/build/ImportUperfUpstream.py
-          python3 -m py_compile tests/selinux/TestUperfRuntimeAccess.py
-          python3 -m py_compile tests/flash/VerifyFixedSevenReadback.py
-          python3 -m py_compile scripts/build/VerifiedContentCache.py
-          python3 tests/cache/TestVerifiedContentCache.py
-          bash -n payload/system/bin/zui_controld
-          bash -n payload/system/bin/zui_uperf_service
-          bash -n payload/system/etc/zui_control/zui_uperf_crash_gate.sh
-          bash tests/command_plane/TestZuiControldTransactions.sh
-          bash tests/command_plane/TestParserBuiltins.sh
-          python3 tests/command_plane/TestCommandPlaneArchitecture.py
-          python3 tests/command_plane/TestBinderOwnerContract.py
-          python3 tests/command_plane/TestControlsCallbacks.py
-          python3 tests/command_plane/TestRuntimeDomains.py
-          python3 tests/command_plane/TestAckObservation.py
-          python3 tests/gpu/TestGpuFailureIsolation.py
-          python3 tests/command_plane/TestProjectionMode.py
-          python3 tests/command_plane/TestNativeTransportContract.py
-          python3 tests/command_plane/TestTerminalReplayStress.py
-          python3 tests/monitor/TestMonitor.py
-          python3 tests/gpu/TestAtomicPolicy.py
-          python3 tests/gpu/TestBackupInspection.py
-          python3 tests/gpu/TestFactoryReset.py
-          python3 tests/monitor/TestPowerEdge.py
-          python3 tests/monitor/TestMonitorHealth.py
-          python3 tests/monitor/TestThreadAnalysis.py
-          python3 tests/monitor/TestAnalysisCollector.py
-          python3 tests/monitor/TestAnalysisSql.py
-          python3 tests/zuiopt/TestSchemaContract.py
-          python3 tests/monitor/TestUiPolish.py
-          python3 tests/monitor/TestProductR6.py
-          python3 tests/monitor/TestProductR7.py
-          python3 tests/monitor/TestProductR8.py
-          python3 tests/monitor/TestProductR9.py
-          python3 tests/zuiopt/TestReadTransport.py
-          python3 tests/zuiopt/TestRuntimeFrontendModel.py
-          python3 tests/zuiopt/TestRuntimeFrontendScope.py
-          python3 tests/monitor/TestNotificationRenderer.py
-          bash tests/uperf/TestConfigurableAppPolicy.sh
-          python3 tests/monitor/TestRecordSql.py
-          python3 tests/monitor/TestPackageIdentity.py
-          python3 tests/monitor/TestDeterministicZip.py
-          python3 tests/refresh/TestRefreshStateMachine.py
-          python3 tests/refresh/TestOemTouchTimer.py
-          python3 tests/gpu/TestGpuProof.py
-          python3 tests/uperf/architecture/TestUperfArchitecture.py
-          python3 tests/uperf/top_resumed/TestUperfTopResumedStateMachine.py
-          python3 tests/uperf/startup/TestUperfStartupPolicy.py
-          sudo python3 tests/uperf/startup/TestUperfBootstrap.py
-          python3 tests/uperf/startup/TestUperfStartupBoundaries.py
+          scripts_failed=0
+          python3 -m py_compile scripts/build/ApplyZuiControlPayload.py || scripts_failed=1
+          python3 -m py_compile scripts/build/PatchZuiControlFramework.py || scripts_failed=1
+          python3 -m py_compile scripts/build/ImportUperfUpstream.py || scripts_failed=1
+          python3 -m py_compile tests/selinux/TestUperfRuntimeAccess.py || scripts_failed=1
+          python3 -m py_compile tests/flash/VerifyFixedSevenReadback.py || scripts_failed=1
+          python3 -m py_compile scripts/build/VerifiedContentCache.py || scripts_failed=1
+          python3 tests/cache/TestVerifiedContentCache.py || scripts_failed=1
+          bash -n payload/system/bin/zui_controld || scripts_failed=1
+          bash -n payload/system/bin/zui_uperf_service || scripts_failed=1
+          bash -n payload/system/etc/zui_control/zui_uperf_crash_gate.sh || scripts_failed=1
+          bash tests/command_plane/TestZuiControldTransactions.sh || scripts_failed=1
+          bash tests/command_plane/TestParserBuiltins.sh || scripts_failed=1
+          python3 tests/command_plane/TestCommandPlaneArchitecture.py || scripts_failed=1
+          python3 tests/command_plane/TestBinderOwnerContract.py || scripts_failed=1
+          python3 tests/command_plane/TestControlsCallbacks.py || scripts_failed=1
+          python3 tests/command_plane/TestRuntimeDomains.py || scripts_failed=1
+          python3 tests/command_plane/TestAckObservation.py || scripts_failed=1
+          python3 tests/gpu/TestGpuFailureIsolation.py || scripts_failed=1
+          python3 tests/command_plane/TestProjectionMode.py || scripts_failed=1
+          python3 tests/command_plane/TestNativeTransportContract.py || scripts_failed=1
+          python3 tests/command_plane/TestTerminalReplayStress.py || scripts_failed=1
+          python3 tests/monitor/TestMonitor.py || scripts_failed=1
+          python3 tests/gpu/TestAtomicPolicy.py || scripts_failed=1
+          python3 tests/gpu/TestBackupInspection.py || scripts_failed=1
+          python3 tests/gpu/TestFactoryReset.py || scripts_failed=1
+          python3 tests/monitor/TestPowerEdge.py || scripts_failed=1
+          python3 tests/monitor/TestMonitorHealth.py || scripts_failed=1
+          python3 tests/monitor/TestThreadAnalysis.py || scripts_failed=1
+          python3 tests/monitor/TestAnalysisCollector.py || scripts_failed=1
+          python3 tests/monitor/TestAnalysisSql.py || scripts_failed=1
+          python3 tests/zuiopt/TestSchemaContract.py || scripts_failed=1
+          python3 tests/monitor/TestUiPolish.py || scripts_failed=1
+          python3 tests/monitor/TestProductR6.py || scripts_failed=1
+          python3 tests/monitor/TestProductR7.py || scripts_failed=1
+          python3 tests/monitor/TestProductR8.py || scripts_failed=1
+          python3 tests/monitor/TestProductR9.py || scripts_failed=1
+          python3 tests/zuiopt/TestReadTransport.py || scripts_failed=1
+          python3 tests/zuiopt/TestRuntimeFrontendModel.py || scripts_failed=1
+          python3 tests/zuiopt/TestRuntimeFrontendScope.py || scripts_failed=1
+          python3 tests/monitor/TestNotificationRenderer.py || scripts_failed=1
+          bash tests/uperf/TestConfigurableAppPolicy.sh || scripts_failed=1
+          python3 tests/monitor/TestRecordSql.py || scripts_failed=1
+          python3 tests/monitor/TestPackageIdentity.py || scripts_failed=1
+          python3 tests/monitor/TestDeterministicZip.py || scripts_failed=1
+          python3 tests/refresh/TestRefreshStateMachine.py || scripts_failed=1
+          python3 tests/refresh/TestOemTouchTimer.py || scripts_failed=1
+          python3 tests/gpu/TestGpuProof.py || scripts_failed=1
+          python3 tests/uperf/architecture/TestUperfArchitecture.py || scripts_failed=1
+          python3 tests/uperf/top_resumed/TestUperfTopResumedStateMachine.py || scripts_failed=1
+          python3 tests/uperf/startup/TestUperfStartupPolicy.py || scripts_failed=1
+          sudo python3 tests/uperf/startup/TestUperfBootstrap.py || scripts_failed=1
+          python3 tests/uperf/startup/TestUperfStartupBoundaries.py || scripts_failed=1
           python3 tests/selinux/TestUperfRuntimeAccess.py \
             --mode source \
             --system-root payload/system \
             --file-contexts payload/patches/plat_file_contexts_add.txt \
             --property-contexts payload/patches/plat_property_contexts_add.txt \
             --plat-policy payload/patches/plat_sepolicy_zui_control.cil \
-            --vendor-policy payload/patches/vendor_sepolicy_zui_scheduler.cil
-          bash -n payload/system/etc/zui_control/zui_scheduler_prepare.sh
-          python3 -m json.tool payload/system/etc/zui_control/uperf-sm8650.json >/dev/null
-          python3 tests/zuiopt/test_rule_pack.py
-          python3 tests/zuiopt/TestProductionContracts.py
-          python3 tests/zuiopt/TestBackgroundContracts.py
-          python3 tests/zuiopt/TestTerminalContracts.py
+            --vendor-policy payload/patches/vendor_sepolicy_zui_scheduler.cil || scripts_failed=1
+          bash -n payload/system/etc/zui_control/zui_scheduler_prepare.sh || scripts_failed=1
+          python3 -m json.tool payload/system/etc/zui_control/uperf-sm8650.json >/dev/null || scripts_failed=1
+          python3 tests/zuiopt/test_rule_pack.py || scripts_failed=1
+          python3 tests/zuiopt/TestProductionContracts.py || scripts_failed=1
+          python3 tests/zuiopt/TestBackgroundContracts.py || scripts_failed=1
+          python3 tests/zuiopt/TestTerminalContracts.py || scripts_failed=1
           # Closed purity baseline is inherited; V58 validates the changed native lane.
-          python3 tests/zuiopt/TestSceneAuthority.py
-          sudo python3 host_retirement/TestRetirement.py
-          bash -n payload/system/etc/zuiopt/zuiopt_boot_state.sh
-          bash -n payload/system/etc/zuiopt/crash_gate.sh
+          python3 tests/zuiopt/TestSceneAuthority.py || scripts_failed=1
+          sudo python3 host_retirement/TestRetirement.py || scripts_failed=1
+          bash -n payload/system/etc/zuiopt/zuiopt_boot_state.sh || scripts_failed=1
+          bash -n payload/system/etc/zuiopt/crash_gate.sh || scripts_failed=1
+          test "$scripts_failed" -eq 0
 
       - name: Test and build ZUIopt production integration
+        if: ${{ !cancelled() }}
         id: zuiopt_integration_stage1
         timeout-minutes: 15
         shell: bash
