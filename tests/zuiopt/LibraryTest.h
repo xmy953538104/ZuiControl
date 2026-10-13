@@ -23,6 +23,17 @@ inline void libraryTests(const fs::path& parent){
         auto stable=upgraded.effective;legacy.initialize();require(legacy.current().effective==stable,"V82 migration idempotence");
     }
     auto old=rules(BASE),next=rules(OPEN);auto untouched=mergeLibrary(old,old,next);
+    {
+        auto upstream=old;upstream.schema=3;upstream.profiles.at("G").runtime.preset=true;
+        auto current=upstream;current.mode=1;current.rt=1;
+        auto incoming=upstream;incoming.packages.push_back({"exact","org.new.inherited","G",90});
+        auto merged=mergeLibrary(upstream,current,incoming);auto c=rules(merged.canonical);
+        auto p=appBehavior(c,"org.example.game");require(p&&p->runtime.mode==-1&&p->runtime.rt==-1&&c.mode==1&&c.rt==1,"library retains inheritance and Owner global defaults");
+        require(merged.changes.front().provenance=="UPSTREAM","global default change is not manual App modification");
+        c.mode=2;c.rt=0;auto resolved=resolvedProfile(*p,c);require(resolved.runtime.mode==2&&resolved.runtime.rt==0,"merged App continues following hot global changes");
+        current.profiles.at("G").runtime.mode=1;current.profiles.at("G").runtime.rt=0;
+        auto explicitMerge=rules(mergeLibrary(upstream,current,incoming).canonical);p=appBehavior(explicitMerge,"org.example.game");require(p&&p->runtime.mode==1&&p->runtime.rt==0,"explicit App override remains explicit");
+    }
     require(behavior(appBehavior(rules(untouched.canonical),"org.example.game"))==behavior(appBehavior(next,"org.example.game")),"untouched adopts upstream");
     auto changed=old;changed.profiles.at("G").general=cpus("0-4");
     auto conflict=mergeLibrary(old,changed,next);require(conflict.changes[0].conflict&&conflict.changes[0].decision=="KEEP_MINE","default conflict keep mine");

@@ -1,0 +1,110 @@
+{
+  "phase": "R2_LIBRARY_INHERITANCE_REPAIR",
+  "owner": "DEVICE_LOCAL_TEST_AND_RUNTIME_RECOVERY_R2",
+  "baseHead": "270e33ebd244625b012e4bba052dc7067d5dcb25",
+  "allowedPaths": [
+    "native/zuiopt/ZUIopt_library.h",
+    "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+    "app/src/main/java/com/zui/zuicontrol/ZuioptRuleModel.kt"
+  ],
+  "files": [
+    {
+      "path": "native/zuiopt/ZUIopt_library.h",
+      "beforeSha256": "2bf05a20f880f4f179ff184d407e3315d9a070536805283da6220e8a81e5eb74",
+      "afterSha256": "7fce062fe5ffc86022a6e53489e5762f5bb6801eefbf31b2a398ea336192bf1b",
+      "beforeEntry": "100644 blob 6d20a04194fac58f4cb63aa3cf23102c0680c83e\tnative/zuiopt/ZUIopt_library.h",
+      "afterEntry": "100644 blob b03820dd05f84571b64d994713070670a9fd5126\tnative/zuiopt/ZUIopt_library.h",
+      "hunks": [
+        {
+          "before": "    for(const auto& m:c.packages)if(match(m.kind,m.package,package))return &c.profiles.at(m.profile);\n    return nullptr;\n}\ninline std::string behavior(const Profile* p){return p?behavior(*p):\"\";}\ninline Profile libraryProfile(const Config& c,const Profile& p){return c.schema==3?resolvedProfile(p,c):p;}\ninline std::string behavior(const Config& c,const Profile* p){return p?behavior(libraryProfile(c,*p)):\"\";}\nstruct LibraryChange {\n    std::string package,provenance,decision;bool conflict=false,added=false,removed=false,changed=false;\n    bool mappingChanged=false,cpuChanged=false,selectorClassChanged=false;int threadAdded=0,threadRemoved=0,threadChanged=0;\n",
+          "after": "    for(const auto& m:c.packages)if(match(m.kind,m.package,package))return &c.profiles.at(m.profile);\n    return nullptr;\n}\n// Compare profile intent. Changing an Owner's global defaults is not an App edit.\ninline std::string behavior(const Profile* p){return p?behavior(*p):\"\";}\nstruct LibraryChange {\n    std::string package,provenance,decision;bool conflict=false,added=false,removed=false,changed=false;\n    bool mappingChanged=false,cpuChanged=false,selectorClassChanged=false;int threadAdded=0,threadRemoved=0,threadChanged=0;\n"
+        },
+        {
+          "before": "    };\n    for(const auto& name:names){\n        const auto* a=appBehavior(old,name);const auto* b=appBehavior(current,name);const auto* c=appBehavior(incoming,name);\n        if(partial&&!c){if(b)append({\"exact\",name,\"\",0},libraryProfile(current,*b));continue;}\n        auto sa=behavior(old,a),sb=behavior(current,b),sc=behavior(incoming,c);LibraryChange change;change.package=name;\n        change.provenance=sa.empty()?\"USER_CREATED\":sa==sb?\"UPSTREAM\":\"USER_MODIFIED\";\n        change.conflict=partial?(b&&sb!=sc):sb!=sa&&sc!=sa&&sb!=sc;\n        // User-created rows always survive a full upstream update unless explicitly selected otherwise.\n",
+          "after": "    };\n    for(const auto& name:names){\n        const auto* a=appBehavior(old,name);const auto* b=appBehavior(current,name);const auto* c=appBehavior(incoming,name);\n        if(partial&&!c){if(b)append({\"exact\",name,\"\",0},*b);continue;}\n        auto sa=behavior(a),sb=behavior(b),sc=behavior(c);LibraryChange change;change.package=name;\n        change.provenance=sa.empty()?\"USER_CREATED\":sa==sb?\"UPSTREAM\":\"USER_MODIFIED\";\n        change.conflict=partial?(b&&sb!=sc):sb!=sa&&sc!=sa&&sb!=sc;\n        // User-created rows always survive a full upstream update unless explicitly selected otherwise.\n"
+        },
+        {
+          "before": "            if(x.cls!=y.cls||x.rank!=y.rank||x.mask!=y.mask||i!=j)change.threadChanged++;\n        }\n        for(bool found:paired)if(!found)change.threadAdded++;\n        if(chosen){const auto& source=chosen==b?current:chosen==c?incoming:*manual;append({\"exact\",name,\"\",0},libraryProfile(source,*chosen));}result.changes.push_back(std::move(change));\n    }\n    // Unknown Apps retain the same advanced wildcard order. Named Apps were resolved above.\n    for(const auto& m:current.packages)if(m.kind!=\"exact\")append(m,libraryProfile(current,current.profiles.at(m.profile)));\n    result.canonical=dumpRules(output);require(result.canonical.size()<=RULE_LIMIT,\"merged canonical bound\");return result;\n}\nstruct LibraryPack {std::string upstream,manual,metadata;std::map<std::string,std::string> decisions;bool partial=false;};\n",
+          "after": "            if(x.cls!=y.cls||x.rank!=y.rank||x.mask!=y.mask||i!=j)change.threadChanged++;\n        }\n        for(bool found:paired)if(!found)change.threadAdded++;\n        if(chosen)append({\"exact\",name,\"\",0},*chosen);\n        result.changes.push_back(std::move(change));\n    }\n    // Unknown Apps retain the same advanced wildcard order. Named Apps were resolved above.\n    for(const auto& m:current.packages)if(m.kind!=\"exact\")append(m,current.profiles.at(m.profile));\n    result.canonical=dumpRules(output);require(result.canonical.size()<=RULE_LIMIT,\"merged canonical bound\");return result;\n}\nstruct LibraryPack {std::string upstream,manual,metadata;std::map<std::string,std::string> decisions;bool partial=false;};\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "beforeSha256": "874ea2191207383779255bfa5a6afb04c346a71396c49f338ec5dcea84059f79",
+      "afterSha256": "e52ddeb91844675b500d31668d981ce807381d0264e28b14aed5f96029a2440d",
+      "beforeEntry": "100644 blob c7f04c4546d9f9c8d89dcb4e67d14fe29c6d15b9\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "afterEntry": "100644 blob d42fb4e3eb77dca1b04754720a3c21ebe4c2e2f2\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "hunks": [
+        {
+          "before": "            addView(segment(listOf(\"我的默认 CPU\",\"上游默认 CPU\"),0){upMask=it==1})\n            addView(owner.section(\"特殊线程规则\",\"当前 ${mine.rules.size} 条 · 上游 ${up.rules.size} 条\"),LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(18)})\n            addView(segment(listOf(\"我的特殊规则\",\"上游特殊规则\"),0){upRules=it==1})\n            addView(owner.section(\"高级调度\",\"模式、RT 与模板控制一起保留\"),LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(18)})\n            addView(segment(listOf(\"我的高级调度\",\"上游高级调度\"),0){upRuntime=it==1})\n        }\n        ownerModal?.open(\"手动合并 · ${name(pkg)}\",\"选择各组内容后重新生成原生预览\",480,box,listOf(owner.button(\"取消\"){ownerModal?.close()},owner.button(\"重新预览\",\"primary\"){\n            ownerModal?.close();session.work{\n                val chosen=ZuioptRuleModel.Profile(if(upMask)up.generalMask else mine.generalMask,if(upRules)up.rules else mine.rules,\n                    if(upRuntime)checkNotNull(incomingModel).effectiveRuntime(up) else checkNotNull(model).effectiveRuntime(mine))\n                val current=manual ?: ZuioptRuleModel(true,emptyMap(),emptyList())\n                manual=if(current.appProfile(pkg)!=null)current.editApp(pkg){chosen}else addProfile(current,pkg,chosen)\n                decisions[pkg]=ZuioptLibrary.Decision.MANUAL_MERGE;stagePreview(checkNotNull(this@MainActivity.baseline))\n",
+          "after": "            addView(segment(listOf(\"我的默认 CPU\",\"上游默认 CPU\"),0){upMask=it==1})\n            addView(owner.section(\"特殊线程规则\",\"当前 ${mine.rules.size} 条 · 上游 ${up.rules.size} 条\"),LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(18)})\n            addView(segment(listOf(\"我的特殊规则\",\"上游特殊规则\"),0){upRules=it==1})\n            addView(owner.section(\"高级调度\",\"继承项继续跟随你的全局默认，显式值保持独立\"),LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(18)})\n            addView(segment(listOf(\"我的高级调度\",\"上游高级调度\"),0){upRuntime=it==1})\n        }\n        ownerModal?.open(\"手动合并 · ${name(pkg)}\",\"选择各组内容后重新生成原生预览\",480,box,listOf(owner.button(\"取消\"){ownerModal?.close()},owner.button(\"重新预览\",\"primary\"){\n            ownerModal?.close();session.work{\n                val chosen=ZuioptRuleModel.Profile(if(upMask)up.generalMask else mine.generalMask,if(upRules)up.rules else mine.rules,\n                    if(upRuntime)up.runtime else mine.runtime)\n                val current=manual ?: ZuioptRuleModel(true,emptyMap(),emptyList())\n                manual=if(current.appProfile(pkg)!=null)current.editApp(pkg){chosen}else addProfile(current,pkg,chosen)\n                decisions[pkg]=ZuioptLibrary.Decision.MANUAL_MERGE;stagePreview(checkNotNull(this@MainActivity.baseline))\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/ZuioptRuleModel.kt",
+      "beforeSha256": "70801198de76f5b56730bccb3010e11d66bf44325d887a7f1c13b0c18ed618a6",
+      "afterSha256": "802cae340f5aa6f6acb17ae7c8e739c48ff500725287d9e63410ad62e5271ce6",
+      "beforeEntry": "100644 blob f461a3bb50ff3d021e4590b2810537b5882175ea\tapp/src/main/java/com/zui/zuicontrol/ZuioptRuleModel.kt",
+      "afterEntry": "100644 blob 124a97224e4f6c469448ab81bd528cdc451f64fa\tapp/src/main/java/com/zui/zuicontrol/ZuioptRuleModel.kt",
+      "hunks": [
+        {
+          "before": "    fun appProfile(packageName: String): Profile? = mappings.sortedByDescending { it.priority }.firstOrNull {\n        when(it.matchKind){\"exact\"->it.packageName==packageName;\"prefix\"->packageName.startsWith(it.packageName);else->packageName.contains(it.packageName)}\n    }?.let { profiles.getValue(it.profile) }\n    fun effectiveRuntime(profile: Profile): Runtime = profile.runtime.copy(\n        mode=profile.runtime.mode.takeIf{it>=0} ?: mode,rt=profile.runtime.rt.takeIf{it>=0} ?: rt)\n\n    /** Same semantic comparison as the native library: profile labels and absolute priorities are not behavior. */\n    fun provenance(packageName: String, upstream: ZuioptRuleModel): String? {\n        fun behavior(model: ZuioptRuleModel, profile: Profile?) = profile?.let {\n            val runtime=if(model.schema==3)model.effectiveRuntime(it) else it.runtime\n            it.copy(runtime=runtime,rules=it.rules.sortedByDescending { row->row.priority }.mapIndexed { i,r -> r.copy(priority=100000-i) })\n        }\n        val effective=behavior(this,appProfile(packageName));val baseline=behavior(upstream,upstream.appProfile(packageName))\n        return when { effective==null->null;baseline==null->\"USER_CREATED\";effective==baseline->\"UPSTREAM\";else->\"USER_MODIFIED\" }\n    }\n\n",
+          "after": "    fun appProfile(packageName: String): Profile? = mappings.sortedByDescending { it.priority }.firstOrNull {\n        when(it.matchKind){\"exact\"->it.packageName==packageName;\"prefix\"->packageName.startsWith(it.packageName);else->packageName.contains(it.packageName)}\n    }?.let { profiles.getValue(it.profile) }\n\n    /** Same semantic comparison as the native library: profile labels and absolute priorities are not behavior. */\n    fun provenance(packageName: String, upstream: ZuioptRuleModel): String? {\n        fun behavior(profile: Profile?) = profile?.copy(rules=profile.rules.sortedByDescending { row->row.priority }.mapIndexed { i,r -> r.copy(priority=100000-i) })\n        val effective=behavior(appProfile(packageName));val baseline=behavior(upstream.appProfile(packageName))\n        return when { effective==null->null;baseline==null->\"USER_CREATED\";effective==baseline->\"UPSTREAM\";else->\"USER_MODIFIED\" }\n    }\n\n"
+        }
+      ]
+    }
+  ],
+  "testFiles": [
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/ZuioptRuleModelTest.kt",
+      "beforeSha256": "c3fc974985c7593b85094fafbbebdf57a3df2049153eb34028e98ffb5d031992",
+      "afterSha256": "7cdbb1e41bd4b3d01b8ccd08cd751dfa485338bacfde3f5968adb9dc517b3b06",
+      "beforeEntry": "100644 blob a0a0165af89fa5b4efb00af407d745192b2ffe1e\tapp/src/test/java/com/zui/zuicontrol/ZuioptRuleModelTest.kt",
+      "afterEntry": "100644 blob df7d36c0bd82ba47d2ca84d11b1033679efec72c\tapp/src/test/java/com/zui/zuicontrol/ZuioptRuleModelTest.kt",
+      "hunks": [
+        {
+          "before": "        assertEquals(\"USER_MODIFIED\",next.provenance(\"org.first.app\",m))\n        assertEquals(\"UPSTREAM\",next.provenance(\"org.second.app\",m))\n        val resolved=m.copy(profiles=m.profiles.mapValues{it.value.copy(runtime=it.value.runtime.copy(mode=1,rt=1))})\n        assertEquals(\"UPSTREAM\",resolved.provenance(\"org.first.app\",m))\n        assertThrows(IllegalArgumentException::class.java){ZuioptRuleModel.parse(m.normalized().replace(\"schema 3\",\"schema 2\"))}\n        assertThrows(IllegalArgumentException::class.java){ZuioptRuleModel.parse(m.normalized().replace(\"preset double\",\"explicit double\"))}\n        assertThrows(IllegalArgumentException::class.java){ZuioptRuleModel.parse(m.normalized().replace(\"runtime_defaults 1 1\",\"runtime_defaults 1 2\"))}\n",
+          "after": "        assertEquals(\"USER_MODIFIED\",next.provenance(\"org.first.app\",m))\n        assertEquals(\"UPSTREAM\",next.provenance(\"org.second.app\",m))\n        val resolved=m.copy(profiles=m.profiles.mapValues{it.value.copy(runtime=it.value.runtime.copy(mode=1,rt=1))})\n        assertEquals(\"USER_MODIFIED\",resolved.provenance(\"org.first.app\",m))\n        assertEquals(\"UPSTREAM\",m.copy(mode=2,rt=0).provenance(\"org.first.app\",m))\n        assertThrows(IllegalArgumentException::class.java){ZuioptRuleModel.parse(m.normalized().replace(\"schema 3\",\"schema 2\"))}\n        assertThrows(IllegalArgumentException::class.java){ZuioptRuleModel.parse(m.normalized().replace(\"preset double\",\"explicit double\"))}\n        assertThrows(IllegalArgumentException::class.java){ZuioptRuleModel.parse(m.normalized().replace(\"runtime_defaults 1 1\",\"runtime_defaults 1 2\"))}\n"
+        }
+      ]
+    }
+  ],
+  "no_new_writer_or_sampler": true,
+  "online_feed_enabled": false,
+  "supportFiles": [
+    {
+      "path": "app/build.gradle.kts",
+      "beforeSha256": "f861e06cf5064219351344a9e6c0511d3704dda71e8dfe9dcbb61c6661a50c76",
+      "afterSha256": "22b218a727f1dbb7edcecc14ee8d385cb7be927a46884a8417f091e5c56eb653",
+      "beforeEntry": "100644 blob 4066257b31c34644fe96850efaed9ad87f5b095f\tapp/build.gradle.kts",
+      "afterEntry": "100644 blob 6a6506cf768e76c0b4ccc85a2982e9b2d6709443\tapp/build.gradle.kts",
+      "hunks": [
+        {
+          "before": "dependencies {\n    compileOnly(project(\":framework-stubs\"))\n    testImplementation(\"junit:junit:4.13.2\")\n}\n",
+          "after": "dependencies {\n    compileOnly(project(\":framework-stubs\"))\n    testImplementation(\"junit:junit:4.13.2\")\n    testImplementation(\"org.json:json:20180813\")\n}\n"
+        }
+      ]
+    },
+    {
+      "path": ".github/workflows/build.yml",
+      "beforeSha256": "96632d8b2f4a72125de65324aec10bb5b8522ef4b0fb2772f4a4587693e0709a",
+      "afterSha256": "b0d31b15d3c559afe37d1cd89ca50a0b6507a0cab5ad2ca01654f104f7287067",
+      "beforeEntry": "100644 blob 7bfb3caea14cee4aef7ada37a16f3553f9b747c3\t.github/workflows/build.yml",
+      "afterEntry": "100644 blob d4d0ff2b68ae3a60579917913510809e08412c0f\t.github/workflows/build.yml",
+      "hunks": [
+        {
+          "before": "          path: ${{ runner.temp }}/uperf-supervisor-gate\n          if-no-files-found: error\n\n      - name: Check scripts\n        run: |\n          python3 -m py_compile scripts/build/ApplyZuiControlPayload.py\n",
+          "after": "          path: ${{ runner.temp }}/uperf-supervisor-gate\n          if-no-files-found: error\n\n      - name: Test app\n        run: |\n          gradle -p . :app:testDebugUnitTest :app:lintDebug\n          python3 tests/monitor/TestFrontendV3.py\n          python3 tests/monitor/TestGpuDraftLifecycle.py\n          python3 tests/monitor/TestOwnerVisualSync.py\n          python3 tests/monitor/TestPlan2.py\n          python3 tests/monitor/TestFinalIntegration.py\n          python3 tests/zuiopt/TestRulePublisher.py\n          python3 tests/gpu/TestGpuTouch.py\n          python3 tests/monitor/TestDropdownSelection.py\n          python3 tests/monitor/TestPendingIntentCache.py\n          for case in null empty throw ok rejection; do\n            python3 tests/command_plane/TestUtilityTruth.py \"$case\"\n          done\n\n      - name: Check scripts\n        run: |\n          python3 -m py_compile scripts/build/ApplyZuiControlPayload.py\n"
+        },
+        {
+          "before": "          sudo python3 host_retirement/TestRetirement.py\n          bash -n payload/system/etc/zuiopt/zuiopt_boot_state.sh\n          bash -n payload/system/etc/zuiopt/crash_gate.sh\n\n      - name: Test app\n        run: |\n          gradle -p . :app:testDebugUnitTest :app:lintDebug\n          python3 tests/monitor/TestFrontendV3.py\n          python3 tests/monitor/TestGpuDraftLifecycle.py\n          python3 tests/monitor/TestOwnerVisualSync.py\n          python3 tests/monitor/TestPlan2.py\n          python3 tests/monitor/TestFinalIntegration.py\n          python3 tests/zuiopt/TestRulePublisher.py\n          python3 tests/gpu/TestGpuTouch.py\n          python3 tests/monitor/TestDropdownSelection.py\n          python3 tests/monitor/TestPendingIntentCache.py\n          for case in null empty throw ok rejection; do\n            python3 tests/command_plane/TestUtilityTruth.py \"$case\"\n          done\n\n      - name: Test and build ZUIopt production integration\n        id: zuiopt_integration_stage1\n",
+          "after": "          sudo python3 host_retirement/TestRetirement.py\n          bash -n payload/system/etc/zuiopt/zuiopt_boot_state.sh\n          bash -n payload/system/etc/zuiopt/crash_gate.sh\n\n      - name: Test and build ZUIopt production integration\n        id: zuiopt_integration_stage1\n"
+        }
+      ]
+    }
+  ],
+  "fixtureDependency": "org.json:json:20180813",
+  "production_dependency_changed": false
+}

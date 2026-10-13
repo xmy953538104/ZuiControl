@@ -53,4 +53,5 @@ android {
 dependencies {
     compileOnly(project(":framework-stubs"))
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20180813")
 }

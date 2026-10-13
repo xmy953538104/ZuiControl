@@ -117,6 +117,22 @@ jobs:
           path: ${{ runner.temp }}/uperf-supervisor-gate
           if-no-files-found: error
 
+      - name: Test app
+        run: |
+          gradle -p . :app:testDebugUnitTest :app:lintDebug
+          python3 tests/monitor/TestFrontendV3.py
+          python3 tests/monitor/TestGpuDraftLifecycle.py
+          python3 tests/monitor/TestOwnerVisualSync.py
+          python3 tests/monitor/TestPlan2.py
+          python3 tests/monitor/TestFinalIntegration.py
+          python3 tests/zuiopt/TestRulePublisher.py
+          python3 tests/gpu/TestGpuTouch.py
+          python3 tests/monitor/TestDropdownSelection.py
+          python3 tests/monitor/TestPendingIntentCache.py
+          for case in null empty throw ok rejection; do
+            python3 tests/command_plane/TestUtilityTruth.py "$case"
+          done
+
       - name: Check scripts
         run: |
           python3 -m py_compile scripts/build/ApplyZuiControlPayload.py
@@ -189,22 +205,6 @@ jobs:
           sudo python3 host_retirement/TestRetirement.py
           bash -n payload/system/etc/zuiopt/zuiopt_boot_state.sh
           bash -n payload/system/etc/zuiopt/crash_gate.sh
-
-      - name: Test app
-        run: |
-          gradle -p . :app:testDebugUnitTest :app:lintDebug
-          python3 tests/monitor/TestFrontendV3.py
-          python3 tests/monitor/TestGpuDraftLifecycle.py
-          python3 tests/monitor/TestOwnerVisualSync.py
-          python3 tests/monitor/TestPlan2.py
-          python3 tests/monitor/TestFinalIntegration.py
-          python3 tests/zuiopt/TestRulePublisher.py
-          python3 tests/gpu/TestGpuTouch.py
-          python3 tests/monitor/TestDropdownSelection.py
-          python3 tests/monitor/TestPendingIntentCache.py
-          for case in null empty throw ok rejection; do
-            python3 tests/command_plane/TestUtilityTruth.py "$case"
-          done
 
       - name: Test and build ZUIopt production integration
         id: zuiopt_integration_stage1

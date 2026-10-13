@@ -67,13 +67,14 @@ class ZuiControlManager {
  companion object {val instance=ZuiControlManager();fun get():ZuiControlManager?=instance}
 }'''
         cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1'
-        json_jars=list((cache/'org.json/json').glob('*/*/*.jar'));self.assertEqual(1,len(json_jars),'resolve the existing JSON test library')
+        json_jars=list((cache/'org.json/json/20180813').glob('*/*.jar'));self.assertEqual(1,len(json_jars),'run the declared Gradle JVM tests first to resolve the pinned JSON fixture library')
         compile_run({'Read.kt':source,'Manager.kt':manager,'ReadFixture.kt':fixture},'com.zui.zuicontrol.ReadFixtureKt',[],json_jars)
 
     def test_source_contracts_run_before_native_payload_staging(self):
         workflow=(ROOT/'.github/workflows/build.yml').read_text('utf8')
         native=workflow.index('- name: Test and build ZUIopt production integration')
         self.assertLess(workflow.index('- name: Check scripts'),native)
+        self.assertLess(workflow.index('- name: Test app'),workflow.index('- name: Check scripts'))
         self.assertLess(workflow.index('- name: Test app'),native)
         self.assertLess(native,workflow.index('- name: Upload payload'))
 

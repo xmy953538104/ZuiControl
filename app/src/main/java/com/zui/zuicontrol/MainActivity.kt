@@ -1234,13 +1234,13 @@ class MainActivity : Activity() {
             addView(segment(listOf("我的默认 CPU","上游默认 CPU"),0){upMask=it==1})
             addView(owner.section("特殊线程规则","当前 ${mine.rules.size} 条 · 上游 ${up.rules.size} 条"),LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(18)})
             addView(segment(listOf("我的特殊规则","上游特殊规则"),0){upRules=it==1})
-            addView(owner.section("高级调度","模式、RT 与模板控制一起保留"),LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(18)})
+            addView(owner.section("高级调度","继承项继续跟随你的全局默认，显式值保持独立"),LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(18)})
             addView(segment(listOf("我的高级调度","上游高级调度"),0){upRuntime=it==1})
         }
         ownerModal?.open("手动合并 · ${name(pkg)}","选择各组内容后重新生成原生预览",480,box,listOf(owner.button("取消"){ownerModal?.close()},owner.button("重新预览","primary"){
             ownerModal?.close();session.work{
                 val chosen=ZuioptRuleModel.Profile(if(upMask)up.generalMask else mine.generalMask,if(upRules)up.rules else mine.rules,
-                    if(upRuntime)checkNotNull(incomingModel).effectiveRuntime(up) else checkNotNull(model).effectiveRuntime(mine))
+                    if(upRuntime)up.runtime else mine.runtime)
                 val current=manual ?: ZuioptRuleModel(true,emptyMap(),emptyList())
                 manual=if(current.appProfile(pkg)!=null)current.editApp(pkg){chosen}else addProfile(current,pkg,chosen)
                 decisions[pkg]=ZuioptLibrary.Decision.MANUAL_MERGE;stagePreview(checkNotNull(this@MainActivity.baseline))

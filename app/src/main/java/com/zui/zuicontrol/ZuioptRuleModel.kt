@@ -14,16 +14,11 @@ data class ZuioptRuleModel(val enabled: Boolean, val profiles: Map<String, Profi
     fun appProfile(packageName: String): Profile? = mappings.sortedByDescending { it.priority }.firstOrNull {
         when(it.matchKind){"exact"->it.packageName==packageName;"prefix"->packageName.startsWith(it.packageName);else->packageName.contains(it.packageName)}
     }?.let { profiles.getValue(it.profile) }
-    fun effectiveRuntime(profile: Profile): Runtime = profile.runtime.copy(
-        mode=profile.runtime.mode.takeIf{it>=0} ?: mode,rt=profile.runtime.rt.takeIf{it>=0} ?: rt)
 
     /** Same semantic comparison as the native library: profile labels and absolute priorities are not behavior. */
     fun provenance(packageName: String, upstream: ZuioptRuleModel): String? {
-        fun behavior(model: ZuioptRuleModel, profile: Profile?) = profile?.let {
-            val runtime=if(model.schema==3)model.effectiveRuntime(it) else it.runtime
-            it.copy(runtime=runtime,rules=it.rules.sortedByDescending { row->row.priority }.mapIndexed { i,r -> r.copy(priority=100000-i) })
-        }
-        val effective=behavior(this,appProfile(packageName));val baseline=behavior(upstream,upstream.appProfile(packageName))
+        fun behavior(profile: Profile?) = profile?.copy(rules=profile.rules.sortedByDescending { row->row.priority }.mapIndexed { i,r -> r.copy(priority=100000-i) })
+        val effective=behavior(appProfile(packageName));val baseline=behavior(upstream.appProfile(packageName))
         return when { effective==null->null;baseline==null->"USER_CREATED";effective==baseline->"UPSTREAM";else->"USER_MODIFIED" }
     }
 

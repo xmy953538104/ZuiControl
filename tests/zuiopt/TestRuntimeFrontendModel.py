@@ -16,11 +16,12 @@ fun main(){
  check(changed.mode==1&&changed.rt==1);check(original.normalized()==text)
  check(changed.provenance("org.first.app",original)=="USER_MODIFIED");check(changed.provenance("org.second.app",original)=="UPSTREAM")
  val concrete=original.copy(profiles=original.profiles.mapValues{it.value.copy(runtime=it.value.runtime.copy(mode=1,rt=1))})
- check(concrete.provenance("org.first.app",original)=="UPSTREAM")
- val manualProfile=original.appProfile("org.first.app")!!.copy(runtime=original.effectiveRuntime(original.appProfile("org.first.app")!!))
+ check(concrete.provenance("org.first.app",original)=="USER_MODIFIED")
+ check(original.copy(mode=2,rt=0).provenance("org.first.app",original)=="UPSTREAM")
+ val manualProfile=original.appProfile("org.first.app")!!
  val manual=ZuioptRuleModel(true,mapOf("P" to manualProfile),listOf(ZuioptRuleModel.Mapping("exact","org.first.app","P",100000)))
- check(ZuioptRuleModel.parseNormalized(manual.normalized()).appProfile("org.first.app")!!.runtime.mode==1)
- check(ZuioptRuleModel.parseNormalized(manual.normalized()).appProfile("org.first.app")!!.runtime.rt==1)
+ check(ZuioptRuleModel.parseNormalized(manual.normalized()).appProfile("org.first.app")!!.runtime.mode==-1)
+ check(ZuioptRuleModel.parseNormalized(manual.normalized()).appProfile("org.first.app")!!.runtime.rt==-1)
  check(ZuioptRuleModel.parseNormalized(changed.normalized()).appProfile("org.first.app")!!.runtime.mode==2)
  for(bad in listOf(text.replace("schema 3","schema 2"),text.replace("runtime_defaults 1 1","runtime_defaults 3 1"),text.replace("preset double","explicit double"),text.replace("preset double","preset unknown"),text.replace("runtime Shared -1 -1 preset double","runtime Shared -1 -1 preset double\nruntime Shared 0 0 preset none"))){check(runCatching{ZuioptRuleModel.parseNormalized(bad)}.isFailure)}
  val legacy="schema 2\nenabled true\ndebug false\nprofile Shared 2,3,4,5,6\nthread Shared C2 contains \"Thread-\" selector=rank:1 100000 7\npackage exact org.first.app Shared 100000\n"

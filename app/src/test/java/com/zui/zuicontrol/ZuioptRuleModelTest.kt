@@ -39,7 +39,8 @@ class ZuioptRuleModelTest {
         assertEquals("USER_MODIFIED",next.provenance("org.first.app",m))
         assertEquals("UPSTREAM",next.provenance("org.second.app",m))
         val resolved=m.copy(profiles=m.profiles.mapValues{it.value.copy(runtime=it.value.runtime.copy(mode=1,rt=1))})
-        assertEquals("UPSTREAM",resolved.provenance("org.first.app",m))
+        assertEquals("USER_MODIFIED",resolved.provenance("org.first.app",m))
+        assertEquals("UPSTREAM",m.copy(mode=2,rt=0).provenance("org.first.app",m))
         assertThrows(IllegalArgumentException::class.java){ZuioptRuleModel.parse(m.normalized().replace("schema 3","schema 2"))}
         assertThrows(IllegalArgumentException::class.java){ZuioptRuleModel.parse(m.normalized().replace("preset double","explicit double"))}
         assertThrows(IllegalArgumentException::class.java){ZuioptRuleModel.parse(m.normalized().replace("runtime_defaults 1 1","runtime_defaults 1 2"))}

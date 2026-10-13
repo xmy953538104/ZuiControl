@@ -10,7 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests'))
 from BackendContract import reverse_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE, CLOSURE as CLOSURE_SCOPE, OPTION_B, USER_DOMAIN, FRONTEND_DELTA
-from BackendContract import PLAN3_OVERNIGHT
+from BackendContract import PLAN3_OVERNIGHT, reverse_library_inheritance_r2
 sys.path.insert(0, str(ROOT / 'scripts/build'))
 from ApplyZuiControlPayload import patch_oem_touch_timer
 
@@ -177,6 +177,7 @@ class OemTouchTimer(unittest.TestCase):
         identity_path = 'app/build.gradle.kts'
         old = identity['gradle_text'].encode()
         current = (ROOT/identity_path).read_bytes().replace(b'\r\n', b'\n')
+        current = reverse_library_inheritance_r2(identity_path,current.decode('utf8')).encode('utf8')
         # Reverse this Owner's exact test-build delta, preserving the V84 identity.
         probe=next((r for r in PLAN3_OVERNIGHT['files'] if r['path']==identity_path),None)
         if probe:
