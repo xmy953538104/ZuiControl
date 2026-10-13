@@ -135,7 +135,13 @@ int main(int argc,char** argv){
         int saved=open((outDir+"/critical-before.txt").c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC,0600);auto bytes=critical.str();
         require(saved>=0&&::write(saved,bytes.data(),bytes.size())==static_cast<ssize_t>(bytes.size())&&fsync(saved)==0,"durable fixed original targets");close(saved);
         bool wide=mode1||(mode2&&!mode2Fallback);
-        commit(grant,sha256(original));until([&]{return applied(a,wide?252:28,rt)&&applied(b,mode2Fallback?124:wide?252:128,rt&&!mode2Fallback);},2000,"target apply timeout");applyMs=now()-began;event("mode-targets-applied");
+        commit(grant,sha256(original));bool sampled=false;auto appliedStart=now();
+        until([&]{bool ok=applied(a,wide?252:28,rt&&(!mode2||mode2Fallback))&&applied(b,mode2Fallback?124:wide?252:128,rt&&!mode2Fallback);
+            if(!ok&&!sampled&&now()-appliedStart>=1500){sampled=true;snapshot(a,"apply-pending-C1");snapshot(b,"apply-pending-C2");
+                event("apply-pending-runtime",read("/data/vendor/zui_control/zuiopt/runtime-status.v1"));
+                event("apply-pending-capability",read("/data/vendor/zui_control/zuiopt/walt-capability.json"));
+                event("apply-pending-journal",read("/data/vendor/zui_control/zuiopt/owner_state.v1"));}
+            return ok;},2000,"target apply timeout");applyMs=now()-began;event("mode-targets-applied");
         if(mode2){auto receipt=read("/data/vendor/zui_control/zuiopt/runtime-status.v1");auto expected="\"package\":\"org.zuicontrol.adcblab\",\"requestedMode\":2,\"effectiveMode\":"+std::string(mode2Fallback?"0":"2");
             require(receipt.find(expected)!=receipt.npos&&receipt.find("\"pid\":"+std::to_string(pid)+",\"processStart\":"+std::to_string(a.processBirth))!=receipt.npos,"current target mode2 receipt");
             if(mode2Fallback)require(receipt.find("NO_C2_REPRESENTATIVE")!=receipt.npos&&receipt.find("\"waltRestoreType\":\"FALLBACK\"")!=receipt.npos,"no representative fallback must be explicit");
@@ -174,7 +180,7 @@ int main(int argc,char** argv){
                 int candidate=number(loaded[2]);if(candidate==old||!identity(candidate).start||std::to_string(identity(candidate).start)!=loaded[3])return false;
                 if(processName(candidate)!=candidateExecutable)return false;
                 if(command({"/system/bin/getprop","init.svc.zui_zuiopt"})!=(development?"stopped":"running"))return false;
-                newNative=candidate;return applied(a,wide?252:28,rt)&&applied(b,mode2Fallback?124:wide?252:128,rt&&!mode2Fallback);}catch(...){return false;}},8500,development?"manual supervisor current Native recovery/reapply timeout":"real init current Native recovery/reapply timeout");
+                newNative=candidate;return applied(a,wide?252:28,rt&&(!mode2||mode2Fallback))&&applied(b,mode2Fallback?124:wide?252:128,rt&&!mode2Fallback);}catch(...){return false;}},8500,development?"manual supervisor current Native recovery/reapply timeout":"real init current Native recovery/reapply timeout");
             event(unboundQuarantine?"manual-supervisor-quarantine-current-owner":development?"manual-supervisor-recovered-and-reapplied":"init-recovered-and-reapplied",std::to_string(newNative));snapshot(a,"restart-C1");snapshot(b,"restart-C2");
             if(unboundQuarantine){auto ownerBirth=identity(newNative).start;auto receipt=read("/data/vendor/zui_control/zuiopt/recovery-quarantine.json");
                 require(receipt.find("\"owner_pid\":"+std::to_string(newNative)+",")!=receipt.npos&&receipt.find("\"owner_birth\":"+std::to_string(ownerBirth)+",")!=receipt.npos&&receipt.find("HELD_NO_TRUSTED_ORIGINAL")!=receipt.npos,"current owner quarantine receipt");
