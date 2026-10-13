@@ -576,9 +576,8 @@ public:
                     }
                 }catch(const std::exception&){reason="WALT_PROBE_OPERATION_FAILED";waltCapable=false;}
                 // Ending this dedicated task bounds failure; success requires live withdrawal.
-                // Drop its record only after the thread has actually terminated.
+                // join waits for clear_child_tid; /proc removal occurs later in exit_notify.
                 stop=true;worker.join();
-                require(!identity(r.pid,tid).start,"probe thread remains live");
                 journal.entries.erase(tid);journal.leases.erase(r.pid);journal.commit();retireWaltGlobal();
             }else reason="WALT_PROBE_READY_UNAVAILABLE";
         }

@@ -25,9 +25,16 @@ def method(text,signature):
     raise AssertionError(signature)
 
 def fixture():
-    paths=['native/zuiopt/'+name for name in ('ZUIopt_daemon.h','ZUIopt_runtime.h','ZUIopt_store.h','ZUIopt.cpp','ZUIopt_rules.h')]+['tests/zuiopt/ZUIoptRuntimeTest.cpp']
+    paths=['native/zuiopt/'+name for name in ('ZUIopt_daemon.h','ZUIopt_runtime.h','ZUIopt_store.h','ZUIopt.cpp','ZUIopt_rules.h')]+['tests/zuiopt/ZUIoptRuntimeTest.cpp','native/zuiopt/ZUIopt_owner.h']
     sources={path:(ROOT/path).read_text('utf8') for path in paths}
     daemon=sources[paths[0]];runtime=sources[paths[1]];store=sources[paths[2]];cli=sources[paths[3]];rules=sources[paths[4]]
+    probe=method(sources[paths[6]],'    std::string probeWaltCapability()')
+    joined=probe.index('stop=true;worker.join();')
+    assert probe.index('boost_restored_while_alive')>joined
+    assert probe.index('restored==original&&journal.same(r)')<joined
+    assert probe.index('reduceRestored==(reduce==-1?255:reduce)&&journal.same(r)')<joined
+    assert probe.index('journal.entries.erase(tid)')>joined
+    assert 'identity(' not in probe[joined:probe.index('journal.entries.erase(tid)')]
     startup=daemon[daemon.index('phase=StartupStage::PLACEMENT;'):daemon.index('phase=StartupStage::RECONCILE;')]
     assert startup.index('placement=std::make_unique<Placement>')<startup.index('invalidateRuntime();')<startup.index('sceneObserver=std::make_unique<SceneObserver>')
     assert 'try{' not in startup[startup.index('invalidateRuntime();'):startup.index('sceneObserver=')]
