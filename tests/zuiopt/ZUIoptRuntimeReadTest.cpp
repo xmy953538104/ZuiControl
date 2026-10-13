@@ -14,6 +14,11 @@ int main(int argc,char**argv){
     PrivateDir directory(path);directory.put("loaded-generation.v2",owner+"\n");directory.put("runtime-status.v1",runtimeEnvelope(boot,owner,false,{}));
     auto fingerprint=[&]{std::map<std::string,std::string> files;for(const auto& entry:std::filesystem::recursive_directory_iterator(path))if(entry.is_regular_file())files[entry.path().string()]=sha256(read(entry.path().string()));return files;};
     auto before=fingerprint();int assertions=0;
+    {RuleStore first(path,factoryText,true),second(path,factoryText,true);
+        require(first.state()==second.state(),"concurrent shared readers differ");
+        int writer=open((path+"/manager.lock").c_str(),O_RDWR|O_CLOEXEC);require(writer>=0,"writer lock fixture");
+        require(flock(writer,LOCK_EX|LOCK_NB)!=0&&(errno==EWOULDBLOCK||errno==EAGAIN),"writer bypassed shared reader locks");
+        close(writer);assertions++;}
     auto good=[&]{RuleStore reader(path,factoryText,true);auto result=reader.readReply("runtime|"+generation);auto frame=fields(result,'\n');require(frame.size()==4&&frame[0]=="ZUIOPT_RUNTIME_SNAPSHOT_V1"&&frame[1].rfind("state=",0)==0&&frame[2].rfind("runtime=",0)==0&&frame[3].empty(),"exact runtime frame");require(unbase64(frame[2].substr(8))==directory.get("runtime-status.v1",RUNTIME_STATUS_LIMIT),"unchanged actual source bytes");assertions++;};
     auto reject=[&](const std::string& argument){bool denied=false;try{RuleStore reader(path,factoryText,true);reader.readReply(argument);}catch(const std::exception&){denied=true;}require(denied,"invalid runtime read was accepted");assertions++;};
     good();require(fingerprint()==before,"read-only getter changed fixture data");assertions++;

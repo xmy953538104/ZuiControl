@@ -43,6 +43,10 @@ fun main(){
   manager.reply=reply;reject{ZuioptRead.state()}
  }
  manager.reply="ok=1\nresultCategory=AUTHORITATIVE_READ_ONLY\nreadData=$s";check(ZuioptRead.state()==s)
+ val calls=manager.calls;manager.replies.addAll(listOf("ok=0\nerror=rules_read_busy","ok=0\nerror=rules_read_busy",manager.reply))
+ check(ZuioptRead.state()==s&&manager.calls-calls==3&&manager.replies.isEmpty())
+ manager.reply="ok=0\nerror=rules_read_busy";val busyCalls=manager.calls;reject{ZuioptRead.state()};check(manager.calls-busyCalls==4)
+ manager.reply="ok=1\nresultCategory=AUTHORITATIVE_READ_ONLY\nreadData=$s"
  manager.reply="ok=1\nresultCategory=AUTHORITATIVE_READ_ONLY\nreadData=$good";check(ZuioptRead.snapshot(s)?.upstream==up)
  manager.caps="ok=0\n";reject{ZuioptRead.state()};manager.caps="ok=1\nrulesReadTransport=unknown\n";reject{ZuioptRead.state()}
  manager.caps="ok=1\nrulesReadTransport=DAEMON_SNAPSHOT_V1\nrulesReadTransport=DAEMON_SNAPSHOT_V1\n";reject{ZuioptRead.state()}
@@ -61,9 +65,9 @@ fun main(){
 '''
         manager='''package android.zui
 class ZuiControlManager {
- var caps="ok=1\\n";var reply="";var calls=0
+ var caps="ok=1\\n";var reply="";var calls=0;val replies=mutableListOf<String>()
  fun getCapabilities()=caps
- fun utility(action:String,arg:String):String{check(action=="rulesRead");calls++;return reply}
+ fun utility(action:String,arg:String):String{check(action=="rulesRead");calls++;return if(replies.isEmpty())reply else replies.removeAt(0)}
  companion object {val instance=ZuiControlManager();fun get():ZuiControlManager?=instance}
 }'''
         cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1'
@@ -71,6 +75,9 @@ class ZuiControlManager {
         compile_run({'Read.kt':source,'Manager.kt':manager,'ReadFixture.kt':fixture},'com.zui.zuicontrol.ReadFixtureKt',[],json_jars)
 
     def test_source_contracts_run_before_native_payload_staging(self):
+        cli=(ROOT/'native/zuiopt/ZUIopt.cpp').read_text('utf8')
+        self.assertIn('const bool readOnly=readCommand=="state"||readCommand=="read"||readCommand=="runtime";',cli)
+        self.assertIn('ZUIopt::RuleStore store(ROOT,ZUIopt::read(FACTORY),readOnly);',cli)
         workflow=(ROOT/'.github/workflows/build.yml').read_text('utf8')
         native=workflow.index('- name: Test and build ZUIopt production integration')
         self.assertLess(workflow.index('- name: Check scripts'),native)
@@ -116,6 +123,8 @@ MEMBERS
   f.mAppPolicies.disk.admission="{\"terminal\":true}".getBytes();f.mZuioptScene.reply=newer;
   check(f.rulesRead("state").startsWith("ok=1\n")&&f.mObservedRuleGeneration.equals("g"+"b".repeat(24)));
   f.mZuioptScene.absent=true;check(f.rulesRead("state").equals("ok=0\nerror=rules_read_owner_absent"));
+  f.mZuioptScene.absent=false;f.mZuioptScene.reply="ZUIOPT_RULES_READ_BUSY_V1\n";
+  check(f.rulesRead("state").equals("ok=0\nerror=rules_read_busy")&&f.mObservedRuleGeneration.equals("g"+"b".repeat(24)));
   f.mZuioptScene.absent=false;f.mAppPolicies.current.users.put(0,2L);check(f.rulesRead("state").startsWith("ok=0\n"));
   check(rulesWriter("zo_commit")&&rulesWriter("sb_restore")&&!rulesWriter("zo_state")&&!rulesWriter("policy"));
   System.out.println("EXACT_SERVER_RULES_OBSERVATION_ADMITTED_WINDOW_ACK_EPOCH_USER_INVENTORY=PASS");

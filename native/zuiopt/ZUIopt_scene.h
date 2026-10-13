@@ -28,6 +28,13 @@ struct SceneObserver {
                 return AParcel_writeString(out,result.data(),static_cast<int32_t>(result.size()));
             }catch(const BinderError& e){return e.status;}
             catch(const std::bad_alloc&){return STATUS_NO_MEMORY;}
+            catch(const std::exception& e){
+                if(std::string(e.what())=="RULES_READ_BUSY"){
+                    constexpr char busy[]="ZUIOPT_RULES_READ_BUSY_V1\n";
+                    return AParcel_writeString(out,busy,sizeof(busy)-1);
+                }
+                return STATUS_FAILED_TRANSACTION;
+            }
             catch(...){return STATUS_FAILED_TRANSACTION;}
         }
         int64_t seq=-1;

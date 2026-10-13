@@ -31,7 +31,9 @@ int main(int argc,char** argv){
         }
         ZUIopt::require(argc==2||(argc==5&&std::string(argv[1])=="--control"),"invalid production command");
         if(argc==2&&std::string(argv[1])=="--crash"){puts(ZUIopt::crashGate(ROOT)?"1":"0");return 0;}
-        ZUIopt::RuleStore store(ROOT,ZUIopt::read(FACTORY));
+        const std::string readCommand=argc==5?argv[2]:"";
+        const bool readOnly=readCommand=="state"||readCommand=="read"||readCommand=="runtime";
+        ZUIopt::RuleStore store(ROOT,ZUIopt::read(FACTORY),readOnly);
         if(argc==2){
             auto command=std::string(argv[1]);
             if(command=="--boot"){store.initialize();puts(store.bootState().c_str());return 0;}

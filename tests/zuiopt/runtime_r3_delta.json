@@ -9,6 +9,9 @@
     "native/zuiopt/ZUIopt_store.h",
     "native/zuiopt/ZUIopt_sha256.h",
     "native/zuiopt/ZUIopt_lifecycle.h",
+    "native/zuiopt/ZUIopt.cpp",
+    "native/zuiopt/ZUIopt_scene.h",
+    "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
     "app/src/main/java/com/zui/zuicontrol/ZuioptRead.kt",
     "app/src/main/java/com/zui/zuicontrol/FrontendGateway.kt",
     "app/src/main/java/com/zui/zuicontrol/RuleUpstreamFetcher.kt",
@@ -224,13 +227,59 @@
       ]
     },
     {
-      "path": "app/src/main/java/com/zui/zuicontrol/ZuioptRead.kt",
-      "beforeSha256": "a77eda22cbd80f7aaa77ab5f2c3ee2491d8b761dc6bf7a9570bd1e448b8f9273",
-      "afterSha256": "d33075f9f496809358b4d1e96fcbed27a1c1f042ae3b11368a6bd76d4a103b6e",
-      "beforeEntry": "100644 blob 5b4e4cde40d8561d5183a45bc07e51ca39d6f480\tapp/src/main/java/com/zui/zuicontrol/ZuioptRead.kt",
-      "afterEntry": "100644 blob 28a197fb9ed04e2d24a98c768d70aee63f9f2d80\tapp/src/main/java/com/zui/zuicontrol/ZuioptRead.kt",
+      "path": "native/zuiopt/ZUIopt.cpp",
+      "beforeSha256": "522a4a47432aa0b65230b153e8dc41dc6ac9b8a3c832babecbfe9ae816e8d8a3",
+      "afterSha256": "2aa413c2a73a84a358559f2c017e7a9c660fb8c054f78c1bbbfddec2d2c33bce",
+      "beforeEntry": "100644 blob b9a0b30a358f65ac6ec692006a870be762cfd0c7\tnative/zuiopt/ZUIopt.cpp",
+      "afterEntry": "100644 blob c3ebc8c25857ec6422d920c8f3f61c2808bb2502\tnative/zuiopt/ZUIopt.cpp",
       "before": null,
       "hunks": [
+        {
+          "before": "        }\n        ZUIopt::require(argc==2||(argc==5&&std::string(argv[1])==\"--control\"),\"invalid production command\");\n        if(argc==2&&std::string(argv[1])==\"--crash\"){puts(ZUIopt::crashGate(ROOT)?\"1\":\"0\");return 0;}\n        ZUIopt::RuleStore store(ROOT,ZUIopt::read(FACTORY));\n        if(argc==2){\n            auto command=std::string(argv[1]);\n            if(command==\"--boot\"){store.initialize();puts(store.bootState().c_str());return 0;}\n",
+          "after": "        }\n        ZUIopt::require(argc==2||(argc==5&&std::string(argv[1])==\"--control\"),\"invalid production command\");\n        if(argc==2&&std::string(argv[1])==\"--crash\"){puts(ZUIopt::crashGate(ROOT)?\"1\":\"0\");return 0;}\n        const std::string readCommand=argc==5?argv[2]:\"\";\n        const bool readOnly=readCommand==\"state\"||readCommand==\"read\"||readCommand==\"runtime\";\n        ZUIopt::RuleStore store(ROOT,ZUIopt::read(FACTORY),readOnly);\n        if(argc==2){\n            auto command=std::string(argv[1]);\n            if(command==\"--boot\"){store.initialize();puts(store.bootState().c_str());return 0;}\n"
+        }
+      ]
+    },
+    {
+      "path": "native/zuiopt/ZUIopt_scene.h",
+      "beforeSha256": "95e7a53095bcbbedb033c10b9225d462329b74bade32f2a54ee271b46dbdac78",
+      "afterSha256": "fb2fb7282bc436dac2f1f0062f480018298066b25e192c330d71b5181e966b45",
+      "beforeEntry": "100644 blob 257c10415c5d0f0517fac52846dd941884265060\tnative/zuiopt/ZUIopt_scene.h",
+      "afterEntry": "100644 blob 1dc8921abef098bfd327c1707f5dd7e09a2a596f\tnative/zuiopt/ZUIopt_scene.h",
+      "before": null,
+      "hunks": [
+        {
+          "before": "                return AParcel_writeString(out,result.data(),static_cast<int32_t>(result.size()));\n            }catch(const BinderError& e){return e.status;}\n            catch(const std::bad_alloc&){return STATUS_NO_MEMORY;}\n            catch(...){return STATUS_FAILED_TRANSACTION;}\n        }\n        int64_t seq=-1;\n",
+          "after": "                return AParcel_writeString(out,result.data(),static_cast<int32_t>(result.size()));\n            }catch(const BinderError& e){return e.status;}\n            catch(const std::bad_alloc&){return STATUS_NO_MEMORY;}\n            catch(const std::exception& e){\n                if(std::string(e.what())==\"RULES_READ_BUSY\"){\n                    constexpr char busy[]=\"ZUIOPT_RULES_READ_BUSY_V1\\n\";\n                    return AParcel_writeString(out,busy,sizeof(busy)-1);\n                }\n                return STATUS_FAILED_TRANSACTION;\n            }\n            catch(...){return STATUS_FAILED_TRANSACTION;}\n        }\n        int64_t seq=-1;\n"
+        }
+      ]
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "beforeSha256": "27cdc8e162d158c5747fbf1bfa69b83ed508d864e3838966613767b6f5c7a169",
+      "afterSha256": "d38bbc96f87b312fa8eed34effb240295d61f8970ea63e0fce08817f8a968906",
+      "beforeEntry": "100644 blob cc23e0c32b10d89933071d4c5eaff526ea8eec00\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "afterEntry": "100644 blob 4fb58ba2e0b448e3b546e89d795e21c352c603de\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "before": null,
+      "hunks": [
+        {
+          "before": "                    &&(!current.users.containsKey(user)||java.util.Objects.equals(current.users.get(user),inventory.get(user))),\"user_inventory_not_admitted\");\n            final long epoch;synchronized(this){epoch=mRulesObservationEpoch;}\n            String result=mZuioptScene.readRules(argument);\n            String state=result;\n            if(!\"state\".equals(argument)){\n                String[] parts=result.split(\"\\n\",-1);\n",
+          "after": "                    &&(!current.users.containsKey(user)||java.util.Objects.equals(current.users.get(user),inventory.get(user))),\"user_inventory_not_admitted\");\n            final long epoch;synchronized(this){epoch=mRulesObservationEpoch;}\n            String result=mZuioptScene.readRules(argument);\n            if(\"ZUIOPT_RULES_READ_BUSY_V1\\n\".equals(result))return \"ok=0\\nerror=rules_read_busy\";\n            String state=result;\n            if(!\"state\".equals(argument)){\n                String[] parts=result.split(\"\\n\",-1);\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/ZuioptRead.kt",
+      "beforeSha256": "a77eda22cbd80f7aaa77ab5f2c3ee2491d8b761dc6bf7a9570bd1e448b8f9273",
+      "afterSha256": "bfa0fb175df7d502461f5d42f509cb60a8f748a88fc5d4a845429c4b1093a20d",
+      "beforeEntry": "100644 blob 5b4e4cde40d8561d5183a45bc07e51ca39d6f480\tapp/src/main/java/com/zui/zuicontrol/ZuioptRead.kt",
+      "afterEntry": "100644 blob 71d39badd24b52700d42de1c9a114068b700e685\tapp/src/main/java/com/zui/zuicontrol/ZuioptRead.kt",
+      "before": null,
+      "hunks": [
+        {
+          "before": "            if(support.isEmpty())return null\n            check(support==listOf(\"rulesRuntimeReadTransport=DAEMON_RUNTIME_V1\")){\"运行态读取能力不匹配\"}\n        }\n        val result = manager.utility(\"rulesRead\", argument)\n        if (result == \"ok=0\\nerror=rules_read_owner_absent\") return null\n        check(result.length <= PREFIX.length + 200000 && result.startsWith(PREFIX)) {\n            \"原生规则读取未完成：${result.take(256)}\"\n",
+          "after": "            if(support.isEmpty())return null\n            check(support==listOf(\"rulesRuntimeReadTransport=DAEMON_RUNTIME_V1\")){\"运行态读取能力不匹配\"}\n        }\n        var result = manager.utility(\"rulesRead\", argument)\n        repeat(3){if(result==\"ok=0\\nerror=rules_read_busy\"){\n            Thread.sleep(20)\n            result=manager.utility(\"rulesRead\",argument)\n        }}\n        if (result == \"ok=0\\nerror=rules_read_owner_absent\") return null\n        check(result.length <= PREFIX.length + 200000 && result.startsWith(PREFIX)) {\n            \"原生规则读取未完成：${result.take(256)}\"\n"
+        },
         {
           "before": "        require(identity.size==5 && identity[0]==ZuioptRules.field(state,\"generation\") && identity[1].matches(Regex(\"[0-9a-f-]{36}\")) && identity[2].toInt()>0 && identity[3].toLong()>0 && identity[4]==ZuioptRules.field(state,\"effective_sha256\"))\n        val text=decoded(2,\"runtime\",32768);require(text.endsWith('\\n') && '\\r' !in text && '\\u0000' !in text)\n        val json=org.json.JSONObject(text)\n        require(json.keys().asSequence().toSet()==setOf(\"schema\",\"boot\",\"owner\",\"status\",\"totalProcesses\",\"processes\",\"truncated\") && json.getInt(\"schema\")==2 && json.getString(\"owner\")==owner && json.getString(\"boot\")==identity[1])\n        require(json.getString(\"status\") in setOf(\"PENDING_OWNER_ACK\",\"NO_RUNTIME_OBSERVATIONS\",\"ACKNOWLEDGED_RUNTIME\"))\n        val processes=json.getJSONArray(\"processes\");require(processes.length()<=json.getInt(\"totalProcesses\") && json.getInt(\"totalProcesses\")>=0 && (json.getBoolean(\"truncated\") || processes.length()==json.getInt(\"totalProcesses\")))\n        val pids=mutableSetOf<Int>()\n        for(i in 0 until processes.length()){\n            val row=processes.getJSONObject(i)\n            require(row.keys().asSequence().toSet()==setOf(\"schema\",\"boot\",\"pid\",\"processStart\",\"uid\",\"package\",\"requestedMode\",\"effectiveMode\",\"modeReason\",\"requestedRt\",\"effectiveRt\",\"rtReason\",\"C1\",\"C1Start\",\"C2\",\"C2Start\"))\n            require(row.getInt(\"schema\")==1 && row.getString(\"boot\")==identity[1] && row.getInt(\"pid\")>0 && pids.add(row.getInt(\"pid\")) && row.getLong(\"processStart\")>0 && row.getInt(\"uid\")>=10000)\n            require(row.getString(\"package\").matches(Regex(\"[A-Za-z][A-Za-z0-9_]*(\\\\.[A-Za-z0-9_]*)+\")))\n            for(key in listOf(\"requestedMode\",\"effectiveMode\"))require(row.getInt(key) in 0..2)\n",
           "after": "        require(identity.size==5 && identity[0]==ZuioptRules.field(state,\"generation\") && identity[1].matches(Regex(\"[0-9a-f-]{36}\")) && identity[2].toInt()>0 && identity[3].toLong()>0 && identity[4]==ZuioptRules.field(state,\"effective_sha256\"))\n        val text=decoded(2,\"runtime\",32768);require(text.endsWith('\\n') && '\\r' !in text && '\\u0000' !in text)\n        val json=org.json.JSONObject(text)\n        val fields=setOf(\"schema\",\"boot\",\"owner\",\"status\",\"totalProcesses\",\"processes\",\"truncated\")\n        require(json.keys().asSequence().toSet() in setOf(fields,fields+\"runtimeCapabilities\") && json.getInt(\"schema\")==2 && json.getString(\"owner\")==owner && json.getString(\"boot\")==identity[1])\n        if(json.has(\"runtimeCapabilities\")){\n            val capabilities=json.getJSONArray(\"runtimeCapabilities\");require(capabilities.length() in 1..16)\n            val names=(0 until capabilities.length()).map{capabilities.getString(it)}\n            require(names.toSet().size==names.size && names.all{it.matches(Regex(\"[a-z0-9-]{1,40}\"))})\n        }\n        require(json.getString(\"status\") in setOf(\"PENDING_OWNER_ACK\",\"NO_RUNTIME_OBSERVATIONS\",\"ACKNOWLEDGED_RUNTIME\"))\n        val processes=json.getJSONArray(\"processes\");require(processes.length()<=json.getInt(\"totalProcesses\") && json.getInt(\"totalProcesses\")>=0 && (json.getBoolean(\"truncated\") || processes.length()==json.getInt(\"totalProcesses\")))\n        val pids=mutableSetOf<Int>()\n        for(i in 0 until processes.length()){\n            val row=processes.getJSONObject(i)\n            val fields=setOf(\"schema\",\"boot\",\"pid\",\"processStart\",\"uid\",\"package\",\"requestedMode\",\"effectiveMode\",\"modeReason\",\"requestedRt\",\"effectiveRt\",\"rtReason\",\"C1\",\"C1Start\",\"C2\",\"C2Start\")\n            require(row.keys().asSequence().toSet() in setOf(fields,fields+\"waltRestoreType\"))\n            if(row.has(\"waltRestoreType\"))require(row.getString(\"waltRestoreType\") in setOf(\"EXACT_RESTORE\",\"SEMANTIC_RESTORE\",\"FALLBACK\"))\n            require(row.getInt(\"schema\")==1 && row.getString(\"boot\")==identity[1] && row.getInt(\"pid\")>0 && pids.add(row.getInt(\"pid\")) && row.getLong(\"processStart\")>0 && row.getInt(\"uid\")>=10000)\n            require(row.getString(\"package\").matches(Regex(\"[A-Za-z][A-Za-z0-9_]*(\\\\.[A-Za-z0-9_]*)+\")))\n            for(key in listOf(\"requestedMode\",\"effectiveMode\"))require(row.getInt(key) in 0..2)\n"
@@ -593,6 +642,64 @@
         {
           "before": "        binder=read('native/zuiopt/ZUIopt_binder.h')\n        self.assertLess(binder.index('*phase=StartupStage::REGISTER_PROCESS_OBSERVER'),binder.index('registered=true;registration(120)'))\n\n    def test_canonical_docs(self):\n        verify_repository_docs(ROOT)\n\n",
           "after": "        binder=read('native/zuiopt/ZUIopt_binder.h')\n        self.assertLess(binder.index('*phase=StartupStage::REGISTER_PROCESS_OBSERVER'),binder.index('registered=true;registration(120)'))\n\n    def test_ci_collects_all_script_failures_without_waiving_gate(self):\n        workflow=read('.github/workflows/build.yml')\n        for step,var in (('Test app','app_failed'),('Check scripts','scripts_failed')):\n            section=workflow.split('      - name: '+step+'\\n',1)[1].split('      - name:',1)[0]\n            self.assertIn(var+'=0',section)\n            self.assertIn('test \"$'+var+'\" -eq 0',section)\n            self.assertIn(' || '+var+'=1',section)\n    def test_canonical_docs(self):\n        verify_repository_docs(ROOT)\n\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/zuiopt/ZUIoptSceneTest.cpp",
+      "beforeSha256": "c09a952e48a1d1bac62c213d24b95f2f6af9fc67f1d044ba811200146947d770",
+      "afterSha256": "3205558f6f356e23c32bbc16e985a889cee2b485b94138a5406abac5ae998be6",
+      "beforeEntry": "100644 blob 7f959400e5fd908c45e088e7bab56aff11be72bf\ttests/zuiopt/ZUIoptSceneTest.cpp",
+      "afterEntry": "100644 blob 29edc658aa0320929d51b95ec788ed3ae7dbc365\ttests/zuiopt/ZUIoptSceneTest.cpp",
+      "before": null,
+      "hunks": [
+        {
+          "before": "    Observer::Holder holder=std::make_shared<CallbackState>(std::function<void(int64_t)>([&](int64_t){scenes++;}),\n        [&](const std::string& argument){reads++;return \"response=\"+argument;});\n    AIBinder binder{&holder};\n    auto send=[&](const std::string& argument,bool trailing=false){\n        AParcel in{{string(argument)},0,true},out;\n        if(trailing)in.atoms.push_back(integer(0));\n        auto status=SceneObserver::transact(&binder,2,&in,&out);\n        if(status==STATUS_OK)require(out.atoms.size()==1&&out.atoms[0].kind=='s'&&out.atoms[0].text==\"response=\"+argument,\"plain String reply\");\n        return status;\n    };\n    require(send(\"state\")==STATUS_OK&&send(\"snapshot|g\"+std::string(24,'a'))==STATUS_OK&&reads==2,\"finite read callback\");\n",
+          "after": "    Observer::Holder holder=std::make_shared<CallbackState>(std::function<void(int64_t)>([&](int64_t){scenes++;}),\n        [&](const std::string& argument){reads++;return \"response=\"+argument;});\n    AIBinder binder{&holder};\n    bool expectedBusy=false;\n    auto send=[&](const std::string& argument,bool trailing=false){\n        AParcel in{{string(argument)},0,true},out;\n        if(trailing)in.atoms.push_back(integer(0));\n        auto status=SceneObserver::transact(&binder,2,&in,&out);\n        if(status==STATUS_OK)require(out.atoms.size()==1&&out.atoms[0].kind=='s'&&out.atoms[0].text==(expectedBusy?\"ZUIOPT_RULES_READ_BUSY_V1\\n\":\"response=\"+argument),\"plain String reply\");\n        return status;\n    };\n    require(send(\"state\")==STATUS_OK&&send(\"snapshot|g\"+std::string(24,'a'))==STATUS_OK&&reads==2,\"finite read callback\");\n"
+        },
+        {
+          "before": "    AParcel input{{integer(1)},0,true},output;\n    require(SceneObserver::transact(&binder,2,&input,&output)!=STATUS_OK,\"wrong read wire type\");\n    holder->rulesHandler=[](const std::string&)->std::string{throw std::runtime_error(\"RULES_READ_BUSY\");};\n    require(send(\"state\")==STATUS_FAILED_TRANSACTION,\"writer contention fails closed\");\n    std::promise<void> enter,leave;auto release=leave.get_future();\n    holder->rulesHandler=[&](const std::string& s){enter.set_value();release.wait();return \"response=\"+s;};\n    std::thread read([&]{require(send(\"state\")==STATUS_OK,\"in-flight read completes\");});enter.get_future().wait();\n",
+          "after": "    AParcel input{{integer(1)},0,true},output;\n    require(SceneObserver::transact(&binder,2,&input,&output)!=STATUS_OK,\"wrong read wire type\");\n    holder->rulesHandler=[](const std::string&)->std::string{throw std::runtime_error(\"RULES_READ_BUSY\");};\n    expectedBusy=true;\n    require(send(\"state\")==STATUS_OK,\"writer contention has typed busy reply, not transport death\");\n    expectedBusy=false;\n    holder->rulesHandler=[](const std::string&)->std::string{throw std::runtime_error(\"untrusted failure detail\");};\n    require(send(\"state\")==STATUS_FAILED_TRANSACTION,\"unclassified failure must not become retryable busy\");\n    std::promise<void> enter,leave;auto release=leave.get_future();\n    holder->rulesHandler=[&](const std::string& s){enter.set_value();release.wait();return \"response=\"+s;};\n    std::thread read([&]{require(send(\"state\")==STATUS_OK,\"in-flight read completes\");});enter.get_future().wait();\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/zuiopt/ZUIoptRuntimeReadTest.cpp",
+      "beforeSha256": "05839c1082bf282dc23f98f0ffee1a08a11dee25f824398af8f771122942f738",
+      "afterSha256": "ef32eb6acf4650ce5b855a8cee4624693dcda6370baf8bb029776fd895944ff1",
+      "beforeEntry": "100644 blob 5ef4599af952a70b73b6d5d75f6fdaaa6e1f813e\ttests/zuiopt/ZUIoptRuntimeReadTest.cpp",
+      "afterEntry": "100644 blob a0f22a26d13a52e34160f019419fa421b5fd7673\ttests/zuiopt/ZUIoptRuntimeReadTest.cpp",
+      "before": null,
+      "hunks": [
+        {
+          "before": "    PrivateDir directory(path);directory.put(\"loaded-generation.v2\",owner+\"\\n\");directory.put(\"runtime-status.v1\",runtimeEnvelope(boot,owner,false,{}));\n    auto fingerprint=[&]{std::map<std::string,std::string> files;for(const auto& entry:std::filesystem::recursive_directory_iterator(path))if(entry.is_regular_file())files[entry.path().string()]=sha256(read(entry.path().string()));return files;};\n    auto before=fingerprint();int assertions=0;\n    auto good=[&]{RuleStore reader(path,factoryText,true);auto result=reader.readReply(\"runtime|\"+generation);auto frame=fields(result,'\\n');require(frame.size()==4&&frame[0]==\"ZUIOPT_RUNTIME_SNAPSHOT_V1\"&&frame[1].rfind(\"state=\",0)==0&&frame[2].rfind(\"runtime=\",0)==0&&frame[3].empty(),\"exact runtime frame\");require(unbase64(frame[2].substr(8))==directory.get(\"runtime-status.v1\",RUNTIME_STATUS_LIMIT),\"unchanged actual source bytes\");assertions++;};\n    auto reject=[&](const std::string& argument){bool denied=false;try{RuleStore reader(path,factoryText,true);reader.readReply(argument);}catch(const std::exception&){denied=true;}require(denied,\"invalid runtime read was accepted\");assertions++;};\n    good();require(fingerprint()==before,\"read-only getter changed fixture data\");assertions++;\n",
+          "after": "    PrivateDir directory(path);directory.put(\"loaded-generation.v2\",owner+\"\\n\");directory.put(\"runtime-status.v1\",runtimeEnvelope(boot,owner,false,{}));\n    auto fingerprint=[&]{std::map<std::string,std::string> files;for(const auto& entry:std::filesystem::recursive_directory_iterator(path))if(entry.is_regular_file())files[entry.path().string()]=sha256(read(entry.path().string()));return files;};\n    auto before=fingerprint();int assertions=0;\n    {RuleStore first(path,factoryText,true),second(path,factoryText,true);\n        require(first.state()==second.state(),\"concurrent shared readers differ\");\n        int writer=open((path+\"/manager.lock\").c_str(),O_RDWR|O_CLOEXEC);require(writer>=0,\"writer lock fixture\");\n        require(flock(writer,LOCK_EX|LOCK_NB)!=0&&(errno==EWOULDBLOCK||errno==EAGAIN),\"writer bypassed shared reader locks\");\n        close(writer);assertions++;}\n    auto good=[&]{RuleStore reader(path,factoryText,true);auto result=reader.readReply(\"runtime|\"+generation);auto frame=fields(result,'\\n');require(frame.size()==4&&frame[0]==\"ZUIOPT_RUNTIME_SNAPSHOT_V1\"&&frame[1].rfind(\"state=\",0)==0&&frame[2].rfind(\"runtime=\",0)==0&&frame[3].empty(),\"exact runtime frame\");require(unbase64(frame[2].substr(8))==directory.get(\"runtime-status.v1\",RUNTIME_STATUS_LIMIT),\"unchanged actual source bytes\");assertions++;};\n    auto reject=[&](const std::string& argument){bool denied=false;try{RuleStore reader(path,factoryText,true);reader.readReply(argument);}catch(const std::exception&){denied=true;}require(denied,\"invalid runtime read was accepted\");assertions++;};\n    good();require(fingerprint()==before,\"read-only getter changed fixture data\");assertions++;\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/zuiopt/TestReadTransport.py",
+      "beforeSha256": "e382e1778313c642a67f368d38d9daa4df7c9a9bc63eee10ca2dbf7cbd411505",
+      "afterSha256": "93f3be6712dac16d590274dc9afe3998d90c984bb45a41ee111357770e85c955",
+      "beforeEntry": "100644 blob f342c83e520e1a1e561c93a8eed6856f59c0790d\ttests/zuiopt/TestReadTransport.py",
+      "afterEntry": "100644 blob fa7e7e8784fc309a2b2208bddb9fc45aca57f488\ttests/zuiopt/TestReadTransport.py",
+      "before": null,
+      "hunks": [
+        {
+          "before": "  manager.reply=reply;reject{ZuioptRead.state()}\n }\n manager.reply=\"ok=1\\nresultCategory=AUTHORITATIVE_READ_ONLY\\nreadData=$s\";check(ZuioptRead.state()==s)\n manager.reply=\"ok=1\\nresultCategory=AUTHORITATIVE_READ_ONLY\\nreadData=$good\";check(ZuioptRead.snapshot(s)?.upstream==up)\n manager.caps=\"ok=0\\n\";reject{ZuioptRead.state()};manager.caps=\"ok=1\\nrulesReadTransport=unknown\\n\";reject{ZuioptRead.state()}\n manager.caps=\"ok=1\\nrulesReadTransport=DAEMON_SNAPSHOT_V1\\nrulesReadTransport=DAEMON_SNAPSHOT_V1\\n\";reject{ZuioptRead.state()}\n",
+          "after": "  manager.reply=reply;reject{ZuioptRead.state()}\n }\n manager.reply=\"ok=1\\nresultCategory=AUTHORITATIVE_READ_ONLY\\nreadData=$s\";check(ZuioptRead.state()==s)\n val calls=manager.calls;manager.replies.addAll(listOf(\"ok=0\\nerror=rules_read_busy\",\"ok=0\\nerror=rules_read_busy\",manager.reply))\n check(ZuioptRead.state()==s&&manager.calls-calls==3&&manager.replies.isEmpty())\n manager.reply=\"ok=0\\nerror=rules_read_busy\";val busyCalls=manager.calls;reject{ZuioptRead.state()};check(manager.calls-busyCalls==4)\n manager.reply=\"ok=1\\nresultCategory=AUTHORITATIVE_READ_ONLY\\nreadData=$s\"\n manager.reply=\"ok=1\\nresultCategory=AUTHORITATIVE_READ_ONLY\\nreadData=$good\";check(ZuioptRead.snapshot(s)?.upstream==up)\n manager.caps=\"ok=0\\n\";reject{ZuioptRead.state()};manager.caps=\"ok=1\\nrulesReadTransport=unknown\\n\";reject{ZuioptRead.state()}\n manager.caps=\"ok=1\\nrulesReadTransport=DAEMON_SNAPSHOT_V1\\nrulesReadTransport=DAEMON_SNAPSHOT_V1\\n\";reject{ZuioptRead.state()}\n"
+        },
+        {
+          "before": "'''\n        manager='''package android.zui\nclass ZuiControlManager {\n var caps=\"ok=1\\\\n\";var reply=\"\";var calls=0\n fun getCapabilities()=caps\n fun utility(action:String,arg:String):String{check(action==\"rulesRead\");calls++;return reply}\n companion object {val instance=ZuiControlManager();fun get():ZuiControlManager?=instance}\n}'''\n        cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1'\n",
+          "after": "'''\n        manager='''package android.zui\nclass ZuiControlManager {\n var caps=\"ok=1\\\\n\";var reply=\"\";var calls=0;val replies=mutableListOf<String>()\n fun getCapabilities()=caps\n fun utility(action:String,arg:String):String{check(action==\"rulesRead\");calls++;return if(replies.isEmpty())reply else replies.removeAt(0)}\n companion object {val instance=ZuiControlManager();fun get():ZuiControlManager?=instance}\n}'''\n        cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1'\n"
+        },
+        {
+          "before": "        compile_run({'Read.kt':source,'Manager.kt':manager,'ReadFixture.kt':fixture},'com.zui.zuicontrol.ReadFixtureKt',[],json_jars)\n\n    def test_source_contracts_run_before_native_payload_staging(self):\n        workflow=(ROOT/'.github/workflows/build.yml').read_text('utf8')\n        native=workflow.index('- name: Test and build ZUIopt production integration')\n        self.assertLess(workflow.index('- name: Check scripts'),native)\n",
+          "after": "        compile_run({'Read.kt':source,'Manager.kt':manager,'ReadFixture.kt':fixture},'com.zui.zuicontrol.ReadFixtureKt',[],json_jars)\n\n    def test_source_contracts_run_before_native_payload_staging(self):\n        cli=(ROOT/'native/zuiopt/ZUIopt.cpp').read_text('utf8')\n        self.assertIn('const bool readOnly=readCommand==\"state\"||readCommand==\"read\"||readCommand==\"runtime\";',cli)\n        self.assertIn('ZUIopt::RuleStore store(ROOT,ZUIopt::read(FACTORY),readOnly);',cli)\n        workflow=(ROOT/'.github/workflows/build.yml').read_text('utf8')\n        native=workflow.index('- name: Test and build ZUIopt production integration')\n        self.assertLess(workflow.index('- name: Check scripts'),native)\n"
+        },
+        {
+          "before": "  f.mAppPolicies.disk.admission=\"{\\\"terminal\\\":true}\".getBytes();f.mZuioptScene.reply=newer;\n  check(f.rulesRead(\"state\").startsWith(\"ok=1\\n\")&&f.mObservedRuleGeneration.equals(\"g\"+\"b\".repeat(24)));\n  f.mZuioptScene.absent=true;check(f.rulesRead(\"state\").equals(\"ok=0\\nerror=rules_read_owner_absent\"));\n  f.mZuioptScene.absent=false;f.mAppPolicies.current.users.put(0,2L);check(f.rulesRead(\"state\").startsWith(\"ok=0\\n\"));\n  check(rulesWriter(\"zo_commit\")&&rulesWriter(\"sb_restore\")&&!rulesWriter(\"zo_state\")&&!rulesWriter(\"policy\"));\n  System.out.println(\"EXACT_SERVER_RULES_OBSERVATION_ADMITTED_WINDOW_ACK_EPOCH_USER_INVENTORY=PASS\");\n",
+          "after": "  f.mAppPolicies.disk.admission=\"{\\\"terminal\\\":true}\".getBytes();f.mZuioptScene.reply=newer;\n  check(f.rulesRead(\"state\").startsWith(\"ok=1\\n\")&&f.mObservedRuleGeneration.equals(\"g\"+\"b\".repeat(24)));\n  f.mZuioptScene.absent=true;check(f.rulesRead(\"state\").equals(\"ok=0\\nerror=rules_read_owner_absent\"));\n  f.mZuioptScene.absent=false;f.mZuioptScene.reply=\"ZUIOPT_RULES_READ_BUSY_V1\\n\";\n  check(f.rulesRead(\"state\").equals(\"ok=0\\nerror=rules_read_busy\")&&f.mObservedRuleGeneration.equals(\"g\"+\"b\".repeat(24)));\n  f.mZuioptScene.absent=false;f.mAppPolicies.current.users.put(0,2L);check(f.rulesRead(\"state\").startsWith(\"ok=0\\n\"));\n  check(rulesWriter(\"zo_commit\")&&rulesWriter(\"sb_restore\")&&!rulesWriter(\"zo_state\")&&!rulesWriter(\"policy\"));\n  System.out.println(\"EXACT_SERVER_RULES_OBSERVATION_ADMITTED_WINDOW_ACK_EPOCH_USER_INVENTORY=PASS\");\n"
         }
       ]
     },

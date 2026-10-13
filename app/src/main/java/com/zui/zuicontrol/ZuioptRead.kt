@@ -25,7 +25,11 @@ internal object ZuioptRead {
             if(support.isEmpty())return null
             check(support==listOf("rulesRuntimeReadTransport=DAEMON_RUNTIME_V1")){"运行态读取能力不匹配"}
         }
-        val result = manager.utility("rulesRead", argument)
+        var result = manager.utility("rulesRead", argument)
+        repeat(3){if(result=="ok=0\nerror=rules_read_busy"){
+            Thread.sleep(20)
+            result=manager.utility("rulesRead",argument)
+        }}
         if (result == "ok=0\nerror=rules_read_owner_absent") return null
         check(result.length <= PREFIX.length + 200000 && result.startsWith(PREFIX)) {
             "原生规则读取未完成：${result.take(256)}"

@@ -1479,6 +1479,7 @@ public final class ZuiControlService extends Binder {
                     &&(!current.users.containsKey(user)||java.util.Objects.equals(current.users.get(user),inventory.get(user))),"user_inventory_not_admitted");
             final long epoch;synchronized(this){epoch=mRulesObservationEpoch;}
             String result=mZuioptScene.readRules(argument);
+            if("ZUIOPT_RULES_READ_BUSY_V1\n".equals(result))return "ok=0\nerror=rules_read_busy";
             String state=result;
             if(!"state".equals(argument)){
                 String[] parts=result.split("\n",-1);

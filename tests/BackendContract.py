@@ -29,6 +29,7 @@ RUNTIME_R3=json.loads((ROOT/'tests/zuiopt/runtime_r3_delta.json').read_text(enco
 RUNTIME_R3_ALLOWED={'native/zuiopt/'+name for name in ('ZUIopt_daemon.h','ZUIopt_owner.h','ZUIopt_rules.h','ZUIopt_runtime.h','ZUIopt_store.h','ZUIopt_sha256.h','ZUIopt_lifecycle.h')}
 RUNTIME_R3_ALLOWED|={'app/src/main/java/com/zui/zuicontrol/'+name for name in ('ZuioptRead.kt','FrontendGateway.kt','RuleUpstreamFetcher.kt','MainActivity.kt')}
 RUNTIME_R3_ALLOWED|={'scripts/rules/'+name for name in ('PublishRules.py','PublishRulesGit.py','ZUIOPT_rule_pack.py')}
+RUNTIME_R3_ALLOWED|={'native/zuiopt/ZUIopt.cpp','native/zuiopt/ZUIopt_scene.h','framework_patch/src/services/com/zui/server/control/ZuiControlService.java'}
 assert RUNTIME_R3['baseHead']=='4ccc7620cab5927cbcc602fd8f10a38491df7bb4' and RUNTIME_R3['phase']=='R3_CI_QUARANTINE_WALT_AND_SCHEMA3_CLOSURE'
 assert set(RUNTIME_R3['allowedPaths'])==RUNTIME_R3_ALLOWED
 

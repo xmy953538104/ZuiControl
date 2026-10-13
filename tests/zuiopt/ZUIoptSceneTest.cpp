@@ -174,11 +174,12 @@ void readCallbackLifecycle(){
     Observer::Holder holder=std::make_shared<CallbackState>(std::function<void(int64_t)>([&](int64_t){scenes++;}),
         [&](const std::string& argument){reads++;return "response="+argument;});
     AIBinder binder{&holder};
+    bool expectedBusy=false;
     auto send=[&](const std::string& argument,bool trailing=false){
         AParcel in{{string(argument)},0,true},out;
         if(trailing)in.atoms.push_back(integer(0));
         auto status=SceneObserver::transact(&binder,2,&in,&out);
-        if(status==STATUS_OK)require(out.atoms.size()==1&&out.atoms[0].kind=='s'&&out.atoms[0].text=="response="+argument,"plain String reply");
+        if(status==STATUS_OK)require(out.atoms.size()==1&&out.atoms[0].kind=='s'&&out.atoms[0].text==(expectedBusy?"ZUIOPT_RULES_READ_BUSY_V1\n":"response="+argument),"plain String reply");
         return status;
     };
     require(send("state")==STATUS_OK&&send("snapshot|g"+std::string(24,'a'))==STATUS_OK&&reads==2,"finite read callback");
@@ -189,7 +190,11 @@ void readCallbackLifecycle(){
     AParcel input{{integer(1)},0,true},output;
     require(SceneObserver::transact(&binder,2,&input,&output)!=STATUS_OK,"wrong read wire type");
     holder->rulesHandler=[](const std::string&)->std::string{throw std::runtime_error("RULES_READ_BUSY");};
-    require(send("state")==STATUS_FAILED_TRANSACTION,"writer contention fails closed");
+    expectedBusy=true;
+    require(send("state")==STATUS_OK,"writer contention has typed busy reply, not transport death");
+    expectedBusy=false;
+    holder->rulesHandler=[](const std::string&)->std::string{throw std::runtime_error("untrusted failure detail");};
+    require(send("state")==STATUS_FAILED_TRANSACTION,"unclassified failure must not become retryable busy");
     std::promise<void> enter,leave;auto release=leave.get_future();
     holder->rulesHandler=[&](const std::string& s){enter.set_value();release.wait();return "response="+s;};
     std::thread read([&]{require(send("state")==STATUS_OK,"in-flight read completes");});enter.get_future().wait();
