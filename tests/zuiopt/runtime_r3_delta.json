@@ -8,6 +8,7 @@
     "native/zuiopt/ZUIopt_runtime.h",
     "native/zuiopt/ZUIopt_store.h",
     "native/zuiopt/ZUIopt_sha256.h",
+    "native/zuiopt/ZUIopt_lifecycle.h",
     "app/src/main/java/com/zui/zuicontrol/ZuioptRead.kt",
     "app/src/main/java/com/zui/zuicontrol/FrontendGateway.kt",
     "app/src/main/java/com/zui/zuicontrol/RuleUpstreamFetcher.kt",
@@ -199,6 +200,20 @@
       "afterEntry": "100644 blob 7f8f3b49f9fe2275137866ff02eadc17a9d72c6a\tnative/zuiopt/ZUIopt_sha256.h",
       "before": null,
       "hunks": []
+    },
+    {
+      "path": "native/zuiopt/ZUIopt_lifecycle.h",
+      "beforeSha256": "eb5b0e4328a92f750c949ef396e61a55e7aa53bb64f5681e46dd044cd5424997",
+      "afterSha256": "75b6658020c1d657d1fc18a08b8a746f32bcef18d1b68aa1170dd64654b1bc69",
+      "beforeEntry": "100644 blob c941b906e9b8c5330b59735848fc8d7f1252e8eb\tnative/zuiopt/ZUIopt_lifecycle.h",
+      "afterEntry": "100644 blob f022cf9a169861027a7aa4e960363f883b909e96\tnative/zuiopt/ZUIopt_lifecycle.h",
+      "before": null,
+      "hunks": [
+        {
+          "before": "        \"normalization receipt open\",\"normalization receipt sync\",\"normalization receipt replace\",\n        \"recovery quarantine bound\",\"recovery receipt name\",\n        \"capability receipt open\",\"capability receipt bound\",\"capability receipt sync\",\"capability receipt replace\",\n        \"probe before live leases only\",\"probe current dedicated thread\",\"probe thread remains live\"\n    };\n    for(auto reason:known)if(strcmp(text,reason)==0){\n        std::string value(reason);\n",
+          "after": "        \"normalization receipt open\",\"normalization receipt sync\",\"normalization receipt replace\",\n        \"recovery quarantine bound\",\"recovery receipt name\",\n        \"capability receipt open\",\"capability receipt bound\",\"capability receipt sync\",\"capability receipt replace\",\n        \"probe before live leases only\",\"probe current dedicated thread\",\"probe thread remains live\",\n        \"WALT semantic restoration scope\",\"probe without live RT/WALT owners only\",\"WALT restoration journal fields\"\n    };\n    for(auto reason:known)if(strcmp(text,reason)==0){\n        std::string value(reason);\n"
+        }
+      ]
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/ZuioptRead.kt",

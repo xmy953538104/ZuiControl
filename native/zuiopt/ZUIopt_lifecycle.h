@@ -81,7 +81,8 @@ inline std::string fatalReason(const std::exception& error) {
         "normalization receipt open","normalization receipt sync","normalization receipt replace",
         "recovery quarantine bound","recovery receipt name",
         "capability receipt open","capability receipt bound","capability receipt sync","capability receipt replace",
-        "probe before live leases only","probe current dedicated thread","probe thread remains live"
+        "probe before live leases only","probe current dedicated thread","probe thread remains live",
+        "WALT semantic restoration scope","probe without live RT/WALT owners only","WALT restoration journal fields"
     };
     for(auto reason:known)if(strcmp(text,reason)==0){
         std::string value(reason);
