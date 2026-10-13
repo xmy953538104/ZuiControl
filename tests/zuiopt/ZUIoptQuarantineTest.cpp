@@ -80,7 +80,24 @@ void quarantineProbeWithPlacementOnly(){
     require(!f.owner->deferredWaltProbePending()&&f.journal->entries.size()==entries&&f.journal->leases.size()==leases,"probe lost placement lease or repeats per read");
     puts("DEFERRED_PROBE_PLACEMENT_ONLY_SAFE_RT_WALT_BLOCKED_ONCE=PASS");
 }
+void inactiveDeadJournalRetirement(){
+    AcquisitionFixture f;f.start(2);f.confirm();f.place();
+    auto group=Kernel::tasks.at(43).group;auto moves=Kernel::moves,affinities=Kernel::affinities;
+    f.owner->retireReleasedRecoveryLeases({});require(!f.journal->entries.empty()&&!f.journal->leases.empty(),"inactive live record lost");
+    Kernel::tasks.clear();f.states.clear();
+    Kernel::tasks[400]={20,group,255,400,10002,"org.other.game"};
+    f.owner->retireReleasedRecoveryLeases({});require(!f.journal->entries.empty()&&!f.journal->leases.empty(),"occupied orphan recovery lost");
+    Kernel::tasks.erase(400);
+    f.owner->retireReleasedRecoveryLeases({42});require(!f.journal->entries.empty(),"active owner lost");
+    Kernel::beforeRemove=[&](const std::string& path){if(path=="/dev/cpuset"+group)Kernel::tasks[400]={20,group,255,400,10002,"org.other.game"};};
+    f.owner->retireReleasedRecoveryLeases({});require(!f.journal->entries.empty()&&!f.journal->leases.empty(),"late ingress lost recovery");
+    Kernel::beforeRemove={};Kernel::tasks.erase(400);
+    f.owner->retireReleasedRecoveryLeases({});require(f.journal->entries.empty()&&f.journal->leases.empty(),"dead inactive journal never retired");
+    auto commits=f.journal->commits;f.owner->retireReleasedRecoveryLeases({});require(f.journal->commits==commits,"empty retirement repeated write");
+    require(moves==Kernel::moves&&affinities==Kernel::affinities,"orphan retirement modified kernel");
+    puts("INACTIVE_DEAD_JOURNAL_EMPTY_RETIRED=PASS;LIVE_ACTIVE_OCCUPIED_PRESERVED=PASS;IDEMPOTENT_ZERO_KERNEL_WRITES=PASS");
+}
 int main(){std::cout<<std::unitbuf;int failed=0;
-    for(auto test:{quarantineCycles,quarantineCapacity,quarantineRestart,journalSemanticVersion,quarantineOrphanLease,quarantineProbeWithPlacementOnly})try{timed("QUARANTINE",test);}catch(const std::exception& e){std::cerr<<"QUARANTINE_FAIL "<<e.what()<<'\n';failed++;}
+    for(auto test:{quarantineCycles,quarantineCapacity,quarantineRestart,journalSemanticVersion,quarantineOrphanLease,quarantineProbeWithPlacementOnly,inactiveDeadJournalRetirement})try{timed("QUARANTINE",test);}catch(const std::exception& e){std::cerr<<"QUARANTINE_FAIL "<<e.what()<<'\n';failed++;}
     return failed?1:0;
 }

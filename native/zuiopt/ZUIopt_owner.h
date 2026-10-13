@@ -497,16 +497,27 @@ public:
     void retireReleasedRecoveryLeases(const std::set<int>& active){
         bool changed=false,observed=false;std::set<std::string> paths;
         for(auto it=journal.leases.begin();it!=journal.leases.end();){
-            bool records=false;for(const auto& [_,r]:journal.entries)if(r.placementLease==it->second.placementLease){records=true;break;}
-            if(active.count(it->first)||heldLease(it->second)||records){++it;continue;}
+            if(active.count(it->first)||heldLease(it->second)){++it;continue;}
+            bool records=false;for(const auto& [_,r]:journal.entries)if(r.placementLease==it->second.placementLease&&journal.same(r)){records=true;break;}
+            if(records){++it;continue;}
             if(!observed){paths=groups();observed=true;}
             bool occupied=!members(root).empty();
             for(const auto& path:paths){std::string token;Mask mask=0;
                 if((!journal.placementVersion||(placementGroup(path.substr(11),token,mask)&&token==it->second.placementLease))&&!members(path).empty()){occupied=true;break;}}
             if(occupied){++it;continue;}
+            // Drop dead receipts only after the kernel closes late task ingress.
+            if(!journal.placementVersion&&!paths.empty()){++it;continue;}
+            for(const auto& path:paths){std::string token;Mask mask=0;
+                if(!placementGroup(path.substr(11),token,mask)||token!=it->second.placementLease)continue;
+                if(rmdir(path.c_str())!=0&&errno!=ENOENT){occupied=true;break;}
+                created.erase(path);
+            }
+            if(occupied){++it;continue;}
+            for(auto record=journal.entries.begin();record!=journal.entries.end();)
+                if(record->second.placementLease==it->second.placementLease)record=journal.entries.erase(record);else ++record;
             it=journal.leases.erase(it);changed=true;
         }
-        if(changed)journal.commit();
+        if(changed){journal.commit();retireRealtimeGlobal();retireWaltGlobal();}
     }
     bool finiteRtBudget() const {
         auto period=trim(read("/proc/sys/kernel/sched_rt_period_us")),runtime=trim(read("/proc/sys/kernel/sched_rt_runtime_us"));

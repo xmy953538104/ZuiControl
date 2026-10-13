@@ -126,6 +126,10 @@ public:
             catch(const ProcError& error){if(!error.permission())throw;procBlocked(error);}
             authorityEvent=outerAuthority;
         }
+        if(placement){
+            std::set<int> active;for(const auto& [pid,p]:states)if(p.managed())active.insert(pid);
+            placement->retireReleasedRecoveryLeases(active);
+        }
     }
     void scan(ProcessState& p){
         if(!p.writable())return;
