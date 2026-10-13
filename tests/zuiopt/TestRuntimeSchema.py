@@ -12,6 +12,6 @@ class RuntimeSchema(unittest.TestCase):
  def test_invalid(self):
   for text in [NEW+b'runtime_defaults 0 0\n',NEW+b'runtime New 0 0 explicit none\n',OLD+b'runtime_defaults 0 0\n',NEW.replace(b'-1 0 preset',b'3 0 preset'),NEW.replace(b'preset double',b'explicit double'),NEW+b'opt 1\n']:
    with self.subTest(text=text),self.assertRaises(ValueError):parse_rules(text)
- def test_merge_inheritance_resolved_without_old_rule_change(self):
-  c=parse_rules(merge(OLD,[],NEW));self.assertEqual(c['profiles']['p0000']['runtime'],(1,0,'preset','double'));self.assertEqual(c['profiles']['p0001']['mask'],255);self.assertEqual(c['profiles']['p0001']['rules'][0][3],2)
+ def test_merge_inheritance_retained_without_old_rule_change(self):
+  c=parse_rules(merge(OLD,[],NEW));self.assertEqual(c['profiles']['p0000']['runtime'],(-1,0,'preset','double'));self.assertEqual((c['mode'],c['rt']),(1,1));self.assertEqual(c['profiles']['p0001']['mask'],255);self.assertEqual(c['profiles']['p0001']['rules'][0][3],2)
 if __name__=='__main__':unittest.main()

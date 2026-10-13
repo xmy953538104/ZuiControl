@@ -68,7 +68,7 @@ class ProductionContracts(unittest.TestCase):
         self.assertEqual(first.count('test "$native_failed" -eq 0'),1)
         self.assertEqual(first.count('native_failed=0'),1)
         self.assertEqual(second.count('native_failed=0'),1)
-        self.assertEqual(second.count('native_failed=1'),4)
+        self.assertEqual(second.count('native_failed=1'),7) # Initial fail plus disk, RAM shard and quarantine latches.
         self.assertNotIn('BuildZUIopt.py',first)
         scripts=first+second
         fixtures=['ZUIoptTest.cpp','ZUIoptRuntimeTest.cpp','ZUIoptBinderTest.cpp','ZUIoptSceneTest.cpp','ZUIoptAcquisitionTest.cpp','ZUIoptBackgroundTest.cpp','ZUIoptReleaseReentryTest.cpp','ZUIoptAuthorityTest.cpp','ZUIoptLeaseTest.cpp','ZUIoptDescendantTest.cpp']

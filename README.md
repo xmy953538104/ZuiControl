@@ -119,6 +119,7 @@ python tests/monitor/TestProductR7.py
 python tests/monitor/TestProductR8.py
 python tests/monitor/TestProductR9.py
 python tests/zuiopt/TestReadTransport.py
+python tests/zuiopt/TestRuntimeR3Scope.py
 python tests/monitor/TestNotificationRenderer.py
 python tests/monitor/TestDropdownSelection.py
 python tests/monitor/TestPendingIntentCache.py

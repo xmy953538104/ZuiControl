@@ -28,7 +28,21 @@ def main(native=None):
     rejects(lambda:latest(metadata.replace(b'"schema":1',b'"schema":1,"schema":1')))
     rejects(lambda:latest(metadata+b'x'));rejects(lambda:verify(manifest,rules+b'x'))
     rejects(lambda:build(factory.replace(b'schema 2',b'schema 1'),*args))
+    rejects(lambda:build(factory.replace(b'debug false',b'debug true'),*args))
     rejects(lambda:build(factory.replace(b'package exact',b'package prefix',1),*args))
+    runtime=b'schema 3\nenabled true\ndebug false\nruntime_defaults 2 1\nprofile P 2-6\nruntime P -1 -1 preset double\npackage exact org.example.game P 100\n'
+    metadata3,rules3=build(runtime,*args);manifest3=latest(metadata3)
+    assert manifest3['schema']==2 and manifest3['rulesSchema']==3 and b'runtime P -1 -1 preset double' in rules3
+    assert set(manifest3['requiredCapabilities'])=={'schema3','category-ranking','runtime-inheritance','owned-rt-recovery','mode2','walt-reduce-restorable','marker-double'}
+    verify(manifest3,rules3)
+    rejects(lambda:verify(dict(manifest3,requiredCapabilities=sorted(set(manifest3['requiredCapabilities'])-{'walt-reduce-restorable'})),rules3))
+    rejects(lambda:latest(json.dumps(dict(manifest3,requiredCapabilities=manifest3['requiredCapabilities']+['opt'])).encode()))
+    rejects(lambda:verify(manifest3,rules3.replace(b'-1 -1',b'2 1')))
+    if native:
+        with tempfile.TemporaryDirectory() as tmp:
+            input3=Path(tmp)/'runtime.conf';input3.write_bytes(rules3)
+            result=subprocess.run([native,'rules',str(input3)],capture_output=True,check=True,timeout=15)
+            assert parse_rules(result.stdout)==parse_rules(rules3)
     with tempfile.TemporaryDirectory(prefix='rules-publisher-') as tmp:
         root=Path(tmp);source=root/'input.conf';source.write_bytes(factory)
         first=root/'a/output';second=root/'b/output'

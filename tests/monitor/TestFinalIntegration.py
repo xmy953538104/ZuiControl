@@ -1,6 +1,6 @@
 """Execute production V84 adapters against producer bytes and counted platform boundaries.
 
-JSON fixture uses production PolicyJson, not invented successful wire/analysis data.
+Producer bytes use production PolicyJson; App parsing uses the existing real org.json test library.
 Android Binder, SQLite bindings and rendering remain merged-ROM device gates.
 """
 from pathlib import Path
@@ -25,7 +25,7 @@ backend_scopes = ['framework_patch', 'native', 'payload/system', 'payload/patche
 # Current Owner Plan3 deltas must reverse exactly to the immutable integration
 # baseline before the earlier freeze proofs are inherited.
 sys.path.insert(0,str(ROOT/'tests'))
-from BackendContract import entries,reverse_runtime_entries,RUNTIME_ALLOWED,PLAN3,PLAN3_RESPONSIVENESS,PLAN3_VERTICAL,PLAN3_DOMAIN,PLAN3_UX,PLAN3_R9
+from BackendContract import entries,reverse_runtime_entries,RUNTIME_ALLOWED,RUNTIME_R3_ALLOWED,PLAN3,PLAN3_RESPONSIVENESS,PLAN3_VERTICAL,PLAN3_DOMAIN,PLAN3_UX,PLAN3_R9
 current=reverse_runtime_entries(entries(*backend_scopes),*backend_scopes)
 for row in PLAN3_R9['files']:
     assert row['path'] in PLAN3_R9['allowedPaths']
@@ -54,35 +54,10 @@ assert sorted(current)==sorted(subprocess.check_output(['git','ls-tree','-r','6d
 # BuildZUIopt deliberately replaces its tracked seed with the current CI ELF.
 # Current authorized runtime edits have already been byte-bound and reversed above.
 generated = subprocess.check_output(['git', 'diff', '--name-only', 'HEAD', '--', *backend_scopes], cwd=ROOT, text=True).splitlines()
-assert set(generated) <= {'payload/system/bin/ZUIopt'} | RUNTIME_ALLOWED | {r['path'] for r in PLAN3_R9['files']+PLAN3_UX['files']+PLAN3_DOMAIN['files']+PLAN3_VERTICAL['files']+PLAN3_RESPONSIVENESS['files']+PLAN3['files'] if any(r['path'].startswith(scope+'/') for scope in backend_scopes)}, generated
+assert set(generated) <= {'payload/system/bin/ZUIopt'} | RUNTIME_ALLOWED | RUNTIME_R3_ALLOWED | {r['path'] for r in PLAN3_R9['files']+PLAN3_UX['files']+PLAN3_DOMAIN['files']+PLAN3_VERTICAL['files']+PLAN3_RESPONSIVENESS['files']+PLAN3['files'] if any(r['path'].startswith(scope+'/') for scope in backend_scopes)}, generated
 
 stubs = {
     'Context.kt': 'package android.content\nclass Context\n',
-    'JSON.kt': '''package org.json
-import com.zui.server.control.JsonBridge
-class JSONObject(private val data:MutableMap<String,Any?> = linkedMapOf()) {
- constructor(text:String):this((JsonBridge.parse(text) as Map<String,Any?>).toMutableMap())
- fun put(k:String,v:Any?):JSONObject {data[k]=when(v){is JSONObject->v.data;is JSONArray->v.data;else->v};return this}
- fun get(k:String):Any=checkNotNull(data[k])
- fun getInt(k:String)=(get(k) as Number).toInt()
- fun getLong(k:String)=(get(k) as Number).toLong()
- fun getDouble(k:String)=(get(k) as Number).toDouble()
- fun getString(k:String)=get(k) as String
- fun getBoolean(k:String)=get(k) as Boolean
- fun optString(k:String)=data[k] as? String ?: ""
- fun has(k:String)=data.containsKey(k)
- fun isNull(k:String)=data[k]==null
- fun length()=data.size
- fun keys()=data.keys.iterator()
- fun getJSONObject(k:String)=JSONObject((get(k) as Map<String,Any?>).toMutableMap())
- fun getJSONArray(k:String)=JSONArray(get(k) as List<Any?>)
- override fun toString()=JsonBridge.encode(data)
-}
-class JSONArray(val data:List<Any?>) {
- fun length()=data.size
- fun getJSONObject(i:Int)=JSONObject(JsonBridge.encode(data[i]))
-}
-''',
     'Boundary.kt': '''package com.zui.zuicontrol
 import android.content.Context
 import org.json.JSONObject
@@ -112,6 +87,7 @@ object PerformanceMonitor {
  fun command(a:String,arg:String=""):String {actions+=a;return if(a=="recordRead")record else "ok=1"}
 }
 object ZuioptLibrary {data class Baseline(val metadata:JSONObject,val hash:String)}
+object ZuioptRead {fun state():String?=null;fun runtime(state:String):JSONObject?=null}
 object ZuioptRules {fun boundedRead(s:java.io.InputStream,n:Int):ByteArray=s.readBytes().also{require(it.size<=n)}}
 ''',
     'Harness.kt': '''package com.zui.zuicontrol
@@ -123,7 +99,7 @@ fun main(args:Array<String>) {
  val ranges=GpuDefaultsDraft.modes.map(GpuRanges::default)
  val state="ok=1\\npolicyGeneration=1\\n"+GpuDefaultsDraft.modes.zip(ranges).joinToString("\\n"){(m,r)->"gpuGlobal=0|$m|${r.min}|${r.max}"}
  val draft=GpuDefaultsDraft.fromState(state,0);check(draft.expectedGeneration==1L && draft.original.values.toSet()==ranges.toSet())
- fun rejects(f:()->Unit){try{f();error("accepted invalid input")}catch(e:IllegalArgumentException){}catch(e:IllegalStateException){check(e.message!="accepted invalid input")}}
+ fun rejects(f:()->Unit){try{f();error("accepted invalid input")}catch(e:IllegalArgumentException){}catch(e:org.json.JSONException){}catch(e:IllegalStateException){check(e.message!="accepted invalid input")}}
  rejects {GpuDefaultsDraft.fromState(state.replace("gpuGlobal=0|fast", "gpuGlobal=10|fast"),0)}
  rejects {GpuDefaultsDraft.fromState(state+"\\ngpuGlobal=0|fast|629|903",0)}
  for(success in listOf(false,true)) {
@@ -145,8 +121,8 @@ fun main(args:Array<String>) {
  V84FrontendGateway.validateRecordRelation(zero,zeroRecord,0,a.getString("package"))
  val nulls=JSONObject(a.toString());val rows=nulls.getJSONArray("threads");check(rows.length()>0)
  // Preserve valid unknown metrics from the native producer, never replace them with zero.
- val row=rows.getJSONObject(0).put("avgCpuPct",null).put("medianRank",null)
- nulls.put("threads",org.json.JSONArray(listOf(JsonBridgeValue(row))))
+ val row=rows.getJSONObject(0).put("avgCpuPct",JSONObject.NULL).put("medianRank",JSONObject.NULL)
+ nulls.put("threads",org.json.JSONArray().put(row))
  V84FrontendGateway.validateRecordRelation(nulls,r,0,a.getString("package"))
  for(changed in listOf(JSONObject(a.toString()).put("schema",1),JSONObject(a.toString()).put("acquisition","STANDALONE_COMPATIBILITY"),JSONObject(a.toString()).put("state","FAILED"))) {
   rejects {V84FrontendGateway.validateRecordRelation(changed,r,0,a.getString("package"))}
@@ -155,17 +131,16 @@ fun main(args:Array<String>) {
  val manifest=File(args[3]).readBytes();val bytes=File(args[4]).readBytes();val hash=RuleUpstreamFetcher.hash(bytes)
  val baseline=ZuioptLibrary.Baseline(JSONObject().put("sourceEvidence","publisher-revision:1"),"0".repeat(64))
  var fetches=0
- val upstream=RuleUpstreamFetcher("https://qualification.invalid", "") {url,limit->fetches++;if(url.endsWith("latest.json")){check(limit==2048);manifest}else{check(limit==65536);bytes}}
+ val upstream=RuleUpstreamFetcher("https://raw.githubusercontent.com/qualification/controlled/main/output", "") {url,limit->fetches++;if(url.endsWith("latest.json")){check(limit==2048);manifest}else{check(limit==65536);bytes}}
  val latest=checkNotNull(upstream.check(baseline));check(latest.rulesSchema==2 && latest.sha256==hash)
  check(upstream.download(latest,baseline).contentEquals(bytes));check(fetches==3)
  rejects {upstream.check(baseline.copy(metadata=JSONObject().put("sourceEvidence","revision:1")))}
- val obsolete=RuleUpstreamFetcher("https://qualification.invalid", "") {_,_->manifest.toString(Charsets.UTF_8).replace("rulesSchema","ruleSchema").toByteArray()}
+ val obsolete=RuleUpstreamFetcher("https://raw.githubusercontent.com/qualification/controlled/main/output", "") {_,_->manifest.toString(Charsets.UTF_8).replace("rulesSchema","ruleSchema").toByteArray()}
  rejects {obsolete.check(baseline)}
  val unset=RuleUpstreamFetcher("", "") {_,_->error("unconfigured network")}
  rejects {unset.check(baseline)}
  println("V84_REAL_ADAPTER_BATCH_ACK_COMPOSITE_RELATION_NULL_LEGACY_STOP_PUBLISHER_SINGLE_SOURCE=PASS")
 }
-fun JsonBridgeValue(j:JSONObject)=com.zui.server.control.JsonBridge.parse(j.toString())
 '''
 }
 request = (APP / 'ZuiControlRequest.kt').read_text('utf8')
@@ -178,6 +153,7 @@ version = compiler.parent.parent.name
 jars = list((cache/'org.jetbrains.kotlin').glob('*/'+version+'/*/*.jar')) + list((cache/'org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm').glob('*/*/*.jar'))
 annotations = list((cache/'org.jetbrains/annotations/13.0').glob('*/*.jar'))
 stdlib = next((cache/'org.jetbrains.kotlin/kotlin-stdlib'/version).glob('*/*.jar'))
+jsonjar=next((cache/'org.json/json/20180813').glob('*/*.jar'))
 with tempfile.TemporaryDirectory(prefix='zui-final-adapters-') as directory:
     tmp = Path(directory)
     subprocess.run([sys.executable, str(ROOT/'tests/monitor/TestAnalysisCollector.py'), str(tmp/'analysis.json')], check=True)
@@ -205,10 +181,10 @@ public class JsonBridge {
     java_sources += [ROOT/'tests/gpu'/name for name in ('AppPolicyFixture.java','AtomicPolicyTest.java','FactoryResetTest.java','GpuDefaultsBatchTest.java')]
     subprocess.run(['javac', '-encoding', 'UTF-8', '-d', str(tmp/'classes'), *map(str,java_sources), str(tmp/'JsonBridge.java')], check=True)
     for name, text in stubs.items(): (tmp/name).write_text(text, encoding='utf8')
-    cmd = ['java','-cp',os.pathsep.join(map(str,jars+annotations)),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',os.pathsep.join(map(str,[tmp/'classes',stdlib,*annotations])),'-d',str(tmp/'classes')]
-    cmd += [str(APP/name) for name in ('FrontendGateway.kt','FrontendState.kt','GpuRanges.kt','PackageNames.kt','RuleUpstreamFetcher.kt')]+list(map(str,tmp.glob('*.kt')))
+    cmd = ['java','-cp',os.pathsep.join(map(str,jars+annotations)),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',os.pathsep.join(map(str,[tmp/'classes',stdlib,jsonjar,*annotations])),'-d',str(tmp/'classes')]
+    cmd += [str(APP/name) for name in ('FrontendGateway.kt','FrontendState.kt','GpuRanges.kt','PackageNames.kt','RuleUpstreamFetcher.kt','ZuioptRuleModel.kt')]+list(map(str,tmp.glob('*.kt')))
     subprocess.run(cmd, check=True, timeout=60)
-    subprocess.run(['java','-cp',os.pathsep.join(map(str,[tmp/'classes',stdlib])),'com.zui.zuicontrol.HarnessKt',str(tmp/'analysis.json'),str(tmp/'record.json'),str(tmp/'wire.txt'),str(tmp/'latest.json'),str(tmp/'rules.conf')],check=True,timeout=30)
+    subprocess.run(['java','-cp',os.pathsep.join(map(str,[tmp/'classes',stdlib,jsonjar])),'com.zui.zuicontrol.HarnessKt',str(tmp/'analysis.json'),str(tmp/'record.json'),str(tmp/'wire.txt'),str(tmp/'latest.json'),str(tmp/'rules.conf')],check=True,timeout=30)
     wire = (tmp/'wire.txt').read_text('utf8');payload = json.loads(base64.b64decode(wire.split('|')[4]))
     assert wire == app_wire('batch','policy','',wire.split('|')[4])
     assert set(payload)=={'action','userId','generation','ranges'} and payload['action']=='defaultGpuBatch'

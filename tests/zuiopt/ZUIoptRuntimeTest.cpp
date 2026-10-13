@@ -145,6 +145,18 @@ void waltCases(){
         require(restoreWalt(o,17,k,[]{},[]{return false;})==SchedulerResult::DEAD&&k.writes==writes,"WALT dead/reused target no write");}
     {FakeWalt k;WaltOwnership o;k.affinity=-1;
         require(applyWalt(o,2,17,128,k,[]{},[]{return true;})==SchedulerResult::UNRESTORABLE&&!o.active&&k.writes==0,"negative default rejected before WALT mutation");}
+    {FakeWalt k;k.affinity=-1;WaltOwnership o,durable;
+        auto persist=[&]{durable=o;};
+        require(applyWalt(o,2,17,128,k,persist,[]{return true;},true)==SchedulerResult::APPLIED,"qualified semantic apply");
+        require(durable.original==-1&&durable.expected==128&&durable.semantic&&waltRestoreValue(durable)==255,"raw/expected/semantic durable before write");
+        require(restoreWalt(durable,17,k,[]{},[]{return true;})==SchedulerResult::UNAVAILABLE&&durable.active,"different adapter cannot normalize");
+        require(restoreWalt(durable,17,k,[]{},[]{return true;},true)==SchedulerResult::SEMANTIC_RESTORED&&k.affinity==255&&!durable.active,"live semantic withdrawal");}
+    {FakeWalt k;k.affinity=-1;k.writeDenied=true;WaltOwnership o;
+        require(applyWalt(o,2,17,128,k,[]{},[]{return true;},true)==SchedulerResult::UNAVAILABLE&&o.active,"semantic partial write intent retained");
+        require(restoreWalt(o,17,k,[]{},[]{return true;},true)==SchedulerResult::RESTORED&&!o.active&&k.affinity==-1,"failed write retains exact raw default");}
+    {FakeWalt k;k.affinity=-1;WaltOwnership o;
+        applyWalt(o,2,17,128,k,[]{},[]{return true;},true);k.affinity=64;auto writes=k.writes;
+        require(restoreWalt(o,17,k,[]{},[]{return true;},true)==SchedulerResult::CONFLICT&&k.affinity==64&&k.writes==writes,"semantic restoration preserves foreign Owner");}
 }
 void runtimeEnvelopeCases(){
     const std::string boot="00000000-0000-0000-0000-000000000000";
@@ -154,6 +166,8 @@ void runtimeEnvelopeCases(){
     require(pending.find("\"processes\":[],\"truncated\":false")!=std::string::npos&&
         pending.find("\"status\":\"PENDING_OWNER_ACK\"")!=std::string::npos&&runtimeOwnerMatches(pending,boot,owner),"new owner pending envelope");
     auto idle=runtimeEnvelope(boot,owner,false,states);
+    auto capable=runtimeEnvelope(boot,owner,false,states,{"schema3","runtime-inheritance"});
+    require(runtimeOwnerMatches(capable,boot,owner)&&capable.find("\"runtimeCapabilities\":[\"runtime-inheritance\",\"schema3\"]")!=capable.npos,"current owner capability envelope");
     require(idle.find("\"status\":\"NO_RUNTIME_OBSERVATIONS\"")!=std::string::npos&&runtimeOwnerMatches(idle,boot,owner),"empty captured observation envelope");
     for(int i=0;i<4096;i++)states[i]="{\"pid\":"+std::to_string(i)+",\"package\":\""+std::string(128,'a')+"\"}";
     auto text=runtimeEnvelope(boot,owner,false,states);

@@ -9,15 +9,20 @@ inline constexpr size_t RUNTIME_STATUS_LIMIT=32768;
 inline std::string runtimeOwnerHeader(const std::string& boot,const std::string& owner){
     std::ostringstream out;out<<"{\"schema\":2,\"boot\":"<<std::quoted(boot)<<",\"owner\":"<<std::quoted(owner)<<',';return out.str();
 }
-inline std::string runtimeEnvelope(const std::string& boot,const std::string& owner,bool pending,const std::map<int,std::string>& processes){
+inline std::string runtimeEnvelope(const std::string& boot,const std::string& owner,bool pending,const std::map<int,std::string>& processes,const std::set<std::string>& capabilities=std::set<std::string>()){
     std::ostringstream header;header<<runtimeOwnerHeader(boot,owner)<<"\"status\":"<<std::quoted(pending?"PENDING_OWNER_ACK":processes.empty()?"NO_RUNTIME_OBSERVATIONS":"ACKNOWLEDGED_RUNTIME")
         <<",\"totalProcesses\":"<<processes.size()<<",\"processes\":[";
     auto out=header.str();bool comma=false,truncated=false;
     for(const auto& [_,state]:processes){
-        if(out.size()+state.size()+64>RUNTIME_STATUS_LIMIT){truncated=true;break;}
+        if(out.size()+state.size()+1024>RUNTIME_STATUS_LIMIT){truncated=true;break;}
         if(comma)out+=',';comma=true;out+=state;
     }
-    out+=truncated?"],\"truncated\":true}\n":"],\"truncated\":false}\n";
+    out+=truncated?"],\"truncated\":true":"],\"truncated\":false";
+    if(!capabilities.empty()){
+        require(capabilities.size()<=16,"runtime capability bound");out+=",\"runtimeCapabilities\":[";bool separator=false;
+        for(const auto& capability:capabilities){require(capability.size()<=40&&capability.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-")==capability.npos,"runtime capability name");out+=(separator?",":"")+std::string("\"")+capability+'"';separator=true;}out+=']';
+    }
+    out+="}\n";
     return out;
 }
 inline bool runtimeOwnerMatches(const std::string& text,const std::string& boot,const std::string& owner){
@@ -31,9 +36,17 @@ inline bool runtimeOwnerMatches(const std::string& text,const std::string& boot,
     auto countEnd=text.find(",\"processes\":[",countStart);
     if(!countStart||countEnd==text.npos)return false;
     auto count=text.substr(countStart,countEnd-countStart);
-    return !count.empty()&&count.size()<=10&&count.find_first_not_of("0123456789")==count.npos&&(count.size()==1||count[0]!='0')&&
-        (text.size()>=21&&(text.compare(text.size()-21,21,"],\"truncated\":false}\n")==0||
-            text.compare(text.size()-20,20,"],\"truncated\":true}\n")==0));
+    auto tailStart=text.rfind("],\"truncated\":");if(tailStart==text.npos)return false;auto tail=text.substr(tailStart);
+    bool tailValid=tail=="],\"truncated\":false}\n"||tail=="],\"truncated\":true}\n";
+    for(const std::string prefix:{"],\"truncated\":false,\"runtimeCapabilities\":[","],\"truncated\":true,\"runtimeCapabilities\":["})if(tail.rfind(prefix,0)==0){
+        size_t at=prefix.size();std::set<std::string> seen;
+        while(at<tail.size()&&tail[at]=='"'){
+            auto end=tail.find('"',at+1);if(end==tail.npos)break;auto capability=tail.substr(at+1,end-at-1);
+            if(capability.empty()||capability.size()>40||capability.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-")!=capability.npos||!seen.insert(capability).second||seen.size()>16)break;
+            at=end+1;if(tail.substr(at)=="]}\n"){tailValid=true;break;}if(at>=tail.size()||tail[at++]!=',')break;
+        }
+    }
+    return !count.empty()&&count.size()<=10&&count.find_first_not_of("0123456789")==count.npos&&(count.size()==1||count[0]!='0')&&tailValid;
 }
 struct SchedulerState {
     uint32_t size=56,policy=0;uint64_t flags=0;int32_t nice=0;uint32_t priority=0;
@@ -72,7 +85,7 @@ inline bool parseScheduler(std::istream& in,SchedulerState& s){
     return bool(in>>s.policy>>s.flags>>s.nice>>s.priority>>s.runtime>>s.deadline>>s.period>>s.utilMin>>s.utilMax)&&restorableScheduler(s);
 }
 struct SchedulerOwnership {bool active=false;SchedulerState original,expected;};
-enum class SchedulerResult {UNCHANGED,APPLIED,RESTORED,DEAD,CONFLICT,UNAVAILABLE,UNRESTORABLE};
+enum class SchedulerResult {UNCHANGED,APPLIED,RESTORED,DEAD,CONFLICT,UNAVAILABLE,UNRESTORABLE,SEMANTIC_RESTORED};
 inline bool schedulerControlSame(const SchedulerState& a,const SchedulerState& b){
     // RR owns these fields. OEM nice/uclamp updates must neither strand RR nor be overwritten.
     return a.policy==b.policy&&a.flags==b.flags&&a.priority==b.priority&&
@@ -131,7 +144,9 @@ struct SchedulerKernel {
     bool get(int tid,SchedulerState& state){return schedulerState(tid,state);}
     bool set(int tid,const SchedulerState& state){return setScheduler(tid,state);}
 };
-struct WaltOwnership {bool active=false;int kind=0,original=0,expected=0;};
+struct WaltOwnership {bool active=false;int kind=0,original=0,expected=0;bool semantic=false;};
+inline int waltRestoreValue(const WaltOwnership& owned){return owned.semantic?255:owned.original;}
+inline const char* waltRestoreType(const WaltOwnership& owned){return owned.semantic?"SEMANTIC_RESTORE":"EXACT_RESTORE";}
 inline bool waltValue(int kind,int value){return kind==1?(value>=0&&value<=3):kind==2&&(value>=-1&&value<=255);}
 inline const char* waltPath(int kind){return kind==1?"/proc/sys/walt/sched_per_task_boost":kind==2?"/proc/sys/walt/task_reduce_affinity":"";}
 inline bool qualifiedWaltIdentity(){
@@ -152,33 +167,34 @@ struct WaltKernel {
     bool set(int kind,int tid,int value){return waltValue(kind,value)&&write(waltPath(kind),std::to_string(tid)+" "+std::to_string(value));}
 };
 template<class Kernel,class Persist,class Same>
-SchedulerResult restoreWalt(WaltOwnership& owned,int tid,Kernel& kernel,Persist persist,Same same){
+SchedulerResult restoreWalt(WaltOwnership& owned,int tid,Kernel& kernel,Persist persist,Same same,bool semanticAllowed=false){
     if(!owned.active)return SchedulerResult::UNCHANGED;
     if(!same()){owned.active=false;persist();return SchedulerResult::DEAD;}
     int current=0;if(!kernel.get(owned.kind,tid,current))return SchedulerResult::UNAVAILABLE;
     if(!same()){owned.active=false;persist();return SchedulerResult::DEAD;}
-    if(current!=owned.expected){auto result=current==owned.original?SchedulerResult::RESTORED:SchedulerResult::CONFLICT;owned.active=false;persist();return result;}
-    if(!same()||!kernel.set(owned.kind,tid,owned.original))return SchedulerResult::UNAVAILABLE;
+    const int restored=waltRestoreValue(owned);auto success=owned.semantic?SchedulerResult::SEMANTIC_RESTORED:SchedulerResult::RESTORED;
+    if(current!=owned.expected){auto result=current==owned.original?SchedulerResult::RESTORED:current==restored?success:SchedulerResult::CONFLICT;owned.active=false;persist();return result;}
+    if(owned.semantic&&!semanticAllowed)return SchedulerResult::UNAVAILABLE;
+    if(!same()||!kernel.set(owned.kind,tid,restored))return SchedulerResult::UNAVAILABLE;
     if(!same()){owned.active=false;persist();return SchedulerResult::DEAD;}
-    if(!kernel.get(owned.kind,tid,current)||current!=owned.original)return SchedulerResult::UNAVAILABLE;
-    owned.active=false;persist();return SchedulerResult::RESTORED;
+    if(!kernel.get(owned.kind,tid,current)||current!=restored)return SchedulerResult::UNAVAILABLE;
+    owned.active=false;persist();
+    ZUIOPT_NOTE("WALT_RESTORE","tid="+std::to_string(tid)+" raw="+std::to_string(owned.original)+" expected="+std::to_string(owned.expected)+" restored="+std::to_string(restored)+" type="+waltRestoreType(owned));return success;
 }
 template<class Kernel,class Persist,class Same>
-SchedulerResult applyWalt(WaltOwnership& owned,int kind,int tid,int value,Kernel& kernel,Persist persist,Same same){
+SchedulerResult applyWalt(WaltOwnership& owned,int kind,int tid,int value,Kernel& kernel,Persist persist,Same same,bool semanticAllowed=false){
     if(!same())return SchedulerResult::DEAD;
     int current=0;if(!waltValue(kind,value)||!kernel.get(kind,tid,current))return SchedulerResult::UNAVAILABLE;
     if(!same())return SchedulerResult::DEAD;
-    // Exact qualified module: node9 rejects negative input (1f154..1f158),
-    // but reads the default mask as signed -1 (1f250). It cannot restore that raw value.
-    // Decline BEFORE changing the task; an online-mask approximation is not exact restore.
-    if(kind==2&&current<0)return SchedulerResult::UNRESTORABLE;
+    // Only the audited eight-CPU adapter may normalize its signed all-CPU default.
+    if(kind==2&&current<0&&!semanticAllowed)return SchedulerResult::UNRESTORABLE;
     if(owned.active){
         if(owned.kind==kind&&owned.expected==value)return current==value?SchedulerResult::UNCHANGED:SchedulerResult::CONFLICT;
-        auto result=restoreWalt(owned,tid,kernel,persist,same);if(result==SchedulerResult::UNAVAILABLE||result==SchedulerResult::CONFLICT)return result;
+        auto result=restoreWalt(owned,tid,kernel,persist,same,semanticAllowed);if(result==SchedulerResult::UNAVAILABLE||result==SchedulerResult::CONFLICT)return result;
         if(!kernel.get(kind,tid,current)||!same())return SchedulerResult::UNAVAILABLE;
     }
     if(current==value)return SchedulerResult::UNCHANGED;
-    owned={true,kind,current,value};persist();
+    owned={true,kind,current,value,kind==2&&current==-1};persist();
     if(!same())return SchedulerResult::DEAD;
     if(!kernel.get(kind,tid,current)||current!=owned.original){owned.active=false;persist();return SchedulerResult::CONFLICT;}
     if(!same()||!kernel.set(kind,tid,value))return SchedulerResult::UNAVAILABLE;
@@ -198,12 +214,14 @@ inline bool samePlacementContract(const Profile& before,const Profile& after){
     }
     return true; // Runtime mode/RT/marker use the existing diff-and-revoke engine.
 }
-inline bool sm8650Topology(){
+inline bool sm8650Topology(bool requireOnline=true){
     for(auto [policy,mask]:std::array<std::pair<int,Mask>,4>{{{0,3},{2,28},{5,96},{7,128}}}){
         auto value=trim(read("/sys/devices/system/cpu/cpufreq/policy"+std::to_string(policy)+"/related_cpus"));
         std::replace(value.begin(),value.end(),' ',',');if(value.empty()||cpus(value)!=mask)return false;
-    }return cpus(read("/sys/devices/system/cpu/online"))==255;
+    }return cpus(read(requireOnline?"/sys/devices/system/cpu/online":"/sys/devices/system/cpu/possible"))==255;
 }
+// Withdrawal depends on the audited possible-CPU width, not transient hotplug availability.
+inline bool qualifiedWaltSemanticAdapter(){return qualifiedWaltIdentity()&&sm8650Topology(false);}
 inline RuntimePlan runtimePlan(const Profile& p,const Config& c,bool topology,bool qualifiedWalt){
     auto request=resolvedProfile(p,c).runtime;
     RuntimePlan out;out.requestedMode=request.mode;out.requestedRt=request.rt;out.general=p.general;

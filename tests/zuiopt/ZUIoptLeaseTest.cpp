@@ -101,17 +101,20 @@ void leaseDeterministic(){
     }
     puts("HOME_PHYSICAL_FIRST_200_TASKS=PASS;DELAYS=0,10,25,50,75,100,150,200;AM_STALE_SCENE_WINS=PASS;UNKNOWN_AUTHORITY_PENDING=PASS;NORMAL_HOME_BLOCKER=0;SAME_FOREGROUND_REACQUISITION=PASS;REACQUISITION_BUDGET=2;IDLE_POLLING=0");
 }
+FixtureSelection* leaseSelection=nullptr;
 void leaseStress(){
-    std::mt19937 random(0x60ea5e);constexpr int total=5000;
+    std::mt19937 random(0x60ea5e);constexpr int total=5000;int executed=0;
     std::set<int> delays,kinds,orders,mutations;
     for(int i=0;i<total;i++)try{
-        LeaseFixture f;f.setup(8+random()%33);
+        int n=8+random()%33;
         int delay=random()%251,kind=random()%3,order=random()%4,mutation=order==1?0:random()%5;
+        int percent=25+random()%76;
         delays.insert(delay);kinds.insert(kind);orders.insert(order);mutations.insert(mutation);
-        f.backgroundCase(delay,25+random()%76,kind,order,mutation);
+        if(leaseSelection&&!leaseSelection->selected(i))continue;
+        executed++;LeaseFixture f;f.setup(n);f.backgroundCase(delay,percent,kind,order,mutation);
     }catch(const std::exception& e){throw std::runtime_error("lease case="+std::to_string(i)+" "+e.what());}
     require(delays.size()==251&&kinds.size()==3&&orders.size()==4&&mutations.size()==5,"STRESS_COVERAGE_MISSING");
-    std::cout<<"RANDOM_STRESS_COUNT="<<total<<";RECOVERABLE_GLOBAL_FATAL=0;STATUS3_RECOVERABLE=0;PLACEMENT_AFTER_REVOKE=0;STALE_PID=0;OWNER_LEAK=0;UNSAFE_JOURNAL_CLEAR=0;NORMAL_HOME_BLOCKER=0;EVENTUAL_RELEASE_MISS=0\n";
+    std::cout<<"RANDOM_STRESS_COUNT="<<executed<<";DENOMINATOR="<<total<<";RECOVERABLE_GLOBAL_FATAL=0;STATUS3_RECOVERABLE=0;PLACEMENT_AFTER_REVOKE=0;STALE_PID=0;OWNER_LEAK=0;UNSAFE_JOURNAL_CLEAR=0;NORMAL_HOME_BLOCKER=0;EVENTUAL_RELEASE_MISS=0\n";
 }
 void physicalSyscallBoundary(){
     // Cache hits have no exemption from REVOKE_OBSERVED, for either class.
@@ -224,5 +227,7 @@ void physicalSyscallBoundary(){
     }
     require(!failed,"BOUNDED_INFLIGHT_TAIL_EXCEEDED");
 }
-int main(){try{std::cout<<std::unitbuf;timed("LEASE_TRANSITIONS",leaseTransitions);timed("LEASE_DETERMINISTIC",leaseDeterministic);timed("LEASE_RANDOM5000",leaseStress);timed("PHYSICAL_SYSCALL_BOUNDARY",physicalSyscallBoundary);return 0;}
+int main(int argc,char** argv){try{std::cout<<std::unitbuf;FixtureSelection selection(argc,argv);leaseSelection=&selection;
+    if(selection.deterministic){timed("LEASE_TRANSITIONS",leaseTransitions);timed("LEASE_DETERMINISTIC",leaseDeterministic);timed("PHYSICAL_SYSCALL_BOUNDARY",physicalSyscallBoundary);}
+    if(selection.stress){timed("LEASE_RANDOM5000",leaseStress);std::cout<<"LEASE_EXECUTED="<<(5000+selection.parts-1-selection.index)/selection.parts<<";DENOMINATOR=5000\n";}return 0;}
     catch(const std::exception& e){std::cerr<<"LEASE_FAIL "<<e.what()<<'\n';return 1;}}

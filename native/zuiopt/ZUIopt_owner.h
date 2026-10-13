@@ -114,6 +114,7 @@ public:
     bool waltVersion=false;
     bool placementVersion=false;
     bool normalizationVersion=false;
+    bool semanticVersion=false;
     struct GlobalOwner {int original=0,expected=0,prior=0;};
     std::map<std::string,GlobalOwner> globals;
     uint64_t commits=0;
@@ -244,8 +245,8 @@ public:
             require(n==0,"journal read");close(fd);fd=-1;
             auto newline=text.find('\n');require(newline!=text.npos,"journal truncated header");
             std::istringstream header(text.substr(0,newline));std::string magic,extra;uint64_t crc=0;
-            require(bool(header>>magic>>crc)&&(magic=="ZUIOPT_OWNER_STATE_V1"||magic=="ZUIOPT_OWNER_STATE_V2"||magic=="ZUIOPT_OWNER_STATE_V3"||magic=="ZUIOPT_OWNER_STATE_V4"||magic=="ZUIOPT_OWNER_STATE_V5"||magic=="ZUIOPT_OWNER_STATE_V6")&&!(header>>extra),"journal version/header");
-            normalizationVersion=magic=="ZUIOPT_OWNER_STATE_V6";placementVersion=normalizationVersion||magic=="ZUIOPT_OWNER_STATE_V5";waltVersion=placementVersion||magic=="ZUIOPT_OWNER_STATE_V4";runtimeVersion=waltVersion||magic=="ZUIOPT_OWNER_STATE_V3";
+            require(bool(header>>magic>>crc)&&(magic=="ZUIOPT_OWNER_STATE_V1"||magic=="ZUIOPT_OWNER_STATE_V2"||magic=="ZUIOPT_OWNER_STATE_V3"||magic=="ZUIOPT_OWNER_STATE_V4"||magic=="ZUIOPT_OWNER_STATE_V5"||magic=="ZUIOPT_OWNER_STATE_V6"||magic=="ZUIOPT_OWNER_STATE_V7")&&!(header>>extra),"journal version/header");
+            semanticVersion=magic=="ZUIOPT_OWNER_STATE_V7";normalizationVersion=semanticVersion||magic=="ZUIOPT_OWNER_STATE_V6";placementVersion=normalizationVersion||magic=="ZUIOPT_OWNER_STATE_V5";waltVersion=placementVersion||magic=="ZUIOPT_OWNER_STATE_V4";runtimeVersion=waltVersion||magic=="ZUIOPT_OWNER_STATE_V3";
             std::string body=text.substr(newline+1);require(crc==checksum(body),"journal checksum mismatch");
             std::istringstream in(body);std::string key,line;
             require(bool(std::getline(in,boot))&&boot.size()==36,"journal boot identity");
@@ -271,6 +272,11 @@ public:
                 }
                 if(placementVersion)require(bool(row>>r.placementLease),"journal inheritance lease");
                 if(normalizationVersion&&type=="T"){int normalized=0;require(bool(row>>normalized)&&(normalized==0||normalized==1),"normalization journal field");r.normalizedPlacement=normalized;}
+                if(semanticVersion&&type=="T"){
+                    int restored=0;std::string restoreType;require(bool(row>>restored>>restoreType)&&(restoreType=="EXACT_RESTORE"||restoreType=="SEMANTIC_RESTORE"),"WALT restoration journal fields");
+                    r.walt.semantic=restoreType=="SEMANTIC_RESTORE";
+                    require(restored==waltRestoreValue(r.walt)&&(!r.walt.semantic||(r.walt.kind==2&&r.walt.original==-1)),"WALT semantic restoration scope");
+                }
                 require(!(row>>extra),"journal extra fields");
                 validate(r);
                 if(type=="L"){require(r.tid==r.pid&&leases.size()<128,"journal inheritance lease");require(leases.emplace(r.pid,r).second,"duplicate process lease");}
@@ -283,8 +289,10 @@ public:
         // CRC detects torn/corrupt storage; root-only DAC is the authenticity boundary.
         if(entries.empty()&&leases.empty()&&globals.empty()){
             require(unlinkat(dirFd,"owner_state.v1",0)==0||errno==ENOENT,"journal remove");
-            require(fsync(dirFd)==0,"journal directory sync");boot=currentBoot;runtimeVersion=waltVersion=placementVersion=normalizationVersion=false;commits++;return;
+            require(fsync(dirFd)==0,"journal directory sync");boot=currentBoot;runtimeVersion=waltVersion=placementVersion=normalizationVersion=semanticVersion=false;commits++;return;
         }
+        semanticVersion=false;for(const auto& [_,r]:entries)semanticVersion=semanticVersion||(r.walt.active&&r.walt.semantic);
+        if(semanticVersion)normalizationVersion=placementVersion=waltVersion=runtimeVersion=true;
         validatePlacement();
         boot=currentBoot;std::ostringstream body;body<<boot<<'\n';
         for(const auto& [name,g]:globals){require(runtimeVersion&&((name=="rr_timeslice_ms"&&g.original>=1&&g.original<=1000&&g.expected==3)||(waltVersion&&name=="walt_read_pid"&&g.original>=0&&g.original<=4194304&&g.expected>0&&g.expected<=4194304)),"global journal fields");body<<"G "<<name<<' '<<g.original<<' '<<g.expected;if(waltVersion)body<<' '<<g.prior;body<<'\n';}
@@ -297,10 +305,11 @@ public:
             if(waltVersion)body<<' '<<r.walt.active<<' '<<r.walt.kind<<' '<<r.walt.original<<' '<<r.walt.expected;
             if(placementVersion)body<<' '<<r.placementLease;
             if(normalizationVersion)body<<' '<<r.normalizedPlacement;
+            if(semanticVersion)body<<' '<<waltRestoreValue(r.walt)<<' '<<waltRestoreType(r.walt);
             body<<'\n';
         }
         auto data=body.str();require(data.size()<=4*1024*1024,"journal size bound");
-        data=std::string(normalizationVersion?"ZUIOPT_OWNER_STATE_V6 ":placementVersion?"ZUIOPT_OWNER_STATE_V5 ":waltVersion?"ZUIOPT_OWNER_STATE_V4 ":runtimeVersion?"ZUIOPT_OWNER_STATE_V3 ":"ZUIOPT_OWNER_STATE_V2 ")+std::to_string(checksum(data))+"\n"+data;
+        data=std::string(semanticVersion?"ZUIOPT_OWNER_STATE_V7 ":normalizationVersion?"ZUIOPT_OWNER_STATE_V6 ":placementVersion?"ZUIOPT_OWNER_STATE_V5 ":waltVersion?"ZUIOPT_OWNER_STATE_V4 ":runtimeVersion?"ZUIOPT_OWNER_STATE_V3 ":"ZUIOPT_OWNER_STATE_V2 ")+std::to_string(checksum(data))+"\n"+data;
         int fd=openat(dirFd,"owner_state.v1.new",O_WRONLY|O_CREAT|O_CLOEXEC|O_NOFOLLOW,0600);
         require(fd>=0,"journal staging open");
         try {
@@ -327,7 +336,18 @@ class Placement {
     Journal& journal;
     Counters& count;
     bool waltCapable=false;
+    bool waltSemanticCapable=false;
     std::map<std::string,std::string> quarantined;
+    bool probeAfterQuarantine=false;
+    bool quarantineReleased=false;
+    void quarantineReceipt(){
+        std::ostringstream out;out<<"{\"schema\":1,\"boot\":"<<std::quoted(journal.currentBootId())<<",\"owner_pid\":"<<getpid()
+            <<",\"owner_birth\":"<<identity(getpid()).start<<",\"status\":"<<std::quoted(quarantined.empty()?"RELEASED":"HELD_NO_TRUSTED_ORIGINAL")
+            <<",\"group_count\":"<<quarantined.size()<<",\"tasks\":[";size_t rows=0;
+        // The receipt is diagnostic. The bounded cpuset inventory remains the authority.
+        for(const auto& [_,row]:quarantined){if(rows==32)break;out<<(rows++?",":"")<<row;}
+        out<<"],\"omitted_groups\":"<<quarantined.size()-rows<<"}\n";journal.recordAuxiliary("recovery-quarantine.json",out.str());
+    }
     bool quarantineOrdinary(int tid,const std::string& path){
         // No guessed writes to a foreign UID, an explicit external mask, or an
         // unbound resource. Keep this group/lease and stop only its acquisition.
@@ -335,12 +355,11 @@ class Placement {
         while(std::getline(status,line))if(line.rfind("Tgid:",0)==0){std::istringstream(line.substr(5))>>pid;break;}
         auto process=identity(pid),thread=identity(pid,tid);int user=uid(pid);
         if(!process.start||thread.start<process.start||user<10000||user>=20000||"/dev/cpuset"+group(tid)!=path)return false;
-        if(quarantined.count(path))return true;
-        require(quarantined.size()<32,"recovery quarantine bound");
         std::ostringstream task;task<<"{\"tid\":"<<tid<<",\"birth\":"<<thread.start<<",\"uid\":"<<user<<",\"group\":"<<std::quoted(path.substr(11))<<"}";
-        quarantined.emplace(path,task.str());std::ostringstream out;out<<"{\"schema\":1,\"boot\":"<<std::quoted(journal.currentBootId())<<",\"owner_pid\":"<<getpid()
-            <<",\"owner_birth\":"<<identity(getpid()).start<<",\"status\":\"HELD_NO_TRUSTED_ORIGINAL\",\"tasks\":[";bool comma=false;
-        for(const auto& [_,row]:quarantined){out<<(comma?",":"")<<row;comma=true;}out<<"]}\n";journal.recordAuxiliary("recovery-quarantine.json",out.str());return true;
+        auto existing=quarantined.find(path);
+        if(existing!=quarantined.end()){if(existing->second!=task.str()){existing->second=task.str();quarantineReceipt();}return true;}
+        reapQuarantine();
+        quarantined.emplace(path,task.str());probeAfterQuarantine=true;quarantineReceipt();return true;
     }
     bool heldLease(const OwnerRecord& r)const{
         if(quarantined.count(root))return true;
@@ -379,7 +398,7 @@ class Placement {
     void restore(OwnerRecord& r){
         if(!journal.same(r))return;
         WaltKernel waltKernel{[&](int tid){return selectWalt(tid);}};
-        auto waltResult=restoreWalt(r.walt,r.tid,waltKernel,[&]{journal.commit();},[&]{return journal.same(r);});
+        auto waltResult=restoreWalt(r.walt,r.tid,waltKernel,[&]{journal.commit();},[&]{return journal.same(r);},r.walt.active&&r.walt.semantic&&qualifiedWaltSemanticAdapter());
         require(waltResult!=SchedulerResult::UNAVAILABLE,"WALT recovery unresolved");
         SchedulerKernel kernel;
         auto result=restoreScheduler(r.scheduler,r.tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);});
@@ -448,6 +467,47 @@ public:
             if(trim(read(root+"/"+file))!=expected)require(write(root+"/"+file,expected),"cpuset initialization");}
     }
     bool recoveryHeld()const{return !quarantined.empty();}
+    bool semanticWaltCapable()const{return waltSemanticCapable;}
+    bool deferredWaltProbePending()const{return probeAfterQuarantine;}
+    bool takeQuarantineRelease(){bool released=quarantineReleased;quarantineReleased=false;return released;}
+    bool reapQuarantine(){
+        bool changed=false;
+        for(auto it=quarantined.begin();it!=quarantined.end();){
+            auto path=it->first;struct stat st{};bool gone=lstat(path.c_str(),&st)!=0;
+            if(gone&&errno!=ENOENT){++it;continue;}
+            if(!gone){auto live=members(path);if(!live.empty()){quarantineOrdinary(live.front(),path);++it;continue;}}
+            bool responsible=false;
+            for(const auto& [_,r]:journal.entries)if(journal.same(r)&&
+                (group(r.tid)==path.substr(11)||(journal.placementMatches(r,path.substr(11))&&(r.scheduler.active||r.walt.active)))){responsible=true;break;}
+            if(responsible){++it;continue;}
+            // rmdir rechecks emptiness atomically with task ingress; retain on a race.
+            if(!gone&&path!=root&&rmdir(path.c_str())!=0){++it;continue;}
+            created.erase(path);it=quarantined.erase(it);changed=true;
+        }
+        if(changed){quarantineReleased=true;quarantineReceipt();}return changed;
+    }
+    bool deferredWaltProbeReady()const{
+        return probeAfterQuarantine&&!recoveryHeld()&&noRuntimeOwners();
+    }
+    bool noRuntimeOwners()const{
+        if(!journal.globals.empty())return false;
+        for(const auto& [_,r]:journal.entries)if(r.scheduler.active||r.walt.active)return false;
+        return true;
+    }
+    void retireReleasedRecoveryLeases(const std::set<int>& active){
+        bool changed=false,observed=false;std::set<std::string> paths;
+        for(auto it=journal.leases.begin();it!=journal.leases.end();){
+            bool records=false;for(const auto& [_,r]:journal.entries)if(r.placementLease==it->second.placementLease){records=true;break;}
+            if(active.count(it->first)||heldLease(it->second)||records){++it;continue;}
+            if(!observed){paths=groups();observed=true;}
+            bool occupied=!members(root).empty();
+            for(const auto& path:paths){std::string token;Mask mask=0;
+                if((!journal.placementVersion||(placementGroup(path.substr(11),token,mask)&&token==it->second.placementLease))&&!members(path).empty()){occupied=true;break;}}
+            if(occupied){++it;continue;}
+            it=journal.leases.erase(it);changed=true;
+        }
+        if(changed)journal.commit();
+    }
     bool finiteRtBudget() const {
         auto period=trim(read("/proc/sys/kernel/sched_rt_period_us")),runtime=trim(read("/proc/sys/kernel/sched_rt_runtime_us"));
         if(period.empty()||runtime.empty())return false;
@@ -479,8 +539,10 @@ public:
         return write(path,std::to_string(tid))&&trim(read(path))==std::to_string(tid);
     }
     std::string probeWaltCapability(){
-        require(journal.entries.empty()&&journal.leases.empty()&&journal.globals.empty(),"probe before live leases only");
-        auto began=now();std::string reason="WALT_ADAPTER_UNKNOWN";int original=-1,observed=-1,restored=-1,reduce=-2;
+        require(noRuntimeOwners()&&!recoveryHeld(),"probe without live RT/WALT owners only");
+        probeAfterQuarantine=false;
+        auto began=now();std::string reason="WALT_ADAPTER_UNKNOWN";int original=-1,observed=-1,restored=-1,reduce=-2,reduceObserved=-2,reduceRestored=-2;
+        waltCapable=waltSemanticCapable=false;
         if(qualifiedWaltIdentity()){
             std::atomic<int> target{0};std::atomic<bool> stop{false};
             std::thread worker([&]{target=static_cast<int>(syscall(SYS_gettid));auto end=now()+3000;
@@ -492,7 +554,9 @@ public:
                 OwnerRecord r;r.pid=getpid();r.processStart=identity(r.pid).start;r.user=getuid();r.tid=tid;r.threadStart=identity(r.pid,tid).start;
                 r.package="org.zuicontrol.waltprobe";r.name=processName(r.pid);r.savedGroup=group(tid);r.savedMask=affinity(tid);
                 require(journal.same(r)&&normalGroup(r.savedGroup),"probe current dedicated thread");
-                journal.runtimeVersion=journal.waltVersion=true;journal.entries[tid]=r;journal.commit();
+                OwnerRecord lease=r;lease.tid=r.pid;lease.threadStart=r.processStart;
+                std::ostringstream token;token<<'l'<<std::hex<<r.pid<<'-'<<r.processStart<<'-'<<r.user<<'-'<<lease.threadStart<<'-'<<now();r.placementLease=lease.placementLease=token.str();
+                journal.runtimeVersion=journal.waltVersion=journal.placementVersion=true;journal.leases[r.pid]=lease;journal.entries[tid]=r;journal.commit();
                 auto& owned=journal.entries.at(tid).walt;
                 try{
                     bool readOk=kernel.get(1,tid,original)&&kernel.get(2,tid,reduce);
@@ -503,12 +567,19 @@ public:
                     bool recoveredOk=recovered!=SchedulerResult::UNAVAILABLE&&kernel.get(1,tid,restored)&&restored==original&&journal.same(r);
                     waltCapable=readOk&&appliedOk&&recoveredOk;
                     reason=waltCapable?"WALT_CAPABILITY_WRITE_READ_RESTORE_PASS":!readOk?"WALT_INTERFACE_READ_UNAVAILABLE":!appliedOk?"WALT_CONTROL_WRITE_UNAVAILABLE":"WALT_PROBE_RECOVERY_FAILED";
+                    if(waltCapable&&qualifiedWaltSemanticAdapter()){
+                        auto reduced=applyWalt(owned,2,tid,128,kernel,[&]{journal.commit();},[&]{return journal.same(r);},true);
+                        bool wrote=(reduced==SchedulerResult::APPLIED||reduced==SchedulerResult::UNCHANGED)&&kernel.get(2,tid,reduceObserved)&&reduceObserved==128;
+                        auto returned=restoreWalt(owned,tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);},true);
+                        bool recovered=returned==SchedulerResult::RESTORED||returned==SchedulerResult::SEMANTIC_RESTORED;
+                        waltSemanticCapable=wrote&&recovered&&kernel.get(2,tid,reduceRestored)&&reduceRestored==(reduce==-1?255:reduce)&&journal.same(r);
+                    }
                 }catch(const std::exception&){reason="WALT_PROBE_OPERATION_FAILED";waltCapable=false;}
-                // Ending this dedicated boost-only task bounds even a failed probe.
+                // Ending this dedicated task bounds failure; success requires live withdrawal.
                 // Drop its record only after the thread has actually terminated.
                 stop=true;worker.join();
                 require(!identity(r.pid,tid).start,"probe thread remains live");
-                journal.entries.erase(tid);journal.commit();retireWaltGlobal();
+                journal.entries.erase(tid);journal.leases.erase(r.pid);journal.commit();retireWaltGlobal();
             }else reason="WALT_PROBE_READY_UNAVAILABLE";
         }
         struct utsname kernel{};uname(&kernel);auto domain=read("/proc/self/attr/current");domain.erase(std::find(domain.begin(),domain.end(),'\0'),domain.end());domain=trim(domain);
@@ -516,7 +587,9 @@ public:
         std::ostringstream result;result<<"{\"schema\":1,\"boot\":"<<std::quoted(journal.currentBootId())<<",\"pid\":"<<getpid()<<",\"birth\":"<<identity(getpid()).start
             <<",\"execution_domain\":"<<std::quoted(domain)<<",\"kernel_release\":"<<std::quoted(kernel.release)<<",\"module_note_hex\":"<<std::quoted(noteHex.str())
             <<",\"capable\":"<<(waltCapable?"true":"false")<<",\"reason\":"<<std::quoted(reason)<<",\"local_elapsed_ms\":"<<now()-began<<",\"boost_original\":"<<original
-            <<",\"boost_written_readback\":"<<observed<<",\"boost_restored_while_alive\":"<<restored<<",\"reduce_original\":"<<reduce<<",\"negative_reduce_normalization_qualified\":false}\n";
+            <<",\"boost_written_readback\":"<<observed<<",\"boost_restored_while_alive\":"<<restored<<",\"reduce_original\":"<<reduce
+            <<",\"reduce_written_readback\":"<<reduceObserved<<",\"reduce_restored_while_alive\":"<<reduceRestored
+            <<",\"reduce_restore_type\":"<<std::quoted(reduce==-1?"SEMANTIC_RESTORE":"EXACT_RESTORE")<<",\"negative_reduce_normalization_qualified\":"<<(waltSemanticCapable?"true":"false")<<"}\n";
         journal.recordAuxiliary("walt-capability.json",result.str());return reason;
     }
     SchedulerResult walt(ProcessState& p,int tid,int kind,int value,AuthorityFence* authority=nullptr){
@@ -524,14 +597,14 @@ public:
         if(it==journal.entries.end()&&!identity(p.pid,tid).start)return SchedulerResult::DEAD;
         require(it!=journal.entries.end(),"WALT without durable placement identity");auto& r=it->second;
         WaltKernel kernel{[&](int target){return selectWalt(target);}};
-        if(!kind)return restoreWalt(r.walt,tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);});
+        if(!kind)return restoreWalt(r.walt,tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);},r.walt.active&&r.walt.semantic&&qualifiedWaltSemanticAdapter());
         if(!waltCapable||!qualifiedWaltIdentity())return SchedulerResult::UNAVAILABLE;
         journal.runtimeVersion=true;journal.waltVersion=true;
         return applyWalt(r.walt,kind,tid,value,kernel,[&]{journal.commit();},[&]{
             fence(authority);auto task=p.tasks.find(tid);
             if(task!=p.tasks.end()&&physicalRevoke(p,tid,task->second))throw PhysicalRevoke{};
             return p.writable()&&journal.same(r)&&processName(p.pid)==p.name;
-        });
+        },kind==2&&waltSemanticCapable&&qualifiedWaltSemanticAdapter());
     }
     bool prepareRealtimeGlobal(){
         if(!finiteRtBudget())return false;
@@ -571,8 +644,14 @@ public:
         }return p;
     }
     template<class Proc> BaselineResult acquire(ProcessState& p,Proc& proc){
+        reapQuarantine();
         if(recoveryHeld()&&!journal.placementVersion&&(!journal.leases.empty()||!journal.entries.empty()||!journal.globals.empty()))return BaselineResult::DEFER;
         auto prior=journal.leases.find(p.pid);if(prior!=journal.leases.end()&&heldLease(prior->second))return BaselineResult::DEFER;
+        if(prior!=journal.leases.end()){
+            std::set<int> active;for(const auto& [pid,_]:journal.leases)if(pid!=p.pid)active.insert(pid);
+            retireReleasedRecoveryLeases(active);
+            if(journal.leases.count(p.pid))return BaselineResult::DEFER;
+        }
         if(quarantined.count(root))return BaselineResult::DEFER;
         if(recoveryHeld()){
             if(quarantined.count("/dev/cpuset"+proc.cpuset(p.pid)))return BaselineResult::DEFER;
@@ -791,7 +870,7 @@ public:
         for(auto& entry:journal.entries){auto tid=entry.first;auto& r=entry.second;
             if(!journal.belongs(r,p)||!journal.same(r))continue;
             WaltKernel waltKernel{[&](int target){return selectWalt(target);}};
-            auto waltResult=restoreWalt(r.walt,tid,waltKernel,[&]{journal.commit();},[&]{return journal.same(r);});
+            auto waltResult=restoreWalt(r.walt,tid,waltKernel,[&]{journal.commit();},[&]{return journal.same(r);},r.walt.active&&r.walt.semantic&&qualifiedWaltSemanticAdapter());
             require(waltResult!=SchedulerResult::UNAVAILABLE,"background WALT restore unresolved");
             SchedulerKernel kernel;
             auto schedule=restoreScheduler(r.scheduler,tid,kernel,[&]{journal.commit();},[&]{return journal.same(r);});
@@ -915,6 +994,7 @@ public:
     }
     void cleanup(){
         requireScaffold();
+        reapQuarantine();
         if(!quarantined.count(root))require(members(root).empty(),"remaining root tasks");
         for(auto& p:created){if(quarantined.count(p))continue;require(members(p).empty(),"remaining owned tasks");require(rmdir(p.c_str())==0,"cpuset child removal");}
         created.clear();for(auto& p:groups())require(quarantined.count(p),"remaining cpuset children");

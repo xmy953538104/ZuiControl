@@ -153,6 +153,8 @@ def merge(factory,packs,user):
                 for b in d['packages']:
                     need(not overlaps(a,b) or c['profiles'][a[2]]==d['profiles'][b[2]],'same pack_priority overlapping conflict')
     result=dict(enabled=configs[0][3]['enabled'],debug=configs[0][3]['debug'],profiles={},packages=[])
+    defaults=configs[-1][3] if user else configs[0][3]
+    if defaults.get('schema')==3:result.update(schema=3,mode=defaults['mode'],rt=defaults['rt'])
     seen=set()
     for _,_,_,c in sorted(configs,key=lambda x:(-x[0],-x[1],x[2])):
         aliases={}
@@ -162,7 +164,7 @@ def merge(factory,packs,user):
             if profile not in aliases:
                 alias=f'p{len(result["profiles"]):04d}';aliases[profile]=alias;p=dict(c['profiles'][profile])
                 if c.get('schema')==3:
-                    mode,rt,placement,marker=p['runtime'];p['runtime']=(c['mode'] if mode<0 else mode,c['rt'] if rt<0 else rt,placement,marker);result['schema']=3
+                    result['schema']=3
                 result['profiles'][alias]=p
             result['packages'].append((kind,package,aliases[profile],100000-len(result['packages'])))
     return dump_rules(result)

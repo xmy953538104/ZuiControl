@@ -1392,7 +1392,8 @@ class MainActivity : Activity() {
             "NONE","OK","RT_DISABLED","CUSTOM_MASKS"->""
             else->value
         }
-        val details=listOf(reason(row.optString("modeReason")),reason(row.optString("rtReason"))).filter{it.isNotBlank()}.distinct().joinToString(" · ")
+        val restoration=if(row.optString("waltRestoreType")=="SEMANTIC_RESTORE")"当前八核平台：WALT 原始 -1 按 255 语义恢复" else ""
+        val details=listOf(reason(row.optString("modeReason")),reason(row.optString("rtReason")),restoration).filter{it.isNotBlank()}.distinct().joinToString(" · ")
         return "$requested\n本次原生读回：请求 mode${row.getInt("requestedMode")}/RT${row.getInt("requestedRt")} → 生效 mode${row.getInt("effectiveMode")}/RT${row.getInt("effectiveRt")}${if(details.isEmpty())"" else "\n$details"}"
     }
     private fun runtimeRuleDialog(d: RuleDraft) {

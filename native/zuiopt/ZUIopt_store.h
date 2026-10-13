@@ -280,7 +280,8 @@ public:
     std::string state(){return state(current());}
     std::string state(const RuleState& s){
         require(!s.effective.empty(),"store not initialized");std::ostringstream out;
-        out<<"settings_pending="<<trim(root.get("settings.pending",64,true))<<"\nstore_schema=ZUIOPT_CANONICAL_STATE_V3\ncanonical_sha256="<<sha256(s.user)<<"\nloaded_generation="<<trim(root.get("loaded-generation.v2",256,true))<<"\ngeneration="<<generationOf(s.effective)<<"\ntransaction="<<s.transaction<<"\nfactory_sha256="<<factorySha<<"\nuser_size="<<s.user.size()<<"\nuser_sha256="<<sha256(s.user)<<"\neffective_sha256="<<sha256(s.effective)<<'\n';
+        const auto userHash=sha256(s.user); // One immutable, already verified content snapshot.
+        out<<"settings_pending="<<trim(root.get("settings.pending",64,true))<<"\nstore_schema=ZUIOPT_CANONICAL_STATE_V3\ncanonical_sha256="<<userHash<<"\nloaded_generation="<<trim(root.get("loaded-generation.v2",256,true))<<"\ngeneration="<<generationOf(s.effective)<<"\ntransaction="<<s.transaction<<"\nfactory_sha256="<<factorySha<<"\nuser_size="<<s.user.size()<<"\nuser_sha256="<<userHash<<"\neffective_sha256="<<sha256(s.effective)<<'\n';
         out<<"upstream_sha256="<<sha256(s.upstream)<<"\nupstream_size="<<s.upstream.size()<<"\nupstream_metadata_size="<<s.upstreamMetadata.size()<<"\n";
         PrivateDir active(generations,generationOf(s.effective));auto previous=active.get("last_good.conf",RULE_LIMIT,true);
         out<<"previous_generation="<<(previous.empty()?"none":generationOf(previous))<<'\n';

@@ -131,15 +131,19 @@ void authorityDeterministic(){
         require(::read(fd,&value,sizeof(value))<0&&errno==EAGAIN,"idle polling notification");close(fd);}
     puts("V59_FATAL_PATH_REPLACED_BY_REVOCATION=PASS;A01_200_TASKS=PASS;EXACT_DEVICE_TID=NOT_PROVEN;RACE_A_TO_F=PASS;EVENT_SOURCE_VARIANTS=PASS;SAME_AUTHORITY_DRIFT_PENDING=PASS;IDLE_EXTRA_WAKE=0");
 }
+FixtureSelection* authoritySelection=nullptr;
 void authorityStress(){
-    std::mt19937 random(0x59e90c);constexpr int total=2000;
+    std::mt19937 random(0x59e90c);constexpr int total=2000;int executed=0;
     for(int i=0;i<total;i++)try{
-        AuthorityFixture f;int n=8+random()%33;f.setup(n);Kernel::time=250+random()%4000;
+        int n=8+random()%33,time=250+random()%4000;
         int point=random()%7,mode=random()%5;mode=mode==4?5:mode;
-        f.scan(point,mode,random()%101,random()%3,random()%n,random()%2);
+        int percent=random()%101,kind=random()%3,index=random()%n;bool mutate=random()%2;
+        if(authoritySelection&&!authoritySelection->selected(i))continue;
+        executed++;AuthorityFixture f;f.setup(n);Kernel::time=time;f.scan(point,mode,percent,kind,index,mutate);
     }catch(const std::exception& e){throw std::runtime_error("authority case="+std::to_string(i)+" "+e.what());}
-    puts("AUTHORITY_RANDOM_STRESS_COUNT=2000;RECOVERABLE_GLOBAL_FATAL=0;STATUS3_RECOVERABLE=0;STALE_AUTHORITY_SCAN_FATAL=0;PLACEMENT_AFTER_STALE_AUTHORITY=0;OWNER_LEAK=0;STALE_PID=0;JOURNAL_CLEAR_WITH_LIVE_ZUIOPT_TASK=0;G07_REENTRY=PASS");
+    std::cout<<"AUTHORITY_RANDOM_STRESS_COUNT="<<executed<<";DENOMINATOR=2000;RECOVERABLE_GLOBAL_FATAL=0;STATUS3_RECOVERABLE=0;STALE_AUTHORITY_SCAN_FATAL=0;PLACEMENT_AFTER_STALE_AUTHORITY=0;OWNER_LEAK=0;STALE_PID=0;JOURNAL_CLEAR_WITH_LIVE_ZUIOPT_TASK=0;G07_REENTRY=PASS\n";
 }
-int main(int argc,char** argv){try{require(argc==1||(argc==2&&std::string(argv[1])=="--deterministic-only"),"authority fixture arguments");
-    std::cout<<std::unitbuf;timed("AUTHORITY_DETERMINISTIC",authorityDeterministic);if(argc==1)timed("AUTHORITY_RANDOM",authorityStress);return 0;}
+int main(int argc,char** argv){try{std::cout<<std::unitbuf;FixtureSelection selection(argc,argv);authoritySelection=&selection;
+    if(selection.deterministic)timed("AUTHORITY_DETERMINISTIC",authorityDeterministic);
+    if(selection.stress){timed("AUTHORITY_RANDOM",authorityStress);std::cout<<"AUTHORITY_EXECUTED="<<(2000+selection.parts-1-selection.index)/selection.parts<<";DENOMINATOR=2000\n";}return 0;}
     catch(const std::exception& e){std::cerr<<"AUTHORITY_FAIL "<<e.what()<<'\n';return 1;}}

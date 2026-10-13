@@ -74,7 +74,7 @@ template<class F>void until(F f,int ms,const char* why){auto end=now()+ms;while(
 void injectOrdinaryRecordLoss(const Target& target,bool unbound=false){
     const std::string directory="/data/vendor/zui_control/zuiopt",path=directory+"/owner_state.v1";
     auto originalJournal=read(path);auto split=originalJournal.find('\n');require(split!=originalJournal.npos,"fault journal header");
-    std::istringstream header(originalJournal.substr(0,split));std::string version;uint32_t crc=0;require(bool(header>>version>>crc)&&(version=="ZUIOPT_OWNER_STATE_V5"||version=="ZUIOPT_OWNER_STATE_V6")&&checksum(originalJournal.substr(split+1))==crc,"exact candidate fault journal");
+    std::istringstream header(originalJournal.substr(0,split));std::string version;uint32_t crc=0;require(bool(header>>version>>crc)&&(version=="ZUIOPT_OWNER_STATE_V5"||version=="ZUIOPT_OWNER_STATE_V6"||version=="ZUIOPT_OWNER_STATE_V7")&&checksum(originalJournal.substr(split+1))==crc,"exact candidate fault journal");
     std::istringstream rows(originalJournal.substr(split+1));std::ostringstream retained;std::string row;bool removed=false,leaseSeen=false;
     while(std::getline(rows,row)){
         std::istringstream in(row);char type=0;int pid=0,user=0,tid=0;uint64_t pb=0,tb=0;
@@ -107,9 +107,10 @@ int main(int argc,char** argv){
     bool recordLoss=action=="--dev-provenance-loss"||unboundQuarantine;
     bool hang=development&&(action.find("hang")!=action.npos||recordLoss);
     bool crash=development||action=="--crash"||action=="--rt-crash";
-    bool rt=action=="--rt"||action=="--rt-crash"||action=="--mode2-rt"||action=="--mode1-rt"||(development&&action.find("-rt-")!=action.npos);
+    bool mode2Fallback=action=="--mode2-rt-no-c2";
+    bool rt=action=="--rt"||action=="--rt-crash"||action=="--mode2-rt"||mode2Fallback||action=="--mode1-rt"||(development&&action.find("-rt-")!=action.npos);
     bool mode1=action=="--mode1"||action=="--mode1-rt";
-    bool mode2=argc==3&&(std::string(argv[2])=="--mode2"||std::string(argv[2])=="--mode2-rt");
+    bool mode2=argc==3&&(std::string(argv[2])=="--mode2"||std::string(argv[2])=="--mode2-rt"||mode2Fallback||(development&&action.find("-mode2-")!=action.npos));
     require((argc==2||crash||rt||mode1||mode2)&&getuid()==0,"root device-local output directory");outDir=argv[1];began=now();signal(SIGPIPE,SIG_IGN);
     auto override=trim(read(outDir+"/candidate.path"));if(!override.empty()){require(override.rfind("/data/local/tmp/",0)==0&&access(override.c_str(),X_OK)==0,"legal temporary candidate path");candidateExecutable=override;}
     require(!development||candidateExecutable.rfind("/data/local/tmp/",0)==0,"manual faults only temporary candidate");
@@ -133,11 +134,12 @@ int main(int argc,char** argv){
         for(const auto& t:{a,b}){critical<<"tid="<<t.tid<<" birth="<<t.threadBirth<<" group="<<t.cpuset<<" mask="<<t.mask<<" scheduler=";schedulerText(critical,t.scheduler);critical<<'\n';}
         int saved=open((outDir+"/critical-before.txt").c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC,0600);auto bytes=critical.str();
         require(saved>=0&&::write(saved,bytes.data(),bytes.size())==static_cast<ssize_t>(bytes.size())&&fsync(saved)==0,"durable fixed original targets");close(saved);
-        bool wide=mode1||(mode2&&!rt);
-        commit(grant,sha256(original));until([&]{return applied(a,wide?252:28,rt)&&applied(b,wide?252:128,rt);},2000,"target apply timeout");applyMs=now()-began;event("mode-targets-applied");
-        if(mode2){auto receipt=read("/data/vendor/zui_control/zuiopt/runtime-status.v1");auto expected="\"package\":\"org.zuicontrol.adcblab\",\"requestedMode\":2,\"effectiveMode\":"+std::string(rt?"0":"2");
+        bool wide=mode1||(mode2&&!mode2Fallback);
+        commit(grant,sha256(original));until([&]{return applied(a,wide?252:28,rt)&&applied(b,mode2Fallback?124:wide?252:128,rt&&!mode2Fallback);},2000,"target apply timeout");applyMs=now()-began;event("mode-targets-applied");
+        if(mode2){auto receipt=read("/data/vendor/zui_control/zuiopt/runtime-status.v1");auto expected="\"package\":\"org.zuicontrol.adcblab\",\"requestedMode\":2,\"effectiveMode\":"+std::string(mode2Fallback?"0":"2");
             require(receipt.find(expected)!=receipt.npos&&receipt.find("\"pid\":"+std::to_string(pid)+",\"processStart\":"+std::to_string(a.processBirth))!=receipt.npos,"current target mode2 receipt");
-            if(rt)require(receipt.find("WALT_ORIGINAL_UNRESTORABLE")!=receipt.npos,"honest negative-WALT fallback reason");
+            if(mode2Fallback)require(receipt.find("NO_C2_REPRESENTATIVE")!=receipt.npos&&receipt.find("\"waltRestoreType\":\"FALLBACK\"")!=receipt.npos,"no representative fallback must be explicit");
+            else if(rt){int tid=0,value=0;std::istringstream walt(read("/proc/sys/walt/task_reduce_affinity"));require(bool(walt>>tid>>value)&&tid==b.tid&&value==128,"actual representative WALT reduce readback");require(receipt.find("SEMANTIC_RESTORE")!=receipt.npos||receipt.find("EXACT_RESTORE")!=receipt.npos,"declared restoration class");}
             else {int tid=0,value=0;std::istringstream walt(read("/proc/sys/walt/sched_per_task_boost"));require(bool(walt>>tid>>value)&&tid==b.tid&&value==2,"actual representative WALT boost readback");}
             event("mode2-runtime-receipt",receipt);}
         if(rt)require(trim(read("/proc/sys/kernel/sched_rr_timeslice_ms"))=="3","RT global applied");
@@ -172,7 +174,7 @@ int main(int argc,char** argv){
                 int candidate=number(loaded[2]);if(candidate==old||!identity(candidate).start||std::to_string(identity(candidate).start)!=loaded[3])return false;
                 if(processName(candidate)!=candidateExecutable)return false;
                 if(command({"/system/bin/getprop","init.svc.zui_zuiopt"})!=(development?"stopped":"running"))return false;
-                newNative=candidate;return applied(a,28,rt)&&applied(b,128,rt);}catch(...){return false;}},8500,development?"manual supervisor current Native recovery/reapply timeout":"real init current Native recovery/reapply timeout");
+                newNative=candidate;return applied(a,wide?252:28,rt)&&applied(b,mode2Fallback?124:wide?252:128,rt&&!mode2Fallback);}catch(...){return false;}},8500,development?"manual supervisor current Native recovery/reapply timeout":"real init current Native recovery/reapply timeout");
             event(unboundQuarantine?"manual-supervisor-quarantine-current-owner":development?"manual-supervisor-recovered-and-reapplied":"init-recovered-and-reapplied",std::to_string(newNative));snapshot(a,"restart-C1");snapshot(b,"restart-C2");
             if(unboundQuarantine){auto ownerBirth=identity(newNative).start;auto receipt=read("/data/vendor/zui_control/zuiopt/recovery-quarantine.json");
                 require(receipt.find("\"owner_pid\":"+std::to_string(newNative)+",")!=receipt.npos&&receipt.find("\"owner_birth\":"+std::to_string(ownerBirth)+",")!=receipt.npos&&receipt.find("HELD_NO_TRUSTED_ORIGINAL")!=receipt.npos,"current owner quarantine receipt");
@@ -192,7 +194,7 @@ int main(int argc,char** argv){
     }catch(const std::exception& e){error=e.what();event("case-failed",error);try{rollbackOwn();recovered=true;}catch(const std::exception& x){event("rollback-failed",x.what());}}
     char token='C';::write(stop[1],&token,1);close(stop[1]);int gs=0;waitpid(guard,&gs,0);pass=pass&&WIFEXITED(gs)&&WEXITSTATUS(gs)==0;
     try{command({"/system/bin/am","force-stop","org.zuicontrol.adcblab"});command({"/system/bin/am","start","-W","-n","com.zui.zuicontrol/.MainActivity"});}catch(const std::exception& e){pass=false;error+=e.what();}
-    std::string caseName=development?action.substr(2):mode2?(rt?"mode2_rt1_honest_negative_WALT_fallback_live_off":"mode2_rt0_WALT_boost_live_withdrawal"):mode1?(rt?"mode1_Kana_fc_fc_fc_rt1_live_off":"mode1_Kana_fc_fc_fc_live_withdrawal"):rt?(crash?"mode0_rt1_init_crash_live_off":"mode0_rt1_live_off"):(crash?"mode0_rt0_init_crash_live_reapply_withdrawal":"mode0_rt0_live_withdrawal");
+    std::string caseName=development?action.substr(2):mode2Fallback?"mode2_rt1_fallback_no_C2_live_off":mode2?(rt?"mode2_rt1_complete_live_off":"mode2_rt0_WALT_boost_live_withdrawal"):mode1?(rt?"mode1_Kana_fc_fc_fc_rt1_live_off":"mode1_Kana_fc_fc_fc_live_withdrawal"):rt?(crash?"mode0_rt1_init_crash_live_off":"mode0_rt1_live_off"):(crash?"mode0_rt0_init_crash_live_reapply_withdrawal":"mode0_rt0_live_withdrawal");
     std::ofstream out(outDir+"/RESULTS.json");out<<"{\"schema\":\"ZUIOPT_DEVICE_LOCAL_R2\",\"case\":"<<std::quoted(caseName)<<",\"status\":"<<std::quoted(pass?"PASS":"FAIL")<<",\"local_elapsed_ms\":"<<now()-began<<",\"ready_ms\":"<<readyMs<<",\"apply_ms\":"<<applyMs<<",\"withdraw_ms\":"<<releaseMs<<",\"pid\":"<<pid<<",\"C1_tid\":"<<c1<<",\"C2_tid\":"<<c2<<",\"canonical_restored\":"<<(recovered?"true":"false")<<",\"product_writer\":"<<jsonQuote(candidateExecutable)<<",\"test_kernel_writes\":0,\"fault_injections\":"<<injections<<",\"hang_injections\":"<<stopSignals<<",\"kill_injections\":"<<killSignals<<",\"init_new_native\":"<<(development?0:newNative)<<",\"manual_new_native\":"<<(development?newNative:0)<<",\"error\":"<<jsonQuote(error)<<"}\n";
     return pass?0:1;
 }

@@ -53,13 +53,21 @@ internal object ZuioptRead {
         require(identity.size==5 && identity[0]==ZuioptRules.field(state,"generation") && identity[1].matches(Regex("[0-9a-f-]{36}")) && identity[2].toInt()>0 && identity[3].toLong()>0 && identity[4]==ZuioptRules.field(state,"effective_sha256"))
         val text=decoded(2,"runtime",32768);require(text.endsWith('\n') && '\r' !in text && '\u0000' !in text)
         val json=org.json.JSONObject(text)
-        require(json.keys().asSequence().toSet()==setOf("schema","boot","owner","status","totalProcesses","processes","truncated") && json.getInt("schema")==2 && json.getString("owner")==owner && json.getString("boot")==identity[1])
+        val fields=setOf("schema","boot","owner","status","totalProcesses","processes","truncated")
+        require(json.keys().asSequence().toSet() in setOf(fields,fields+"runtimeCapabilities") && json.getInt("schema")==2 && json.getString("owner")==owner && json.getString("boot")==identity[1])
+        if(json.has("runtimeCapabilities")){
+            val capabilities=json.getJSONArray("runtimeCapabilities");require(capabilities.length() in 1..16)
+            val names=(0 until capabilities.length()).map{capabilities.getString(it)}
+            require(names.toSet().size==names.size && names.all{it.matches(Regex("[a-z0-9-]{1,40}"))})
+        }
         require(json.getString("status") in setOf("PENDING_OWNER_ACK","NO_RUNTIME_OBSERVATIONS","ACKNOWLEDGED_RUNTIME"))
         val processes=json.getJSONArray("processes");require(processes.length()<=json.getInt("totalProcesses") && json.getInt("totalProcesses")>=0 && (json.getBoolean("truncated") || processes.length()==json.getInt("totalProcesses")))
         val pids=mutableSetOf<Int>()
         for(i in 0 until processes.length()){
             val row=processes.getJSONObject(i)
-            require(row.keys().asSequence().toSet()==setOf("schema","boot","pid","processStart","uid","package","requestedMode","effectiveMode","modeReason","requestedRt","effectiveRt","rtReason","C1","C1Start","C2","C2Start"))
+            val fields=setOf("schema","boot","pid","processStart","uid","package","requestedMode","effectiveMode","modeReason","requestedRt","effectiveRt","rtReason","C1","C1Start","C2","C2Start")
+            require(row.keys().asSequence().toSet() in setOf(fields,fields+"waltRestoreType"))
+            if(row.has("waltRestoreType"))require(row.getString("waltRestoreType") in setOf("EXACT_RESTORE","SEMANTIC_RESTORE","FALLBACK"))
             require(row.getInt("schema")==1 && row.getString("boot")==identity[1] && row.getInt("pid")>0 && pids.add(row.getInt("pid")) && row.getLong("processStart")>0 && row.getInt("uid")>=10000)
             require(row.getString("package").matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]*)+")))
             for(key in listOf("requestedMode","effectiveMode"))require(row.getInt(key) in 0..2)

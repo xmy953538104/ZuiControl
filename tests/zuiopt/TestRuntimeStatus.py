@@ -55,6 +55,7 @@ def fixture():
     branch=method(cli,'        else if(command=="runtime")')
     branch=branch[branch.index('{')+1:-1]
     fixture=r'''#include <map>
+#include <set>
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -79,7 +80,7 @@ enum class EventSubstage {NONE,BACKGROUND_RELEASE,RELOAD_RELEASE,STOP_RELEASE,CA
 enum class RuntimeBlockerReason {BACKGROUND_RELEASE_BLOCKED};
 struct ProcessState {int pid=42;bool alive=true,releaseBlocked=false,owned=true,writeable=true,acquiringFlag=false;
  bool managed()const{return owned;}bool writable()const{return owned&&writeable;}bool acquiring()const{return acquiringFlag;}};
-struct Placement {bool contention=false,denied=false;int calls=0;ReleaseCause last=ReleaseCause::AUTHORITY_BACKGROUND;
+struct Placement {bool semanticWaltCapable()const{return false;}bool contention=false,denied=false;int calls=0;ReleaseCause last=ReleaseCause::AUTHORITY_BACKGROUND;
  void release(ProcessState& p,ReleaseCause cause){calls++;last=cause;if(denied)throw std::runtime_error("physical release denied");if(contention)p.writeable=false;else{p.owned=false;p.acquiringFlag=false;}}};
 struct Journal {int entries=2,globals=1,commits=0;std::string currentBootId(){return BOOT;}};
 struct Store {std::map<std::string,std::string> files;bool fail=false;int writes=0;std::function<void(const std::string&)> onRead=[](const std::string&){};};
@@ -88,7 +89,7 @@ struct PrivateDir {std::string root;explicit PrivateDir(std::string r):root(std:
  void put(const std::string& path,const std::string& text){auto& s=stores[root];if(s.fail)throw std::runtime_error("atomic write failed");s.files[path]=text;s.writes++;}
  std::string get(const std::string& path,size_t limit,bool){auto& s=stores[root];s.onRead(path);auto text=s.files[path];require(text.size()<=limit,"mock bound");return text;}};
 @@RECEIPT@@
-struct StatusCore {std::string stateRoot,runtimeStatus,loadedIdentity=OWNER;bool runtimePending=true;std::map<int,std::string> runtimeProcesses;std::map<int,ProcessState> states;
+struct StatusCore {std::string stateRoot,runtimeStatus,loadedIdentity=OWNER;bool runtimePending=true,waltQualified=false;std::map<int,std::string> runtimeProcesses;std::map<int,ProcessState> states;
  Journal j;Placement pl;Journal* journal=&j;Placement* placement=&pl;EventSubstage substage=EventSubstage::NONE;int blockers=0;
  explicit StatusCore(std::string root):stateRoot(std::move(root)){}
  void blocked(RuntimeBlockerReason){blockers++;}

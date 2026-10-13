@@ -29,7 +29,7 @@ def release(repo,input_path,kind,source,version,date,upload=False):
         tree=git('write-tree',env=env)
         need(git('ls-tree','-r','--name-only',tree).splitlines()==['output/latest.json','output/rules.conf'],'distribution tree ownership')
         args=['-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com',
-              'commit-tree',tree,'-m','Publish Schema2 rules revision '+str(revision)]
+              'commit-tree',tree,'-m','Publish Schema'+str(manifest['rulesSchema'])+' rules revision '+str(revision)]
         if base:args+=['-p',base]
         commit=git(*args)
         if upload:git('push','origin',commit+':'+BRANCH) # fast-forward only; external races fail closed

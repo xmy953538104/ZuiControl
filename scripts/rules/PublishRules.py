@@ -1,4 +1,4 @@
-"""Deterministic two-file upstream publication using the qualified Schema2 normalizer."""
+"""Deterministic Schema2/3 publication; manifest last, named capabilities fail closed."""
 from pathlib import Path
 import argparse,datetime,hashlib,json,os,re,tempfile
 from ZUIOPT_rule_pack import MAX_PACK,MAX_RULES,normalize_source,parse_rules,read_bounded,need
@@ -7,14 +7,32 @@ LATEST_LIMIT=2048
 MAX_REVISION=9007199254740991  # exact in Kotlin Long and JavaScript safe integers
 FIELDS={'schema','revision','source','sourceVersion','sourceDate','sourceCommit',
         'targetSoC','targetTopology','rulesSchema','rulesSha256','rulesSize'}
+BASE_CAPABILITIES={'schema3','category-ranking','runtime-inheritance','owned-rt-recovery'}
+CAPABILITIES=BASE_CAPABILITIES|{'mode0','mode1','mode2','marker-dummy','marker-double','walt-boost-restorable','walt-reduce-restorable'}
+
+def required_capabilities(config):
+    if config.get('schema',2)==2:return set()
+    required=set(BASE_CAPABILITIES)
+    for p in config['profiles'].values():
+        mode,rt,placement,marker=p['runtime'];mode=config['mode'] if mode<0 else mode;rt=config['rt'] if rt<0 else rt
+        required.add('mode'+str(mode))
+        if mode==2 and placement=='preset':required.add('walt-reduce-restorable' if rt else 'walt-boost-restorable')
+        if marker!='none':required.add('marker-'+marker)
+    if not config['profiles']:required.add('mode'+str(config['mode']))
+    return required
 
 def encoded(value):
     return (json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=True)+'\n').encode('ascii')
 
 def validate(value):
-    need(isinstance(value,dict) and set(value)==FIELDS,'latest fields')
-    need(type(value['schema']) is int and value['schema']==1,'latest schema')
-    need(type(value['rulesSchema']) is int and value['rulesSchema']==2,'rules schema')
+    need(isinstance(value,dict),'latest object')
+    runtime=value.get('rulesSchema')==3
+    need(set(value)==(FIELDS|{'requiredCapabilities'} if runtime else FIELDS),'latest fields')
+    need(type(value['schema']) is int and value['schema']==(2 if runtime else 1),'latest schema')
+    need(type(value['rulesSchema']) is int and value['rulesSchema'] in (2,3),'rules schema')
+    if runtime:
+        caps=value['requiredCapabilities'];need(isinstance(caps,list) and all(isinstance(c,str) for c in caps),'capability types')
+        need(caps==sorted(set(caps)) and BASE_CAPABILITIES<=set(caps)<=CAPABILITIES,'required capabilities')
     need(type(value['revision']) is int and 1<=value['revision']<=MAX_REVISION,'revision bound')
     for key,pattern in (('source',r'[A-Za-z0-9_.:/-]{1,128}'),('sourceVersion',r'[A-Za-z0-9_.+-]{1,64}'),
                         ('sourceDate',r'[0-9]{4}-[0-9]{2}-[0-9]{2}'),('sourceCommit',r'[0-9a-f]{40}'),('rulesSha256',r'[0-9a-f]{64}')):
@@ -44,13 +62,19 @@ def compare(candidate,current):
 def verify(manifest,rules):
     validate(manifest)
     need(len(rules)==manifest['rulesSize'] and hashlib.sha256(rules).hexdigest()==manifest['rulesSha256'],'rules integrity')
-    need(normalize_source(rules,'canonical')==rules,'rules must be normalized Schema2')
-    need(all(mapping[0]=='exact' for mapping in parse_rules(rules)['packages']),'V83 upstream library requires exact package mappings')
+    config=parse_rules(rules)
+    need(not config['debug'],'published debug must remain disabled')
+    need(normalize_source(rules,'canonical')==rules and config.get('schema',2)==manifest['rulesSchema'],'rules must be normalized declared schema')
+    need(all(mapping[0]=='exact' for mapping in config['packages']),'upstream library requires exact package mappings')
+    need(required_capabilities(config)==set(manifest.get('requiredCapabilities',[])),'capabilities/content mismatch')
 
 def build(data,kind,revision,source,version,date,commit):
     rules=normalize_source(data,kind)
-    manifest=validate(dict(schema=1,revision=revision,source=source,sourceVersion=version,sourceDate=date,sourceCommit=commit,
-        targetSoC='SM8650',targetTopology='0-7',rulesSchema=2,rulesSha256=hashlib.sha256(rules).hexdigest(),rulesSize=len(rules)))
+    config=parse_rules(rules);schema=config.get('schema',2)
+    manifest=dict(schema=2 if schema==3 else 1,revision=revision,source=source,sourceVersion=version,sourceDate=date,sourceCommit=commit,
+        targetSoC='SM8650',targetTopology='0-7',rulesSchema=schema,rulesSha256=hashlib.sha256(rules).hexdigest(),rulesSize=len(rules))
+    if schema==3:manifest['requiredCapabilities']=sorted(required_capabilities(config))
+    validate(manifest)
     verify(manifest,rules)
     return encoded(manifest),rules
 

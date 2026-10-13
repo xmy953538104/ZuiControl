@@ -34,7 +34,7 @@ int main(int argc,char** argv){require(argc==3&&getuid()==0,"development executa
     DIR* groups=opendir("/dev/cpuset/ZUIopt");require(groups,"handoff resource inventory");while(auto* entry=readdir(groups)){
         std::string name=entry->d_name;if(name=="."||name=="..")continue;struct stat st{};auto group="/dev/cpuset/ZUIopt/"+name;
         if(lstat(group.c_str(),&st)==0&&S_ISDIR(st.st_mode)&&!trim(read(group+"/tasks")).empty())residue=true;}closedir(groups);
-    if(!residue&&journal.rfind("ZUIOPT_OWNER_STATE_V6 ",0)!=0){try{property("ctl.start","zui_zuiopt");resumed=true;}catch(const std::exception& e){error=e.what();}}
+    if(!residue&&journal.rfind("ZUIOPT_OWNER_STATE_V6 ",0)!=0&&journal.rfind("ZUIOPT_OWNER_STATE_V7 ",0)!=0){try{property("ctl.start","zui_zuiopt");resumed=true;}catch(const std::exception& e){error=e.what();}}
     else error="LIVE_RESIDUE_REQUIRES_CANDIDATE_RECOVERY";
     std::ofstream out(path+"/supervisor-result.json");out<<"{\"requested_finish\":"<<(requested?"true":"false")<<",\"candidate_wait_status\":"<<status
         <<",\"original_init_start_requested\":"<<(resumed?"true":"false")<<",\"Uperf_stop_requests\":0,\"error\":"<<std::quoted(error)<<"}\n";

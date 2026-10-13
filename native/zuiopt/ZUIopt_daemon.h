@@ -32,6 +32,7 @@ class Core {
     std::map<int,std::string> runtimeProcesses;
     bool topologyQualified=false,waltQualified=false;
     std::string waltCapabilityReason="WALT_PROBE_NOT_RUN";
+    int64_t nextRecoverySweep=0;
 public:
     Core(std::string path,const std::string& statePath):configPath(std::move(path)),stateRoot(statePath){
         available=cpus(read("/sys/devices/system/cpu/online"));loadedConfig=read(configPath);config=parseConfig(loadedConfig,available);ZUIOPT_debug=config.debug;
@@ -79,7 +80,10 @@ public:
     void publishRuntime(){
         bool pending=runtimePending;
         for(const auto& [_,p]:states)pending=pending||p.acquiring()||(p.managed()&&!p.writable());
-        auto out=runtimeEnvelope(journal->currentBootId(),loadedIdentity,pending,runtimeProcesses);
+        std::set<std::string> capabilities={"schema3","category-ranking","runtime-inheritance","owned-rt-recovery","mode0","mode1","marker-dummy","marker-double"};
+        if(waltQualified){capabilities.insert("mode2");capabilities.insert("walt-boost-restorable");}
+        if(placement&&placement->semanticWaltCapable())capabilities.insert("walt-reduce-restorable");
+        auto out=runtimeEnvelope(journal->currentBootId(),loadedIdentity,pending,runtimeProcesses,capabilities);
         if(out!=runtimeStatus){PrivateDir(stateRoot).put("runtime-status.v1",out);runtimeStatus=std::move(out);}
     }
     BaselineResult acquire(ProcessState& p){
@@ -247,10 +251,12 @@ public:
         if(!rtAllowed||!rtReadback)placement->retireRealtimeGlobal();
         placement->retireWaltGlobal();
         std::ostringstream status;
+        std::string restoreType=plan.requestedMode==2&&plan.effectiveMode!=2?"FALLBACK":"EXACT_RESTORE";
+        if(plan.effectiveMode==2&&reps.c2){auto owned=journal->entries.find(reps.c2);if(owned!=journal->entries.end())restoreType=waltRestoreType(owned->second.walt);}
         status<<"{\"schema\":1,\"boot\":"<<std::quoted(journal->currentBootId())<<",\"pid\":"<<p.pid<<",\"processStart\":"<<p.generation
             <<",\"uid\":"<<p.uid<<",\"package\":"<<std::quoted(p.package)<<",\"requestedMode\":"<<plan.requestedMode<<",\"effectiveMode\":"<<plan.effectiveMode
             <<",\"modeReason\":"<<std::quoted(plan.reason)<<",\"requestedRt\":"<<plan.requestedRt<<",\"effectiveRt\":"<<(rtAllowed&&rtReadback?1:0)
-            <<",\"rtReason\":"<<std::quoted(rtReason)<<",\"C1\":"<<reps.c1<<",\"C1Start\":"<<(reps.c1?p.tasks.at(reps.c1).generation:0)
+            <<",\"rtReason\":"<<std::quoted(rtReason)<<",\"waltRestoreType\":"<<std::quoted(restoreType)<<",\"C1\":"<<reps.c1<<",\"C1Start\":"<<(reps.c1?p.tasks.at(reps.c1).generation:0)
             <<",\"C2\":"<<reps.c2<<",\"C2Start\":"<<(reps.c2?p.tasks.at(reps.c2).generation:0)<<"}";
         runtimeProcesses[p.pid]=status.str();runtimePending=false;publishRuntime();
         finishScan(p,now(),coherence==CoherenceResult::REPAIR);
@@ -319,7 +325,28 @@ public:
                 if(p.backgroundReleasing()){release(p);if(!p.backgroundReleasing())activate(p);continue;}
                 substage=EventSubstage::ACQUISITION;advanceAcquisition(p,now(),*this);if(p.managed()&&p.next<=now())scan(p);
             }
+            if(placement->recoveryHeld()&&now()>=nextRecoverySweep){
+                nextRecoverySweep=now()+1000;
+                placement->reapQuarantine();
+            }
+            if(placement->takeQuarantineRelease()){
+                    std::set<int> active;for(auto& [pid,p]:states){
+                        if(p.managed())active.insert(pid);
+                        if(p.backgroundReleasing()&&p.releaseParked){p.releaseParked=false;p.next=now();}
+                    }
+                    placement->retireReleasedRecoveryLeases(active);
+            }
+            if(placement->deferredWaltProbePending()){
+                std::set<int> active;for(const auto& [pid,p]:states)if(p.managed())active.insert(pid);
+                placement->retireReleasedRecoveryLeases(active);
+                placement->retireRealtimeGlobal();placement->retireWaltGlobal();
+            }
+            if(placement->deferredWaltProbeReady()){
+                waltCapabilityReason=placement->probeWaltCapability();waltQualified=waltCapabilityReason=="WALT_CAPABILITY_WRITE_READ_RESTORE_PASS";
+                for(auto& [_,p]:states)if(p.writable())p.next=now();invalidateRuntime();
+            }
             int timeout=sceneBurst.timeout(now());for(auto& [_,p]:states)if((p.writable()||p.backgroundReleasing()||p.acquiring())&&!p.releaseParked){int delay=static_cast<int>(std::max<int64_t>(0,p.next-now()));timeout=timeout<0?delay:std::min(timeout,delay);}
+            if(placement->recoveryHeld()){int delay=static_cast<int>(std::max<int64_t>(0,nextRecoverySweep-now()));timeout=timeout<0?delay:std::min(timeout,delay);}
             pollfd fds[]={{eventFd,POLLIN,0},{signalFd,POLLIN,0}};int n=poll(fds,2,timeout);if(n<0&&errno==EINTR)continue;require(n>=0,"poll failed");counters.wakeups++;
             if(fds[0].revents&POLLIN){uint64_t v;ssize_t ignored=::read(eventFd,&v,sizeof(v));(void)ignored;}
             if(fds[1].revents&POLLIN){signalfd_siginfo s{};while(::read(signalFd,&s,sizeof(s))==sizeof(s)){

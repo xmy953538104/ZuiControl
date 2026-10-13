@@ -25,8 +25,35 @@ assert LIBRARY_INHERITANCE_R2['baseHead']=='270e33ebd244625b012e4bba052dc7067d5d
 assert set(LIBRARY_INHERITANCE_R2['allowedPaths'])=={'native/zuiopt/ZUIopt_library.h','app/src/main/java/com/zui/zuicontrol/MainActivity.kt','app/src/main/java/com/zui/zuicontrol/ZuioptRuleModel.kt'}
 assert {r['path'] for r in LIBRARY_INHERITANCE_R2['testFiles']}=={'app/src/test/java/com/zui/zuicontrol/ZuioptRuleModelTest.kt'}
 assert {r['path'] for r in LIBRARY_INHERITANCE_R2['supportFiles']}=={'app/build.gradle.kts','.github/workflows/build.yml'}
+RUNTIME_R3=json.loads((ROOT/'tests/zuiopt/runtime_r3_delta.json').read_text(encoding='utf8'))
+RUNTIME_R3_ALLOWED={'native/zuiopt/'+name for name in ('ZUIopt_daemon.h','ZUIopt_owner.h','ZUIopt_rules.h','ZUIopt_runtime.h','ZUIopt_store.h','ZUIopt_sha256.h')}
+RUNTIME_R3_ALLOWED|={'app/src/main/java/com/zui/zuicontrol/'+name for name in ('ZuioptRead.kt','FrontendGateway.kt','RuleUpstreamFetcher.kt','MainActivity.kt')}
+RUNTIME_R3_ALLOWED|={'scripts/rules/'+name for name in ('PublishRules.py','PublishRulesGit.py','ZUIOPT_rule_pack.py')}
+assert RUNTIME_R3['baseHead']=='4ccc7620cab5927cbcc602fd8f10a38491df7bb4' and RUNTIME_R3['phase']=='R3_CI_QUARANTINE_WALT_AND_SCHEMA3_CLOSURE'
+assert set(RUNTIME_R3['allowedPaths'])==RUNTIME_R3_ALLOWED
+
+def reverse_runtime_r3(path,text):
+    row=next((r for r in RUNTIME_R3['files']+RUNTIME_R3['testFiles']+RUNTIME_R3['supportFiles'] if r['path']==path),None)
+    if not row:return text
+    assert hashlib.sha256(text.encode()).hexdigest()==row['afterSha256'],('R3 exact authorized bytes',path)
+    if row['beforeEntry'] is None:return ''
+    for h in reversed(row['hunks']):
+        assert text.count(h['after'])==1,('R3 exact source hunk',path)
+        text=text.replace(h['after'],h['before'],1)
+    assert hashlib.sha256(text.encode()).hexdigest()==row['beforeSha256'],('R3 immutable base',path)
+    return text
+
+def reverse_runtime_r3_entries(current,*scopes):
+    result=list(current)
+    for row in RUNTIME_R3['files']+RUNTIME_R3['testFiles']+RUNTIME_R3['supportFiles']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('R3 exact authorized source',row['path'])
+        result.remove(row['afterEntry'].encode())
+        if row['beforeEntry'] is not None:result.append(row['beforeEntry'].encode())
+    return result
 
 def reverse_library_inheritance_r2(path,text):
+    text=reverse_runtime_r3(path,text)
     row=next((r for r in LIBRARY_INHERITANCE_R2['files']+LIBRARY_INHERITANCE_R2['testFiles']+LIBRARY_INHERITANCE_R2['supportFiles'] if r['path']==path),None)
     if row:
         assert hashlib.sha256(text.encode()).hexdigest()==row['afterSha256'],('R2 library inheritance exact authorized bytes',path)
@@ -47,7 +74,7 @@ def reverse_frontend_runtime_r2(path,text):
         assert hashlib.sha256(text.encode()).hexdigest()==row['beforeSha256'],('R2 C/B immutable source base',path)
     return text
 def reverse_frontend_runtime_entries(current,*scopes):
-    result=list(current)
+    result=reverse_runtime_r3_entries(current,*scopes)
     for row in LIBRARY_INHERITANCE_R2['files']+LIBRARY_INHERITANCE_R2['testFiles']+LIBRARY_INHERITANCE_R2['supportFiles']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['afterEntry'].encode())==1,('R2 library inheritance exact source entry',row['path'])

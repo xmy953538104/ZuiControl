@@ -30,6 +30,7 @@ std::function<void(const std::string&)> beforeRemove;
 std::function<void(const std::string&)> beforeCreate;
 int removeError=0;
 bool journalWriteError=false;
+bool journalInRam=false;
 std::string mapped(const std::string& path){
     if(path.rfind("/dev/cpuset",0)==0||(path.rfind("/proc/",0)==0&&path.size()>6&&path[6]>='0'&&path[6]<='9'))return virtualRoot+path;
     return path;
@@ -42,6 +43,7 @@ std::string statText(int tid){
     std::ostringstream s;s<<tid<<" (fixture) S";for(int i=1;i<19;i++)s<<" 0";s<<' '<<it->second.birth<<"\n";return s.str();
 }
 bool procText(const std::string& path,std::string& text){
+    if(path=="/sys/module/sched_walt/notes/.note.gnu.build-id"){text.clear();return true;} // Never probe the real kernel from a synthetic fixture.
     if(path=="/sys/devices/system/cpu/online"){text="0-7\n";return true;}
     if(path=="/proc/uptime"){text=std::to_string(100.+time/1000.)+" 0\n";return true;}
     if(path.rfind("/proc/",0)==0){
@@ -76,18 +78,40 @@ void initialize(){
     char path[]="/tmp/zuiopt-acquire-XXXXXX";
     char ram[]="/dev/shm/zuiopt-kernel-XXXXXX";
 #endif
-    require(mkdtemp(path),"exclusive synthetic kernel root");root=path;
+    std::string selected=journalInRam?std::string(ram).substr(0,strlen(ram)-6)+"journal-XXXXXX":path;
+    std::vector<char> storagePath(selected.begin(),selected.end());storagePath.push_back(0);
+    require(mkdtemp(storagePath.data()),"exclusive synthetic kernel root");root=storagePath.data();
     // Only emulated proc/cpuset files live in RAM, like the real kernel files.
     // Journal/CRC/fsync/rename/locks/SIGKILL remain on disk-backed storage.
     require(mkdtemp(ram),"exclusive virtual kernel root");virtualRoot=ram;
     struct statfs storage{};require(statfs(virtualRoot.c_str(),&storage)==0&&storage.f_type==0x01021994,"virtual kernel must be tmpfs");
-    require(statfs(root.c_str(),&storage)==0&&storage.f_type!=0x01021994,"journal must remain disk-backed");
+    require(statfs(root.c_str(),&storage)==0,"journal backing observation");
+    if(journalInRam)require(storage.f_type==0x01021994,"logic journal must be tmpfs");
+    else require(storage.f_type!=0x01021994,"journal must remain disk-backed");
     tasks={{42,{}},{43,{}}};fds.clear();procFiles.clear();listedTasks.clear();user=10001;time=0;reads=moves=affinities=0;stuck=journalWriteError=false;moveError=removeError=0;hook={};beforeWrite={};afterWrite={};beforeRemove={};beforeCreate={};
     for(auto g:{"","/top-app","/background","/foreground","/ZUIopt"})for(auto f:{"tasks","mems","cpus"})put(virtualRoot+"/dev/cpuset"+g+"/"+f,f==std::string("mems")?"0":"0-7");
     fs::permissions(virtualRoot+"/dev/cpuset/ZUIopt",fs::perms::owner_all|fs::perms::group_read|fs::perms::group_exec|fs::perms::others_read|fs::perms::others_exec);
     fs::create_directories(virtualRoot+"/proc/42/task");
 }
 }
+struct FixtureSelection {
+    bool deterministic=true,stress=true;int index=0,parts=1;
+    FixtureSelection(int argc,char** argv){
+        for(int i=1;i<argc;i++){
+            std::string arg=argv[i];
+            if(arg=="--deterministic-only")stress=false;
+            else if(arg=="--stress-only")deterministic=false;
+            else if(arg=="--storage=ram")Kernel::journalInRam=true;
+            else if(arg=="--storage=disk")Kernel::journalInRam=false;
+            else if(arg.rfind("--shard=",0)==0){std::istringstream in(arg.substr(8));char slash=0;std::string extra;
+                require(bool(in>>index>>slash>>parts)&&slash=='/'&&!(in>>extra)&&parts>0&&parts<=16&&index>=0&&index<parts,"fixture shard");}
+            else throw std::runtime_error("fixture argument");
+        }
+        require(!Kernel::journalInRam||!deterministic,"durability phases must remain disk-backed");
+        std::cout<<"FIXTURE_STORAGE="<<(Kernel::journalInRam?"RAM_LOGIC_NOT_DURABILITY":"DISK_DURABILITY")<<";SHARD="<<index<<'/'<<parts<<'\n';
+    }
+    bool selected(int i)const{return i%parts==index;}
+};
 extern "C" {
 int __real_open(const char*,int,...);int __real_close(int);ssize_t __real_write(int,const void*,size_t);
 int __real_stat(const char*,struct stat*);int __real_lstat(const char*,struct stat*);

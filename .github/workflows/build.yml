@@ -243,6 +243,10 @@ jobs:
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptSceneTest.cpp -lz -ldl -Wl,--export-dynamic \
             -o "$RUNNER_TEMP/zuiopt-scene-fixture"
           sudo "$RUNNER_TEMP/zuiopt-scene-fixture" | tee "$receipt/scene_liveness_fixtures.txt" || native_failed=1
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptSHA256Test.cpp \
+            -o "$RUNNER_TEMP/zuiopt-sha256-fixture"
+          "$RUNNER_TEMP/zuiopt-sha256-fixture" | tee "$receipt/sha256_standard_vectors.txt" || native_failed=1
+          cp tests/zuiopt/ci_storage_coverage.json "$receipt/ci_storage_coverage.json"
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptAcquisitionTest.cpp -lz \
             -Wl,--wrap=open,--wrap=close,--wrap=write,--wrap=stat,--wrap=lstat,--wrap=access \
@@ -291,7 +295,7 @@ jobs:
             -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
             -o "$RUNNER_TEMP/zuiopt-authority-fixture"
           sudo /usr/bin/time -v -o "$receipt/authority_resources.txt" timeout --kill-after=10s 5m \
-            "$RUNNER_TEMP/zuiopt-authority-fixture" | tee "$receipt/authority_epoch_fixtures.txt" || native_failed=1
+            "$RUNNER_TEMP/zuiopt-authority-fixture" --storage=disk --deterministic-only | tee "$receipt/authority_epoch_fixtures.txt" || native_failed=1
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptLeaseTest.cpp -lz \
             -Wl,--wrap=unlinkat \
@@ -299,7 +303,23 @@ jobs:
             -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
             -o "$RUNNER_TEMP/zuiopt-lease-fixture"
           sudo /usr/bin/time -v -o "$receipt/lease_resources.txt" timeout --kill-after=10s 5m \
-            "$RUNNER_TEMP/zuiopt-lease-fixture" | tee "$receipt/os_authority_lease_fixtures.txt" || native_failed=1
+            "$RUNNER_TEMP/zuiopt-lease-fixture" --storage=disk --deterministic-only | tee "$receipt/os_authority_lease_fixtures.txt" || native_failed=1
+          # Same fixed seeds and complete 2000/5000 denominators; RAM proves logic only.
+          for shard in 0 1 2 3; do
+            sudo /usr/bin/time -v -o "$receipt/authority_ram_${shard}_resources.txt" timeout --kill-after=10s 2m \
+              "$RUNNER_TEMP/zuiopt-authority-fixture" --storage=ram --stress-only --shard="$shard/4" \
+              | tee "$receipt/authority_ram_${shard}.txt" || native_failed=1
+            sudo /usr/bin/time -v -o "$receipt/lease_ram_${shard}_resources.txt" timeout --kill-after=10s 2m \
+              "$RUNNER_TEMP/zuiopt-lease-fixture" --storage=ram --stress-only --shard="$shard/4" \
+              | tee "$receipt/lease_ram_${shard}.txt" || native_failed=1
+          done
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
+            -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptQuarantineTest.cpp -lz \
+            -Wl,--wrap=open,--wrap=close,--wrap=write,--wrap=stat,--wrap=lstat,--wrap=access \
+            -Wl,--wrap=opendir,--wrap=mkdir,--wrap=rmdir,--wrap=sched_getaffinity,--wrap=sched_setaffinity \
+            -o "$RUNNER_TEMP/zuiopt-quarantine-fixture"
+          sudo timeout --kill-after=10s 2m "$RUNNER_TEMP/zuiopt-quarantine-fixture" \
+            | tee "$receipt/quarantine_lifecycle.txt" || native_failed=1
           clang++ -std=c++17 -O1 -Wall -Wextra -Werror \
             -I tests/zuiopt/fixtures/binder_ndk tests/zuiopt/ZUIoptDescendantTest.cpp -lz \
             -Wl,--wrap=open,--wrap=close,--wrap=write,--wrap=stat,--wrap=lstat,--wrap=access \

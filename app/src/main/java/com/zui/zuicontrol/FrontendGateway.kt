@@ -19,7 +19,12 @@ interface FrontendGateway {
 }
 
 class V84FrontendGateway(private val context: Context) : FrontendGateway {
-    private val upstream = RuleUpstreamFetcher()
+    private val upstream = RuleUpstreamFetcher(capabilities={
+        val state=checkNotNull(ZuioptRead.state()){"RULE_CAPABILITIES_UNAVAILABLE"}
+        val runtime=checkNotNull(ZuioptRead.runtime(state)){"RULE_CAPABILITIES_UNAVAILABLE"}
+        val available=runtime.optJSONArray("runtimeCapabilities")
+        if(available==null)emptySet() else (0 until available.length()).map{available.getString(it)}.toSet()
+    })
     override fun readGpuDefaults(user: Int) = GpuDefaultsDraft.fromState(ZuiControlClient.stateText(), user)
     override fun saveGpuDefaultsAtomic(powersave: GpuRanges.Range, balance: GpuRanges.Range,
         performance: GpuRanges.Range, fast: GpuRanges.Range, expectedGeneration: Long): ZuiControlClient.Reply = runCatching {

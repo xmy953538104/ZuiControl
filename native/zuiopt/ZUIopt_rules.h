@@ -2,7 +2,7 @@
 #pragma once
 #include "ZUIopt_core.h"
 #include <regex>
-#include <sys/wait.h>
+#include "ZUIopt_sha256.h"
 #include <zlib.h>
 
 namespace ZUIopt {
@@ -12,30 +12,6 @@ inline bool hex(const std::string& s,size_t count){return s.size()==count&&s.fin
 inline bool packId(const std::string& s){return rx(s,"[a-z][a-z0-9_.-]{0,63}");}
 inline void putAll(int fd,const std::string& s){
     size_t at=0;while(at<s.size()){auto n=::write(fd,s.data()+at,s.size()-at);if(n<0&&errno==EINTR)continue;require(n>0,"file write");at+=n;}
-}
-inline std::string sha256(const std::string& data){
-    // Use Android's installed SHA-256 implementation, never a shell or user path.
-    int input[2],output[2];require(pipe2(input,O_CLOEXEC)==0,"digest input pipe");
-    if(pipe2(output,O_CLOEXEC)){close(input[0]);close(input[1]);throw std::runtime_error("digest output pipe");}
-    pid_t child=fork();
-    if(child==0){
-        if(dup2(input[0],STDIN_FILENO)<0||dup2(output[1],STDOUT_FILENO)<0)_exit(126);
-        close(input[0]);close(input[1]);close(output[0]);close(output[1]);
-#ifdef __ANDROID__
-        execl("/system/bin/sha256sum","sha256sum","-",static_cast<char*>(nullptr));
-#else
-        execl("/usr/bin/sha256sum","sha256sum","-",static_cast<char*>(nullptr));
-#endif
-        _exit(127);
-    }
-    close(input[0]);close(output[1]);
-    if(child<0){close(input[1]);close(output[0]);throw std::runtime_error("digest fork");}
-    bool wrote=true;try{putAll(input[1],data);}catch(...){wrote=false;}close(input[1]);
-    char buffer[128];std::string result;ssize_t n;
-    while((n=::read(output[0],buffer,sizeof(buffer)))!=0){if(n<0&&errno==EINTR)continue;if(n<0)break;result.append(buffer,n);if(result.size()>128)break;}
-    close(output[0]);int status=0;pid_t done;do{done=waitpid(child,&status,0);}while(done<0&&errno==EINTR);
-    require(wrote&&done==child&&WIFEXITED(status)&&WEXITSTATUS(status)==0&&result.size()>=65&&result[64]==' '&&hex(result.substr(0,64),64),"SHA256 tool failed");
-    return result.substr(0,64);
 }
 inline std::string dumpRules(const Config& c){
     bool runtime=c.schema==3||c.mode||c.rt;
@@ -210,11 +186,12 @@ inline std::string mergeRules(const std::string& factory,const std::vector<Pack>
         const auto& a=layers[i];const auto& b=layers[j];if(a.tier!=1||b.tier!=1||a.priority!=b.priority)continue;
         for(const auto& x:a.config.packages)for(const auto& y:b.config.packages)require(!overlap(x,y)||profileText(a.config.profiles.at(x.profile))==profileText(b.config.profiles.at(y.profile)),"same priority pack overlap");
     }
-    Config result;result.enabled=layers[0].config.enabled;std::set<std::pair<std::string,std::string>> seen;
+    Config result;result.enabled=layers[0].config.enabled;const auto& defaults=user.empty()?layers.front().config:layers.back().config;
+    result.schema=defaults.schema;result.mode=defaults.mode;result.rt=defaults.rt;std::set<std::pair<std::string,std::string>> seen;
     std::sort(layers.begin(),layers.end(),[](const Layer& a,const Layer& b){return a.tier!=b.tier?a.tier>b.tier:a.priority!=b.priority?a.priority>b.priority:a.id<b.id;});
     for(const auto& layer:layers){std::map<std::string,std::string> aliases;
         for(const auto& m:layer.config.packages){if(!seen.emplace(m.kind,m.package).second)continue;
-            if(!aliases.count(m.profile)){std::ostringstream name;name<<'p'<<std::setw(4)<<std::setfill('0')<<result.profiles.size();aliases[m.profile]=name.str();auto p=layer.config.profiles.at(m.profile);if(layer.config.schema==3){p=resolvedProfile(p,layer.config);result.schema=3;}result.profiles[name.str()]=std::move(p);}
+            if(!aliases.count(m.profile)){std::ostringstream name;name<<'p'<<std::setw(4)<<std::setfill('0')<<result.profiles.size();aliases[m.profile]=name.str();auto p=layer.config.profiles.at(m.profile);if(layer.config.schema==3)result.schema=3;result.profiles[name.str()]=std::move(p);}
             result.packages.push_back({m.kind,m.package,aliases.at(m.profile),100000-static_cast<int>(result.packages.size())});
         }
     }return dumpRules(result);

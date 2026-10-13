@@ -1,0 +1,35 @@
+{
+  "version": 3,
+  "logic_storage": "explicit tmpfs, real fsync remains enabled; NOT durability",
+  "durability_storage": "disk, production fsync/rename/CRC/locks/errors/SIGKILL",
+  "authority": {
+    "seed": "0x59e90c",
+    "total": 2000,
+    "shards": 4,
+    "cases_per_shard": 500,
+    "disk_phases": [
+      "AUTHORITY_DETERMINISTIC"
+    ]
+  },
+  "lease": {
+    "seed": "0x60ea5e",
+    "total": 5000,
+    "shards": 4,
+    "cases_per_shard": 1250,
+    "disk_phases": [
+      "LEASE_TRANSITIONS",
+      "LEASE_DETERMINISTIC",
+      "PHYSICAL_SYSCALL_BOUNDARY"
+    ],
+    "physical_cases": 360
+  },
+  "other_disk_fixtures": [
+    "Acquisition",
+    "Background",
+    "ReleaseReentry",
+    "Descendant",
+    "Quarantine",
+    "RuleStore"
+  ],
+  "coverage": "Fixed RNG sequence is generated for the whole denominator; case i is executed by i%4. Disk deterministic covers the same branch families plus real persistence/error/crash boundaries."
+}
