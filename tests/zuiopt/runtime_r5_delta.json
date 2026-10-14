@@ -16,6 +16,7 @@
     "app/src/test/java/com/zui/zuicontrol/ZuioptRuleModelTest.kt",
     "framework_patch/src/services/com/zui/server/control/SettingsBackup.java",
     "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+    "host_retirement/TestRetirement.py",
     "native/zuiopt/ZUIopt.cpp",
     "native/zuiopt/ZUIopt_binder.h",
     "native/zuiopt/ZUIopt_core.h",
@@ -52,6 +53,7 @@
     "tests/zuiopt/TestRuntimeRecoveryScope.py",
     "tests/zuiopt/TestRuntimeSchema.py",
     "tests/zuiopt/TestRuntimeStatus.py",
+    "tests/zuiopt/TestScanObservation.py",
     "tests/zuiopt/TestSceneAuthority.py",
     "tests/zuiopt/TestSchema3BackupMigration.py",
     "tests/zuiopt/TestSchemaContract.py",
@@ -334,6 +336,24 @@
         {
           "before": "        return \"ok=1\\nsupportedDisplayHz=\" + supportedDisplayHz()\n                + \"\\nfpsCapPhase=not_delivered\"\n                + \"\\nintegrationSchema=V83\\nappPolicySchema=\"+(mAppPolicies==null||mAppPolicies.current==null?\"UNAVAILABLE\":mAppPolicies.current.schema)\n                + \"\\nzuioptSchema=3\\nzuioptLegacySchema=2\\nthreadCpuIds=0,1,2,3,4,5,6,7\\nthreadTopology=SM8650_LOGICAL_CPU_IDS\"\n                + \"\\nrulesReadTransport=DAEMON_SNAPSHOT_V1\"\n                + \"\\nrulesRuntimeReadTransport=DAEMON_RUNTIME_V1\"\n                + \"\\nthreadCpuConvention=ONE_CORE_100_PERCENT\\nrecordThreadCoverage=TOP15_OBSERVED\"\n",
           "after": "        return \"ok=1\\nsupportedDisplayHz=\" + supportedDisplayHz()\n                + \"\\nfpsCapPhase=not_delivered\"\n                + \"\\nintegrationSchema=V83\\nappPolicySchema=\"+(mAppPolicies==null||mAppPolicies.current==null?\"UNAVAILABLE\":mAppPolicies.current.schema)\n                + \"\\nzuioptSchema=3\\nzuioptBackupMigration=EXPLICIT_ONLY\\nthreadCpuIds=0,1,2,3,4,5,6,7\\nthreadTopology=SM8650_LOGICAL_CPU_IDS\"\n                + \"\\nrulesReadTransport=DAEMON_SNAPSHOT_V1\"\n                + \"\\nrulesRuntimeReadTransport=DAEMON_RUNTIME_V1\"\n                + \"\\nthreadCpuConvention=ONE_CORE_100_PERCENT\\nrecordThreadCoverage=TOP15_OBSERVED\"\n"
+        }
+      ]
+    },
+    {
+      "path": "host_retirement/TestRetirement.py",
+      "beforeSha256": "f74022d9896650c32f60172ba7540ad13a9b98e34961008cce4d6e6a21eed47d",
+      "afterSha256": "997a6e1fb18a31cf6fdc74ec1cf3e0eb4320c429bf2f8eb3d06333e3c0148c30",
+      "beforeEntry": "100644 blob 8fa3d491113531db526c3a34ab7afcb58caba032\thost_retirement/TestRetirement.py",
+      "afterEntry": "100644 blob bc65b52c1cfb126caf4e192a2b497c327182aa10\thost_retirement/TestRetirement.py",
+      "before": null,
+      "hunks": [
+        {
+          "before": "sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tests/zuiopt'))\nfrom RuntimePurityAudit import inspect,patterns\nsys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tests'))\nfrom BackendContract import reverse_text\n\n\ndef proven_source(repo, name):\n",
+          "after": "sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tests/zuiopt'))\nfrom RuntimePurityAudit import inspect,patterns\nsys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tests'))\nfrom BackendContract import reverse_text,reverse_runtime_r5\n\n\ndef proven_source(repo, name):\n"
+        },
+        {
+          "before": "    def test_provenance_only_repack_preserves_execution(self):\n        import types\n        repo=Path(__file__).resolve().parents[1];sys.path.insert(0,str(repo/'scripts/rules'))\n        import ZUIOPT_rule_pack as current\n        old=types.ModuleType('proven_reference_parser')\n        source=proven_source(repo,'scripts/rules/ZUIOPT_rule_pack.py')\n        self.assertEqual(R.digest(source.encode()),'68893bee028ddb0c2115b1877576528ac64fb1e810acbe70f9a6ff0b2ab591f1')\n        exec(compile(source,'<hash-bound-reference-parser>','exec'),old.__dict__)\n        rules=(repo/'payload/system/etc/zuiopt/factory_rules.conf').read_bytes()\n        manifest=old.manifest_for(rules,'recovered','asoul_binary',binary_sha='a'*64,evidence='STATIC_RECOVERED',priority=17)\n        old_manifest,old_rules=old.unpack(old.pack_bytes(manifest,rules))\n        new_manifest=dict(old_manifest,source_type='recovered_binary')\n",
+          "after": "    def test_provenance_only_repack_preserves_execution(self):\n        import types\n        repo=Path(__file__).resolve().parents[1];sys.path.insert(0,str(repo/'scripts/rules'))\n        # This is the frozen provenance-only proof. Current Schema3 is covered by migration/parity suites.\n        current=types.ModuleType('proven_provenance_parser')\n        actual=(repo/'scripts/rules/ZUIOPT_rule_pack.py').read_text(encoding='utf8')\n        inherited=reverse_runtime_r5('scripts/rules/ZUIOPT_rule_pack.py',actual)\n        self.assertEqual(R.digest(inherited.encode()),'5f449a1ad7e238c59448da22bbb846dd9747a09f843a5d423fe8b25a3ba9ae8d')\n        exec(compile(inherited,'<hash-bound-provenance-parser>','exec'),current.__dict__)\n        old=types.ModuleType('proven_reference_parser')\n        source=proven_source(repo,'scripts/rules/ZUIOPT_rule_pack.py')\n        self.assertEqual(R.digest(source.encode()),'68893bee028ddb0c2115b1877576528ac64fb1e810acbe70f9a6ff0b2ab591f1')\n        exec(compile(source,'<hash-bound-reference-parser>','exec'),old.__dict__)\n        rules=reverse_runtime_r5('payload/system/etc/zuiopt/factory_rules.conf',(repo/'payload/system/etc/zuiopt/factory_rules.conf').read_text(encoding='utf8')).encode()\n        manifest=old.manifest_for(rules,'recovered','asoul_binary',binary_sha='a'*64,evidence='STATIC_RECOVERED',priority=17)\n        old_manifest,old_rules=old.unpack(old.pack_bytes(manifest,rules))\n        new_manifest=dict(old_manifest,source_type='recovered_binary')\n"
         }
       ]
     },
@@ -741,14 +761,14 @@
     {
       "path": "tests/zuiopt/LibraryTest.h",
       "beforeSha256": "cd59fb4be3c31c07c88d01bf332261859408c8b59bdaa5aa5c6e84ee99bbfd4e",
-      "afterSha256": "305efbaae49f756ad5eacd3739db6998fb43cb4540995b4b8537ad2255f86b75",
+      "afterSha256": "6e99c1908d63ac2e6b1b936fe90ec71b0e369f1693c553bcb47bfb326512ea92",
       "beforeEntry": "100644 blob 48ea4414169b9102d4790d599f821027796aaf7a\ttests/zuiopt/LibraryTest.h",
-      "afterEntry": "100644 blob 2cbaafc04b88c9657d538556bd00c807a8aef39d\ttests/zuiopt/LibraryTest.h",
+      "afterEntry": "100644 blob e5fff7c60f57abfecd7beb3302c7a7525bc61313\ttests/zuiopt/LibraryTest.h",
       "before": null,
       "hunks": [
         {
-          "before": "// Included in the existing native suite; production parser/merge/store, temporary fixture only.\ninline std::string libraryBytes(const std::string& old,const std::string& next,const std::string& choices=\"# defaults\\n\",const std::string& manual=\"schema 2\\nenabled true\\ndebug false\\n\",bool appopt=false){\n    Manifest m;for(const auto& [k,v]:std::map<std::string,std::string>{{\"kind\",appopt?\"APPOPT\":\"UPSTREAM\"},{\"source\",\"fixture\"},{\"sourceVersion\",\"1\"},{\"sourceDate\",\"\"},{\"sourceCommit\",\"\"},{\"sourceEvidence\",\"host-controlled\"},{\"targetSoC\",\"SM8650\"},{\"targetTopology\",\"0-7\"},{\"oldUpstreamHash\",sha256(old)},{\"newUpstreamHash\",appopt?sha256(old):sha256(next)},{\"rulesHash\",sha256(next)},{\"manualHash\",sha256(manual)},{\"decisionsHash\",sha256(choices)}})m[k]={v,false};\n    m[\"schema\"]={\"1\",true};return packRuleFiles({{\"manifest.json\",jsonText(m)},{\"rules.conf\",next},{\"manual.conf\",manual},{\"decisions.conf\",choices}});\n}\n",
-          "after": "// Included in the existing native suite; production parser/merge/store, temporary fixture only.\ninline std::string libraryBytes(const std::string& old,const std::string& next,const std::string& choices=\"# defaults\\n\",const std::string& manual=\"schema 3\\nenabled true\\ndebug false\\n\",bool appopt=false){\n    Manifest m;for(const auto& [k,v]:std::map<std::string,std::string>{{\"kind\",appopt?\"APPOPT\":\"UPSTREAM\"},{\"source\",\"fixture\"},{\"sourceVersion\",\"1\"},{\"sourceDate\",\"\"},{\"sourceCommit\",\"\"},{\"sourceEvidence\",\"host-controlled\"},{\"targetSoC\",\"SM8650\"},{\"targetTopology\",\"0-7\"},{\"oldUpstreamHash\",sha256(old)},{\"newUpstreamHash\",appopt?sha256(old):sha256(next)},{\"rulesHash\",sha256(next)},{\"manualHash\",sha256(manual)},{\"decisionsHash\",sha256(choices)}})m[k]={v,false};\n    m[\"schema\"]={\"1\",true};return packRuleFiles({{\"manifest.json\",jsonText(m)},{\"rules.conf\",next},{\"manual.conf\",manual},{\"decisions.conf\",choices}});\n}\n"
+          "before": "// Included in the existing native suite; production parser/merge/store, temporary fixture only.\ninline std::string libraryBytes(const std::string& old,const std::string& next,const std::string& choices=\"# defaults\\n\",const std::string& manual=\"schema 2\\nenabled true\\ndebug false\\n\",bool appopt=false){\n    Manifest m;for(const auto& [k,v]:std::map<std::string,std::string>{{\"kind\",appopt?\"APPOPT\":\"UPSTREAM\"},{\"source\",\"fixture\"},{\"sourceVersion\",\"1\"},{\"sourceDate\",\"\"},{\"sourceCommit\",\"\"},{\"sourceEvidence\",\"host-controlled\"},{\"targetSoC\",\"SM8650\"},{\"targetTopology\",\"0-7\"},{\"oldUpstreamHash\",sha256(old)},{\"newUpstreamHash\",appopt?sha256(old):sha256(next)},{\"rulesHash\",sha256(next)},{\"manualHash\",sha256(manual)},{\"decisionsHash\",sha256(choices)}})m[k]={v,false};\n    m[\"schema\"]={\"1\",true};return packRuleFiles({{\"manifest.json\",jsonText(m)},{\"rules.conf\",next},{\"manual.conf\",manual},{\"decisions.conf\",choices}});\n}\ninline void stageLibrary(RuleStore& store,const std::string& bytes,const std::string& tx){\n    store.apply(\"begin\",tx,\"library:\"+std::to_string(bytes.size())+\":\"+sha256(bytes)+\":-:0:\"+generationOf(store.current().effective));\n",
+          "after": "// Included in the existing native suite; production parser/merge/store, temporary fixture only.\ninline std::string libraryBytes(const std::string& old,const std::string& next,const std::string& choices=\"# defaults\\n\",const std::string& manual=\"schema 3\\nenabled true\\ndebug false\\n\",bool appopt=false){\n    const auto canonicalManual=dumpRules(rules(manual));\n    Manifest m;for(const auto& [k,v]:std::map<std::string,std::string>{{\"kind\",appopt?\"APPOPT\":\"UPSTREAM\"},{\"source\",\"fixture\"},{\"sourceVersion\",\"1\"},{\"sourceDate\",\"\"},{\"sourceCommit\",\"\"},{\"sourceEvidence\",\"host-controlled\"},{\"targetSoC\",\"SM8650\"},{\"targetTopology\",\"0-7\"},{\"oldUpstreamHash\",sha256(old)},{\"newUpstreamHash\",appopt?sha256(old):sha256(next)},{\"rulesHash\",sha256(next)},{\"manualHash\",sha256(canonicalManual)},{\"decisionsHash\",sha256(choices)}})m[k]={v,false};\n    m[\"schema\"]={\"1\",true};return packRuleFiles({{\"manifest.json\",jsonText(m)},{\"rules.conf\",next},{\"manual.conf\",canonicalManual},{\"decisions.conf\",choices}});\n}\ninline void stageLibrary(RuleStore& store,const std::string& bytes,const std::string& tx){\n    store.apply(\"begin\",tx,\"library:\"+std::to_string(bytes.size())+\":\"+sha256(bytes)+\":-:0:\"+generationOf(store.current().effective));\n"
         },
         {
           "before": "        auto meta=\"ZUIOPT_CANONICAL_STATE_V2\\n\"+id+\"\\n\"+randomId()+\"\\n\"+sha256(canonical)+\"\\nschema2-1\\n\"+sha256(provenance)+\"\\nnone\\n\"+sha256(canonical)+\"\\n\";\n        oldDir.put(\"canonical_state.v2\",meta);oldDir.put(\"source.bin\",canonical);oldDir.put(\"provenance.txt\",provenance);\n        oldDir.put(\"last_good.conf\",\"\");oldDir.put(\"effective.conf\",effective);root.put(\"effective.conf\",effective);root.put(\"migration_factory.conf\",BASE);\n        RuleStore legacy(v2path.string(),OPEN);require(legacy.current().canonical&&!legacy.current().library,\"real V82 canonical accepted\");\n        RuleStore::testBeforeCommit=!after;RuleStore::testAfterCommit=after;rejects([&]{legacy.initialize();});RuleStore::testBeforeCommit=RuleStore::testAfterCommit=false;\n        legacy.initialize();auto upgraded=legacy.current();\n        require(upgraded.library&&upgraded.user==canonical&&upgraded.upstream==dumpRules(rules(BASE)),\"V82 seed preserves effective and immutable factory across interrupted migration\");\n",
@@ -941,6 +961,24 @@
       ]
     },
     {
+      "path": "tests/zuiopt/TestScanObservation.py",
+      "beforeSha256": "0005f37875915c634f91f2941b480295909026dc8faaf0d2a59a9308759aef77",
+      "afterSha256": "44b4dcc069726c1a4b885ca156e2f437a14254286e1a7635595991942f63eaa6",
+      "beforeEntry": "100644 blob 878110365dd1ffb54234b7622aa61d16388d84f6\ttests/zuiopt/TestScanObservation.py",
+      "afterEntry": "100644 blob 6770a6c9e6d4e0aa941890fa7cb2aabc59fae807\ttests/zuiopt/TestScanObservation.py",
+      "before": null,
+      "hunks": [
+        {
+          "before": "\nROOT = Path(__file__).resolve().parents[2]\nsys.path.insert(0, str(ROOT/'tests'))\nfrom BackendContract import reverse_text,reverse_runtime_text\n\n\ndef digest(text):\n",
+          "after": "\nROOT = Path(__file__).resolve().parents[2]\nsys.path.insert(0, str(ROOT/'tests'))\nfrom BackendContract import reverse_text,reverse_runtime_text,reverse_runtime_r5\n\n\ndef digest(text):\n"
+        },
+        {
+          "before": "    daemon = (ROOT/'native/zuiopt/ZUIopt_daemon.h').read_text(encoding='utf8')\n    baseline = (ROOT/'tests/zuiopt/fixtures/PhysicalRevokeCandidate1.h').read_text(encoding='utf8')\n    candidate = between(owner, '    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')\n    current = between((ROOT/'native/zuiopt/ZUIopt_owner.h').read_text(encoding='utf8'),'    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')\n    # V5 changes only the resource name in this pinned historical scan model.\n    # The actual lease paths/recovery execute in ZUIoptDescendantTest.cpp.\n    old_group = ('        std::ostringstream expected;expected<<\"/ZUIopt/\"<<std::hex<<t.appliedMask;\\n'\n",
+          "after": "    daemon = (ROOT/'native/zuiopt/ZUIopt_daemon.h').read_text(encoding='utf8')\n    baseline = (ROOT/'tests/zuiopt/fixtures/PhysicalRevokeCandidate1.h').read_text(encoding='utf8')\n    candidate = between(owner, '    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')\n    current = between(reverse_runtime_r5('native/zuiopt/ZUIopt_owner.h',(ROOT/'native/zuiopt/ZUIopt_owner.h').read_text(encoding='utf8')),'    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')\n    # V5 changes only the resource name in this pinned historical scan model.\n    # The actual lease paths/recovery execute in ZUIoptDescendantTest.cpp.\n    old_group = ('        std::ostringstream expected;expected<<\"/ZUIopt/\"<<std::hex<<t.appliedMask;\\n'\n"
+        }
+      ]
+    },
+    {
       "path": "tests/zuiopt/TestSceneAuthority.py",
       "beforeSha256": "331c7aa36e41d7560aabcd37879c3281a6176ff7f722c6e8f654e63f3cdc4968",
       "afterSha256": "982ffa1c12e59290c3ebe10863db9e6747939a22e1fdc90bdd16e362dab495b1",
@@ -1106,14 +1144,18 @@
     {
       "path": "tests/zuiopt/ZUIoptTest.cpp",
       "beforeSha256": "83edfe9b738739cf358d9e6c1f032e509ccf41f4733fed7e72d6c9fb491b8feb",
-      "afterSha256": "c4f2d4e6a19dbd62290773d99520d920e0bca74ecccad1c1d0590347a4858b7d",
+      "afterSha256": "7a82306092571dc9d60183697a2b85c2661e212c1a5b22588fc5f6f2aa393224",
       "beforeEntry": "100644 blob b83dbe24889c99252cea5d52c7edcd48ed3c54af\ttests/zuiopt/ZUIoptTest.cpp",
-      "afterEntry": "100644 blob 5f08da423fc72d5f78b09d952a8f580390fcdb32\ttests/zuiopt/ZUIoptTest.cpp",
+      "afterEntry": "100644 blob 698b6ce5da9aee5a18abefc7c6191777c942007f\ttests/zuiopt/ZUIoptTest.cpp",
       "before": null,
       "hunks": [
         {
           "before": "#include <iostream>\nusing namespace ZUIopt;\nnamespace fs=std::filesystem;\nconst std::string BASE=\"schema 2\\nenabled true\\nprofile G 2-6\\npackage exact org.example.game G 100\\n\";\nconst std::string OPEN=\"schema 2\\nenabled true\\nprofile G 2-7\\nthread G ALL glob \\\"Job.worker[AB]*\\\" selector=all 30 2-4\\nthread G R1 prefix Top selector=rank:1 20 7\\nthread G R2 contains Runner selector=rank:2 10 5-6\\npackage exact org.example.game G 100\\n\";\nvoid rejects(const std::function<void()>& action){bool rejected=false;try{action();}catch(const std::exception&){rejected=true;}require(rejected,\"expected rejection\");}\nstd::string readPack(const char* path){std::ifstream input(path,std::ios::binary);require(input.good(),\"fixture input open\");std::string data(PACK_LIMIT+1,'\\0');input.read(data.data(),data.size());data.resize(input.gcount());require(data.size()<=PACK_LIMIT&&input.eof(),\"fixture input bound\");return data;}\nvoid uploadData(RuleStore& store,const std::string& kind,const std::string& data,const std::string& id,const std::string& pack=\"-\"){\n",
           "after": "#include <iostream>\nusing namespace ZUIopt;\nnamespace fs=std::filesystem;\nconst std::string BASE=\"schema 3\\nenabled true\\nprofile G 2-6\\npackage exact org.example.game G 100\\n\";\nconst std::string OPEN=\"schema 3\\nenabled true\\nprofile G 2-7\\nthread G ALL glob \\\"Job.worker[AB]*\\\" selector=all 30 2-4\\nthread G R1 prefix Top selector=rank:1 20 7\\nthread G R2 contains Runner selector=rank:2 10 5-6\\npackage exact org.example.game G 100\\n\";\nvoid rejects(const std::function<void()>& action){bool rejected=false;try{action();}catch(const std::exception&){rejected=true;}require(rejected,\"expected rejection\");}\nstd::string readPack(const char* path){std::ifstream input(path,std::ios::binary);require(input.good(),\"fixture input open\");std::string data(PACK_LIMIT+1,'\\0');input.read(data.data(),data.size());data.resize(input.gcount());require(data.size()<=PACK_LIMIT&&input.eof(),\"fixture input bound\");return data;}\nvoid uploadData(RuleStore& store,const std::string& kind,const std::string& data,const std::string& id,const std::string& pack=\"-\"){\n"
+        },
+        {
+          "before": "    old.put(\"pack_state.conf\",metadata);old.put(\"user_rules.conf\",OPEN);old.put(\"last_good.conf\",\"\");\n    packs.put(\"prior.zip\",pack.archive);old.put(\"effective.conf\",effective);root.put(\"effective.conf\",effective);\n    {\n        RuleStore store(path.string(),BASE);require(!store.current().canonical,\"real V1 accepted\");\n        store.initialize();auto migrated=store.current();\n        require(migrated.canonical&&migrated.packs.empty()&&dumpRules(rules(migrated.effective))==dumpRules(rules(effective)),\"V1 effective semantic parity\");\n        auto before=rules(effective),after=rules(migrated.effective);\n",
+          "after": "    old.put(\"pack_state.conf\",metadata);old.put(\"user_rules.conf\",OPEN);old.put(\"last_good.conf\",\"\");\n    packs.put(\"prior.zip\",pack.archive);old.put(\"effective.conf\",effective);root.put(\"effective.conf\",effective);\n    {\n        RuleStore store(path.string(),BASE);rejects([&]{store.current();}); // Legacy state is read only inside the explicit initialization migration.\n        store.initialize();auto migrated=store.current();\n        require(migrated.canonical&&migrated.packs.empty()&&dumpRules(rules(migrated.effective))==dumpRules(rules(effective)),\"V1 effective semantic parity\");\n        auto before=rules(effective),after=rules(migrated.effective);\n"
         },
         {
           "before": "            std::string command=argv[1];\n            if(command==\"canonical\"&&argc==4){auto pack=unpackPack(readPack(argv[2]),dumpRules(rules(read(argv[3]))));std::cout<<dumpRules(pack.config);return 0;}\n            if(command==\"pack\"){std::cout<<jsonText(unpackPack(readPack(argv[2])).manifest);return 0;}\n            if(command==\"rules\"){std::cout<<dumpRules(rules(read(argv[2])));return 0;}\n            if(command==\"merge\"&&argc>=4){std::vector<Pack> packs;for(int i=4;i<argc;i++)packs.push_back(unpackPack(readPack(argv[i])));std::cout<<mergeRules(read(argv[2]),packs,read(argv[3]));return 0;}\n            if(command==\"appopt\"&&argc==5){auto pack=importAppOpt(read(argv[2]),argv[3],number(argv[4]));std::cout.write(pack.archive.data(),pack.archive.size());return 0;}\n",

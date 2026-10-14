@@ -17,7 +17,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT/'tests'))
-from BackendContract import reverse_text,reverse_runtime_text
+from BackendContract import reverse_text,reverse_runtime_text,reverse_runtime_r5
 
 
 def digest(text):
@@ -34,7 +34,7 @@ def sources():
     daemon = (ROOT/'native/zuiopt/ZUIopt_daemon.h').read_text(encoding='utf8')
     baseline = (ROOT/'tests/zuiopt/fixtures/PhysicalRevokeCandidate1.h').read_text(encoding='utf8')
     candidate = between(owner, '    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')
-    current = between((ROOT/'native/zuiopt/ZUIopt_owner.h').read_text(encoding='utf8'),'    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')
+    current = between(reverse_runtime_r5('native/zuiopt/ZUIopt_owner.h',(ROOT/'native/zuiopt/ZUIopt_owner.h').read_text(encoding='utf8')),'    bool physicalRevoke(', '    CoherenceResult verifyCoherence(')
     # V5 changes only the resource name in this pinned historical scan model.
     # The actual lease paths/recovery execute in ZUIoptDescendantTest.cpp.
     old_group = ('        std::ostringstream expected;expected<<"/ZUIopt/"<<std::hex<<t.appliedMask;\n'

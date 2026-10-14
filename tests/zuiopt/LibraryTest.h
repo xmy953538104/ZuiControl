@@ -1,7 +1,8 @@
 // Included in the existing native suite; production parser/merge/store, temporary fixture only.
 inline std::string libraryBytes(const std::string& old,const std::string& next,const std::string& choices="# defaults\n",const std::string& manual="schema 3\nenabled true\ndebug false\n",bool appopt=false){
-    Manifest m;for(const auto& [k,v]:std::map<std::string,std::string>{{"kind",appopt?"APPOPT":"UPSTREAM"},{"source","fixture"},{"sourceVersion","1"},{"sourceDate",""},{"sourceCommit",""},{"sourceEvidence","host-controlled"},{"targetSoC","SM8650"},{"targetTopology","0-7"},{"oldUpstreamHash",sha256(old)},{"newUpstreamHash",appopt?sha256(old):sha256(next)},{"rulesHash",sha256(next)},{"manualHash",sha256(manual)},{"decisionsHash",sha256(choices)}})m[k]={v,false};
-    m["schema"]={"1",true};return packRuleFiles({{"manifest.json",jsonText(m)},{"rules.conf",next},{"manual.conf",manual},{"decisions.conf",choices}});
+    const auto canonicalManual=dumpRules(rules(manual));
+    Manifest m;for(const auto& [k,v]:std::map<std::string,std::string>{{"kind",appopt?"APPOPT":"UPSTREAM"},{"source","fixture"},{"sourceVersion","1"},{"sourceDate",""},{"sourceCommit",""},{"sourceEvidence","host-controlled"},{"targetSoC","SM8650"},{"targetTopology","0-7"},{"oldUpstreamHash",sha256(old)},{"newUpstreamHash",appopt?sha256(old):sha256(next)},{"rulesHash",sha256(next)},{"manualHash",sha256(canonicalManual)},{"decisionsHash",sha256(choices)}})m[k]={v,false};
+    m["schema"]={"1",true};return packRuleFiles({{"manifest.json",jsonText(m)},{"rules.conf",next},{"manual.conf",canonicalManual},{"decisions.conf",choices}});
 }
 inline void stageLibrary(RuleStore& store,const std::string& bytes,const std::string& tx){
     store.apply("begin",tx,"library:"+std::to_string(bytes.size())+":"+sha256(bytes)+":-:0:"+generationOf(store.current().effective));

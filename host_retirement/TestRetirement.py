@@ -17,7 +17,7 @@ import retirement as R
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tests/zuiopt'))
 from RuntimePurityAudit import inspect,patterns
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tests'))
-from BackendContract import reverse_text
+from BackendContract import reverse_text,reverse_runtime_r5
 
 
 def proven_source(repo, name):
@@ -41,12 +41,17 @@ class PurePolicy(unittest.TestCase):
     def test_provenance_only_repack_preserves_execution(self):
         import types
         repo=Path(__file__).resolve().parents[1];sys.path.insert(0,str(repo/'scripts/rules'))
-        import ZUIOPT_rule_pack as current
+        # This is the frozen provenance-only proof. Current Schema3 is covered by migration/parity suites.
+        current=types.ModuleType('proven_provenance_parser')
+        actual=(repo/'scripts/rules/ZUIOPT_rule_pack.py').read_text(encoding='utf8')
+        inherited=reverse_runtime_r5('scripts/rules/ZUIOPT_rule_pack.py',actual)
+        self.assertEqual(R.digest(inherited.encode()),'5f449a1ad7e238c59448da22bbb846dd9747a09f843a5d423fe8b25a3ba9ae8d')
+        exec(compile(inherited,'<hash-bound-provenance-parser>','exec'),current.__dict__)
         old=types.ModuleType('proven_reference_parser')
         source=proven_source(repo,'scripts/rules/ZUIOPT_rule_pack.py')
         self.assertEqual(R.digest(source.encode()),'68893bee028ddb0c2115b1877576528ac64fb1e810acbe70f9a6ff0b2ab591f1')
         exec(compile(source,'<hash-bound-reference-parser>','exec'),old.__dict__)
-        rules=(repo/'payload/system/etc/zuiopt/factory_rules.conf').read_bytes()
+        rules=reverse_runtime_r5('payload/system/etc/zuiopt/factory_rules.conf',(repo/'payload/system/etc/zuiopt/factory_rules.conf').read_text(encoding='utf8')).encode()
         manifest=old.manifest_for(rules,'recovered','asoul_binary',binary_sha='a'*64,evidence='STATIC_RECOVERED',priority=17)
         old_manifest,old_rules=old.unpack(old.pack_bytes(manifest,rules))
         new_manifest=dict(old_manifest,source_type='recovered_binary')

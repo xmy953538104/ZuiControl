@@ -134,7 +134,7 @@ void canonicalMigrationTests(const fs::path& parent){
     old.put("pack_state.conf",metadata);old.put("user_rules.conf",OPEN);old.put("last_good.conf","");
     packs.put("prior.zip",pack.archive);old.put("effective.conf",effective);root.put("effective.conf",effective);
     {
-        RuleStore store(path.string(),BASE);require(!store.current().canonical,"real V1 accepted");
+        RuleStore store(path.string(),BASE);rejects([&]{store.current();}); // Legacy state is read only inside the explicit initialization migration.
         store.initialize();auto migrated=store.current();
         require(migrated.canonical&&migrated.packs.empty()&&dumpRules(rules(migrated.effective))==dumpRules(rules(effective)),"V1 effective semantic parity");
         auto before=rules(effective),after=rules(migrated.effective);
