@@ -84,6 +84,8 @@ class RuleUpstreamFetcher(private val primary: String = RuleRemoteConfig.GITHUB_
     fun check(baseline: ZuioptLibrary.Baseline): Latest? {
         configured()
         checkedSource = ""
+        downloadedSource = ""
+        mirrorStatus = "NOT_CHECKED"
         val latest = try { readLatest(primary).also { checkedSource=primary } }
             catch (primaryError: IOException) {
                 check(mirror.isNotBlank()) { "RULE_SOURCES_UNAVAILABLE" }

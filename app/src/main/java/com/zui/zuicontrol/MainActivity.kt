@@ -545,7 +545,8 @@ class MainActivity : Activity() {
         if(session.section=="settings" && session.settingsModule==1 && session.gpuDraft==null)
             runCatching{session.gpuDraftFrom(state)}
         val rulesPage=if(session.section=="thread")"${snapshot?.generation}/$ruleError/${ZuioptRules.field(ruleState,"failure")}/${ZuioptRules.field(ruleState,"failure_reason")}" else ""
-        val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage/$recordThreads/${selectedThread?.optString("key")}/$rawPage/${preview?.hashCode()}/${caps.isNotEmpty()}/${session.gpuAuthority!=null}/${session.appDraft!=null}/${session.ruleDraft!=null}/${session.gpuDraft!=null}/${selectedRecord?.optLong("recordId")}/$recordDetailLoading/$threadDetailLoading/${analysisPage && analysis!=null}/$rulesPage"
+        val feedPage=if(session.section=="thread" && session.selected.isEmpty())"$updateStatus/${latest?.revision}" else ""
+        val page="${session.section}/${session.selected}/${session.settingsModule}/$analysisPage/$recordThreads/${selectedThread?.optString("key")}/$rawPage/${preview?.hashCode()}/${caps.isNotEmpty()}/${session.gpuAuthority!=null}/${session.appDraft!=null}/${session.ruleDraft!=null}/${session.gpuDraft!=null}/${selectedRecord?.optLong("recordId")}/$recordDetailLoading/$threadDetailLoading/${analysisPage && analysis!=null}/$rulesPage/$feedPage"
         if(page!=shownPage) {
         shownPage=page;cpuSparklines.cancel();pageBindings.clear();controlBindings.clear()
         for(i in pageHost.childCount-1 downTo 0){
@@ -1168,15 +1169,22 @@ class MainActivity : Activity() {
     private fun checkUpdates() {
         val b = baseline ?: return
         if (!RuleRemoteConfig.configured) { updateStatus = RuleRemoteConfig.DIAGNOSTIC; render(); return }
-        session.work { latest = session.gateway.checkUpstream(b); updateStatus = (latest?.let { "可更新：revision ${it.revision} · ${it.version} · ${it.date}" } ?: "已是最新") + "\n"+session.gateway.upstreamStatus() }
+        updateStatus="正在检查清单…"
+        session.work {
+            try { latest = session.gateway.checkUpstream(b); updateStatus = (latest?.let { "可更新：revision ${it.revision} · ${it.version} · ${it.date}" } ?: "已是最新") + "\n"+session.gateway.upstreamStatus() }
+            catch(error:Exception){updateStatus="检查未完成，请重试";throw error}
+        }
     }
     private fun syncUpstream() {
         val l = latest ?: return; val b = baseline ?: return
+        updateStatus="正在下载并生成规则差异预览…"
         session.work {
+            try {
             incoming = session.gateway.downloadUpstream(l, b); appOpt = false
             updateStatus="已下载 revision ${l.revision} · ${incoming.size} 字节 · ${ZuioptRules.digest(incoming)}\n${session.gateway.upstreamStatus()}"
             source = ZuioptLibrary.Provenance(l.source, l.version, l.date, l.commit, "publisher-revision:${l.revision}")
             decisions.clear(); manual = null; stagePreview(b)
+            } catch(error:Exception){updateStatus="下载或预览未完成，请重试";throw error}
         }
     }
     private fun stagePreview(b: ZuioptLibrary.Baseline) {

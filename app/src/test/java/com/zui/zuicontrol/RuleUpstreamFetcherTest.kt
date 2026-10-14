@@ -112,4 +112,18 @@ class RuleUpstreamFetcherTest {
             rejected{RuleUpstreamFetcher.mirrorRedirect(original,bad)}
         rejected{RuleUpstreamFetcher.mirrorRedirect(java.net.URL(source+"/rules.conf"),good)}
     }
+    @Test fun recheckClearsThePreviousDownloadSource(){
+        var primaryOffline=false
+        val mirror=RuleRemoteConfig.GITEE_BASE
+        val metadata=manifest().toString().toByteArray()
+        val fetcher=RuleUpstreamFetcher(source,mirror,{RuleUpstreamFetcher.CAPABILITIES}){url,_->
+            if(primaryOffline && url.startsWith(source))throw IOException("offline")
+            if(url.endsWith("latest.json"))metadata else runtime
+        }
+        val base=baseline();val latest=checkNotNull(fetcher.check(base))
+        fetcher.download(latest,base);assertEquals(source,fetcher.downloadedSource)
+        primaryOffline=true
+        assertEquals(latest,fetcher.check(base));assertEquals(mirror,fetcher.checkedSource)
+        assertEquals("",fetcher.downloadedSource);assertEquals("MANIFEST_FALLBACK",fetcher.mirrorStatus)
+    }
 }
