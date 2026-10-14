@@ -5,61 +5,113 @@
 #include <sys/syscall.h>
 
 namespace {
-constexpr const char* ROOT="/data/vendor/zui_control/zuiopt";
-constexpr const char* FACTORY="/system/etc/zuiopt/factory_rules.conf";
-std::string property(const char* name){char value[PROP_VALUE_MAX]{};__system_property_get(name,value);return value;}
-bool selected(){return property("sys.zui_control.scheduler_active")=="1"&&property("sys.zui_control.zuiopt_failed")=="0";}
+constexpr const char *ROOT = "/data/vendor/zui_control/zuiopt";
+constexpr const char *FACTORY = "/system/etc/zuiopt/factory_rules.conf";
+std::string property(const char *name) {
+    char value[PROP_VALUE_MAX]{};
+    __system_property_get(name, value);
+    return value;
+}
+bool selected() {
+    return property("sys.zui_control.scheduler_active") == "1" && property("sys.zui_control.zuiopt_failed") == "0";
+}
 void reload() noexcept {
-    if(!selected())return;
-    try{for(int pid:ZUIopt::ids("/proc")){
-        if(pid==getpid())continue;int fd=static_cast<int>(syscall(SYS_pidfd_open,pid,0));if(fd<0)continue;
-        char exe[512]{};auto n=readlink(("/proc/"+std::to_string(pid)+"/exe").c_str(),exe,sizeof(exe)-1);
-        if(n>0&&std::string(exe)=="/system/bin/ZUIopt")syscall(SYS_pidfd_send_signal,fd,SIGHUP,nullptr,0);
-        close(fd);
-    }}catch(...){} // A committed generation remains valid; init restart also reloads it.
-}
-}
-int main(int argc,char** argv){
-    setvbuf(stdout,nullptr,_IOLBF,0);
-    signal(SIGPIPE,SIG_IGN);
-    try{
-        ZUIopt::require(getuid()==0&&geteuid()==0,"root identity required");
-        if(argc==1){ZUIopt::require(selected(),"not this boot's task owner");ZUIopt::Core core(std::string(ROOT)+"/effective.conf",ROOT);return core.run();}
-        if(argc==2&&std::string(argv[1])=="--recover"){
-            ZUIopt::require(property("sys.zui_control.zuiopt_failed")=="1","recovery only after fail-safe stop");
-            ZUIopt::Journal journal(ROOT);ZUIopt::Counters counters;ZUIopt::Placement placement(counters,journal);placement.cleanup();ZUIopt::PrivateDir(ROOT).remove("runtime-status.v1");return 0;
+    if (!selected())
+        return;
+    try {
+        for (int pid : ZUIopt::ids("/proc")) {
+            if (pid == getpid())
+                continue;
+            int fd = static_cast<int>(syscall(SYS_pidfd_open, pid, 0));
+            if (fd < 0)
+                continue;
+            char exe[512]{};
+            auto n = readlink(("/proc/" + std::to_string(pid) + "/exe").c_str(), exe, sizeof(exe) - 1);
+            if (n > 0 && std::string(exe) == "/system/bin/ZUIopt")
+                syscall(SYS_pidfd_send_signal, fd, SIGHUP, nullptr, 0);
+            close(fd);
         }
-        ZUIopt::require(argc==2||(argc==5&&std::string(argv[1])=="--control"),"invalid production command");
-        if(argc==2&&std::string(argv[1])=="--crash"){puts(ZUIopt::crashGate(ROOT)?"1":"0");return 0;}
-        const std::string readCommand=argc==5?argv[2]:"";
-        const bool readOnly=readCommand=="state"||readCommand=="read"||readCommand=="runtime";
-        ZUIopt::RuleStore store(ROOT,ZUIopt::read(FACTORY),readOnly);
-        if(argc==2){
-            auto command=std::string(argv[1]);
-            if(command=="--boot"){store.initialize();puts(store.bootState().c_str());return 0;}
+    } catch (...) {
+    } // A committed generation remains valid; init restart also reloads it.
+}
+}
+int main(int argc, char **argv) {
+    setvbuf(stdout, nullptr, _IOLBF, 0);
+    signal(SIGPIPE, SIG_IGN);
+    try {
+        ZUIopt::require(getuid() == 0 && geteuid() == 0, "root identity required");
+        if (argc == 1) {
+            ZUIopt::require(selected(), "not this boot's task owner");
+            ZUIopt::Core core(std::string(ROOT) + "/effective.conf", ROOT);
+            return core.run();
+        }
+        if (argc == 2 && std::string(argv[1]) == "--recover") {
+            ZUIopt::require(property("sys.zui_control.zuiopt_failed") == "1", "recovery only after fail-safe stop");
+            ZUIopt::Journal journal(ROOT);
+            ZUIopt::Counters counters;
+            ZUIopt::Placement placement(counters, journal);
+            placement.cleanup();
+            ZUIopt::PrivateDir(ROOT).remove("runtime-status.v1");
+            return 0;
+        }
+        ZUIopt::require(argc == 2 || (argc == 5 && std::string(argv[1]) == "--control"), "invalid production command");
+        if (argc == 2 && std::string(argv[1]) == "--crash") {
+            puts(ZUIopt::crashGate(ROOT) ? "1" : "0");
+            return 0;
+        }
+        const std::string readCommand = argc == 5 ? argv[2] : "";
+        const bool readOnly = readCommand == "state" || readCommand == "read" || readCommand == "runtime";
+        ZUIopt::RuleStore store(ROOT, ZUIopt::read(FACTORY), readOnly);
+        if (argc == 2) {
+            auto command = std::string(argv[1]);
+            if (command == "--boot") {
+                store.initialize();
+                puts(store.bootState().c_str());
+                return 0;
+            }
             throw std::runtime_error("unknown production command");
         }
-        std::string command=argv[2],key=argv[3],value=argv[4],result;
-        ZUIopt::require(command.size()<=16&&key.size()<=128&&value.size()<=(command=="settings_prepare"?90000u:10924u),"command bound");
-        if(command=="state")result=store.state()+store.failureState();
-        else if(command=="runtime"){
-            ZUIopt::require(key.empty()&&value.empty(),"runtime read arguments");
-            result="{\"schema\":2,\"processes\":[],\"status\":\"NO_RUNTIME_ACK\"}";
-            if(selected()&&store.loaded()){
+        std::string command = argv[2], key = argv[3], value = argv[4], result;
+        ZUIopt::require(command.size() <= 16 && key.size() <= 128 &&
+                            value.size() <= (command == "settings_prepare" ? 90000u : 10924u),
+                        "command bound");
+        if (command == "state")
+            result = store.state() + store.failureState();
+        else if (command == "runtime") {
+            ZUIopt::require(key.empty() && value.empty(), "runtime read arguments");
+            result = "{\"schema\":2,\"processes\":[],\"status\":\"NO_RUNTIME_ACK\"}";
+            if (selected() && store.loaded()) {
                 ZUIopt::PrivateDir directory(ROOT);
-                auto owner=ZUIopt::trim(directory.get("loaded-generation.v2",256,true));
-                auto snapshot=directory.get("runtime-status.v1",ZUIopt::RUNTIME_STATUS_LIMIT,true);
-                if(ZUIopt::runtimeOwnerMatches(snapshot,ZUIopt::trim(ZUIopt::read("/proc/sys/kernel/random/boot_id")),owner)&&
-                    store.loaded()&&selected()&&ZUIopt::trim(directory.get("loaded-generation.v2",256,true))==owner)result=std::move(snapshot);
+                auto owner = ZUIopt::trim(directory.get("loaded-generation.v2", 256, true));
+                auto snapshot = directory.get("runtime-status.v1", ZUIopt::RUNTIME_STATUS_LIMIT, true);
+                if (ZUIopt::runtimeOwnerMatches(snapshot, ZUIopt::trim(ZUIopt::read("/proc/sys/kernel/random/boot_id")),
+                                                owner) &&
+                    store.loaded() && selected() &&
+                    ZUIopt::trim(directory.get("loaded-generation.v2", 256, true)) == owner)
+                    result = std::move(snapshot);
+            }
+        } else if (command == "read")
+            result = store.userChunk(key, value);
+        else if (command == "reset") {
+            ZUIopt::require(key.empty() && value.empty(), "reset arguments");
+            store.resetFailure();
+            result = "NEXT_REBOOT_RETRIES_ZUIOPT";
+        } else {
+            result = command.rfind("settings_", 0) == 0 ? store.settings(command, key, value)
+                                                        : store.apply(command, key, value);
+            if (command == "commit" || command == "restore_app" || command == "rollback" ||
+                command == "settings_apply" || command == "settings_revert") {
+                reload();
+                const auto deadline = ZUIopt::now() + 3000;
+                while (selected() && !store.loaded() && ZUIopt::now() < deadline)
+                    usleep(20000);
+                ZUIopt::require(selected() && store.loaded(), "COMMITTED_PENDING_OWNER_ACK_query_state");
             }
         }
-        else if(command=="read")result=store.userChunk(key,value);
-        else if(command=="reset"){ZUIopt::require(key.empty()&&value.empty(),"reset arguments");store.resetFailure();result="NEXT_REBOOT_RETRIES_ZUIOPT";}
-        else{result=command.rfind("settings_",0)==0?store.settings(command,key,value):store.apply(command,key,value);if(command=="commit"||command=="restore_app"||command=="rollback"||command=="settings_apply"||command=="settings_revert"){
-            reload();const auto deadline=ZUIopt::now()+3000;
-            while(selected()&&!store.loaded()&&ZUIopt::now()<deadline)usleep(20000);
-            ZUIopt::require(selected()&&store.loaded(),"COMMITTED_PENDING_OWNER_ACK_query_state");
-        }}
-        printf("%s\n",result.c_str());return 0;
-    }catch(const std::exception& e){fprintf(stderr,"ZUIopt rejected: %.96s\n",e.what());return 1;}
+        printf("%s\n", result.c_str());
+        return 0;
+    } catch (const std::exception &e) {
+        fprintf(stderr, "ZUIopt rejected: %.96s\n", e.what());
+        return 1;
+    }
 }

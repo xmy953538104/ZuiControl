@@ -23,5 +23,5 @@ class RuntimeR3Scope(unittest.TestCase):
   self.assertEqual(coverage['lease']['total'],coverage['lease']['shards']*coverage['lease']['cases_per_shard'])
   workflow=(ROOT/'.github/workflows/build.yml').read_text()
   self.assertIn('--storage=disk --deterministic-only',workflow);self.assertIn('--storage=ram --stress-only --shard=',workflow)
-  owner=(ROOT/'native/zuiopt/ZUIopt_owner.h').read_text();self.assertIn('fsync(fd)==0',owner);self.assertIn('fsync(dirFd)==0',owner)
+  owner=reverse_runtime_r5('native/zuiopt/ZUIopt_owner.h',(ROOT/'native/zuiopt/ZUIopt_owner.h').read_text());self.assertIn('fsync(fd)==0',owner);self.assertIn('fsync(dirFd)==0',owner)
 if __name__=='__main__':unittest.main(verbosity=2)
