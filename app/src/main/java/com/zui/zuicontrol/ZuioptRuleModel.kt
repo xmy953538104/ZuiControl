@@ -35,7 +35,7 @@ data class ZuioptRuleModel(val enabled: Boolean, val profiles: Map<String, Profi
             append("package ${m.matchKind} ${m.packageName} ${m.profile} ${m.priority}\n")
     }.also { require(it.length in 1..65536) }
 
-    /** Always clone before a single-App edit; even a prefix mapping may cover unknown siblings. */
+    /** Shared and broad mappings need a clone; an exact private profile can be updated in place. */
     fun editApp(packageName: String, edit: (Profile) -> Profile): ZuioptRuleModel {
         require(packageName.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")))
         val mapping = mappings.sortedByDescending { it.priority }.firstOrNull {
@@ -44,9 +44,12 @@ data class ZuioptRuleModel(val enabled: Boolean, val profiles: Map<String, Profi
                 else -> packageName.contains(it.packageName) }
         }
         require(mapping != null) { "No existing profile for App" }
+        val updated=edit(profiles.getValue(mapping.profile))
+        if(mapping.matchKind=="exact" && mappings.count{it.profile==mapping.profile}==1)
+            return copy(profiles=profiles+(mapping.profile to updated)).also{parse(it.normalized())}
         require(profiles.size < 64)
         val alias = (0..64).map { "user$it" }.first { it !in profiles }
-        val nextProfiles = profiles + (alias to edit(profiles.getValue(mapping.profile)))
+        val nextProfiles = profiles + (alias to updated)
         val rows = mappings.filterNot { it.matchKind == "exact" && it.packageName == packageName }
         val next = listOf(Mapping("exact", packageName, alias, 0)) + rows.sortedByDescending { it.priority }
         require(next.size <= 512)

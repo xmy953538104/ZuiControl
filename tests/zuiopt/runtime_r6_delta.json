@@ -6,10 +6,13 @@
     "app/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
     "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
     "app/src/main/java/com/zui/zuicontrol/ResponseTrace.kt",
+    "app/src/main/java/com/zui/zuicontrol/ZuioptRuleModel.kt",
     "app/src/main/java/com/zui/zuicontrol/ZuioptRules.kt",
     "app/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
     "app/src/test/java/com/zui/zuicontrol/InlineRulesTest.kt",
+    "app/src/test/java/com/zui/zuicontrol/ZuioptRuleModelTest.kt",
     "native/zuiopt/ZUIopt_store.h",
+    "tests/command_plane/TestUtilityTruth.py",
     "tests/monitor/TestGpuDraftLifecycle.py",
     "tests/zuiopt/InlineCommitTest.h",
     "tests/zuiopt/TestRuntimeFrontendScope.py",
@@ -107,6 +110,24 @@
       "hunks": []
     },
     {
+      "path": "app/src/main/java/com/zui/zuicontrol/ZuioptRuleModel.kt",
+      "beforeSha256": "cb78fe089681f01b1a0df8f0c3be9665bb222990e4a45e53dc63cfeab397054d",
+      "afterSha256": "c9a5f055a61795dce06fdbdedd8119f85b8e4af1c7efd7fb87e67838d4db45c8",
+      "beforeEntry": "100644 blob c7893f339cfb06c55f0c30653143ba17e136a3ec\tapp/src/main/java/com/zui/zuicontrol/ZuioptRuleModel.kt",
+      "afterEntry": "100644 blob 599d932a58dd21bf63de889a6f72319739efeca4\tapp/src/main/java/com/zui/zuicontrol/ZuioptRuleModel.kt",
+      "before": null,
+      "hunks": [
+        {
+          "before": "            append(\"package ${m.matchKind} ${m.packageName} ${m.profile} ${m.priority}\\n\")\n    }.also { require(it.length in 1..65536) }\n\n    /** Always clone before a single-App edit; even a prefix mapping may cover unknown siblings. */\n    fun editApp(packageName: String, edit: (Profile) -> Profile): ZuioptRuleModel {\n        require(packageName.matches(Regex(\"[A-Za-z][A-Za-z0-9_]*(\\\\.[A-Za-z][A-Za-z0-9_]*)+\")))\n        val mapping = mappings.sortedByDescending { it.priority }.firstOrNull {\n",
+          "after": "            append(\"package ${m.matchKind} ${m.packageName} ${m.profile} ${m.priority}\\n\")\n    }.also { require(it.length in 1..65536) }\n\n    /** Shared and broad mappings need a clone; an exact private profile can be updated in place. */\n    fun editApp(packageName: String, edit: (Profile) -> Profile): ZuioptRuleModel {\n        require(packageName.matches(Regex(\"[A-Za-z][A-Za-z0-9_]*(\\\\.[A-Za-z][A-Za-z0-9_]*)+\")))\n        val mapping = mappings.sortedByDescending { it.priority }.firstOrNull {\n"
+        },
+        {
+          "before": "                else -> packageName.contains(it.packageName) }\n        }\n        require(mapping != null) { \"No existing profile for App\" }\n        require(profiles.size < 64)\n        val alias = (0..64).map { \"user$it\" }.first { it !in profiles }\n        val nextProfiles = profiles + (alias to edit(profiles.getValue(mapping.profile)))\n        val rows = mappings.filterNot { it.matchKind == \"exact\" && it.packageName == packageName }\n        val next = listOf(Mapping(\"exact\", packageName, alias, 0)) + rows.sortedByDescending { it.priority }\n        require(next.size <= 512)\n",
+          "after": "                else -> packageName.contains(it.packageName) }\n        }\n        require(mapping != null) { \"No existing profile for App\" }\n        val updated=edit(profiles.getValue(mapping.profile))\n        if(mapping.matchKind==\"exact\" && mappings.count{it.profile==mapping.profile}==1)\n            return copy(profiles=profiles+(mapping.profile to updated)).also{parse(it.normalized())}\n        require(profiles.size < 64)\n        val alias = (0..64).map { \"user$it\" }.first { it !in profiles }\n        val nextProfiles = profiles + (alias to updated)\n        val rows = mappings.filterNot { it.matchKind == \"exact\" && it.packageName == packageName }\n        val next = listOf(Mapping(\"exact\", packageName, alias, 0)) + rows.sortedByDescending { it.priority }\n        require(next.size <= 512)\n"
+        }
+      ]
+    },
+    {
       "path": "app/src/main/java/com/zui/zuicontrol/ZuioptRules.kt",
       "beforeSha256": "086574c80e66d04bd6645ca3def20c1a4d2660d3bcd71ad9739ca37dec46206c",
       "afterSha256": "16959a7f9d9636fc4d301b3ebcf3b9692bc4cc7b0f266e04e12a70b881496922",
@@ -156,13 +177,39 @@
       "hunks": []
     },
     {
-      "path": "native/zuiopt/ZUIopt_store.h",
-      "beforeSha256": "cb8ce5490f1496ba960142229e62dc04c0be36a4a30e9ec3f81bb2f12f96b6c5",
-      "afterSha256": "ec25eaf7513f6519ea9d13dab9eb57057fc9343b15d346fc4c5608626dc80a8b",
-      "beforeEntry": "100644 blob cfaffc909043e22ce1567409dca4580e9a6cd3c1\tnative/zuiopt/ZUIopt_store.h",
-      "afterEntry": "100644 blob c149393799ac2299212fc606d1919dd414ceb577\tnative/zuiopt/ZUIopt_store.h",
+      "path": "app/src/test/java/com/zui/zuicontrol/ZuioptRuleModelTest.kt",
+      "beforeSha256": "a25b6a3be21775574455a06b6be8f3417df606422940fe63dc490f29daeb26fe",
+      "afterSha256": "02aeb11e9a0cef75844163057cd6f1951e1c0b06b46e9de67f6a474e74284672",
+      "beforeEntry": "100644 blob 4ed42581aef15f436e78786cd4b5faccc327c88c\tapp/src/test/java/com/zui/zuicontrol/ZuioptRuleModelTest.kt",
+      "afterEntry": "100644 blob ce82b36fe7628d237caa5c3bc8de646945dc5417\tapp/src/test/java/com/zui/zuicontrol/ZuioptRuleModelTest.kt",
       "before": null,
       "hunks": [
+        {
+          "before": "import org.junit.Test\nclass ZuioptRuleModelTest {\n    private val raw=\"schema 3\\nenabled true\\nprofile Shared 2-6\\nthread Shared Pool exact \\\"Worker\\\" selector=rank:2 40 7\\nthread Shared Pool prefix \\\"Worker-\\\" selector=rank:2 30 7\\npackage exact org.first.app Shared 100\\npackage exact org.second.app Shared 90\\n\"\n    @Test fun normalizedRoundTripAndSharedProfileIsolation() {\n        val m=ZuioptRuleModel.parse(raw); val text=m.normalized()\n        assertEquals(text,ZuioptRuleModel.parseNormalized(text).normalized())\n",
+          "after": "import org.junit.Test\nclass ZuioptRuleModelTest {\n    private val raw=\"schema 3\\nenabled true\\nprofile Shared 2-6\\nthread Shared Pool exact \\\"Worker\\\" selector=rank:2 40 7\\nthread Shared Pool prefix \\\"Worker-\\\" selector=rank:2 30 7\\npackage exact org.first.app Shared 100\\npackage exact org.second.app Shared 90\\n\"\n    @Test fun repeatedPrivateEditsDoNotAccumulateProfilesOrChangeSharedSibling() {\n        val original=ZuioptRuleModel.parse(raw)\n        var next=original.editApp(\"org.first.app\"){it.copy(generalMask=setOf(7))}\n        val privateId=next.mappings.first{it.packageName==\"org.first.app\"}.profile\n        repeat(40){i->next=next.editApp(\"org.first.app\"){it.copy(generalMask=setOf(if(i%2==0)6 else 7))}\n            assertEquals(2,next.profiles.size);assertEquals(privateId,next.mappings.first{it.packageName==\"org.first.app\"}.profile)\n            assertEquals(original.appProfile(\"org.second.app\"),next.appProfile(\"org.second.app\"))}\n        val full=next.copy(profiles=next.profiles+(0 until 62).associate{\"unused$it\" to original.profiles.getValue(\"Shared\")})\n        assertEquals(64,full.editApp(\"org.first.app\"){it.copy(generalMask=setOf(5))}.profiles.size)\n    }\n    @Test fun normalizedRoundTripAndSharedProfileIsolation() {\n        val m=ZuioptRuleModel.parse(raw); val text=m.normalized()\n        assertEquals(text,ZuioptRuleModel.parseNormalized(text).normalized())\n"
+        }
+      ]
+    },
+    {
+      "path": "native/zuiopt/ZUIopt_store.h",
+      "beforeSha256": "cb8ce5490f1496ba960142229e62dc04c0be36a4a30e9ec3f81bb2f12f96b6c5",
+      "afterSha256": "bbbf955ee59f35af74a02415b1175eade4629ed6dc949e1287ffe24bc24bec75",
+      "beforeEntry": "100644 blob cfaffc909043e22ce1567409dca4580e9a6cd3c1\tnative/zuiopt/ZUIopt_store.h",
+      "afterEntry": "100644 blob ad6d01989280341bf51323b1d29dafe15066c03b\tnative/zuiopt/ZUIopt_store.h",
+      "before": null,
+      "hunks": [
+        {
+          "before": "#ifdef ZUIOPT_TEST\n        if (testBeforeCommit)\n            throw std::runtime_error(\"injected before commit\");\n#endif\n        if (!activate)\n            return id;\n",
+          "after": "#ifdef ZUIOPT_TEST\n        if (testBeforeCommit)\n            throw std::runtime_error(\"injected before commit\");\n        if (testCommitKill == 1)\n            kill(getpid(), SIGKILL);\n#endif\n        if (!activate)\n            return id;\n"
+        },
+        {
+          "before": "#ifdef ZUIOPT_TEST\n        if (testAfterCommit)\n            throw std::runtime_error(\"injected after commit\");\n#endif\n        require(root.get(\"effective.conf\", RULE_LIMIT) == effective, \"committed readback\");\n        try {\n",
+          "after": "#ifdef ZUIOPT_TEST\n        if (testAfterCommit)\n            throw std::runtime_error(\"injected after commit\");\n        if (testCommitKill == 2)\n            kill(getpid(), SIGKILL);\n#endif\n        require(root.get(\"effective.conf\", RULE_LIMIT) == effective, \"committed readback\");\n        try {\n"
+        },
+        {
+          "before": "#ifdef ZUIOPT_TEST\n    inline static bool testBeforeCommit = false;\n    inline static bool testAfterCommit = false;\n    inline static int testMigrationFault = 0;\n#endif\n    RuleStore(const std::string &path, const std::string &factoryText, bool onlyRead = false)\n",
+          "after": "#ifdef ZUIOPT_TEST\n    inline static bool testBeforeCommit = false;\n    inline static bool testAfterCommit = false;\n    inline static int testCommitKill = 0;\n    inline static int testMigrationFault = 0;\n#endif\n    RuleStore(const std::string &path, const std::string &factoryText, bool onlyRead = false)\n"
+        },
         {
           "before": "        if (runtime)\n            require(generationOf(s.effective) == argument.substr(8), \"runtime read generation changed\");\n        auto status = state(s) + failureState() + \"upstream_metadata_sha256=\" + sha256(s.upstreamMetadata) +\n                      \"\\nrules_read_transport=DAEMON_SNAPSHOT_V1\\n\";\n        require(status.size() <= 4608, \"rules read state bound\");\n        if (runtime) {\n            auto body = root.get(\"runtime-status.v1\", RUNTIME_STATUS_LIMIT);\n",
           "after": "        if (runtime)\n            require(generationOf(s.effective) == argument.substr(8), \"runtime read generation changed\");\n        auto status = state(s) + failureState() + \"upstream_metadata_sha256=\" + sha256(s.upstreamMetadata) +\n                      \"\\nrules_read_transport=DAEMON_SNAPSHOT_V1\\nrules_commit_transport=ZLIB_USER_V1\\n\";\n        require(status.size() <= 4608, \"rules read state bound\");\n        if (runtime) {\n            auto body = root.get(\"runtime-status.v1\", RUNTIME_STATUS_LIMIT);\n"
@@ -170,6 +217,20 @@
         {
           "before": "        auto s = current();\n        require(s.canonical, \"canonical migration required\");\n        require(!root.exists(\"settings.pending\"), \"settings restore recovery required\");\n        if (action == \"upstream_read\") {\n            auto input = fields(value, ':');\n            require(input.size() == 2 && (input[0] == \"rules\" || input[0] == \"metadata\") && rx(input[1], \"[0-9]{1,6}\"),\n",
           "after": "        auto s = current();\n        require(s.canonical, \"canonical migration required\");\n        require(!root.exists(\"settings.pending\"), \"settings restore recovery required\");\n        if (action == \"commit\" && !value.empty()) {\n            // One authenticated envelope, unchanged durable upload/commit and exclusive store lock.\n            auto f = fields(value, ':');\n            require(value.size() <= 10924 && f.size() == 5 && f[0] == \"zlib-user-v1\" && generationId(f[1]) &&\n                        f[1] == generationOf(s.effective) && rx(f[2], \"[0-9]{1,6}\") && hex(f[3], 64) && hex(id, 24),\n                    \"inline commit metadata\");\n            size_t size = number(f[2]);\n            require(size > 0 && size <= RULE_LIMIT, \"inline commit bound\");\n            auto packed = unbase64(f[4], 8192);\n            std::string bytes(size, '\\0');\n            z_stream stream{};\n            stream.next_in = reinterpret_cast<Bytef *>(packed.data());\n            stream.avail_in = packed.size();\n            stream.next_out = reinterpret_cast<Bytef *>(bytes.data());\n            stream.avail_out = bytes.size();\n            require(inflateInit(&stream) == Z_OK, \"inline inflate init\");\n            int result = inflate(&stream, Z_FINISH);\n            bool complete = result == Z_STREAM_END && stream.total_out == size && stream.avail_in == 0;\n            inflateEnd(&stream);\n            require(complete && sha256(bytes) == f[3], \"inline content length/SHA256\");\n            apply(\"begin\", id, \"user:\" + f[2] + \":\" + f[3] + \":-:0:\" + f[1]);\n            try {\n                for (size_t offset = 0; offset < bytes.size(); offset += 8192)\n                    apply(\"chunk\", id + \":\" + std::to_string(offset), base64(bytes.substr(offset, 8192)));\n                return apply(\"commit\", id, \"\");\n            } catch (...) {\n                try {\n                    apply(\"abort\", id, \"\");\n                } catch (...) {\n                }\n                throw;\n            }\n        }\n        if (action == \"upstream_read\") {\n            auto input = fields(value, ':');\n            require(input.size() == 2 && (input[0] == \"rules\" || input[0] == \"metadata\") && rx(input[1], \"[0-9]{1,6}\"),\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/command_plane/TestUtilityTruth.py",
+      "beforeSha256": "a49ae9cdc4b81de24e7019f5dfdd8818de8cc9a67574628c551b67073ad1367b",
+      "afterSha256": "b82ec9c0d05ff18393d0dddbac7fd9e3da7a9cd98f55873c0b51e58e9343ab48",
+      "beforeEntry": "100644 blob 0140e53d21d88d298265319ce1c88b6d0541d095\ttests/command_plane/TestUtilityTruth.py",
+      "afterEntry": "100644 blob ae7696f9e21299c8e8ca04d3f2945994107ee431\ttests/command_plane/TestUtilityTruth.py",
+      "before": null,
+      "hunks": [
+        {
+          "before": "    # ContentResolver and executor/post boundaries are replaced in this harness.\n    harness='''package com.zui.zuicontrol\nimport java.io.*\nobject FrontendTransport {\n val commands:Any=Any()\n class Reads{fun execute(task:()->Unit){task()}}\n",
+          "after": "    # ContentResolver and executor/post boundaries are replaced in this harness.\n    harness='''package com.zui.zuicontrol\nimport java.io.*\n// Android logging is outside this SAF/session state-machine boundary.\nobject ResponseTrace{fun event(id:String,phase:String,detail:String=\"\"){};fun <T> during(id:String,task:()->T):T=task()}\nobject FrontendTransport {\n val commands:Any=Any()\n class Reads{fun execute(task:()->Unit){task()}}\n"
         }
       ]
     },
@@ -194,9 +255,9 @@
     {
       "path": "tests/zuiopt/InlineCommitTest.h",
       "beforeSha256": null,
-      "afterSha256": "d0349210ab80878df49e8b20c35e60b4cdd03a840ea113afb833a054cb383a96",
+      "afterSha256": "5c3442f07692d624efe1444adab18e526cf53f85c3c192f55792d0b9551a7412",
       "beforeEntry": null,
-      "afterEntry": "100644 blob 45b9ea792b3905ef75c1cd24b3e6b6dd6ad4de78\ttests/zuiopt/InlineCommitTest.h",
+      "afterEntry": "100644 blob 53b30179a9bb2d5a8fa1a28ccb584566bc2571bc\ttests/zuiopt/InlineCommitTest.h",
       "before": null,
       "hunks": []
     },
@@ -267,18 +328,18 @@
     {
       "path": "tests/zuiopt/ZUIoptTest.cpp",
       "beforeSha256": "7a82306092571dc9d60183697a2b85c2661e212c1a5b22588fc5f6f2aa393224",
-      "afterSha256": "dd1d17d89dad421f8eee66065aefe1608234164ab2fbeac1d672e6fb3bf5d340",
+      "afterSha256": "84dd5f324b5246230c1c18ec8b1f09426c63c70f1a9d78b619fcaa1fff472548",
       "beforeEntry": "100644 blob 698b6ce5da9aee5a18abefc7c6191777c942007f\ttests/zuiopt/ZUIoptTest.cpp",
-      "afterEntry": "100644 blob eb9bc7912bcc1febd67d9cdb0b35a98c88184819\ttests/zuiopt/ZUIoptTest.cpp",
+      "afterEntry": "100644 blob f52f1bd3736cb36476608e2c5a98ce6a23c95b3a\ttests/zuiopt/ZUIoptTest.cpp",
       "before": null,
       "hunks": [
         {
           "before": "        puts(\"RULES_READ_CANONICAL_SNAPSHOT_ZERO_WRITES_SHARED_LOCK_WRITER_EXCLUSION=PASS\");\n}\n\nint main(int argc,char** argv){\n    if(argc==2&&std::string(argv[1])==\"readonly\"){\n        try{\n            const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-read-fixture-XXXXXX\";\n",
-          "after": "        puts(\"RULES_READ_CANONICAL_SNAPSHOT_ZERO_WRITES_SHARED_LOCK_WRITER_EXCLUSION=PASS\");\n}\n\n#include \"InlineCommitTest.h\"\nint main(int argc,char** argv){\n    if(argc==2&&std::string(argv[1])==\"inline\"){\n        try{const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-inline-XXXXXX\";std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);require(mkdtemp(path.data()),\"exclusive inline fixture\");auto root=fs::path(path.data());inlineCommitTests(root);fs::remove_all(root);return 0;}catch(const std::exception& e){std::cerr<<\"INLINE_FIXTURE_FAIL \"<<e.what()<<'\\n';return 1;}\n    }\n    if(argc==2&&std::string(argv[1])==\"readonly\"){\n        try{\n            const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-read-fixture-XXXXXX\";\n"
+          "after": "        puts(\"RULES_READ_CANONICAL_SNAPSHOT_ZERO_WRITES_SHARED_LOCK_WRITER_EXCLUSION=PASS\");\n}\n\n#include \"InlineCommitTest.h\"\nint main(int argc,char** argv){\n    if(argc==2&&std::string(argv[1])==\"inline\"){\n        try{const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-inline-XXXXXX\";std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);require(mkdtemp(path.data()),\"exclusive inline fixture\");auto root=fs::path(path.data());inlineCommitTests(root);inlineCommitKillTests(root);fs::remove_all(root);return 0;}catch(const std::exception& e){std::cerr<<\"INLINE_FIXTURE_FAIL \"<<e.what()<<'\\n';return 1;}\n    }\n    if(argc==2&&std::string(argv[1])==\"readonly\"){\n        try{\n            const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-read-fixture-XXXXXX\";\n"
         },
         {
           "before": "        journalTests(root);\n        canonicalMigrationTests(root);\n        libraryTests(root);\n        {\n            RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;\n            for(const auto& candidate:std::vector<std::string>{OPEN,\"schema 3\\nenabled true\\nunknown bad\\n\"}){\n",
-          "after": "        journalTests(root);\n        canonicalMigrationTests(root);\n        libraryTests(root);\n        inlineCommitTests(root);\n        {\n            RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;\n            for(const auto& candidate:std::vector<std::string>{OPEN,\"schema 3\\nenabled true\\nunknown bad\\n\"}){\n"
+          "after": "        journalTests(root);\n        canonicalMigrationTests(root);\n        libraryTests(root);\n        inlineCommitTests(root);\n        inlineCommitKillTests(root);\n        {\n            RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;\n            for(const auto& candidate:std::vector<std::string>{OPEN,\"schema 3\\nenabled true\\nunknown bad\\n\"}){\n"
         }
       ]
     }

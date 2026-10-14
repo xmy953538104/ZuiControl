@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 class ZuioptRuleModelTest {
     private val raw="schema 3\nenabled true\nprofile Shared 2-6\nthread Shared Pool exact \"Worker\" selector=rank:2 40 7\nthread Shared Pool prefix \"Worker-\" selector=rank:2 30 7\npackage exact org.first.app Shared 100\npackage exact org.second.app Shared 90\n"
+    @Test fun repeatedPrivateEditsDoNotAccumulateProfilesOrChangeSharedSibling() {
+        val original=ZuioptRuleModel.parse(raw)
+        var next=original.editApp("org.first.app"){it.copy(generalMask=setOf(7))}
+        val privateId=next.mappings.first{it.packageName=="org.first.app"}.profile
+        repeat(40){i->next=next.editApp("org.first.app"){it.copy(generalMask=setOf(if(i%2==0)6 else 7))}
+            assertEquals(2,next.profiles.size);assertEquals(privateId,next.mappings.first{it.packageName=="org.first.app"}.profile)
+            assertEquals(original.appProfile("org.second.app"),next.appProfile("org.second.app"))}
+        val full=next.copy(profiles=next.profiles+(0 until 62).associate{"unused$it" to original.profiles.getValue("Shared")})
+        assertEquals(64,full.editApp("org.first.app"){it.copy(generalMask=setOf(5))}.profiles.size)
+    }
     @Test fun normalizedRoundTripAndSharedProfileIsolation() {
         val m=ZuioptRuleModel.parse(raw); val text=m.normalized()
         assertEquals(text,ZuioptRuleModel.parseNormalized(text).normalized())

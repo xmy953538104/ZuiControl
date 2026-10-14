@@ -499,6 +499,8 @@ class RuleStore {
 #ifdef ZUIOPT_TEST
         if (testBeforeCommit)
             throw std::runtime_error("injected before commit");
+        if (testCommitKill == 1)
+            kill(getpid(), SIGKILL);
 #endif
         if (!activate)
             return id;
@@ -508,6 +510,8 @@ class RuleStore {
 #ifdef ZUIOPT_TEST
         if (testAfterCommit)
             throw std::runtime_error("injected after commit");
+        if (testCommitKill == 2)
+            kill(getpid(), SIGKILL);
 #endif
         require(root.get("effective.conf", RULE_LIMIT) == effective, "committed readback");
         try {
@@ -741,6 +745,7 @@ class RuleStore {
 #ifdef ZUIOPT_TEST
     inline static bool testBeforeCommit = false;
     inline static bool testAfterCommit = false;
+    inline static int testCommitKill = 0;
     inline static int testMigrationFault = 0;
 #endif
     RuleStore(const std::string &path, const std::string &factoryText, bool onlyRead = false)

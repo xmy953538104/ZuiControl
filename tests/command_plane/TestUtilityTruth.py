@@ -30,6 +30,8 @@ def saf(case):
     # ContentResolver and executor/post boundaries are replaced in this harness.
     harness='''package com.zui.zuicontrol
 import java.io.*
+// Android logging is outside this SAF/session state-machine boundary.
+object ResponseTrace{fun event(id:String,phase:String,detail:String=""){};fun <T> during(id:String,task:()->T):T=task()}
 object FrontendTransport {
  val commands:Any=Any()
  class Reads{fun execute(task:()->Unit){task()}}
