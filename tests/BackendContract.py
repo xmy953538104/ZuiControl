@@ -33,7 +33,29 @@ RUNTIME_R3_ALLOWED|={'native/zuiopt/ZUIopt.cpp','native/zuiopt/ZUIopt_scene.h','
 assert RUNTIME_R3['baseHead']=='4ccc7620cab5927cbcc602fd8f10a38491df7bb4' and RUNTIME_R3['phase']=='R3_CI_QUARANTINE_WALT_AND_SCHEMA3_CLOSURE'
 assert set(RUNTIME_R3['allowedPaths'])==RUNTIME_R3_ALLOWED
 
+RUNTIME_R5=json.loads((ROOT/'tests/zuiopt/runtime_r5_delta.json').read_text(encoding='utf8'))
+assert RUNTIME_R5['baseHead']=='d54bbee0215989b3f4a2737aff30d315f590eaa3' and RUNTIME_R5['phase']=='ZUIOPT_R5_SCHEMA3_LIVE_CLOUD_INTEGRATION_AND_COMPLETION'
+def reverse_runtime_r5(path,text):
+    row=next((r for r in RUNTIME_R5['files'] if r['path']==path),None)
+    if not row:return text
+    assert hashlib.sha256(text.encode()).hexdigest()==row['afterSha256'],('R5 exact authorized bytes',path)
+    if row['beforeEntry'] is None:return ''
+    for h in reversed(row['hunks']):
+        assert text.count(h['after'])==1,('R5 exact source hunk',path)
+        text=text.replace(h['after'],h['before'],1)
+    assert hashlib.sha256(text.encode()).hexdigest()==row['beforeSha256'],('R5 immutable base',path)
+    return text
+def reverse_runtime_r5_entries(current,*scopes):
+    result=list(current)
+    for row in RUNTIME_R5['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('R5 exact authorized source',row['path'])
+        result.remove(row['afterEntry'].encode())
+        if row['beforeEntry'] is not None:result.append(row['beforeEntry'].encode())
+    return result
+
 def reverse_runtime_r3(path,text):
+    text=reverse_runtime_r5(path,text)
     row=next((r for r in RUNTIME_R3['files']+RUNTIME_R3['testFiles']+RUNTIME_R3['supportFiles'] if r['path']==path),None)
     if not row:return text
     assert hashlib.sha256(text.encode()).hexdigest()==row['afterSha256'],('R3 exact authorized bytes',path)
@@ -45,7 +67,7 @@ def reverse_runtime_r3(path,text):
     return text
 
 def reverse_runtime_r3_entries(current,*scopes):
-    result=list(current)
+    result=reverse_runtime_r5_entries(current,*scopes)
     for row in RUNTIME_R3['files']+RUNTIME_R3['testFiles']+RUNTIME_R3['supportFiles']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['afterEntry'].encode())==1,('R3 exact authorized source',row['path'])

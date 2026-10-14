@@ -131,7 +131,7 @@ fun main(args:Array<String>) {
  val manifest=File(args[3]).readBytes();val bytes=File(args[4]).readBytes();val hash=RuleUpstreamFetcher.hash(bytes)
  val baseline=ZuioptLibrary.Baseline(JSONObject().put("sourceEvidence","publisher-revision:1"),"0".repeat(64))
  var fetches=0
- val upstream=RuleUpstreamFetcher("https://raw.githubusercontent.com/qualification/controlled/main/output", "") {url,limit->fetches++;if(url.endsWith("latest.json")){check(limit==2048);manifest}else{check(limit==65536);bytes}}
+ val upstream=RuleUpstreamFetcher("https://raw.githubusercontent.com/qualification/controlled/main/output", "") {url,limit->fetches++;if(url.endsWith("latest.json")){check(limit==2048);manifest}else{check(limit==bytes.size);bytes}}
  val latest=checkNotNull(upstream.check(baseline));check(latest.rulesSchema==2 && latest.sha256==hash)
  check(upstream.download(latest,baseline).contentEquals(bytes));check(fetches==3)
  rejects {upstream.check(baseline.copy(metadata=JSONObject().put("sourceEvidence","revision:1")))}

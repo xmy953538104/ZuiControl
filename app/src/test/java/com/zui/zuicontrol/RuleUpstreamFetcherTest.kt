@@ -71,4 +71,44 @@ class RuleUpstreamFetcherTest {
         val fetcher=RuleUpstreamFetcher(source,capabilities={RuleUpstreamFetcher.CAPABILITIES}){url,_->if(url.endsWith("latest.json"))metadata else runtime}
         assertTrue(rejected{fetcher.download(checkNotNull(fetcher.check(baseline())),baseline())}.contains("RULE_CAPABILITIES_CONTENT_MISMATCH"))
     }
+    @Test fun mirrorUnavailableOrLaggingDoesNotBlockPrimary(){
+        val mirror=RuleRemoteConfig.GITEE_BASE
+        var mirrorManifest: ByteArray?=null;var ruleReads=0
+        val fetcher=RuleUpstreamFetcher(source,mirror,{RuleUpstreamFetcher.CAPABILITIES}){url,_->
+            if(url.startsWith(mirror)){mirrorManifest?:throw IOException("HTTP 302")}
+            else if(url.endsWith("latest.json"))manifest().toString().toByteArray()
+            else {ruleReads++;runtime}
+        }
+        val latest=checkNotNull(fetcher.check(baseline()));assertEquals(0,ruleReads)
+        assertEquals("UNAVAILABLE_HTTP_302",fetcher.mirrorStatus)
+        mirrorManifest=manifest(revision=1).toString().toByteArray()
+        assertEquals(latest,fetcher.check(baseline()));assertEquals("LAGGING_NOT_SELECTED",fetcher.mirrorStatus)
+        assertArrayEquals(runtime,fetcher.download(latest,baseline()));assertEquals(source,fetcher.downloadedSource)
+        assertEquals(1,ruleReads)
+    }
+    @Test fun fallbackRequiresTheFrozenWholeManifest(){
+        var failed=false;var mirrorBytes=manifest().toString().toByteArray()
+        val mirror=RuleRemoteConfig.GITEE_BASE
+        val fetcher=RuleUpstreamFetcher(source,mirror,{RuleUpstreamFetcher.CAPABILITIES}){url,_->
+            if(url.startsWith(source)&&failed)throw IOException("offline")
+            if(url.endsWith("latest.json"))if(url.startsWith(mirror))mirrorBytes else manifest().toString().toByteArray() else runtime
+        }
+        val latest=checkNotNull(fetcher.check(baseline()));failed=true
+        assertArrayEquals(runtime,fetcher.download(latest,baseline()));assertEquals(mirror,fetcher.downloadedSource)
+        mirrorBytes=manifest(revision=1).toString().toByteArray()
+        assertTrue(rejected{fetcher.download(latest,baseline())}.contains("RULE_SOURCE_CHANGED"))
+        mirrorBytes=manifest().put("rulesSha256","f".repeat(64)).toString().toByteArray()
+        assertTrue(rejected{fetcher.download(latest,baseline())}.contains("RULE_SOURCE_CHANGED"))
+        mirrorBytes="<html>login</html>".toByteArray()
+        try{fetcher.download(latest,baseline());fail("HTML accepted")}catch(_:org.json.JSONException){}
+    }
+    @Test fun onlyVerifiedSamePathGiteeCdnRedirectAllowed(){
+        val original=java.net.URL(RuleRemoteConfig.GITEE_BASE+"/rules.conf")
+        val good="https://raw.giteeusercontent.com${original.path}?anonymous-signature=fixture"
+        assertEquals("raw.giteeusercontent.com",RuleUpstreamFetcher.mirrorRedirect(original,good).host)
+        for(bad in listOf(good.replace("https:","http:"),good.replace("raw.giteeusercontent.com","evil.example"),
+            good.replace("/rules.conf","/login"),good.replace("https://","https://user@"),good+"#fragment"))
+            rejected{RuleUpstreamFetcher.mirrorRedirect(original,bad)}
+        rejected{RuleUpstreamFetcher.mirrorRedirect(java.net.URL(source+"/rules.conf"),good)}
+    }
 }

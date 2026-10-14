@@ -40,10 +40,11 @@ class FrontendV3(unittest.TestCase):
         self.assertIn('"defaultGpuBatch"',gateway)
         self.assertIn('ThreadAnalysisClient.read(packageName)',gateway)
         remote=read('RuleUpstreamFetcher.kt')
-        self.assertIn('const val GITHUB_BASE = ""',remote);self.assertIn('const val GITEE_BASE = ""',remote)
+        self.assertIn('https://raw.githubusercontent.com/xmy953538104/ZuiControl-Rules/main/output',remote)
+        self.assertIn('https://gitee.com/xmy953538104/ZuiControl-Rules/raw/main/output',remote)
         for forbidden in ('Timer','postDelayed','Thread.sleep'):
             self.assertNotIn(forbidden,remote)
-        self.assertIn('check(a == null || b == null || a == b)',remote)
+        self.assertIn('check(readLatest(base) == latest)',remote)
         self.assertIn('latest.verify(bytes, revisions)',remote)
         self.assertIn('ZuioptLibrary.preview',main)
         self.assertNotIn('saveGpuDefaultsAtomic',main) # centralized session operation, never per-slider saves

@@ -6,19 +6,22 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 
-/** Explicit release configuration; no authoritative production URLs were supplied. */
+/** One logical feed, edited/published on GitHub; Gitee is a read-only mirror. */
 object RuleRemoteConfig {
-    const val GITHUB_BASE = ""
-    const val GITEE_BASE = ""
+    const val GITHUB_BASE = "https://raw.githubusercontent.com/xmy953538104/ZuiControl-Rules/main/output"
+    const val GITEE_BASE = "https://gitee.com/xmy953538104/ZuiControl-Rules/raw/main/output"
     val configured get() = GITHUB_BASE.isNotBlank()
     const val DIAGNOSTIC = "RULE_REMOTE_CONFIGURATION_REQUIRED"
 }
 
 /** App-layer, user-triggered transport. The existing native library owns all diffs and commits. */
 class RuleUpstreamFetcher(private val primary: String = RuleRemoteConfig.GITHUB_BASE,
-    private val mirror: String = RuleRemoteConfig.GITEE_BASE,
+    private val mirror: String = if(primary==RuleRemoteConfig.GITHUB_BASE)RuleRemoteConfig.GITEE_BASE else "",
     private val capabilities: () -> Set<String> = { emptySet() },
     private val fetch: (String, Int) -> ByteArray = ::httpsRead) {
+    var checkedSource: String = ""; private set
+    var downloadedSource: String = ""; private set
+    var mirrorStatus: String = "NOT_CHECKED"; private set
     data class Latest(val revision: Long, val version: String, val date: String, val commit: String,
         val size: Int, val sha256: String, val soc: String, val topology: String, val rulesSchema: Int, val source: String,
         val requiredCapabilities: Set<String> = emptySet()) {
@@ -49,7 +52,9 @@ class RuleUpstreamFetcher(private val primary: String = RuleRemoteConfig.GITHUB_
         for (base in listOf(primary, mirror).filter { it.isNotBlank() }) {
             val url = URL(base)
             require(url.protocol == "https" && url.userInfo == null && url.query == null && url.ref == null)
-            require(url.host in setOf("raw.githubusercontent.com","github.com","api.github.com")){"RULE_GITHUB_SOURCE_REQUIRED"}
+            require(url.port == -1 || url.port == 443) { "RULE_SOURCE_PORT" }
+            require(if(base==primary) url.host in setOf("raw.githubusercontent.com","github.com","api.github.com")
+                else base.trimEnd('/') == RuleRemoteConfig.GITEE_BASE) { "RULE_SOURCE_NOT_ALLOWED" }
         }
     }
     private fun installedRevision(baseline: ZuioptLibrary.Baseline): Long {
@@ -76,33 +81,41 @@ class RuleUpstreamFetcher(private val primary: String = RuleRemoteConfig.GITHUB_
             json.getString("sourceCommit"), json.getInt("rulesSize"), json.getString("rulesSha256"),
             json.getString("targetSoC"), json.getString("targetTopology"), schema, json.getString("source"),required)
     }
-    private fun pair(): Pair<Latest?, Latest?> {
-        fun available(base: String) = try { readLatest(base) } catch (_: IOException) { null }
-        val a = available(primary); val b = if (mirror.isNotBlank()) available(mirror) else null
-        check(a != null || b != null) { "RULE_SOURCES_UNAVAILABLE" }
-        check(a == null || b == null || a == b) { "RULE_SOURCE_MISMATCH" }
-        return a to b
-    }
     fun check(baseline: ZuioptLibrary.Baseline): Latest? {
         configured()
-        val (a, b) = pair(); val latest = checkNotNull(a ?: b)
+        checkedSource = ""
+        val latest = try { readLatest(primary).also { checkedSource=primary } }
+            catch (primaryError: IOException) {
+                check(mirror.isNotBlank()) { "RULE_SOURCES_UNAVAILABLE" }
+                try { readLatest(mirror).also { checkedSource=mirror } }
+                catch (mirrorError: IOException) { throw IllegalStateException("RULE_SOURCES_UNAVAILABLE",mirrorError) }
+            }
         requireCapabilities(latest)
+        mirrorStatus = if(mirror.isBlank())"NOT_CONFIGURED" else if(checkedSource==mirror)"MANIFEST_FALLBACK" else try {
+            val mirrored=readLatest(mirror)
+            when { mirrored==latest->"MANIFEST_MATCH";mirrored.revision<latest.revision->"LAGGING_NOT_SELECTED"
+                else->"DIFFERENT_IDENTITY_NOT_SELECTED" }
+        } catch (e: IOException) { "UNAVAILABLE_"+(e.message?.takeIf{it.matches(Regex("HTTP [0-9]{3}"))}?.replace(' ','_') ?: "IO") }
+        catch (_: Exception) { "INVALID_MANIFEST_NOT_SELECTED" }
         return latest.takeIf { it.newerThan(installedRevision(baseline), baseline.hash) }
     }
     fun download(latest: Latest, baseline: ZuioptLibrary.Baseline): ByteArray {
         configured()
-        val (a, b) = pair()
-        check((a ?: b) == latest) { "RULE_SOURCE_CHANGED_RECHECK_REQUIRED" }
         requireCapabilities(latest)
         val revisions = installedRevision(baseline)
-        fun rules(base: String, manifest: Latest?): ByteArray? {
-            if (manifest == null) return null
-            val bytes = try { fetch(base.trimEnd('/') + "/rules.conf", 65536) } catch (_: IOException) { return null }
-            latest.verify(bytes, revisions); return bytes
+        downloadedSource = ""
+        fun rules(base: String): ByteArray {
+            check(readLatest(base) == latest) { "RULE_SOURCE_CHANGED_RECHECK_REQUIRED" }
+            val bytes = fetch(base.trimEnd('/') + "/rules.conf", latest.size)
+            latest.verify(bytes, revisions)
+            downloadedSource=base
+            return bytes
         }
-        val first = rules(primary, a); val second = rules(mirror, b)
-        check(first == null || second == null || first.contentEquals(second)) { "RULE_SOURCE_MISMATCH" }
-        return checkNotNull(first ?: second) { "RULE_SOURCES_UNAVAILABLE" }
+        return try { rules(primary) } catch (primaryError: IOException) {
+            check(mirror.isNotBlank()) { "RULE_SOURCES_UNAVAILABLE" }
+            try { rules(mirror) }
+            catch (mirrorError: IOException) { throw IllegalStateException("RULE_SOURCES_UNAVAILABLE",mirrorError) }
+        }
     }
     companion object {
         internal val BASE_CAPABILITIES=setOf("schema3","category-ranking","runtime-inheritance","owned-rt-recovery")
@@ -118,15 +131,34 @@ class RuleUpstreamFetcher(private val primary: String = RuleRemoteConfig.GITHUB_
         }
         internal fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes)
             .joinToString("") { "%02x".format(it.toInt() and 255) }
+        internal fun mirrorRedirect(original: URL, location: String): URL {
+            val next=URL(original,location)
+            val path=URL(RuleRemoteConfig.GITEE_BASE).path
+            require(original.host=="gitee.com" && original.path in setOf("$path/latest.json","$path/rules.conf") &&
+                next.protocol=="https" && next.host=="raw.giteeusercontent.com" && next.path==original.path &&
+                next.userInfo==null && next.ref==null && (next.port==-1 || next.port==443)) { "RULE_REDIRECT_NOT_ALLOWED" }
+            return next
+        }
         private fun httpsRead(url: String, limit: Int): ByteArray {
-            val connection = URL(url).openConnection() as HttpURLConnection
-            connection.connectTimeout = 8000; connection.readTimeout = 8000
-            connection.instanceFollowRedirects = false
-            try {
-                if (connection.responseCode != 200) throw IOException("HTTP ${connection.responseCode}")
-                require(connection.contentLengthLong <= limit) { "RULE_SIZE_LIMIT" }
-                return connection.inputStream.use { ZuioptRules.boundedRead(it, limit) }
-            } finally { connection.disconnect() }
+            var target=URL(url)
+            for(hop in 0..1){
+                val connection = target.openConnection() as HttpURLConnection
+                connection.connectTimeout = 8000; connection.readTimeout = 8000
+                connection.instanceFollowRedirects = false
+                connection.useCaches = false
+                connection.setRequestProperty("Cache-Control", "no-cache")
+                try {
+                    val status=connection.responseCode
+                    if(status in setOf(301,302,307,308) && hop==0){
+                        target=mirrorRedirect(target,connection.getHeaderField("Location") ?: throw IOException("RULE_REDIRECT_LOCATION"))
+                        continue
+                    }
+                    if(status!=200)throw IOException("HTTP $status")
+                    require(connection.contentLengthLong <= limit) { "RULE_SIZE_LIMIT" }
+                    return connection.inputStream.use { ZuioptRules.boundedRead(it, limit) }
+                } finally { connection.disconnect() }
+            }
+            throw IOException("RULE_REDIRECT_LIMIT")
         }
     }
 }

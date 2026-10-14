@@ -177,6 +177,7 @@ jobs:
           python3 tests/zuiopt/TestReadTransport.py || scripts_failed=1
           python3 tests/zuiopt/TestRuntimeFrontendModel.py || scripts_failed=1
           python3 tests/zuiopt/TestRuntimeFrontendScope.py || scripts_failed=1
+          python3 tests/zuiopt/TestRuntimeR5Scope.py || scripts_failed=1
           python3 tests/monitor/TestNotificationRenderer.py || scripts_failed=1
           bash tests/uperf/TestConfigurableAppPolicy.sh || scripts_failed=1
           python3 tests/monitor/TestRecordSql.py || scripts_failed=1

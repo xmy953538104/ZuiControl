@@ -16,6 +16,7 @@ interface FrontendGateway {
     fun stopRecord(): ZuiControlClient.Reply
     fun checkUpstream(baseline: ZuioptLibrary.Baseline): RuleUpstreamFetcher.Latest?
     fun downloadUpstream(latest: RuleUpstreamFetcher.Latest, baseline: ZuioptLibrary.Baseline): ByteArray
+    fun upstreamStatus(): String = ""
 }
 
 class V84FrontendGateway(private val context: Context) : FrontendGateway {
@@ -66,6 +67,7 @@ class V84FrontendGateway(private val context: Context) : FrontendGateway {
     }
     override fun checkUpstream(baseline: ZuioptLibrary.Baseline) = upstream.check(baseline)
     override fun downloadUpstream(latest: RuleUpstreamFetcher.Latest, baseline: ZuioptLibrary.Baseline) = upstream.download(latest, baseline)
+    override fun upstreamStatus() = "${if(upstream.downloadedSource.isNotBlank())upstream.downloadedSource else upstream.checkedSource} · Gitee ${upstream.mirrorStatus}"
 
     companion object {
         internal fun gpuBatchPayload(user: Int, generation: Long, ranges: List<GpuRanges.Range>): JSONObject {

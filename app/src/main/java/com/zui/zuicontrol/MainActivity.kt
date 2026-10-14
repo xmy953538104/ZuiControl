@@ -1148,7 +1148,8 @@ class MainActivity : Activity() {
             setPadding(dp(18),dp(12),dp(18),dp(12))
             addView(owner.label("规则库",11.5f,owner.muted,800),LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(4)})
             addView(owner.domainRow("全局调度默认","mode ${model?.mode ?: 0} · RT ${model?.rt ?: 0}",R.drawable.owner_settings,"zo",true){if(rulesQualified&&!session.busy)runtimeDefaultsDialog()}.apply{tag="owner-control"})
-            // Deferred feed has no manual-import affordance. Existing feed logic stays disabled.
+            addView(owner.domainRow("检查规则更新","仅检查清单，选择同步后才下载正文",R.drawable.owner_undo,"zo",true){if(rulesQualified&&!session.busy)checkUpdates()}.apply{tag="owner-control"})
+            if(latest!=null)addView(owner.domainRow("同步规则库","revision ${latest?.revision} · 下载并预览，确认后提交",R.drawable.owner_code,"zo",true){if(rulesQualified&&!session.busy)syncUpstream()}.apply{tag="owner-control"})
             val previous=ZuioptRules.field(ruleState,"previous_generation").matches(Regex("g[0-9a-f]{24}"))
             addView(owner.domainRow("回退规则版本",if(previous)"回到上一代完整规则集" else "暂无可回退版本",R.drawable.owner_undo,"warn",true){if(rulesQualified)confirm("回退规则版本？","上游基线和生效规则一起回退。"){
                 if(rulesQualified)session.work("已回退"){ZuioptRules.command(applicationContext,"rollback",checkNotNull(snapshot).generation)}
@@ -1157,19 +1158,20 @@ class MainActivity : Activity() {
             addView(owner.domainRow("高级兼容导入 · AppOpt","兼容转换与差异预览后确认",R.drawable.owner_appopt,"mute",true){if(rulesQualified && !session.busy)document(Intent.ACTION_OPEN_DOCUMENT,102,"*/*")}.apply{tag="owner-control"})
             addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
             addView(owner.domainRow("规则集导出","导出当前生效规则集",R.drawable.owner_export,"zo",true){snapshot?.let{export(it.text.toByteArray(),"ZuiControl_rules.conf")}})
-            addView(note("在线规则源尚未启用 · 兼容实验室验证后开放"))
+            addView(note("GitHub 主源 · Gitee 备用 · 仅手动检查与同步"))
             if(RuleRemoteConfig.configured && updateStatus.isNotEmpty())addView(note(updateStatus))
         },gap())
     }
     private fun checkUpdates() {
         val b = baseline ?: return
         if (!RuleRemoteConfig.configured) { updateStatus = RuleRemoteConfig.DIAGNOSTIC; render(); return }
-        session.work { latest = session.gateway.checkUpstream(b); updateStatus = latest?.let { "可更新：${it.version} · ${it.date}" } ?: "已是最新" }
+        session.work { latest = session.gateway.checkUpstream(b); updateStatus = (latest?.let { "可更新：revision ${it.revision} · ${it.version} · ${it.date}" } ?: "已是最新") + "\n"+session.gateway.upstreamStatus() }
     }
     private fun syncUpstream() {
         val l = latest ?: return; val b = baseline ?: return
         session.work {
             incoming = session.gateway.downloadUpstream(l, b); appOpt = false
+            updateStatus="已下载 revision ${l.revision} · ${incoming.size} 字节 · ${ZuioptRules.digest(incoming)}\n${session.gateway.upstreamStatus()}"
             source = ZuioptLibrary.Provenance(l.source, l.version, l.date, l.commit, "publisher-revision:${l.revision}")
             decisions.clear(); manual = null; stagePreview(b)
         }
@@ -1184,6 +1186,7 @@ class MainActivity : Activity() {
         detail.addView(owner.title(if(appOpt)"高级兼容导入 · AppOpt" else "规则库更新", "转换结果需确认后才写入；不会整体替换当前规则集",leading=owner.back(){session.work("已放弃导入"){ZuioptLibrary.cancel(applicationContext,p);preview=null}}))
         detail.addView(card().apply{
             addView(owner.section("预览摘要","${p.apps.size} 个应用变化",owner.chip(if(p.apps.any{it.optBoolean("conflict")})"需要你决定" else "待确认",3,true)))
+            if(!appOpt)addView(note(updateStatus))
             addView(owner.row().apply{
                 listOf("来源" to source?.source.orEmpty(),"版本" to source?.version.orEmpty(),"变化应用" to p.apps.size.toString(),"竞争选择" to if(appOpt)"全部候选" else "原生 Schema2").forEach{(key,value)->
                     addView(owner.column().apply{addView(owner.label(key,10f,owner.muted,600));addView(owner.label(value,12f,owner.text,700),LinearLayout.LayoutParams(-1,dp(22)))},LinearLayout.LayoutParams(0,-2,1f))
