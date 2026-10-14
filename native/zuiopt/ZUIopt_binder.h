@@ -16,10 +16,10 @@
 #include <mutex>
 
 namespace ZUIopt {
-struct BinderError : std::runtime_error {
+struct BinderError : NativeError {
     binder_status_t status;
     explicit BinderError(binder_status_t value)
-        : std::runtime_error("parcel/status=" + std::to_string(value)), status(value) {}
+        : NativeError(ErrorCode::BINDER, "parcel/status=" + std::to_string(value)), status(value) {}
 };
 inline void checked(binder_status_t s) {
     if (s != STATUS_OK)

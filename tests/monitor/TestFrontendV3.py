@@ -54,7 +54,7 @@ class FrontendV3(unittest.TestCase):
             self.assertIn('"'+field+'"',main)
         analysis=main.split('private fun analysisCard()',1)[1].split('private fun readRecord',1)[0]
         self.assertIn('暂无可用于线程分析的监测记录',analysis)
-        self.assertIn('emptySet()',analysis);self.assertNotIn('recordStart',analysis)
+        self.assertIn('d.addObservedThreads(chosen.toList())',analysis);self.assertIn('analysisPage=false',analysis);self.assertNotIn('recordStart',analysis)
         self.assertIn('session.gateway.stopRecord()',main)
         self.assertNotIn('EditText',main.split('private fun rawView()',1)[1].split('private fun mergeAppOpt',1)[0])
     def test_exact_notification_rebind(self):

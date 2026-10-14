@@ -1030,7 +1030,7 @@ class MainActivity : Activity() {
             if(session.section=="tune" && (mode.confirmed !in GpuDefaultsDraft.modes || refresh.confirmed !in supportedRates())){toast("全局策略暂不可用");return@button}
             session.clearDrafts();session.selected=selected
             if(session.section=="tune"){session.appDraft=ZuiControlClient.AppPolicyDraft(selected,refresh.confirmed,mode.confirmed,ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,checkNotNull(authority).generation);session.newApp=true}else openRule(selected)
-            ownerModal?.close();render();if(session.section=="thread")loadAnalysis(selected)
+            ownerModal?.close();render();if(session.section=="thread"){loadAnalysis(selected);if(session.ruleDraft?.original==null)ordinaryTemplateDialog()}
         }
         val adapter=object:BaseAdapter(){
             override fun getCount()=shownApps.size
@@ -1117,7 +1117,10 @@ class MainActivity : Activity() {
         val b = baseline
         detail.addView(card().apply {
             addView(owner.section("当前规则集",b?.metadata?.let { listOf(it.optString("source").ifBlank{"来源未提供"},it.optString("sourceVersion")).filter{it.isNotBlank()}.joinToString(" · ") } ?: ruleLoadStage,owner.row().apply {
-                addView(owner.chip("规则源待验证",0,true),LinearLayout.LayoutParams(-2,dp(22)).apply{marginEnd=dp(10)})
+                val sourceChip=owner.chip("正在校验",0,true)
+                bindPresentation { val evidence=this@MainActivity.baseline?.metadata?.optString("sourceEvidence").orEmpty()
+                    sourceChip.text=if(!rulesQualified)"正在校验" else Regex("publisher-revision:([0-9]+)").matchEntire(evidence)?.let{"云端 revision ${it.groupValues[1]}"} ?: "本地规则基线" }
+                addView(sourceChip,LinearLayout.LayoutParams(-2,dp(22)).apply{marginEnd=dp(10)})
             addView(owner.button("查看原文",small=true,icon=R.drawable.owner_code){rawView()})
 
             }))
@@ -1178,7 +1181,7 @@ class MainActivity : Activity() {
     }
     private fun stagePreview(b: ZuioptLibrary.Baseline) {
         preview?.let { ZuioptLibrary.cancel(applicationContext, it) }; preview = null
-        val bytes = ZuioptLibrary.pack(b, checkNotNull(source), incoming, appOpt, decisions, manual?.normalized() ?: "schema 2\nenabled true\ndebug false\n")
+        val bytes = ZuioptLibrary.pack(b, checkNotNull(source), incoming, appOpt, decisions, manual?.normalized() ?: "schema 3\nenabled true\ndebug false\nruntime_defaults 0 0\n")
         preview = ZuioptLibrary.preview(applicationContext, bytes, b)
     }
     private fun updatePage() {
@@ -1188,7 +1191,7 @@ class MainActivity : Activity() {
             addView(owner.section("预览摘要","${p.apps.size} 个应用变化",owner.chip(if(p.apps.any{it.optBoolean("conflict")})"需要你决定" else "待确认",3,true)))
             if(!appOpt)addView(note(updateStatus))
             addView(owner.row().apply{
-                listOf("来源" to source?.source.orEmpty(),"版本" to source?.version.orEmpty(),"变化应用" to p.apps.size.toString(),"竞争选择" to if(appOpt)"全部候选" else "原生 Schema2").forEach{(key,value)->
+                listOf("来源" to source?.source.orEmpty(),"版本" to source?.version.orEmpty(),"变化应用" to p.apps.size.toString(),"竞争选择" to if(appOpt)"全部候选" else "原生 Schema3").forEach{(key,value)->
                     addView(owner.column().apply{addView(owner.label(key,10f,owner.muted,600));addView(owner.label(value,12f,owner.text,700),LinearLayout.LayoutParams(-1,dp(22)))},LinearLayout.LayoutParams(0,-2,1f))
                 }
             })
@@ -1208,6 +1211,9 @@ class MainActivity : Activity() {
                             addView(owner.label(name(pkg),13f,owner.text,800));addView(note(sourceTitle(r.optString("provenance"))))
                             addView(owner.label("新增 ${r.optInt("threadAdded")} · 移除 ${r.optInt("threadRemoved")} · 修改 ${r.optInt("threadChanged")}",10.5f,owner.muted,600))
                             addView(owner.label("CPU ${if(r.optBoolean("cpuMaskChanged"))"变化" else "保持"} · 竞争组 ${if(r.optBoolean("selectorClassChanged"))"变化" else "保持"}",10.5f,owner.muted,600))
+                            fun intent(key:String):String {val value=r.optJSONObject(key) ?: return "无规则";val mode=value.getInt("mode");val rt=value.getInt("rt")
+                                return "${if(mode<0)"继承" else "mode$mode"}/${if(rt<0)"继承" else "rt$rt"} · ${if(value.getString("placement")=="preset")"模式预设" else "显式 CPU"} · ${value.getString("marker")}"}
+                            addView(owner.label(if(r.optBoolean("runtimeChanged"))"高级调度 ${intent("oldRuntime")} → ${intent("newRuntime")}" else "高级调度保持 · 匹配映射${if(r.optBoolean("mappingChanged"))"变化" else "保持"}",10.5f,owner.muted,600))
                         },LinearLayout.LayoutParams(0,-2,1f).apply{marginEnd=dp(12)})
                         addView(segment(listOf("保留我的",if(appOpt)"采用转换" else "采用上游","手动合并"), (decisions[pkg] ?: ZuioptLibrary.Decision.valueOf(r.getString("decision"))).ordinal) { choice ->
                             if(choice==2)mergeDialog(pkg)else session.work{decisions[pkg]=ZuioptLibrary.Decision.entries[choice];stagePreview(checkNotNull(this@MainActivity.baseline))}
@@ -1257,7 +1263,7 @@ class MainActivity : Activity() {
     private fun rawView() {rawPage=true;render()}
     private fun rawPage() {
         val raw = snapshot?.text ?: return
-        detail.addView(owner.title("规则集原文 · 只读","完整 canonical 规则；编辑请进入单个应用。",leading=owner.back(){rawPage=false;render()},trailing=owner.chip("Schema 2 · 原文",0,true).apply{background=owner.shape(owner.zoBg,6f);setTextColor(owner.zoFg)}))
+        detail.addView(owner.title("规则集原文 · 只读","完整 canonical 规则；编辑请进入单个应用。",leading=owner.back(){rawPage=false;render()},trailing=owner.chip("Schema 3 · 原文",0,true).apply{background=owner.shape(owner.zoBg,6f);setTextColor(owner.zoFg)}))
         val code=owner.row().apply {
             background=owner.shape(owner.code,12f,owner.line)
             addView(owner.label(raw.lines().indices.joinToString("\n"){(it+1).toString()},12f,owner.muted).apply{setSingleLine(false);typeface=Typeface.MONOSPACE;gravity=Gravity.TOP;setPadding(dp(12),dp(12),dp(8),dp(12))},LinearLayout.LayoutParams(dp(40),-2))
@@ -1271,6 +1277,12 @@ class MainActivity : Activity() {
         val base = model ?: return
         val p = base.appProfile(pkg)
         session.ruleDraft = RuleDraft(pkg, base, checkNotNull(snapshot).generation, p, p ?: ZuioptRuleModel.Profile((0..7).toSet(), emptyList()))
+    }
+    private fun ordinaryTemplateDialog() {
+        ownerModal?.open("普通应用模板","先生成本地草稿。默认 CPU 0–7，高级调度继承全局；不会根据线程名或 CPU 自动开启 RT。",480,owner.column(),listOf(
+            owner.button("取消"){ownerModal?.close();session.clearDrafts();session.selected="";render()},
+            owner.button("从记录选择目标"){ownerModal?.close();analysisPage=true;render()},
+            owner.button("普通应用","primary"){ownerModal?.close();render()}))
     }
     private fun threadApp() {
         val pkg=session.selected;val d=session.ruleDraft
@@ -1529,12 +1541,8 @@ class MainActivity : Activity() {
             addView(button("加入规则草稿", true) { mutateRule {
                 val d = session.ruleDraft ?: return@mutateRule
                 if (chosen.isEmpty()) { toast("请先选择线程名组"); return@mutateRule }
-                if (chosen.any { it.length > 64 || it.any { c -> c.code !in 32..126 } }) { toast("所选线程名无法表示为 Schema2 匹配，请手动编辑"); return@mutateRule }
-                if (d.profile.rules.size + chosen.size > 32) { toast("最多 32 条规则"); return@mutateRule }
-                val used = d.profile.rules.map { it.competitionClass }.toMutableSet()
-                val additions = chosen.map { name -> val group = (0..64).map { "group$it" }.first { it !in used }; used += group
-                    ZuioptRuleModel.Rule(group, "exact", name, "all", 0, emptySet()) }
-                d.profile = d.profile.copy(rules = d.profile.rules + additions); render()
+                runCatching { d.addObservedThreads(chosen.toList()) }.onFailure { toast(it.message.orEmpty());return@mutateRule }
+                analysisPage=false;toast("已加入草稿，沿用当前默认 CPU；RT 保持原选择，保存后生效");render()
             } })
         }, gap())
     }

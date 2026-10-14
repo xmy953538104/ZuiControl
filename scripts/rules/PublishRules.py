@@ -1,4 +1,4 @@
-"""Deterministic Schema2/3 publication; manifest last, named capabilities fail closed."""
+"""Deterministic Schema3 publication; manifest protocol2 and required capabilities."""
 from pathlib import Path
 import argparse,datetime,hashlib,json,os,re,tempfile
 from ZUIOPT_rule_pack import MAX_PACK,MAX_RULES,normalize_source,parse_rules,read_bounded,need
@@ -11,7 +11,7 @@ BASE_CAPABILITIES={'schema3','category-ranking','runtime-inheritance','owned-rt-
 CAPABILITIES=BASE_CAPABILITIES|{'mode0','mode1','mode2','marker-dummy','marker-double','walt-boost-restorable','walt-reduce-restorable'}
 
 def required_capabilities(config):
-    if config.get('schema',2)==2:return set()
+    need(config.get('schema')==3,'Schema3 required')
     required=set(BASE_CAPABILITIES)
     for p in config['profiles'].values():
         mode,rt,placement,marker=p['runtime'];mode=config['mode'] if mode<0 else mode;rt=config['rt'] if rt<0 else rt
@@ -26,13 +26,11 @@ def encoded(value):
 
 def validate(value):
     need(isinstance(value,dict),'latest object')
-    runtime=value.get('rulesSchema')==3
-    need(set(value)==(FIELDS|{'requiredCapabilities'} if runtime else FIELDS),'latest fields')
-    need(type(value['schema']) is int and value['schema']==(2 if runtime else 1),'latest schema')
-    need(type(value['rulesSchema']) is int and value['rulesSchema'] in (2,3),'rules schema')
-    if runtime:
-        caps=value['requiredCapabilities'];need(isinstance(caps,list) and all(isinstance(c,str) for c in caps),'capability types')
-        need(caps==sorted(set(caps)) and BASE_CAPABILITIES<=set(caps)<=CAPABILITIES,'required capabilities')
+    need(set(value)==FIELDS|{'requiredCapabilities'},'latest fields')
+    need(type(value['schema']) is int and value['schema']==2,'latest schema')
+    need(type(value['rulesSchema']) is int and value['rulesSchema']==3,'rules schema')
+    caps=value['requiredCapabilities'];need(isinstance(caps,list) and all(isinstance(c,str) for c in caps),'capability types')
+    need(caps==sorted(set(caps)) and BASE_CAPABILITIES<=set(caps)<=CAPABILITIES,'required capabilities')
     need(type(value['revision']) is int and 1<=value['revision']<=MAX_REVISION,'revision bound')
     for key,pattern in (('source',r'[A-Za-z0-9_.:/-]{1,128}'),('sourceVersion',r'[A-Za-z0-9_.+-]{1,64}'),
                         ('sourceDate',r'[0-9]{4}-[0-9]{2}-[0-9]{2}'),('sourceCommit',r'[0-9a-f]{40}'),('rulesSha256',r'[0-9a-f]{64}')):
@@ -70,10 +68,9 @@ def verify(manifest,rules):
 
 def build(data,kind,revision,source,version,date,commit):
     rules=normalize_source(data,kind)
-    config=parse_rules(rules);schema=config.get('schema',2)
-    manifest=dict(schema=2 if schema==3 else 1,revision=revision,source=source,sourceVersion=version,sourceDate=date,sourceCommit=commit,
-        targetSoC='SM8650',targetTopology='0-7',rulesSchema=schema,rulesSha256=hashlib.sha256(rules).hexdigest(),rulesSize=len(rules))
-    if schema==3:manifest['requiredCapabilities']=sorted(required_capabilities(config))
+    config=parse_rules(rules)
+    manifest=dict(schema=2,revision=revision,source=source,sourceVersion=version,sourceDate=date,sourceCommit=commit,
+        targetSoC='SM8650',targetTopology='0-7',rulesSchema=3,rulesSha256=hashlib.sha256(rules).hexdigest(),rulesSize=len(rules),requiredCapabilities=sorted(required_capabilities(config)))
     validate(manifest)
     verify(manifest,rules)
     return encoded(manifest),rules

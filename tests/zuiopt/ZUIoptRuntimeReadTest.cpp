@@ -7,7 +7,7 @@ using namespace ZUIopt;
 int main(int argc,char**argv){
     require(argc==2,"runtime reader private fixture path");std::string path=argv[1];require(mkdir(path.c_str(),0700)==0,"fresh private fixture");
     auto factory=path+"/factory.conf";int fd=open(factory.c_str(),O_CREAT|O_EXCL|O_WRONLY,0600);require(fd>=0,"fixture factory");
-    const std::string factoryText="schema 2\nenabled true\ndebug false\nprofile P 0-7\npackage exact org.example.app P 100\n";
+    const std::string factoryText="schema 3\nenabled true\ndebug false\nprofile P 0-7\npackage exact org.example.app P 100\n";
     putAll(fd,factoryText);close(fd);alarm(15);
     RuleState current;{RuleStore writer(path,factoryText);writer.initialize();current=writer.current();}auto generation=generationOf(current.effective),boot=trim(read("/proc/sys/kernel/random/boot_id"));
     auto owner=generation+":"+boot+":"+std::to_string(getpid())+":"+std::to_string(identity(getpid()).start)+":"+sha256(current.effective);

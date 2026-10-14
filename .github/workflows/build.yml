@@ -229,6 +229,10 @@ jobs:
             tests/zuiopt/ZUIoptTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-fixture"
           sudo "$RUNNER_TEMP/zuiopt-fixture" payload/system/etc/zuiopt/factory_rules.conf \
             | tee "$receipt/native_tests.txt" || native_failed=1
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptFatalTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-fatal-fixture"
+          sudo "$RUNNER_TEMP/zuiopt-fatal-fixture" "$receipt/zuiopt-r5-fatal-typed" | tee "$receipt/typed_fatal.txt" || native_failed=1
+          clang++ -std=c++17 -O1 -Wall -Wextra -Werror tests/zuiopt/ZUIoptSchema3MigrationTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-migration-fixture"
+          sudo "$RUNNER_TEMP/zuiopt-migration-fixture" "$receipt/zuiopt-r5-migration-atomic" | tee "$receipt/schema3_migration.txt" || native_failed=1
           clang++ -std=c++17 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
             tests/zuiopt/ZUIoptRuntimeTest.cpp -lz -o "$RUNNER_TEMP/zuiopt-runtime-fixture"
           "$RUNNER_TEMP/zuiopt-runtime-fixture" | tee "$receipt/runtime_contract_faults.txt" || native_failed=1

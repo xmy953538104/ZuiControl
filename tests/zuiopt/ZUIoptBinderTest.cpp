@@ -53,7 +53,7 @@ void rejects(std::vector<Atom> atoms,const std::string& reason,bool ok=true){
 }
 struct RuntimeFixture {
     bool sceneForeground(const ProcessState&,bool am)const{return am;}
-    Config config=parseConfig("schema 2\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n",255);
+    Config config=parseConfig("schema 3\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n",255);
     std::map<int,ProcessState> states;
     Snapshot app{"org.example.game",42,10001,4,100,2,true,{"org.example.game"}};
     std::vector<std::string> authority={"org.example.game"};

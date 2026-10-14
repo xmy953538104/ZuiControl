@@ -10,8 +10,8 @@
 #include <iostream>
 using namespace ZUIopt;
 namespace fs=std::filesystem;
-const std::string BASE="schema 2\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n";
-const std::string OPEN="schema 2\nenabled true\nprofile G 2-7\nthread G ALL glob \"Job.worker[AB]*\" selector=all 30 2-4\nthread G R1 prefix Top selector=rank:1 20 7\nthread G R2 contains Runner selector=rank:2 10 5-6\npackage exact org.example.game G 100\n";
+const std::string BASE="schema 3\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n";
+const std::string OPEN="schema 3\nenabled true\nprofile G 2-7\nthread G ALL glob \"Job.worker[AB]*\" selector=all 30 2-4\nthread G R1 prefix Top selector=rank:1 20 7\nthread G R2 contains Runner selector=rank:2 10 5-6\npackage exact org.example.game G 100\n";
 void rejects(const std::function<void()>& action){bool rejected=false;try{action();}catch(const std::exception&){rejected=true;}require(rejected,"expected rejection");}
 std::string readPack(const char* path){std::ifstream input(path,std::ios::binary);require(input.good(),"fixture input open");std::string data(PACK_LIMIT+1,'\0');input.read(data.data(),data.size());data.resize(input.gcount());require(data.size()<=PACK_LIMIT&&input.eof(),"fixture input bound");return data;}
 void uploadData(RuleStore& store,const std::string& kind,const std::string& data,const std::string& id,const std::string& pack="-"){
@@ -251,7 +251,7 @@ int main(int argc,char** argv){
         libraryTests(root);
         {
             RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;
-            for(const auto& candidate:std::vector<std::string>{OPEN,"schema 2\nenabled true\nunknown bad\n"}){
+            for(const auto& candidate:std::vector<std::string>{OPEN,"schema 3\nenabled true\nunknown bad\n"}){
                 auto tx=randomId();store.apply("begin",tx,"user:"+std::to_string(candidate.size())+":"+sha256(candidate)+":-:0:"+generationOf(initial));
                 store.apply("chunk",tx+":0",base64(candidate));
                 std::map<std::string,std::string> snapshot;

@@ -25,7 +25,7 @@ def convert(database,expected_counts=(27,316),require_selectors=False):
         packages.setdefault(p,set()).add((g,r['declaration_status']))
     assert 1<=len(profiles)<=64 and 1<=len(packages)<=512
     if expected_counts is not None: assert (len(profiles),len(packages))==expected_counts
-    lines=['# ZUIopt generated compatibility database: STATIC_RECOVERED, not 316-device-PASS.','schema 2','enabled true','debug false']
+    lines=['# ZUIopt generated compatibility database: STATIC_RECOVERED, not 316-device-PASS.','schema 3','enabled true','debug false']
     for g,rules in sorted(profiles.items()):
         lines+=['# '+g+' source=STATIC_RECOVERED','profile '+g+' 2-6']
         for order,(pattern,cls,cpus) in sorted(rules.items()):
@@ -40,7 +40,8 @@ def convert(database,expected_counts=(27,316),require_selectors=False):
         g=next(iter(active));assert g in profiles
         lines.append('package exact '+p+' '+g+' '+str(10000-n))
         provenance.append(dict(package=p,match_type='exact',profile=g,priority=10000-n,status='STATIC_RECOVERED',source_declarations=';'.join(':'.join(c) for c in sorted(choices))))
-    text='\n'.join(lines)+'\n'
+    from ZUIOPT_rule_pack import parse_rules,dump_rules
+    text=dump_rules(parse_rules('\n'.join(lines)+'\n')).decode('ascii')
     assert len(text.encode())<65536 and not re.search(r'\b(?:rt|opt|mode)\s*=',text)
     return text,profile_text,provenance
 

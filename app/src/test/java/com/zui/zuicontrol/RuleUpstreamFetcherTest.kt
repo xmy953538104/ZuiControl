@@ -40,10 +40,11 @@ class RuleUpstreamFetcherTest {
         assertTrue(rejected{fetcher.check(baseline())}.contains("RULE_CAPABILITIES_MISSING"))
         assertTrue(rejected{fetcher.download(latest,baseline())}.contains("RULE_CAPABILITIES_MISSING"))
     }
-    @Test fun schema2CompatibleWithoutRuntimeCapabilities(){
-        val bytes="schema 2\nenabled true\ndebug false\n".toByteArray();val metadata=manifest(bytes).toString().toByteArray()
-        val fetcher=RuleUpstreamFetcher(source,capabilities={error("Schema2 must not request runtime capabilities")}){url,_->if(url.endsWith("latest.json"))metadata else bytes}
-        assertArrayEquals(bytes,fetcher.download(checkNotNull(fetcher.check(baseline())),baseline()))
+    @Test fun schema2RequiresExplicitBackupMigration(){
+        val old=manifest().put("schema",1).put("rulesSchema",2);old.remove("requiredCapabilities")
+        val fetcher=RuleUpstreamFetcher(source,capabilities={RuleUpstreamFetcher.CAPABILITIES}){_,_->old.toString().toByteArray()}
+        assertTrue(rejected{fetcher.check(baseline())}.contains("RULE_MANIFEST_FIELDS"))
+        rejected{ZuioptRuleModel.parse("schema 2\nenabled true\ndebug false\n")}
     }
     @Test fun integrityTargetAndInterruptedDownloadReject(){
         for((key,value) in listOf("rulesSha256" to "0".repeat(64),"rulesSize" to runtime.size+1,"targetTopology" to "0-8","rulesSchema" to "3")){

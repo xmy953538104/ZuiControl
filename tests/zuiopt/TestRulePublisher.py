@@ -27,9 +27,9 @@ def main(native=None):
                       ('rulesSchema',1),('targetSoC','OTHER'),('targetTopology','0-8'),('source','x'*129),
                       ('sourceVersion','bad version'),('sourceDate','2026-02-30'),('sourceCommit','a'*41)):
         rejects(lambda:latest(json.dumps(dict(manifest,**{key:value})).encode()))
-    rejects(lambda:latest(metadata.replace(b'"schema":1',b'"schema":1,"schema":1')))
+    rejects(lambda:latest(metadata.replace(b'"schema":2',b'"schema":2,"schema":2')))
     rejects(lambda:latest(metadata+b'x'));rejects(lambda:verify(manifest,rules+b'x'))
-    rejects(lambda:build(factory.replace(b'schema 2',b'schema 1'),*args))
+    rejects(lambda:build(factory.replace(b'schema 3',b'schema 1'),*args))
     rejects(lambda:build(factory.replace(b'debug false',b'debug true'),*args))
     rejects(lambda:build(factory.replace(b'package exact',b'package prefix',1),*args))
     runtime=b'schema 3\nenabled true\ndebug false\nruntime_defaults 2 1\nprofile P 2-6\nruntime P -1 -1 preset double\npackage exact org.example.game P 100\n'

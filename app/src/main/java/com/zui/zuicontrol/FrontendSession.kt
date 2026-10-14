@@ -281,6 +281,15 @@ class RuleDraft(val packageName: String, var base: ZuioptRuleModel, var generati
     var original: ZuioptRuleModel.Profile?, var profile: ZuioptRuleModel.Profile,
     var cloneConfirmed: Boolean = false) {
     val dirty get() = original == null || profile != original
+    fun addObservedThreads(names: List<String>) {
+        require(names.isNotEmpty() && names.size==names.distinct().size && names.all{it.isNotEmpty() && it.length<=64 && it.all{c->c.code in 32..126}}) { "线程名无法表示为 Schema3 匹配" }
+        val selected=names.filter { name->profile.rules.none{it.matchKind=="exact" && it.pattern==name} }
+        require(profile.rules.size+selected.size<=32 && profile.generalMask.isNotEmpty()) { "规则数量或默认 CPU 无效" }
+        val groups=profile.rules.map{it.competitionClass}.toMutableSet()
+        val additions=selected.map { name->val group=(0..64).map{"group$it"}.first{it !in groups};groups+=group
+            ZuioptRuleModel.Rule(group,"exact",name,"all",0,profile.generalMask.toSet()) }
+        profile=profile.copy(rules=profile.rules+additions)
+    }
     fun canonical(): String {
         require(profile.generalMask.isNotEmpty() && profile.rules.all { it.cpuMask.isNotEmpty() }) { "请为每条规则选择 CPU" }
         val ordered = profile.copy(rules = profile.rules.mapIndexed { i, r -> r.copy(priority = 100000 - i) })

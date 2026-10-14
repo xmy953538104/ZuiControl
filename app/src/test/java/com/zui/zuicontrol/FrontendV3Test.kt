@@ -396,9 +396,9 @@ class FrontendV3Test {
         foreground.start();assertFalse(foreground.stop(false,true)) // SAF/settings.
         foreground.start();assertTrue(foreground.stop(false,false))
     }
-    private val bytes = "schema 2\nenabled true\ndebug false\n".toByteArray()
+    private val bytes = "schema 3\nenabled true\ndebug false\nruntime_defaults 0 0\n".toByteArray()
     private fun latest(revision: Long = 84, hash: String = RuleUpstreamFetcher.hash(bytes)) =
-        RuleUpstreamFetcher.Latest(revision, "v84", "2026-10-04", "a".repeat(40), bytes.size, hash, "SM8650", "0-7", 2, "qualification-fixture")
+        RuleUpstreamFetcher.Latest(revision, "v84", "2026-10-04", "a".repeat(40), bytes.size, hash, "SM8650", "0-7", 3, "qualification-fixture", RuleUpstreamFetcher.BASE_CAPABILITIES+"mode0")
     @Test fun upstreamIntegrityAndRevisionFailClosed() {
         val l = latest(); l.verify(bytes, 83)
         assertThrows(IllegalArgumentException::class.java) { l.verify(bytes + 1, 83) }

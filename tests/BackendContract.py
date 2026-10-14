@@ -34,6 +34,7 @@ assert RUNTIME_R3['baseHead']=='4ccc7620cab5927cbcc602fd8f10a38491df7bb4' and RU
 assert set(RUNTIME_R3['allowedPaths'])==RUNTIME_R3_ALLOWED
 
 RUNTIME_R5=json.loads((ROOT/'tests/zuiopt/runtime_r5_delta.json').read_text(encoding='utf8'))
+RUNTIME_R5_ALLOWED=set(RUNTIME_R5['allowedPaths'])
 assert RUNTIME_R5['baseHead']=='d54bbee0215989b3f4a2737aff30d315f590eaa3' and RUNTIME_R5['phase']=='ZUIOPT_R5_SCHEMA3_LIVE_CLOUD_INTEGRATION_AND_COMPLETION'
 def reverse_runtime_r5(path,text):
     row=next((r for r in RUNTIME_R5['files'] if r['path']==path),None)

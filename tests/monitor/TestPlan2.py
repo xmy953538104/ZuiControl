@@ -55,7 +55,7 @@ class Plan2(unittest.TestCase):
   self.assertNotIn('listRow("","规则库"',main);self.assertNotIn('owner.label("职责边界"',main)
   self.assertIn('"thread"->{loadState();loadInventory();loadRules()}',main)
   self.assertIn('cached?.matches(rs)==true',main)
-  self.assertIn('owner.domainRow("规则集导出"',main);self.assertIn('规则源尚未启用',main)
+  self.assertIn('owner.domainRow("规则集导出"',main);self.assertIn('仅手动检查与同步',main)
   self.assertIn('if(!enabled)addView(owner.button("系统通知设置"',main)
  def test_charts_keep_gap_semantics(self):
   chart=read('RecordChart.kt')

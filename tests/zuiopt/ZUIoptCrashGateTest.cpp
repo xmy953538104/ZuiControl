@@ -11,7 +11,7 @@ int main(int argc,char** argv){
     std::string pattern=std::string(argc==2?argv[1]:"/tmp")+"/zuiopt-crash-gate-XXXXXX";
     std::vector<char> buffer(pattern.begin(),pattern.end());buffer.push_back(0);char* temporary=buffer.data();
     require(mkdtemp(temporary)!=nullptr,"fixture directory");
-    const std::string factory="schema 2\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n";
+    const std::string factory="schema 3\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n";
     int ready[2],result[2];require(pipe(ready)==0&&pipe(result)==0,"fixture pipes");
     // Lock in another process: child must not inherit the flock description.
     pid_t holder=fork();require(holder>=0,"holder fork");

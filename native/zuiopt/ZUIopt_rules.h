@@ -27,18 +27,13 @@ inline void putAll(int fd, const std::string &s) {
     }
 }
 inline std::string dumpRules(const Config &c) {
-    bool runtime = c.schema == 3 || c.mode || c.rt;
-    for (const auto &[_, p] : c.profiles)
-        runtime = runtime || p.runtime.mode >= 0 || p.runtime.rt >= 0 || p.runtime.preset || p.runtime.marker != "none";
     std::ostringstream out;
-    out << "schema " << (runtime ? 3 : 2) << "\nenabled " << (c.enabled ? "true" : "false") << "\ndebug false\n";
-    if (runtime)
-        out << "runtime_defaults " << c.mode << ' ' << c.rt << '\n';
+    out << "schema 3\nenabled " << (c.enabled ? "true" : "false") << "\ndebug false\n";
+    out << "runtime_defaults " << c.mode << ' ' << c.rt << '\n';
     for (const auto &[name, p] : c.profiles) {
         out << "profile " << name << ' ' << cpuText(p.general) << '\n';
-        if (runtime)
-            out << "runtime " << name << ' ' << p.runtime.mode << ' ' << p.runtime.rt << ' '
-                << (p.runtime.preset ? "preset" : "explicit") << ' ' << p.runtime.marker << '\n';
+        out << "runtime " << name << ' ' << p.runtime.mode << ' ' << p.runtime.rt << ' '
+            << (p.runtime.preset ? "preset" : "explicit") << ' ' << p.runtime.marker << '\n';
         for (const auto &r : p.rules)
             out << "thread " << name << ' ' << r.cls << ' ' << r.kind << ' ' << std::quoted(r.pattern)
                 << " selector=" << (r.rank ? "rank:" + std::to_string(r.rank) : "all") << ' ' << r.priority << ' '
@@ -56,6 +51,33 @@ inline Config rules(const std::string &text) {
     auto c = parseConfig(text, 255);
     require(!c.debug, "production debug is disabled");
     return c;
+}
+
+// Only the boot migration and explicit backup tool call this legacy reader.
+inline Config migrationRules(const std::string &text) {
+    for (unsigned char c : text)
+        require(c == 9 || c == 10 || c == 13 || (c >= 32 && c < 127), "migration ASCII/control character");
+    auto config = parseConfig(text, 255, true);
+    require(!config.debug, "migration production debug disabled", ErrorCode::CONFIG);
+    return config;
+}
+inline std::string legacyCanonical(const Config &config) {
+    auto text = dumpRules(config);
+    if (config.schema == 3)
+        return text;
+    std::istringstream lines(text);
+    std::string line, old;
+    while (std::getline(lines, line)) {
+        if (line.rfind("runtime_defaults ", 0) == 0 || line.rfind("runtime ", 0) == 0)
+            continue;
+        old += (line == "schema 3" ? "schema 2" : line) + '\n';
+    }
+    return old;
+}
+inline std::string migrateSchema3Rules(const std::string &text) {
+    auto config = migrationRules(text);
+    config.schema = 3;
+    return dumpRules(config);
 }
 
 struct JsonValue {
@@ -166,7 +188,8 @@ struct Pack {
     Config config;
     std::string archive;
 };
-inline Pack validatePack(Manifest m, const std::string &text, const std::string &archive = {}) {
+inline Pack validatePack(Manifest m, const std::string &text, const std::string &archive = {},
+                         bool legacyMigration = false) {
     const std::set<std::string> ints = {"schema_version", "pack_priority", "package_count", "profile_count"};
     const std::set<std::string> fields = {"schema_version",        "pack_id",       "pack_version",
                                           "pack_priority",         "source_type",   "source_binary_sha256",
@@ -192,7 +215,7 @@ inline Pack validatePack(Manifest m, const std::string &text, const std::string 
             "recovered provenance");
     require(s("target_soc") == "SM8650" && s("target_topology") == "0-7", "pack topology");
     require(hex(s("rules_sha256"), 64) && s("rules_sha256") == sha256(text), "rules digest");
-    auto config = rules(text);
+    auto config = legacyMigration ? migrationRules(text) : rules(text);
     require(config.enabled && number(s("package_count")) == static_cast<int>(config.packages.size()) &&
                 number(s("profile_count")) == static_cast<int>(config.profiles.size()),
             "pack counts/enabled");
@@ -299,7 +322,7 @@ inline std::map<std::string, std::string> unpackRuleFiles(const std::string &dat
         require(spans[i - 1].second == spans[i].first, "ZIP overlapping entries");
     return files;
 }
-inline Pack unpackPack(const std::string &data, const std::string &canonicalBase = {}) {
+inline Pack unpackPack(const std::string &data, const std::string &canonicalBase = {}, bool legacyMigration = false) {
     auto files = unpackRuleFiles(data, {"manifest.json", "rules.conf"});
     auto manifest = ManifestJson(files.at("manifest.json")).parse();
     auto text = files.at("rules.conf");
@@ -320,8 +343,8 @@ inline Pack unpackPack(const std::string &data, const std::string &canonicalBase
             require(manifest.count(k) && manifest.at(k).integer == (k == "schemaVersion" || k == "engineSchema"),
                     "canonical manifest type");
         auto get = [&](const char *k) { return manifest.at(k).text; };
-        require(get("schemaVersion") == "2" && get("engineSchema") == "2" && get("targetSoC") == "sm8650" &&
-                    get("normalizerVersion") == "schema2-1",
+        require(get("schemaVersion") == "2" && get("engineSchema") == "3" && get("targetSoC") == "sm8650" &&
+                    get("normalizerVersion") == "schema3-1",
                 "canonical compatibility");
         for (const auto *k : {"oldCanonicalHash", "newSourceHash", "outputCanonicalHash", "conflictListHash",
                               "qualificationEvidenceHash"})
@@ -335,7 +358,7 @@ inline Pack unpackPack(const std::string &data, const std::string &canonicalBase
         require(dumpRules(config) == text, "canonical normalization");
         return {std::move(manifest), text, std::move(config), data};
     }
-    return validatePack(std::move(manifest), text, data);
+    return validatePack(std::move(manifest), text, data, legacyMigration);
 }
 inline void appendLe(std::string &s, uint32_t n, size_t bytes) {
     for (size_t i = 0; i < bytes; i++)

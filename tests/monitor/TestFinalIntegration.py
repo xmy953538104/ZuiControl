@@ -25,7 +25,7 @@ backend_scopes = ['framework_patch', 'native', 'payload/system', 'payload/patche
 # Current Owner Plan3 deltas must reverse exactly to the immutable integration
 # baseline before the earlier freeze proofs are inherited.
 sys.path.insert(0,str(ROOT/'tests'))
-from BackendContract import entries,reverse_runtime_entries,RUNTIME_ALLOWED,RUNTIME_R3_ALLOWED,PLAN3,PLAN3_RESPONSIVENESS,PLAN3_VERTICAL,PLAN3_DOMAIN,PLAN3_UX,PLAN3_R9
+from BackendContract import entries,reverse_runtime_entries,RUNTIME_ALLOWED,RUNTIME_R3_ALLOWED,RUNTIME_R5_ALLOWED,PLAN3,PLAN3_RESPONSIVENESS,PLAN3_VERTICAL,PLAN3_DOMAIN,PLAN3_UX,PLAN3_R9
 current=reverse_runtime_entries(entries(*backend_scopes),*backend_scopes)
 for row in PLAN3_R9['files']:
     assert row['path'] in PLAN3_R9['allowedPaths']
@@ -54,7 +54,7 @@ assert sorted(current)==sorted(subprocess.check_output(['git','ls-tree','-r','6d
 # BuildZUIopt deliberately replaces its tracked seed with the current CI ELF.
 # Current authorized runtime edits have already been byte-bound and reversed above.
 generated = subprocess.check_output(['git', 'diff', '--name-only', 'HEAD', '--', *backend_scopes], cwd=ROOT, text=True).splitlines()
-assert set(generated) <= {'payload/system/bin/ZUIopt'} | RUNTIME_ALLOWED | RUNTIME_R3_ALLOWED | {r['path'] for r in PLAN3_R9['files']+PLAN3_UX['files']+PLAN3_DOMAIN['files']+PLAN3_VERTICAL['files']+PLAN3_RESPONSIVENESS['files']+PLAN3['files'] if any(r['path'].startswith(scope+'/') for scope in backend_scopes)}, generated
+assert set(generated) <= {'payload/system/bin/ZUIopt'} | RUNTIME_ALLOWED | RUNTIME_R3_ALLOWED | RUNTIME_R5_ALLOWED | {r['path'] for r in PLAN3_R9['files']+PLAN3_UX['files']+PLAN3_DOMAIN['files']+PLAN3_VERTICAL['files']+PLAN3_RESPONSIVENESS['files']+PLAN3['files'] if any(r['path'].startswith(scope+'/') for scope in backend_scopes)}, generated
 
 stubs = {
     'Context.kt': 'package android.content\nclass Context\n',
@@ -131,8 +131,8 @@ fun main(args:Array<String>) {
  val manifest=File(args[3]).readBytes();val bytes=File(args[4]).readBytes();val hash=RuleUpstreamFetcher.hash(bytes)
  val baseline=ZuioptLibrary.Baseline(JSONObject().put("sourceEvidence","publisher-revision:1"),"0".repeat(64))
  var fetches=0
- val upstream=RuleUpstreamFetcher("https://raw.githubusercontent.com/qualification/controlled/main/output", "") {url,limit->fetches++;if(url.endsWith("latest.json")){check(limit==2048);manifest}else{check(limit==bytes.size);bytes}}
- val latest=checkNotNull(upstream.check(baseline));check(latest.rulesSchema==2 && latest.sha256==hash)
+ val upstream=RuleUpstreamFetcher("https://raw.githubusercontent.com/qualification/controlled/main/output", "", {RuleUpstreamFetcher.CAPABILITIES}) {url,limit->fetches++;if(url.endsWith("latest.json")){check(limit==2048);manifest}else{check(limit==bytes.size);bytes}}
+ val latest=checkNotNull(upstream.check(baseline));check(latest.rulesSchema==3 && latest.sha256==hash)
  check(upstream.download(latest,baseline).contentEquals(bytes));check(fetches==3)
  rejects {upstream.check(baseline.copy(metadata=JSONObject().put("sourceEvidence","revision:1")))}
  val obsolete=RuleUpstreamFetcher("https://raw.githubusercontent.com/qualification/controlled/main/output", "") {_,_->manifest.toString(Charsets.UTF_8).replace("rulesSchema","ruleSchema").toByteArray()}

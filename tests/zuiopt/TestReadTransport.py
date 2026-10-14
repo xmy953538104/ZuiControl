@@ -4,6 +4,8 @@ import sys,unittest,subprocess,tempfile,shutil,os
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests/command_plane'))
 from TestUtilityTruth import compile_run
+sys.path.insert(0,str(ROOT/'tests'))
+from BackendContract import reverse_runtime_r5
 
 class ReadTransport(unittest.TestCase):
     def test_exact_client_frame_and_compatibility(self):
@@ -75,7 +77,7 @@ class ZuiControlManager {
         compile_run({'Read.kt':source,'Manager.kt':manager,'ReadFixture.kt':fixture},'com.zui.zuicontrol.ReadFixtureKt',[],json_jars)
 
     def test_source_contracts_run_before_native_payload_staging(self):
-        cli=(ROOT/'native/zuiopt/ZUIopt.cpp').read_text('utf8')
+        cli=reverse_runtime_r5('native/zuiopt/ZUIopt.cpp',(ROOT/'native/zuiopt/ZUIopt.cpp').read_text('utf8'))
         self.assertIn('const bool readOnly=readCommand=="state"||readCommand=="read"||readCommand=="runtime";',cli)
         self.assertIn('ZUIopt::RuleStore store(ROOT,ZUIopt::read(FACTORY),readOnly);',cli)
         workflow=(ROOT/'.github/workflows/build.yml').read_text('utf8')

@@ -3,7 +3,12 @@ from pathlib import Path
 import re
 import unittest
 ROOT=Path(__file__).resolve().parents[2]
-def text(name):return (ROOT/'native/zuiopt'/name).read_text(encoding='utf8')
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from BackendContract import reverse_runtime_r5
+def text(name):
+    path='native/zuiopt/'+name
+    return reverse_runtime_r5(path,(ROOT/path).read_text(encoding='utf8'))
 def literals(source):
     for match in re.finditer(r'\b(require|std::runtime_error)\(',source):
         start=match.end();depth=1;quote=False;escape=False;arg=start

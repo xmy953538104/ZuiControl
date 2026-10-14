@@ -5,9 +5,52 @@
 #include <string>
 #include <vector>
 namespace ZUIopt {
-inline void require(bool ok, const char *why) {
+enum class ErrorCode {
+    UNKNOWN,
+    INVARIANT,
+    CONFIG,
+    PROC,
+    PERMISSION,
+    BINDER,
+    JOURNAL,
+    OWNERSHIP,
+    RECOVERY,
+    ALLOCATION,
+    SYSTEM
+};
+struct NativeError : std::runtime_error {
+    ErrorCode errorCode;
+    NativeError(ErrorCode code, const std::string &why) : std::runtime_error(why), errorCode(code) {}
+};
+inline const char *errorCodeName(ErrorCode code) {
+    switch (code) {
+    case ErrorCode::INVARIANT:
+        return "INVARIANT";
+    case ErrorCode::CONFIG:
+        return "CONFIG";
+    case ErrorCode::PROC:
+        return "PROC";
+    case ErrorCode::PERMISSION:
+        return "PERMISSION";
+    case ErrorCode::BINDER:
+        return "BINDER";
+    case ErrorCode::JOURNAL:
+        return "JOURNAL";
+    case ErrorCode::OWNERSHIP:
+        return "OWNERSHIP";
+    case ErrorCode::RECOVERY:
+        return "RECOVERY";
+    case ErrorCode::ALLOCATION:
+        return "ALLOCATION";
+    case ErrorCode::SYSTEM:
+        return "SYSTEM";
+    default:
+        return "UNKNOWN";
+    }
+}
+inline void require(bool ok, const char *why, ErrorCode code = ErrorCode::INVARIANT) {
     if (!ok)
-        throw std::runtime_error(why);
+        throw NativeError(code, why);
 }
 struct Snapshot {
     std::string name;

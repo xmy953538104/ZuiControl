@@ -63,8 +63,19 @@ inline const char *stageName(StartupStage stage) {
     auto index = static_cast<unsigned>(stage);
     return index < sizeof(names) / sizeof(names[0]) ? names[index] : "UNKNOWN";
 }
-inline std::string fatalReason(const std::exception &error) {
-    // Only known source literals or bounded numeric status codes leave the process.
+inline ErrorCode fatalCode(const std::exception &error) noexcept {
+    if (auto *typed = dynamic_cast<const NativeError *>(&error))
+        return typed->errorCode;
+    if (dynamic_cast<const std::bad_alloc *>(&error))
+        return ErrorCode::ALLOCATION;
+    if (dynamic_cast<const std::system_error *>(&error))
+        return ErrorCode::SYSTEM;
+    if (dynamic_cast<const std::invalid_argument *>(&error) || dynamic_cast<const std::out_of_range *>(&error))
+        return ErrorCode::CONFIG;
+    return ErrorCode::UNKNOWN;
+}
+inline std::string legacyFatalReason(const std::exception &error) {
+    // Display/compatibility only. Classification comes exclusively from fatalCode().
     // Never persist arbitrary what(): some ownership errors append a private TID.
     const char *text = error.what();
     if (!text)
@@ -269,6 +280,16 @@ inline std::string fatalReason(const std::exception &error) {
         return "system_error_" + std::to_string(system->code().value());
     return "unclassified_exception";
 }
+inline std::string fatalReason(const std::exception &error) {
+    auto legacy = legacyFatalReason(error);
+    if (legacy != "unclassified_exception" || fatalCode(error) == ErrorCode::UNKNOWN)
+        return legacy;
+    std::string reason = errorCodeName(fatalCode(error));
+    for (char &c : reason)
+        if (c >= 'A' && c <= 'Z')
+            c = static_cast<char>(c - 'A' + 'a');
+    return reason + "_failed";
+}
 inline bool recordLifecycle(const std::string &root, const std::string &boot, StartupStage stage,
                             const std::exception *fatal = nullptr, EventSubstage substage = EventSubstage::NONE,
                             const std::exception *cleanup = nullptr,
@@ -282,6 +303,8 @@ inline bool recordLifecycle(const std::string &root, const std::string &boot, St
         std::string data = std::string(fatal ? "ZUIOPT_FATAL_V1\n" : "ZUIOPT_STARTUP_V1\n") + "boot=" + boot +
                            "\nstage=" + stageName(stage) + "\nstate=" + (fatal ? "FAIL" : "OK") + "\nreason=" + reason +
                            "\nsubstage=" + substageName(substage) + "\n";
+        if (fatal)
+            data += "error_code=" + std::string(errorCodeName(fatalCode(*fatal))) + "\n";
         if (cleanup) {
             auto secondary = fatalReason(*cleanup);
             require(secondary.size() <= 96 &&
@@ -289,6 +312,7 @@ inline bool recordLifecycle(const std::string &root, const std::string &boot, St
                     "diagnostic reason bound");
             data +=
                 "cleanup_substage=" + std::string(substageName(cleanupStage)) + "\ncleanup_reason=" + secondary + "\n";
+            data += "cleanup_error_code=" + std::string(errorCodeName(fatalCode(*cleanup))) + "\n";
         }
         require(data.size() < 1024, "diagnostic receipt bound");
         PrivateDir directory(root);

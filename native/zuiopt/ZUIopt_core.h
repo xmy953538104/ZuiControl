@@ -85,9 +85,10 @@ inline void note(const char *event, const std::string &detail) {
 }
 #define ZUIOPT_NOTE(event, detail) note(event, detail)
 #endif
-struct ProcError : std::runtime_error {
+struct ProcError : NativeError {
     int code;
-    ProcError(int value, const char *why) : std::runtime_error(why), code(value) {}
+    ProcError(int value, const char *why)
+        : NativeError(value == EACCES || value == EPERM ? ErrorCode::PERMISSION : ErrorCode::PROC, why), code(value) {}
     bool permission() const noexcept {
         return code == EACCES || code == EPERM;
     }
@@ -437,7 +438,7 @@ struct Config {
     bool enabled = true, debug = false;
     std::map<std::string, Profile> profiles;
     std::vector<Mapping> packages;
-    int schema = 2, mode = 0, rt = 0;
+    int schema = 3, mode = 0, rt = 0;
     const Profile *find(const std::string &package) const {
         if (!enabled)
             return nullptr;
@@ -457,7 +458,7 @@ inline Identity managedIdentity(const Snapshot &s, const Config &config, Identit
         return {};
     return probe(s.pid, 0);
 }
-inline Config parseConfig(const std::string &text, Mask available) {
+inline Config parseConfig(const std::string &text, Mask available, bool legacyMigration = false) {
     require(!text.empty() && text.size() <= 65536 && text.find('\0') == text.npos, "config size/NUL");
     Config c;
     bool seenEnabled = false, seenSchema = false, seenDebug = false, seenRuntimeDefaults = false;
@@ -475,7 +476,7 @@ inline Config parseConfig(const std::string &text, Mask available) {
         if (kind == "schema") {
             std::string v;
             in >> v;
-            require(!seenSchema && (v == "2" || v == "3"), "schema version");
+            require(!seenSchema && (v == "3" || (legacyMigration && v == "2")), "schema 3 required", ErrorCode::CONFIG);
             c.schema = number(v);
             seenSchema = true;
         } else if (kind == "enabled") {
@@ -869,7 +870,7 @@ template <class Runtime> void advanceAcquisition(ProcessState &p, int64_t time, 
 inline void selftest() {
     require(cpus("2-6") == 0x7c && cpus("7") == 0x80, "CPU fixture");
     require(packageName("org.example.app:worker") == "org.example.app", "subprocess fixture");
-    auto c = parseConfig("schema 2\nenabled true\nprofile G 2-6\nthread G C1 contains Render selector=rank:1 20 "
+    auto c = parseConfig("schema 3\nenabled true\nprofile G 2-6\nthread G C1 contains Render selector=rank:1 20 "
                          "2-4\nthread G C2 prefix Game selector=rank:2 10 7\npackage exact org.example.app G 100\n",
                          255);
     require(c.find("org.example.app") && !c.find("org.example.app.extra"), "exact package fixture");

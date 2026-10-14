@@ -23,8 +23,19 @@ struct LibraryChange {
     std::string package, provenance, decision;
     bool conflict = false, added = false, removed = false, changed = false;
     bool mappingChanged = false, cpuChanged = false, selectorClassChanged = false;
+    bool runtimeChanged = false;
+    std::string oldRuntime = "null", newRuntime = "null";
     int threadAdded = 0, threadRemoved = 0, threadChanged = 0;
 };
+inline std::string profileRuntimeJson(const Profile *profile) {
+    if (!profile)
+        return "null";
+    const auto &r = profile->runtime;
+    std::ostringstream out;
+    out << "{\"mode\":" << r.mode << ",\"rt\":" << r.rt << ",\"placement\":\"" << (r.preset ? "preset" : "explicit")
+        << "\",\"marker\":" << std::quoted(r.marker) << '}';
+    return out.str();
+}
 struct LibraryMerge {
     std::string canonical;
     std::vector<LibraryChange> changes;
@@ -114,6 +125,9 @@ inline LibraryMerge mergeLibrary(const Config &old, const Config &current, const
         };
         change.mappingChanged = mappingIdentity(old) != mappingIdentity(incoming);
         change.cpuChanged = a && c && a->general != c->general;
+        change.oldRuntime = profileRuntimeJson(a);
+        change.newRuntime = profileRuntimeJson(c);
+        change.runtimeChanged = change.oldRuntime != change.newRuntime;
         size_t an = a ? a->rules.size() : 0, cn = c ? c->rules.size() : 0;
         std::vector<bool> paired(cn, false);
         for (size_t i = 0; i < an; i++) {
@@ -218,8 +232,9 @@ inline std::string libraryPreview(const LibraryMerge &merged, size_t offset) {
             << ",\"profileSemanticChanged\":" << (c.changed ? "true" : "false")
             << ",\"cpuMaskChanged\":" << (c.cpuChanged ? "true" : "false")
             << ",\"selectorClassChanged\":" << (c.selectorClassChanged ? "true" : "false")
-            << ",\"threadAdded\":" << c.threadAdded << ",\"threadRemoved\":" << c.threadRemoved
-            << ",\"threadChanged\":" << c.threadChanged << '}';
+            << ",\"runtimeChanged\":" << (c.runtimeChanged ? "true" : "false") << ",\"oldRuntime\":" << c.oldRuntime
+            << ",\"newRuntime\":" << c.newRuntime << ",\"threadAdded\":" << c.threadAdded
+            << ",\"threadRemoved\":" << c.threadRemoved << ",\"threadChanged\":" << c.threadChanged << '}';
     }
     out << "]}";
     require(out.str().size() <= 32768, "preview page bound");

@@ -27,8 +27,8 @@ class RuleUpstreamFetcher(private val primary: String = RuleRemoteConfig.GITHUB_
         val requiredCapabilities: Set<String> = emptySet()) {
         init {
             require(revision in 1..9007199254740991L && size in 1..65536 && sha256.matches(Regex("[0-9a-f]{64}")))
-            require(soc == "SM8650" && topology == "0-7" && rulesSchema in 2..3) { "RULE_TARGET_MISMATCH" }
-            require(if(rulesSchema==2)requiredCapabilities.isEmpty() else BASE_CAPABILITIES.all{it in requiredCapabilities} && requiredCapabilities.all{it in CAPABILITIES}){"RULE_REQUIRED_CAPABILITIES"}
+            require(soc == "SM8650" && topology == "0-7" && rulesSchema == 3) { "RULE_TARGET_MISMATCH" }
+            require(BASE_CAPABILITIES.all{it in requiredCapabilities} && requiredCapabilities.all{it in CAPABILITIES}){"RULE_REQUIRED_CAPABILITIES"}
             require(source.matches(Regex("[A-Za-z0-9_.:/-]{1,128}")) && version.matches(Regex("[A-Za-z0-9_.+-]{1,64}")))
             require(date.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")) && commit.matches(Regex("[0-9a-f]{40}")))
             java.time.LocalDate.parse(date)
@@ -64,7 +64,7 @@ class RuleUpstreamFetcher(private val primary: String = RuleRemoteConfig.GITHUB_
             ?.groupValues?.get(1)?.toLongOrNull()?.takeIf{it in 1..9007199254740991L} ?: error("RULE_BASELINE_REVISION_REQUIRED")
     }
     private fun requireCapabilities(latest: Latest){
-        if(latest.rulesSchema==3){val missing=latest.requiredCapabilities-capabilities();check(missing.isEmpty()){"RULE_CAPABILITIES_MISSING:"+missing.sorted().joinToString(",")}}
+        val missing=latest.requiredCapabilities-capabilities();check(missing.isEmpty()){"RULE_CAPABILITIES_MISSING:"+missing.sorted().joinToString(",")}
     }
     private fun readLatest(base: String): Latest {
         val bytes = fetch(base.trimEnd('/') + "/latest.json", 2048)
@@ -74,9 +74,9 @@ class RuleUpstreamFetcher(private val primary: String = RuleRemoteConfig.GITHUB_
         for(key in listOf("source","sourceVersion","sourceDate","sourceCommit","targetSoC","targetTopology","rulesSha256"))require(json.get(key) is String){"RULE_MANIFEST_STRING_TYPE"}
         val schema=json.getInt("rulesSchema")
         val fields=setOf("schema", "revision", "source", "sourceVersion", "sourceDate", "sourceCommit","targetSoC", "targetTopology", "rulesSchema", "rulesSha256", "rulesSize")
-        require(json.keys().asSequence().toSet() == if(schema==3)fields+"requiredCapabilities" else fields) { "RULE_MANIFEST_FIELDS" }
-        require(json.getInt("schema") == if(schema==3)2 else 1)
-        val required=if(schema==3){val list=json.getJSONArray("requiredCapabilities");require(list.length() in 4..16);val values=(0 until list.length()).map{list.getString(it)};require(values==values.distinct().sorted());values.toSet()}else emptySet()
+        require(schema==3 && json.keys().asSequence().toSet() == fields+"requiredCapabilities") { "RULE_MANIFEST_FIELDS" }
+        require(json.getInt("schema") == 2)
+        val list=json.getJSONArray("requiredCapabilities");require(list.length() in 4..16);val values=(0 until list.length()).map{list.getString(it)};require(values==values.distinct().sorted());val required=values.toSet()
         return Latest(json.getLong("revision"), json.getString("sourceVersion"), json.getString("sourceDate"),
             json.getString("sourceCommit"), json.getInt("rulesSize"), json.getString("rulesSha256"),
             json.getString("targetSoC"), json.getString("targetTopology"), schema, json.getString("source"),required)
@@ -121,7 +121,7 @@ class RuleUpstreamFetcher(private val primary: String = RuleRemoteConfig.GITHUB_
         internal val BASE_CAPABILITIES=setOf("schema3","category-ranking","runtime-inheritance","owned-rt-recovery")
         internal val CAPABILITIES=BASE_CAPABILITIES+setOf("mode0","mode1","mode2","marker-dummy","marker-double","walt-boost-restorable","walt-reduce-restorable")
         internal fun required(model: ZuioptRuleModel): Set<String> {
-            if(model.schema==2)return emptySet()
+            require(model.schema==3) { "RULE_SCHEMA3_REQUIRED" }
             val needed=BASE_CAPABILITIES.toMutableSet()
             for(profile in model.profiles.values){val runtime=profile.runtime;val mode=if(runtime.mode<0)model.mode else runtime.mode;val rt=if(runtime.rt<0)model.rt else runtime.rt
                 needed+="mode$mode";if(mode==2 && runtime.placement=="preset")needed+=if(rt==1)"walt-reduce-restorable" else "walt-boost-restorable"

@@ -3,7 +3,7 @@ import java.io.File
 import org.junit.Assert.*
 import org.junit.Test
 class ZuioptRuleModelTest {
-    private val raw="schema 2\nenabled true\nprofile Shared 2-6\nthread Shared Pool exact \"Worker\" selector=rank:2 40 7\nthread Shared Pool prefix \"Worker-\" selector=rank:2 30 7\npackage exact org.first.app Shared 100\npackage exact org.second.app Shared 90\n"
+    private val raw="schema 3\nenabled true\nprofile Shared 2-6\nthread Shared Pool exact \"Worker\" selector=rank:2 40 7\nthread Shared Pool prefix \"Worker-\" selector=rank:2 30 7\npackage exact org.first.app Shared 100\npackage exact org.second.app Shared 90\n"
     @Test fun normalizedRoundTripAndSharedProfileIsolation() {
         val m=ZuioptRuleModel.parse(raw); val text=m.normalized()
         assertEquals(text,ZuioptRuleModel.parseNormalized(text).normalized())
@@ -27,10 +27,10 @@ class ZuioptRuleModelTest {
         val file=sequenceOf(File("../payload/system/etc/zuiopt/factory_rules.conf"),File("payload/system/etc/zuiopt/factory_rules.conf")).first { it.exists() }
         val m=ZuioptRuleModel.parse(file.readText());assertEquals(27,m.profiles.size);assertEquals(316,m.mappings.size)
         assertEquals(m,ZuioptRuleModel.parseNormalized(m.normalized()))
-        assertEquals("81c0fa1cd419788322a92b0307985a25e3c2003f35522b26bca30f4c60a618f8",ZuioptRules.digest(m.normalized().toByteArray()))
+        assertEquals("c4daebc3385d7e21b2ffb25e6724cdca1487c0e9062328f343ac29f9b6eb6768",ZuioptRules.digest(m.normalized().toByteArray()))
     }
     @Test fun schema3RoundTripInheritanceAndSingleAppIsolation() {
-        val m=ZuioptRuleModel.parse(raw.replace("schema 2","schema 3\nruntime_defaults 1 1").replace("profile Shared 2-6","profile Shared 2-6\nruntime Shared -1 -1 preset double"))
+        val m=ZuioptRuleModel.parse(raw.replace("schema 3","schema 3\nruntime_defaults 1 1").replace("profile Shared 2-6","profile Shared 2-6\nruntime Shared -1 -1 preset double"))
         assertEquals(m,ZuioptRuleModel.parseNormalized(m.normalized()))
         val next=m.editApp("org.first.app"){it.copy(runtime=it.runtime.copy(mode=2,rt=0))}
         assertEquals(-1,next.appProfile("org.second.app")!!.runtime.rt)

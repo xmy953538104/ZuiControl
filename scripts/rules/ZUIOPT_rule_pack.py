@@ -1,4 +1,4 @@
-"""P1.1 host rule manager/reference importer. Android engine consumes schema 2.
+"""Host rule manager/reference importer. The formal Android rule format is Schema3.
 
 Only two ZIP members. Package profiles are complete override units, not partial
 field inheritance. Activation is a single atomic effective.conf replacement;
@@ -67,7 +67,7 @@ def parse_rules(data):
         t=shlex.split(line,comments=False,posix=True);k=t[0]
         if k in ('schema','enabled','debug'):
             need(len(t)==2 and k not in headers,'header syntax/duplicate')
-            need(t[1] in (('2','3') if k=='schema' else ('true','false')),'header value');headers[k]=t[1]
+            need(t[1] in (('3',) if k=='schema' else ('true','false')),'Schema3 header required; use explicit backup migration');headers[k]=t[1]
         elif k=='runtime_defaults':
             need(len(t)==3 and runtime_defaults is None and t[1] in ('0','1','2') and t[2] in ('0','1'),'runtime defaults')
             runtime_defaults=(int(t[1]),int(t[2]))
@@ -100,28 +100,23 @@ def parse_rules(data):
             packages.append((t[1],t[2],t[3],priority))
         else: raise ValueError('unknown directive '+k)
         need(len(profiles)<=64 and len(packages)<=512,'config bound')
-    need(headers.get('schema') in ('2','3') and 'enabled' in headers,'schema/enabled required')
-    need(headers['schema']=='3' or (runtime_defaults is None and not runtime_profiles),'runtime requires schema 3')
+    need(headers.get('schema')=='3' and 'enabled' in headers,'schema/enabled required')
     for profile in profiles.values():
         need(len(profile['rules'])<=32,'rule count');profile['rules'].sort(key=lambda r:-r[4])
     packages.sort(key=lambda p:-p[3])
     result=dict(profiles=profiles,packages=packages,enabled=headers['enabled']=='true',debug=headers.get('debug')=='true')
-    if headers['schema']=='3':
-        result.update(schema=3,mode=(runtime_defaults or (0,0))[0],rt=(runtime_defaults or (0,0))[1])
-        for p in profiles.values():p.setdefault('runtime',(-1,-1,'explicit','none'))
+    result.update(schema=3,mode=(runtime_defaults or (0,0))[0],rt=(runtime_defaults or (0,0))[1])
+    for p in profiles.values():p.setdefault('runtime',(-1,-1,'explicit','none'))
     return result
 
 def cpu_text(bits): return ','.join(str(n) for n in range(8) if bits&(1<<n))
 
 def dump_rules(config):
-    runtime=config.get('schema')==3 or any('runtime' in p for p in config['profiles'].values())
-    lines=['schema '+('3' if runtime else '2'),'enabled '+str(config['enabled']).lower(),'debug '+str(config.get('debug',False)).lower()]
-    if runtime:lines.append(f'runtime_defaults {config.get("mode",0)} {config.get("rt",0)}')
+    lines=['schema 3','enabled '+str(config['enabled']).lower(),'debug '+str(config.get('debug',False)).lower(),f'runtime_defaults {config.get("mode",0)} {config.get("rt",0)}']
     for name,p in sorted(config['profiles'].items()):
         lines.append('profile '+name+' '+cpu_text(p['mask']))
-        if runtime:
-            mode,rt,placement,marker=p.get('runtime',(-1,-1,'explicit','none'))
-            lines.append(f'runtime {name} {mode} {rt} {placement} {marker}')
+        mode,rt,placement,marker=p.get('runtime',(-1,-1,'explicit','none'))
+        lines.append(f'runtime {name} {mode} {rt} {placement} {marker}')
         for group,kind,pattern,rank,priority,bits in p['rules']:
             lines.append(f'thread {name} {group} {kind} {json.dumps(pattern)} selector={"rank:"+str(rank) if rank else "all"} {priority} {cpu_text(bits)}')
     for kind,package,name,priority in config['packages']: lines.append(f'package {kind} {package} {name} {priority}')
@@ -276,7 +271,7 @@ class Store:
 
     def current(self):
         path=self.root/'effective.conf'
-        if not path.exists(): return dict(packs={},enabled=[],user=b'schema 2\nenabled true\n'),b''
+        if not path.exists(): return dict(packs={},enabled=[],user=b'schema 3\nenabled true\ndebug false\nruntime_defaults 0 0\n'),b''
         data=read_bounded(path,MAX_RULES);parse_rules(data);generation=data.splitlines()[0].decode().removeprefix('# ZUIOPT_GENERATION ')
         need(GEN.fullmatch(generation) is not None,'generation reference')
         d=self.root/'generations'/generation;need(read_bounded(d/'effective.conf',MAX_RULES)==data,'generation content mismatch')
@@ -338,7 +333,7 @@ class Store:
                 need(not p.is_symlink() and p.resolve().parent==root,'unsafe generation cleanup');shutil.rmtree(p)
 
 
-NORMALIZER_VERSION = 'schema2-1'
+NORMALIZER_VERSION = 'schema3-1'
 RECOGNIZED_RECOVERED_SHA = 'c83f951ae67e9ec2ae64dbc0c7c07c03b83d8b163ca6378d09be4787c128a24b'
 
 def normalize_source(data, kind):
@@ -409,7 +404,7 @@ def canonical_workflow(old,source,kind,choice,workflow,evidence_hash):
     manifest=dict(schemaVersion=2,oldCanonicalHash=digest(old),newSourceHash=digest(source),
         normalizerVersion=NORMALIZER_VERSION,outputChoice=choice,outputCanonicalHash=digest(output),
         conflictListHash=digest(json.dumps(comparison,sort_keys=True,separators=(',',':')).encode()),
-        engineSchema=2,targetSoC='sm8650',workflowRepoCommitRun=workflow,qualificationEvidenceHash=evidence_hash)
+        engineSchema=3,targetSoC='sm8650',workflowRepoCommitRun=workflow,qualificationEvidenceHash=evidence_hash)
     out=io.BytesIO()
     with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_STORED) as z:
         for name,data in [('manifest.json',json.dumps(manifest,sort_keys=True,separators=(',',':')).encode('ascii')),('rules.conf',output)]:

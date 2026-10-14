@@ -1,4 +1,4 @@
-"""Cross-check the production importer against the Schema2/3 Python reference."""
+"""Cross-check the production importer against the Schema3 Python reference."""
 from pathlib import Path
 import io,json,subprocess,sys,tempfile,zipfile
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/rules'))
@@ -7,8 +7,8 @@ from ZUIOPT_rule_pack import parse_rules,dump_rules,manifest_for,pack_bytes,unpa
 from TestSchemaContract import CANONICAL as AUDITED, INVALID as AUDITED_INVALID, check as check_contract
 
 ROOT=Path(__file__).resolve().parents[2]
-BASE=b'schema 2\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n'
-OPEN=b'schema 2\nenabled true\nprofile G 2-7\nthread G ALL glob "Job.worker[AB]*" selector=all 30 2-4\nthread G R1 prefix Top selector=rank:1 20 7\nthread G R2 contains Runner selector=rank:2 10 5-6\npackage exact org.example.game G 100\n'
+BASE=b'schema 3\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n'
+OPEN=b'schema 3\nenabled true\nprofile G 2-7\nthread G ALL glob "Job.worker[AB]*" selector=all 30 2-4\nthread G R1 prefix Top selector=rank:1 20 7\nthread G R2 contains Runner selector=rank:2 10 5-6\npackage exact org.example.game G 100\n'
 
 def main(binary):
     from TestRulePublisher import main as check_publisher
@@ -32,12 +32,12 @@ def main(binary):
             assert parse_rules(call('rules',rules))==parse_rules(rules)
         for mode in range(3):
             for rt in range(2):
-                runtime=OPEN.replace(b'schema 2',b'schema 3')+f'runtime_defaults {mode} {rt}\nruntime G -1 -1 preset double\n'.encode()
+                runtime=OPEN+f'runtime_defaults {mode} {rt}\nruntime G -1 -1 preset double\n'.encode()
                 assert parse_rules(call('rules',runtime))==parse_rules(runtime)
                 assert call('merge',BASE,runtime)==merge(BASE,[],runtime)
                 runtime_pack=(manifest_for(runtime,'runtime'),runtime)
                 assert call('merge',BASE,b'',pack_bytes(*runtime_pack))==merge(BASE,[runtime_pack],b'')
-        for bad in (b'',BASE.replace(b'2-6',b'0-8'),BASE.replace(b'schema 2',b'schema 1'),BASE+b'profile G 1\n',BASE+b'unknown true\n',OPEN.replace(b'selector=all',b'selector=rank:0'),OPEN.replace(b'selector=all',b'selector=rank:1025'),OPEN.replace(b' 20 7',b' 30 7'),OPEN.replace(b' R2 ',b' R1 ')):
+        for bad in (b'',BASE.replace(b'2-6',b'0-8'),BASE.replace(b'schema 3',b'schema 1'),BASE+b'profile G 1\n',BASE+b'unknown true\n',OPEN.replace(b'selector=all',b'selector=rank:0'),OPEN.replace(b'selector=all',b'selector=rank:1025'),OPEN.replace(b' 20 7',b' 30 7'),OPEN.replace(b' R2 ',b' R1 ')):
             call('rules',bad,ok=False)
         for source in ('recovered_binary','appopt','zuiopt_native','user_export'):
             manifest=manifest_for(OPEN,'parity',source,binary_sha='a'*64,evidence='STATIC_RECOVERED')
@@ -75,7 +75,7 @@ def main(binary):
             with zipfile.ZipFile(io.BytesIO(archive)) as z: expected=z.read('rules.conf')
             assert call('canonical',archive,BASE)==expected
             call('canonical',archive,OPEN,ok=False) # exact oldCanonicalHash CAS
-        distinct=b'schema 2\nenabled true\nprofile X 0-1\npackage exact org.new.game X 99\n'
+        distinct=b'schema 3\nenabled true\nprofile X 0-1\npackage exact org.new.game X 99\n'
         archive,_=canonical_workflow(BASE,distinct,'canonical','Clean','fixture/commit/run','a'*64)
         with zipfile.ZipFile(io.BytesIO(archive)) as z: assert call('canonical',archive,BASE)==z.read('rules.conf')
         recovered=b'package,group,affinity_mask,static_confidence,thread_pattern,thread_priority,thread_match_type,declaration_status,selector\norg.example.future,F01,0x7c,STATIC_CONFIRMED,<NO_THREAD_MATCH>,0,SUBSTRING_STRSTR,ACTIVE_FOR_EXACT_INPUT,all\norg.example.future,F01,0x80,STATIC_CONFIRMED,Runner,1,SUBSTRING_STRSTR,ACTIVE_FOR_EXACT_INPUT,rank:2\n'

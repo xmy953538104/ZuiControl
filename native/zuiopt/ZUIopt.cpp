@@ -40,6 +40,34 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
     try {
         ZUIopt::require(getuid() == 0 && geteuid() == 0, "root identity required");
+        if (argc == 3 && std::string(argv[1]) == "--migrate-backup") {
+            int fd = open(argv[2], O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+            try {
+                ZUIopt::PrivateDir::file(fd);
+                std::string input;
+                char bytes[4096];
+                for (;;) {
+                    auto n = ::read(fd, bytes, sizeof(bytes));
+                    if (n < 0 && errno == EINTR)
+                        continue;
+                    ZUIopt::require(n >= 0, "migration backup read", ZUIopt::ErrorCode::CONFIG);
+                    if (!n)
+                        break;
+                    input.append(bytes, n);
+                    ZUIopt::require(input.size() <= ZUIopt::RULE_LIMIT, "migration backup size",
+                                    ZUIopt::ErrorCode::CONFIG);
+                }
+                close(fd);
+                fd = -1;
+                auto output = ZUIopt::migrateSchema3Rules(input);
+                ZUIopt::putAll(STDOUT_FILENO, output);
+                return 0;
+            } catch (...) {
+                if (fd >= 0)
+                    close(fd);
+                throw;
+            }
+        }
         if (argc == 1) {
             ZUIopt::require(selected(), "not this boot's task owner");
             ZUIopt::Core core(std::string(ROOT) + "/effective.conf", ROOT);

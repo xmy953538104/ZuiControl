@@ -2,7 +2,7 @@ package com.zui.zuicontrol
 
 /** Draft/view model only. Native validation and generation CAS remain authoritative. */
 data class ZuioptRuleModel(val enabled: Boolean, val profiles: Map<String, Profile>, val mappings: List<Mapping>,
-    val schema: Int = 2, val mode: Int = 0, val rt: Int = 0) {
+    val schema: Int = 3, val mode: Int = 0, val rt: Int = 0) {
     data class Rule(val competitionClass: String, val matchKind: String, val pattern: String,
                     val selector: String, val priority: Int, val cpuMask: Set<Int>)
     data class Runtime(val mode: Int = -1, val rt: Int = -1, val placement: String = "explicit", val marker: String = "none") {
@@ -23,13 +23,11 @@ data class ZuioptRuleModel(val enabled: Boolean, val profiles: Map<String, Profi
     }
 
     fun normalized(): String = buildString {
-        require(schema in 2..3 && mode in 0..2 && rt in 0..1)
-        val runtime=schema==3 || mode!=0 || rt!=0 || profiles.values.any { it.runtime!=Runtime() }
-        append("schema ${if(runtime)3 else 2}\nenabled $enabled\ndebug false\n")
-        if(runtime)append("runtime_defaults $mode $rt\n")
+        require(schema == 3 && mode in 0..2 && rt in 0..1)
+        append("schema 3\nenabled $enabled\ndebug false\nruntime_defaults $mode $rt\n")
         for ((name, profile) in profiles.toSortedMap()) {
             append("profile $name ${maskText(profile.generalMask)}\n")
-            if(runtime)profile.runtime.let { append("runtime $name ${it.mode} ${it.rt} ${it.placement} ${it.marker}\n") }
+            profile.runtime.let { append("runtime $name ${it.mode} ${it.rt} ${it.placement} ${it.marker}\n") }
             for (r in profile.rules.sortedByDescending { it.priority })
                 append("thread $name ${r.competitionClass} ${r.matchKind} ${quote(r.pattern)} selector=${r.selector} ${r.priority} ${maskText(r.cpuMask)}\n")
         }
@@ -120,8 +118,7 @@ data class ZuioptRuleModel(val enabled: Boolean, val profiles: Map<String, Profi
                 }
                 require(profiles.size <= 64 && mappings.size <= 512)
             }
-            require(headers["schema"] in setOf("2","3") && headers["enabled"] in setOf("true", "false") && headers["debug"] in setOf(null, "false"))
-            require(headers["schema"]=="3" || (defaults==null && runtimeProfiles.isEmpty()))
+            require(headers["schema"] == "3" && headers["enabled"] in setOf("true", "false") && headers["debug"] in setOf(null, "false")) { "SCHEMA3_REQUIRED_USE_EXPLICIT_BACKUP_MIGRATION" }
             return ZuioptRuleModel(headers["enabled"] == "true", profiles.toSortedMap(), mappings.sortedByDescending { it.priority },headers.getValue("schema").toInt(),defaults?.first ?: 0,defaults?.second ?: 0)
         }
     }

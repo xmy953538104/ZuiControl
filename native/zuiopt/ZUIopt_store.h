@@ -4,6 +4,7 @@
 #include "ZUIopt_runtime.h"
 #include <sys/file.h>
 #include <sys/random.h>
+#include <signal.h>
 
 namespace ZUIopt {
 inline std::string randomId() {
@@ -242,8 +243,8 @@ inline void recordLoadedGeneration(const std::string &root, const std::string &b
 struct RuleState {
     std::map<std::string, Pack> packs;
     std::set<std::string> enabled;
-    std::string user = "schema 2\nenabled true\n", effective, transaction, provenance, source, upstream,
-                upstreamMetadata;
+    std::string user = "schema 3\nenabled true\ndebug false\nruntime_defaults 0 0\n", effective, transaction,
+                provenance, source, upstream, upstreamMetadata;
     bool canonical = false, library = false;
 };
 inline std::string base64(const std::string &s) {
@@ -379,11 +380,16 @@ class RuleStore {
     int lockFd = -1;
     std::string factory, factorySha;
     bool readOnly;
-    RuleState load(const std::string &effective) {
+    RuleState load(const std::string &effective, bool legacyMigration = false) {
+        auto parse = legacyMigration ? migrationRules : rules;
+        auto canonical = [&](const std::string &text) {
+            auto config = parse(text);
+            return legacyMigration ? legacyCanonical(config) : dumpRules(config);
+        };
         RuleState state;
         if (effective.empty())
             return state;
-        rules(effective);
+        parse(effective);
         auto id = generationOf(effective);
         PrivateDir d(generations, id);
         require(d.get("effective.conf", RULE_LIMIT) == effective, "generation commit content");
@@ -393,17 +399,17 @@ class RuleStore {
             auto meta = fields(d.get(state.library ? "canonical_state.v3" : "canonical_state.v2", 2048), '\n');
             require(meta.size() == (state.library ? 11u : 9u) &&
                         meta[0] == (state.library ? "ZUIOPT_CANONICAL_STATE_V3" : "ZUIOPT_CANONICAL_STATE_V2") &&
-                        meta[1] == id && hex(meta[2], 24) && hex(meta[3], 64) && meta[4] == "schema2-1" &&
-                        hex(meta[5], 64) && (meta[6] == "none" || generationId(meta[6])) && hex(meta[7], 64) &&
-                        meta.back().empty(),
+                        meta[1] == id && hex(meta[2], 24) && hex(meta[3], 64) &&
+                        (meta[4] == "schema3-1" || (legacyMigration && meta[4] == "schema2-1")) && hex(meta[5], 64) &&
+                        (meta[6] == "none" || generationId(meta[6])) && hex(meta[7], 64) && meta.back().empty(),
                     "canonical metadata");
-            state.user = dumpRules(rules(effective));
+            state.user = canonical(effective);
             state.canonical = true;
             if (state.library) {
                 state.upstream = d.get("upstream.conf", RULE_LIMIT);
                 state.upstreamMetadata = d.get("upstream.metadata.json", 8192);
                 require(sha256(state.upstream) == meta[8] && sha256(state.upstreamMetadata) == meta[9] &&
-                            dumpRules(rules(state.upstream)) == state.upstream,
+                            canonical(state.upstream) == state.upstream,
                         "upstream binding");
             }
             state.transaction = meta[2];
@@ -415,6 +421,7 @@ class RuleStore {
             require((previous.empty() ? "none" : generationOf(previous)) == meta[6], "canonical previous generation");
             return state;
         }
+        require(legacyMigration, "explicit legacy store migration required", ErrorCode::CONFIG);
         auto metadata = d.get("pack_state.conf", 8192);
         auto rows = fields(metadata, '\n');
         require(rows.size() >= 5 && rows[0] == "ZUIOPT_RULE_STATE_V1" && rows.back().empty(), "state header");
@@ -427,7 +434,7 @@ class RuleStore {
         state.transaction = tx[1];
         state.user = d.get("user_rules.conf", RULE_LIMIT);
         require(sha256(state.user) == user[1], "stored user digest");
-        rules(state.user);
+        parse(state.user);
         PrivateDir packs(d, "imported_packs");
         for (size_t i = 4; i + 1 < rows.size(); i++) {
             auto p = fields(rows[i], ' ');
@@ -436,7 +443,7 @@ class RuleStore {
                     "stored pack state");
             auto data = packs.get(p[1] + ".zip", PACK_LIMIT);
             require(sha256(data) == p[3], "stored archive digest");
-            auto pack = unpackPack(data);
+            auto pack = unpackPack(data, {}, true);
             require(pack.manifest.at("pack_id").text == p[1], "stored pack ID");
             state.packs.emplace(p[1], std::move(pack));
             if (p[2] == "1")
@@ -445,11 +452,14 @@ class RuleStore {
         std::vector<Pack> selected;
         for (const auto &p : state.enabled)
             selected.push_back(state.packs.at(p));
-        require(effective == "# ZUIOPT_GENERATION " + id + "\n" + mergeRules(legacyFactory, selected, state.user),
+        auto merged = rules(mergeRules(migrateSchema3Rules(legacyFactory), selected, migrateSchema3Rules(state.user)));
+        merged.schema = parse(effective).schema;
+        require(effective == "# ZUIOPT_GENERATION " + id + "\n" + legacyCanonical(merged),
                 "stored effective derivation");
         return state;
     }
-    std::string commit(RuleState state, const std::string &transaction, const std::string &expected) {
+    std::string commit(RuleState state, const std::string &transaction, const std::string &expected,
+                       const std::string *previousOverride = nullptr, bool activate = true) {
         require(hex(transaction, 24), "commit transaction");
         const auto active = root.get("effective.conf", RULE_LIMIT, true);
         require((active.empty() ? "none" : generationOf(active)) == expected && active == state.effective,
@@ -472,11 +482,13 @@ class RuleStore {
             state.upstreamMetadata =
                 "{\"source\":\"FROZEN_FACTORY_SEED\",\"rulesHash\":\"" + sha256(state.upstream) + "\"}";
         }
+        const auto previous = previousOverride ? *previousOverride : active;
+        const auto priorId = previous.empty() ? "none" : generationOf(previous);
         const auto metadata = "ZUIOPT_CANONICAL_STATE_V3\n" + id + "\n" + transaction + "\n" + sha256(canonical) +
-                              "\nschema2-1\n" + sha256(provenance) + "\n" + expected + "\n" + sha256(state.source) +
+                              "\nschema3-1\n" + sha256(provenance) + "\n" + priorId + "\n" + sha256(state.source) +
                               "\n" + sha256(state.upstream) + "\n" + sha256(state.upstreamMetadata) + "\n";
         d.put("source.bin", state.source, true);
-        d.put("last_good.conf", active, true);
+        d.put("last_good.conf", previous, true);
         d.put("provenance.txt", provenance, true);
         d.put("upstream.conf", state.upstream, true);
         d.put("upstream.metadata.json", state.upstreamMetadata, true);
@@ -488,6 +500,9 @@ class RuleStore {
         if (testBeforeCommit)
             throw std::runtime_error("injected before commit");
 #endif
+        if (!activate)
+            return id;
+        migrationBoundary(3);
         // Rename is the sole commit point. A following fsync error is indeterminate; query exact bytes.
         root.put("effective.conf", effective);
 #ifdef ZUIOPT_TEST
@@ -567,6 +582,120 @@ class RuleStore {
         } catch (...) {
         } // Retention cannot turn a durable successful commit into a failed transaction.
     }
+    void migrationBoundary(int point) {
+#ifdef ZUIOPT_TEST
+        if (testMigrationFault == point)
+            kill(getpid(), SIGKILL);
+#else
+        (void)point;
+#endif
+    }
+    static void migrationCopy(const PrivateDir &target, const std::string &name, const std::string &data) {
+        if (target.exists(name))
+            require(target.get(name, PACK_LIMIT) == data, "immutable migration input identity", ErrorCode::CONFIG);
+        else
+            target.put(name, data, true);
+    }
+    void finishSchema3Migration() {
+        auto pending = trim(root.get("schema3-migration.pending", 64, true));
+        if (pending.empty())
+            return;
+        require(generationId(pending), "migration pending generation", ErrorCode::CONFIG);
+        PrivateDir backups(root, "schema3-migration-backups"), backup(backups, pending);
+        if (backup.exists("complete.v1")) {
+            root.remove("schema3-migration.pending");
+            return;
+        }
+        if (!backup.exists("rollback-effective.conf"))
+            return;
+        auto state = current();
+        require(rules(state.user).schema == 3 && rules(state.upstream).schema == 3, "migration final format",
+                ErrorCode::CONFIG);
+        // Only invalidate the exact pre-migration upload, never a newly created Owner transaction.
+        if (root.exists("upload.meta") && root.get("upload.meta", 512) == backup.get("old-upload.meta", 512) &&
+            root.get("upload.bin", PACK_LIMIT) == backup.get("old-upload.bin", PACK_LIMIT))
+            clearUpload();
+        if (root.exists("library-preview.v1") &&
+            root.get("library-preview.v1", PACK_LIMIT) == backup.get("old-library-preview.v1", PACK_LIMIT))
+            root.remove("library-preview.v1");
+        migrationBoundary(5);
+        backup.put("complete.v1",
+                   "ZUIOPT_SCHEMA3_MIGRATION_V1\nold_effective_sha256=" +
+                       sha256(backup.get("old-effective.conf", RULE_LIMIT)) +
+                       "\ncurrent=" + generationOf(state.effective) +
+                       "\nrollback=" + generationOf(backup.get("rollback-effective.conf", RULE_LIMIT)) + "\n",
+                   true);
+        root.remove("schema3-migration.pending");
+    }
+    void migrateSchema3State() {
+        require(!readOnly && !root.exists("settings.pending"), "migration settings recovery required",
+                ErrorCode::CONFIG);
+        auto active = root.get("effective.conf", RULE_LIMIT);
+        auto old = load(active, true); // Full old content/hash verification precedes any migration write.
+        PrivateDir backups(root, "schema3-migration-backups", true), backup(backups, generationOf(active), true),
+            original(generations, generationOf(active));
+        migrationCopy(backup, "old-effective.conf", active);
+        migrationCopy(backup, "old-upstream.conf", old.upstream);
+        migrationCopy(backup, "old-metadata.json", old.upstreamMetadata);
+        migrationCopy(backup, "old-source.bin", old.source);
+        migrationCopy(backup, "old-last-good.conf", original.get("last_good.conf", RULE_LIMIT, true));
+        migrationCopy(backup, "old-factory.conf", root.get("migration_factory.conf", RULE_LIMIT, true));
+        for (const auto *name : {"upload.meta", "upload.bin", "library-preview.v1"})
+            migrationCopy(backup, std::string("old-") + name, root.get(name, PACK_LIMIT, true));
+        for (const auto &name : original.names()) {
+            if (name == "imported_packs") {
+                PrivateDir packs(original, name), saved(backup, "imported_packs", true);
+                for (const auto &file : packs.names())
+                    migrationCopy(saved, file, packs.get(file, PACK_LIMIT));
+            } else
+                migrationCopy(backup, "generation-" + name, original.get(name, PACK_LIMIT));
+        }
+        backup.sync();
+        root.sync();
+        root.put("schema3-migration.pending", generationOf(active) + "\n");
+        migrationBoundary(1);
+        auto migrated = old;
+        migrated.user = migrateSchema3Rules(active);
+        auto seed = root.get("migration_factory.conf", RULE_LIMIT, true);
+        if (seed.empty())
+            seed = factory;
+        migrated.upstream = migrateSchema3Rules(old.upstream.empty() ? seed : old.upstream);
+        if (old.upstream.empty())
+            migrated.upstreamMetadata =
+                "{\"source\":\"FROZEN_FACTORY_SEED\",\"rulesHash\":\"" + sha256(migrated.upstream) + "\"}";
+        else {
+            auto metadata = ManifestJson(old.upstreamMetadata).parse();
+            for (const auto *key : {"rulesHash", "newUpstreamHash"})
+                if (metadata.count(key)) {
+                    require(metadata[key].text == sha256(old.upstream), "migration upstream metadata identity",
+                            ErrorCode::CONFIG);
+                    metadata[key].text = sha256(migrated.upstream);
+                }
+            migrated.upstreamMetadata = jsonText(metadata);
+        }
+        migrated.provenance = "migration=SCHEMA2_TO_SCHEMA3\nold_effective_sha256=" + sha256(active) +
+                              "\nold_upstream_sha256=" + sha256(old.upstream) + "\n";
+        std::string previous;
+        if (backup.exists("rollback-effective.conf")) {
+            previous = backup.get("rollback-effective.conf", RULE_LIMIT);
+            auto point = load(previous);
+            require(point.user == migrated.user && point.upstream == migrated.upstream &&
+                        point.upstreamMetadata == migrated.upstreamMetadata,
+                    "migration rollback point identity", ErrorCode::CONFIG);
+        } else {
+            const std::string none;
+            auto point = commit(migrated, randomId(), generationOf(active), &none, false);
+            PrivateDir prepared(generations, point);
+            previous = prepared.get("effective.conf", RULE_LIMIT);
+            migrationCopy(backup, "rollback-effective.conf", previous);
+            migrationCopy(backup, "rollback-upstream.conf", migrated.upstream);
+            migrationCopy(backup, "rollback-metadata.json", migrated.upstreamMetadata);
+        }
+        migrationBoundary(2);
+        commit(migrated, randomId(), generationOf(active), &previous);
+        migrationBoundary(4);
+        finishSchema3Migration();
+    }
     void clearUpload() {
         // Preserve successful and failed input receipts; only the active transport slots are cleared.
         auto meta = root.get("upload.meta", 512, true);
@@ -612,6 +741,7 @@ class RuleStore {
 #ifdef ZUIOPT_TEST
     inline static bool testBeforeCommit = false;
     inline static bool testAfterCommit = false;
+    inline static int testMigrationFault = 0;
 #endif
     RuleStore(const std::string &path, const std::string &factoryText, bool onlyRead = false)
         : root(path), generations(root, "generations", !onlyRead), factory(factoryText), readOnly(onlyRead) {
@@ -639,6 +769,14 @@ class RuleStore {
     }
     void initialize() {
         require(!readOnly, "read-only store");
+        auto active = root.get("effective.conf", RULE_LIMIT, true);
+        if (!active.empty()) {
+            PrivateDir generation(generations, generationOf(active));
+            auto metadata = fields(generation.get("canonical_state.v3", 2048, true), '\n');
+            if (metadata.size() != 11 || metadata[4] != "schema3-1")
+                migrateSchema3State();
+            finishSchema3Migration();
+        }
         auto s = current();
         if (s.canonical && s.library)
             return;

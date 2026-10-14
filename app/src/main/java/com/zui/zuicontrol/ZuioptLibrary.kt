@@ -41,7 +41,7 @@ object ZuioptLibrary {
         return Baseline(generation,hash,bytes.toString(Charsets.UTF_8),JSONObject(metadata.toString(Charsets.UTF_8)))
     }
     fun pack(baseline: Baseline, source: Provenance, rules: ByteArray, appOpt: Boolean=false,
-             decisions: Map<String,Decision> = emptyMap(), manual: String="schema 2\nenabled true\ndebug false\n"): ByteArray {
+             decisions: Map<String,Decision> = emptyMap(), manual: String="schema 3\nenabled true\ndebug false\nruntime_defaults 0 0\n"): ByteArray {
         require(baseline.hash.matches(Regex("[0-9a-f]{64}"))&&rules.size in 1..ZuioptRules.RULE_LIMIT)
         require(source.source.isNotEmpty()&&source.version.isNotEmpty()&&(source.commit.isNotEmpty()||source.evidence.isNotEmpty()))
         for(text in listOf(source.source,source.version,source.date,source.commit,source.evidence))require(text.length<=128&&text.all { it.code in 32..126 })

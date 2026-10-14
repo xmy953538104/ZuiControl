@@ -180,6 +180,9 @@ template <class Proc> BaselineResult probeBaseline(const ProcessState &p, Proc &
     return BaselineResult::STABLE;
 }
 class Journal {
+    static void require(bool ok, const char *why) {
+        ZUIopt::require(ok, why, ErrorCode::JOURNAL);
+    }
     int dirFd = -1, lockFd = -1;
     std::string currentBoot;
     static void secureFile(int fd) {
@@ -698,6 +701,9 @@ class Journal {
 };
 enum class CoherenceResult { CLEAN, REPAIR, REACQUIRE, CONTESTED, REVOKED };
 class Placement {
+    static void require(bool ok, const char *why) {
+        ZUIopt::require(ok, why, ErrorCode::OWNERSHIP);
+    }
     const std::string root = "/dev/cpuset/ZUIopt";
     std::set<std::string> created;
     Journal &journal;
@@ -861,7 +867,7 @@ class Placement {
             restored = journal.same(r) && setAffinity(r.tid, restoreMask);
         }
         if ((!moved || !restored) && journal.same(r))
-            throw std::runtime_error("journal release failed TID=" + std::to_string(r.tid));
+            throw NativeError(ErrorCode::RECOVERY, "journal release failed TID=" + std::to_string(r.tid));
         count.releases++;
         ZUIOPT_NOTE("RELEASE",
                     "pid=" + std::to_string(r.pid) + " tid=" + std::to_string(r.tid) + " group=" + destination);
@@ -875,7 +881,8 @@ class Placement {
                 auto it = journal.entries.find(tid);
                 if (it != journal.entries.end() && journal.same(it->second)) {
                     if (journal.placementVersion && !journal.placementMatches(it->second, group(tid)))
-                        throw std::runtime_error("RECOVERY_UNKNOWN_TASK_FAIL_CLOSED tid=" + std::to_string(tid));
+                        throw NativeError(ErrorCode::RECOVERY,
+                                          "RECOVERY_UNKNOWN_TASK_FAIL_CLOSED tid=" + std::to_string(tid));
                     remaining = true;
                     continue;
                 }
@@ -895,7 +902,8 @@ class Placement {
                         continue;
                     if (quarantineOrdinary(tid, p))
                         continue;
-                    throw std::runtime_error("RECOVERY_UNKNOWN_TASK_FAIL_CLOSED tid=" + std::to_string(tid));
+                    throw NativeError(ErrorCode::RECOVERY,
+                                      "RECOVERY_UNKNOWN_TASK_FAIL_CLOSED tid=" + std::to_string(tid));
                 }
             }
         if (added)

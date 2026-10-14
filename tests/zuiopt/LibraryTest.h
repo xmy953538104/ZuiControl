@@ -1,5 +1,5 @@
 // Included in the existing native suite; production parser/merge/store, temporary fixture only.
-inline std::string libraryBytes(const std::string& old,const std::string& next,const std::string& choices="# defaults\n",const std::string& manual="schema 2\nenabled true\ndebug false\n",bool appopt=false){
+inline std::string libraryBytes(const std::string& old,const std::string& next,const std::string& choices="# defaults\n",const std::string& manual="schema 3\nenabled true\ndebug false\n",bool appopt=false){
     Manifest m;for(const auto& [k,v]:std::map<std::string,std::string>{{"kind",appopt?"APPOPT":"UPSTREAM"},{"source","fixture"},{"sourceVersion","1"},{"sourceDate",""},{"sourceCommit",""},{"sourceEvidence","host-controlled"},{"targetSoC","SM8650"},{"targetTopology","0-7"},{"oldUpstreamHash",sha256(old)},{"newUpstreamHash",appopt?sha256(old):sha256(next)},{"rulesHash",sha256(next)},{"manualHash",sha256(manual)},{"decisionsHash",sha256(choices)}})m[k]={v,false};
     m["schema"]={"1",true};return packRuleFiles({{"manifest.json",jsonText(m)},{"rules.conf",next},{"manual.conf",manual},{"decisions.conf",choices}});
 }
@@ -15,7 +15,7 @@ inline void libraryTests(const fs::path& parent){
         auto meta="ZUIOPT_CANONICAL_STATE_V2\n"+id+"\n"+randomId()+"\n"+sha256(canonical)+"\nschema2-1\n"+sha256(provenance)+"\nnone\n"+sha256(canonical)+"\n";
         oldDir.put("canonical_state.v2",meta);oldDir.put("source.bin",canonical);oldDir.put("provenance.txt",provenance);
         oldDir.put("last_good.conf","");oldDir.put("effective.conf",effective);root.put("effective.conf",effective);root.put("migration_factory.conf",BASE);
-        RuleStore legacy(v2path.string(),OPEN);require(legacy.current().canonical&&!legacy.current().library,"real V82 canonical accepted");
+        RuleStore legacy(v2path.string(),OPEN);rejects([&]{legacy.current();}); // Legacy metadata is consumed only by initialize migration.
         RuleStore::testBeforeCommit=!after;RuleStore::testAfterCommit=after;rejects([&]{legacy.initialize();});RuleStore::testBeforeCommit=RuleStore::testAfterCommit=false;
         legacy.initialize();auto upgraded=legacy.current();
         require(upgraded.library&&upgraded.user==canonical&&upgraded.upstream==dumpRules(rules(BASE)),"V82 seed preserves effective and immutable factory across interrupted migration");
@@ -69,7 +69,7 @@ inline void libraryTests(const fs::path& parent){
     uploadData(store,"user",dumpRules(changed),randomId());auto before=store.current();
     store.apply("restore_app",generationOf(before.effective),"org.example.game:"+sha256(before.upstream));
     require(appBehavior(rules(store.current().user),"org.example.game")->general==cpus("2-6")&&appBehavior(rules(store.current().user),"org.user.created"),"per App restore retains unrelated");
-    auto appopt=libraryBytes(store.current().upstream,"org.example.game=7\n", "org.example.game USE_UPSTREAM\n","schema 2\nenabled true\ndebug false\n",true);
+    auto appopt=libraryBytes(store.current().upstream,"org.example.game=7\n", "org.example.game USE_UPSTREAM\n","schema 3\nenabled true\ndebug false\n",true);
     tx=randomId();stageLibrary(store,appopt,tx);store.apply("preview",tx,"0");auto upstream=store.current().upstream;store.apply("commit",tx,"");
     require(store.current().upstream==upstream&&appBehavior(rules(store.current().user),"org.example.game")->general==cpus("7")&&appBehavior(rules(store.current().user),"org.user.created"),"AppOpt explicit merge preserves baseline/other Apps");
     for(bool after:{false,true}){

@@ -4,8 +4,11 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(ROOT/'tests'))
+from BackendContract import reverse_runtime_r5
 SERVICE = ROOT/'framework_patch/src/services/com/zui/server/control/ZuiControlService.java'
 SOURCE = SERVICE.with_name('ZuioptSceneAuthority.java')
 
@@ -155,18 +158,18 @@ class SceneAuthorityTests(unittest.TestCase):
         self.assertIn('(allow zuiopt zui_control_service (service_manager (find)))', policy)
 
     def test_event_contract_and_bounded_schedule(self):
-        scene = (ROOT/'native/zuiopt/ZUIopt_scene.h').read_text()
+        scene = reverse_runtime_r5('native/zuiopt/ZUIopt_scene.h',(ROOT/'native/zuiopt/ZUIopt_scene.h').read_text())
         callback = scene.split('static binder_status_t transact(', 1)[1].split('explicit SceneObserver(', 1)[0]
         for token in ('/proc', 'snapshot(', 'packagesForUid(', 'placement', 'journal'):
             self.assertNotIn(token, callback)
         self.assertNotRegex(callback,r'\back\(')
-        daemon = (ROOT/'native/zuiopt/ZUIopt_daemon.h').read_text()
+        daemon = reverse_runtime_r5('native/zuiopt/ZUIopt_daemon.h',(ROOT/'native/zuiopt/ZUIopt_daemon.h').read_text())
         self.assertIn('sceneBurst.complete(now())&&events.latestScene(seq)', daemon)
         self.assertLess(daemon.index('reconcile(snapshot);'), daemon.index('sceneObserver->ack(seq)'))
         self.assertLess(daemon.index('sceneObserver.reset();observer.reset();'), daemon.index('if(signalFd>=0)close(signalFd);', daemon.index('~Core()')))
         for p in (ROOT/'native/zuiopt').glob('*'):
             self.assertNotIn('__system_property_wait', p.read_text())
-        events = (ROOT/'native/zuiopt/ZUIopt_events.h').read_text()
+        events = reverse_runtime_r5('native/zuiopt/ZUIopt_events.h',(ROOT/'native/zuiopt/ZUIopt_events.h').read_text())
         self.assertIn('schedule={0,100,250,500}', events)
         self.assertIn('step==schedule.size()?-1:', events)
 

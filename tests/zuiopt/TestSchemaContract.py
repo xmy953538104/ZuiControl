@@ -1,10 +1,10 @@
-"""Audited schema-2 product facts; native acceptance also runs in parity suite."""
+"""Audited Schema3 product facts; native acceptance also runs in parity suite."""
 from pathlib import Path
 import re,sys
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'scripts/rules'))
 from ZUIOPT_rule_pack import parse_rules,dump_rules,appopt,unpack
-CANONICAL=b'schema 2\nenabled true\nprofile Shared 2-6\nthread Shared Pool exact "Worker" selector=rank:2 40 7\nthread Shared Pool prefix "Worker-" selector=rank:2 30 7\nthread Shared All contains "Render" selector=all 20 2-4\nthread Shared Glob glob "Job*" selector=all 10 5-6\npackage exact org.example.game Shared 100\npackage prefix org.other Shared 90\n'
+CANONICAL=b'schema 3\nenabled true\nprofile Shared 2-6\nthread Shared Pool exact "Worker" selector=rank:2 40 7\nthread Shared Pool prefix "Worker-" selector=rank:2 30 7\nthread Shared All contains "Render" selector=all 20 2-4\nthread Shared Glob glob "Job*" selector=all 10 5-6\npackage exact org.example.game Shared 100\npackage prefix org.other Shared 90\n'
 INVALID=[CANONICAL.replace(b'selector=rank:2',b'selector='+scope) for scope in (b'thread',b'task',b'process')]
 INVALID += [CANONICAL+b'enabled org.example.game false\n',CANONICAL+b'ruleName Rule_Game_Main\n']
 INVALID += [CANONICAL+b'sched FIFO\n',CANONICAL+b'sched RR\n',CANONICAL+b'nice -10\n',CANONICAL+b'uclamp 100\n']
@@ -30,7 +30,7 @@ def check():
  for forbidden in ('sched_setscheduler','sched_setparam','setpriority','UCLAMP_MIN','UCLAMP_MAX'):
   assert not re.search(r'\b'+forbidden+r'\b',engine),forbidden
  assert not re.search(r'\bnice\s*\(',engine)
- # Owner ADCB explicitly adds sched_attr ownership. Schema2 still accepts no RT directives.
+ # Owner ADCB explicitly adds sched_attr ownership. Schema3 runtime mode/rt directives use the separate owned-runtime contract.
  assert 'SYS_sched_getattr' in engine and 'SYS_sched_setattr' in engine
- print('SCHEMA_CONTRACT=PASS schema2 grammar; explicit ADCB sched_attr ownership separately tested')
+ print('SCHEMA_CONTRACT=PASS schema3 grammar; explicit ADCB sched_attr ownership separately tested')
 if __name__=='__main__':check()

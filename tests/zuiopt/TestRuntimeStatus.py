@@ -1,5 +1,6 @@
 """Execute exact production runtime status seams; placement/storage are mocks, not kernel proof."""
 import argparse
+import re
 import hashlib
 import json
 from pathlib import Path
@@ -10,7 +11,9 @@ import tempfile
 ROOT=Path(__file__).resolve().parents[2]
 
 def method(text,signature):
-    start=text.index(signature);brace=text.index('{',start);depth=0;quote=None;escape=False
+    tokens=re.findall(r'[A-Za-z_]\w*|[0-9]+|::|&&|[^\s]',signature.strip());found=re.search(r'\s*'.join(re.escape(t) for t in tokens),text)
+    assert found is not None,signature
+    start=found.start();brace=text.index('{',start);depth=0;quote=None;escape=False
     for at in range(brace,len(text)):
         char=text[at]
         if quote:
@@ -28,35 +31,36 @@ def fixture():
     paths=['native/zuiopt/'+name for name in ('ZUIopt_daemon.h','ZUIopt_runtime.h','ZUIopt_store.h','ZUIopt.cpp','ZUIopt_rules.h')]+['tests/zuiopt/ZUIoptRuntimeTest.cpp','native/zuiopt/ZUIopt_owner.h']
     sources={path:(ROOT/path).read_text('utf8') for path in paths}
     daemon=sources[paths[0]];runtime=sources[paths[1]];store=sources[paths[2]];cli=sources[paths[3]];rules=sources[paths[4]]
-    probe=method(sources[paths[6]],'    std::string probeWaltCapability()')
+    compact=lambda text:re.sub(r'\s+','',text)
+    probe=compact(method(sources[paths[6]],'std::string probeWaltCapability()'))
     joined=probe.index('stop=true;worker.join();')
     assert probe.index('boost_restored_while_alive')>joined
     assert probe.index('restored==original&&journal.same(r)')<joined
     assert probe.index('reduceRestored==(reduce==-1?255:reduce)&&journal.same(r)')<joined
     assert probe.index('journal.entries.erase(tid)')>joined
     assert 'identity(' not in probe[joined:probe.index('journal.entries.erase(tid)')]
-    startup=daemon[daemon.index('phase=StartupStage::PLACEMENT;'):daemon.index('phase=StartupStage::RECONCILE;')]
+    checked=compact(daemon)
+    startup=checked[checked.index('phase=StartupStage::PLACEMENT;'):checked.index('phase=StartupStage::RECONCILE;')]
     assert startup.index('placement=std::make_unique<Placement>')<startup.index('invalidateRuntime();')<startup.index('sceneObserver=std::make_unique<SceneObserver>')
     assert 'try{' not in startup[startup.index('invalidateRuntime();'):startup.index('sceneObserver=')]
-    reload=method(daemon,'if(valid){phase=StartupStage::RELOAD;')
-    assert reload.index('invalidateRuntime();')<reload.index('for(auto& [_,p]:states){')<reload.index('config=std::move(next)')
+    reload=compact(method(daemon,'if(valid){phase=StartupStage::RELOAD;'))
+    assert reload.index('invalidateRuntime();')<reload.index('for(auto&[_,p]:states){')<reload.index('config=std::move(next)')
     assert 'if(p.writable()&&before&&after&&samePlacementContract(*before,*after))p.next=now();' in reload
-    assert 'else release(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP);' in reload
-    assert reload.index('const auto* before=config.find(p.package);const auto* after=next.find(p.package);')<reload.index('samePlacementContract(')<reload.index('config=std::move(next)')
+    assert 'elserelease(p,ReleaseCause::RELOAD_OR_CONTROLLED_STOP);' in reload
+    assert reload.index('constauto*before=config.find(p.package);constauto*after=next.find(p.package);')<reload.index('samePlacementContract(')<reload.index('config=std::move(next)')
     assert reload.index('loadedConfig=std::move(nextBytes)')<reload.index('loadedIdentity=loadedGenerationIdentity(')<reload.index('publishRuntime();')<reload.index('reconcile(observer->snapshot())')<reload.index('acknowledgeRuntime();')
-    assert daemon.count('placement->release(')==1
-    assert 'for(auto& [_,p]:states)release(p,cause)' in daemon
-    assert daemon.count('loadedIdentity=loadedGenerationIdentity(')==2
-    assert 'recordLoadedGeneration(stateRoot,' not in daemon
-    ack=method(daemon,'    void acknowledgeRuntime()') if '    void acknowledgeRuntime()' in daemon else '    void acknowledgeRuntime(){recordLoadedIdentity(stateRoot,loadedIdentity);}'
-    if '    void acknowledgeRuntime()' in daemon:
-        assert daemon.count('recordLoadedIdentity(stateRoot,loadedIdentity)')==1 and daemon.count('acknowledgeRuntime();')==2
-    publish=method(daemon,'    void publishRuntime()')
+    assert checked.count('placement->release(')==1
+    assert 'for(auto&[_,p]:states)release(p,cause)' in checked
+    assert checked.count('loadedIdentity=loadedGenerationIdentity(')==2
+    assert 'recordLoadedGeneration(stateRoot,' not in checked
+    ack=method(daemon,'void acknowledgeRuntime()')
+    assert checked.count('recordLoadedIdentity(stateRoot,loadedIdentity)')==1 and checked.count('acknowledgeRuntime();')==2
+    publish=method(daemon,'void publishRuntime()')
     assert 'sha256' not in publish and 'loadedGenerationIdentity' not in publish
-    scan=daemon[daemon.index('void scan('):daemon.index('    void stats()')]
+    scan=checked[checked.index('voidscan('):checked.index('voidstats()')]
     assert 'runtimeProcesses[p.pid]=status.str();runtimePending=false;publishRuntime();' in scan
     for key in ('"uid"','"C1Start"','"C2Start"'):assert key.replace('"','\\"') in scan
-    assert 'loadedGenerationIdentity(bytes,' in method(store,'inline void recordLoadedGeneration(')
+    assert 'loadedGenerationIdentity(bytes,' in compact(method(store,'inline void recordLoadedGeneration('))
     definitions='\n'.join(method(runtime,signature) for signature in ('inline std::string runtimeOwnerHeader(','inline std::string runtimeEnvelope(','inline bool runtimeOwnerMatches('))
     definitions+='\n'+'\n'.join(method(source,signature) for source,signature in ((rules,'inline bool hex('),(store,'inline bool generationId('),(store,'inline std::string generationOf('),(store,'inline std::string loadedGenerationIdentity(')))
     seams='\n'.join(method(daemon,signature) for signature in ('    void release(ProcessState& p,ReleaseCause cause)','    void release(ProcessState& p)','    void invalidateRuntime()','    void publishRuntime()'))
@@ -132,7 +136,7 @@ int main(){try{
  test("RELOAD_INVALIDATION_NEVER_RELABELS_OLD_ROWS",[]{StatusCore c("reload");c.seed();c.pl.contention=true;c.invalidateRuntime();c.release(c.states.at(42),ReleaseCause::RELOAD_OR_CONTROLLED_STOP);c.loadedIdentity="g"+std::string(24,'c')+OWNER.substr(25);c.publishRuntime();require(c.states.at(42).managed()&&c.runtimeProcesses.empty()&&c.file().find("PENDING_OWNER_ACK")!=std::string::npos&&runtimeOwnerMatches(c.file(),BOOT,c.loadedIdentity)&&!runtimeOwnerMatches(c.file(),BOOT,OWNER)&&c.j.entries==2,"reload relabelled old observation");});
  test("PHYSICAL_RELEASE_EXCEPTION_RETAINS_OBSERVATION",[]{StatusCore c("physicalfail");c.seed();auto old=c.file();c.pl.denied=true;try{c.release(c.states.at(42),ReleaseCause::CRASH_RECOVERY);}catch(const std::runtime_error&){}require(c.states.at(42).managed()&&c.runtimeProcesses.count(42)&&c.file()==old,"failed release erased facts");});
  test("PUBLISH_NEVER_REHASHES_CONFIG_OR_REWRITES_IDENTICAL_IDLE",[]{StatusCore c("idle");c.invalidateRuntime();auto count=stores[c.stateRoot].writes;int before=hashes;for(int i=0;i<100;i++)c.publishRuntime();require(stores[c.stateRoot].writes==count&&hashes==before,"new steady hash/write work");});
- test("SHARED_LOADED_RECEIPT_IDENTITY_FORMAT",[]{auto text="# ZUIOPT_GENERATION g"+std::string(24,'a')+"\nschema 2\nenabled true\n";require(loadedGenerationIdentity(text,BOOT,17,123)==OWNER,"loaded identity grammar drift");});
+ test("SHARED_LOADED_RECEIPT_IDENTITY_FORMAT",[]{auto text="# ZUIOPT_GENERATION g"+std::string(24,'a')+"\nschema 3\nenabled true\n";require(loadedGenerationIdentity(text,BOOT,17,123)==OWNER,"loaded identity grammar drift");});
  test("LOADED_RECEIPT_REUSES_CACHED_IDENTITY_AND_EXACT_NEWLINE",[]{int count=hashes;recordLoadedIdentity("receipt",OWNER);require(stores["receipt"].files["loaded-generation.v2"]==OWNER+"\n"&&hashes==count,"receipt grammar or duplicate hash work");stores["receipt"].fail=true;recordLoadedIdentity("receipt",OWNER+"x");require(stores["receipt"].files["loaded-generation.v2"]==OWNER+"\n","failed receipt changed previous ACK");});
  test("CLI_ACCEPTS_CURRENT_BOUND_CAPTURED_SNAPSHOT",[]{cliSetup();RuleStore s;auto expected=stores[ROOT].files["runtime-status.v1"];require(runtimeRead(s)==expected&&s.calls==2&&selectedCalls==2,"current capture not acknowledged");});
  test("CLI_REJECTS_OLD_OWNER_BOOT_GENERATION_HASH_SCHEMA",[]{for(auto owner:std::vector<std::string>{OWNER+"x","g"+std::string(24,'c')+OWNER.substr(25),OWNER.substr(0,OWNER.size()-1)+"c"}){cliSetup();stores[ROOT].files["runtime-status.v1"]=runtimeEnvelope(BOOT,owner,false,{});RuleStore s;require(noAck(runtimeRead(s)),"wrong owner accepted");}cliSetup();stores[ROOT].files["runtime-status.v1"]=runtimeEnvelope("10000000-0000-0000-0000-000000000000",OWNER,false,{});RuleStore s;require(noAck(runtimeRead(s)),"wrong boot accepted");cliSetup();stores[ROOT].files["runtime-status.v1"]="{\"schema\":1,\"processes\":[]}\n";RuleStore legacy;require(noAck(runtimeRead(legacy)),"legacy unbound file accepted");});

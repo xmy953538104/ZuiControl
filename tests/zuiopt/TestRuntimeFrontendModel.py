@@ -24,9 +24,9 @@ fun main(){
  check(ZuioptRuleModel.parseNormalized(manual.normalized()).appProfile("org.first.app")!!.runtime.rt==-1)
  check(ZuioptRuleModel.parseNormalized(changed.normalized()).appProfile("org.first.app")!!.runtime.mode==2)
  for(bad in listOf(text.replace("schema 3","schema 2"),text.replace("runtime_defaults 1 1","runtime_defaults 3 1"),text.replace("preset double","explicit double"),text.replace("preset double","preset unknown"),text.replace("runtime Shared -1 -1 preset double","runtime Shared -1 -1 preset double\nruntime Shared 0 0 preset none"))){check(runCatching{ZuioptRuleModel.parseNormalized(bad)}.isFailure)}
- val legacy="schema 2\nenabled true\ndebug false\nprofile Shared 2,3,4,5,6\nthread Shared C2 contains \"Thread-\" selector=rank:1 100000 7\npackage exact org.first.app Shared 100000\n"
- check(ZuioptRuleModel.parseNormalized(legacy).normalized()==legacy)
- val upgrade=ZuioptRuleModel.parseNormalized(legacy).editApp("org.first.app"){it.copy(runtime=ZuioptRuleModel.Runtime(1,1,"preset","dummy"))}
+ val legacy="schema 3\nenabled true\ndebug false\nprofile Shared 2,3,4,5,6\nthread Shared C2 contains \"Thread-\" selector=rank:1 100000 7\npackage exact org.first.app Shared 100000\n"
+ val normalized=ZuioptRuleModel.parse(legacy).normalized();check(ZuioptRuleModel.parseNormalized(normalized).normalized()==normalized)
+ val upgrade=ZuioptRuleModel.parseNormalized(normalized).editApp("org.first.app"){it.copy(runtime=ZuioptRuleModel.Runtime(1,1,"preset","dummy"))}
  check(upgrade.normalized().startsWith("schema 3\n"));check(ZuioptRuleModel.parseNormalized(upgrade.normalized()).appProfile("org.first.app")!!.runtime.marker=="dummy")
  println("SCHEMA3_FRONTEND_RUNTIME_LOCAL_DRAFT_INHERITANCE_PROVENANCE_SHARED_APP_AND_LEGACY=PASS")
 }

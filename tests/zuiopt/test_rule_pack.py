@@ -6,8 +6,8 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/rules'))
 from ZUIOPT_rule_pack import *
 
-BASE=b'schema 2\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n'
-OPEN=b'schema 2\nenabled true\nprofile G 2-7\nthread G ALL glob "Job.worker[AB]*" selector=all 30 2-4\nthread G R1 prefix Top selector=rank:1 20 7\nthread G R2 contains Runner selector=rank:2 10 5-6\npackage exact org.example.game G 100\n'
+BASE=b'schema 3\nenabled true\nprofile G 2-6\npackage exact org.example.game G 100\n'
+OPEN=b'schema 3\nenabled true\nprofile G 2-7\nthread G ALL glob "Job.worker[AB]*" selector=all 30 2-4\nthread G R1 prefix Top selector=rank:1 20 7\nthread G R2 contains Runner selector=rank:2 10 5-6\npackage exact org.example.game G 100\n'
 
 class Rules(unittest.TestCase):
     def test_future_recovered_selector_required(self):
@@ -40,7 +40,7 @@ class Rules(unittest.TestCase):
             self.assertEqual(c['profiles'][match[2]]['mask'],mask_expected)
         self.assertEqual(old,canonical_workflow(BASE,new,'canonical','Old','repo/commit/run','a'*64)[0])
         self.assertIsNone(canonical_workflow(BASE,new,'canonical','Compare','repo/commit/run','a'*64)[0])
-        distinct=b'schema 2\nenabled true\nprofile X 0-1\npackage exact org.new.game X 99\n'
+        distinct=b'schema 3\nenabled true\nprofile X 0-1\npackage exact org.new.game X 99\n'
         clean,_=canonical_workflow(BASE,distinct,'canonical','Clean','repo/commit/run','a'*64)
         self.assertEqual(len(config(clean)['packages']),2)
         prefix=BASE.replace(b'package exact org.example.game',b'package prefix org.example.')
@@ -66,8 +66,8 @@ class Rules(unittest.TestCase):
         for p in ('','[','[]','[z-a]','[a-]','[!a]','[a','a]','\\*','a'*65):
             with self.subTest(p=p),self.assertRaises(ValueError): validate_glob(p)
     def test_rules_bounds(self):
-        cases=[b'',b'#'*65537,BASE.replace(b'2-6',b'0-8'),BASE.replace(b'schema 2',b'schema 1'),BASE+b'profile G 1\n',BASE+b'package exact org.other G 100\n',BASE+b'package exact org.example.game G 99\n',OPEN.replace(b'selector=all',b'selector=rank:0'),OPEN.replace(b'selector=all',b'selector=rank:1025'),OPEN.replace(b'selector=all',b'auto'),OPEN.replace(b' 20 7',b' 30 7'),OPEN.replace(b' R2 ',b' R1 '),BASE+b'unknown true\n']
-        cases+=[b'schema 2\nenabled true\n'+b''.join(f'profile G{n} 2-6\n'.encode() for n in range(65))]
+        cases=[b'',b'#'*65537,BASE.replace(b'2-6',b'0-8'),BASE.replace(b'schema 3',b'schema 1'),BASE+b'profile G 1\n',BASE+b'package exact org.other G 100\n',BASE+b'package exact org.example.game G 99\n',OPEN.replace(b'selector=all',b'selector=rank:0'),OPEN.replace(b'selector=all',b'selector=rank:1025'),OPEN.replace(b'selector=all',b'auto'),OPEN.replace(b' 20 7',b' 30 7'),OPEN.replace(b' R2 ',b' R1 '),BASE+b'unknown true\n']
+        cases+=[b'schema 3\nenabled true\n'+b''.join(f'profile G{n} 2-6\n'.encode() for n in range(65))]
         cases+=[BASE+b''.join(f'thread G R{n} exact t{n} selector=all {n} 7\n'.encode() for n in range(33))]
         cases+=[BASE+b''.join(f'package exact org.a{n} G {n+101}\n'.encode() for n in range(512))]
         for data in cases:

@@ -67,7 +67,7 @@ struct ReentryFixture:BackgroundFixture {
         auto start=p().acquireStarted;tick(time);for(int dt:{100,250,500,750,1000})if(!p().managed())tick(std::max(start+dt,time+dt));
         require(p().managed()&&!p().acquiring(),"STICKY_RELEASE_OUTAGE");
         owner->prepare(p());
-        auto g07=parseConfig("schema 2\nenabled true\nprofile G 2-6\nthread G R exact Render selector=rank:1 20 2-4\nthread G T exact Game selector=rank:1 10 7\npackage exact org.example.game G 100\n",255);
+        auto g07=parseConfig("schema 3\nenabled true\nprofile G 2-6\nthread G R exact Render selector=rank:1 20 2-4\nthread G T exact Game selector=rank:1 10 7\npackage exact org.example.game G 100\n",255);
         const auto& profile=*g07.find("org.example.game");
         std::vector<RankedTask> render={{20,43}},game={{10,44}};
         int r=representative(render,1),g=representative(game,1);
