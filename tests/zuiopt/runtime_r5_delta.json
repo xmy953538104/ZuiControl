@@ -3,6 +3,7 @@
   "baseHead": "d54bbee0215989b3f4a2737aff30d315f590eaa3",
   "allowedPaths": [
     ".clang-format",
+    ".github/workflows/backend-native.yml",
     ".github/workflows/build.yml",
     "app/src/main/java/com/zui/zuicontrol/FrontendGateway.kt",
     "app/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
@@ -79,6 +80,20 @@
       "hunks": []
     },
     {
+      "path": ".github/workflows/backend-native.yml",
+      "beforeSha256": "e93ee7266ba4e35b8edeef5e7965b6659186240a5d80b7689d88d5ff895e7b70",
+      "afterSha256": "43cb88af03824c3de1892b5e6840cbf8ff4bb3991dbd34abe32e2e95726f1ae6",
+      "beforeEntry": "100644 blob d8050808f830fb47837fb060f0b0669421d669cc\t.github/workflows/backend-native.yml",
+      "afterEntry": "100644 blob 1010294d4318b55b522ff08b6046d08e4dde2de6\t.github/workflows/backend-native.yml",
+      "before": null,
+      "hunks": [
+        {
+          "before": "            binary=\"$RUNNER_TEMP/zuiopt-$name\"\n            if clang++ -std=c++17 -O1 -Wall -Wextra -Werror -I tests/zuiopt/fixtures/binder_ndk \\\n                \"tests/zuiopt/ZUIopt${name}Test.cpp\" -lz \"${options[@]}\" -o \"$binary\" 2>&1 | tee \"$receipt/$name-compile.log\"; then\n              sudo timeout --kill-after=10s 5m \"$binary\" 2>&1 | tee \"$receipt/$name.log\" || failed=1\n            else\n              failed=1\n            fi\n",
+          "after": "            binary=\"$RUNNER_TEMP/zuiopt-$name\"\n            if clang++ -std=c++17 -O1 -Wall -Wextra -Werror -I tests/zuiopt/fixtures/binder_ndk \\\n                \"tests/zuiopt/ZUIopt${name}Test.cpp\" -lz \"${options[@]}\" -o \"$binary\" 2>&1 | tee \"$receipt/$name-compile.log\"; then\n              if [[ \"$name\" == Authority || \"$name\" == Lease ]]; then\n                sudo timeout --kill-after=10s 5m \"$binary\" --storage=disk --deterministic-only \\\n                  2>&1 | tee \"$receipt/$name.log\" || failed=1\n                grep -Fx 'FIXTURE_STORAGE=DISK_DURABILITY;SHARD=0/1' \"$receipt/$name.log\" || failed=1\n                if [[ \"$name\" == Authority ]]; then expected='AUTHORITY_EXECUTED=500;DENOMINATOR=2000';\n                else expected='LEASE_EXECUTED=1250;DENOMINATOR=5000'; fi\n                for shard in 0 1 2 3; do\n                  log=\"$receipt/$name-ram-$shard.log\"\n                  sudo timeout --kill-after=10s 2m \"$binary\" --storage=ram --stress-only --shard=\"$shard/4\" \\\n                    2>&1 | tee \"$log\" || failed=1\n                  grep -Fx \"FIXTURE_STORAGE=RAM_LOGIC_NOT_DURABILITY;SHARD=$shard/4\" \"$log\" || failed=1\n                  grep -Fx \"$expected\" \"$log\" || failed=1\n                  cat \"$log\" >> \"$receipt/$name.log\"\n                done\n              else\n                sudo timeout --kill-after=10s 5m \"$binary\" 2>&1 | tee \"$receipt/$name.log\" || failed=1\n              fi\n            else\n              failed=1\n            fi\n"
+        }
+      ]
+    },
+    {
       "path": ".github/workflows/build.yml",
       "beforeSha256": "379be5a581eb7e923c29c228bfa0bc7af25bec314f1a4cd5faa1df6cc8f77f6f",
       "afterSha256": "083f86a5dfdc9971ac71b9bcea36d53f8b795db49b1df48a2d8fec62d018ca1a",
@@ -139,9 +154,9 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "beforeSha256": "92670949e22e7c9290f256eb6025b80394bf57f3d6eddfd1edc1a41af247334e",
-      "afterSha256": "e2934f47018db10f877b08263a78eb428d2110610b2570e78019bb142b0d64e1",
+      "afterSha256": "04d4267afd2dd44b99f2d627f2754809d23f85b708822cf232f2163b77fba4e0",
       "beforeEntry": "100644 blob abf3a64a75ac0f5227220c2d5bca2406284fea12\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "afterEntry": "100644 blob 32bf45549f563039c996ae5e319d6abda5097162\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "afterEntry": "100644 blob 808c1cd6082f954be89d60cb3e1ff65d288a2395\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "before": null,
       "hunks": [
         {
@@ -179,6 +194,10 @@
         {
           "before": "        val base = model ?: return\n        val p = base.appProfile(pkg)\n        session.ruleDraft = RuleDraft(pkg, base, checkNotNull(snapshot).generation, p, p ?: ZuioptRuleModel.Profile((0..7).toSet(), emptyList()))\n    }\n    private fun threadApp() {\n        val pkg=session.selected;val d=session.ruleDraft\n",
           "after": "        val base = model ?: return\n        val p = base.appProfile(pkg)\n        session.ruleDraft = RuleDraft(pkg, base, checkNotNull(snapshot).generation, p, p ?: ZuioptRuleModel.Profile((0..7).toSet(), emptyList()))\n    }\n    private fun ordinaryTemplateDialog() {\n        ownerModal?.open(\"普通应用模板\",\"先生成本地草稿。默认 CPU 0–7，高级调度继承全局；不会根据线程名或 CPU 自动开启 RT。\",480,owner.column(),listOf(\n            owner.button(\"取消\"){ownerModal?.close();session.clearDrafts();session.selected=\"\";render()},\n            owner.button(\"从记录选择目标\"){ownerModal?.close();analysisPage=true;render()},\n            owner.button(\"普通应用\",\"primary\"){ownerModal?.close();render()}))\n    }\n    private fun threadApp() {\n        val pkg=session.selected;val d=session.ruleDraft\n"
+        },
+        {
+          "before": "                    table.addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))\n                    if(rule.cpuMask.isEmpty())table.addView(note(\"请选择 CPU 后再保存\",orange))\n                }\n                rowsHost.addView(owner.scroll(table,minOf(214,28+d.profile.rules.size*40)))\n                }\n                bindPresentation{\n                    val next=d.profile.rules.map{listOf(it.competitionClass,it.matchKind,it.pattern,it.selector,it.priority,it.cpuMask.isEmpty())}.toString()\n",
+          "after": "                    table.addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))\n                    if(rule.cpuMask.isEmpty())table.addView(note(\"请选择 CPU 后再保存\",orange))\n                }\n                rowsHost.addView(owner.scroll(table,if(d.profile.rules.isEmpty())180 else minOf(214,28+d.profile.rules.size*40)))\n                }\n                bindPresentation{\n                    val next=d.profile.rules.map{listOf(it.competitionClass,it.matchKind,it.pattern,it.selector,it.priority,it.cpuMask.isEmpty())}.toString()\n"
         },
         {
           "before": "            addView(button(\"加入规则草稿\", true) { mutateRule {\n                val d = session.ruleDraft ?: return@mutateRule\n                if (chosen.isEmpty()) { toast(\"请先选择线程名组\"); return@mutateRule }\n                if (chosen.any { it.length > 64 || it.any { c -> c.code !in 32..126 } }) { toast(\"所选线程名无法表示为 Schema2 匹配，请手动编辑\"); return@mutateRule }\n                if (d.profile.rules.size + chosen.size > 32) { toast(\"最多 32 条规则\"); return@mutateRule }\n                val used = d.profile.rules.map { it.competitionClass }.toMutableSet()\n                val additions = chosen.map { name -> val group = (0..64).map { \"group$it\" }.first { it !in used }; used += group\n                    ZuioptRuleModel.Rule(group, \"exact\", name, \"all\", 0, emptySet()) }\n                d.profile = d.profile.copy(rules = d.profile.rules + additions); render()\n            } })\n        }, gap())\n    }\n",

@@ -157,7 +157,23 @@ jobs:
             binary="$RUNNER_TEMP/zuiopt-$name"
             if clang++ -std=c++17 -O1 -Wall -Wextra -Werror -I tests/zuiopt/fixtures/binder_ndk \
                 "tests/zuiopt/ZUIopt${name}Test.cpp" -lz "${options[@]}" -o "$binary" 2>&1 | tee "$receipt/$name-compile.log"; then
-              sudo timeout --kill-after=10s 5m "$binary" 2>&1 | tee "$receipt/$name.log" || failed=1
+              if [[ "$name" == Authority || "$name" == Lease ]]; then
+                sudo timeout --kill-after=10s 5m "$binary" --storage=disk --deterministic-only \
+                  2>&1 | tee "$receipt/$name.log" || failed=1
+                grep -Fx 'FIXTURE_STORAGE=DISK_DURABILITY;SHARD=0/1' "$receipt/$name.log" || failed=1
+                if [[ "$name" == Authority ]]; then expected='AUTHORITY_EXECUTED=500;DENOMINATOR=2000';
+                else expected='LEASE_EXECUTED=1250;DENOMINATOR=5000'; fi
+                for shard in 0 1 2 3; do
+                  log="$receipt/$name-ram-$shard.log"
+                  sudo timeout --kill-after=10s 2m "$binary" --storage=ram --stress-only --shard="$shard/4" \
+                    2>&1 | tee "$log" || failed=1
+                  grep -Fx "FIXTURE_STORAGE=RAM_LOGIC_NOT_DURABILITY;SHARD=$shard/4" "$log" || failed=1
+                  grep -Fx "$expected" "$log" || failed=1
+                  cat "$log" >> "$receipt/$name.log"
+                done
+              else
+                sudo timeout --kill-after=10s 5m "$binary" 2>&1 | tee "$receipt/$name.log" || failed=1
+              fi
             else
               failed=1
             fi

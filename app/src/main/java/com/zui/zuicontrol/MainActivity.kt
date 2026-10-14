@@ -1356,7 +1356,7 @@ class MainActivity : Activity() {
                     table.addView(View(this@MainActivity).apply{setBackgroundColor(owner.line)},LinearLayout.LayoutParams(-1,dp(1)))
                     if(rule.cpuMask.isEmpty())table.addView(note("请选择 CPU 后再保存",orange))
                 }
-                rowsHost.addView(owner.scroll(table,minOf(214,28+d.profile.rules.size*40)))
+                rowsHost.addView(owner.scroll(table,if(d.profile.rules.isEmpty())180 else minOf(214,28+d.profile.rules.size*40)))
                 }
                 bindPresentation{
                     val next=d.profile.rules.map{listOf(it.competitionClass,it.matchKind,it.pattern,it.selector,it.priority,it.cpuMask.isEmpty())}.toString()
