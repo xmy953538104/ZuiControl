@@ -842,7 +842,7 @@ class RuleStore {
         if (runtime)
             require(generationOf(s.effective) == argument.substr(8), "runtime read generation changed");
         auto status = state(s) + failureState() + "upstream_metadata_sha256=" + sha256(s.upstreamMetadata) +
-                      "\nrules_read_transport=DAEMON_SNAPSHOT_V1\n";
+                      "\nrules_read_transport=DAEMON_SNAPSHOT_V1\nrules_commit_transport=ZLIB_USER_V1\n";
         require(status.size() <= 4608, "rules read state bound");
         if (runtime) {
             auto body = root.get("runtime-status.v1", RUNTIME_STATUS_LIMIT);
@@ -947,6 +947,39 @@ class RuleStore {
         auto s = current();
         require(s.canonical, "canonical migration required");
         require(!root.exists("settings.pending"), "settings restore recovery required");
+        if (action == "commit" && !value.empty()) {
+            // One authenticated envelope, unchanged durable upload/commit and exclusive store lock.
+            auto f = fields(value, ':');
+            require(value.size() <= 10924 && f.size() == 5 && f[0] == "zlib-user-v1" && generationId(f[1]) &&
+                        f[1] == generationOf(s.effective) && rx(f[2], "[0-9]{1,6}") && hex(f[3], 64) && hex(id, 24),
+                    "inline commit metadata");
+            size_t size = number(f[2]);
+            require(size > 0 && size <= RULE_LIMIT, "inline commit bound");
+            auto packed = unbase64(f[4], 8192);
+            std::string bytes(size, '\0');
+            z_stream stream{};
+            stream.next_in = reinterpret_cast<Bytef *>(packed.data());
+            stream.avail_in = packed.size();
+            stream.next_out = reinterpret_cast<Bytef *>(bytes.data());
+            stream.avail_out = bytes.size();
+            require(inflateInit(&stream) == Z_OK, "inline inflate init");
+            int result = inflate(&stream, Z_FINISH);
+            bool complete = result == Z_STREAM_END && stream.total_out == size && stream.avail_in == 0;
+            inflateEnd(&stream);
+            require(complete && sha256(bytes) == f[3], "inline content length/SHA256");
+            apply("begin", id, "user:" + f[2] + ":" + f[3] + ":-:0:" + f[1]);
+            try {
+                for (size_t offset = 0; offset < bytes.size(); offset += 8192)
+                    apply("chunk", id + ":" + std::to_string(offset), base64(bytes.substr(offset, 8192)));
+                return apply("commit", id, "");
+            } catch (...) {
+                try {
+                    apply("abort", id, "");
+                } catch (...) {
+                }
+                throw;
+            }
+        }
         if (action == "upstream_read") {
             auto input = fields(value, ':');
             require(input.size() == 2 && (input[0] == "rules" || input[0] == "metadata") && rx(input[1], "[0-9]{1,6}"),

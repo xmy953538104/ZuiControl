@@ -92,6 +92,11 @@ class MainActivity : Activity() {
     private var ruleError = ""
     private var rulesQualified = false
     private var ruleLoadStage = "正在连接原生规则…"
+    private var responseReadId=ResponseTrace.begin("cold_page")
+    private var responseResumed=false
+    private var responseFrameKey=""
+    private var responseSaveId=""
+    private var responseNotice=""
     /** Last verified presentation; editing always waits for fresh native identity. */
     private data class LoadedRules(val state:String,val current:ZuioptRules.Snapshot,val model:ZuioptRuleModel,
         val baseline:ZuioptLibrary.Baseline,val upstream:ZuioptRuleModel,val runtime:JSONObject?=null,val runtimeError:String="") {
@@ -117,10 +122,12 @@ class MainActivity : Activity() {
             val task=synchronized(rulesReadLock){
                 rulesRead?.takeUnless{it.isDone} ?: java.util.concurrent.FutureTask {
                     val rs=ZuioptRules.state(context)
+                    ResponseTrace.mark("AUTHORITY_STATE_READY")
                     val cached=rulesCache
                     val fresh=if(cached?.matches(rs)==true)cached.copy(state=rs) else {
                         progress("正在读取生效规则…")
                         val bulk=ZuioptRead.snapshot(rs)
+                        ResponseTrace.mark("CONSISTENT_SNAPSHOT_READY","bytes=${bulk?.let{it.user.length+it.upstream.length+it.metadata.length} ?: 0}")
                         val current=bulk?.let{ZuioptRules.Snapshot(ZuioptRules.field(it.state,"generation"),it.user)} ?: ZuioptRules.userRules(context,rs)
                         val userParse=SystemClock.elapsedRealtimeNanos();val parsed=ZuioptRuleModel.parseNormalized(current.text)
                         OwnerRenderTrace.event("RULES_USER_PARSED","parse_ms=${(SystemClock.elapsedRealtimeNanos()-userParse)/1e6}")
@@ -128,6 +135,7 @@ class MainActivity : Activity() {
                         val up=bulk?.let{ZuioptLibrary.Baseline(ZuioptRules.field(it.state,"generation"),ZuioptRules.field(it.state,"upstream_sha256"),it.upstream,JSONObject(it.metadata))} ?: ZuioptLibrary.baseline(context,rs)
                         check(current.generation==up.generation){"规则版本变化，请刷新"}
                         val upParse=SystemClock.elapsedRealtimeNanos();val upstream=ZuioptRuleModel.parseNormalized(up.rules)
+                        ResponseTrace.mark("RULES_PARSED")
                         OwnerRenderTrace.event("RULES_UPSTREAM_PARSED","parse_ms=${(SystemClock.elapsedRealtimeNanos()-upParse)/1e6}")
                         LoadedRules(bulk?.state ?: rs,current,parsed,up,upstream)
                     }
@@ -281,6 +289,8 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent:Intent){super.onNewIntent(intent);if(intent.getBooleanExtra("openRecord",false)){recordLaunch=intent;if(visible)load()}}
     override fun onSaveInstanceState(out: Bundle) { session.save(out); super.onSaveInstanceState(out) }
     override fun onResume() {
+        if(responseResumed)responseReadId=ResponseTrace.begin("warm_page")
+        responseResumed=true;responseFrameKey=""
         super.onResume(); visible = true; session.onChanged = changed;session.onReconciled=reconciled; session.onControlsChanged = { control->if(visible){rebindControl(control);if(session.error.isNotEmpty())render()} }
         session.ownedExternalFlow=false
         FrontendPackages.observe(applicationContext,inventoryChanged)
@@ -305,16 +315,20 @@ class MainActivity : Activity() {
     /** Each operation consumes its own transport result and presents on the main thread. */
     private fun <T,R> read(name:String, shared:Boolean=false, accept:()->Boolean={true}, finished:()->Unit={}, failed:(Throwable)->Unit={session.error=it.message.orEmpty();if(visible)render()}, fetch:()->T, parse:(T)->R, present:(R)->Unit) {
         if(!loading.add(name))return
+        val traceId=responseReadId
+        ResponseTrace.event(traceId,"READ_ENQUEUED",name)
         val queued=SystemClock.elapsedRealtimeNanos()
         val task={
             val start=SystemClock.elapsedRealtimeNanos();var fetched=start;var parsed=start
-            val result=runCatching{val raw=fetch();fetched=SystemClock.elapsedRealtimeNanos();parse(raw).also{parsed=SystemClock.elapsedRealtimeNanos()}}
+            ResponseTrace.event(traceId,"READ_STARTED",name)
+            val result=runCatching{ResponseTrace.during(traceId){val raw=fetch();fetched=SystemClock.elapsedRealtimeNanos();ResponseTrace.event(traceId,"READ_FETCHED",name);parse(raw).also{parsed=SystemClock.elapsedRealtimeNanos()}}}
             handler.post {
                 loading.remove(name)
                 if(!isDestroyed && accept()) {
                     val presentationStart=SystemClock.elapsedRealtimeNanos()
                     finished()
                     result.mapCatching{present(it)}.onFailure(failed)
+                    ResponseTrace.event(traceId,"READ_PRESENTED",name)
                     OwnerRenderTrace.event("READ_TIMING",JSONObject().put("operation",name).put("lane",if(shared)"SHARED_COMMAND_LANE" else "DIRECT_READ_LANE")
                         .put("queue_wait_ms",(start-queued)/1e6).put("binder_or_command_ms",(fetched-start)/1e6)
                         .put("parse_ms",(parsed-fetched)/1e6).put("presentation_ms",(SystemClock.elapsedRealtimeNanos()-presentationStart)/1e6).toString())
@@ -383,6 +397,7 @@ class MainActivity : Activity() {
         ruleState=fresh.state;snapshot=fresh.current;model=fresh.model;baseline=fresh.baseline;upstreamModel=fresh.upstream;ruleError=""
         runtimeReadback=fresh.runtime;runtimeReadError=fresh.runtimeError
         rulesCache=fresh;rulesQualified=true;ruleLoadStage="";OwnerRenderTrace.event("RULES_STAGE","READY")
+        ResponseTrace.event(responseReadId,"AUTHORITY_QUALIFIED",fresh.current.generation)
         if(session.section=="thread" && session.selected.isNotEmpty() &&
             (session.ruleDraft==null || session.ruleDraft?.let{!it.dirty && it.generation!=fresh.current.generation}==true))openRule(session.selected)
         if(visible)render()
@@ -581,6 +596,15 @@ class MainActivity : Activity() {
         OwnerRenderTrace.bind(physicalHost,ownerCanvas,rail,master,pageHost)
         if(session.notice.isNotEmpty() && session.notice!=shownToast){shownToast=session.notice;toast(session.notice)}
         if(session.notice.isEmpty())shownToast=""
+        if(session.notice!=responseNotice){
+            responseNotice=session.notice
+            if(visible && session.notice.isNotEmpty())ResponseTrace.drawn(pageHost,responseSaveId,if(session.busy)"LOCAL_FEEDBACK_DRAW" else "SAVE_CONFIRM_DRAW")
+        }
+        val responseKey="$responseReadId/${session.section}/$rulesQualified/$inventoryVersion"
+        if(responseKey!=responseFrameKey){
+            responseFrameKey=responseKey
+            ResponseTrace.drawn(pageHost,responseReadId,if(session.section=="thread" && rulesQualified && inventoryVersion==FrontendPackages.version)"EDITABLE_DRAW" else "CONTENT_DRAW")
+        }
 
     }
     private fun buildMaster() {
@@ -976,23 +1000,31 @@ class MainActivity : Activity() {
         if(session.section=="thread" && !rulesQualified){toast("规则校验尚未完成，请重试");return}
         val app = session.appDraft; val gpu = session.gpuDraft; val rule = session.ruleDraft
         val defaults=session.ruleDefaultsDraft
+        val traceId=ResponseTrace.begin("save_${if(defaults!=null)"global" else if(rule?.profile?.runtime?.mode==-1)"inherit" else "app"}")
+        responseSaveId=traceId
         if(defaults!=null && session.section=="thread" && session.selected.isEmpty()) {
-            session.work("已保存并生效",completed=after,feature="rules") {
-                val bytes=defaults.canonical().toByteArray(Charsets.UTF_8);val validation=ZuioptRules.validate(applicationContext,bytes,defaults.generation)
-                check(validation.valid){validation.error};ZuioptRules.upload(applicationContext,"user",bytes,expectedGeneration=defaults.generation)
+            session.work("已保存，原生已加载",completed=after,feature="rules",pending="正在保存规则…",traceId=traceId) {
+                ResponseTrace.mark("SERIALIZE_BEGIN")
+                val bytes=defaults.canonical().toByteArray(Charsets.UTF_8)
+                ResponseTrace.mark("SERIALIZE_END","bytes=${bytes.size}")
+                ZuioptRules.upload(applicationContext,"user",bytes,expectedGeneration=defaults.generation)
                 val fresh=ZuioptRules.userRules(applicationContext);val accepted=ZuioptRuleModel.parseNormalized(fresh.text)
+                ResponseTrace.mark("POST_ACK_AUTHORITY_READY",fresh.generation)
                 check(fresh.generation!=defaults.generation && accepted.mode==defaults.mode && accepted.rt==defaults.rt){"RUNTIME_DEFAULTS_POST_ACK_MISMATCH"}
                 if(session.ruleDefaultsDraft===defaults)session.ruleDefaultsDraft=null
             };return
         }
         if (app != null) { session.saveApp(after); return }
         if (gpu != null) { session.saveGpu(after); return }
-        session.work("已保存并生效", completed = after) {
+        session.work("已保存，原生已加载", completed = after,pending="正在保存规则…",traceId=traceId) {
             when {
                 rule != null -> {
-                    val bytes = rule.canonical().toByteArray(Charsets.UTF_8); val validation = ZuioptRules.validate(applicationContext, bytes, rule.generation)
-                    check(validation.valid) { validation.error }; ZuioptRules.upload(applicationContext, "user", bytes, expectedGeneration = rule.generation)
+                    ResponseTrace.mark("SERIALIZE_BEGIN")
+                    val bytes = rule.canonical().toByteArray(Charsets.UTF_8)
+                    ResponseTrace.mark("SERIALIZE_END","bytes=${bytes.size}")
+                    ZuioptRules.upload(applicationContext, "user", bytes, expectedGeneration = rule.generation)
                     val fresh=ZuioptRules.userRules(applicationContext);val accepted=ZuioptRuleModel.parseNormalized(fresh.text)
+                    ResponseTrace.mark("POST_ACK_AUTHORITY_READY",fresh.generation)
                     val profile=checkNotNull(accepted.appProfile(rule.packageName)){"RULE_POST_ACK_PROFILE_UNAVAILABLE"}
                     check(fresh.generation!=rule.generation){"RULE_POST_ACK_READ_STALE"}
                     rule.base=accepted;rule.generation=fresh.generation;rule.original=profile;rule.profile=profile
@@ -1439,16 +1471,19 @@ class MainActivity : Activity() {
     private fun runtimeDefaultsDialog() {
         if(!rulesQualified||session.busy)return
         val draft=session.ruleDefaultsDraft ?: RuleDefaultsDraft(checkNotNull(model),checkNotNull(snapshot).generation).also{session.ruleDefaultsDraft=it}
+        var save:View?=null
+        fun updateSave(){save?.let{it.isEnabled=draft.dirty;it.alpha=if(draft.dirty)1f else .4f}}
         val box=column().apply {
             addView(owner.section("全局模式","每应用的显式设置优先；继承项跟随此处"))
-            addView(segment(listOf("mode0","mode1","mode2"),draft.mode){draft.mode=it})
+            addView(segment(listOf("mode0","mode1","mode2"),draft.mode){draft.mode=it;updateSave()})
             addView(owner.section("全局 RT","默认关闭；能力不足时保留明确回退结果"),gap())
-            addView(segment(listOf("关闭","开启"),draft.rt){draft.rt=it})
+            addView(segment(listOf("关闭","开启"),draft.rt){draft.rt=it;updateSave()})
         }
-        ownerModal?.open("全局调度默认","修改先留在本地草稿，保存使用当前规则 generation CAS",480,box,listOf(owner.button("取消"){session.ruleDefaultsDraft=null;ownerModal?.close()},owner.button("保存并应用","primary"){
-            if(!rulesQualified||session.busy)return@button
+        save=owner.button("保存并应用","primary",enabled=draft.dirty){
+            if(!rulesQualified||session.busy||!draft.dirty)return@button
             ownerModal?.close();saveDraft()
-        }))
+        }
+        ownerModal?.open("全局调度默认","修改先留在本地草稿，保存使用当前规则 generation CAS",480,box,listOf(owner.button("取消"){session.ruleDefaultsDraft=null;ownerModal?.close()},checkNotNull(save)))
     }
     private fun mutateRule(next: () -> Unit) {
         if(!rulesQualified)return

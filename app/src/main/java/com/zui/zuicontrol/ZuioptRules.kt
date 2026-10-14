@@ -9,6 +9,7 @@ import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.zip.Deflater
 
 /** Client for the existing authenticated command plane; never edits daemon state. */
 object ZuioptRules {
@@ -43,8 +44,11 @@ object ZuioptRules {
         require(action in setOf("state", "reset", "read", "begin", "chunk", "validate", "preview", "upstream_read", "restore_app", "commit", "abort", "enable", "disable", "rollback"))
         require(key.length <= 128 && value.length <= 10924 && '|' !in key && '|' !in value)
         val command = if (action == "reset") ZuiControlContract.CMD_RESET_ZUIOPT_FAILSAFE else "zo_$action"
+        ResponseTrace.mark("COMMAND_BEGIN","action=$action;bytes=${value.toByteArray(Charsets.UTF_8).size}")
         val id = ZuiControlRequest.send(context, command, pkg = key, mode = value)
+        ResponseTrace.mark("COMMAND_ADMITTED","action=$action;request=$id")
         val ack = ZuiControlRequest.awaitTerminalAck(context, id)
+        ResponseTrace.mark("COMMAND_ACK","action=$action;request=$id;state=${ack.state}")
         check(ack.succeeded) { "规则操作未完成：${ack.detail}；请刷新确认状态" }
         return id
     }
@@ -112,7 +116,19 @@ object ZuioptRules {
         require(packId == "-" || packId.matches(Regex("[a-z][a-z0-9_.-]{0,63}")))
         val tx = ByteArray(12).also(random::nextBytes).joinToString("") { "%02x".format(it.toInt() and 255) }
         require(expectedGeneration.matches(Regex("g[0-9a-f]{24}")))
-        command(context, "begin", tx, "$kind:${data.size}:${digest(data)}:$packId:$priority:$expectedGeneration")
+        val hash=digest(data)
+        ResponseTrace.mark("UPLOAD_PREPARED","bytes=${data.size};chunks=${(data.size+CHUNK-1)/CHUNK}")
+        if(kind=="user") {
+            val current=state(context)
+            check(field(current,"generation")==expectedGeneration){"规则版本变化，请刷新"}
+            if(field(current,"rules_commit_transport")=="ZLIB_USER_V1") {
+                inlineUser(data,expectedGeneration,hash)?.let {
+                    try{command(context,"commit",tx,it)}catch(error:Exception){runCatching{command(context,"abort",tx)};throw error}
+                    return
+                }
+            }
+        }
+        command(context, "begin", tx, "$kind:${data.size}:$hash:$packId:$priority:$expectedGeneration")
         try {
             var offset = 0
             while (offset < data.size) {
@@ -126,5 +142,17 @@ object ZuioptRules {
             runCatching { command(context, "abort", tx) }
             throw error
         }
+    }
+
+    internal fun inlineUser(data: ByteArray, generation: String, hash: String=digest(data)): String? {
+        require(data.size in 1..RULE_LIMIT && generation.matches(Regex("g[0-9a-f]{24}")) && hash.matches(Regex("[0-9a-f]{64}")))
+        val compressor=Deflater()
+        val packed=ByteArray(8193)
+        val count=try{compressor.setInput(data);compressor.finish();val n=compressor.deflate(packed)
+            if(!compressor.finished() || n>8192)return null
+            n
+        }finally{compressor.end()}
+        return "zlib-user-v1:$generation:${data.size}:$hash:${Base64.getEncoder().encodeToString(packed.copyOf(count))}"
+            .takeIf{it.length<=10924}
     }
 }

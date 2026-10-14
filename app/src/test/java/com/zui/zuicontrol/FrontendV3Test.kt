@@ -8,6 +8,18 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 class FrontendV3Test {
+    @Test fun pendingFeedbackNeverClaimsSuccessAndDuplicateWorkDoesNotQueue() {
+        val callbacks=LinkedBlockingQueue<()->Unit>();val entered=java.util.concurrent.CountDownLatch(1);val release=java.util.concurrent.CountDownLatch(1)
+        val writes=java.util.concurrent.atomic.AtomicInteger();val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){callbacks.put(it)}
+        try {
+            session.work("已保存，原生已加载",pending="正在保存规则…"){writes.incrementAndGet();entered.countDown();check(release.await(5,TimeUnit.SECONDS))}
+            check(entered.await(5,TimeUnit.SECONDS));assertTrue(session.busy);assertEquals("正在保存规则…",session.notice)
+            session.work("duplicate"){writes.incrementAndGet()};assertEquals(1,writes.get())
+            session.onChanged=null // Backgrounding detaches presentation, not operation reconciliation.
+            release.countDown();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()
+            assertFalse(session.busy);assertEquals("已保存，原生已加载",session.notice);assertEquals(1,writes.get())
+        }finally{release.countDown();session.close()}
+    }
     @Test fun unchangedAppRevisionAdvancesCleanCasButPreservesDirtyCas() {
         val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){}
         try {

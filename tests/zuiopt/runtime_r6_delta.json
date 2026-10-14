@@ -1,0 +1,289 @@
+{
+  "phase": "ZUIOPT_R6_RESPONSE_AND_FINAL_RELEASE",
+  "baseHead": "d0282ffad66bdb3dcb53c9fadbfe783114d7dd7c",
+  "allowedPaths": [
+    ".github/workflows/build.yml",
+    "app/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+    "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+    "app/src/main/java/com/zui/zuicontrol/ResponseTrace.kt",
+    "app/src/main/java/com/zui/zuicontrol/ZuioptRules.kt",
+    "app/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+    "app/src/test/java/com/zui/zuicontrol/InlineRulesTest.kt",
+    "native/zuiopt/ZUIopt_store.h",
+    "tests/monitor/TestGpuDraftLifecycle.py",
+    "tests/zuiopt/InlineCommitTest.h",
+    "tests/zuiopt/TestRuntimeFrontendScope.py",
+    "tests/zuiopt/TestRuntimeR3Scope.py",
+    "tests/zuiopt/TestRuntimeR5Scope.py",
+    "tests/zuiopt/TestRuntimeRecoveryScope.py",
+    "tests/zuiopt/ZUIoptTest.cpp"
+  ],
+  "files": [
+    {
+      "path": ".github/workflows/build.yml",
+      "beforeSha256": "083f86a5dfdc9971ac71b9bcea36d53f8b795db49b1df48a2d8fec62d018ca1a",
+      "afterSha256": "f0f2a92fb3c73f8193d4e827f6713aa3c57521ef3b773c9d75e9e0d0829518ff",
+      "beforeEntry": "100644 blob ba84a14622879ec1dc9d470ca8b08a28198671e8\t.github/workflows/build.yml",
+      "afterEntry": "100644 blob 906e4c3c2d5a594f380341ff377c1afdff01bf15\t.github/workflows/build.yml",
+      "before": null,
+      "hunks": [
+        {
+          "before": "          python3 tests/zuiopt/TestRuntimeFrontendModel.py || scripts_failed=1\n          python3 tests/zuiopt/TestRuntimeFrontendScope.py || scripts_failed=1\n          python3 tests/zuiopt/TestRuntimeR5Scope.py || scripts_failed=1\n          python3 tests/monitor/TestNotificationRenderer.py || scripts_failed=1\n          bash tests/uperf/TestConfigurableAppPolicy.sh || scripts_failed=1\n          python3 tests/monitor/TestRecordSql.py || scripts_failed=1\n",
+          "after": "          python3 tests/zuiopt/TestRuntimeFrontendModel.py || scripts_failed=1\n          python3 tests/zuiopt/TestRuntimeFrontendScope.py || scripts_failed=1\n          python3 tests/zuiopt/TestRuntimeR5Scope.py || scripts_failed=1\n          python3 tests/zuiopt/TestRuntimeR6Scope.py || scripts_failed=1\n          python3 tests/monitor/TestNotificationRenderer.py || scripts_failed=1\n          bash tests/uperf/TestConfigurableAppPolicy.sh || scripts_failed=1\n          python3 tests/monitor/TestRecordSql.py || scripts_failed=1\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+      "beforeSha256": "064c73a9ecfbfe8dad6135c25e5be1238fe94bea95eabe1f6d588c5c8ed44c9b",
+      "afterSha256": "d3d9e9a1f9c06ce4a78d422ca2575032835fd9a719e55361f78621e687ad5146",
+      "beforeEntry": "100644 blob 3bbaedaca6f2bbb32689dc16bd4da48016002120\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+      "afterEntry": "100644 blob 9ecee89e70ca438d9073f378081f5ae811ae61a0\tapp/src/main/java/com/zui/zuicontrol/FrontendSession.kt",
+      "before": null,
+      "hunks": [
+        {
+          "before": "    val appDirty get() = appDraft != null && (newApp || appDraft != originalApp)\n    val dirty get() = appDirty || gpuDraft?.dirty == true || ruleDraft?.dirty == true || ruleDefaultsDraft?.dirty==true\n    fun clearDrafts() { appDraft = null; originalApp = null; newApp = false; gpuDraft = null; ruleDraft = null; ruleDefaultsDraft=null }\n    fun work(success: String = \"\", completed: (() -> Unit)? = null, reconciled: (() -> Unit)? = null, feature:String=\"rules\", task: () -> Unit) {\n        if (busy) return\n        busy = true;workFeature=feature; error = \"\"; notice = \"\"\n        executor.execute {\n            val result = runCatching(task)\n            post {\n                busy = false\n                reconciled?.invoke()\n",
+          "after": "    val appDirty get() = appDraft != null && (newApp || appDraft != originalApp)\n    val dirty get() = appDirty || gpuDraft?.dirty == true || ruleDraft?.dirty == true || ruleDefaultsDraft?.dirty==true\n    fun clearDrafts() { appDraft = null; originalApp = null; newApp = false; gpuDraft = null; ruleDraft = null; ruleDefaultsDraft=null }\n    fun work(success: String = \"\", completed: (() -> Unit)? = null, reconciled: (() -> Unit)? = null, feature:String=\"rules\", pending:String=\"\", traceId:String=\"\", task: () -> Unit) {\n        if (busy) return\n        busy = true;workFeature=feature; error = \"\"; notice = pending\n        ResponseTrace.event(traceId,\"LOCAL_FEEDBACK\")\n        ResponseTrace.event(traceId,\"ENQUEUED\")\n        executor.execute {\n            ResponseTrace.event(traceId,\"DISPATCHED\")\n            val result = runCatching{ResponseTrace.during(traceId,task)}\n            ResponseTrace.event(traceId,\"TASK_TERMINAL\",if(result.isSuccess)\"success\" else \"failed\")\n            post {\n                busy = false\n                reconciled?.invoke()\n"
+        },
+        {
+          "before": "                onReconciled?.invoke(feature)\n                workFeature=\"\"\n                onChanged?.invoke()\n                finishClose()\n            }\n        }\n",
+          "after": "                onReconciled?.invoke(feature)\n                workFeature=\"\"\n                onChanged?.invoke()\n                ResponseTrace.event(traceId,\"UI_CONFIRMED\",if(result.isSuccess)\"saved_loaded;runtime_separate\" else \"failed\")\n                finishClose()\n            }\n        }\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "beforeSha256": "04d4267afd2dd44b99f2d627f2754809d23f85b708822cf232f2163b77fba4e0",
+      "afterSha256": "37ce857657a12250e1ce2490b7c76be8a4131bdf554c5ac6e33562ae23d347c0",
+      "beforeEntry": "100644 blob 808c1cd6082f954be89d60cb3e1ff65d288a2395\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "afterEntry": "100644 blob eba0cb281bc2344718bd30c6950f96fa5e8865f6\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "before": null,
+      "hunks": [
+        {
+          "before": "    private var ruleError = \"\"\n    private var rulesQualified = false\n    private var ruleLoadStage = \"正在连接原生规则…\"\n    /** Last verified presentation; editing always waits for fresh native identity. */\n    private data class LoadedRules(val state:String,val current:ZuioptRules.Snapshot,val model:ZuioptRuleModel,\n        val baseline:ZuioptLibrary.Baseline,val upstream:ZuioptRuleModel,val runtime:JSONObject?=null,val runtimeError:String=\"\") {\n",
+          "after": "    private var ruleError = \"\"\n    private var rulesQualified = false\n    private var ruleLoadStage = \"正在连接原生规则…\"\n    private var responseReadId=ResponseTrace.begin(\"cold_page\")\n    private var responseResumed=false\n    private var responseFrameKey=\"\"\n    private var responseSaveId=\"\"\n    private var responseNotice=\"\"\n    /** Last verified presentation; editing always waits for fresh native identity. */\n    private data class LoadedRules(val state:String,val current:ZuioptRules.Snapshot,val model:ZuioptRuleModel,\n        val baseline:ZuioptLibrary.Baseline,val upstream:ZuioptRuleModel,val runtime:JSONObject?=null,val runtimeError:String=\"\") {\n"
+        },
+        {
+          "before": "            val task=synchronized(rulesReadLock){\n                rulesRead?.takeUnless{it.isDone} ?: java.util.concurrent.FutureTask {\n                    val rs=ZuioptRules.state(context)\n                    val cached=rulesCache\n                    val fresh=if(cached?.matches(rs)==true)cached.copy(state=rs) else {\n                        progress(\"正在读取生效规则…\")\n                        val bulk=ZuioptRead.snapshot(rs)\n                        val current=bulk?.let{ZuioptRules.Snapshot(ZuioptRules.field(it.state,\"generation\"),it.user)} ?: ZuioptRules.userRules(context,rs)\n                        val userParse=SystemClock.elapsedRealtimeNanos();val parsed=ZuioptRuleModel.parseNormalized(current.text)\n                        OwnerRenderTrace.event(\"RULES_USER_PARSED\",\"parse_ms=${(SystemClock.elapsedRealtimeNanos()-userParse)/1e6}\")\n",
+          "after": "            val task=synchronized(rulesReadLock){\n                rulesRead?.takeUnless{it.isDone} ?: java.util.concurrent.FutureTask {\n                    val rs=ZuioptRules.state(context)\n                    ResponseTrace.mark(\"AUTHORITY_STATE_READY\")\n                    val cached=rulesCache\n                    val fresh=if(cached?.matches(rs)==true)cached.copy(state=rs) else {\n                        progress(\"正在读取生效规则…\")\n                        val bulk=ZuioptRead.snapshot(rs)\n                        ResponseTrace.mark(\"CONSISTENT_SNAPSHOT_READY\",\"bytes=${bulk?.let{it.user.length+it.upstream.length+it.metadata.length} ?: 0}\")\n                        val current=bulk?.let{ZuioptRules.Snapshot(ZuioptRules.field(it.state,\"generation\"),it.user)} ?: ZuioptRules.userRules(context,rs)\n                        val userParse=SystemClock.elapsedRealtimeNanos();val parsed=ZuioptRuleModel.parseNormalized(current.text)\n                        OwnerRenderTrace.event(\"RULES_USER_PARSED\",\"parse_ms=${(SystemClock.elapsedRealtimeNanos()-userParse)/1e6}\")\n"
+        },
+        {
+          "before": "                        val up=bulk?.let{ZuioptLibrary.Baseline(ZuioptRules.field(it.state,\"generation\"),ZuioptRules.field(it.state,\"upstream_sha256\"),it.upstream,JSONObject(it.metadata))} ?: ZuioptLibrary.baseline(context,rs)\n                        check(current.generation==up.generation){\"规则版本变化，请刷新\"}\n                        val upParse=SystemClock.elapsedRealtimeNanos();val upstream=ZuioptRuleModel.parseNormalized(up.rules)\n                        OwnerRenderTrace.event(\"RULES_UPSTREAM_PARSED\",\"parse_ms=${(SystemClock.elapsedRealtimeNanos()-upParse)/1e6}\")\n                        LoadedRules(bulk?.state ?: rs,current,parsed,up,upstream)\n                    }\n",
+          "after": "                        val up=bulk?.let{ZuioptLibrary.Baseline(ZuioptRules.field(it.state,\"generation\"),ZuioptRules.field(it.state,\"upstream_sha256\"),it.upstream,JSONObject(it.metadata))} ?: ZuioptLibrary.baseline(context,rs)\n                        check(current.generation==up.generation){\"规则版本变化，请刷新\"}\n                        val upParse=SystemClock.elapsedRealtimeNanos();val upstream=ZuioptRuleModel.parseNormalized(up.rules)\n                        ResponseTrace.mark(\"RULES_PARSED\")\n                        OwnerRenderTrace.event(\"RULES_UPSTREAM_PARSED\",\"parse_ms=${(SystemClock.elapsedRealtimeNanos()-upParse)/1e6}\")\n                        LoadedRules(bulk?.state ?: rs,current,parsed,up,upstream)\n                    }\n"
+        },
+        {
+          "before": "    override fun onNewIntent(intent:Intent){super.onNewIntent(intent);if(intent.getBooleanExtra(\"openRecord\",false)){recordLaunch=intent;if(visible)load()}}\n    override fun onSaveInstanceState(out: Bundle) { session.save(out); super.onSaveInstanceState(out) }\n    override fun onResume() {\n        super.onResume(); visible = true; session.onChanged = changed;session.onReconciled=reconciled; session.onControlsChanged = { control->if(visible){rebindControl(control);if(session.error.isNotEmpty())render()} }\n        session.ownedExternalFlow=false\n        FrontendPackages.observe(applicationContext,inventoryChanged)\n",
+          "after": "    override fun onNewIntent(intent:Intent){super.onNewIntent(intent);if(intent.getBooleanExtra(\"openRecord\",false)){recordLaunch=intent;if(visible)load()}}\n    override fun onSaveInstanceState(out: Bundle) { session.save(out); super.onSaveInstanceState(out) }\n    override fun onResume() {\n        if(responseResumed)responseReadId=ResponseTrace.begin(\"warm_page\")\n        responseResumed=true;responseFrameKey=\"\"\n        super.onResume(); visible = true; session.onChanged = changed;session.onReconciled=reconciled; session.onControlsChanged = { control->if(visible){rebindControl(control);if(session.error.isNotEmpty())render()} }\n        session.ownedExternalFlow=false\n        FrontendPackages.observe(applicationContext,inventoryChanged)\n"
+        },
+        {
+          "before": "    /** Each operation consumes its own transport result and presents on the main thread. */\n    private fun <T,R> read(name:String, shared:Boolean=false, accept:()->Boolean={true}, finished:()->Unit={}, failed:(Throwable)->Unit={session.error=it.message.orEmpty();if(visible)render()}, fetch:()->T, parse:(T)->R, present:(R)->Unit) {\n        if(!loading.add(name))return\n        val queued=SystemClock.elapsedRealtimeNanos()\n        val task={\n            val start=SystemClock.elapsedRealtimeNanos();var fetched=start;var parsed=start\n            val result=runCatching{val raw=fetch();fetched=SystemClock.elapsedRealtimeNanos();parse(raw).also{parsed=SystemClock.elapsedRealtimeNanos()}}\n            handler.post {\n                loading.remove(name)\n                if(!isDestroyed && accept()) {\n                    val presentationStart=SystemClock.elapsedRealtimeNanos()\n                    finished()\n                    result.mapCatching{present(it)}.onFailure(failed)\n                    OwnerRenderTrace.event(\"READ_TIMING\",JSONObject().put(\"operation\",name).put(\"lane\",if(shared)\"SHARED_COMMAND_LANE\" else \"DIRECT_READ_LANE\")\n                        .put(\"queue_wait_ms\",(start-queued)/1e6).put(\"binder_or_command_ms\",(fetched-start)/1e6)\n                        .put(\"parse_ms\",(parsed-fetched)/1e6).put(\"presentation_ms\",(SystemClock.elapsedRealtimeNanos()-presentationStart)/1e6).toString())\n",
+          "after": "    /** Each operation consumes its own transport result and presents on the main thread. */\n    private fun <T,R> read(name:String, shared:Boolean=false, accept:()->Boolean={true}, finished:()->Unit={}, failed:(Throwable)->Unit={session.error=it.message.orEmpty();if(visible)render()}, fetch:()->T, parse:(T)->R, present:(R)->Unit) {\n        if(!loading.add(name))return\n        val traceId=responseReadId\n        ResponseTrace.event(traceId,\"READ_ENQUEUED\",name)\n        val queued=SystemClock.elapsedRealtimeNanos()\n        val task={\n            val start=SystemClock.elapsedRealtimeNanos();var fetched=start;var parsed=start\n            ResponseTrace.event(traceId,\"READ_STARTED\",name)\n            val result=runCatching{ResponseTrace.during(traceId){val raw=fetch();fetched=SystemClock.elapsedRealtimeNanos();ResponseTrace.event(traceId,\"READ_FETCHED\",name);parse(raw).also{parsed=SystemClock.elapsedRealtimeNanos()}}}\n            handler.post {\n                loading.remove(name)\n                if(!isDestroyed && accept()) {\n                    val presentationStart=SystemClock.elapsedRealtimeNanos()\n                    finished()\n                    result.mapCatching{present(it)}.onFailure(failed)\n                    ResponseTrace.event(traceId,\"READ_PRESENTED\",name)\n                    OwnerRenderTrace.event(\"READ_TIMING\",JSONObject().put(\"operation\",name).put(\"lane\",if(shared)\"SHARED_COMMAND_LANE\" else \"DIRECT_READ_LANE\")\n                        .put(\"queue_wait_ms\",(start-queued)/1e6).put(\"binder_or_command_ms\",(fetched-start)/1e6)\n                        .put(\"parse_ms\",(parsed-fetched)/1e6).put(\"presentation_ms\",(SystemClock.elapsedRealtimeNanos()-presentationStart)/1e6).toString())\n"
+        },
+        {
+          "before": "        ruleState=fresh.state;snapshot=fresh.current;model=fresh.model;baseline=fresh.baseline;upstreamModel=fresh.upstream;ruleError=\"\"\n        runtimeReadback=fresh.runtime;runtimeReadError=fresh.runtimeError\n        rulesCache=fresh;rulesQualified=true;ruleLoadStage=\"\";OwnerRenderTrace.event(\"RULES_STAGE\",\"READY\")\n        if(session.section==\"thread\" && session.selected.isNotEmpty() &&\n            (session.ruleDraft==null || session.ruleDraft?.let{!it.dirty && it.generation!=fresh.current.generation}==true))openRule(session.selected)\n        if(visible)render()\n",
+          "after": "        ruleState=fresh.state;snapshot=fresh.current;model=fresh.model;baseline=fresh.baseline;upstreamModel=fresh.upstream;ruleError=\"\"\n        runtimeReadback=fresh.runtime;runtimeReadError=fresh.runtimeError\n        rulesCache=fresh;rulesQualified=true;ruleLoadStage=\"\";OwnerRenderTrace.event(\"RULES_STAGE\",\"READY\")\n        ResponseTrace.event(responseReadId,\"AUTHORITY_QUALIFIED\",fresh.current.generation)\n        if(session.section==\"thread\" && session.selected.isNotEmpty() &&\n            (session.ruleDraft==null || session.ruleDraft?.let{!it.dirty && it.generation!=fresh.current.generation}==true))openRule(session.selected)\n        if(visible)render()\n"
+        },
+        {
+          "before": "        OwnerRenderTrace.bind(physicalHost,ownerCanvas,rail,master,pageHost)\n        if(session.notice.isNotEmpty() && session.notice!=shownToast){shownToast=session.notice;toast(session.notice)}\n        if(session.notice.isEmpty())shownToast=\"\"\n\n    }\n    private fun buildMaster() {\n",
+          "after": "        OwnerRenderTrace.bind(physicalHost,ownerCanvas,rail,master,pageHost)\n        if(session.notice.isNotEmpty() && session.notice!=shownToast){shownToast=session.notice;toast(session.notice)}\n        if(session.notice.isEmpty())shownToast=\"\"\n        if(session.notice!=responseNotice){\n            responseNotice=session.notice\n            if(visible && session.notice.isNotEmpty())ResponseTrace.drawn(pageHost,responseSaveId,if(session.busy)\"LOCAL_FEEDBACK_DRAW\" else \"SAVE_CONFIRM_DRAW\")\n        }\n        val responseKey=\"$responseReadId/${session.section}/$rulesQualified/$inventoryVersion\"\n        if(responseKey!=responseFrameKey){\n            responseFrameKey=responseKey\n            ResponseTrace.drawn(pageHost,responseReadId,if(session.section==\"thread\" && rulesQualified && inventoryVersion==FrontendPackages.version)\"EDITABLE_DRAW\" else \"CONTENT_DRAW\")\n        }\n\n    }\n    private fun buildMaster() {\n"
+        },
+        {
+          "before": "        if(session.section==\"thread\" && !rulesQualified){toast(\"规则校验尚未完成，请重试\");return}\n        val app = session.appDraft; val gpu = session.gpuDraft; val rule = session.ruleDraft\n        val defaults=session.ruleDefaultsDraft\n        if(defaults!=null && session.section==\"thread\" && session.selected.isEmpty()) {\n            session.work(\"已保存并生效\",completed=after,feature=\"rules\") {\n                val bytes=defaults.canonical().toByteArray(Charsets.UTF_8);val validation=ZuioptRules.validate(applicationContext,bytes,defaults.generation)\n                check(validation.valid){validation.error};ZuioptRules.upload(applicationContext,\"user\",bytes,expectedGeneration=defaults.generation)\n                val fresh=ZuioptRules.userRules(applicationContext);val accepted=ZuioptRuleModel.parseNormalized(fresh.text)\n                check(fresh.generation!=defaults.generation && accepted.mode==defaults.mode && accepted.rt==defaults.rt){\"RUNTIME_DEFAULTS_POST_ACK_MISMATCH\"}\n                if(session.ruleDefaultsDraft===defaults)session.ruleDefaultsDraft=null\n            };return\n        }\n        if (app != null) { session.saveApp(after); return }\n        if (gpu != null) { session.saveGpu(after); return }\n        session.work(\"已保存并生效\", completed = after) {\n            when {\n                rule != null -> {\n                    val bytes = rule.canonical().toByteArray(Charsets.UTF_8); val validation = ZuioptRules.validate(applicationContext, bytes, rule.generation)\n                    check(validation.valid) { validation.error }; ZuioptRules.upload(applicationContext, \"user\", bytes, expectedGeneration = rule.generation)\n                    val fresh=ZuioptRules.userRules(applicationContext);val accepted=ZuioptRuleModel.parseNormalized(fresh.text)\n                    val profile=checkNotNull(accepted.appProfile(rule.packageName)){\"RULE_POST_ACK_PROFILE_UNAVAILABLE\"}\n                    check(fresh.generation!=rule.generation){\"RULE_POST_ACK_READ_STALE\"}\n                    rule.base=accepted;rule.generation=fresh.generation;rule.original=profile;rule.profile=profile\n",
+          "after": "        if(session.section==\"thread\" && !rulesQualified){toast(\"规则校验尚未完成，请重试\");return}\n        val app = session.appDraft; val gpu = session.gpuDraft; val rule = session.ruleDraft\n        val defaults=session.ruleDefaultsDraft\n        val traceId=ResponseTrace.begin(\"save_${if(defaults!=null)\"global\" else if(rule?.profile?.runtime?.mode==-1)\"inherit\" else \"app\"}\")\n        responseSaveId=traceId\n        if(defaults!=null && session.section==\"thread\" && session.selected.isEmpty()) {\n            session.work(\"已保存，原生已加载\",completed=after,feature=\"rules\",pending=\"正在保存规则…\",traceId=traceId) {\n                ResponseTrace.mark(\"SERIALIZE_BEGIN\")\n                val bytes=defaults.canonical().toByteArray(Charsets.UTF_8)\n                ResponseTrace.mark(\"SERIALIZE_END\",\"bytes=${bytes.size}\")\n                ZuioptRules.upload(applicationContext,\"user\",bytes,expectedGeneration=defaults.generation)\n                val fresh=ZuioptRules.userRules(applicationContext);val accepted=ZuioptRuleModel.parseNormalized(fresh.text)\n                ResponseTrace.mark(\"POST_ACK_AUTHORITY_READY\",fresh.generation)\n                check(fresh.generation!=defaults.generation && accepted.mode==defaults.mode && accepted.rt==defaults.rt){\"RUNTIME_DEFAULTS_POST_ACK_MISMATCH\"}\n                if(session.ruleDefaultsDraft===defaults)session.ruleDefaultsDraft=null\n            };return\n        }\n        if (app != null) { session.saveApp(after); return }\n        if (gpu != null) { session.saveGpu(after); return }\n        session.work(\"已保存，原生已加载\", completed = after,pending=\"正在保存规则…\",traceId=traceId) {\n            when {\n                rule != null -> {\n                    ResponseTrace.mark(\"SERIALIZE_BEGIN\")\n                    val bytes = rule.canonical().toByteArray(Charsets.UTF_8)\n                    ResponseTrace.mark(\"SERIALIZE_END\",\"bytes=${bytes.size}\")\n                    ZuioptRules.upload(applicationContext, \"user\", bytes, expectedGeneration = rule.generation)\n                    val fresh=ZuioptRules.userRules(applicationContext);val accepted=ZuioptRuleModel.parseNormalized(fresh.text)\n                    ResponseTrace.mark(\"POST_ACK_AUTHORITY_READY\",fresh.generation)\n                    val profile=checkNotNull(accepted.appProfile(rule.packageName)){\"RULE_POST_ACK_PROFILE_UNAVAILABLE\"}\n                    check(fresh.generation!=rule.generation){\"RULE_POST_ACK_READ_STALE\"}\n                    rule.base=accepted;rule.generation=fresh.generation;rule.original=profile;rule.profile=profile\n"
+        },
+        {
+          "before": "    private fun runtimeDefaultsDialog() {\n        if(!rulesQualified||session.busy)return\n        val draft=session.ruleDefaultsDraft ?: RuleDefaultsDraft(checkNotNull(model),checkNotNull(snapshot).generation).also{session.ruleDefaultsDraft=it}\n        val box=column().apply {\n            addView(owner.section(\"全局模式\",\"每应用的显式设置优先；继承项跟随此处\"))\n            addView(segment(listOf(\"mode0\",\"mode1\",\"mode2\"),draft.mode){draft.mode=it})\n            addView(owner.section(\"全局 RT\",\"默认关闭；能力不足时保留明确回退结果\"),gap())\n            addView(segment(listOf(\"关闭\",\"开启\"),draft.rt){draft.rt=it})\n        }\n        ownerModal?.open(\"全局调度默认\",\"修改先留在本地草稿，保存使用当前规则 generation CAS\",480,box,listOf(owner.button(\"取消\"){session.ruleDefaultsDraft=null;ownerModal?.close()},owner.button(\"保存并应用\",\"primary\"){\n            if(!rulesQualified||session.busy)return@button\n            ownerModal?.close();saveDraft()\n        }))\n    }\n    private fun mutateRule(next: () -> Unit) {\n        if(!rulesQualified)return\n",
+          "after": "    private fun runtimeDefaultsDialog() {\n        if(!rulesQualified||session.busy)return\n        val draft=session.ruleDefaultsDraft ?: RuleDefaultsDraft(checkNotNull(model),checkNotNull(snapshot).generation).also{session.ruleDefaultsDraft=it}\n        var save:View?=null\n        fun updateSave(){save?.let{it.isEnabled=draft.dirty;it.alpha=if(draft.dirty)1f else .4f}}\n        val box=column().apply {\n            addView(owner.section(\"全局模式\",\"每应用的显式设置优先；继承项跟随此处\"))\n            addView(segment(listOf(\"mode0\",\"mode1\",\"mode2\"),draft.mode){draft.mode=it;updateSave()})\n            addView(owner.section(\"全局 RT\",\"默认关闭；能力不足时保留明确回退结果\"),gap())\n            addView(segment(listOf(\"关闭\",\"开启\"),draft.rt){draft.rt=it;updateSave()})\n        }\n        save=owner.button(\"保存并应用\",\"primary\",enabled=draft.dirty){\n            if(!rulesQualified||session.busy||!draft.dirty)return@button\n            ownerModal?.close();saveDraft()\n        }\n        ownerModal?.open(\"全局调度默认\",\"修改先留在本地草稿，保存使用当前规则 generation CAS\",480,box,listOf(owner.button(\"取消\"){session.ruleDefaultsDraft=null;ownerModal?.close()},checkNotNull(save)))\n    }\n    private fun mutateRule(next: () -> Unit) {\n        if(!rulesQualified)return\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/ResponseTrace.kt",
+      "beforeSha256": null,
+      "afterSha256": "89bba70fa7d5dc0b7db4622892060c814a8917f9e3942cdd156f7ce54cf286bf",
+      "beforeEntry": null,
+      "afterEntry": "100644 blob fa4aaaae9f4d687ef0f5a9b917e94775840e69f5\tapp/src/main/java/com/zui/zuicontrol/ResponseTrace.kt",
+      "before": null,
+      "hunks": []
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/ZuioptRules.kt",
+      "beforeSha256": "086574c80e66d04bd6645ca3def20c1a4d2660d3bcd71ad9739ca37dec46206c",
+      "afterSha256": "16959a7f9d9636fc4d301b3ebcf3b9692bc4cc7b0f266e04e12a70b881496922",
+      "beforeEntry": "100644 blob a45dca3c200e2cdb6a3e2a495ee67bc3981c6822\tapp/src/main/java/com/zui/zuicontrol/ZuioptRules.kt",
+      "afterEntry": "100644 blob 4434d5bc5a07569455594b52cb6cc8c9ad232459\tapp/src/main/java/com/zui/zuicontrol/ZuioptRules.kt",
+      "before": null,
+      "hunks": [
+        {
+          "before": "import java.security.MessageDigest\nimport java.security.SecureRandom\nimport java.util.Base64\n\n/** Client for the existing authenticated command plane; never edits daemon state. */\nobject ZuioptRules {\n",
+          "after": "import java.security.MessageDigest\nimport java.security.SecureRandom\nimport java.util.Base64\nimport java.util.zip.Deflater\n\n/** Client for the existing authenticated command plane; never edits daemon state. */\nobject ZuioptRules {\n"
+        },
+        {
+          "before": "        require(action in setOf(\"state\", \"reset\", \"read\", \"begin\", \"chunk\", \"validate\", \"preview\", \"upstream_read\", \"restore_app\", \"commit\", \"abort\", \"enable\", \"disable\", \"rollback\"))\n        require(key.length <= 128 && value.length <= 10924 && '|' !in key && '|' !in value)\n        val command = if (action == \"reset\") ZuiControlContract.CMD_RESET_ZUIOPT_FAILSAFE else \"zo_$action\"\n        val id = ZuiControlRequest.send(context, command, pkg = key, mode = value)\n        val ack = ZuiControlRequest.awaitTerminalAck(context, id)\n        check(ack.succeeded) { \"规则操作未完成：${ack.detail}；请刷新确认状态\" }\n        return id\n    }\n",
+          "after": "        require(action in setOf(\"state\", \"reset\", \"read\", \"begin\", \"chunk\", \"validate\", \"preview\", \"upstream_read\", \"restore_app\", \"commit\", \"abort\", \"enable\", \"disable\", \"rollback\"))\n        require(key.length <= 128 && value.length <= 10924 && '|' !in key && '|' !in value)\n        val command = if (action == \"reset\") ZuiControlContract.CMD_RESET_ZUIOPT_FAILSAFE else \"zo_$action\"\n        ResponseTrace.mark(\"COMMAND_BEGIN\",\"action=$action;bytes=${value.toByteArray(Charsets.UTF_8).size}\")\n        val id = ZuiControlRequest.send(context, command, pkg = key, mode = value)\n        ResponseTrace.mark(\"COMMAND_ADMITTED\",\"action=$action;request=$id\")\n        val ack = ZuiControlRequest.awaitTerminalAck(context, id)\n        ResponseTrace.mark(\"COMMAND_ACK\",\"action=$action;request=$id;state=${ack.state}\")\n        check(ack.succeeded) { \"规则操作未完成：${ack.detail}；请刷新确认状态\" }\n        return id\n    }\n"
+        },
+        {
+          "before": "        require(packId == \"-\" || packId.matches(Regex(\"[a-z][a-z0-9_.-]{0,63}\")))\n        val tx = ByteArray(12).also(random::nextBytes).joinToString(\"\") { \"%02x\".format(it.toInt() and 255) }\n        require(expectedGeneration.matches(Regex(\"g[0-9a-f]{24}\")))\n        command(context, \"begin\", tx, \"$kind:${data.size}:${digest(data)}:$packId:$priority:$expectedGeneration\")\n        try {\n            var offset = 0\n            while (offset < data.size) {\n",
+          "after": "        require(packId == \"-\" || packId.matches(Regex(\"[a-z][a-z0-9_.-]{0,63}\")))\n        val tx = ByteArray(12).also(random::nextBytes).joinToString(\"\") { \"%02x\".format(it.toInt() and 255) }\n        require(expectedGeneration.matches(Regex(\"g[0-9a-f]{24}\")))\n        val hash=digest(data)\n        ResponseTrace.mark(\"UPLOAD_PREPARED\",\"bytes=${data.size};chunks=${(data.size+CHUNK-1)/CHUNK}\")\n        if(kind==\"user\") {\n            val current=state(context)\n            check(field(current,\"generation\")==expectedGeneration){\"规则版本变化，请刷新\"}\n            if(field(current,\"rules_commit_transport\")==\"ZLIB_USER_V1\") {\n                inlineUser(data,expectedGeneration,hash)?.let {\n                    try{command(context,\"commit\",tx,it)}catch(error:Exception){runCatching{command(context,\"abort\",tx)};throw error}\n                    return\n                }\n            }\n        }\n        command(context, \"begin\", tx, \"$kind:${data.size}:$hash:$packId:$priority:$expectedGeneration\")\n        try {\n            var offset = 0\n            while (offset < data.size) {\n"
+        },
+        {
+          "before": "            throw error\n        }\n    }\n}\n",
+          "after": "            throw error\n        }\n    }\n\n    internal fun inlineUser(data: ByteArray, generation: String, hash: String=digest(data)): String? {\n        require(data.size in 1..RULE_LIMIT && generation.matches(Regex(\"g[0-9a-f]{24}\")) && hash.matches(Regex(\"[0-9a-f]{64}\")))\n        val compressor=Deflater()\n        val packed=ByteArray(8193)\n        val count=try{compressor.setInput(data);compressor.finish();val n=compressor.deflate(packed)\n            if(!compressor.finished() || n>8192)return null\n            n\n        }finally{compressor.end()}\n        return \"zlib-user-v1:$generation:${data.size}:$hash:${Base64.getEncoder().encodeToString(packed.copyOf(count))}\"\n            .takeIf{it.length<=10924}\n    }\n}\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+      "beforeSha256": "f6d563bad321864ba263894b932ef24111a587fc96bbf64bd3c6f5adcc1e5443",
+      "afterSha256": "2256f570830ea16593000968f2498b7f937c45699c7abb5515161e0d5d376a0b",
+      "beforeEntry": "100644 blob 080301ae6b2bdc54c706edd5a973ab591051ca94\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+      "afterEntry": "100644 blob ca0e5dd9aa940539eb19698e12c35ba26ec2319a\tapp/src/test/java/com/zui/zuicontrol/FrontendV3Test.kt",
+      "before": null,
+      "hunks": [
+        {
+          "before": "import java.util.concurrent.TimeUnit\n\nclass FrontendV3Test {\n    @Test fun unchangedAppRevisionAdvancesCleanCasButPreservesDirtyCas() {\n        val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){}\n        try {\n",
+          "after": "import java.util.concurrent.TimeUnit\n\nclass FrontendV3Test {\n    @Test fun pendingFeedbackNeverClaimsSuccessAndDuplicateWorkDoesNotQueue() {\n        val callbacks=LinkedBlockingQueue<()->Unit>();val entered=java.util.concurrent.CountDownLatch(1);val release=java.util.concurrent.CountDownLatch(1)\n        val writes=java.util.concurrent.atomic.AtomicInteger();val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){callbacks.put(it)}\n        try {\n            session.work(\"已保存，原生已加载\",pending=\"正在保存规则…\"){writes.incrementAndGet();entered.countDown();check(release.await(5,TimeUnit.SECONDS))}\n            check(entered.await(5,TimeUnit.SECONDS));assertTrue(session.busy);assertEquals(\"正在保存规则…\",session.notice)\n            session.work(\"duplicate\"){writes.incrementAndGet()};assertEquals(1,writes.get())\n            session.onChanged=null // Backgrounding detaches presentation, not operation reconciliation.\n            release.countDown();checkNotNull(callbacks.poll(5,TimeUnit.SECONDS)).invoke()\n            assertFalse(session.busy);assertEquals(\"已保存，原生已加载\",session.notice);assertEquals(1,writes.get())\n        }finally{release.countDown();session.close()}\n    }\n    @Test fun unchangedAppRevisionAdvancesCleanCasButPreservesDirtyCas() {\n        val session=FrontendSession(FakeFrontendGateway(),0,Executors.newSingleThreadExecutor()){}\n        try {\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/test/java/com/zui/zuicontrol/InlineRulesTest.kt",
+      "beforeSha256": null,
+      "afterSha256": "ae1e65282e289a473b76e9135da5c4f49ab51bf65078820f3cfe14bf9c76548d",
+      "beforeEntry": null,
+      "afterEntry": "100644 blob fd9c110334589d202ee6c09f315ce84e0b8b274f\tapp/src/test/java/com/zui/zuicontrol/InlineRulesTest.kt",
+      "before": null,
+      "hunks": []
+    },
+    {
+      "path": "native/zuiopt/ZUIopt_store.h",
+      "beforeSha256": "cb8ce5490f1496ba960142229e62dc04c0be36a4a30e9ec3f81bb2f12f96b6c5",
+      "afterSha256": "ec25eaf7513f6519ea9d13dab9eb57057fc9343b15d346fc4c5608626dc80a8b",
+      "beforeEntry": "100644 blob cfaffc909043e22ce1567409dca4580e9a6cd3c1\tnative/zuiopt/ZUIopt_store.h",
+      "afterEntry": "100644 blob c149393799ac2299212fc606d1919dd414ceb577\tnative/zuiopt/ZUIopt_store.h",
+      "before": null,
+      "hunks": [
+        {
+          "before": "        if (runtime)\n            require(generationOf(s.effective) == argument.substr(8), \"runtime read generation changed\");\n        auto status = state(s) + failureState() + \"upstream_metadata_sha256=\" + sha256(s.upstreamMetadata) +\n                      \"\\nrules_read_transport=DAEMON_SNAPSHOT_V1\\n\";\n        require(status.size() <= 4608, \"rules read state bound\");\n        if (runtime) {\n            auto body = root.get(\"runtime-status.v1\", RUNTIME_STATUS_LIMIT);\n",
+          "after": "        if (runtime)\n            require(generationOf(s.effective) == argument.substr(8), \"runtime read generation changed\");\n        auto status = state(s) + failureState() + \"upstream_metadata_sha256=\" + sha256(s.upstreamMetadata) +\n                      \"\\nrules_read_transport=DAEMON_SNAPSHOT_V1\\nrules_commit_transport=ZLIB_USER_V1\\n\";\n        require(status.size() <= 4608, \"rules read state bound\");\n        if (runtime) {\n            auto body = root.get(\"runtime-status.v1\", RUNTIME_STATUS_LIMIT);\n"
+        },
+        {
+          "before": "        auto s = current();\n        require(s.canonical, \"canonical migration required\");\n        require(!root.exists(\"settings.pending\"), \"settings restore recovery required\");\n        if (action == \"upstream_read\") {\n            auto input = fields(value, ':');\n            require(input.size() == 2 && (input[0] == \"rules\" || input[0] == \"metadata\") && rx(input[1], \"[0-9]{1,6}\"),\n",
+          "after": "        auto s = current();\n        require(s.canonical, \"canonical migration required\");\n        require(!root.exists(\"settings.pending\"), \"settings restore recovery required\");\n        if (action == \"commit\" && !value.empty()) {\n            // One authenticated envelope, unchanged durable upload/commit and exclusive store lock.\n            auto f = fields(value, ':');\n            require(value.size() <= 10924 && f.size() == 5 && f[0] == \"zlib-user-v1\" && generationId(f[1]) &&\n                        f[1] == generationOf(s.effective) && rx(f[2], \"[0-9]{1,6}\") && hex(f[3], 64) && hex(id, 24),\n                    \"inline commit metadata\");\n            size_t size = number(f[2]);\n            require(size > 0 && size <= RULE_LIMIT, \"inline commit bound\");\n            auto packed = unbase64(f[4], 8192);\n            std::string bytes(size, '\\0');\n            z_stream stream{};\n            stream.next_in = reinterpret_cast<Bytef *>(packed.data());\n            stream.avail_in = packed.size();\n            stream.next_out = reinterpret_cast<Bytef *>(bytes.data());\n            stream.avail_out = bytes.size();\n            require(inflateInit(&stream) == Z_OK, \"inline inflate init\");\n            int result = inflate(&stream, Z_FINISH);\n            bool complete = result == Z_STREAM_END && stream.total_out == size && stream.avail_in == 0;\n            inflateEnd(&stream);\n            require(complete && sha256(bytes) == f[3], \"inline content length/SHA256\");\n            apply(\"begin\", id, \"user:\" + f[2] + \":\" + f[3] + \":-:0:\" + f[1]);\n            try {\n                for (size_t offset = 0; offset < bytes.size(); offset += 8192)\n                    apply(\"chunk\", id + \":\" + std::to_string(offset), base64(bytes.substr(offset, 8192)));\n                return apply(\"commit\", id, \"\");\n            } catch (...) {\n                try {\n                    apply(\"abort\", id, \"\");\n                } catch (...) {\n                }\n                throw;\n            }\n        }\n        if (action == \"upstream_read\") {\n            auto input = fields(value, ':');\n            require(input.size() == 2 && (input[0] == \"rules\" || input[0] == \"metadata\") && rx(input[1], \"[0-9]{1,6}\"),\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/monitor/TestGpuDraftLifecycle.py",
+      "beforeSha256": "9b54c45ba58ca3e12eecc40764d992cf2d279c9438b70b5225765631974c06cd",
+      "afterSha256": "149bf5c88ad4564ea7ab950c2dc736adb16c35d779c6f09a96c588bf6ecd0178",
+      "beforeEntry": "100644 blob fa08282dc37782b29212fc9ef338ea0cba7f1605\ttests/monitor/TestGpuDraftLifecycle.py",
+      "afterEntry": "100644 blob dc588b02fd43a23e223cbb25c33757a423d4ed7e\ttests/monitor/TestGpuDraftLifecycle.py",
+      "before": null,
+      "hunks": [
+        {
+          "before": "}\n''',\n'Owners.kt':'''package com.zui.zuicontrol\nobject PackageNames{fun isValid(s:String)=s.contains('.')}\nobject ZuiControlClient {\n enum class GpuPolicy{CUSTOM,DEFAULT_FOR_MODE}\n",
+          "after": "}\n''',\n'Owners.kt':'''package com.zui.zuicontrol\n// Diagnostics only; execute the actual session task without Android logging on the host.\nobject ResponseTrace{fun event(id:String,phase:String,detail:String=\"\"){};fun <T> during(id:String,task:()->T):T=task()}\nobject PackageNames{fun isValid(s:String)=s.contains('.')}\nobject ZuiControlClient {\n enum class GpuPolicy{CUSTOM,DEFAULT_FOR_MODE}\n"
+        },
+        {
+          "before": " for name,text in sources.items():(p/name).write_text(text,encoding='utf8')\n cp=os.pathsep.join(map(str,[stdlib,gson,*annotations]))\n cmd=[java,'-cp',os.pathsep.join(map(str,[*jars,*annotations])),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',cp,'-d',str(p/'classes'),*[str(APP/n) for n in ('FrontendSession.kt','FrontendTransport.kt','FrontendState.kt','GpuRanges.kt','ZuioptRuleModel.kt')],*map(str,p.glob('*.kt'))]\n result=subprocess.run(cmd,capture_output=True,text=True,timeout=60)\n assert result.returncode==0,result.stdout+result.stderr\n result=subprocess.run([java,'-cp',os.pathsep.join([str(p/'classes'),cp]),'com.zui.zuicontrol.HarnessKt'],capture_output=True,text=True,timeout=20)\n assert result.returncode==0,result.stdout+result.stderr\n",
+          "after": " for name,text in sources.items():(p/name).write_text(text,encoding='utf8')\n cp=os.pathsep.join(map(str,[stdlib,gson,*annotations]))\n cmd=[java,'-cp',os.pathsep.join(map(str,[*jars,*annotations])),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',cp,'-d',str(p/'classes'),*[str(APP/n) for n in ('FrontendSession.kt','FrontendTransport.kt','FrontendState.kt','GpuRanges.kt','ZuioptRuleModel.kt')],*map(str,p.glob('*.kt'))]\n result=subprocess.run(cmd,capture_output=True,text=True,encoding='utf8',errors='replace',timeout=60)\n assert result.returncode==0,result.stdout+result.stderr\n result=subprocess.run([java,'-cp',os.pathsep.join([str(p/'classes'),cp]),'com.zui.zuicontrol.HarnessKt'],capture_output=True,text=True,timeout=20)\n assert result.returncode==0,result.stdout+result.stderr\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/zuiopt/InlineCommitTest.h",
+      "beforeSha256": null,
+      "afterSha256": "d0349210ab80878df49e8b20c35e60b4cdd03a840ea113afb833a054cb383a96",
+      "beforeEntry": null,
+      "afterEntry": "100644 blob 45b9ea792b3905ef75c1cd24b3e6b6dd6ad4de78\ttests/zuiopt/InlineCommitTest.h",
+      "before": null,
+      "hunks": []
+    },
+    {
+      "path": "tests/zuiopt/TestRuntimeFrontendScope.py",
+      "beforeSha256": "420a42f459fcc662700fc6aad19902d126acebb3a93caf093f433408c11472c2",
+      "afterSha256": "9034d1e6be99dca6fdae4d94cfeebf8d4f485d45aa84504e65d8060a69c88125",
+      "beforeEntry": "100644 blob da010c031c2672be101ee9502faa231603e96ea7\ttests/zuiopt/TestRuntimeFrontendScope.py",
+      "afterEntry": "100644 blob 16458d37bbc60f8ca74fce71a2da402c7184b206\ttests/zuiopt/TestRuntimeFrontendScope.py",
+      "before": null,
+      "hunks": [
+        {
+          "before": "            with self.subTest(path=row['path']):\n                source=(ROOT/row['path']).read_text(encoding='utf8');old=subprocess.check_output(['git','-C',str(ROOT),'show',FRONTEND_RUNTIME_R2['baseHead']+':'+row['path']]).decode('utf8').replace('\\r\\n','\\n')\n                self.assertEqual(old,reverse_frontend_runtime_r2(row['path'],source))\n                with self.assertRaisesRegex(AssertionError,'R[235] (?:C/B |library inheritance )?exact authorized bytes'):reverse_frontend_runtime_r2(row['path'],source+'\\n// outside Owner delta\\n')\n        actual=entries('native/zuiopt');old=subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r',FRONTEND_RUNTIME_R2['baseHead'],'--','native/zuiopt']).splitlines()\n        self.assertEqual(sorted(old),sorted(reverse_frontend_runtime_entries(actual,'native/zuiopt')))\n    def test_execution_and_historical_manifests_unchanged(self):\n",
+          "after": "            with self.subTest(path=row['path']):\n                source=(ROOT/row['path']).read_text(encoding='utf8');old=subprocess.check_output(['git','-C',str(ROOT),'show',FRONTEND_RUNTIME_R2['baseHead']+':'+row['path']]).decode('utf8').replace('\\r\\n','\\n')\n                self.assertEqual(old,reverse_frontend_runtime_r2(row['path'],source))\n                with self.assertRaisesRegex(AssertionError,'R[2356] (?:C/B |library inheritance )?exact authorized bytes'):reverse_frontend_runtime_r2(row['path'],source+'\\n// outside Owner delta\\n')\n        actual=entries('native/zuiopt');old=subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r',FRONTEND_RUNTIME_R2['baseHead'],'--','native/zuiopt']).splitlines()\n        self.assertEqual(sorted(old),sorted(reverse_frontend_runtime_entries(actual,'native/zuiopt')))\n    def test_execution_and_historical_manifests_unchanged(self):\n"
+        },
+        {
+          "before": "                source=(ROOT/row['path']).read_text(encoding='utf8')\n                old=subprocess.check_output(['git','-C',str(ROOT),'show',LIBRARY_INHERITANCE_R2['baseHead']+':'+row['path']]).decode('utf8').replace('\\r\\n','\\n')\n                self.assertEqual(old,reverse_library_inheritance_r2(row['path'],source))\n                with self.assertRaisesRegex(AssertionError,'R[235] (?:library inheritance )?exact authorized bytes'):reverse_library_inheritance_r2(row['path'],source+'\\n// unauthorized\\n')\n        path='tests/zuiopt/runtime_frontend_r2_delta.json'\n        self.assertEqual((ROOT/path).read_text(encoding='utf8'),subprocess.check_output(['git','-C',str(ROOT),'show',LIBRARY_INHERITANCE_R2['baseHead']+':'+path]).decode('utf8').replace('\\r\\n','\\n'))\nif __name__=='__main__':unittest.main(verbosity=2)\n",
+          "after": "                source=(ROOT/row['path']).read_text(encoding='utf8')\n                old=subprocess.check_output(['git','-C',str(ROOT),'show',LIBRARY_INHERITANCE_R2['baseHead']+':'+row['path']]).decode('utf8').replace('\\r\\n','\\n')\n                self.assertEqual(old,reverse_library_inheritance_r2(row['path'],source))\n                with self.assertRaisesRegex(AssertionError,'R[2356] (?:library inheritance )?exact authorized bytes'):reverse_library_inheritance_r2(row['path'],source+'\\n// unauthorized\\n')\n        path='tests/zuiopt/runtime_frontend_r2_delta.json'\n        self.assertEqual((ROOT/path).read_text(encoding='utf8'),subprocess.check_output(['git','-C',str(ROOT),'show',LIBRARY_INHERITANCE_R2['baseHead']+':'+path]).decode('utf8').replace('\\r\\n','\\n'))\nif __name__=='__main__':unittest.main(verbosity=2)\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/zuiopt/TestRuntimeR3Scope.py",
+      "beforeSha256": "de798174257e8f82d0dedff32cda2758936a8ac4fc69f3ce01a6e69a486df8a2",
+      "afterSha256": "ab2cc3a88165b56940e99c588ad06f31b384155d283771244b653380037d2a71",
+      "beforeEntry": "100644 blob d71a960f7234bcfad6e4ae7681a12c0d8916f918\ttests/zuiopt/TestRuntimeR3Scope.py",
+      "afterEntry": "100644 blob 8e7361aa30bf4735bd0c15e28a673211080d22cb\ttests/zuiopt/TestRuntimeR3Scope.py",
+      "before": null,
+      "hunks": [
+        {
+          "before": "    text=(ROOT/row['path']).read_text(encoding='utf8');self.assertEqual(hashlib.sha256(reverse_runtime_r5(row['path'],text).encode()).hexdigest(),row['afterSha256'])\n    old=subprocess.run(['git','show',RUNTIME_R3['baseHead']+':'+row['path']],cwd=ROOT,capture_output=True)\n    self.assertEqual(reverse_runtime_r3(row['path'],text),old.stdout.decode('utf8').replace('\\r\\n','\\n') if old.returncode==0 else '')\n    with self.assertRaisesRegex(AssertionError,'R[35] exact authorized bytes'):reverse_runtime_r3(row['path'],text+'\\n// outside scope\\n')\n def test_native_entries_and_historical_manifests(self):\n  expected=subprocess.check_output(['git','ls-tree','-r',RUNTIME_R3['baseHead'],'--','native/zuiopt'],cwd=ROOT).splitlines()\n  self.assertEqual(sorted(reverse_runtime_r3_entries(entries('native/zuiopt'),'native/zuiopt')),sorted(expected))\n",
+          "after": "    text=(ROOT/row['path']).read_text(encoding='utf8');self.assertEqual(hashlib.sha256(reverse_runtime_r5(row['path'],text).encode()).hexdigest(),row['afterSha256'])\n    old=subprocess.run(['git','show',RUNTIME_R3['baseHead']+':'+row['path']],cwd=ROOT,capture_output=True)\n    self.assertEqual(reverse_runtime_r3(row['path'],text),old.stdout.decode('utf8').replace('\\r\\n','\\n') if old.returncode==0 else '')\n    with self.assertRaisesRegex(AssertionError,'R[356] exact authorized bytes'):reverse_runtime_r3(row['path'],text+'\\n// outside scope\\n')\n def test_native_entries_and_historical_manifests(self):\n  expected=subprocess.check_output(['git','ls-tree','-r',RUNTIME_R3['baseHead'],'--','native/zuiopt'],cwd=ROOT).splitlines()\n  self.assertEqual(sorted(reverse_runtime_r3_entries(entries('native/zuiopt'),'native/zuiopt')),sorted(expected))\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/zuiopt/TestRuntimeR5Scope.py",
+      "beforeSha256": "9b95dcf8229d1a2d306c7ba914728eff70d691151bd57512fa956b74ee92960b",
+      "afterSha256": "abf3627ffd5aa9c498ee46764a0b0da40a4701ae4e961269cb444f57d01b9153",
+      "beforeEntry": "100644 blob 608958092d435f98741ec0becb25bc5ca9ad0c8d\ttests/zuiopt/TestRuntimeR5Scope.py",
+      "afterEntry": "100644 blob 98d2a7dafea32612d54bfe2ffde4ef130915fce4\ttests/zuiopt/TestRuntimeR5Scope.py",
+      "before": null,
+      "hunks": [
+        {
+          "before": "    text=(ROOT/row['path']).read_text(encoding='utf8')\n    old=subprocess.run(['git','show',RUNTIME_R5['baseHead']+':'+row['path']],cwd=ROOT,capture_output=True)\n    self.assertEqual(reverse_runtime_r5(row['path'],text),old.stdout.decode('utf8').replace('\\r\\n','\\n') if old.returncode==0 else '')\n    with self.assertRaisesRegex(AssertionError,'R5 exact authorized bytes'):reverse_runtime_r5(row['path'],text+'\\n// outside scope\\n')\n  expected=subprocess.check_output(['git','ls-tree','-r',RUNTIME_R5['baseHead'],'--','native/zuiopt'],cwd=ROOT).splitlines()\n  self.assertEqual(sorted(reverse_runtime_r5_entries(entries('native/zuiopt'),'native/zuiopt')),sorted(expected))\n def test_historical_overlays_unchanged(self):\n",
+          "after": "    text=(ROOT/row['path']).read_text(encoding='utf8')\n    old=subprocess.run(['git','show',RUNTIME_R5['baseHead']+':'+row['path']],cwd=ROOT,capture_output=True)\n    self.assertEqual(reverse_runtime_r5(row['path'],text),old.stdout.decode('utf8').replace('\\r\\n','\\n') if old.returncode==0 else '')\n    with self.assertRaisesRegex(AssertionError,'R[56] exact authorized bytes'):reverse_runtime_r5(row['path'],text+'\\n// outside scope\\n')\n  expected=subprocess.check_output(['git','ls-tree','-r',RUNTIME_R5['baseHead'],'--','native/zuiopt'],cwd=ROOT).splitlines()\n  self.assertEqual(sorted(reverse_runtime_r5_entries(entries('native/zuiopt'),'native/zuiopt')),sorted(expected))\n def test_historical_overlays_unchanged(self):\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/zuiopt/TestRuntimeRecoveryScope.py",
+      "beforeSha256": "25d38b7c1da64e63de3fadbfe89ee7460c4ae471765853ebdbe17112f8638e5b",
+      "afterSha256": "f9432d72c19a7840c8e20d4b407a28d61c1e841ea18726b8784c2a59d4e7d3ec",
+      "beforeEntry": "100644 blob c81ea68eb00fe96c2a991b1cf2120c0f8590c571\ttests/zuiopt/TestRuntimeRecoveryScope.py",
+      "afterEntry": "100644 blob 4d3454086f19fee045b479cf7685855c7fbeb122\ttests/zuiopt/TestRuntimeRecoveryScope.py",
+      "before": null,
+      "hunks": [
+        {
+          "before": "                current=(ROOT/row['path']).read_text(encoding='utf8')\n                baseline=subprocess.check_output(['git','-C',str(ROOT),'show',RECOVERY_R2['baseHead']+':'+row['path']]).decode('utf8').replace('\\r\\n','\\n')\n                self.assertEqual(reverse_recovery_r2(row['path'],current),baseline)\n                with self.assertRaisesRegex(AssertionError,'R[235] (?:quarantine exact|exact authorized) bytes'):\n                    reverse_recovery_r2(row['path'],current+'\\n// unauthorized\\n')\n    def test_historical_runtime_manifest_is_unchanged(self):\n        historical=subprocess.check_output(['git','-C',str(ROOT),'show',RECOVERY_R2['baseHead']+':tests/zuiopt/runtime_delta.json'])\n",
+          "after": "                current=(ROOT/row['path']).read_text(encoding='utf8')\n                baseline=subprocess.check_output(['git','-C',str(ROOT),'show',RECOVERY_R2['baseHead']+':'+row['path']]).decode('utf8').replace('\\r\\n','\\n')\n                self.assertEqual(reverse_recovery_r2(row['path'],current),baseline)\n                with self.assertRaisesRegex(AssertionError,'R[2356] (?:quarantine exact|exact authorized) bytes'):\n                    reverse_recovery_r2(row['path'],current+'\\n// unauthorized\\n')\n    def test_historical_runtime_manifest_is_unchanged(self):\n        historical=subprocess.check_output(['git','-C',str(ROOT),'show',RECOVERY_R2['baseHead']+':tests/zuiopt/runtime_delta.json'])\n"
+        },
+        {
+          "before": "        baseline=subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r',RECOVERY_R2['baseHead'],'--','native/zuiopt']).splitlines()\n        self.assertEqual(sorted(reverse_recovery_entries(current,'native/zuiopt')),sorted(baseline))\n        mutated=[row.replace(b'\\t',b'x\\t',1) if row.endswith(b'\\tnative/zuiopt/ZUIopt_owner.h') else row for row in current]\n        with self.assertRaisesRegex(AssertionError,'R[235] (?:quarantine exact|exact authorized) source'):\n            reverse_recovery_entries(mutated,'native/zuiopt')\nif __name__=='__main__':unittest.main(verbosity=2)\n",
+          "after": "        baseline=subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r',RECOVERY_R2['baseHead'],'--','native/zuiopt']).splitlines()\n        self.assertEqual(sorted(reverse_recovery_entries(current,'native/zuiopt')),sorted(baseline))\n        mutated=[row.replace(b'\\t',b'x\\t',1) if row.endswith(b'\\tnative/zuiopt/ZUIopt_owner.h') else row for row in current]\n        with self.assertRaisesRegex(AssertionError,'R[2356] (?:quarantine exact|exact authorized) source'):\n            reverse_recovery_entries(mutated,'native/zuiopt')\nif __name__=='__main__':unittest.main(verbosity=2)\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/zuiopt/ZUIoptTest.cpp",
+      "beforeSha256": "7a82306092571dc9d60183697a2b85c2661e212c1a5b22588fc5f6f2aa393224",
+      "afterSha256": "dd1d17d89dad421f8eee66065aefe1608234164ab2fbeac1d672e6fb3bf5d340",
+      "beforeEntry": "100644 blob 698b6ce5da9aee5a18abefc7c6191777c942007f\ttests/zuiopt/ZUIoptTest.cpp",
+      "afterEntry": "100644 blob eb9bc7912bcc1febd67d9cdb0b35a98c88184819\ttests/zuiopt/ZUIoptTest.cpp",
+      "before": null,
+      "hunks": [
+        {
+          "before": "        puts(\"RULES_READ_CANONICAL_SNAPSHOT_ZERO_WRITES_SHARED_LOCK_WRITER_EXCLUSION=PASS\");\n}\n\nint main(int argc,char** argv){\n    if(argc==2&&std::string(argv[1])==\"readonly\"){\n        try{\n            const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-read-fixture-XXXXXX\";\n",
+          "after": "        puts(\"RULES_READ_CANONICAL_SNAPSHOT_ZERO_WRITES_SHARED_LOCK_WRITER_EXCLUSION=PASS\");\n}\n\n#include \"InlineCommitTest.h\"\nint main(int argc,char** argv){\n    if(argc==2&&std::string(argv[1])==\"inline\"){\n        try{const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-inline-XXXXXX\";std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);require(mkdtemp(path.data()),\"exclusive inline fixture\");auto root=fs::path(path.data());inlineCommitTests(root);fs::remove_all(root);return 0;}catch(const std::exception& e){std::cerr<<\"INLINE_FIXTURE_FAIL \"<<e.what()<<'\\n';return 1;}\n    }\n    if(argc==2&&std::string(argv[1])==\"readonly\"){\n        try{\n            const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-read-fixture-XXXXXX\";\n"
+        },
+        {
+          "before": "        journalTests(root);\n        canonicalMigrationTests(root);\n        libraryTests(root);\n        {\n            RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;\n            for(const auto& candidate:std::vector<std::string>{OPEN,\"schema 3\\nenabled true\\nunknown bad\\n\"}){\n",
+          "after": "        journalTests(root);\n        canonicalMigrationTests(root);\n        libraryTests(root);\n        inlineCommitTests(root);\n        {\n            RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;\n            for(const auto& candidate:std::vector<std::string>{OPEN,\"schema 3\\nenabled true\\nunknown bad\\n\"}){\n"
+        }
+      ]
+    }
+  ],
+  "authority": "Owner R6 response attribution, minimal authenticated commit consolidation, opt-in timing and final self-contained release",
+  "historical_manifests_immutable": true,
+  "unchanged": "Scheduler, Journal7, SELinux/init, CAS/fsync, cloud preview and source identity"
+}

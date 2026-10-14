@@ -129,11 +129,15 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
     val appDirty get() = appDraft != null && (newApp || appDraft != originalApp)
     val dirty get() = appDirty || gpuDraft?.dirty == true || ruleDraft?.dirty == true || ruleDefaultsDraft?.dirty==true
     fun clearDrafts() { appDraft = null; originalApp = null; newApp = false; gpuDraft = null; ruleDraft = null; ruleDefaultsDraft=null }
-    fun work(success: String = "", completed: (() -> Unit)? = null, reconciled: (() -> Unit)? = null, feature:String="rules", task: () -> Unit) {
+    fun work(success: String = "", completed: (() -> Unit)? = null, reconciled: (() -> Unit)? = null, feature:String="rules", pending:String="", traceId:String="", task: () -> Unit) {
         if (busy) return
-        busy = true;workFeature=feature; error = ""; notice = ""
+        busy = true;workFeature=feature; error = ""; notice = pending
+        ResponseTrace.event(traceId,"LOCAL_FEEDBACK")
+        ResponseTrace.event(traceId,"ENQUEUED")
         executor.execute {
-            val result = runCatching(task)
+            ResponseTrace.event(traceId,"DISPATCHED")
+            val result = runCatching{ResponseTrace.during(traceId,task)}
+            ResponseTrace.event(traceId,"TASK_TERMINAL",if(result.isSuccess)"success" else "failed")
             post {
                 busy = false
                 reconciled?.invoke()
@@ -141,6 +145,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
                 onReconciled?.invoke(feature)
                 workFeature=""
                 onChanged?.invoke()
+                ResponseTrace.event(traceId,"UI_CONFIRMED",if(result.isSuccess)"saved_loaded;runtime_separate" else "failed")
                 finishClose()
             }
         }

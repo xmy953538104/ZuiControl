@@ -10,7 +10,7 @@ class RuntimeRecoveryScope(unittest.TestCase):
                 current=(ROOT/row['path']).read_text(encoding='utf8')
                 baseline=subprocess.check_output(['git','-C',str(ROOT),'show',RECOVERY_R2['baseHead']+':'+row['path']]).decode('utf8').replace('\r\n','\n')
                 self.assertEqual(reverse_recovery_r2(row['path'],current),baseline)
-                with self.assertRaisesRegex(AssertionError,'R[235] (?:quarantine exact|exact authorized) bytes'):
+                with self.assertRaisesRegex(AssertionError,'R[2356] (?:quarantine exact|exact authorized) bytes'):
                     reverse_recovery_r2(row['path'],current+'\n// unauthorized\n')
     def test_historical_runtime_manifest_is_unchanged(self):
         historical=subprocess.check_output(['git','-C',str(ROOT),'show',RECOVERY_R2['baseHead']+':tests/zuiopt/runtime_delta.json'])
@@ -20,6 +20,6 @@ class RuntimeRecoveryScope(unittest.TestCase):
         baseline=subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r',RECOVERY_R2['baseHead'],'--','native/zuiopt']).splitlines()
         self.assertEqual(sorted(reverse_recovery_entries(current,'native/zuiopt')),sorted(baseline))
         mutated=[row.replace(b'\t',b'x\t',1) if row.endswith(b'\tnative/zuiopt/ZUIopt_owner.h') else row for row in current]
-        with self.assertRaisesRegex(AssertionError,'R[235] (?:quarantine exact|exact authorized) source'):
+        with self.assertRaisesRegex(AssertionError,'R[2356] (?:quarantine exact|exact authorized) source'):
             reverse_recovery_entries(mutated,'native/zuiopt')
 if __name__=='__main__':unittest.main(verbosity=2)

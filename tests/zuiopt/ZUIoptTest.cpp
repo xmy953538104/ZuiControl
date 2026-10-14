@@ -187,7 +187,11 @@ void readOnlyTests(const fs::path& root){
         puts("RULES_READ_CANONICAL_SNAPSHOT_ZERO_WRITES_SHARED_LOCK_WRITER_EXCLUSION=PASS");
 }
 
+#include "InlineCommitTest.h"
 int main(int argc,char** argv){
+    if(argc==2&&std::string(argv[1])=="inline"){
+        try{const char* temp=getenv("TMPDIR");std::string prefix=std::string(temp?temp:"/tmp")+"/ZUIopt-inline-XXXXXX";std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);require(mkdtemp(path.data()),"exclusive inline fixture");auto root=fs::path(path.data());inlineCommitTests(root);fs::remove_all(root);return 0;}catch(const std::exception& e){std::cerr<<"INLINE_FIXTURE_FAIL "<<e.what()<<'\n';return 1;}
+    }
     if(argc==2&&std::string(argv[1])=="readonly"){
         try{
             const char* temp=getenv("TMPDIR");std::string prefix=std::string(temp?temp:"/tmp")+"/ZUIopt-read-fixture-XXXXXX";
@@ -250,6 +254,7 @@ int main(int argc,char** argv){
         journalTests(root);
         canonicalMigrationTests(root);
         libraryTests(root);
+        inlineCommitTests(root);
         {
             RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;
             for(const auto& candidate:std::vector<std::string>{OPEN,"schema 3\nenabled true\nunknown bad\n"}){

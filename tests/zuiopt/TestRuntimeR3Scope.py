@@ -10,7 +10,7 @@ class RuntimeR3Scope(unittest.TestCase):
     text=(ROOT/row['path']).read_text(encoding='utf8');self.assertEqual(hashlib.sha256(reverse_runtime_r5(row['path'],text).encode()).hexdigest(),row['afterSha256'])
     old=subprocess.run(['git','show',RUNTIME_R3['baseHead']+':'+row['path']],cwd=ROOT,capture_output=True)
     self.assertEqual(reverse_runtime_r3(row['path'],text),old.stdout.decode('utf8').replace('\r\n','\n') if old.returncode==0 else '')
-    with self.assertRaisesRegex(AssertionError,'R[35] exact authorized bytes'):reverse_runtime_r3(row['path'],text+'\n// outside scope\n')
+    with self.assertRaisesRegex(AssertionError,'R[356] exact authorized bytes'):reverse_runtime_r3(row['path'],text+'\n// outside scope\n')
  def test_native_entries_and_historical_manifests(self):
   expected=subprocess.check_output(['git','ls-tree','-r',RUNTIME_R3['baseHead'],'--','native/zuiopt'],cwd=ROOT).splitlines()
   self.assertEqual(sorted(reverse_runtime_r3_entries(entries('native/zuiopt'),'native/zuiopt')),sorted(expected))
