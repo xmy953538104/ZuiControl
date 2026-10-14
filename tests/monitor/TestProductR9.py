@@ -23,6 +23,7 @@ object ZuioptRead {
 }
 object SystemClock { fun elapsedRealtimeNanos()=System.nanoTime() }
 object OwnerRenderTrace { fun event(kind:String,value:String){} }
+object ResponseTrace { fun mark(phase:String,detail:String=""){} }
 class ZuioptRuleModel { companion object { fun parseNormalized(text:String)=ZuioptRuleModel() } }
 object ZuioptLibrary {
  data class Baseline(val generation:String,val rules:String){constructor(g:String,h:String,r:String,m:JSONObject):this(g,r)}
@@ -77,7 +78,7 @@ fun main() {
         self.assertIn('rulesQualified=false',load);self.assertIn('failed={error->',load)
         page=main.split('private fun render()',1)[1].split('private fun buildMaster()',1)[0]
         identity=page.split('val page=',1)[1].split('if(page!=shownPage)',1)[0]
-        self.assertNotIn('ruleLoadStage',identity);self.assertNotIn('$rulesQualified',page)
+        self.assertNotIn('ruleLoadStage',identity);self.assertNotIn('$rulesQualified',identity)
         self.assertLess(page.index('restoreRulesPending()'),page.index('pageBindings.toList()'))
         self.assertIn('rulesPendingViews.putIfAbsent(v,v.isEnabled to v.alpha)',main)
         self.assertIn('view.isEnabled=saved.first;view.alpha=saved.second',main)

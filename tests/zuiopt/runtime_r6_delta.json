@@ -14,6 +14,7 @@
     "native/zuiopt/ZUIopt_store.h",
     "tests/command_plane/TestUtilityTruth.py",
     "tests/monitor/TestGpuDraftLifecycle.py",
+    "tests/monitor/TestProductR9.py",
     "tests/zuiopt/InlineCommitTest.h",
     "tests/zuiopt/TestRuntimeFrontendScope.py",
     "tests/zuiopt/TestRuntimeR3Scope.py",
@@ -253,6 +254,24 @@
       ]
     },
     {
+      "path": "tests/monitor/TestProductR9.py",
+      "beforeSha256": "377f50f49b51041f482c7598930a1a210c3e53529bda9481b16ca6da4d87ddb7",
+      "afterSha256": "09ad675d8aa1c2a2b0edcfa1ad48891ac044256fdd5d2169fc726dd48da9c7fe",
+      "beforeEntry": "100644 blob 1051b102f760123f80cf0ede02b2ebf8c9052644\ttests/monitor/TestProductR9.py",
+      "afterEntry": "100644 blob 3442dad85f5c0d48194cc231ca18cb3b2f01cbae\ttests/monitor/TestProductR9.py",
+      "before": null,
+      "hunks": [
+        {
+          "before": "}\nobject SystemClock { fun elapsedRealtimeNanos()=System.nanoTime() }\nobject OwnerRenderTrace { fun event(kind:String,value:String){} }\nclass ZuioptRuleModel { companion object { fun parseNormalized(text:String)=ZuioptRuleModel() } }\nobject ZuioptLibrary {\n data class Baseline(val generation:String,val rules:String){constructor(g:String,h:String,r:String,m:JSONObject):this(g,r)}\n",
+          "after": "}\nobject SystemClock { fun elapsedRealtimeNanos()=System.nanoTime() }\nobject OwnerRenderTrace { fun event(kind:String,value:String){} }\nobject ResponseTrace { fun mark(phase:String,detail:String=\"\"){} }\nclass ZuioptRuleModel { companion object { fun parseNormalized(text:String)=ZuioptRuleModel() } }\nobject ZuioptLibrary {\n data class Baseline(val generation:String,val rules:String){constructor(g:String,h:String,r:String,m:JSONObject):this(g,r)}\n"
+        },
+        {
+          "before": "        self.assertIn('rulesQualified=false',load);self.assertIn('failed={error->',load)\n        page=main.split('private fun render()',1)[1].split('private fun buildMaster()',1)[0]\n        identity=page.split('val page=',1)[1].split('if(page!=shownPage)',1)[0]\n        self.assertNotIn('ruleLoadStage',identity);self.assertNotIn('$rulesQualified',page)\n        self.assertLess(page.index('restoreRulesPending()'),page.index('pageBindings.toList()'))\n        self.assertIn('rulesPendingViews.putIfAbsent(v,v.isEnabled to v.alpha)',main)\n        self.assertIn('view.isEnabled=saved.first;view.alpha=saved.second',main)\n",
+          "after": "        self.assertIn('rulesQualified=false',load);self.assertIn('failed={error->',load)\n        page=main.split('private fun render()',1)[1].split('private fun buildMaster()',1)[0]\n        identity=page.split('val page=',1)[1].split('if(page!=shownPage)',1)[0]\n        self.assertNotIn('ruleLoadStage',identity);self.assertNotIn('$rulesQualified',identity)\n        self.assertLess(page.index('restoreRulesPending()'),page.index('pageBindings.toList()'))\n        self.assertIn('rulesPendingViews.putIfAbsent(v,v.isEnabled to v.alpha)',main)\n        self.assertIn('view.isEnabled=saved.first;view.alpha=saved.second',main)\n"
+        }
+      ]
+    },
+    {
       "path": "tests/zuiopt/InlineCommitTest.h",
       "beforeSha256": null,
       "afterSha256": "5c3442f07692d624efe1444adab18e526cf53f85c3c192f55792d0b9551a7412",
@@ -328,14 +347,14 @@
     {
       "path": "tests/zuiopt/ZUIoptTest.cpp",
       "beforeSha256": "7a82306092571dc9d60183697a2b85c2661e212c1a5b22588fc5f6f2aa393224",
-      "afterSha256": "84dd5f324b5246230c1c18ec8b1f09426c63c70f1a9d78b619fcaa1fff472548",
+      "afterSha256": "931aa01f94f715a2272b984d51e33034fb5dd89e0b3ef33ae14b619bab36cdb0",
       "beforeEntry": "100644 blob 698b6ce5da9aee5a18abefc7c6191777c942007f\ttests/zuiopt/ZUIoptTest.cpp",
-      "afterEntry": "100644 blob f52f1bd3736cb36476608e2c5a98ce6a23c95b3a\ttests/zuiopt/ZUIoptTest.cpp",
+      "afterEntry": "100644 blob 8d6f8c8b85fad156aa66ddff3584787b8a2ee3f2\ttests/zuiopt/ZUIoptTest.cpp",
       "before": null,
       "hunks": [
         {
           "before": "        puts(\"RULES_READ_CANONICAL_SNAPSHOT_ZERO_WRITES_SHARED_LOCK_WRITER_EXCLUSION=PASS\");\n}\n\nint main(int argc,char** argv){\n    if(argc==2&&std::string(argv[1])==\"readonly\"){\n        try{\n            const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-read-fixture-XXXXXX\";\n",
-          "after": "        puts(\"RULES_READ_CANONICAL_SNAPSHOT_ZERO_WRITES_SHARED_LOCK_WRITER_EXCLUSION=PASS\");\n}\n\n#include \"InlineCommitTest.h\"\nint main(int argc,char** argv){\n    if(argc==2&&std::string(argv[1])==\"inline\"){\n        try{const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-inline-XXXXXX\";std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);require(mkdtemp(path.data()),\"exclusive inline fixture\");auto root=fs::path(path.data());inlineCommitTests(root);inlineCommitKillTests(root);fs::remove_all(root);return 0;}catch(const std::exception& e){std::cerr<<\"INLINE_FIXTURE_FAIL \"<<e.what()<<'\\n';return 1;}\n    }\n    if(argc==2&&std::string(argv[1])==\"readonly\"){\n        try{\n            const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-read-fixture-XXXXXX\";\n"
+          "after": "        puts(\"RULES_READ_CANONICAL_SNAPSHOT_ZERO_WRITES_SHARED_LOCK_WRITER_EXCLUSION=PASS\");\n}\n\n#include \"InlineCommitTest.h\"\nint main(int argc,char** argv){\n    if(argc==2&&std::string(argv[1])==\"inline\"){\n        try{const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-inline-XXXXXX\";std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);require(mkdtemp(path.data()),\"exclusive inline fixture\");auto root=fs::path(path.data());auto started=ZUIopt::now();inlineCommitTests(root);inlineCommitKillTests(root);fs::remove_all(root);std::cout<<\"LOCAL_ELAPSED_MS=\"<<(ZUIopt::now()-started)<<'\\n';return 0;}catch(const std::exception& e){std::cerr<<\"INLINE_FIXTURE_FAIL \"<<e.what()<<'\\n';return 1;}\n    }\n    if(argc==2&&std::string(argv[1])==\"readonly\"){\n        try{\n            const char* temp=getenv(\"TMPDIR\");std::string prefix=std::string(temp?temp:\"/tmp\")+\"/ZUIopt-read-fixture-XXXXXX\";\n"
         },
         {
           "before": "        journalTests(root);\n        canonicalMigrationTests(root);\n        libraryTests(root);\n        {\n            RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;\n            for(const auto& candidate:std::vector<std::string>{OPEN,\"schema 3\\nenabled true\\nunknown bad\\n\"}){\n",

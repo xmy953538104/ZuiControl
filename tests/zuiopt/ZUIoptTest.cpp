@@ -190,7 +190,7 @@ void readOnlyTests(const fs::path& root){
 #include "InlineCommitTest.h"
 int main(int argc,char** argv){
     if(argc==2&&std::string(argv[1])=="inline"){
-        try{const char* temp=getenv("TMPDIR");std::string prefix=std::string(temp?temp:"/tmp")+"/ZUIopt-inline-XXXXXX";std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);require(mkdtemp(path.data()),"exclusive inline fixture");auto root=fs::path(path.data());inlineCommitTests(root);inlineCommitKillTests(root);fs::remove_all(root);return 0;}catch(const std::exception& e){std::cerr<<"INLINE_FIXTURE_FAIL "<<e.what()<<'\n';return 1;}
+        try{const char* temp=getenv("TMPDIR");std::string prefix=std::string(temp?temp:"/tmp")+"/ZUIopt-inline-XXXXXX";std::vector<char> path(prefix.begin(),prefix.end());path.push_back(0);require(mkdtemp(path.data()),"exclusive inline fixture");auto root=fs::path(path.data());auto started=ZUIopt::now();inlineCommitTests(root);inlineCommitKillTests(root);fs::remove_all(root);std::cout<<"LOCAL_ELAPSED_MS="<<(ZUIopt::now()-started)<<'\n';return 0;}catch(const std::exception& e){std::cerr<<"INLINE_FIXTURE_FAIL "<<e.what()<<'\n';return 1;}
     }
     if(argc==2&&std::string(argv[1])=="readonly"){
         try{
