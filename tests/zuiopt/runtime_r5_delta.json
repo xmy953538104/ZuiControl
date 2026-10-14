@@ -14,6 +14,8 @@
     "app/src/test/java/com/zui/zuicontrol/RuleObservedDraftTest.kt",
     "app/src/test/java/com/zui/zuicontrol/RuleUpstreamFetcherTest.kt",
     "app/src/test/java/com/zui/zuicontrol/ZuioptRuleModelTest.kt",
+    "framework_patch/src/services/com/zui/server/control/SettingsBackup.java",
+    "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
     "native/zuiopt/ZUIopt.cpp",
     "native/zuiopt/ZUIopt_binder.h",
     "native/zuiopt/ZUIopt_core.h",
@@ -29,9 +31,13 @@
     "native/zuiopt/ZUIopt_sha256.h",
     "native/zuiopt/ZUIopt_store.h",
     "payload/system/etc/zuiopt/factory_rules.conf",
+    "scripts/rules/MigrateSchema2Backup.py",
     "scripts/rules/PublishRules.py",
     "scripts/rules/ZUIOPT_convert_legacy_rules.py",
     "scripts/rules/ZUIOPT_rule_pack.py",
+    "tests/gpu/AppPolicyFixture.java",
+    "tests/gpu/BackupInspectionTest.java",
+    "tests/gpu/FactoryResetTest.java",
     "tests/monitor/TestFinalIntegration.py",
     "tests/monitor/TestFrontendV3.py",
     "tests/monitor/TestPlan2.py",
@@ -47,6 +53,7 @@
     "tests/zuiopt/TestRuntimeSchema.py",
     "tests/zuiopt/TestRuntimeStatus.py",
     "tests/zuiopt/TestSceneAuthority.py",
+    "tests/zuiopt/TestSchema3BackupMigration.py",
     "tests/zuiopt/TestSchemaContract.py",
     "tests/zuiopt/TestTerminalContracts.py",
     "tests/zuiopt/ZUIoptBinderTest.cpp",
@@ -72,11 +79,15 @@
     {
       "path": ".github/workflows/build.yml",
       "beforeSha256": "379be5a581eb7e923c29c228bfa0bc7af25bec314f1a4cd5faa1df6cc8f77f6f",
-      "afterSha256": "f4c32e4e1406043787c9a976a22debbdeb38813303d90b54faad9922f3f36670",
+      "afterSha256": "1fc3175381eeeff73f763026a0c6ecebb3146d5f033322af858375d499980d85",
       "beforeEntry": "100644 blob 3e782c4a82ec0ff9e8ba80ed3027594c46a14f31\t.github/workflows/build.yml",
-      "afterEntry": "100644 blob 8ba18f2a3750c9faf93e9270218650df428e2706\t.github/workflows/build.yml",
+      "afterEntry": "100644 blob 7545a627c8457090f1c2d4011a0fafa9fcff48de\t.github/workflows/build.yml",
       "before": null,
       "hunks": [
+        {
+          "before": "          python3 tests/monitor/TestAnalysisCollector.py || scripts_failed=1\n          python3 tests/monitor/TestAnalysisSql.py || scripts_failed=1\n          python3 tests/zuiopt/TestSchemaContract.py || scripts_failed=1\n          python3 tests/monitor/TestUiPolish.py || scripts_failed=1\n          python3 tests/monitor/TestProductR6.py || scripts_failed=1\n          python3 tests/monitor/TestProductR7.py || scripts_failed=1\n",
+          "after": "          python3 tests/monitor/TestAnalysisCollector.py || scripts_failed=1\n          python3 tests/monitor/TestAnalysisSql.py || scripts_failed=1\n          python3 tests/zuiopt/TestSchemaContract.py || scripts_failed=1\n          python3 tests/zuiopt/TestSchema3BackupMigration.py || scripts_failed=1\n          python3 tests/monitor/TestUiPolish.py || scripts_failed=1\n          python3 tests/monitor/TestProductR6.py || scripts_failed=1\n          python3 tests/monitor/TestProductR7.py || scripts_failed=1\n"
+        },
         {
           "before": "          python3 tests/zuiopt/TestReadTransport.py || scripts_failed=1\n          python3 tests/zuiopt/TestRuntimeFrontendModel.py || scripts_failed=1\n          python3 tests/zuiopt/TestRuntimeFrontendScope.py || scripts_failed=1\n          python3 tests/monitor/TestNotificationRenderer.py || scripts_failed=1\n          bash tests/uperf/TestConfigurableAppPolicy.sh || scripts_failed=1\n          python3 tests/monitor/TestRecordSql.py || scripts_failed=1\n",
           "after": "          python3 tests/zuiopt/TestReadTransport.py || scripts_failed=1\n          python3 tests/zuiopt/TestRuntimeFrontendModel.py || scripts_failed=1\n          python3 tests/zuiopt/TestRuntimeFrontendScope.py || scripts_failed=1\n          python3 tests/zuiopt/TestRuntimeR5Scope.py || scripts_failed=1\n          python3 tests/monitor/TestNotificationRenderer.py || scripts_failed=1\n          bash tests/uperf/TestConfigurableAppPolicy.sh || scripts_failed=1\n          python3 tests/monitor/TestRecordSql.py || scripts_failed=1\n"
@@ -291,6 +302,42 @@
       ]
     },
     {
+      "path": "framework_patch/src/services/com/zui/server/control/SettingsBackup.java",
+      "beforeSha256": "2818b55be81ed1cd88088115006afe378b339e20c89bf9e1a762494466e7186a",
+      "afterSha256": "f8c10b2db01025b72ca7cc1ee46e7fe0c7827add1ac00f490eca80161434b688",
+      "beforeEntry": "100644 blob 7e5deeeff45ee23cde76c112fcc5f0a1004ea0c4\tframework_patch/src/services/com/zui/server/control/SettingsBackup.java",
+      "afterEntry": "100644 blob e3efcb26c6d7fd50917c067395afc8f0ffa7baea\tframework_patch/src/services/com/zui/server/control/SettingsBackup.java",
+      "before": null,
+      "hunks": [
+        {
+          "before": "        entries.put(\"preferences.json\",preferences(prefs,policy.users));List<Object> hashes=new ArrayList<>();\n        for(int i=1;i<NAMES.length;i++){byte[] data=entries.get(NAMES[i]);hashes.add(map(\"name\",NAMES[i],\"bytes\",data.length,\"sha256\",hash(data)));}\n        Map<String,Object> manifest=map(\"schemaVersion\",1,\"kind\",\"zui.settings.backup\",\"productSpecVersion\",\"1.0\",\n            \"sourceBuild\",build,\"policySchema\",policy.schema,\"zuioptSchema\",2,\"targetSoC\",\"SM8650\",\"gpuOppSetHash\",OPP_HASH,\n            \"createdAt\",created,\"userInventory\",object(parse(policy.bytes())).get(\"users\"),\"entries\",hashes,\n            \"configGeneration\",map(\"policy\",policy.generation,\"rules\",rule.get(\"generation\"),\"preferences\",hash(prefs)));\n        manifest.put(\"manifestHash\",hash(bytes(manifest)));entries.put(\"manifest.json\",bytes(manifest));return zip(entries);\n",
+          "after": "        entries.put(\"preferences.json\",preferences(prefs,policy.users));List<Object> hashes=new ArrayList<>();\n        for(int i=1;i<NAMES.length;i++){byte[] data=entries.get(NAMES[i]);hashes.add(map(\"name\",NAMES[i],\"bytes\",data.length,\"sha256\",hash(data)));}\n        Map<String,Object> manifest=map(\"schemaVersion\",1,\"kind\",\"zui.settings.backup\",\"productSpecVersion\",\"1.0\",\n            \"sourceBuild\",build,\"policySchema\",policy.schema,\"zuioptSchema\",3,\"targetSoC\",\"SM8650\",\"gpuOppSetHash\",OPP_HASH,\n            \"createdAt\",created,\"userInventory\",object(parse(policy.bytes())).get(\"users\"),\"entries\",hashes,\n            \"configGeneration\",map(\"policy\",policy.generation,\"rules\",rule.get(\"generation\"),\"preferences\",hash(prefs)));\n        manifest.put(\"manifestHash\",hash(bytes(manifest)));entries.put(\"manifest.json\",bytes(manifest));return zip(entries);\n"
+        },
+        {
+          "before": "        String digest=string(manifest.remove(\"manifestHash\"));require(digest.equals(hash(bytes(manifest))),\"manifest hash\");\n        require(integer(manifest.get(\"schemaVersion\"))==1&&\"zui.settings.backup\".equals(manifest.get(\"kind\"))\n            &&\"1.0\".equals(manifest.get(\"productSpecVersion\"))&&(integer(manifest.get(\"policySchema\"))==2||integer(manifest.get(\"policySchema\"))==3)\n            &&integer(manifest.get(\"zuioptSchema\"))==2&&\"SM8650\".equals(manifest.get(\"targetSoC\"))\n            &&OPP_HASH.equals(manifest.get(\"gpuOppSetHash\")),\"unsupported backup compatibility\");\n        require(!string(manifest.get(\"sourceBuild\")).isEmpty()&&integer(manifest.get(\"createdAt\"))>=0,\"backup provenance\");\n        List<Object> hashes=array(manifest.get(\"entries\"));require(hashes.size()==3,\"manifest members\");\n",
+          "after": "        String digest=string(manifest.remove(\"manifestHash\"));require(digest.equals(hash(bytes(manifest))),\"manifest hash\");\n        require(integer(manifest.get(\"schemaVersion\"))==1&&\"zui.settings.backup\".equals(manifest.get(\"kind\"))\n            &&\"1.0\".equals(manifest.get(\"productSpecVersion\"))&&(integer(manifest.get(\"policySchema\"))==2||integer(manifest.get(\"policySchema\"))==3)\n            &&integer(manifest.get(\"zuioptSchema\"))==3&&\"SM8650\".equals(manifest.get(\"targetSoC\"))\n            &&OPP_HASH.equals(manifest.get(\"gpuOppSetHash\")),\"unsupported backup compatibility\");\n        require(!string(manifest.get(\"sourceBuild\")).isEmpty()&&integer(manifest.get(\"createdAt\"))>=0,\"backup provenance\");\n        List<Object> hashes=array(manifest.get(\"entries\"));require(hashes.size()==3,\"manifest members\");\n"
+        },
+        {
+          "before": "        require(integer(gen.get(\"policy\"))==policy.generation&&string(gen.get(\"rules\")).matches(\"g[0-9a-f]{24}\")\n            &&hash(entries.get(\"preferences.json\")).equals(gen.get(\"preferences\")),\"backup generation vector\");\n        // Native owner additionally parses and round-trips canonical rules before COMMIT.\n        require(!utf8(entries.get(\"zuiopt.canonical.conf\")).contains(\"\\r\"),\"rules LF encoding\");return entries;\n    }\n    final AppPolicyStore policy;\n    SettingsBackup(AppPolicyStore policy){this.policy=policy;}\n",
+          "after": "        require(integer(gen.get(\"policy\"))==policy.generation&&string(gen.get(\"rules\")).matches(\"g[0-9a-f]{24}\")\n            &&hash(entries.get(\"preferences.json\")).equals(gen.get(\"preferences\")),\"backup generation vector\");\n        // Native owner additionally parses and round-trips canonical rules before COMMIT.\n        require(utf8(entries.get(\"zuiopt.canonical.conf\")).startsWith(\"schema 3\\n\")\n            &&!utf8(entries.get(\"zuiopt.canonical.conf\")).contains(\"\\r\"),\"Schema3 rules required; migrate old backup explicitly\");return entries;\n    }\n    final AppPolicyStore policy;\n    SettingsBackup(AppPolicyStore policy){this.policy=policy;}\n"
+        }
+      ]
+    },
+    {
+      "path": "framework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "beforeSha256": "d38bbc96f87b312fa8eed34effb240295d61f8970ea63e0fce08817f8a968906",
+      "afterSha256": "499e3ae349043da5c8eb7e7fa0918a1a32eb2607cd71132215945b8dd7f83b0e",
+      "beforeEntry": "100644 blob 4fb58ba2e0b448e3b546e89d795e21c352c603de\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "afterEntry": "100644 blob 93ac67e624dcc48dbd2ed9a8637ff346643a9474\tframework_patch/src/services/com/zui/server/control/ZuiControlService.java",
+      "before": null,
+      "hunks": [
+        {
+          "before": "        return \"ok=1\\nsupportedDisplayHz=\" + supportedDisplayHz()\n                + \"\\nfpsCapPhase=not_delivered\"\n                + \"\\nintegrationSchema=V83\\nappPolicySchema=\"+(mAppPolicies==null||mAppPolicies.current==null?\"UNAVAILABLE\":mAppPolicies.current.schema)\n                + \"\\nzuioptSchema=3\\nzuioptLegacySchema=2\\nthreadCpuIds=0,1,2,3,4,5,6,7\\nthreadTopology=SM8650_LOGICAL_CPU_IDS\"\n                + \"\\nrulesReadTransport=DAEMON_SNAPSHOT_V1\"\n                + \"\\nrulesRuntimeReadTransport=DAEMON_RUNTIME_V1\"\n                + \"\\nthreadCpuConvention=ONE_CORE_100_PERCENT\\nrecordThreadCoverage=TOP15_OBSERVED\"\n",
+          "after": "        return \"ok=1\\nsupportedDisplayHz=\" + supportedDisplayHz()\n                + \"\\nfpsCapPhase=not_delivered\"\n                + \"\\nintegrationSchema=V83\\nappPolicySchema=\"+(mAppPolicies==null||mAppPolicies.current==null?\"UNAVAILABLE\":mAppPolicies.current.schema)\n                + \"\\nzuioptSchema=3\\nzuioptBackupMigration=EXPLICIT_ONLY\\nthreadCpuIds=0,1,2,3,4,5,6,7\\nthreadTopology=SM8650_LOGICAL_CPU_IDS\"\n                + \"\\nrulesReadTransport=DAEMON_SNAPSHOT_V1\"\n                + \"\\nrulesRuntimeReadTransport=DAEMON_RUNTIME_V1\"\n                + \"\\nthreadCpuConvention=ONE_CORE_100_PERCENT\\nrecordThreadCoverage=TOP15_OBSERVED\"\n"
+        }
+      ]
+    },
+    {
       "path": "native/zuiopt/ZUIopt.cpp",
       "beforeSha256": "2aa413c2a73a84a358559f2c017e7a9c660fb8c054f78c1bbbfddec2d2c33bce",
       "afterSha256": "6f2ce801332ceced5201dcd8d6804d4ae8c6854b63ba53be378e2b366af2c580",
@@ -501,6 +548,15 @@
       ]
     },
     {
+      "path": "scripts/rules/MigrateSchema2Backup.py",
+      "beforeSha256": null,
+      "afterSha256": "33960cf1b7db0bd6886e419499c05d6ad79be06cb3d05c032cd8cd3516f8ba2f",
+      "beforeEntry": null,
+      "afterEntry": "100644 blob b3cf5bab4e2d61dee93ea188f56ab1459ea822f0\tscripts/rules/MigrateSchema2Backup.py",
+      "before": null,
+      "hunks": []
+    },
+    {
       "path": "scripts/rules/PublishRules.py",
       "beforeSha256": "b6dde35f11c5c26b80f7990a67661a7094e0c8d19a558bf84868b202f5a3720b",
       "afterSha256": "3eba1895c5e5b4ace1d2df7141df8684ac870c916ac9a3c3e24023e66a7b7be9",
@@ -575,6 +631,56 @@
         {
           "before": "    manifest=dict(schemaVersion=2,oldCanonicalHash=digest(old),newSourceHash=digest(source),\n        normalizerVersion=NORMALIZER_VERSION,outputChoice=choice,outputCanonicalHash=digest(output),\n        conflictListHash=digest(json.dumps(comparison,sort_keys=True,separators=(',',':')).encode()),\n        engineSchema=2,targetSoC='sm8650',workflowRepoCommitRun=workflow,qualificationEvidenceHash=evidence_hash)\n    out=io.BytesIO()\n    with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_STORED) as z:\n        for name,data in [('manifest.json',json.dumps(manifest,sort_keys=True,separators=(',',':')).encode('ascii')),('rules.conf',output)]:\n",
           "after": "    manifest=dict(schemaVersion=2,oldCanonicalHash=digest(old),newSourceHash=digest(source),\n        normalizerVersion=NORMALIZER_VERSION,outputChoice=choice,outputCanonicalHash=digest(output),\n        conflictListHash=digest(json.dumps(comparison,sort_keys=True,separators=(',',':')).encode()),\n        engineSchema=3,targetSoC='sm8650',workflowRepoCommitRun=workflow,qualificationEvidenceHash=evidence_hash)\n    out=io.BytesIO()\n    with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_STORED) as z:\n        for name,data in [('manifest.json',json.dumps(manifest,sort_keys=True,separators=(',',':')).encode('ascii')),('rules.conf',output)]:\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/gpu/AppPolicyFixture.java",
+      "beforeSha256": "362ff52f6b38b42a9ace795c9a89c9213669c70d970720aa56f97fe7e16cb919",
+      "afterSha256": "024925596bf70a2ece6a5f2a3f95ee7f105fad558bf8a950be1dccb318ea345c",
+      "beforeEntry": "100644 blob 7c8f88cf0ea55757b6c927d09b5cd70b38610333\ttests/gpu/AppPolicyFixture.java",
+      "afterEntry": "100644 blob f6ff25ec6628682f2b2c5ccb0dbb1e3008a606af\ttests/gpu/AppPolicyFixture.java",
+      "before": null,
+      "hunks": [
+        {
+          "before": "        }\n    }\n    static final class Rules implements SettingsBackup.Rules {\n        byte[] data=b(\"schema=2\\n\");String pending=\"\",generation=\"g000000000000000000000001\";byte[] before,target;boolean fail,prepareFail;int finishes;\n        public Map<String,Object> snapshot(){return map(\"data\",Base64.getEncoder().encodeToString(data),\"generation\",generation,\"pending\",pending);}\n        public void prepare(String tx,String expected,byte[] next){if(prepareFail){prepareFail=false;throw new IllegalStateException(\"native prepare failed before lease\");}require(pending.isEmpty()&&generation.equals(expected),\"rule CAS\");pending=tx;before=data.clone();target=next.clone();}\n        public void apply(String tx,byte[] wanted,boolean rollback)throws IOException {\n",
+          "after": "        }\n    }\n    static final class Rules implements SettingsBackup.Rules {\n        byte[] data=b(\"schema 3\\nenabled true\\n\");String pending=\"\",generation=\"g000000000000000000000001\";byte[] before,target;boolean fail,prepareFail;int finishes;\n        public Map<String,Object> snapshot(){return map(\"data\",Base64.getEncoder().encodeToString(data),\"generation\",generation,\"pending\",pending);}\n        public void prepare(String tx,String expected,byte[] next){if(prepareFail){prepareFail=false;throw new IllegalStateException(\"native prepare failed before lease\");}require(pending.isEmpty()&&generation.equals(expected),\"rule CAS\");pending=tx;before=data.clone();target=next.clone();}\n        public void apply(String tx,byte[] wanted,boolean rollback)throws IOException {\n"
+        },
+        {
+          "before": "        rejects(()->SettingsBackup.preferences(bytes(prefs),initial.users));\n        AppPolicyStore.State next=initial.copy();next.globals.put(0,new AppPolicyStore.Row(60,\"fast\",629,903));\n        Map<String,Object> nextPrefs=object(parse(backup.prefs()));object(array(nextPrefs.get(\"users\")).get(0)).put(\"circle_x\",0.25);\n        byte[] wanted=SettingsBackup.archive(next,map(\"data\",Base64.getEncoder().encodeToString(b(\"schema=2\\n# next\\n\")),\"generation\",rules.generation),bytes(nextPrefs),\"fixture\",0);\n        String tx=\"000000000000000000000001\";backup.restore(wanted,tx,owner,rules);\n        check(store.current.global(0).refreshHz==60&&!backup.busy()&&rules.pending.isEmpty(),\"whole settings applied\");\n        long gen=store.current.generation;int finishCount=rules.finishes;\n",
+          "after": "        rejects(()->SettingsBackup.preferences(bytes(prefs),initial.users));\n        AppPolicyStore.State next=initial.copy();next.globals.put(0,new AppPolicyStore.Row(60,\"fast\",629,903));\n        Map<String,Object> nextPrefs=object(parse(backup.prefs()));object(array(nextPrefs.get(\"users\")).get(0)).put(\"circle_x\",0.25);\n        byte[] wanted=SettingsBackup.archive(next,map(\"data\",Base64.getEncoder().encodeToString(b(\"schema 3\\nenabled true\\n# next\\n\")),\"generation\",rules.generation),bytes(nextPrefs),\"fixture\",0);\n        String tx=\"000000000000000000000001\";backup.restore(wanted,tx,owner,rules);\n        check(store.current.global(0).refreshHz==60&&!backup.busy()&&rules.pending.isEmpty(),\"whole settings applied\");\n        long gen=store.current.generation;int finishCount=rules.finishes;\n"
+        },
+        {
+          "before": "            SettingsBackup restarted=new SettingsBackup(new AppPolicyStore(broken));restarted.recover(new Owner(),nativeOwner);\n            boolean applied=restarted.policy.current.global(0).refreshHz==60;\n            check(!restarted.busy()&&nativeOwner.pending.isEmpty(),\"resolved crash boundary \"+boundary);\n            check(Arrays.equals(nativeOwner.data,applied?b(\"schema=2\\n# next\\n\"):b(\"schema=2\\n\")),\"whole rule generation after crash \"+boundary);\n            check(Arrays.equals(restarted.prefs(),applied?bytes(nextPrefs):bytes(SettingsBackup.defaultPreferences(initial.users))),\"whole prefs after crash \"+boundary);\n        }\n        System.out.println(\"SETTINGS_BACKUP_ROUNDTRIP_REJECTION_ACK_FAILURE_CRASH_ROLLBACK=PASS\");\n",
+          "after": "            SettingsBackup restarted=new SettingsBackup(new AppPolicyStore(broken));restarted.recover(new Owner(),nativeOwner);\n            boolean applied=restarted.policy.current.global(0).refreshHz==60;\n            check(!restarted.busy()&&nativeOwner.pending.isEmpty(),\"resolved crash boundary \"+boundary);\n            check(Arrays.equals(nativeOwner.data,applied?b(\"schema 3\\nenabled true\\n# next\\n\"):b(\"schema 3\\nenabled true\\n\")),\"whole rule generation after crash \"+boundary);\n            check(Arrays.equals(restarted.prefs(),applied?bytes(nextPrefs):bytes(SettingsBackup.defaultPreferences(initial.users))),\"whole prefs after crash \"+boundary);\n        }\n        System.out.println(\"SETTINGS_BACKUP_ROUNDTRIP_REJECTION_ACK_FAILURE_CRASH_ROLLBACK=PASS\");\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/gpu/BackupInspectionTest.java",
+      "beforeSha256": "d0f0a8f75431b5103d2c011491682f564e84b433ab039a99c4a4c75d4ddc5217",
+      "afterSha256": "fc4032f7d807acda1b222dcff6ca377355c8edb9383937f41877ecaf6cf06169",
+      "beforeEntry": "100644 blob 28db4148dd461262a05e18b043ac3ca683599d81\ttests/gpu/BackupInspectionTest.java",
+      "afterEntry": "100644 blob d06491be2dc410b45d89aaaf5236ae6d4d1e0ad7\ttests/gpu/BackupInspectionTest.java",
+      "before": null,
+      "hunks": [
+        {
+          "before": "  for(String mode:AppPolicyStore.MODES)s.defaults.put(AppPolicyStore.key(0,mode),s.range(0,mode));\n  d.write(AppPolicyStore.ACTIVE,s.bytes());AppPolicyStore p=new AppPolicyStore(d);SettingsBackup b=new SettingsBackup(p);\n  Rules rules=new Rules();byte[] archive=b.export(rules,\"inspection-fixture\",1),before=p.current.bytes();\n  String tx=\"000000000000000000000071\",sha=hash(archive),path=\"settings-upload-\"+tx;\n  Map<String,Object> meta=map(\"transaction\",tx,\"size\",archive.length,\"hash\",sha);\n  AppPolicyStore.Uploads.begin(meta,\"boot\",10);d.write(path+\".json\",bytes(meta));d.write(path+\".zip\",archive);\n",
+          "after": "  for(String mode:AppPolicyStore.MODES)s.defaults.put(AppPolicyStore.key(0,mode),s.range(0,mode));\n  d.write(AppPolicyStore.ACTIVE,s.bytes());AppPolicyStore p=new AppPolicyStore(d);SettingsBackup b=new SettingsBackup(p);\n  Rules rules=new Rules();byte[] archive=b.export(rules,\"inspection-fixture\",1),before=p.current.bytes();\n  check(integer(object(parse(SettingsBackup.validate(archive,s.users).get(\"manifest.json\"))).get(\"zuioptSchema\"))==3,\"Schema3 formal backup export\");\n  if(args.length>0)SettingsBackup.validate(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(args[0])),s.users);\n  String tx=\"000000000000000000000071\",sha=hash(archive),path=\"settings-upload-\"+tx;\n  Map<String,Object> meta=map(\"transaction\",tx,\"size\",archive.length,\"hash\",sha);\n  AppPolicyStore.Uploads.begin(meta,\"boot\",10);d.write(path+\".json\",bytes(meta));d.write(path+\".zip\",archive);\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/gpu/FactoryResetTest.java",
+      "beforeSha256": "d63a5bacacd4eabb3e924f60562b86459a076f7e17daa00313dd073c16143ae7",
+      "afterSha256": "d917b789c0dd1bec134fdcf6fbd1170ad8fc71b4782a71eb498f5e3b720e74c1",
+      "beforeEntry": "100644 blob affd5887120bcc039a4a976b63cd7a4ff4f4b269\ttests/gpu/FactoryResetTest.java",
+      "afterEntry": "100644 blob 0fd0def57f6c0128f3652975f7bbb1004efae34d\ttests/gpu/FactoryResetTest.java",
+      "before": null,
+      "hunks": [
+        {
+          "before": "import static com.zui.server.control.AppPolicyFixture.*;\nimport static com.zui.server.control.PolicyJson.*;\npublic final class FactoryResetTest {\n static final byte[] UPSTREAM=b(\"schema 2\\nenabled true\\ndebug false\\n\");\n static SettingsBackup.Rules rules(Rules owner){return new SettingsBackup.Rules(){\n  public Map<String,Object> snapshot(){return owner.snapshot();}\n  public Map<String,Object> upstream(){return map(\"generation\",owner.generation,\"data\",Base64.getEncoder().encodeToString(UPSTREAM));}\n",
+          "after": "import static com.zui.server.control.AppPolicyFixture.*;\nimport static com.zui.server.control.PolicyJson.*;\npublic final class FactoryResetTest {\n static final byte[] UPSTREAM=b(\"schema 3\\nenabled true\\ndebug false\\n\");\n static SettingsBackup.Rules rules(Rules owner){return new SettingsBackup.Rules(){\n  public Map<String,Object> snapshot(){return owner.snapshot();}\n  public Map<String,Object> upstream(){return map(\"generation\",owner.generation,\"data\",Base64.getEncoder().encodeToString(UPSTREAM));}\n"
         }
       ]
     },
@@ -671,18 +777,18 @@
     {
       "path": "tests/zuiopt/TestNativeRuleParity.py",
       "beforeSha256": "0f8834c6d2a188fe7517b6fe669e0afd4a10c2e20cf08520edc182c964e78d03",
-      "afterSha256": "47dd56ab2d6a9402ba7b44b0364ed60f52dbe64fdda686b324cf8284ad204d4d",
+      "afterSha256": "0be8e48664996fc3ad3ab60db6986e81e4f3399bd4649f6846b2b0611a32f4c5",
       "beforeEntry": "100644 blob 3feb8dfdce0f54a02c7220922d12015d1e88a779\ttests/zuiopt/TestNativeRuleParity.py",
-      "afterEntry": "100644 blob f8d61622a71e4c4ec64c953fc5868c534a7136c8\ttests/zuiopt/TestNativeRuleParity.py",
+      "afterEntry": "100644 blob 69dfa3a89966d0a394236648a15dac293b096d7d\ttests/zuiopt/TestNativeRuleParity.py",
       "before": null,
       "hunks": [
         {
-          "before": "\"\"\"Cross-check the production importer against the Schema2/3 Python reference.\"\"\"\nfrom pathlib import Path\nimport io,json,subprocess,sys,tempfile,zipfile\nsys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/rules'))\n",
-          "after": "\"\"\"Cross-check the production importer against the Schema3 Python reference.\"\"\"\nfrom pathlib import Path\nimport io,json,subprocess,sys,tempfile,zipfile\nsys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/rules'))\n"
+          "before": "\"\"\"Cross-check the production importer against the Schema2/3 Python reference.\"\"\"\nfrom pathlib import Path\nimport io,json,subprocess,sys,tempfile,zipfile\nsys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/rules'))\nfrom ZUIOPT_rule_pack import parse_rules,dump_rules,manifest_for,pack_bytes,unpack,appopt,merge,canonical_workflow,normalize_source\n\nfrom TestSchemaContract import CANONICAL as AUDITED, INVALID as AUDITED_INVALID, check as check_contract\n\nROOT=Path(__file__).resolve().parents[2]\nBASE=b'schema 2\\nenabled true\\nprofile G 2-6\\npackage exact org.example.game G 100\\n'\nOPEN=b'schema 2\\nenabled true\\nprofile G 2-7\\nthread G ALL glob \"Job.worker[AB]*\" selector=all 30 2-4\\nthread G R1 prefix Top selector=rank:1 20 7\\nthread G R2 contains Runner selector=rank:2 10 5-6\\npackage exact org.example.game G 100\\n'\n\ndef main(binary):\n    from TestRulePublisher import main as check_publisher\n",
+          "after": "\"\"\"Cross-check the production importer against the Schema3 Python reference.\"\"\"\nfrom pathlib import Path\nimport io,json,subprocess,sys,tempfile,zipfile\nsys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/rules'))\nfrom ZUIOPT_rule_pack import parse_rules,dump_rules,manifest_for,pack_bytes,unpack,appopt,merge,canonical_workflow,normalize_source\n\nfrom MigrateSchema2Backup import migrate_rules\nfrom TestSchemaContract import CANONICAL as AUDITED, INVALID as AUDITED_INVALID, check as check_contract\n\nROOT=Path(__file__).resolve().parents[2]\nBASE=b'schema 3\\nenabled true\\nprofile G 2-6\\npackage exact org.example.game G 100\\n'\nOPEN=b'schema 3\\nenabled true\\nprofile G 2-7\\nthread G ALL glob \"Job.worker[AB]*\" selector=all 30 2-4\\nthread G R1 prefix Top selector=rank:1 20 7\\nthread G R2 contains Runner selector=rank:2 10 5-6\\npackage exact org.example.game G 100\\n'\n\ndef main(binary):\n    from TestRulePublisher import main as check_publisher\n"
         },
         {
-          "before": "from TestSchemaContract import CANONICAL as AUDITED, INVALID as AUDITED_INVALID, check as check_contract\n\nROOT=Path(__file__).resolve().parents[2]\nBASE=b'schema 2\\nenabled true\\nprofile G 2-6\\npackage exact org.example.game G 100\\n'\nOPEN=b'schema 2\\nenabled true\\nprofile G 2-7\\nthread G ALL glob \"Job.worker[AB]*\" selector=all 30 2-4\\nthread G R1 prefix Top selector=rank:1 20 7\\nthread G R2 contains Runner selector=rank:2 10 5-6\\npackage exact org.example.game G 100\\n'\n\ndef main(binary):\n    from TestRulePublisher import main as check_publisher\n",
-          "after": "from TestSchemaContract import CANONICAL as AUDITED, INVALID as AUDITED_INVALID, check as check_contract\n\nROOT=Path(__file__).resolve().parents[2]\nBASE=b'schema 3\\nenabled true\\nprofile G 2-6\\npackage exact org.example.game G 100\\n'\nOPEN=b'schema 3\\nenabled true\\nprofile G 2-7\\nthread G ALL glob \"Job.worker[AB]*\" selector=all 30 2-4\\nthread G R1 prefix Top selector=rank:1 20 7\\nthread G R2 contains Runner selector=rank:2 10 5-6\\npackage exact org.example.game G 100\\n'\n\ndef main(binary):\n    from TestRulePublisher import main as check_publisher\n"
+          "before": "            result=subprocess.run([binary,command,*paths,*extra],capture_output=True,timeout=15)\n            assert (result.returncode==0)==ok,(command,result.stderr.decode(errors='replace'))\n            checked+=1;return result.stdout\n        assert parse_rules(call('rules',AUDITED))==parse_rules(AUDITED)\n        for invalid in AUDITED_INVALID: call('rules',invalid,ok=False)\n        factory=(ROOT/'payload/system/etc/zuiopt/factory_rules.conf').read_bytes()\n",
+          "after": "            result=subprocess.run([binary,command,*paths,*extra],capture_output=True,timeout=15)\n            assert (result.returncode==0)==ok,(command,result.stderr.decode(errors='replace'))\n            checked+=1;return result.stdout\n        legacy=BASE.replace(b'schema 3',b'schema 2')\n        assert call('--migrate-backup',legacy)==migrate_rules(legacy)\n        call('rules',legacy,ok=False)\n        assert parse_rules(call('rules',AUDITED))==parse_rules(AUDITED)\n        for invalid in AUDITED_INVALID: call('rules',invalid,ok=False)\n        factory=(ROOT/'payload/system/etc/zuiopt/factory_rules.conf').read_bytes()\n"
         },
         {
           "before": "            assert parse_rules(call('rules',rules))==parse_rules(rules)\n        for mode in range(3):\n            for rt in range(2):\n                runtime=OPEN.replace(b'schema 2',b'schema 3')+f'runtime_defaults {mode} {rt}\\nruntime G -1 -1 preset double\\n'.encode()\n                assert parse_rules(call('rules',runtime))==parse_rules(runtime)\n                assert call('merge',BASE,runtime)==merge(BASE,[],runtime)\n                runtime_pack=(manifest_for(runtime,'runtime'),runtime)\n                assert call('merge',BASE,b'',pack_bytes(*runtime_pack))==merge(BASE,[runtime_pack],b'')\n        for bad in (b'',BASE.replace(b'2-6',b'0-8'),BASE.replace(b'schema 2',b'schema 1'),BASE+b'profile G 1\\n',BASE+b'unknown true\\n',OPEN.replace(b'selector=all',b'selector=rank:0'),OPEN.replace(b'selector=all',b'selector=rank:1025'),OPEN.replace(b' 20 7',b' 30 7'),OPEN.replace(b' R2 ',b' R1 ')):\n            call('rules',bad,ok=False)\n        for source in ('recovered_binary','appopt','zuiopt_native','user_export'):\n            manifest=manifest_for(OPEN,'parity',source,binary_sha='a'*64,evidence='STATIC_RECOVERED')\n",
@@ -853,6 +959,15 @@
       ]
     },
     {
+      "path": "tests/zuiopt/TestSchema3BackupMigration.py",
+      "beforeSha256": null,
+      "afterSha256": "6e37b0320b552ad98c9783182922d4d135fa50751b8e9426688d71059edcb5ca",
+      "beforeEntry": null,
+      "afterEntry": "100644 blob 41270e03f381cb52e105f01d42ec8a9ed0faef97\ttests/zuiopt/TestSchema3BackupMigration.py",
+      "before": null,
+      "hunks": []
+    },
+    {
       "path": "tests/zuiopt/TestSchemaContract.py",
       "beforeSha256": "8034342b3a6b4a5bc9be6b24a6bd9ba9c390e624f928948f996c48d942c63f2f",
       "afterSha256": "779fa61d578a31616e6e2e6e22dddd8484f3d4c9e0e014a334d97e3cab00e428",
@@ -991,14 +1106,18 @@
     {
       "path": "tests/zuiopt/ZUIoptTest.cpp",
       "beforeSha256": "83edfe9b738739cf358d9e6c1f032e509ccf41f4733fed7e72d6c9fb491b8feb",
-      "afterSha256": "f80f960f0a07073a45b614632509a3b27876f36e96ebf002127ed9586f071e45",
+      "afterSha256": "c4f2d4e6a19dbd62290773d99520d920e0bca74ecccad1c1d0590347a4858b7d",
       "beforeEntry": "100644 blob b83dbe24889c99252cea5d52c7edcd48ed3c54af\ttests/zuiopt/ZUIoptTest.cpp",
-      "afterEntry": "100644 blob 4fae7befcd4c8678ed6459f3a1add90c92cdac50\ttests/zuiopt/ZUIoptTest.cpp",
+      "afterEntry": "100644 blob 5f08da423fc72d5f78b09d952a8f580390fcdb32\ttests/zuiopt/ZUIoptTest.cpp",
       "before": null,
       "hunks": [
         {
           "before": "#include <iostream>\nusing namespace ZUIopt;\nnamespace fs=std::filesystem;\nconst std::string BASE=\"schema 2\\nenabled true\\nprofile G 2-6\\npackage exact org.example.game G 100\\n\";\nconst std::string OPEN=\"schema 2\\nenabled true\\nprofile G 2-7\\nthread G ALL glob \\\"Job.worker[AB]*\\\" selector=all 30 2-4\\nthread G R1 prefix Top selector=rank:1 20 7\\nthread G R2 contains Runner selector=rank:2 10 5-6\\npackage exact org.example.game G 100\\n\";\nvoid rejects(const std::function<void()>& action){bool rejected=false;try{action();}catch(const std::exception&){rejected=true;}require(rejected,\"expected rejection\");}\nstd::string readPack(const char* path){std::ifstream input(path,std::ios::binary);require(input.good(),\"fixture input open\");std::string data(PACK_LIMIT+1,'\\0');input.read(data.data(),data.size());data.resize(input.gcount());require(data.size()<=PACK_LIMIT&&input.eof(),\"fixture input bound\");return data;}\nvoid uploadData(RuleStore& store,const std::string& kind,const std::string& data,const std::string& id,const std::string& pack=\"-\"){\n",
           "after": "#include <iostream>\nusing namespace ZUIopt;\nnamespace fs=std::filesystem;\nconst std::string BASE=\"schema 3\\nenabled true\\nprofile G 2-6\\npackage exact org.example.game G 100\\n\";\nconst std::string OPEN=\"schema 3\\nenabled true\\nprofile G 2-7\\nthread G ALL glob \\\"Job.worker[AB]*\\\" selector=all 30 2-4\\nthread G R1 prefix Top selector=rank:1 20 7\\nthread G R2 contains Runner selector=rank:2 10 5-6\\npackage exact org.example.game G 100\\n\";\nvoid rejects(const std::function<void()>& action){bool rejected=false;try{action();}catch(const std::exception&){rejected=true;}require(rejected,\"expected rejection\");}\nstd::string readPack(const char* path){std::ifstream input(path,std::ios::binary);require(input.good(),\"fixture input open\");std::string data(PACK_LIMIT+1,'\\0');input.read(data.data(),data.size());data.resize(input.gcount());require(data.size()<=PACK_LIMIT&&input.eof(),\"fixture input bound\");return data;}\nvoid uploadData(RuleStore& store,const std::string& kind,const std::string& data,const std::string& id,const std::string& pack=\"-\"){\n"
+        },
+        {
+          "before": "            std::string command=argv[1];\n            if(command==\"canonical\"&&argc==4){auto pack=unpackPack(readPack(argv[2]),dumpRules(rules(read(argv[3]))));std::cout<<dumpRules(pack.config);return 0;}\n            if(command==\"pack\"){std::cout<<jsonText(unpackPack(readPack(argv[2])).manifest);return 0;}\n            if(command==\"rules\"){std::cout<<dumpRules(rules(read(argv[2])));return 0;}\n            if(command==\"merge\"&&argc>=4){std::vector<Pack> packs;for(int i=4;i<argc;i++)packs.push_back(unpackPack(readPack(argv[i])));std::cout<<mergeRules(read(argv[2]),packs,read(argv[3]));return 0;}\n            if(command==\"appopt\"&&argc==5){auto pack=importAppOpt(read(argv[2]),argv[3],number(argv[4]));std::cout.write(pack.archive.data(),pack.archive.size());return 0;}\n",
+          "after": "            std::string command=argv[1];\n            if(command==\"canonical\"&&argc==4){auto pack=unpackPack(readPack(argv[2]),dumpRules(rules(read(argv[3]))));std::cout<<dumpRules(pack.config);return 0;}\n            if(command==\"pack\"){std::cout<<jsonText(unpackPack(readPack(argv[2])).manifest);return 0;}\n            if(command==\"--migrate-backup\"){std::cout<<migrateSchema3Rules(read(argv[2]));return 0;}\n            if(command==\"rules\"){std::cout<<dumpRules(rules(read(argv[2])));return 0;}\n            if(command==\"merge\"&&argc>=4){std::vector<Pack> packs;for(int i=4;i<argc;i++)packs.push_back(unpackPack(readPack(argv[i])));std::cout<<mergeRules(read(argv[2]),packs,read(argv[3]));return 0;}\n            if(command==\"appopt\"&&argc==5){auto pack=importAppOpt(read(argv[2]),argv[3],number(argv[4]));std::cout.write(pack.archive.data(),pack.archive.size());return 0;}\n"
         },
         {
           "before": "        libraryTests(root);\n        {\n            RuleStore store(root.string(),BASE);store.initialize();auto initial=store.current().effective;\n            for(const auto& candidate:std::vector<std::string>{OPEN,\"schema 2\\nenabled true\\nunknown bad\\n\"}){\n                auto tx=randomId();store.apply(\"begin\",tx,\"user:\"+std::to_string(candidate.size())+\":\"+sha256(candidate)+\":-:0:\"+generationOf(initial));\n                store.apply(\"chunk\",tx+\":0\",base64(candidate));\n                std::map<std::string,std::string> snapshot;\n",

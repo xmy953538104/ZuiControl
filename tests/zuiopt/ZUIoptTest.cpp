@@ -203,6 +203,7 @@ int main(int argc,char** argv){
             std::string command=argv[1];
             if(command=="canonical"&&argc==4){auto pack=unpackPack(readPack(argv[2]),dumpRules(rules(read(argv[3]))));std::cout<<dumpRules(pack.config);return 0;}
             if(command=="pack"){std::cout<<jsonText(unpackPack(readPack(argv[2])).manifest);return 0;}
+            if(command=="--migrate-backup"){std::cout<<migrateSchema3Rules(read(argv[2]));return 0;}
             if(command=="rules"){std::cout<<dumpRules(rules(read(argv[2])));return 0;}
             if(command=="merge"&&argc>=4){std::vector<Pack> packs;for(int i=4;i<argc;i++)packs.push_back(unpackPack(readPack(argv[i])));std::cout<<mergeRules(read(argv[2]),packs,read(argv[3]));return 0;}
             if(command=="appopt"&&argc==5){auto pack=importAppOpt(read(argv[2]),argv[3],number(argv[4]));std::cout.write(pack.archive.data(),pack.archive.size());return 0;}

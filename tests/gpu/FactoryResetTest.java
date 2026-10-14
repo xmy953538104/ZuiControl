@@ -3,7 +3,7 @@ import java.util.*;
 import static com.zui.server.control.AppPolicyFixture.*;
 import static com.zui.server.control.PolicyJson.*;
 public final class FactoryResetTest {
- static final byte[] UPSTREAM=b("schema 2\nenabled true\ndebug false\n");
+ static final byte[] UPSTREAM=b("schema 3\nenabled true\ndebug false\n");
  static SettingsBackup.Rules rules(Rules owner){return new SettingsBackup.Rules(){
   public Map<String,Object> snapshot(){return owner.snapshot();}
   public Map<String,Object> upstream(){return map("generation",owner.generation,"data",Base64.getEncoder().encodeToString(UPSTREAM));}

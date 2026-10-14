@@ -4,6 +4,7 @@ import io,json,subprocess,sys,tempfile,zipfile
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts/rules'))
 from ZUIOPT_rule_pack import parse_rules,dump_rules,manifest_for,pack_bytes,unpack,appopt,merge,canonical_workflow,normalize_source
 
+from MigrateSchema2Backup import migrate_rules
 from TestSchemaContract import CANONICAL as AUDITED, INVALID as AUDITED_INVALID, check as check_contract
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -25,6 +26,9 @@ def main(binary):
             result=subprocess.run([binary,command,*paths,*extra],capture_output=True,timeout=15)
             assert (result.returncode==0)==ok,(command,result.stderr.decode(errors='replace'))
             checked+=1;return result.stdout
+        legacy=BASE.replace(b'schema 3',b'schema 2')
+        assert call('--migrate-backup',legacy)==migrate_rules(legacy)
+        call('rules',legacy,ok=False)
         assert parse_rules(call('rules',AUDITED))==parse_rules(AUDITED)
         for invalid in AUDITED_INVALID: call('rules',invalid,ok=False)
         factory=(ROOT/'payload/system/etc/zuiopt/factory_rules.conf').read_bytes()

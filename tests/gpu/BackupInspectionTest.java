@@ -8,6 +8,8 @@ public final class BackupInspectionTest {
   for(String mode:AppPolicyStore.MODES)s.defaults.put(AppPolicyStore.key(0,mode),s.range(0,mode));
   d.write(AppPolicyStore.ACTIVE,s.bytes());AppPolicyStore p=new AppPolicyStore(d);SettingsBackup b=new SettingsBackup(p);
   Rules rules=new Rules();byte[] archive=b.export(rules,"inspection-fixture",1),before=p.current.bytes();
+  check(integer(object(parse(SettingsBackup.validate(archive,s.users).get("manifest.json"))).get("zuioptSchema"))==3,"Schema3 formal backup export");
+  if(args.length>0)SettingsBackup.validate(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(args[0])),s.users);
   String tx="000000000000000000000071",sha=hash(archive),path="settings-upload-"+tx;
   Map<String,Object> meta=map("transaction",tx,"size",archive.length,"hash",sha);
   AppPolicyStore.Uploads.begin(meta,"boot",10);d.write(path+".json",bytes(meta));d.write(path+".zip",archive);

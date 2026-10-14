@@ -2603,7 +2603,7 @@ public final class ZuiControlService extends Binder {
         return "ok=1\nsupportedDisplayHz=" + supportedDisplayHz()
                 + "\nfpsCapPhase=not_delivered"
                 + "\nintegrationSchema=V83\nappPolicySchema="+(mAppPolicies==null||mAppPolicies.current==null?"UNAVAILABLE":mAppPolicies.current.schema)
-                + "\nzuioptSchema=3\nzuioptLegacySchema=2\nthreadCpuIds=0,1,2,3,4,5,6,7\nthreadTopology=SM8650_LOGICAL_CPU_IDS"
+                + "\nzuioptSchema=3\nzuioptBackupMigration=EXPLICIT_ONLY\nthreadCpuIds=0,1,2,3,4,5,6,7\nthreadTopology=SM8650_LOGICAL_CPU_IDS"
                 + "\nrulesReadTransport=DAEMON_SNAPSHOT_V1"
                 + "\nrulesRuntimeReadTransport=DAEMON_RUNTIME_V1"
                 + "\nthreadCpuConvention=ONE_CORE_100_PERCENT\nrecordThreadCoverage=TOP15_OBSERVED"

@@ -61,7 +61,7 @@ final class SettingsBackup {
         entries.put("preferences.json",preferences(prefs,policy.users));List<Object> hashes=new ArrayList<>();
         for(int i=1;i<NAMES.length;i++){byte[] data=entries.get(NAMES[i]);hashes.add(map("name",NAMES[i],"bytes",data.length,"sha256",hash(data)));}
         Map<String,Object> manifest=map("schemaVersion",1,"kind","zui.settings.backup","productSpecVersion","1.0",
-            "sourceBuild",build,"policySchema",policy.schema,"zuioptSchema",2,"targetSoC","SM8650","gpuOppSetHash",OPP_HASH,
+            "sourceBuild",build,"policySchema",policy.schema,"zuioptSchema",3,"targetSoC","SM8650","gpuOppSetHash",OPP_HASH,
             "createdAt",created,"userInventory",object(parse(policy.bytes())).get("users"),"entries",hashes,
             "configGeneration",map("policy",policy.generation,"rules",rule.get("generation"),"preferences",hash(prefs)));
         manifest.put("manifestHash",hash(bytes(manifest)));entries.put("manifest.json",bytes(manifest));return zip(entries);
@@ -75,7 +75,7 @@ final class SettingsBackup {
         String digest=string(manifest.remove("manifestHash"));require(digest.equals(hash(bytes(manifest))),"manifest hash");
         require(integer(manifest.get("schemaVersion"))==1&&"zui.settings.backup".equals(manifest.get("kind"))
             &&"1.0".equals(manifest.get("productSpecVersion"))&&(integer(manifest.get("policySchema"))==2||integer(manifest.get("policySchema"))==3)
-            &&integer(manifest.get("zuioptSchema"))==2&&"SM8650".equals(manifest.get("targetSoC"))
+            &&integer(manifest.get("zuioptSchema"))==3&&"SM8650".equals(manifest.get("targetSoC"))
             &&OPP_HASH.equals(manifest.get("gpuOppSetHash")),"unsupported backup compatibility");
         require(!string(manifest.get("sourceBuild")).isEmpty()&&integer(manifest.get("createdAt"))>=0,"backup provenance");
         List<Object> hashes=array(manifest.get("entries"));require(hashes.size()==3,"manifest members");
@@ -94,7 +94,8 @@ final class SettingsBackup {
         require(integer(gen.get("policy"))==policy.generation&&string(gen.get("rules")).matches("g[0-9a-f]{24}")
             &&hash(entries.get("preferences.json")).equals(gen.get("preferences")),"backup generation vector");
         // Native owner additionally parses and round-trips canonical rules before COMMIT.
-        require(!utf8(entries.get("zuiopt.canonical.conf")).contains("\r"),"rules LF encoding");return entries;
+        require(utf8(entries.get("zuiopt.canonical.conf")).startsWith("schema 3\n")
+            &&!utf8(entries.get("zuiopt.canonical.conf")).contains("\r"),"Schema3 rules required; migrate old backup explicitly");return entries;
     }
     final AppPolicyStore policy;
     SettingsBackup(AppPolicyStore policy){this.policy=policy;}

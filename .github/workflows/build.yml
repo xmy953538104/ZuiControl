@@ -169,6 +169,7 @@ jobs:
           python3 tests/monitor/TestAnalysisCollector.py || scripts_failed=1
           python3 tests/monitor/TestAnalysisSql.py || scripts_failed=1
           python3 tests/zuiopt/TestSchemaContract.py || scripts_failed=1
+          python3 tests/zuiopt/TestSchema3BackupMigration.py || scripts_failed=1
           python3 tests/monitor/TestUiPolish.py || scripts_failed=1
           python3 tests/monitor/TestProductR6.py || scripts_failed=1
           python3 tests/monitor/TestProductR7.py || scripts_failed=1

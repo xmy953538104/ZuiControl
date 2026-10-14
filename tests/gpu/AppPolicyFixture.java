@@ -34,7 +34,7 @@ public final class AppPolicyFixture {
         }
     }
     static final class Rules implements SettingsBackup.Rules {
-        byte[] data=b("schema=2\n");String pending="",generation="g000000000000000000000001";byte[] before,target;boolean fail,prepareFail;int finishes;
+        byte[] data=b("schema 3\nenabled true\n");String pending="",generation="g000000000000000000000001";byte[] before,target;boolean fail,prepareFail;int finishes;
         public Map<String,Object> snapshot(){return map("data",Base64.getEncoder().encodeToString(data),"generation",generation,"pending",pending);}
         public void prepare(String tx,String expected,byte[] next){if(prepareFail){prepareFail=false;throw new IllegalStateException("native prepare failed before lease");}require(pending.isEmpty()&&generation.equals(expected),"rule CAS");pending=tx;before=data.clone();target=next.clone();}
         public void apply(String tx,byte[] wanted,boolean rollback)throws IOException {
@@ -60,7 +60,7 @@ public final class AppPolicyFixture {
         rejects(()->SettingsBackup.preferences(bytes(prefs),initial.users));
         AppPolicyStore.State next=initial.copy();next.globals.put(0,new AppPolicyStore.Row(60,"fast",629,903));
         Map<String,Object> nextPrefs=object(parse(backup.prefs()));object(array(nextPrefs.get("users")).get(0)).put("circle_x",0.25);
-        byte[] wanted=SettingsBackup.archive(next,map("data",Base64.getEncoder().encodeToString(b("schema=2\n# next\n")),"generation",rules.generation),bytes(nextPrefs),"fixture",0);
+        byte[] wanted=SettingsBackup.archive(next,map("data",Base64.getEncoder().encodeToString(b("schema 3\nenabled true\n# next\n")),"generation",rules.generation),bytes(nextPrefs),"fixture",0);
         String tx="000000000000000000000001";backup.restore(wanted,tx,owner,rules);
         check(store.current.global(0).refreshHz==60&&!backup.busy()&&rules.pending.isEmpty(),"whole settings applied");
         long gen=store.current.generation;int finishCount=rules.finishes;
@@ -93,7 +93,7 @@ public final class AppPolicyFixture {
             SettingsBackup restarted=new SettingsBackup(new AppPolicyStore(broken));restarted.recover(new Owner(),nativeOwner);
             boolean applied=restarted.policy.current.global(0).refreshHz==60;
             check(!restarted.busy()&&nativeOwner.pending.isEmpty(),"resolved crash boundary "+boundary);
-            check(Arrays.equals(nativeOwner.data,applied?b("schema=2\n# next\n"):b("schema=2\n")),"whole rule generation after crash "+boundary);
+            check(Arrays.equals(nativeOwner.data,applied?b("schema 3\nenabled true\n# next\n"):b("schema 3\nenabled true\n")),"whole rule generation after crash "+boundary);
             check(Arrays.equals(restarted.prefs(),applied?bytes(nextPrefs):bytes(SettingsBackup.defaultPreferences(initial.users))),"whole prefs after crash "+boundary);
         }
         System.out.println("SETTINGS_BACKUP_ROUNDTRIP_REJECTION_ACK_FAILURE_CRASH_ROLLBACK=PASS");
