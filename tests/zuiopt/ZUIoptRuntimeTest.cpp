@@ -88,8 +88,8 @@ void schedulerCases(){
 }
 void grammarCases(){
     auto old=rules("schema 3\nenabled true\nprofile G 0-7\nthread G C2 contains Work selector=rank:2 10 5-6\npackage exact org.example.app G 100\n");
-    require(old.schema==2&&old.mode==0&&old.rt==0&&old.profiles.at("G").general==255,"Schema2 original");
-    require(dumpRules(old).rfind("schema 3\n",0)==0,"no automatic Schema2 upgrade");
+    require(old.schema==3&&old.mode==0&&old.rt==0&&old.profiles.at("G").general==255,"Schema3 defaults preserve explicit CPU intent");
+    require(dumpRules(old).rfind("schema 3\n",0)==0,"formal output is Schema3");
     std::string base="schema 3\nenabled true\nruntime_defaults 1 1\nprofile G 2-6\nruntime G -1 0 preset double\nthread G C2 contains Work selector=rank:1 10 7\npackage exact org.example.app G 100\n";
     auto c=rules(base);require(resolvedProfile(c.profiles.at("G"),c).runtime.mode==1&&resolvedProfile(c.profiles.at("G"),c).runtime.rt==0,"global/perApp override");
     auto placement=old.profiles.at("G"),runtimeOnly=placement;runtimeOnly.runtime={1,1,true,"double"};
@@ -103,7 +103,7 @@ void grammarCases(){
     changed=runtimeOnly;changed.rules.at(0).pattern="Other";
     require(!samePlacementContract(placement,changed),"classifier change requires retirement");
     require(dumpRules(rules(dumpRules(c)))==dumpRules(c),"schema3 canonical roundtrip");
-    for(auto bad:{base+"runtime_defaults 0 0\n",base+"runtime G 0 1 explicit none\n",base+"opt 1\n",std::string("schema 3\nenabled true\nruntime_defaults 0 0\n")}){
+    for(auto bad:{base+"runtime_defaults 0 0\n",base+"runtime G 0 1 explicit none\n",base+"opt 1\n",std::string("schema 2\nenabled true\nruntime_defaults 0 0\n")}){
         bool rejected=false;try{rules(bad);}catch(...){rejected=true;}require(rejected,"new grammar rejects invalid");
     }
     for(int mode=0;mode<3;mode++)for(int rt=0;rt<2;rt++){

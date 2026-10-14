@@ -60,7 +60,7 @@ class TerminalContracts(unittest.TestCase):
     def test_parser_semantics_have_one_differential_guard(self):
         for path in ('tests/zuiopt/TestStatParser.py','tests/zuiopt/ZUIoptStatParserTest.cpp'):
             self.assertTrue((ROOT/path).is_file(),path)
-        invocation='python3 tests/zuiopt/TestStatParser.py --compiler clang++ --output "$receipt/parser-differential"'
+        invocation='python3 tests/zuiopt/TestStatParser.py --compiler clang++ --output "$receipt/parser-differential" || native_failed=1'
         self.assertIn(invocation,[line.strip() for line in read('.github/workflows/build.yml').splitlines()])
 
     def test_reverse_verifier_loads_sibling_in_isolated_python(self):
