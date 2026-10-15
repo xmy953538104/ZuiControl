@@ -108,7 +108,7 @@ fun main() {
   rates.forEachIndexed { i,id -> check((views.properties[id to "textColor"]==Color.WHITE)==(ZuiControlContract.rates[i]==rate)) }
   modes.forEachIndexed { i,id -> check((views.properties[id to "textColor"]==Color.WHITE)==(i==tier.ordinal)) }
   check(views.properties[R.id.monitor_indicator to "visibility"]==0)
-  show(rate,tier,false,false,-1.0,-1.0)
+  show(rate,tier,false,false,-1.0,Double.NaN)
   modes.forEach { id ->
    check(views.properties[id to "setEnabled"]==false)
    check(views.properties[id to "setBackgroundResource"]==R.drawable.notify_rate_normal)
@@ -124,7 +124,7 @@ fun main() {
   check(views.properties[modes[tier.ordinal] to "setEnabled"]==true)
  }
  for(dark in listOf(false,true)) {
-  helper.updateRemoteViews(views,NotificationQuickControlHelper.Snapshot("org.test.app",120,UperfMode.BALANCE,false,true,true,40.1,-1.0,dark),PendingIntent("monitor"),{PendingIntent("hz:$it")},{PendingIntent("mode:${it.id}")})
+  helper.updateRemoteViews(views,NotificationQuickControlHelper.Snapshot("org.test.app",120,UperfMode.BALANCE,false,true,true,40.1,Double.NaN,dark),PendingIntent("monitor"),{PendingIntent("hz:$it")},{PendingIntent("mode:${it.id}")})
   check(views.properties[R.id.notification_quiet to "textColor"]==if(dark)Color.rgb(232,237,246)else Color.rgb(15,23,42))
   check(views.properties[R.id.notification_power to "textColor"]==if(dark)Color.rgb(108,120,144)else Color.rgb(142,155,174))
   check((views.properties[R.id.notification_power to "description"] as String).contains("暂不可用"))
@@ -139,13 +139,14 @@ fun main() {
         jars=list((cache/'org.jetbrains.kotlin').glob('*/'+version+'/*/*.jar'))+list((cache/'org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm').glob('*/*/*.jar'))
         annotations=list((cache/'org.jetbrains/annotations/13.0').glob('*/*.jar'));jars+=annotations
         stdlib=next((cache/'org.jetbrains.kotlin/kotlin-stdlib'/version).glob('*/*.jar'))
+        jsonlib=next((cache/'org.json/json/20180813').glob('*/*.jar'))
         java=str(Path(os.environ['JAVA_HOME'])/'bin'/('java.exe' if os.name=='nt' else 'java')) if 'JAVA_HOME' in os.environ else shutil.which('java')
         with tempfile.TemporaryDirectory(prefix='zui-v3-renderer-') as directory:
             tmp=Path(directory)
             for name,text in stubs.items():(tmp/name).write_text(text,encoding='utf-8')
             (tmp/'Harness.kt').write_text(harness,encoding='utf-8')
-            subprocess.run([java,'-cp',os.pathsep.join(map(str,jars)),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',os.pathsep.join(map(str,[stdlib,*annotations])),'-d',str(tmp/'classes'),str(APP/'NotificationQuickControlHelper.kt'),str(APP/'UperfMode.kt'),*map(str,tmp.glob('*.kt'))],check=True,timeout=60,capture_output=True)
-            r=subprocess.run([java,'-cp',os.pathsep.join(map(str,[tmp/'classes',stdlib])),'com.zui.zuicontrol.HarnessKt'],check=True,timeout=20,capture_output=True,text=True)
+            subprocess.run([java,'-cp',os.pathsep.join(map(str,jars)),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',os.pathsep.join(map(str,[stdlib,jsonlib,*annotations])),'-d',str(tmp/'classes'),str(APP/'NotificationQuickControlHelper.kt'),str(APP/'LivePower.kt'),str(APP/'UperfMode.kt'),*map(str,tmp.glob('*.kt'))],check=True,timeout=60,capture_output=True)
+            r=subprocess.run([java,'-cp',os.pathsep.join(map(str,[tmp/'classes',stdlib,jsonlib])),'com.zui.zuicontrol.HarnessKt'],check=True,timeout=20,capture_output=True,text=True)
             self.assertIn('60_TRANSITIONS=PASS',r.stdout);print(r.stdout.strip())
 
 if __name__=='__main__':unittest.main(verbosity=2)

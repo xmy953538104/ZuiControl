@@ -15,7 +15,7 @@ internal object NotificationQuickControlHelper {
     data class Snapshot(
         val pkg: String, val currentHz: Int, val currentMode: UperfMode,
         val isFloatActive: Boolean, val refreshEnabled: Boolean, val uperfEnabled: Boolean,
-        val quietC: Double = -1.0, val powerW: Double = -1.0, val dark:Boolean=false
+        val quietC: Double = -1.0, val powerW: Double = Double.NaN, val dark:Boolean=false
     )
 
     fun updateRemoteViews(
@@ -42,7 +42,7 @@ internal object NotificationQuickControlHelper {
         metric(views, R.id.notification_quiet, snapshot.quietC,
             "°C", "quiet-therm 温度",snapshot.dark)
         metric(views, R.id.notification_power, snapshot.powerW,
-            " W", "设备电池侧功率",snapshot.dark)
+            " W", "净功率，正为充入、负为放出；输入模式显示外部输入",snapshot.dark,true)
 
         listOf(R.id.refresh_60, R.id.refresh_90, R.id.refresh_120, R.id.refresh_144, R.id.refresh_165)
             .zip(ZuiControlContract.rates).forEach { (id, value) ->
@@ -61,14 +61,14 @@ internal object NotificationQuickControlHelper {
     }
 
     internal fun availabilityChanged(oldQuiet: Double, newQuiet: Double, oldPower: Double, newPower: Double): Boolean =
-        (oldQuiet > 0 && newQuiet < 0) || ((oldPower > 0) != (newPower > 0))
+        (oldQuiet > 0 && newQuiet < 0) || (oldPower.isFinite() != newPower.isFinite()) || oldPower*newPower<0
 
     fun metricNumber(value: Double): String =
         if (value.isFinite() && value > 0.0) String.format(Locale.US, "%.1f", value) else "--"
 
-    private fun metric(views: RemoteViews, id: Int, value: Double, unit: String, description: String,dark:Boolean) {
-        val valid = value.isFinite() && value > 0.0
-        val number = metricNumber(value)
+    private fun metric(views: RemoteViews, id: Int, value: Double, unit: String, description: String,dark:Boolean,power:Boolean=false) {
+        val valid = value.isFinite() && (power || value > 0.0)
+        val number = if(power)LivePower.number(value) else metricNumber(value)
         val text = SpannableString(number + unit)
         val flags = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
         views.setTextColor(id, if(valid)if(dark)Color.rgb(232,237,246)else Color.rgb(15,23,42) else if(dark)Color.rgb(108,120,144)else Color.rgb(142,155,174))

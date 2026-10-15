@@ -7,6 +7,7 @@ import java.io.IOException;
 
 /** Qualified scalar sources only; no task enumeration and no GPU access. */
 final class MonitorSources {
+    final MonitorPower power = new MonitorPower();
     long scalarReads, discoveryReads;
     String quietPath = "", quietError = "";
     private boolean discovered, quietUnavailable;

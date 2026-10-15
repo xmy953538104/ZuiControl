@@ -164,6 +164,7 @@ jobs:
           python3 tests/gpu/TestBackupInspection.py || scripts_failed=1
           python3 tests/gpu/TestFactoryReset.py || scripts_failed=1
           python3 tests/monitor/TestPowerEdge.py || scripts_failed=1
+          python3 tests/monitor/TestMonitorPower.py || scripts_failed=1
           python3 tests/monitor/TestMonitorHealth.py || scripts_failed=1
           python3 tests/monitor/TestThreadAnalysis.py || scripts_failed=1
           python3 tests/monitor/TestAnalysisCollector.py || scripts_failed=1
@@ -186,6 +187,7 @@ jobs:
           python3 tests/monitor/TestPackageIdentity.py || scripts_failed=1
           python3 tests/monitor/TestDeterministicZip.py || scripts_failed=1
           python3 tests/refresh/TestRefreshStateMachine.py || scripts_failed=1
+          python3 tests/refresh/TestRenderVoteOwner.py || scripts_failed=1
           python3 tests/refresh/TestOemTouchTimer.py || scripts_failed=1
           python3 tests/gpu/TestGpuProof.py || scripts_failed=1
           python3 tests/uperf/architecture/TestUperfArchitecture.py || scripts_failed=1

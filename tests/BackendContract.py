@@ -35,7 +35,38 @@ assert set(RUNTIME_R3['allowedPaths'])==RUNTIME_R3_ALLOWED
 
 RUNTIME_R6=json.loads((ROOT/'tests/zuiopt/runtime_r6_delta.json').read_text(encoding='utf8'))
 assert RUNTIME_R6['baseHead']=='d0282ffad66bdb3dcb53c9fadbfe783114d7dd7c' and RUNTIME_R6['phase']=='ZUIOPT_R6_RESPONSE_AND_FINAL_RELEASE'
+
+RESPONSE_BATTERY=json.loads((ROOT/'tests/response_battery_r1_delta.json').read_text(encoding='utf8'))
+RESPONSE_ALLOWED={'.github/workflows/build.yml','scripts/build/PatchRenderVoteOwner.py'}
+RESPONSE_ALLOWED|={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','LivePower.kt','PerformanceMonitor.kt','NotificationQuickControlHelper.kt','ZuiControlQuickService.kt')}
+RESPONSE_ALLOWED|={'app/src/test/java/com/zui/zuicontrol/'+n for n in ('LivePowerTest.kt','NotificationMetricTest.kt')}
+RESPONSE_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('MonitorCollector.java','MonitorSources.java','MonitorPower.java','RenderVoteOwner.java','ZuiControlService.java')}
+RESPONSE_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeR3Scope.py','TestRuntimeR5Scope.py','TestRuntimeR6Scope.py','TestRuntimeFrontendScope.py','TestRuntimeRecoveryScope.py')}
+RESPONSE_ALLOWED|={'tests/monitor/TestFrontendV3.py','tests/monitor/TestFinalIntegration.py'}
+assert RESPONSE_BATTERY['phase']=='ZUICONTROL_POST_BASELINE_RESPONSE_AND_BATTERY_R1'
+assert RESPONSE_BATTERY['baseHead']=='3565f3d4ecf66bce0f8bac2ca93d9ae180745e1c'
+assert set(RESPONSE_BATTERY['allowedPaths'])==RESPONSE_ALLOWED=={r['path'] for r in RESPONSE_BATTERY['files']}
+
+def reverse_response_battery(path,text):
+    row=next((r for r in RESPONSE_BATTERY['files'] if r['path']==path),None)
+    if row is None:return text
+    assert hashlib.sha256(text.encode()).hexdigest()==row['afterSha256'],('POST_BASELINE exact authorized bytes',path)
+    for h in reversed(row['hunks']):
+        assert text.count(h['after'])==1,('POST_BASELINE exact hunk',path)
+        text=text.replace(h['after'],h['before'],1)
+    assert hashlib.sha256(text.encode()).hexdigest()==row['beforeSha256'],('POST_BASELINE immutable business base',path)
+    return text
+
+def reverse_response_battery_entries(current,*scopes):
+    result=list(current)
+    for row in RESPONSE_BATTERY['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('POST_BASELINE exact authorized source',row['path'])
+        result.remove(row['afterEntry'].encode())
+        if row['beforeEntry'] is not None:result.append(row['beforeEntry'].encode())
+    return result
 def reverse_runtime_r6(path,text):
+    text=reverse_response_battery(path,text)
     row=next((r for r in RUNTIME_R6['files'] if r['path']==path),None)
     if not row:return text
     assert hashlib.sha256(text.encode()).hexdigest()==row['afterSha256'],('R6 exact authorized bytes',path)
@@ -46,7 +77,7 @@ def reverse_runtime_r6(path,text):
     assert hashlib.sha256(text.encode()).hexdigest()==row['beforeSha256'],('R6 immutable base',path)
     return text
 def reverse_runtime_r6_entries(current,*scopes):
-    result=list(current)
+    result=reverse_response_battery_entries(current,*scopes)
     for row in RUNTIME_R6['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['afterEntry'].encode())==1,('R6 exact authorized source',row['path'])

@@ -45,7 +45,7 @@ class MonitorCollector {
     private Handler handler;
     private boolean scheduled;
     private int expectedPowerPlugged=-1;
-    private long powerRecheckUntil;
+    private boolean powerRecheckPending;
     private boolean powerWakePending;
     private long edgeTraceUntil,edgeTraceDropped;
     private final List<String> edgeTrace=new ArrayList<>();
@@ -178,6 +178,11 @@ class MonitorCollector {
     synchronized String command(String action,int user,String arg){
         try{
             long now=SystemClock.elapsedRealtime();
+            if ("batteryHealth".equals(action)) {
+                if (user != session.user) return reject("inactive_user");
+                if (!arg.isEmpty()) return reject("battery_health_argument");
+                return "ok=1\nbatteryHealth=" + PolicyJson.encode(sources.power.health(now));
+            }
             if(action.startsWith("analysis"))return analysisCommand(action,user,arg,now);
             if("recordRead".equals(action))return store.read(user,arg);
             if("recordList".equals(action))return store.list(user);
@@ -280,7 +285,9 @@ class MonitorCollector {
             .put("sourceGeneration",0).put("sourceHealthy",false)
             .put("windowStart",JSONObject.NULL).put("windowEnd",JSONObject.NULL)
             .put("newPresents",JSONObject.NULL).put("lastPresent",JSONObject.NULL)
-            .put("sourceMeasurementTime",JSONObject.NULL).put("inputPowerW",JSONObject.NULL);
+            .put("sourceMeasurementTime",JSONObject.NULL).put("inputPowerW",JSONObject.NULL)
+            .put("inputPowerValidity","UNAVAILABLE_NOT_SAMPLED").put("batteryNetPowerW",JSONObject.NULL)
+            .put("batteryNetValidity","UNAVAILABLE_NOT_SAMPLED");
     }
     private String fpsBlockedReason(){
         if(!session.eligible)return "UNAVAILABLE_SCREEN_OR_TARGET";
@@ -293,8 +300,9 @@ class MonitorCollector {
         // Replace the pending edge on the existing clock; never retain pre-edge watts.
         expectedPowerPlugged=connected?1:0;
         long receivedAt=SystemClock.elapsedRealtime();
-        powerRecheckUntil=receivedAt+2000;
-        String edgeFacts="receivedAt="+receivedAt+" expectedPlugged="+expectedPowerPlugged+" deadline="+powerRecheckUntil;
+        powerRecheckPending=true;
+        sources.power.edge(connected);
+        String edgeFacts="receivedAt="+receivedAt+" expectedPlugged="+expectedPowerPlugged+" timedRechecks=1";
         if(edgeTraceActive()){
             Intent battery=context.registerReceiver(null,new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
             BatteryManager manager=context.getSystemService(BatteryManager.class);
@@ -313,7 +321,7 @@ class MonitorCollector {
                 expectedPowerPlugged==0&&plugged==0&&status==3&&watts>=0;
     }
     synchronized void onBatteryStateChanged(Intent battery){
-        if(battery==null||(expectedPowerPlugged==-1&&!edgeTraceActive()))return;
+        if(battery==null||(expectedPowerPlugged==-1&&!sources.power.pending()&&!edgeTraceActive()))return;
         int plugged=battery.getIntExtra(BatteryManager.EXTRA_PLUGGED,-1);
         int status=battery.getIntExtra(BatteryManager.EXTRA_STATUS,-1);
         int voltage=battery.getIntExtra(BatteryManager.EXTRA_VOLTAGE,-1);
@@ -323,8 +331,8 @@ class MonitorCollector {
                 +" voltageMv="+voltage+" currentUa="+current+" expectedPlugged="+expectedPowerPlugged);
         // Retain an unresolved discharge edge until the existing strict source is valid.
         // A later current-only fact wakes this clock once, including after the bounded window.
-        if(powerWakePending||!scalarActive()||!powerEdgeSettled(plugged,status,
-                MonitorSources.batteryWatts(plugged,status,voltage,current)))return;
+        if(powerWakePending||!scalarActive()||!(sources.power.changedCurrent(current)||powerEdgeSettled(plugged,status,
+                MonitorSources.batteryWatts(plugged,status,voltage,current))))return;
         powerWakePending=true;
         stop();schedule(); // Same worker, sticky-battery reader and snapshot authority.
     }
@@ -367,7 +375,7 @@ class MonitorCollector {
         if(ticket!=epoch||handler==null||(!scalarActive()&&analyses.isEmpty()))return;
         scheduled=false;
         powerWakePending=false;
-        traceEdge("SAMPLE_START","expectedPlugged="+expectedPowerPlugged+" deadline="+powerRecheckUntil);
+        traceEdge("SAMPLE_START","expectedPlugged="+expectedPowerPlugged+" recheckPending="+powerRecheckPending);
         long powerDelay=0;
         try{
             // End the recording before enumerating at or beyond its deadline.
@@ -399,15 +407,15 @@ class MonitorCollector {
                     power=MonitorSources.batteryWatts(plugged,batteryStatus,milliVolts,microAmps);
                 }
             }
+            java.util.Map<String,Object> powerDetails=sources.power.sample(plugged,batteryStatus,milliVolts,microAmps,now);
             if(expectedPowerPlugged!=-1){
                 boolean settled=powerEdgeSettled(plugged,batteryStatus,power);
-                if(settled){expectedPowerPlugged=-1;powerRecheckUntil=0;}
+                if(settled){expectedPowerPlugged=-1;}
                 else{
                     power=-1;
-                    long remaining=powerRecheckUntil-SystemClock.elapsedRealtime();
-                    if(remaining>0)powerDelay=Math.min(400,remaining);
                 }
             }
+            if(powerRecheckPending){if(sources.power.pending())powerDelay=800;powerRecheckPending=false;}
             if(capture){
                 MonitorSnapshot.Task process=identity(session.recordingPid);
                 if(process!=null&&session.sameProcess(process.tid,process.start)){
@@ -440,6 +448,8 @@ class MonitorCollector {
                 .put("batteryVoltageMv",milliVolts).put("batteryCurrentUa",microAmps)
                 .put("batteryCurrentMagnitudeA",power<0?-1:Math.abs(microAmps/1000000.0))
                 .put("quietC",quiet).put("recordState",session.recordingState());
+            for(java.util.Map.Entry<String,Object> field:powerDetails.entrySet())
+                data.put(field.getKey(),field.getValue()==null?JSONObject.NULL:field.getValue());
             lastSnapshot=data.toString();deliver(lastSnapshot);
             traceEdge("SAMPLE_END","plugged="+plugged+" batteryStatus="+batteryStatus
                     +" voltageMv="+milliVolts+" currentUa="+microAmps

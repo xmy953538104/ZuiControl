@@ -109,7 +109,7 @@ class NotificationRenderer(unittest.TestCase):
         self.assertIn('next.optString("producerEpoch")!=expectedProducer',monitor)
         self.assertIn('clickAction=action;performClick()',monitor)
         self.assertIn('handler.removeCallbacks(readingExpiry)',quick)
-        self.assertIn('lastReadingPublish + 2000L',quick)
+        self.assertIn('lastReadingPublish + 1000L',quick)
         self.assertIn('handler.removeCallbacksAndMessages(null)',quick)
 
 if __name__=='__main__': unittest.main(verbosity=2)

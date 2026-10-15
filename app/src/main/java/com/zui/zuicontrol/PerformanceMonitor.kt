@@ -81,7 +81,7 @@ class PerformanceMonitor(private val context: Context,
         }
     }
     private var snapshot = JSONObject()
-    private var displayPower = -1.0
+    private var displayPower = Double.NaN
     private var backend: ZuiControlManager? = null
     private var permissionAllowed = true
     private var backendGeneration=0L
@@ -158,7 +158,7 @@ class PerformanceMonitor(private val context: Context,
             attached = false; removes++; event("remove")
         }
         state("HIDDEN")
-        displayPower = -1.0
+        displayPower = Double.NaN
     }
     private fun safeTop(insets: WindowInsets?): Int =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -290,7 +290,7 @@ class PerformanceMonitor(private val context: Context,
             else handler.postDelayed(expireReading,left+1)
         }
         // Both consumers receive the exact same scalar sample, including OFF notifications.
-        displayPower = if(positions.optString("powerPresentation")=="INPUT") -1.0 else next.optDouble("powerW", -1.0)
+        displayPower = LivePower.value(next, positions.optString("powerPresentation")=="INPUT")
         snapshot = next
         MonitorPresentation.publish(next)
         if (modeChanged) onModeChanged()
@@ -370,7 +370,7 @@ class PerformanceMonitor(private val context: Context,
             val now = SystemClock.elapsedRealtime()
             gesture.cycle(now)
             val all = listOf(number(snapshot.optDouble("fps", -1.0)) to "FPS",
-                number(snapshot.optDouble("quietC", -1.0)) to "°C", number(displayPower) to "W")
+                number(snapshot.optDouble("quietC", -1.0)) to "°C", LivePower.number(displayPower) to "W")
             val previous = metrics
             metrics = if (snapshot.optInt("mode") == 2) listOf(all[0])
                 else if (circle) listOf(all[metric]) else all

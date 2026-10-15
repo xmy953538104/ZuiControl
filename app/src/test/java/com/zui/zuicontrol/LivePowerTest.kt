@@ -1,19 +1,27 @@
 package com.zui.zuicontrol
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 class LivePowerTest {
-    @Test fun medianIsBoundedAndInvalidPowerClearsPreviousDischarge() {
-        val live = LivePower()
-        val raw = listOf(4.0, 30.0, 6.0, 8.0, 10.0)
-        assertEquals(listOf(4.0, 17.0, 6.0, 8.0, 8.0), raw.map(live::add))
-        assertEquals(listOf(4.0, 30.0, 6.0, 8.0, 10.0), raw)
-        assertEquals(-1.0, live.add(-1.0), 0.0)
-        assertEquals(12.0, live.add(12.0), 0.0)
-        assertEquals(-1.0, live.add(Double.NaN), 0.0)
-        assertEquals(3.0, live.add(3.0), 0.0)
-        live.clear()
-        assertEquals(15.0, live.add(15.0), 0.0)
+    @Test fun signedNetPowerAndInputAreIndependentAndZeroIsNotMissing() {
+        val sample=JSONObject().put("elapsedMs",100).put("batteryNetPowerW",-1.0).put("inputPowerW",2.5)
+        assertEquals(-1.0,LivePower.value(sample),0.0)
+        assertEquals(2.5,LivePower.value(sample,true),0.0)
+        assertEquals("-1.0",LivePower.number(LivePower.value(sample)))
+        assertEquals("0.0",LivePower.number(0.0))
+        assertEquals("0.0",LivePower.number(-0.0))
+        sample.put("batteryNetPowerW",JSONObject.NULL)
+        assertTrue(LivePower.value(sample).isNaN())
+        assertEquals(2.5,LivePower.value(sample,true),0.0)
+        sample.put("elapsedMs",0)
+        assertTrue(LivePower.value(sample,true).isNaN())
+        assertEquals("--",LivePower.number(Double.NaN))
+        assertEquals("--",LivePower.number(Double.POSITIVE_INFINITY))
+    }
+    @Test fun legacyDischargeSampleCannotPretendToBeNetPower() {
+        assertTrue(LivePower.value(JSONObject().put("elapsedMs",100).put("powerW",4.0)).isNaN())
     }
 }

@@ -3,8 +3,10 @@ import org.junit.Assert.*
 import org.junit.Test
 class NotificationMetricTest {
     @Test fun bothPowerAvailabilityEdgesBypassOrdinaryCoalescing() {
-        assertTrue(NotificationQuickControlHelper.availabilityChanged(35.0,35.0,4.0,-1.0))
-        assertTrue(NotificationQuickControlHelper.availabilityChanged(35.0,35.0,-1.0,4.0))
+        assertTrue(NotificationQuickControlHelper.availabilityChanged(35.0,35.0,4.0,Double.NaN))
+        assertTrue(NotificationQuickControlHelper.availabilityChanged(35.0,35.0,Double.NaN,4.0))
+        assertTrue(NotificationQuickControlHelper.availabilityChanged(35.0,35.0,-4.0,4.0))
+        assertFalse(NotificationQuickControlHelper.availabilityChanged(35.0,35.0,-4.0,-5.0))
         assertFalse(NotificationQuickControlHelper.availabilityChanged(35.0,35.1,4.0,5.0))
         assertFalse(NotificationQuickControlHelper.availabilityChanged(35.0,35.1,-1.0,-1.0))
         assertTrue(NotificationQuickControlHelper.availabilityChanged(35.0,-1.0,4.0,4.0))

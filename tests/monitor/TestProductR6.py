@@ -38,7 +38,7 @@ class ProductR6(unittest.TestCase):
         monitor=source('PerformanceMonitor.kt')
         metrics=monitor.split('val all = listOf(',1)[1].split('metrics =',1)[0]
         self.assertLess(metrics.index('"fps"'),metrics.index('"quietC"'))
-        self.assertLess(metrics.index('"quietC"'),metrics.index('number(displayPower)'))
+        self.assertLess(metrics.index('"quietC"'),metrics.index('LivePower.number(displayPower)'))
         self.assertIn('COMPLEX_UNIT_MM, 0.5f, resources.displayMetrics',monitor)
         self.assertIn('2 * barPadding',monitor)
         self.assertIn('monitor_unit_text',monitor)

@@ -67,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix='analysis-collector-') as tmp:
  out=Path(tmp);files=[]
  for name,text in stubs.items():
   p=out/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text,encoding='utf8');files.append(str(p))
- production=['MonitorCollector.java','MonitorSources.java','MonitorSnapshot.java','MonitorSession.java','MonitorLifecycle.java','ThreadAnalysis.java','PolicyJson.java']
+ production=['MonitorCollector.java','MonitorSources.java','MonitorPower.java','MonitorSnapshot.java','MonitorSession.java','MonitorLifecycle.java','ThreadAnalysis.java','PolicyJson.java']
  subprocess.run(['javac','-encoding','UTF-8','-d',tmp,*files,*[str(namespace['namespace']['src']/n) for n in production],str(HERE/'RecordAnalysisTest.java'),str(HERE/'RecordAnalysisBenchmark.java')],check=True)
  subprocess.run(['java','-cp',tmp,'com.zui.server.control.AnalysisCollectorTest'],check=True)
  subprocess.run(['java','-cp',tmp,'com.zui.server.control.RecordAnalysisTest',*sys.argv[1:]],check=True)

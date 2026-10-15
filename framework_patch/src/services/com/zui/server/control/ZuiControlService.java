@@ -98,7 +98,6 @@ public final class ZuiControlService extends Binder {
     private final ControlsCallbacks mControls = new ControlsCallbacks();
     private final java.util.Set<Integer> mRetiredStatusUsers = new java.util.HashSet<>();
     private static final long TOP_RESUMED_NULL_REVALIDATE_DELAY_MS = 64L;
-    private static final int PRIORITY_ZUI_CONTROL_RENDER = 8;
     private static final int[] DISPLAY_HZ = new int[] {60, 90, 120, 144, 165};
     private static volatile ZuiControlService sInstance;
 
@@ -2403,18 +2402,7 @@ public final class ZuiControlService extends Binder {
         Object displayManagerService = readField(dmi, "this$0");
         Object director = readField(displayManagerService, "mDisplayModeDirector");
         Object votesStorage = readField(director, "mVotesStorage");
-        Class<?> voteClass = Class.forName("com.android.server.display.mode.Vote");
-        Object vote = null;
-        if (hz != null) {
-            Method forRender = voteClass.getDeclaredMethod("forRenderFrameRates",
-                    float.class, float.class);
-            forRender.setAccessible(true);
-            vote = forRender.invoke(null, 0.0f, hz.floatValue());
-        }
-        Method updateVote = votesStorage.getClass().getDeclaredMethod(
-                "updateGlobalVote", int.class, voteClass);
-        updateVote.setAccessible(true);
-        updateVote.invoke(votesStorage, PRIORITY_ZUI_CONTROL_RENDER, vote);
+        RenderVoteOwner.update(votesStorage,hz);
     }
 
     private static Object readField(Object target, String name) throws Exception {
@@ -2499,7 +2487,8 @@ public final class ZuiControlService extends Binder {
                 + "\npeakBridgeOwned=" + mPeakBridgeOwned
                 + "\npeakReleaseStatus=" + mPeakReleaseStatus
                 + "\ndisplayVote=adaptiveRender"
-                + "\nrenderVoteScope=globalPriority8"
+                + "\nrenderVoteScope=ownedCompositePriority0"
+                + "\nrenderVoteAdapterError=" + RenderVoteOwner.error()
                 + "\nrenderVoteOwned=" + mRenderVoteOwned
                 + "\nrenderVoteHz=" + mRenderVoteHz
                 + "\nrenderVoteReleaseStatus=" + mRenderVoteReleaseStatus

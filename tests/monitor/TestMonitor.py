@@ -179,7 +179,7 @@ with tempfile.TemporaryDirectory(prefix='zui-monitor-r4-') as tmp:
  out=Path(tmp);files=[]
  for name,text in stubs.items():
   p=out/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text,encoding='utf8');files.append(str(p))
- production=['MonitorCollector.java','MonitorSources.java','MonitorSnapshot.java','MonitorSession.java','MonitorLifecycle.java','ThreadAnalysis.java','PolicyJson.java']
+ production=['MonitorCollector.java','MonitorSources.java','MonitorPower.java','MonitorSnapshot.java','MonitorSession.java','MonitorLifecycle.java','ThreadAnalysis.java','PolicyJson.java']
  subprocess.run(['javac','-encoding','UTF-8','-d',tmp,*files,*[str(src/n) for n in production],str(Path(__file__).with_name('MonitorTest.java')),str(Path(__file__).with_name('MonitorR4Test.java'))],check=True)
  for test in ('MonitorTest','MonitorR4Test','CollectorTest'):subprocess.run(['java','-cp',tmp,'com.zui.server.control.'+test],check=True)
 collector=(src/'MonitorCollector.java').read_text(encoding='utf8')

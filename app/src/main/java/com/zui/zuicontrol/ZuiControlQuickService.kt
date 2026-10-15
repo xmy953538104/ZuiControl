@@ -33,13 +33,13 @@ class ZuiControlQuickService : Service() {
     private var notificationPublishes = 0L
     private val update = Runnable { refreshPosted = false; refreshNotification() }
     private var quietC = -1.0
-    private var powerW = -1.0
+    private var powerW = Double.NaN
     private var readingTime = 0L
     private var readingTtl = 3500L
     private var lastReadingPublish = 0L
     private val readingUpdate = Runnable { lastReadingPublish = SystemClock.elapsedRealtime(); requestRefresh(false) }
     // A one-shot expiry only; it does not read a sensor or wake a sleeping device.
-    private val readingExpiry = Runnable { acceptReading(-1.0, -1.0, 0L, 3500L) }
+    private val readingExpiry = Runnable { acceptReading(-1.0, Double.NaN, 0L, 3500L) }
     private val controlsChanged: () -> Unit = { requestRefresh() }
     override fun onCreate() {
         super.onCreate()
@@ -118,10 +118,10 @@ class ZuiControlQuickService : Service() {
         readingTtl = ttl.coerceIn(3500L, 7500L)
         val fresh = elapsed > 0 && now - elapsed in 0..readingTtl
         val nextQuiet = if (fresh && quiet.isFinite() && quiet > 0) quiet else -1.0
-        val nextPower = if (fresh && power.isFinite() && power > 0) power else -1.0
+        val nextPower = if (fresh && power.isFinite()) power else Double.NaN
         val invalidated = NotificationQuickControlHelper.availabilityChanged(quietC, nextQuiet, powerW, nextPower)
         val changed = NotificationQuickControlHelper.metricNumber(quietC) != NotificationQuickControlHelper.metricNumber(nextQuiet) ||
-            NotificationQuickControlHelper.metricNumber(powerW) != NotificationQuickControlHelper.metricNumber(nextPower)
+            LivePower.number(powerW) != LivePower.number(nextPower)
         quietC = nextQuiet; powerW = nextPower; readingTime = if (fresh) elapsed else 0L
         handler.removeCallbacks(readingExpiry)
         if (fresh) handler.postDelayed(readingExpiry, (elapsed + readingTtl + 1L - now).coerceAtLeast(1))
@@ -129,7 +129,7 @@ class ZuiControlQuickService : Service() {
         if (invalidated) {
             handler.removeCallbacks(readingUpdate); requestRefresh(false)
         } else if (!handler.hasCallbacks(readingUpdate)) {
-            handler.postDelayed(readingUpdate, (lastReadingPublish + 2000L - now).coerceAtLeast(0))
+            handler.postDelayed(readingUpdate, (lastReadingPublish + 1000L - now).coerceAtLeast(0))
         }
     }
     private fun requestRefresh(controlsChanged: Boolean = true) {
@@ -142,7 +142,7 @@ class ZuiControlQuickService : Service() {
         val state = snapshot()
         val displayed = state.copy(
             quietC = NotificationQuickControlHelper.metricNumber(state.quietC).toDoubleOrNull() ?: -1.0,
-            powerW = NotificationQuickControlHelper.metricNumber(state.powerW).toDoubleOrNull() ?: -1.0)
+            powerW = LivePower.number(state.powerW).toDoubleOrNull() ?: Double.NaN)
         if (displayed == lastRendered) return
         lastRendered = displayed
         val trace = QuickControlTrace.observed(state.pkg, state.currentHz, state.currentMode.id, "T2")
@@ -184,7 +184,7 @@ class ZuiControlQuickService : Service() {
         val fresh = readingTime > 0 && SystemClock.elapsedRealtime() - readingTime in 0..readingTtl
         // monitorMode comes from the existing authenticated producer snapshot, never a second state query.
         return controls!!.copy(isFloatActive = monitor?.desiredFull() == true,
-            quietC = if (fresh) quietC else -1.0, powerW = if (fresh) powerW else -1.0,
+            quietC = if (fresh) quietC else -1.0, powerW = if (fresh) powerW else Double.NaN,
             dark=resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES)
     }
     @Suppress("DEPRECATION")

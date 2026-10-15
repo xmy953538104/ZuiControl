@@ -41,7 +41,7 @@ public class PowerEdgeTest {
  static void delayed(boolean full,boolean connected,long delay)throws Exception {
   Client client=new Client();MonitorCollector c=begin(full,client);long start=SystemClock.now;
   settled(!connected);c.invalidatePower(connected);check(watts(c)<0,"immediate invalidation");
-  Handler.next();check(watts(c)<0&&Handler.delays.get(0)==400,"stale edge unavailable");
+  Handler.next();check(watts(c)<0&&Handler.delays.get(0)==800,"stale edge unavailable; one timed recheck");
   Runnable stale=Handler.pending.get(0);long samples=metric(c,"monitorSamples");
   event(c);check(metric(c,"monitorSamples")==samples&&Handler.pending.get(0)==stale,"unsettled noise ignored");
   while(Handler.due.get(0)<start+delay)Handler.next();
@@ -79,24 +79,24 @@ public class PowerEdgeTest {
    for(long delay:new long[]{200,600,2500})delayed(full,connected,delay);
   Client client=new Client();MonitorCollector c=begin(false,client);
   BatteryManager.currentUa=0;c.invalidatePower(false);Handler.next();
-  check(watts(c)<0&&Handler.delays.get(0)==400,"invalid current retains edge");
+  check(watts(c)<0&&Handler.delays.get(0)==800,"invalid current retains edge");
   SystemClock.now+=600;BatteryManager.currentUa=-2000000;event(c);check(Handler.delays.get(0)==0,"same tuple current-only wake");
   Handler.next();check(watts(c)==8&&Handler.delays.get(0)==5000,"same tuple validity qualified");
   settled(false);c.invalidatePower(true);Handler.next();long start=SystemClock.now;
-  for(int i=0;i<5;i++)check(Handler.next()==400,"bounded confirmation");
-  check(SystemClock.now==start+2000&&Handler.delays.get(0)==5000&&watts(c)<0,"deadline restores normal OFF");
+  check(Handler.next()==800,"one bounded confirmation");
+  check(SystemClock.now==start+800&&Handler.delays.get(0)==5000&&watts(c)<0,"single recheck restores normal OFF");
   Handler.next();check(Handler.delays.get(0)==5000,"no perpetual edge clock");
   c.command("full",0,"");Handler.next();shape(c);
   settled(true);c.invalidatePower(false);Runnable older=Handler.pending.get(0);
   c.invalidatePower(true);Handler.next();long samples=metric(c,"monitorSamples");older.run();
-  check(metric(c,"monitorSamples")==samples&&Handler.delays.get(0)==1000,"opposite edge replacement");
+  check(metric(c,"monitorSamples")==samples&&Handler.delays.get(0)==800,"opposite edge replacement retains one pending sensor recheck");
   c.invalidatePower(false);Handler.next();c.scene("org.example.app",0,false);settled(false);event(c);
   check(Handler.pending.isEmpty()&&HandlerThread.active==0,"screen ineligible has no scalar wake");
   c.scene("org.example.app",0,true);Handler.next();check(watts(c)==8,"screen resume source");
   settled(true);c.invalidatePower(false);Handler.next();Client replacement=new Client();c.register(replacement);
   int oldCalls=client.calls;settled(false);event(c);Handler.next();check(client.calls==oldCalls&&watts(c)==8,"replacement client only");
   c.armEdgeTrace(1);c.invalidatePower(false);Handler.next();
-  String facts=c.edgeTrace();check(facts.contains("ACTION_POWER_DISCONNECTED")&&facts.contains("factSource=STICKY_BATTERY_AT_POWER_EVENT plugged=0 batteryStatus=3 voltageMv=4000 currentUa=-2000000")&&facts.contains("SAMPLE_START")&&facts.contains("SAMPLE_END")&&facts.contains("powerValidity=VALID powerW=8.0")&&facts.contains("SCHEDULE delayMs=1000"),"actual edge/sample/schedule facts");
+  String facts=c.edgeTrace();check(facts.contains("ACTION_POWER_DISCONNECTED")&&facts.contains("factSource=STICKY_BATTERY_AT_POWER_EVENT plugged=0 batteryStatus=3 voltageMv=4000 currentUa=-2000000")&&facts.contains("SAMPLE_START")&&facts.contains("SAMPLE_END")&&facts.contains("powerValidity=VALID powerW=8.0")&&facts.contains("SCHEDULE delayMs=800"),"legacy watts retained; opposite-sign net source still awaits confirmation");
   c.armEdgeTrace(1);for(int i=0;i<600;i++)c.traceUnlock(true,false);
   String trace=c.edgeTrace();check(trace.contains("monitorEdgeTrace[511]=")&&!trace.contains("monitorEdgeTrace[512]=")&&trace.contains("monitorEdgeTraceDropped=89"),"bounded memory");
   SystemClock.now+=1000;c.traceUnlock(false,true);check(c.edgeTrace().contains("monitorEdgeTraceActive=false")&&c.edgeTrace().contains("monitorEdgeTraceDropped=89"),"trace finite");
@@ -106,10 +106,10 @@ public class PowerEdgeTest {
   recording.register(client);recording.scene("org.example.app",0,true);recording.command("full",0,"");recording.command("circle",0,"");
   check(recording.command("recordStart",0,recording.session.connectionEpoch+":"+recording.session.targetEpoch+":101").startsWith("ok=1"),"existing gesture start");Handler.next();
   shape(recording);recording.invalidatePower(false);Handler.next();Handler.next();long writes=metric(recording,"monitorDbWrites");int scans=recording.scans;
-  SystemClock.now=900;settled(false);event(recording);check(metric(recording,"monitorDbWrites")==writes&&recording.scans==scans,"event itself never writes/scans");
+  SystemClock.now+=600;settled(false);event(recording);check(metric(recording,"monitorDbWrites")==writes&&recording.scans==scans,"event itself never writes/scans");
   Handler.next();check(watts(recording)==8&&recording.scans==scans&&metric(recording,"monitorDbWrites")==writes+1,"shared Recording scalar row/scan deadline");
   recording.command("recordStop",0,"");recording.command("off",0,"");recording.unregister(client);check(HandlerThread.active==0,"record worker retired");
-  System.out.println("POWER_EDGE_SHAPE=PASS bounded2s/late-current/OFF/FULL/duplicates/opposite/screen/client/recording/age/validity/no-extra-scans/bounded-trace; PHYSICAL_MEASUREMENT=NOT_CLAIMED");
+  System.out.println("POWER_EDGE_SHAPE=PASS single-timed-recheck/late-current/OFF/FULL/duplicates/opposite/screen/client/recording/age/validity/no-extra-scans/bounded-trace; PHYSICAL_MEASUREMENT=NOT_CLAIMED");
  }
 }'''
 # Preserve shared Android stubs; only this focused snapshot fixture uses the real codec.
@@ -128,7 +128,7 @@ with tempfile.TemporaryDirectory(prefix='monitor-power-edge-') as tmp:
  files=[]
  for name,text in stubs.items():
   p=Path(tmp)/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text,encoding='utf8');files.append(str(p))
- production=['MonitorCollector.java','MonitorSources.java','MonitorSnapshot.java','MonitorSession.java','MonitorLifecycle.java','ThreadAnalysis.java','PolicyJson.java']
+ production=['MonitorCollector.java','MonitorSources.java','MonitorPower.java','MonitorSnapshot.java','MonitorSession.java','MonitorLifecycle.java','ThreadAnalysis.java','PolicyJson.java']
  subprocess.run(['javac','-encoding','UTF-8','-d',tmp,*files,*[str(namespace['src']/n) for n in production]],check=True)
  subprocess.run(['java','-cp',tmp,'com.zui.server.control.PowerEdgeTest'],check=True)
 service=(namespace['src']/'ZuiControlService.java').read_text(encoding='utf8')

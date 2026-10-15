@@ -449,11 +449,12 @@ class MainActivity : Activity() {
     private fun bindMonitor() {
         val fresh = monitor.optLong("elapsedMs") > 0 && SystemClock.elapsedRealtime() - monitor.optLong("elapsedMs") in 0..monitor.optLong("ttlMs", 3500)
         val q = if (fresh) monitor.optDouble("quietC", -1.0) else -1.0
-        val p = if (fresh) monitor.optDouble("powerW", -1.0) else -1.0
+        val p = if (fresh) LivePower.value(monitor) else Double.NaN
+        val magnitude=if(p.isFinite())kotlin.math.abs(p) else 0.0
         quietLabel?.apply { val value=number(q);if(text.toString()!=value)text=value }
-        powerLabel?.apply { val value=if(p<0)"--" else number(p);if(text.toString()!=value)text=value }
+        powerLabel?.apply { val value=LivePower.number(p);if(text.toString()!=value)text=value }
         ownerQuiet?.apply { tone = if (q >= 45) owner.tiers[3] else if (q >= 40) owner.tiers[2] else owner.accent; setFraction(if(q < 0) 0f else ((q-20)/30).toFloat()) }
-        ownerPower?.apply { tone = if (p >= 14) owner.tiers[3] else if (p >= 7) owner.tiers[2] else owner.accent; setFraction(if(p < 0) 0f else (p/20).toFloat()) }
+        ownerPower?.apply { tone = if (magnitude >= 14) owner.tiers[3] else if (magnitude >= 7) owner.tiers[2] else owner.accent; setFraction((magnitude/20).toFloat()) }
         ownerSwitch?.let{knob->
             (knob.background as? GradientDrawable)?.let{if(it.color?.defaultColor!=Color.WHITE)it.setColor(Color.WHITE)}
             val target=owner.px(if(overlay.displayed)18 else 0).toFloat()
@@ -461,13 +462,12 @@ class MainActivity : Activity() {
         }
         controlBindings[overlay]?.toList()?.forEach{it()}
         quietMeter?.progress = if (q > 0) (q / 55 * 100).toInt().coerceIn(0, 100) else 0
-        powerMeter?.progress = if (p > 0) (p / 20 * 100).toInt().coerceIn(0, 100) else 0
+        powerMeter?.progress = (magnitude / 20 * 100).toInt().coerceIn(0, 100)
         quietLabel?.setTextColor(if (q >= 45) owner.inks[3] else if (q >= 40) owner.inks[2] else owner.text)
-        powerLabel?.setTextColor(if (p >= 14) owner.inks[3] else if (p >= 7) owner.inks[2] else owner.text)
-        val plugged=fresh && monitor.optInt("batteryPlugged",-1)>0
-        powerUnit?.visibility=if(p>=0)View.VISIBLE else View.GONE
-        powerReason?.text = if(plugged) "插电中 · 不显示功耗" else if(p < 0) "不可用" else ""
-        powerReason?.contentDescription=if(p < 0) "功耗不可用 · ${monitor.optString("powerValidity", "等待数据")}" else "设备电池侧功耗"
+        powerLabel?.setTextColor(if (magnitude >= 14) owner.inks[3] else if (magnitude >= 7) owner.inks[2] else owner.text)
+        powerUnit?.visibility=if(p.isFinite())View.VISIBLE else View.GONE
+        powerReason?.text = if(!fresh)"等待数据" else if(!p.isFinite())LivePower.reason(monitor) else if(p>0)"净充入" else if(p<0)"净放出" else "净电流为零"
+        powerReason?.contentDescription="电池净功率，正为充入，负为放出；${LivePower.reason(monitor)}"
         overlayButton?.text = if (this@MainActivity.overlay.displayed) "已开启" else "已关闭"
         recordBanner?.visibility = if (monitor.optString("recordState") == "RECORDING") View.VISIBLE else View.GONE
         val active = (0 until records.length()).map { records.getJSONObject(it) }.firstOrNull { it.optBoolean("active") }
@@ -743,8 +743,9 @@ class MainActivity : Activity() {
         }
         detail.addView(owner.title("系统全局状态","系统关键性能参数与组件运行情况",trailing=modeChip))
         val stats=owner.row()
-        listOf("温度","功耗","核心组件").forEachIndexed{i,title ->
+        listOf("温度","电池净功率","核心组件").forEachIndexed{i,title ->
             val box=owner.card(false).apply{setPadding(owner.px(17),owner.px(15),owner.px(17),owner.px(17))}
+            if(i==1){box.setOnClickListener{powerDialog()};box.isFocusable=true;box.contentDescription="电池净功率与外部输入详情"}
             box.addView(owner.row().apply{
                 addView(owner.icon(listOf(R.drawable.owner_temperature,R.drawable.owner_power,R.drawable.owner_health)[i],owner.muted,16),LinearLayout.LayoutParams(owner.px(16),owner.px(16)).apply{marginEnd=owner.px(7)})
                 addView(owner.label(title,12f,owner.sub,700))
@@ -1725,11 +1726,44 @@ class MainActivity : Activity() {
                     addView(owner.label("版本信息",11f,owner.muted,800))
                     listOf("Release" to "releaseVersion","Build" to "sourceBuild","Integration" to "integrationSchema","AppPolicy" to "appPolicySchema","ZUIopt" to "zuioptSchema").forEach{(title,key)->addView(owner.formRow(title,note(value(caps,key).ifEmpty{"暂不可用"})))}
                 },gap())
+                detail.addView(card().apply{
+                    addView(actionRow("电池健康与容量","只读驱动容量与来源；不执行校准或强制充放电"){batteryHealthDialog()})
+                },gap())
                 detail.addView(card().apply{addView(actionRow("使用帮助","功能说明与监测记录指引"){monitorGuidance()})},gap())
             }
         }
     }
     private var themeFramePending=false
+    private fun powerDialog() {
+        val fresh=monitor.optLong("elapsedMs")>0 && SystemClock.elapsedRealtime()-monitor.optLong("elapsedMs") in 0..monitor.optLong("ttlMs",3500)
+        val body=owner.column().apply {
+            addView(note("电池净功率：${LivePower.number(if(fresh)LivePower.value(monitor) else Double.NaN)} W\n正为充入、负为放出；${if(fresh)LivePower.reason(monitor) else "快照已过期"}"))
+            addView(note("外部输入：${LivePower.number(if(fresh)LivePower.value(monitor,true) else Double.NaN)} W\n${if(fresh)LivePower.reason(monitor,true) else "快照已过期"}"))
+            addView(note("输入测量源：${monitor.optString("inputPowerSupply").ifEmpty{"不可读"}}。由同一通路的电压、电流读数相乘；不是充电器额定值或限流值。"))
+            addView(note("读数没有硬件测量时间戳；读取时刻不能证明传感器刚更新。电池净功率包含电池充放电，不等于插电时的整机耗电。"))
+            addView(note("历史录制的功耗仍只表示未插电放电功率，历史含义不变。"))
+        }
+        ownerModal?.open("功率与来源","同一 Monitor 快照 · 不额外采样",460,body,listOf(owner.button("关闭"){ownerModal?.close()}))
+    }
+    private fun batteryHealthDialog() {
+        read("batteryHealth",accept={visible && session.section=="settings"},
+            fetch={PerformanceMonitor.command("batteryHealth","")},parse={text->
+                check(text.startsWith("ok=1\n")){"当前后端未提供电池健康读数"}
+                JSONObject(text.lineSequence().first{it.startsWith("batteryHealth=")}.substringAfter('='))
+            }) { health ->
+            fun value(key:String,scale:Double=1.0):String = if(health.isNull(key))"不可读" else String.format(java.util.Locale.ROOT,"%.1f",health.getDouble(key)/scale)
+            val age=((SystemClock.elapsedRealtime()-health.optLong("readElapsedMs"))/1000).coerceAtLeast(0)
+            val body=owner.column().apply{
+                addView(note("FCC ${value("chargeFullUah",1000.0)} mAh · 驱动设计 ${value("chargeFullDesignUah",1000.0)} mAh"))
+                addView(note("同口径 FCC/design：${value("fccDesignPercent")}% · 驱动估计"))
+                addView(note("驱动另报 SOH：${value("driverSohPercent")}% · 不与上项混用"))
+                addView(note("循环次数：${value("cycleCount")} · 读取于 ${age} 秒前"))
+                addView(note("公开参考：典型6550 mAh / 额定6400 mAh；不是本次实测容量。"))
+                addView(note("来源：${health.optString("source")} · ${health.optString("unit")}\n${if(health.isNull("fccDesignPercent"))"同口径容量数据不足" else "同一逻辑电池驱动估计，非独立容量实测"}\n物理电芯口径尚未验证，不乘2。驱动无硬件测量时间戳，health GOOD不等于容量100%。"))
+            }
+            ownerModal?.open("电池健康与容量","保留原始口径；慢变化字段最多五分钟读取一次",460,body,listOf(owner.button("关闭"){ownerModal?.close()}))
+        }
+    }
     private fun theme(theme: String) {
         if(prefs.getString("theme","system")==theme && OwnerWindow.dark(this)==owner.dark)return
         prefs.edit().putString("theme",theme).apply()

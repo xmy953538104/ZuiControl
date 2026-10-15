@@ -60,7 +60,7 @@ class UiPolish(unittest.TestCase):
         self.assertEqual(tokens['monitor_unit_scale'], '60%')
         self.assertTrue(0.26 <= int(tokens['monitor_glass'][1:3], 16)/255 <= 0.30)
         overlay = source('PerformanceMonitor.kt')
-        self.assertIn('metricWidth(it)', overlay); self.assertNotIn('livePower.add(', overlay); self.assertIn('next.optDouble("powerW", -1.0)', overlay)
+        self.assertIn('metricWidth(it)', overlay); self.assertNotIn('livePower.add(', overlay); self.assertIn('LivePower.value(next,', overlay)
         self.assertNotRegex(overlay, r'\b276\b'); self.assertNotIn('circleText', overlay)
         for forbidden in ('MediaProjection', 'PixelCopy', 'SurfaceControl', 'kgsl', '/proc/', 'SQLite'):
             self.assertNotIn(forbidden, overlay)

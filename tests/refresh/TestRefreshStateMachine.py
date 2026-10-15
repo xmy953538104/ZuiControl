@@ -849,7 +849,8 @@ class ProductionBindingTest(unittest.TestCase):
             )
 
     def test_cleanup_uses_owner_safe_vote_and_wm_handoff(self) -> None:
-        self.assertIn('"updateGlobalVote", int.class, voteClass', self.service)
+        self.assertIn('RenderVoteOwner.update(votesStorage,hz)', self.service)
+        self.assertNotIn('"updateGlobalVote", int.class, voteClass', self.service)
         self.assertNotIn('"updateVote", int.class, int.class', self.service)
         self.assertIn("updateGlobalRenderVote(dmi, null)", self.service)
         self.assertIn("requestTraversalFromDisplayManager()", self.service)
