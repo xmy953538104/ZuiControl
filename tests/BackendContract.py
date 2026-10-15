@@ -42,6 +42,7 @@ RESPONSE_ALLOWED|={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActi
 RESPONSE_ALLOWED|={'app/src/test/java/com/zui/zuicontrol/'+n for n in ('LivePowerTest.kt','NotificationMetricTest.kt')}
 RESPONSE_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('MonitorCollector.java','MonitorSources.java','MonitorPower.java','RenderVoteOwner.java','ZuiControlService.java','ControlsCallbacks.java')}
 RESPONSE_ALLOWED|={'framework_patch/stubs/android/os/UEventObserver.java','payload/patches/vendor_sepolicy_zui_scheduler.cil','native/command/Adapter.cpp','native/command/Rules.h'}
+RESPONSE_ALLOWED.add('app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java')
 RESPONSE_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeR3Scope.py','TestRuntimeR5Scope.py','TestRuntimeR6Scope.py','TestRuntimeFrontendScope.py','TestRuntimeRecoveryScope.py')}
 RESPONSE_ALLOWED|={'tests/monitor/TestFrontendV3.py','tests/monitor/TestFinalIntegration.py'}
 assert RESPONSE_BATTERY['phase']=='ZUICONTROL_POST_BASELINE_RESPONSE_AND_BATTERY_R1'

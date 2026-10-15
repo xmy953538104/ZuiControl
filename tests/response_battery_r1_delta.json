@@ -3,6 +3,7 @@
   "baseHead": "3565f3d4ecf66bce0f8bac2ca93d9ae180745e1c",
   "allowedPaths": [
     ".github/workflows/build.yml",
+    "app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java",
     "app/src/main/java/com/zui/zuicontrol/ControlsState.kt",
     "app/src/main/java/com/zui/zuicontrol/FrontendPackages.kt",
     "app/src/main/java/com/zui/zuicontrol/LivePower.kt",
@@ -36,10 +37,22 @@
     {
       "path": ".github/workflows/build.yml",
       "beforeSha256": "f0f2a92fb3c73f8193d4e827f6713aa3c57521ef3b773c9d75e9e0d0829518ff",
-      "afterSha256": "1811dd8da4e6641d24c3f4c2f9476c3db03af91fbea2aae3dae4dc383b3d52b1",
+      "afterSha256": "aeeb9deba00a0883daa52e620f09378d5e38bbe924fac209c0c3fa3115b5ec33",
       "beforeEntry": "100644 blob 906e4c3c2d5a594f380341ff377c1afdff01bf15\t.github/workflows/build.yml",
-      "afterEntry": "100644 blob cdbf9436c488982ab42ca5a7c86b1cf8770d21fd\t.github/workflows/build.yml",
+      "afterEntry": "100644 blob b703b1fc9b48a1b047f0afe980cdb4cc5ff2c1a5\t.github/workflows/build.yml",
       "hunks": [
+        {
+          "before": "            -fPIE -pie -static-libstdc++ -fstack-protector-strong -D_FORTIFY_SOURCE=2 \\\n            -Wl,-z,relro,-z,now,--build-id=none native/command/Adapter.cpp -lbinder_ndk -llog -ldl -o \"$RUNNER_TEMP/zui_control_request\"\n          \"$toolchain/llvm-strip\" --strip-all \"$RUNNER_TEMP/zui_control_request\"\n          cmp \"$RUNNER_TEMP/zui_control_request\" payload/system/bin/zui_control_request\n\n      - name: Rebuild and verify Android Uperf supervisor\n        shell: bash\n",
+          "after": "            -fPIE -pie -static-libstdc++ -fstack-protector-strong -D_FORTIFY_SOURCE=2 \\\n            -Wl,-z,relro,-z,now,--build-id=none native/command/Adapter.cpp -lbinder_ndk -llog -ldl -o \"$RUNNER_TEMP/zui_control_request\"\n          \"$toolchain/llvm-strip\" --strip-all \"$RUNNER_TEMP/zui_control_request\"\n          sha256sum \"$RUNNER_TEMP/zui_control_request\" > \"$RUNNER_TEMP/command-build.sha256\"\n\n      - name: Upload fresh command adapter\n        uses: actions/upload-artifact@v4\n        with:\n          name: zui-control-command-gate\n          path: |\n            ${{ runner.temp }}/zui_control_request\n            ${{ runner.temp }}/command-build.sha256\n          if-no-files-found: error\n\n      - name: Rebuild and verify Android Uperf supervisor\n        shell: bash\n"
+        },
+        {
+          "before": "          if-no-files-found: error\n\n      - name: Test app\n        run: |\n          app_failed=0\n          gradle -p . :app:testDebugUnitTest :app:lintDebug || app_failed=1\n",
+          "after": "          if-no-files-found: error\n\n      - name: Test app\n        if: ${{ !cancelled() }}\n        run: |\n          app_failed=0\n          gradle -p . :app:testDebugUnitTest :app:lintDebug || app_failed=1\n"
+        },
+        {
+          "before": "          test \"$app_failed\" -eq 0\n\n      - name: Check scripts\n        run: |\n          scripts_failed=0\n          python3 -m py_compile scripts/build/ApplyZuiControlPayload.py || scripts_failed=1\n",
+          "after": "          test \"$app_failed\" -eq 0\n\n      - name: Check scripts\n        if: ${{ !cancelled() }}\n        run: |\n          scripts_failed=0\n          python3 -m py_compile scripts/build/ApplyZuiControlPayload.py || scripts_failed=1\n"
+        },
         {
           "before": "          python3 tests/command_plane/TestControlsCallbacks.py || scripts_failed=1\n          python3 tests/command_plane/TestRuntimeDomains.py || scripts_failed=1\n          python3 tests/command_plane/TestAckObservation.py || scripts_failed=1\n          python3 tests/gpu/TestGpuFailureIsolation.py || scripts_failed=1\n          python3 tests/command_plane/TestProjectionMode.py || scripts_failed=1\n          python3 tests/command_plane/TestNativeTransportContract.py || scripts_failed=1\n",
           "after": "          python3 tests/command_plane/TestControlsCallbacks.py || scripts_failed=1\n          python3 tests/command_plane/TestRuntimeDomains.py || scripts_failed=1\n          python3 tests/command_plane/TestAckObservation.py || scripts_failed=1\n          python3 tests/command_plane/TestFrontendPackages.py || scripts_failed=1\n          python3 tests/command_plane/TestCachedDraft.py || scripts_failed=1\n          python3 tests/gpu/TestGpuFailureIsolation.py || scripts_failed=1\n          python3 tests/command_plane/TestProjectionMode.py || scripts_failed=1\n          python3 tests/command_plane/TestNativeTransportContract.py || scripts_failed=1\n"
@@ -51,6 +64,23 @@
         {
           "before": "          python3 tests/monitor/TestPackageIdentity.py || scripts_failed=1\n          python3 tests/monitor/TestDeterministicZip.py || scripts_failed=1\n          python3 tests/refresh/TestRefreshStateMachine.py || scripts_failed=1\n          python3 tests/refresh/TestOemTouchTimer.py || scripts_failed=1\n          python3 tests/gpu/TestGpuProof.py || scripts_failed=1\n          python3 tests/uperf/architecture/TestUperfArchitecture.py || scripts_failed=1\n",
           "after": "          python3 tests/monitor/TestPackageIdentity.py || scripts_failed=1\n          python3 tests/monitor/TestDeterministicZip.py || scripts_failed=1\n          python3 tests/refresh/TestRefreshStateMachine.py || scripts_failed=1\n          python3 tests/refresh/TestRenderVoteOwner.py || scripts_failed=1\n          python3 tests/refresh/TestOemTouchTimer.py || scripts_failed=1\n          python3 tests/gpu/TestGpuProof.py || scripts_failed=1\n          python3 tests/uperf/architecture/TestUperfArchitecture.py || scripts_failed=1\n"
+        },
+        {
+          "before": "\n      - name: Stage payload APK\n        run: |\n          rm -rf payload/system/priv-app/ZuiControl payload/system/priv-app/ZuiControlV30 payload/system/priv-app/ZuiControlV31\n          rm -rf payload/system/priv-app/ZuiControlV32 payload/system/priv-app/ZuiControlV33 payload/system/priv-app/ZuiControlV34\n          rm -rf payload/system/priv-app/ZuiControlV35 payload/system/priv-app/ZuiControlV36 payload/system/priv-app/ZuiControlV37\n",
+          "after": "\n      - name: Stage payload APK\n        run: |\n          sha256sum -c \"$RUNNER_TEMP/command-build.sha256\"\n          cp \"$RUNNER_TEMP/zui_control_request\" payload/system/bin/zui_control_request\n          rm -rf payload/system/priv-app/ZuiControl payload/system/priv-app/ZuiControlV30 payload/system/priv-app/ZuiControlV31\n          rm -rf payload/system/priv-app/ZuiControlV32 payload/system/priv-app/ZuiControlV33 payload/system/priv-app/ZuiControlV34\n          rm -rf payload/system/priv-app/ZuiControlV35 payload/system/priv-app/ZuiControlV36 payload/system/priv-app/ZuiControlV37\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java",
+      "beforeSha256": "30aeaf3c3303b52cacc99dd72c5475f4a43468d8b4dbe2c77c9557ea38685348",
+      "afterSha256": "25623fb7540f73310fe2d4d87558d9c3942a60633050ddb349f0946472a60674",
+      "beforeEntry": "100644 blob ba9ed4167aa81327c29ece08e6205550f3a81039\tapp/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java",
+      "afterEntry": "100644 blob ecd5f34a05f0600997eb9c4ca4f59ec24de75f52\tapp/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java",
+      "hunks": [
+        {
+          "before": "            frozen=true;Log.i(\"R6Probe\",\"FROZEN_PING_COUNT=\"+count);return;\n        }\n        if(\"clearRetainedIcons\".equals(op)) {\n            Object inventory=cache.get(singleton);\n            List<?> entries=(List<?>)inventory.getClass().getMethod(\"getEntries\").invoke(inventory);\n            Map<String,Object> replacement=new HashMap<>();List<Object> next=new ArrayList<>();\n            for(Object e:entries){ApplicationInfo info=(ApplicationInfo)e.getClass().getMethod(\"getInfo\").invoke(e);\n                Object x=e.getClass().getConstructors()[0].newInstance(info,e.getClass().getMethod(\"getLabel\").invoke(e),new ColorDrawable(0));next.add(x);replacement.put(info.packageName,x);}\n            cache.set(singleton,inventory.getClass().getConstructors()[0].newInstance(inventory.getClass().getMethod(\"getVersion\").invoke(inventory),next));\n            if(activity!=null)put(activity,\"appMetadata\",replacement);\n            Log.i(\"R6Probe\",\"ICON_REFS_REPLACED=\"+next.size());return;\n        }\n        if(\"gc\".equals(op)){Runtime.getRuntime().gc();System.runFinalization();Runtime.getRuntime().gc();Log.i(\"R6Probe\",\"CONTROLLED_GC\");return;}\n        if(\"finish\".equals(op)){finish(0,new Bundle());return;}\n",
+          "after": "            frozen=true;Log.i(\"R6Probe\",\"FROZEN_PING_COUNT=\"+count);return;\n        }\n        if(\"clearRetainedIcons\".equals(op)) {\n            Object lru=field(singleton,\"icons\");lru.getClass().getMethod(\"evictAll\").invoke(lru);\n            Log.i(\"R6Probe\",\"ICON_CACHE_EVICTED; METADATA_UNCHANGED\");return;\n        }\n        if(\"gc\".equals(op)){Runtime.getRuntime().gc();System.runFinalization();Runtime.getRuntime().gc();Log.i(\"R6Probe\",\"CONTROLLED_GC\");return;}\n        if(\"finish\".equals(op)){finish(0,new Bundle());return;}\n"
         }
       ]
     },

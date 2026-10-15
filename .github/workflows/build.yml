@@ -88,7 +88,16 @@ jobs:
             -fPIE -pie -static-libstdc++ -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
             -Wl,-z,relro,-z,now,--build-id=none native/command/Adapter.cpp -lbinder_ndk -llog -ldl -o "$RUNNER_TEMP/zui_control_request"
           "$toolchain/llvm-strip" --strip-all "$RUNNER_TEMP/zui_control_request"
-          cmp "$RUNNER_TEMP/zui_control_request" payload/system/bin/zui_control_request
+          sha256sum "$RUNNER_TEMP/zui_control_request" > "$RUNNER_TEMP/command-build.sha256"
+
+      - name: Upload fresh command adapter
+        uses: actions/upload-artifact@v4
+        with:
+          name: zui-control-command-gate
+          path: |
+            ${{ runner.temp }}/zui_control_request
+            ${{ runner.temp }}/command-build.sha256
+          if-no-files-found: error
 
       - name: Rebuild and verify Android Uperf supervisor
         shell: bash
@@ -118,6 +127,7 @@ jobs:
           if-no-files-found: error
 
       - name: Test app
+        if: ${{ !cancelled() }}
         run: |
           app_failed=0
           gradle -p . :app:testDebugUnitTest :app:lintDebug || app_failed=1
@@ -136,6 +146,7 @@ jobs:
           test "$app_failed" -eq 0
 
       - name: Check scripts
+        if: ${{ !cancelled() }}
         run: |
           scripts_failed=0
           python3 -m py_compile scripts/build/ApplyZuiControlPayload.py || scripts_failed=1
@@ -487,6 +498,8 @@ jobs:
 
       - name: Stage payload APK
         run: |
+          sha256sum -c "$RUNNER_TEMP/command-build.sha256"
+          cp "$RUNNER_TEMP/zui_control_request" payload/system/bin/zui_control_request
           rm -rf payload/system/priv-app/ZuiControl payload/system/priv-app/ZuiControlV30 payload/system/priv-app/ZuiControlV31
           rm -rf payload/system/priv-app/ZuiControlV32 payload/system/priv-app/ZuiControlV33 payload/system/priv-app/ZuiControlV34
           rm -rf payload/system/priv-app/ZuiControlV35 payload/system/priv-app/ZuiControlV36 payload/system/priv-app/ZuiControlV37

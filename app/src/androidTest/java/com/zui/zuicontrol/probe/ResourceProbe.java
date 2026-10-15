@@ -68,14 +68,8 @@ public final class ResourceProbe extends Instrumentation {
             frozen=true;Log.i("R6Probe","FROZEN_PING_COUNT="+count);return;
         }
         if("clearRetainedIcons".equals(op)) {
-            Object inventory=cache.get(singleton);
-            List<?> entries=(List<?>)inventory.getClass().getMethod("getEntries").invoke(inventory);
-            Map<String,Object> replacement=new HashMap<>();List<Object> next=new ArrayList<>();
-            for(Object e:entries){ApplicationInfo info=(ApplicationInfo)e.getClass().getMethod("getInfo").invoke(e);
-                Object x=e.getClass().getConstructors()[0].newInstance(info,e.getClass().getMethod("getLabel").invoke(e),new ColorDrawable(0));next.add(x);replacement.put(info.packageName,x);}
-            cache.set(singleton,inventory.getClass().getConstructors()[0].newInstance(inventory.getClass().getMethod("getVersion").invoke(inventory),next));
-            if(activity!=null)put(activity,"appMetadata",replacement);
-            Log.i("R6Probe","ICON_REFS_REPLACED="+next.size());return;
+            Object lru=field(singleton,"icons");lru.getClass().getMethod("evictAll").invoke(lru);
+            Log.i("R6Probe","ICON_CACHE_EVICTED; METADATA_UNCHANGED");return;
         }
         if("gc".equals(op)){Runtime.getRuntime().gc();System.runFinalization();Runtime.getRuntime().gc();Log.i("R6Probe","CONTROLLED_GC");return;}
         if("finish".equals(op)){finish(0,new Bundle());return;}
