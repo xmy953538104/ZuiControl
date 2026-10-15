@@ -44,7 +44,7 @@ RESPONSE_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for 
 RESPONSE_ALLOWED|={'framework_patch/stubs/android/os/UEventObserver.java','payload/patches/vendor_sepolicy_zui_scheduler.cil','native/command/Adapter.cpp','native/command/Rules.h'}
 RESPONSE_ALLOWED.add('app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java')
 RESPONSE_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeR3Scope.py','TestRuntimeR5Scope.py','TestRuntimeR6Scope.py','TestRuntimeFrontendScope.py','TestRuntimeRecoveryScope.py')}
-RESPONSE_ALLOWED|={'tests/monitor/TestFrontendV3.py','tests/monitor/TestFinalIntegration.py'}
+RESPONSE_ALLOWED|={'tests/monitor/TestFrontendV3.py','tests/monitor/TestFinalIntegration.py','tests/monitor/TestProductR9.py'}
 assert RESPONSE_BATTERY['phase']=='ZUICONTROL_POST_BASELINE_RESPONSE_AND_BATTERY_R1'
 assert RESPONSE_BATTERY['baseHead']=='3565f3d4ecf66bce0f8bac2ca93d9ae180745e1c'
 assert set(RESPONSE_BATTERY['allowedPaths'])==RESPONSE_ALLOWED=={r['path'] for r in RESPONSE_BATTERY['files']}

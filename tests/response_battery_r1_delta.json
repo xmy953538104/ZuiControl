@@ -27,6 +27,7 @@
     "scripts/build/PatchRenderVoteOwner.py",
     "tests/monitor/TestFinalIntegration.py",
     "tests/monitor/TestFrontendV3.py",
+    "tests/monitor/TestProductR9.py",
     "tests/zuiopt/TestRuntimeFrontendScope.py",
     "tests/zuiopt/TestRuntimeR3Scope.py",
     "tests/zuiopt/TestRuntimeR5Scope.py",
@@ -632,6 +633,19 @@
         {
           "before": "        jars=list((cache/'org.jetbrains.kotlin').glob('*/'+version+'/*/*.jar'))+list((cache/'org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm').glob('*/*/*.jar'))\n        annotations=list((cache/'org.jetbrains/annotations/13.0').glob('*/*.jar'));jars+=annotations\n        stdlib=next((cache/'org.jetbrains.kotlin/kotlin-stdlib'/version).glob('*/*.jar'))\n        java=str(Path(os.environ['JAVA_HOME'])/'bin'/('java.exe' if os.name=='nt' else 'java')) if 'JAVA_HOME' in os.environ else shutil.which('java')\n        with tempfile.TemporaryDirectory(prefix='zui-v3-renderer-') as directory:\n            tmp=Path(directory)\n            for name,text in stubs.items():(tmp/name).write_text(text,encoding='utf-8')\n            (tmp/'Harness.kt').write_text(harness,encoding='utf-8')\n            subprocess.run([java,'-cp',os.pathsep.join(map(str,jars)),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',os.pathsep.join(map(str,[stdlib,*annotations])),'-d',str(tmp/'classes'),str(APP/'NotificationQuickControlHelper.kt'),str(APP/'UperfMode.kt'),*map(str,tmp.glob('*.kt'))],check=True,timeout=60,capture_output=True)\n            r=subprocess.run([java,'-cp',os.pathsep.join(map(str,[tmp/'classes',stdlib])),'com.zui.zuicontrol.HarnessKt'],check=True,timeout=20,capture_output=True,text=True)\n            self.assertIn('60_TRANSITIONS=PASS',r.stdout);print(r.stdout.strip())\n\nif __name__=='__main__':unittest.main(verbosity=2)\n",
           "after": "        jars=list((cache/'org.jetbrains.kotlin').glob('*/'+version+'/*/*.jar'))+list((cache/'org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm').glob('*/*/*.jar'))\n        annotations=list((cache/'org.jetbrains/annotations/13.0').glob('*/*.jar'));jars+=annotations\n        stdlib=next((cache/'org.jetbrains.kotlin/kotlin-stdlib'/version).glob('*/*.jar'))\n        jsonlib=next((cache/'org.json/json/20180813').glob('*/*.jar'))\n        java=str(Path(os.environ['JAVA_HOME'])/'bin'/('java.exe' if os.name=='nt' else 'java')) if 'JAVA_HOME' in os.environ else shutil.which('java')\n        with tempfile.TemporaryDirectory(prefix='zui-v3-renderer-') as directory:\n            tmp=Path(directory)\n            for name,text in stubs.items():(tmp/name).write_text(text,encoding='utf-8')\n            (tmp/'Harness.kt').write_text(harness,encoding='utf-8')\n            subprocess.run([java,'-cp',os.pathsep.join(map(str,jars)),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',os.pathsep.join(map(str,[stdlib,jsonlib,*annotations])),'-d',str(tmp/'classes'),str(APP/'NotificationQuickControlHelper.kt'),str(APP/'LivePower.kt'),str(APP/'UperfMode.kt'),*map(str,tmp.glob('*.kt'))],check=True,timeout=60,capture_output=True)\n            r=subprocess.run([java,'-cp',os.pathsep.join(map(str,[tmp/'classes',stdlib,jsonlib])),'com.zui.zuicontrol.HarnessKt'],check=True,timeout=20,capture_output=True,text=True)\n            self.assertIn('60_TRANSITIONS=PASS',r.stdout);print(r.stdout.strip())\n\nif __name__=='__main__':unittest.main(verbosity=2)\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/monitor/TestProductR9.py",
+      "beforeSha256": "09ad675d8aa1c2a2b0edcfa1ad48891ac044256fdd5d2169fc726dd48da9c7fe",
+      "afterSha256": "f0f4f14c24ad873850bb38c93636c6439e4c93ae6236fc529ebfec137115f79f",
+      "beforeEntry": "100644 blob 3442dad85f5c0d48194cc231ca18cb3b2f01cbae\ttests/monitor/TestProductR9.py",
+      "afterEntry": "100644 blob f368a455c7533dce9a23c60d5a602575f1ea5959\ttests/monitor/TestProductR9.py",
+      "hunks": [
+        {
+          "before": "        self.assertLess(page.index('restoreRulesPending()'),page.index('pageBindings.toList()'))\n        self.assertIn('rulesPendingViews.putIfAbsent(v,v.isEnabled to v.alpha)',main)\n        self.assertIn('view.isEnabled=saved.first;view.alpha=saved.second',main)\n        self.assertIn('if(!rulesQualified)return',main.split('private fun mutateRule',1)[1].split('private fun moveRule',1)[0])\n        self.assertIn('!rulesQualified',main.split('private fun saveDraft',1)[1].split('private fun addApp',1)[0])\n        self.assertIn('tag=\"rules-retry\"',main)\n        self.assertIn('!it.dirty && it.generation!=fresh.current.generation',load)\n",
+          "after": "        self.assertLess(page.index('restoreRulesPending()'),page.index('pageBindings.toList()'))\n        self.assertIn('rulesPendingViews.putIfAbsent(v,v.isEnabled to v.alpha)',main)\n        self.assertIn('view.isEnabled=saved.first;view.alpha=saved.second',main)\n        self.assertIn('session.ruleDraft!==d',main.split('private fun mutateRule',1)[1].split('private fun moveRule',1)[0])\n        self.assertIn('!rulesQualified',main.split('private fun saveDraft',1)[1].split('private fun addApp',1)[0])\n        self.assertIn('tag=\"rules-retry\"',main)\n        self.assertIn('!it.dirty && it.generation!=fresh.current.generation',load)\n"
         }
       ]
     },
