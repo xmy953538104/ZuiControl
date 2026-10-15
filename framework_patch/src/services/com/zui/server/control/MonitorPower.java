@@ -15,8 +15,10 @@ final class MonitorPower {
     private long lastCurrent = Long.MIN_VALUE, edgeCurrent = Long.MIN_VALUE;
     private boolean awaitingCurrent;
     private int expectedConnected = -1;
-    private String lastInput = "", edgeInput = "";
+    private final java.util.Map<String,Long> inputReadings=new java.util.HashMap<>(),edgeInputs=new java.util.HashMap<>();
     private boolean awaitingInput;
+    private long notifiedCurrent = Long.MIN_VALUE;
+    private final java.util.Map<String,Long> notifiedInputs=new java.util.HashMap<>();
     private final java.util.Map<String,String[]> sourceFacts=new java.util.HashMap<>();
 
     synchronized boolean sourceEvent(String name,String... fields) {
@@ -27,14 +29,32 @@ final class MonitorPower {
         if(!supplied || java.util.Arrays.equals(old,next))return false;
         sourceFacts.put(name,next);return true;
     }
-    synchronized void resetSourceEvents(){sourceFacts.clear();}
+    synchronized void resetSourceEvents(){sourceFacts.clear();notifiedCurrent=Long.MIN_VALUE;notifiedInputs.clear();}
+    boolean measurementEvent(String name,String current) {
+        if(current==null || current.length()>32)return false;
+        final long value;
+        try { value=Long.parseLong(current); } catch(NumberFormatException e){return false;}
+        if("battery".equals(name) && awaitingCurrent && value>=-30000000 && value<=30000000){
+            notifiedCurrent=value;return true;
+        }
+        if(("usb".equals(name)||"wireless".equals(name)) && awaitingInput && value>=0 && value<=10000000){
+            notifiedInputs.put(name,value);return true;
+        }
+        return false;
+    }
+    private void beginSourceUpdate(){
+        edgeCurrent=lastCurrent;awaitingCurrent=true;edgeInputs.clear();edgeInputs.putAll(inputReadings);awaitingInput=true;
+        notifiedCurrent=Long.MIN_VALUE;notifiedInputs.clear();
+    }
     void sourceChanged() {
-        expectedConnected=-1;edgeCurrent=lastCurrent;awaitingCurrent=true;edgeInput=lastInput;awaitingInput=true;
+        String[] usb=sourceFacts.get("usb");
+        expectedConnected=usb==null?-1:"1".equals(usb[0])?1:"0".equals(usb[0])?0:-1;
+        beginSourceUpdate();
     }
 
     void edge(boolean connected) {
         expectedConnected=connected?1:0;
-        edgeCurrent=lastCurrent;awaitingCurrent=true;edgeInput=lastInput;awaitingInput=true;
+        beginSourceUpdate();
     }
     boolean pending(){return expectedConnected>=0 || awaitingCurrent;}
     boolean changedCurrent(long ua){return pending() && ua!=Long.MIN_VALUE && ua!=lastCurrent;}
@@ -49,12 +69,15 @@ final class MonitorPower {
 
     Map<String,Object> sample(int plugged,int status,int mv,long ua,long now) {
         boolean connectionMatches=expectedConnected<0 || (plugged>0?1:plugged)==expectedConnected;
-        if(awaitingCurrent && connectionMatches && netWatts(plugged,status,mv,ua)!=null && ua!=edgeCurrent
-                && (edgeCurrent!=Long.MIN_VALUE || ua!=0))awaitingCurrent=false;
+        // A post-edge driver notification can confirm an unchanged read, never an ADC timestamp.
+        boolean notified=ua!=Long.MIN_VALUE && ua==notifiedCurrent;
+        if(awaitingCurrent && connectionMatches && netWatts(plugged,status,mv,ua)!=null
+                && (notified || ua!=edgeCurrent && (edgeCurrent!=Long.MIN_VALUE || ua!=0)))awaitingCurrent=false;
         if(ua!=Long.MIN_VALUE)lastCurrent=ua;
         Double net=connectionMatches&&!awaitingCurrent?netWatts(plugged,status,mv,ua):null;
         String batteryValidity=!connectionMatches?"WAITING_POWER_STATE":awaitingCurrent?"WAITING_SOURCE_UPDATE":net==null?"UNAVAILABLE_SOURCE_OR_DIRECTION":"DRIVER_READING";
         String inputValidity=plugged==0?"DISCONNECTED":"UNAVAILABLE_PORT_MAPPING",supply="",protocol=null;
+        if(plugged==0 && connectionMatches)awaitingInput=false;
         Long uv=null, inputUa=null;
         Double input=null;
         if(plugged>0 && connectionMatches) {
@@ -66,13 +89,14 @@ final class MonitorPower {
                 protocol=read("usb","real_type");
                 boolean conventional=protocol!=null && java.util.Arrays.asList("SDP","CDP","DCP").contains(protocol);
                 if(conventional)inputUa=number(supply,"current_now");
-                String fingerprint=supply+":"+uv+":"+inputUa;
-                boolean unchangedEdge=awaitingInput && fingerprint.equals(edgeInput);
+                boolean inputNotified=inputUa!=null && inputUa.equals(notifiedInputs.get(supply));
+                Long before=edgeInputs.get(supply);
+                boolean unchangedEdge=awaitingInput && !inputNotified && (before==null || before.equals(inputUa));
                 if(!unchangedEdge)awaitingInput=false;
-                lastInput=fingerprint;
+                if(inputUa!=null)inputReadings.put(supply,inputUa);
                 if(protocol==null)inputValidity="UNAVAILABLE_PROTOCOL";
                 // Charge-pump contributions are not qualified by this logical input-current node.
-                else if(!conventional)inputValidity="UNQUALIFIED_PROTOCOL_INPUT_CURRENT";
+                else if(!conventional){inputValidity="UNQUALIFIED_PROTOCOL_INPUT_CURRENT";awaitingInput=false;}
                 else if(unchangedEdge)inputValidity="WAITING_SOURCE_UPDATE";
                 else if(uv!=null && inputUa!=null && uv>=4000000 && uv<=24000000 && inputUa>=0 && inputUa<=10000000) {
                     input=uv*(inputUa/1000000000000.0);inputValidity="DRIVER_READING";
@@ -83,9 +107,11 @@ final class MonitorPower {
         return map("batteryNetPowerW",net,"batteryNetValidity",batteryValidity,
                 "batteryNetSign","POSITIVE_CHARGING_NEGATIVE_DISCHARGING",
                 "batteryNetSource","BATTERY_LOGICAL_SUPPLY_MV_UA","batteryNetReadElapsedMs",now,
+                "batteryNetObservation",notified?"POST_EDGE_DRIVER_EVENT_MATCH_TIME_UNKNOWN":"READ_TIME_ONLY_MEASUREMENT_TIME_UNKNOWN",
                 "batteryNetSourceMeasurementTime",null,"batteryNetTimestampAvailable",false,
                 "inputPowerW",input,"inputPowerValidity",inputValidity,"inputPowerSupply",supply,
                 "inputVoltageUv",uv,"inputCurrentUa",inputUa,"inputProtocol",protocol,"inputPowerReadElapsedMs",now,
+                "inputProtocolSource","/sys/class/power_supply/usb/real_type","inputProtocolScope","PLATFORM_SHARED_SINGLE_INPUT_ONLY",
                 "inputPowerSourceMeasurementTime",null,"inputPowerTimestampAvailable",false);
     }
 

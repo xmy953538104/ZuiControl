@@ -20,6 +20,7 @@ stubs['android/os/Handler.java']='''package android.os;import java.util.*;public
  public Handler(Object o){}public boolean post(Runnable r){return postDelayed(r,0);}
  public boolean postDelayed(Runnable r,long d){long at=SystemClock.now+d;int i=0;while(i<due.size()&&due.get(i)<=at)i++;pending.add(i,r);delays.add(i,d);due.add(i,at);return true;}
  public void removeCallbacksAndMessages(Object o){pending.clear();delays.clear();due.clear();}
+ public void removeCallbacks(Runnable r){int i=pending.indexOf(r);if(i>=0){pending.remove(i);delays.remove(i);due.remove(i);}}
  public static long next(){long d=delays.remove(0);SystemClock.now=Math.max(SystemClock.now,due.remove(0));pending.remove(0).run();return d;}}
 '''
 stubs['com/zui/server/control/PowerEdgeTest.java']='''package com.zui.server.control;
@@ -40,7 +41,10 @@ public class PowerEdgeTest {
  }
  static void delayed(boolean full,boolean connected,long delay)throws Exception {
   Client client=new Client();MonitorCollector c=begin(full,client);long start=SystemClock.now;
+  Map<String,Object> prior=snapshot(c);
   settled(!connected);c.invalidatePower(connected);check(watts(c)<0,"immediate invalidation");
+  for(String key:new String[]{"elapsedMs","fps","quietC","recordState","package","targetEpoch","connectionEpoch","sourceHealthy"})
+   check(java.util.Objects.equals(prior.get(key),snapshot(c).get(key)),"power edge must preserve unrelated "+key);
   Handler.next();check(watts(c)<0&&Handler.delays.get(0)==800,"stale edge unavailable; one timed recheck");
   Runnable stale=Handler.pending.get(0);long samples=metric(c,"monitorSamples");
   event(c);check(metric(c,"monitorSamples")==samples&&Handler.pending.get(0)==stale,"unsettled noise ignored");
@@ -115,6 +119,27 @@ public class PowerEdgeTest {
   samples=metric(source,"monitorSamples");observer.onUEvent(new UEventObserver.UEvent(eventFacts));check(Handler.delays.get(0)==0,"hardware event precedes normal cadence");
   Handler.next();Runnable sample=Handler.pending.get(0);observer.onUEvent(new UEventObserver.UEvent(eventFacts));check(Handler.pending.get(0)==sample,"same source fact coalesced");
   Handler.next();check(metric(source,"monitorSamples")==samples+1&&metric(source,"monitorThreadEnumerations")==0&&metric(source,"monitorDbWrites")==0,"event uses the one scalar producer");
+  while(Handler.delays.get(0)==0)Handler.next(); // queued duplicate notifications are retained, then ignored
+  Intent.plugged=1;Intent.status=5;BatteryManager.currentUa=0;
+  source.invalidatePower(true);Handler.next();
+  source.invalidatePower(true);Handler.next();Handler.next();
+  check(snapshot(source).get("batteryNetPowerW")==null,"unchanged zero needs a post-edge source observation");
+  eventFacts.clear();eventFacts.put("POWER_SUPPLY_NAME","battery");eventFacts.put("POWER_SUPPLY_CURRENT_NOW","0");
+  observer.onUEvent(new UEventObserver.UEvent(eventFacts));
+  check(Handler.delays.get(0)==0,"current-only kernel notification must precede the five-second clock");
+  Handler.next();if(Handler.delays.get(0)==0)Handler.next();
+  check(snapshot(source).get("batteryNetPowerW") instanceof Number&&((Number)snapshot(source).get("batteryNetPowerW")).doubleValue()==0.0,"new observed zero is valid without inventing an ADC timestamp: "+snapshot(source));
+  check(snapshot(source).get("batteryNetSourceMeasurementTime")==null&&Handler.delays.get(0)==5000,"unknown measurement time and normal cadence retained");
+  long burstSamples=metric(source,"monitorSamples");
+  Map<String,String> firstEdge=new HashMap<>(),lastEdge=new HashMap<>();
+  firstEdge.put("POWER_SUPPLY_NAME","usb");firstEdge.put("POWER_SUPPLY_ONLINE","0");
+  lastEdge.put("POWER_SUPPLY_NAME","usb");lastEdge.put("POWER_SUPPLY_ONLINE","1");
+  observer.onUEvent(new UEventObserver.UEvent(firstEdge));observer.onUEvent(new UEventObserver.UEvent(lastEdge));
+  while(Handler.delays.get(0)==0)Handler.next();
+  java.lang.reflect.Field sourceField=MonitorCollector.class.getDeclaredField("sources");sourceField.setAccessible(true);
+  MonitorPower powerSource=((MonitorSources)sourceField.get(source)).power;
+  check(!powerSource.sourceEvent("usb","1",null,null,null),"latest queued source fact survives the first clock cancellation");
+  check(metric(source,"monitorSamples")==burstSamples+1,"source burst coalesces into one actual scalar sample");
   source.unregister(client);check(UEventObserver.active==0&&HandlerThread.active==0,"observer and scalar clock retire together");
   System.out.println("POWER_EDGE_SHAPE=PASS single-timed-recheck/late-current/OFF/FULL/duplicates/opposite/screen/client/recording/age/validity/no-extra-scans/bounded-trace; PHYSICAL_MEASUREMENT=NOT_CLAIMED");
  }

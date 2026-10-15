@@ -50,7 +50,20 @@ assert RESPONSE_BATTERY['phase']=='ZUICONTROL_POST_BASELINE_RESPONSE_AND_BATTERY
 assert RESPONSE_BATTERY['baseHead']=='3565f3d4ecf66bce0f8bac2ca93d9ae180745e1c'
 assert set(RESPONSE_BATTERY['allowedPaths'])==RESPONSE_ALLOWED=={r['path'] for r in RESPONSE_BATTERY['files']}
 
+POWER_PORT_R2=json.loads((ROOT/'tests/power_port_r2_delta.json').read_text(encoding='utf8'))
+assert POWER_PORT_R2['phase']=='ZUICONTROL_POWER_PORT_R2_ACTUAL_EVIDENCE_AND_FIX'
+assert POWER_PORT_R2['baseHead']=='1f67fc0f1476e728a6a9e9fe8eac6062fb3b83d1'
+assert set(POWER_PORT_R2['allowedPaths'])=={'framework_patch/src/services/com/zui/server/control/'+n for n in ('MonitorCollector.java','MonitorPower.java')}
+assert set(POWER_PORT_R2['allowedPaths'])=={r['path'] for r in POWER_PORT_R2['files']}
+
 def reverse_response_battery(path,text):
+    delta=next((r for r in POWER_PORT_R2['files'] if r['path']==path),None)
+    if delta:
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('POWER_PORT_R2 exact authorized bytes',path)
+        for h in reversed(delta['hunks']):
+            assert text.count(h['after'])==1,('POWER_PORT_R2 exact hunk',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['beforeSha256'],('POWER_PORT_R2 preserved R1 base',path)
     row=next((r for r in RESPONSE_BATTERY['files'] if r['path']==path),None)
     if row is None:return text
     assert hashlib.sha256(text.encode()).hexdigest()==row['afterSha256'],('POST_BASELINE exact authorized bytes',path)
@@ -62,6 +75,10 @@ def reverse_response_battery(path,text):
 
 def reverse_response_battery_entries(current,*scopes):
     result=list(current)
+    for row in POWER_PORT_R2['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('POWER_PORT_R2 exact authorized source',row['path'])
+        result.remove(row['afterEntry'].encode());result.append(row['beforeEntry'].encode())
     for row in RESPONSE_BATTERY['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['afterEntry'].encode())==1,('POST_BASELINE exact authorized source',row['path'])

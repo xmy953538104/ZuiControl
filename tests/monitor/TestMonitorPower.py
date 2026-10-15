@@ -54,6 +54,27 @@ public class MonitorPowerTest {
    put(usb,"real_type","PD_PPS");need(reader.sample(1,5,4000,0,16).get("inputPowerW")==null);
    put(usb,"real_type","SDP");put(other,"voltage_now","-13000");need(reader.sample(1,5,4000,0,17).get("inputPowerW")==null);
    put(usb,"voltage_now","5000000");put(other,"voltage_now","5000000");need(reader.sample(1,5,4000,0,18).get("inputPowerW")==null);
+   put(other,"voltage_now","-13000");reader.sample(1,5,4000,0,19);reader.edge(true);
+   need(reader.sample(1,5,4000,0,20).get("inputPowerValidity").equals("WAITING_SOURCE_UPDATE"));
+   put(usb,"voltage_now","5100000");need(reader.sample(1,5,4000,0,20).get("inputPowerW")==null);
+   put(usb,"voltage_now","5000000"); // changing only voltage is not a new current observation
+   need(!reader.measurementEvent("unknown","200000")&&!reader.measurementEvent("usb","bad"));
+   need(!reader.measurementEvent("usb","-1")&&!reader.measurementEvent("battery","30000001"));
+   need(reader.measurementEvent("wireless","200000"));
+   need(reader.sample(1,5,4000,0,21).get("inputPowerW")==null); // notification from the other branch is insufficient
+   need(reader.measurementEvent("usb","200000"));
+   need(reader.sample(1,5,4000,0,22).get("inputPowerW").equals(1.0));
+   need(reader.measurementEvent("battery","1"));
+   need(reader.sample(1,5,4000,0,23).get("batteryNetPowerW")==null); // event must match the actual read
+   need(reader.measurementEvent("battery","0"));
+   Map<String,Object> zero=reader.sample(1,5,4000,0,24);
+   need(zero.get("batteryNetPowerW").equals(0.0)&&zero.get("batteryNetSourceMeasurementTime")==null);
+   need(zero.get("batteryNetObservation").equals("POST_EDGE_DRIVER_EVENT_MATCH_TIME_UNKNOWN"));
+   reader.edge(true);need(reader.sample(1,5,4000,0,25).get("batteryNetPowerW")==null); // old notices cannot qualify the next edge
+   reader.measurementEvent("battery","0");reader.resetSourceEvents();
+   need(reader.sample(1,5,4000,0,26).get("batteryNetPowerW")==null);
+   reader.edge(false);reader.sample(0,3,4000,1000000,27);
+   need(!reader.measurementEvent("usb","0")); // disconnected input cannot keep waking the producer
    for(Path dir:new Path[]{usb,other}){for(Path p:Files.newDirectoryStream(dir))Files.delete(p);Files.delete(dir);}
    System.out.println("MONITOR_HEALTH_UNITS_RAW_SOURCE_NULL_AND_TTL=PASS");
    System.out.println("POWER_SIGN_ZERO_EDGE_PORT_SELECTION_PROTOCOL_AND_NULL=PASS");

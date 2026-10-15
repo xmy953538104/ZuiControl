@@ -15,6 +15,7 @@ stubs.update({
  public boolean post(Runnable r){pending.add(r);return true;}
  public boolean postDelayed(Runnable r,long delay){if(delay<1||delay>5000)throw new AssertionError();pending.add(r);return true;}
  public void removeCallbacksAndMessages(Object o){pending.clear();}
+ public void removeCallbacks(Runnable r){pending.remove(r);}
  public static void next(){SystemClock.now+=1000;pending.remove(0).run();}}''',
  'android/os/BatteryManager.java':'''package android.os;public class BatteryManager {
  public static final String EXTRA_PLUGGED="plugged",EXTRA_STATUS="status",EXTRA_VOLTAGE="voltage";
