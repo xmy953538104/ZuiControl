@@ -19,12 +19,12 @@ internal object ResponseTrace {
         val old=operation.get();operation.set(id)
         try{return task()}finally{operation.set(old)}
     }
-    fun drawn(view: View, id: String, phase: String) {
+    fun drawn(view: View, id: String, phase: String, detail:String="", valid:()->Boolean={true}) {
         if(!Log.isLoggable(TAG,Log.VERBOSE))return
         val observer=view.viewTreeObserver
         val listener=object:android.view.ViewTreeObserver.OnDrawListener {
             var done=false
-            override fun onDraw(){if(!done){done=true;event(id,phase);view.post{if(observer.isAlive)observer.removeOnDrawListener(this)}}}
+            override fun onDraw(){if(!done){done=true;if(valid())event(id,phase,detail);view.post{if(observer.isAlive)observer.removeOnDrawListener(this)}}}
         }
         observer.addOnDrawListener(listener)
     }

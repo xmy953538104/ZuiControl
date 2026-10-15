@@ -616,12 +616,20 @@ class MainActivity : Activity() {
         if(session.notice.isEmpty())shownToast=""
         if(session.notice!=responseNotice){
             responseNotice=session.notice
-            if(visible && session.notice.isNotEmpty())ResponseTrace.drawn(pageHost,responseSaveId,if(session.busy)"LOCAL_FEEDBACK_DRAW" else "SAVE_CONFIRM_DRAW")
+            if(visible && session.notice.isNotEmpty()){
+                val id=responseSaveId;val notice=session.notice;val busy=session.busy
+                ResponseTrace.drawn(pageHost,id,if(busy)"LOCAL_FEEDBACK_DRAW" else "SAVE_CONFIRM_DRAW",session.section){
+                    visible && responseSaveId==id && session.notice==notice && session.busy==busy
+                }
+            }
         }
-        val responseKey="$responseReadId/${session.section}/$rulesQualified/$inventoryVersion"
+        val responseKey="$responseReadId/$shownPage/$rulesQualified/$inventoryVersion"
         if(responseKey!=responseFrameKey){
             responseFrameKey=responseKey
-            ResponseTrace.drawn(pageHost,responseReadId,if(session.section=="thread" && rulesQualified && inventoryVersion==FrontendPackages.version)"EDITABLE_DRAW" else "CONTENT_DRAW")
+            val editable=session.section=="thread" && rulesQualified && inventoryVersion==FrontendPackages.version
+            ResponseTrace.drawn(pageHost,responseReadId,if(editable)"EDITABLE_DRAW" else "CONTENT_DRAW",session.section){
+                visible && responseFrameKey==responseKey && (!editable || rulesQualified && inventoryVersion==FrontendPackages.version)
+            }
         }
 
     }

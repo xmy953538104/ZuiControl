@@ -10,6 +10,7 @@
     "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
     "app/src/main/java/com/zui/zuicontrol/NotificationQuickControlHelper.kt",
     "app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+    "app/src/main/java/com/zui/zuicontrol/ResponseTrace.kt",
     "app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
     "app/src/main/java/com/zui/zuicontrol/ZuiControlRequest.kt",
     "app/src/test/java/com/zui/zuicontrol/LivePowerTest.kt",
@@ -38,9 +39,9 @@
     {
       "path": ".github/workflows/build.yml",
       "beforeSha256": "f0f2a92fb3c73f8193d4e827f6713aa3c57521ef3b773c9d75e9e0d0829518ff",
-      "afterSha256": "aeeb9deba00a0883daa52e620f09378d5e38bbe924fac209c0c3fa3115b5ec33",
+      "afterSha256": "1b66f41afb87f21f8f9c0f02faa9f022f29d06bcf9fb3342f6abfeab88eb119f",
       "beforeEntry": "100644 blob 906e4c3c2d5a594f380341ff377c1afdff01bf15\t.github/workflows/build.yml",
-      "afterEntry": "100644 blob b703b1fc9b48a1b047f0afe980cdb4cc5ff2c1a5\t.github/workflows/build.yml",
+      "afterEntry": "100644 blob 2eaa0fe7900d7f34a36bd92001fdbca1bd5d64e7\t.github/workflows/build.yml",
       "hunks": [
         {
           "before": "            -fPIE -pie -static-libstdc++ -fstack-protector-strong -D_FORTIFY_SOURCE=2 \\\n            -Wl,-z,relro,-z,now,--build-id=none native/command/Adapter.cpp -lbinder_ndk -llog -ldl -o \"$RUNNER_TEMP/zui_control_request\"\n          \"$toolchain/llvm-strip\" --strip-all \"$RUNNER_TEMP/zui_control_request\"\n          cmp \"$RUNNER_TEMP/zui_control_request\" payload/system/bin/zui_control_request\n\n      - name: Rebuild and verify Android Uperf supervisor\n        shell: bash\n",
@@ -56,7 +57,7 @@
         },
         {
           "before": "          python3 tests/command_plane/TestControlsCallbacks.py || scripts_failed=1\n          python3 tests/command_plane/TestRuntimeDomains.py || scripts_failed=1\n          python3 tests/command_plane/TestAckObservation.py || scripts_failed=1\n          python3 tests/gpu/TestGpuFailureIsolation.py || scripts_failed=1\n          python3 tests/command_plane/TestProjectionMode.py || scripts_failed=1\n          python3 tests/command_plane/TestNativeTransportContract.py || scripts_failed=1\n",
-          "after": "          python3 tests/command_plane/TestControlsCallbacks.py || scripts_failed=1\n          python3 tests/command_plane/TestRuntimeDomains.py || scripts_failed=1\n          python3 tests/command_plane/TestAckObservation.py || scripts_failed=1\n          python3 tests/command_plane/TestFrontendPackages.py || scripts_failed=1\n          python3 tests/command_plane/TestCachedDraft.py || scripts_failed=1\n          python3 tests/gpu/TestGpuFailureIsolation.py || scripts_failed=1\n          python3 tests/command_plane/TestProjectionMode.py || scripts_failed=1\n          python3 tests/command_plane/TestNativeTransportContract.py || scripts_failed=1\n"
+          "after": "          python3 tests/command_plane/TestControlsCallbacks.py || scripts_failed=1\n          python3 tests/command_plane/TestRuntimeDomains.py || scripts_failed=1\n          python3 tests/command_plane/TestAckObservation.py || scripts_failed=1\n          python3 tests/command_plane/TestFrontendPackages.py || scripts_failed=1\n          python3 tests/command_plane/TestCachedDraft.py || scripts_failed=1\n          python3 tests/command_plane/TestResponseDraw.py || scripts_failed=1\n          python3 tests/gpu/TestGpuFailureIsolation.py || scripts_failed=1\n          python3 tests/command_plane/TestProjectionMode.py || scripts_failed=1\n          python3 tests/command_plane/TestNativeTransportContract.py || scripts_failed=1\n"
         },
         {
           "before": "          python3 tests/gpu/TestBackupInspection.py || scripts_failed=1\n          python3 tests/gpu/TestFactoryReset.py || scripts_failed=1\n          python3 tests/monitor/TestPowerEdge.py || scripts_failed=1\n          python3 tests/monitor/TestMonitorHealth.py || scripts_failed=1\n          python3 tests/monitor/TestThreadAnalysis.py || scripts_failed=1\n          python3 tests/monitor/TestAnalysisCollector.py || scripts_failed=1\n",
@@ -139,9 +140,9 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "beforeSha256": "37ce857657a12250e1ce2490b7c76be8a4131bdf554c5ac6e33562ae23d347c0",
-      "afterSha256": "e67df43f9a36967569829d3756a0ae157533fb6626b749511be2ea5c9ea9d4a1",
+      "afterSha256": "44931f9d305f21a50d72c4aae16d0c5c32b775bce637cf15ede523dd97a63b7b",
       "beforeEntry": "100644 blob eba0cb281bc2344718bd30c6950f96fa5e8865f6\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
-      "afterEntry": "100644 blob 4d79a5a76916363205aea47eb2bab25479e753f4\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
+      "afterEntry": "100644 blob 8074667b8c132106f47b1b837cbc57b4de03a3f3\tapp/src/main/java/com/zui/zuicontrol/MainActivity.kt",
       "hunks": [
         {
           "before": "        fun disable(v:View){rulesPendingViews.putIfAbsent(v,v.isEnabled to v.alpha);v.isEnabled=false;if(v is ViewGroup)for(i in 0 until v.childCount)disable(v.getChildAt(i))}\n        ownerControls.forEach{disable(it);it.alpha=.6f}\n        fun visit(v:View){\n            if(v is OwnerSegment || v is GpuRangeBar || v.tag==\"owner-control\" || v.tag==\"owner-button\"){\n                disable(v);v.alpha=if(v.tag==\"owner-button\").4f else .6f\n            }else if(v is ViewGroup)for(i in 0 until v.childCount)visit(v.getChildAt(i))\n",
@@ -178,6 +179,10 @@
         {
           "before": "        if(!::physicalHost.isInitialized)createShell()\n        railBindings.forEach{it()}\n        val listFingerprint=when(session.section){\n            \"tune\"->\"$inventoryVersion/${policies?.apps?.map{it.draft.let{d->listOf(d.packageName,d.refreshHz,d.uperfMode,d.gpuPolicy,d.gpuMinMHz,d.gpuMaxMHz)}}}/${if(session.newApp)session.appDraft else null}\"\n            \"thread\"->\"${snapshot?.generation}/$inventoryVersion\"\n            \"monitor\"->records.toString()\n            else->\"settings\"\n        }\n",
           "after": "        if(!::physicalHost.isInitialized)createShell()\n        railBindings.forEach{it()}\n        val listFingerprint=when(session.section){\n            \"tune\"->\"$inventoryVersion/$inventoryLabelsRevision/${policies?.apps?.map{it.draft.let{d->listOf(d.packageName,d.refreshHz,d.uperfMode,d.gpuPolicy,d.gpuMinMHz,d.gpuMaxMHz)}}}/${if(session.newApp)session.appDraft else null}\"\n            \"thread\"->\"${snapshot?.generation}/$inventoryVersion/$inventoryLabelsRevision\"\n            \"monitor\"->records.toString()\n            else->\"settings\"\n        }\n"
+        },
+        {
+          "before": "        if(session.notice.isEmpty())shownToast=\"\"\n        if(session.notice!=responseNotice){\n            responseNotice=session.notice\n            if(visible && session.notice.isNotEmpty())ResponseTrace.drawn(pageHost,responseSaveId,if(session.busy)\"LOCAL_FEEDBACK_DRAW\" else \"SAVE_CONFIRM_DRAW\")\n        }\n        val responseKey=\"$responseReadId/${session.section}/$rulesQualified/$inventoryVersion\"\n        if(responseKey!=responseFrameKey){\n            responseFrameKey=responseKey\n            ResponseTrace.drawn(pageHost,responseReadId,if(session.section==\"thread\" && rulesQualified && inventoryVersion==FrontendPackages.version)\"EDITABLE_DRAW\" else \"CONTENT_DRAW\")\n        }\n\n    }\n",
+          "after": "        if(session.notice.isEmpty())shownToast=\"\"\n        if(session.notice!=responseNotice){\n            responseNotice=session.notice\n            if(visible && session.notice.isNotEmpty()){\n                val id=responseSaveId;val notice=session.notice;val busy=session.busy\n                ResponseTrace.drawn(pageHost,id,if(busy)\"LOCAL_FEEDBACK_DRAW\" else \"SAVE_CONFIRM_DRAW\",session.section){\n                    visible && responseSaveId==id && session.notice==notice && session.busy==busy\n                }\n            }\n        }\n        val responseKey=\"$responseReadId/$shownPage/$rulesQualified/$inventoryVersion\"\n        if(responseKey!=responseFrameKey){\n            responseFrameKey=responseKey\n            val editable=session.section==\"thread\" && rulesQualified && inventoryVersion==FrontendPackages.version\n            ResponseTrace.drawn(pageHost,responseReadId,if(editable)\"EDITABLE_DRAW\" else \"CONTENT_DRAW\",session.section){\n                visible && responseFrameKey==responseKey && (!editable || rulesQualified && inventoryVersion==FrontendPackages.version)\n            }\n        }\n\n    }\n"
         },
         {
           "before": "        }\n    }\n    private fun selectWithGuard(pkg:String){\n        if(session.section==\"thread\" && !rulesQualified){toast(\"正在校验规则，请稍候\");return}\n        if(!session.busy && session.selected.isEmpty() && session.hasDraftFor(session.section,pkg))select(pkg)\n        else guard{select(pkg)}\n    }\n",
@@ -288,6 +293,19 @@
         {
           "before": "            val now = SystemClock.elapsedRealtime()\n            gesture.cycle(now)\n            val all = listOf(number(snapshot.optDouble(\"fps\", -1.0)) to \"FPS\",\n                number(snapshot.optDouble(\"quietC\", -1.0)) to \"°C\", number(displayPower) to \"W\")\n            val previous = metrics\n            metrics = if (snapshot.optInt(\"mode\") == 2) listOf(all[0])\n                else if (circle) listOf(all[metric]) else all\n",
           "after": "            val now = SystemClock.elapsedRealtime()\n            gesture.cycle(now)\n            val all = listOf(number(snapshot.optDouble(\"fps\", -1.0)) to \"FPS\",\n                number(snapshot.optDouble(\"quietC\", -1.0)) to \"°C\", LivePower.number(displayPower) to \"W\")\n            val previous = metrics\n            metrics = if (snapshot.optInt(\"mode\") == 2) listOf(all[0])\n                else if (circle) listOf(all[metric]) else all\n"
+        }
+      ]
+    },
+    {
+      "path": "app/src/main/java/com/zui/zuicontrol/ResponseTrace.kt",
+      "beforeSha256": "89bba70fa7d5dc0b7db4622892060c814a8917f9e3942cdd156f7ce54cf286bf",
+      "afterSha256": "229c2c84cdf497d53728422928fa386404b080252bcee37b47e2b68cbdcd0a30",
+      "beforeEntry": "100644 blob fa4aaaae9f4d687ef0f5a9b917e94775840e69f5\tapp/src/main/java/com/zui/zuicontrol/ResponseTrace.kt",
+      "afterEntry": "100644 blob 5872420df88288d93f9b7720c9566f6e5bd4a8c8\tapp/src/main/java/com/zui/zuicontrol/ResponseTrace.kt",
+      "hunks": [
+        {
+          "before": "        val old=operation.get();operation.set(id)\n        try{return task()}finally{operation.set(old)}\n    }\n    fun drawn(view: View, id: String, phase: String) {\n        if(!Log.isLoggable(TAG,Log.VERBOSE))return\n        val observer=view.viewTreeObserver\n        val listener=object:android.view.ViewTreeObserver.OnDrawListener {\n            var done=false\n            override fun onDraw(){if(!done){done=true;event(id,phase);view.post{if(observer.isAlive)observer.removeOnDrawListener(this)}}}\n        }\n        observer.addOnDrawListener(listener)\n    }\n",
+          "after": "        val old=operation.get();operation.set(id)\n        try{return task()}finally{operation.set(old)}\n    }\n    fun drawn(view: View, id: String, phase: String, detail:String=\"\", valid:()->Boolean={true}) {\n        if(!Log.isLoggable(TAG,Log.VERBOSE))return\n        val observer=view.viewTreeObserver\n        val listener=object:android.view.ViewTreeObserver.OnDrawListener {\n            var done=false\n            override fun onDraw(){if(!done){done=true;if(valid())event(id,phase,detail);view.post{if(observer.isAlive)observer.removeOnDrawListener(this)}}}\n        }\n        observer.addOnDrawListener(listener)\n    }\n"
         }
       ]
     },

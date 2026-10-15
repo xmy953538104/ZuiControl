@@ -168,6 +168,7 @@ jobs:
           python3 tests/command_plane/TestAckObservation.py || scripts_failed=1
           python3 tests/command_plane/TestFrontendPackages.py || scripts_failed=1
           python3 tests/command_plane/TestCachedDraft.py || scripts_failed=1
+          python3 tests/command_plane/TestResponseDraw.py || scripts_failed=1
           python3 tests/gpu/TestGpuFailureIsolation.py || scripts_failed=1
           python3 tests/command_plane/TestProjectionMode.py || scripts_failed=1
           python3 tests/command_plane/TestNativeTransportContract.py || scripts_failed=1
