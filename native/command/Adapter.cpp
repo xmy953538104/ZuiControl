@@ -9,6 +9,7 @@
 #include <memory>
 #include <time.h>
 #include <cstdio>
+#include <sys/system_properties.h>
 
 using namespace command;
 namespace {
@@ -84,16 +85,32 @@ int run(int argc,char** argv){
     // Process-owned: a lost Binder reply may leave an in-flight callback until exit.
     Binder& binder=*new Binder;Request request(binder.call(1012,{requestId,hash,sequence,user,kick,"read",""}));
     request.bind(user,sequence);request.authenticate(requestId,hash);mark("request_validated");
-    if(request.command!="policy"){
+    bool rules=rulesCommand(request.command);std::string namespaceName;
+    Disk parent("/data/vendor/zui_control/zuicontrol");
+    if(rules){
+        namespaceName=binder.call(1012,{requestId,hash,sequence,user,kick,"namespace",""});
+        require(namespaceName.rfind("user-shell-",0)==0&&alphabet(namespaceName,"abcdefghijklmnopqrstuvwxyz0123456789-",1,80),"rules namespace");
+        Disk legacy(parent,namespaceName);
+        // Drain an old shell claim or replay its exact receipt through its original implementation.
+        auto receipt=legacy.read("last_request_receipt");
+        if(legacy.exists("active_request_claim")||(!receipt.empty()&&split(split(receipt,'\n')[0],'|')[0]==requestId))rules=false;
+        namespaceName="user-native-rules-"+namespaceName.substr(11);
+    }
+    if(request.command!="policy"&&!rules){
         // Other commands keep their existing finite implementation and contracts.
         execl("/system/bin/sh","sh","/system/bin/zui_controld","--oneshot-request",argv[1],argv[2],sequence.c_str(),user.c_str(),kick.c_str(),static_cast<char*>(nullptr));
         throw std::runtime_error("legacy command exec");
     }
-    Disk parent("/data/vendor/zui_control/zuicontrol"),disk(parent,"user-domain-v1");
+    Disk disk(parent,rules?namespaceName:"user-domain-v1");
     Receipts receipts{disk,[&](const std::string& ack){require(binder.call(1012,{requestId,hash,sequence,user,kick,"ack",ack})=="ok=1","ACK reply");}};
     receipts.point=mark;
-    receipts.reconcile=[&](const Request& prior){require(!prior.user.empty(),"bound recovery required");return binder.call(1013,{prior.requestId,sha256(prior.text),prior.sequence,prior.user},true);};
-    receipts.run(request,[&]{mark("T5");auto result=binder.call(1010,{requestId,hash,sequence,user},true);mark("T6");return result;});
+    receipts.reconcile=[&](const Request& prior){require(!prior.user.empty(),"bound recovery required");
+        if(rulesCommand(prior.command))return std::string("ok=0\nerror=indeterminate_after_claim_query_state");
+        return binder.call(1013,{prior.requestId,sha256(prior.text),prior.sequence,prior.user},true);};
+    receipts.run(request,[&]{mark("T5");auto result=rules?rulesRequest(request,[&](const std::string& kind,const std::string& value){
+            require(binder.call(1012,{requestId,hash,sequence,user,kick,"result:"+kind,value})=="ok=1","rules result publication");
+        },[](const std::string& key){char value[PROP_VALUE_MAX]{};__system_property_get(key.c_str(),value);return std::string(value);},nativeRules):
+        binder.call(1010,{requestId,hash,sequence,user},true);mark("T6");return result;});
     return 0;
 }
 }

@@ -35,7 +35,8 @@ fun main(){
         self.assertLess(fetch.index('progress("生效规则已读取'),fetch.index('val up=bulk?.let'))
         self.assertIn('rulesQualified=false',loader);self.assertIn('rulesQualified=true',loader)
         self.assertIn('if(session.section=="thread" && !rulesQualified)ownerPending()',main)
-        self.assertIn('if(!rulesQualified)return',main.split('private fun openRule',1)[1].split('private fun threadApp',1)[0])
+        self.assertIn('if(!localRulesAvailable)return',main.split('private fun openRule',1)[1].split('private fun threadApp',1)[0])
+        self.assertIn('!rulesQualified',main.split('private fun saveDraft',1)[1].split('private fun addApp',1)[0])
         self.assertIn('if(model==null)emptyList() else installed.mapNotNull',main)
         page=main.split('private fun render()',1)[1].split('private fun buildMaster()',1)[0]
         for forbidden in ('next.alpha=0','next.translationY','next.animate()', 'previous.animate()'):self.assertNotIn(forbidden,page)

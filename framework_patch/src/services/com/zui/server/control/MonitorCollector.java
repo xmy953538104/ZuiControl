@@ -12,6 +12,7 @@ import android.os.IBinder;
 import android.os.Parcel;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.os.UEventObserver;
 import android.system.Os;
 import android.system.OsConstants;
 import org.json.JSONObject;
@@ -42,7 +43,22 @@ class MonitorCollector {
     private final java.util.Map<Integer,IBinder> clients=new java.util.HashMap<>();
     private final java.util.Map<Integer,int[]> userModes=new java.util.HashMap<>();
     private HandlerThread thread;
-    private Handler handler;
+    private volatile Handler handler;
+    private boolean powerEventsStarted;
+    private String powerEventsError="";
+    private final UEventObserver powerEvents=new UEventObserver(){
+        @Override public void onUEvent(UEvent event){
+            Handler target=handler;
+            if(target==null || !sources.power.sourceEvent(event.get("POWER_SUPPLY_NAME"),event.get("POWER_SUPPLY_ONLINE"),
+                    event.get("POWER_SUPPLY_PRESENT"),event.get("POWER_SUPPLY_REAL_TYPE"),event.get("POWER_SUPPLY_USB_TYPE")))return;
+            target.post(()->{synchronized(MonitorCollector.this){
+                if(target!=handler || !scalarActive())return;
+                traceEdge("POWER_SUPPLY_SOURCE_EVENT","source="+event.get("POWER_SUPPLY_NAME"));
+                sources.power.sourceChanged();powerRecheckPending=true;
+                if(!powerWakePending){powerWakePending=true;stop();schedule();}
+            }});
+        }
+    };
     private boolean scheduled;
     private int expectedPowerPlugged=-1;
     private boolean powerRecheckPending;
@@ -73,7 +89,7 @@ class MonitorCollector {
         if(callback!=null)terminate("CLIENT_REPLACED",true);
         drain();
         retireCallback();
-        callback=binder;death=null;session.connectionEpoch++;lastGesture=-1;sources.resetFps();sources.resetQuiet();
+        callback=binder;death=null;session.connectionEpoch++;lastGesture=-1;sources.resetFps();sources.resetQuiet();powerEventsError="";
         if(binder!=null){
             final long connection=session.connectionEpoch;
             death=()->{synchronized(MonitorCollector.this){
@@ -255,14 +271,24 @@ class MonitorCollector {
     private void schedule(){
         if(!scalarActive()&&analyses.isEmpty()){stop();return;}
         if(handler==null){thread=new HandlerThread("ZuiMonitor");thread.start();handler=new Handler(thread.getLooper());}
+        if(!scalarActive())stopPowerEvents();
+        else if(!powerEventsStarted && powerEventsError.isEmpty()){
+            try{powerEvents.startObserving("SUBSYSTEM=power_supply");powerEventsStarted=true;}
+            catch(RuntimeException unavailable){powerEventsError=boundedError(unavailable.getClass().getSimpleName());}
+        }
         if(scheduled)return;
         scheduled=true;long ticket=epoch;handler.post(()->sample(ticket));
     }
     private void drain(){
+        stopPowerEvents();
         epoch++;
         if(handler!=null)handler.removeCallbacksAndMessages(null);
         if(thread!=null)thread.quitSafely();
         handler=null;thread=null;scheduled=false;
+    }
+    private void stopPowerEvents(){
+        if(powerEventsStarted){powerEvents.stopObserving();powerEventsStarted=false;}
+        sources.power.resetSourceEvents();
     }
     synchronized void stop(){
         // Keep the one worker while the client has an active sampling lifetime.
@@ -367,6 +393,8 @@ class MonitorCollector {
             +"\nmonitorIntervalMs="+session.interval()+"\nmonitorConnectionEpoch="+session.connectionEpoch+"\nmonitorTargetEpoch="+session.targetEpoch+"\nmonitorThreadIntervalMs=3000\nmonitorTimer="+(handler!=null)
             +"\nmonitorQuietPath="+sources.quietPath+"\nmonitorQuietUnit=millidegree_C\nmonitorQuietDiscovery="+sources.discoveryReads
             +"\nmonitorFpsReads="+sources.fpsReads+"\nmonitorFpsError="+sources.fpsError
+            +"\nmonitorPowerEventObserver="+powerEventsStarted+"\nmonitorPowerEventError="+powerEventsError
+            +"\nmonitorPowerSourceReads="+sources.power.scalarReads+"\nmonitorHealthReads="+sources.power.healthReads
             +"\nmonitorQuietError="+sources.quietError+"\nmonitorError="+error+"\nmonitorFinalizeError="+finalizeError
             +"\nmonitorLastRequestError="+lastRequestError
             +"\nanalysisEnumerations="+analysisEnumerations+"\nanalysisTaskReads="+analysisReads+"\nanalysisResultWrites="+analysisWrites;

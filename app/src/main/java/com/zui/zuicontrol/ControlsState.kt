@@ -14,7 +14,7 @@ internal object ControlsState {
     private var backend: ZuiControlManager? = null
     private var callback: IBinder? = null
     private var death: IBinder.DeathRecipient? = null
-    private var epoch = 0L
+    @Volatile private var epoch = 0L
     private var connecting=false
     var snapshot: String = ""
         private set
@@ -49,8 +49,19 @@ internal object ControlsState {
         connecting=true
         val ticket = ++epoch
         val next = object : Binder() {
+            init { attachInterface(null,"android.zui.IControlsSnapshotV2") }
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-                if (code != 1 || flags and IBinder.FLAG_ONEWAY == 0 || getCallingUid() != 1000) return false
+                if(code==IBinder.INTERFACE_TRANSACTION)return super.onTransact(code,data,reply,flags)
+                if (code !in 1..2 || flags and IBinder.FLAG_ONEWAY == 0 || getCallingUid() != 1000) return false
+                if(code==2){
+                    data.enforceInterface("android.zui.IControlsSnapshotV2")
+                    val id=data.readString() ?: return false
+                    val sha=data.readString() ?: return false
+                    val ack=data.readString() ?: return false
+                    if(id.length>64 || sha.length!=64 || ack.length>8192 || data.dataAvail()!=0)return false
+                    if(ticket==epoch)ZuiControlRequest.acceptAckCallback(id,sha,ack)
+                    return true
+                }
                 data.enforceInterface("android.zui.IControlsSnapshot")
                 val text = data.readString() ?: return false
                 if (text.length > 32768 || data.dataAvail() != 0) return false

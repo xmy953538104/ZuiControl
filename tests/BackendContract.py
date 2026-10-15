@@ -38,9 +38,10 @@ assert RUNTIME_R6['baseHead']=='d0282ffad66bdb3dcb53c9fadbfe783114d7dd7c' and RU
 
 RESPONSE_BATTERY=json.loads((ROOT/'tests/response_battery_r1_delta.json').read_text(encoding='utf8'))
 RESPONSE_ALLOWED={'.github/workflows/build.yml','scripts/build/PatchRenderVoteOwner.py'}
-RESPONSE_ALLOWED|={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','LivePower.kt','PerformanceMonitor.kt','NotificationQuickControlHelper.kt','ZuiControlQuickService.kt')}
+RESPONSE_ALLOWED|={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','LivePower.kt','PerformanceMonitor.kt','NotificationQuickControlHelper.kt','ZuiControlQuickService.kt','ControlsState.kt','ZuiControlRequest.kt','FrontendPackages.kt')}
 RESPONSE_ALLOWED|={'app/src/test/java/com/zui/zuicontrol/'+n for n in ('LivePowerTest.kt','NotificationMetricTest.kt')}
-RESPONSE_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('MonitorCollector.java','MonitorSources.java','MonitorPower.java','RenderVoteOwner.java','ZuiControlService.java')}
+RESPONSE_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('MonitorCollector.java','MonitorSources.java','MonitorPower.java','RenderVoteOwner.java','ZuiControlService.java','ControlsCallbacks.java')}
+RESPONSE_ALLOWED|={'framework_patch/stubs/android/os/UEventObserver.java','payload/patches/vendor_sepolicy_zui_scheduler.cil','native/command/Adapter.cpp','native/command/Rules.h'}
 RESPONSE_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeR3Scope.py','TestRuntimeR5Scope.py','TestRuntimeR6Scope.py','TestRuntimeFrontendScope.py','TestRuntimeRecoveryScope.py')}
 RESPONSE_ALLOWED|={'tests/monitor/TestFrontendV3.py','tests/monitor/TestFinalIntegration.py'}
 assert RESPONSE_BATTERY['phase']=='ZUICONTROL_POST_BASELINE_RESPONSE_AND_BATTERY_R1'

@@ -18,7 +18,7 @@ stubs['android/os/Handler.java']='''package android.os;import java.util.*;public
  public static final List<Runnable> pending=new ArrayList<>();public static final List<Long> delays=new ArrayList<>();
  public static final List<Long> due=new ArrayList<>();
  public Handler(Object o){}public boolean post(Runnable r){return postDelayed(r,0);}
- public boolean postDelayed(Runnable r,long d){pending.add(r);delays.add(d);due.add(SystemClock.now+d);return true;}
+ public boolean postDelayed(Runnable r,long d){long at=SystemClock.now+d;int i=0;while(i<due.size()&&due.get(i)<=at)i++;pending.add(i,r);delays.add(i,d);due.add(i,at);return true;}
  public void removeCallbacksAndMessages(Object o){pending.clear();delays.clear();due.clear();}
  public static long next(){long d=delays.remove(0);SystemClock.now=Math.max(SystemClock.now,due.remove(0));pending.remove(0).run();return d;}}
 '''
@@ -109,6 +109,13 @@ public class PowerEdgeTest {
   SystemClock.now+=600;settled(false);event(recording);check(metric(recording,"monitorDbWrites")==writes&&recording.scans==scans,"event itself never writes/scans");
   Handler.next();check(watts(recording)==8&&recording.scans==scans&&metric(recording,"monitorDbWrites")==writes+1,"shared Recording scalar row/scan deadline");
   recording.command("recordStop",0,"");recording.command("off",0,"");recording.unregister(client);check(HandlerThread.active==0,"record worker retired");
+  client=new Client();MonitorCollector source=begin(false,client);check(UEventObserver.active==1,"one active hardware event observer");
+  java.lang.reflect.Field field=MonitorCollector.class.getDeclaredField("powerEvents");field.setAccessible(true);UEventObserver observer=(UEventObserver)field.get(source);
+  Map<String,String> eventFacts=new HashMap<>();eventFacts.put("POWER_SUPPLY_NAME","usb");eventFacts.put("POWER_SUPPLY_ONLINE","1");eventFacts.put("POWER_SUPPLY_REAL_TYPE","SDP");
+  samples=metric(source,"monitorSamples");observer.onUEvent(new UEventObserver.UEvent(eventFacts));check(Handler.delays.get(0)==0,"hardware event precedes normal cadence");
+  Handler.next();Runnable sample=Handler.pending.get(0);observer.onUEvent(new UEventObserver.UEvent(eventFacts));check(Handler.pending.get(0)==sample,"same source fact coalesced");
+  Handler.next();check(metric(source,"monitorSamples")==samples+1&&metric(source,"monitorThreadEnumerations")==0&&metric(source,"monitorDbWrites")==0,"event uses the one scalar producer");
+  source.unregister(client);check(UEventObserver.active==0&&HandlerThread.active==0,"observer and scalar clock retire together");
   System.out.println("POWER_EDGE_SHAPE=PASS single-timed-recheck/late-current/OFF/FULL/duplicates/opposite/screen/client/recording/age/validity/no-extra-scans/bounded-trace; PHYSICAL_MEASUREMENT=NOT_CLAIMED");
  }
 }'''

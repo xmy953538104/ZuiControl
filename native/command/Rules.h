@@ -27,6 +27,29 @@ inline std::string nativeRules(const std::string& action,const std::string& key,
     }catch(...){if(child>0){kill(child,SIGKILL);while(waitpid(child,nullptr,0)<0&&errno==EINTR){}}throw;}
 }
 inline std::string field(const std::string& text,const std::string& key){for(auto& row:split(text,'\n'))if(row.rfind(key+"=",0)==0)return row.substr(key.size()+1);return {};}
+inline bool rulesCommand(const std::string& name){
+    static const std::vector<std::string> names={"zo_state","zo_reset","zo_read","zo_upstream_read","zo_preview","zo_restore_app","zo_validate","zo_begin","zo_chunk","zo_commit","zo_abort","zo_enable","zo_disable","zo_rollback"};
+    return std::find(names.begin(),names.end(),name)!=names.end();
+}
+// Keep the same Native control transaction and private result publisher; no shell or settings writes.
+inline std::string rulesRequest(const Request& request,const std::function<void(const std::string&,const std::string&)>& publish,
+        const std::function<std::string(const std::string&)>& property,
+        const std::function<std::string(const std::string&,const std::string&,const std::string&)>& invoke){
+    require(rulesCommand(request.command),"rules command");auto parts=split(request.text,'|');
+    require(parts[3].size()<=128&&parts[4].size()<=10924,"rules request bound");
+    auto action=request.command.substr(3);auto reply=invoke(action,parts[3],parts[4]);std::string kind;
+    if(action=="commit"||action=="rollback"||action=="restore_app"||action=="enable"||action=="disable"){
+        reply=invoke("state","","");require(reply.size()<=4096,"rules state bound");kind="rulesState";
+    }else if(action=="state"){
+        require(reply.size()<=4096,"rules state bound");auto service=property("init.svc.zui_zuiopt"),failed=property("sys.zui_control.zuiopt_failed");
+        auto state=failed=="1"&&service=="stopped"?"ANDROID_DEFAULT_FAILSAFE":failed=="0"&&service=="running"?"ZUIOPT_ACTIVE":"INACTIVE_OR_UNHEALTHY";
+        reply+="\nthreadManagerState="+std::string(state)+"\nservice="+service+"\nfail_safe="+failed;kind="rulesState";
+    }else if(action=="validate"){require(reply.size()<=256,"rules validation bound");kind="rulesValidation";}
+    else if(action=="preview"){require(reply.size()<=32768,"rules preview bound");kind="rulesPreview";}
+    else if(action=="read"||action=="upstream_read"){require(reply.size()<=11000,"rules chunk bound");kind="rulesChunk";}
+    if(!kind.empty())publish(kind,reply);
+    return "ok=1\nzuiopt="+action;
+}
 inline std::string unbase64(const std::string& input){
     static const std::string alphabet64="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     require(input.size()%4==0&&input.size()<=90000,"base64 size");std::string result;

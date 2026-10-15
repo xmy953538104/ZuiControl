@@ -155,6 +155,8 @@ jobs:
           python3 tests/command_plane/TestControlsCallbacks.py || scripts_failed=1
           python3 tests/command_plane/TestRuntimeDomains.py || scripts_failed=1
           python3 tests/command_plane/TestAckObservation.py || scripts_failed=1
+          python3 tests/command_plane/TestFrontendPackages.py || scripts_failed=1
+          python3 tests/command_plane/TestCachedDraft.py || scripts_failed=1
           python3 tests/gpu/TestGpuFailureIsolation.py || scripts_failed=1
           python3 tests/command_plane/TestProjectionMode.py || scripts_failed=1
           python3 tests/command_plane/TestNativeTransportContract.py || scripts_failed=1
@@ -165,6 +167,7 @@ jobs:
           python3 tests/gpu/TestFactoryReset.py || scripts_failed=1
           python3 tests/monitor/TestPowerEdge.py || scripts_failed=1
           python3 tests/monitor/TestMonitorPower.py || scripts_failed=1
+          python3 tests/monitor/TestPowerAccessPolicy.py || scripts_failed=1
           python3 tests/monitor/TestMonitorHealth.py || scripts_failed=1
           python3 tests/monitor/TestThreadAnalysis.py || scripts_failed=1
           python3 tests/monitor/TestAnalysisCollector.py || scripts_failed=1

@@ -1,6 +1,13 @@
 stubs = {
+    'android/os/UEventObserver.java': '''package android.os;public abstract class UEventObserver {
+        public static int active;private boolean listening;
+        public static class UEvent {private final java.util.Map<String,String> fields;public UEvent(java.util.Map<String,String> f){fields=f;}public String get(String k){return fields.get(k);}}
+        public abstract void onUEvent(UEvent event);
+        public final void startObserving(String match){if(!match.equals("SUBSYSTEM=power_supply"))throw new AssertionError();if(!listening){active++;listening=true;}}
+        public final void stopObserving(){if(listening){active--;listening=false;}}}''',
     'android/os/RemoteException.java': 'package android.os; public class RemoteException extends Exception {}',
     'android/os/IBinder.java': '''package android.os; public interface IBinder { int FLAG_ONEWAY=1;
+        default String getInterfaceDescriptor()throws RemoteException{return "";}
         interface DeathRecipient { void binderDied(); }
         void linkToDeath(DeathRecipient d,int f)throws RemoteException;
         boolean unlinkToDeath(DeathRecipient d,int f);

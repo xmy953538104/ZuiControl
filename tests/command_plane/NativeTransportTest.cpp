@@ -176,7 +176,34 @@ void userReceipts(){
     receipts.run(next,[&]{++calls;return "ok=1";});check(calls==1&&acks==3);
     check(d.read("last_request_receipt").find(next.stored()+"\n")==0);
 }
+void directRules(){
+    unsigned calls=0,published=0;std::string reply="reply",kind,data;
+    auto invoke=[&](const std::string& action,const std::string& key,const std::string& value){
+        ++calls;if(action=="state")return std::string("generation=g1");check(key=="key"&&value=="value");return reply;};
+    auto publish=[&](const std::string& k,const std::string& v){++published;kind=k;data=v;};
+    auto property=[](const std::string& key){return key=="init.svc.zui_zuiopt"?"running":"0";};
+    for(auto action:{"reset","read","upstream_read","preview","restore_app","validate","begin","chunk","commit","abort","enable","disable","rollback","state"}){
+        calls=published=0;kind=data="";Request request(std::string("rules|zo_")+action+"||key|value");
+        check(rulesRequest(request,publish,property,invoke)==std::string("ok=1\nzuiopt=")+action);
+        std::string name=action;bool state=name=="commit"||name=="rollback"||name=="restore_app"||name=="enable"||name=="disable";
+        check(calls==(state?2u:1u));
+        if(state||name=="state")check(published==1&&kind=="rulesState"&&data.find("generation=g1")==0);
+        else if(name=="read"||name=="upstream_read")check(published==1&&kind=="rulesChunk"&&data==reply);
+        else if(name=="preview"||name=="validate")check(published==1&&kind==(name=="preview"?"rulesPreview":"rulesValidation"));
+        else check(published==0);
+        if(name=="state")check(data.find("threadManagerState=ZUIOPT_ACTIVE")!=std::string::npos);
+    }
+    rejects([&]{rulesRequest(Request("rules|zo_unknown|||"),publish,property,invoke);});
+    calls=0;rejects([&]{rulesRequest(Request("rules|zo_commit||"+std::string(129,'x')+"|value"),publish,property,invoke);});check(calls==0);
+    reply=std::string(257,'x');rejects([&]{rulesRequest(Request("rules|zo_validate||key|value"),publish,property,invoke);});
+    auto failed=[](const std::string&,const std::string&,const std::string&)->std::string{throw std::runtime_error("partial commit; query state");};
+    published=0;rejects([&]{rulesRequest(Request("rules|zo_commit||key|value"),publish,property,failed);});check(published==0);
+}
 int main(int argc,char** argv){try{
+    directRules();
+    if(argc==2&&std::string(argv[1])=="--rules-only"){
+        std::cout<<"NATIVE_RULES_DISPATCH_LOGIC_PASS checks="<<checks<<" PRODUCT_TRANSACTIONS_NOT_RUN\n";return 0;
+    }
     userReceipts();
     if(argc==2&&std::string(argv[1])=="--portable-core"){
         parsers();projections();concurrentModeReadback();replay();crashes();reconciliation();

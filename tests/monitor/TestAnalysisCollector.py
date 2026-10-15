@@ -25,7 +25,7 @@ public final class AnalysisCollectorTest {
   List<ThreadAnalysis.Process> readAnalysisTasks(ThreadAnalysis a){scans++;return Arrays.asList(
    new ThreadAnalysis.Process(1,generation,Arrays.asList(new MonitorSnapshot.Task(2,"GameThread",generation,SystemClock.now/10))));}
  }
- static void tick(long time){SystemClock.now=time;Runnable r=Handler.pending.remove(0);Handler.delays.remove(0);r.run();}
+ static void tick(long time){SystemClock.now=time;Runnable r=Handler.pending.remove(0);Handler.delays.remove(0);Handler.due.remove(0);r.run();}
  public static void main(String[] args)throws Exception {
   SystemClock.now=100;Collector c=new Collector();c.scene("org.game",0,true);
   String result=c.command("analysisStart",0,"{\\"package\\":\\"org.game\\",\\"activeMs\\":120000}");

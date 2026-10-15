@@ -12,6 +12,29 @@ object ZuiControlRequest {
         val requestText: String,
         val sha256: String,
     )
+    private class AckWaiter(val id:String,val sha:String,val command:String) {
+        val signal=java.lang.Object()
+        var incoming:Ack?=null
+    }
+    @Volatile private var ackWaiter:AckWaiter?=null
+    @Synchronized private fun watch(pending:PendingRequest):AckWaiter {
+        ackWaiter?.takeIf{it.id==pending.requestId && it.sha==pending.sha256}?.let{return it}
+        return AckWaiter(pending.requestId,pending.sha256,checkNotNull(requestCommandFromText(pending.requestText))).also{ackWaiter=it}
+    }
+    internal fun acceptAckCallback(id:String,sha:String,text:String):Boolean {
+        val waiter=ackWaiter?.takeIf{it.id==id && it.sha==sha} ?: return false
+        if(text.length>8192 || '\n' in text || '\r' in text)return false
+        val ack=parseAck(text)?.takeIf{it.requestId==id && it.command==waiter.command} ?: return false
+        synchronized(waiter.signal){
+            if(waiter.incoming?.isTerminal==true)return waiter.incoming==ack
+            if(waiter.incoming!=ack){waiter.incoming=ack;waiter.signal.notifyAll()}
+        }
+        return true
+    }
+    @Synchronized private fun pendingForAwait(context:Context,id:String):Pair<PendingRequest,AckWaiter> {
+        val pending=loadPending(context)?.takeIf{it.requestId==id} ?: error("系统命令认证状态已丢失")
+        return pending to watch(pending)
+    }
 
     data class Ack(
         val requestId: String,
@@ -39,6 +62,7 @@ object ZuiControlRequest {
         loadPending(context)?.let { pending ->
             val currentAck = ZuiControlClient.utilityValue("ack", pending.requestId)
             if (isTerminalFor(pending, currentAck)) {
+                acceptAckCallback(pending.requestId,pending.sha256,currentAck)
                 clearPending(context, pending.requestId)
             } else {
                 kickTrusted(context, pending)
@@ -54,6 +78,7 @@ object ZuiControlRequest {
         )
         val pending = PendingRequest(requestId, requestText, sha256(requestText))
         check(savePending(context, pending)) { "系统命令认证状态写入失败" }
+        watch(pending)
         Log.i(TIMING_TAG, "id=$requestId phase=T0 ns=${SystemClock.elapsedRealtimeNanos()}")
         val dispatch = ZuiControlClient.utility("submit", pending.requestText)
         if (!dispatch.ok) {
@@ -72,6 +97,7 @@ object ZuiControlRequest {
         val pending = loadPending(context) ?: return null
         val ackText = ZuiControlClient.utilityValue("ack", pending.requestId)
         if (isTerminalFor(pending, ackText)) {
+            acceptAckCallback(pending.requestId,pending.sha256,ackText)
             clearPending(context, pending.requestId)
             return null
         }
@@ -89,24 +115,28 @@ object ZuiControlRequest {
         timeoutMs: Long = ACK_TIMEOUT_MS,
         onProgress: ((Ack) -> Unit)? = null,
     ): Ack {
-        val pending = loadPending(context)?.takeIf { it.requestId == requestId }
-            ?: throw IllegalStateException("系统命令认证状态已丢失")
+        val (pending,waiter) = pendingForAwait(context,requestId)
         val requestCommand = requestCommandFromText(pending.requestText)
             ?: throw IllegalStateException("系统命令认证状态无效")
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
-        val fastPollUntil=SystemClock.elapsedRealtime()+ACK_FAST_WINDOW_MS
+        var nextQueryAt=0L
         var queryCount=0
         var lastProgress: Ack? = null
         var retryCount = 0
         var nextKickAt = SystemClock.elapsedRealtime() + retryDelayMs(retryCount)
         do {
-            queryCount++
-            val ack = parseAck(ZuiControlClient.utilityValue("ack", requestId))
+            val delivered=synchronized(waiter.signal){waiter.incoming.also{if(it?.isTerminal!=true)waiter.incoming=null}}
+            var source="CALLBACK"
+            val ack=delivered ?: if(SystemClock.elapsedRealtime()>=nextQueryAt){
+                queryCount++;source="PERSISTENT_QUERY"
+                nextQueryAt=SystemClock.elapsedRealtime()+ACK_FALLBACK_QUERY_MS
+                parseAck(ZuiControlClient.utilityValue("ack",requestId))
+            }else null
             if (ack?.requestId == requestId && ack.command == requestCommand) {
                 if (ack.isTerminal) {
                     Log.i(
                         TIMING_TAG,
-                        "id=$requestId phase=T9 ns=${SystemClock.elapsedRealtimeNanos()} queries=$queryCount",
+                        "id=$requestId phase=T9 ns=${SystemClock.elapsedRealtimeNanos()} queries=$queryCount ackSource=$source",
                     )
                     clearPending(context, requestId)
                     return ack
@@ -123,7 +153,11 @@ object ZuiControlRequest {
                 nextKickAt = now + retryDelayMs(retryCount)
             }
             val remaining = deadline - SystemClock.elapsedRealtime()
-            if (remaining > 0) Thread.sleep(minOf(if(now<fastPollUntil)ACK_FAST_POLL_MS else ACK_POLL_MS, remaining))
+            if (remaining > 0) synchronized(waiter.signal){
+                val waitMs=minOf(remaining,(nextQueryAt-SystemClock.elapsedRealtime()).coerceAtLeast(1),
+                    if(retryCount<MAX_KICK_RETRIES)(nextKickAt-SystemClock.elapsedRealtime()).coerceAtLeast(1) else remaining)
+                if(waiter.incoming==null)waiter.signal.wait(waitMs)
+            }
         } while (SystemClock.elapsedRealtime() < deadline)
         throw IllegalStateException("等待系统命令完成超时")
     }
@@ -216,11 +250,12 @@ object ZuiControlRequest {
         return null
     }
 
-    private fun clearPending(context: Context, requestId: String) {
+    @Synchronized private fun clearPending(context: Context, requestId: String) {
         val prefs = preferences(context)
         if (prefs.getString(PREF_REQUEST_ID, null) == requestId) {
             prefs.edit().clear().commit()
         }
+        if(ackWaiter?.id==requestId)ackWaiter=null
     }
 
     private fun preferences(context: Context) =
@@ -231,9 +266,7 @@ object ZuiControlRequest {
     private const val ACK_DONE = "done"
     private const val ACK_FAILED = "failed"
     private val ACK_STATES = setOf(ACK_PROCESSING, ACK_DONE, ACK_FAILED)
-    private const val ACK_POLL_MS = 200L
-    private const val ACK_FAST_POLL_MS = 50L
-    private const val ACK_FAST_WINDOW_MS = 1000L
+    private const val ACK_FALLBACK_QUERY_MS = 1000L
     private const val INITIAL_KICK_RETRY_MS = 1_000L
     private const val PREFS_NAME = "zui_control_pending_command"
     private const val PREF_REQUEST_ID = "request_id"

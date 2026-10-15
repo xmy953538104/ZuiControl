@@ -1619,6 +1619,8 @@ public final class ZuiControlService extends Binder {
             transport.reconcileTerminal(user);
             if("done".equals(ack[1])&&(parsed.command.equals("zo_state")||parsed.command.equals("zo_commit")||parsed.command.equals("zo_rollback")||parsed.command.equals("zo_restore_app")||parsed.command.equals("zo_enable")||parsed.command.equals("zo_disable")))
                 observeRules(transport.result(user,id,"rulesState"));
+            Log.i(TIMING_TAG,"id="+id+" phase=ACK_DURABLE ns="+SystemClock.elapsedRealtimeNanos()+" state="+ack[1]);
+            mControls.publishAck(user,id,hash,value);
             return "ok=1";
         } finally { Binder.restoreCallingIdentity(identity); }
     }

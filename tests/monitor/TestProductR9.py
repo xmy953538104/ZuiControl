@@ -82,7 +82,7 @@ fun main() {
         self.assertLess(page.index('restoreRulesPending()'),page.index('pageBindings.toList()'))
         self.assertIn('rulesPendingViews.putIfAbsent(v,v.isEnabled to v.alpha)',main)
         self.assertIn('view.isEnabled=saved.first;view.alpha=saved.second',main)
-        self.assertIn('if(!rulesQualified)return',main.split('private fun mutateRule',1)[1].split('private fun moveRule',1)[0])
+        self.assertIn('session.ruleDraft!==d',main.split('private fun mutateRule',1)[1].split('private fun moveRule',1)[0])
         self.assertIn('!rulesQualified',main.split('private fun saveDraft',1)[1].split('private fun addApp',1)[0])
         self.assertIn('tag="rules-retry"',main)
         self.assertIn('!it.dirty && it.generation!=fresh.current.generation',load)

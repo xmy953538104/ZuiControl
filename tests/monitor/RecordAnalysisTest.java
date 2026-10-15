@@ -36,7 +36,7 @@ public final class RecordAnalysisTest {
     Arrays.asList(new MonitorSnapshot.Task(99,"Child",childGeneration,SystemClock.now/5))));
   }
  }
- static void tick(long time){SystemClock.now=time;Handler.delays.remove(0);Handler.pending.remove(0).run();}
+ static void tick(long time){SystemClock.now=time;Handler.delays.remove(0);Handler.due.remove(0);Handler.pending.remove(0).run();}
  static Map<String,Object> result()throws Exception{return object(parse(MonitorStore.lastAnalysis,ThreadAnalysis.RESULT_LIMIT));}
  static long gesture;
  static void start(MonitorCollector c){

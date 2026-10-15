@@ -13,12 +13,7 @@ public class MonitorPowerTest {
   try{
    put(battery,"charge_full","6000000");put(battery,"charge_full_design","6500000");
    put(battery,"cycle_count","42");put(battery,"soh","95");
-   MonitorPower reader=new MonitorPower(root.toFile()){
-    String read(String supply,String field){
-     if(supply.startsWith("ucsi-source-psy-"))supply=supply.endsWith("ucsi1")?"port1":"port2";
-     return super.read(supply,field);
-    }
-   };Map<String,Object> first=reader.health(100);
+   MonitorPower reader=new MonitorPower(root.toFile());Map<String,Object> first=reader.health(100);
    need(Math.abs((Double)first.get("fccDesignPercent")-92.30769231)<0.00001);
    need(first.get("driverSohPercent").equals(95L));need(first.get("capacityScaling").equals(1));
    put(battery,"charge_full","3200000");need(reader.health(101)==first&&reader.healthReads==1);
@@ -42,18 +37,24 @@ public class MonitorPowerTest {
    need(reader.sample(0,3,4000,0,12).get("batteryNetValidity").equals("WAITING_SOURCE_UPDATE"));
    need(reader.sample(0,3,4000,1000000,13).get("batteryNetPowerW").equals(-4.0));
    need(!reader.pending());
-   Path one=Files.createDirectory(root.resolve("port1"));
-   Path two=Files.createDirectory(root.resolve("port2"));
+   need(!reader.sourceEvent("battery","1",null,null,null));
+   need(!reader.sourceEvent("unbounded-new-name","1",null,null,null));
+   need(reader.sourceEvent("usb","1",null,"SDP",null));
+   need(!reader.sourceEvent("usb","1",null,"SDP",null));
+   need(!reader.sourceEvent("usb",null,null,null,null));
+   need(reader.sourceEvent("usb",null,null,"PD_PPS",null));
+   need(!reader.sourceEvent("usb","1",null,null,null)); // missing fields retain the last fact
+   reader.resetSourceEvents();need(reader.sourceEvent("usb","1",null,"PD_PPS",null));
    Path usb=Files.createDirectory(root.resolve("usb"));Path other=Files.createDirectory(root.resolve("wireless"));
-   put(one,"online","1");put(two,"online","0");put(usb,"voltage_now","5000000");put(usb,"current_now","200000");put(usb,"real_type","SDP");
+   put(usb,"voltage_now","5000000");put(other,"voltage_now","-13000");put(usb,"current_now","200000");put(usb,"real_type","SDP");
    need(reader.sample(1,5,4000,0,14).get("inputPowerW").equals(1.0));
-   put(one,"online","0");put(two,"online","1");put(other,"voltage_now","9000000");put(other,"current_now","300000");
+   put(usb,"voltage_now","-13000");put(other,"voltage_now","9000000");put(other,"current_now","300000");
    need(reader.sample(1,5,4000,0,15).get("inputPowerSupply").equals("wireless"));
    need(Math.abs((Double)reader.sample(1,5,4000,0,15).get("inputPowerW")-2.7)<1e-8);
    put(usb,"real_type","PD_PPS");need(reader.sample(1,5,4000,0,16).get("inputPowerW")==null);
    put(usb,"real_type","SDP");put(other,"voltage_now","-13000");need(reader.sample(1,5,4000,0,17).get("inputPowerW")==null);
-   put(one,"online","1");need(reader.sample(1,5,4000,0,18).get("inputPowerW")==null);
-   for(Path dir:new Path[]{one,two,usb,other}){for(Path p:Files.newDirectoryStream(dir))Files.delete(p);Files.delete(dir);}
+   put(usb,"voltage_now","5000000");put(other,"voltage_now","5000000");need(reader.sample(1,5,4000,0,18).get("inputPowerW")==null);
+   for(Path dir:new Path[]{usb,other}){for(Path p:Files.newDirectoryStream(dir))Files.delete(p);Files.delete(dir);}
    System.out.println("MONITOR_HEALTH_UNITS_RAW_SOURCE_NULL_AND_TTL=PASS");
    System.out.println("POWER_SIGN_ZERO_EDGE_PORT_SELECTION_PROTOCOL_AND_NULL=PASS");
   }finally{for(Path p:Files.newDirectoryStream(battery))Files.delete(p);Files.delete(battery);Files.delete(root);}

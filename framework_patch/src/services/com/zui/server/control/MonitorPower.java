@@ -6,7 +6,7 @@ import java.util.Map;
 import static com.zui.server.control.PolicyJson.*;
 
 /** TB321FU logical battery supply. Read-only; owned by the existing Monitor collector. */
-class MonitorPower {
+final class MonitorPower {
     static final long HEALTH_TTL_MS = 300000;
     private final File supplies;
     private Map<String,Object> health;
@@ -16,10 +16,25 @@ class MonitorPower {
     private boolean awaitingCurrent;
     private int expectedConnected = -1;
     private String lastInput = "", edgeInput = "";
+    private boolean awaitingInput;
+    private final java.util.Map<String,String[]> sourceFacts=new java.util.HashMap<>();
+
+    synchronized boolean sourceEvent(String name,String... fields) {
+        if(!java.util.Arrays.asList("usb","wireless","ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1","ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi2").contains(name) || fields.length!=4)return false;
+        String[] old=sourceFacts.get(name),next=old==null?new String[4]:old.clone();
+        boolean supplied=false;
+        for(int i=0;i<fields.length;i++)if(fields[i]!=null && fields[i].length()<=96 && fields[i].indexOf('\n')<0 && fields[i].indexOf('\0')<0){next[i]=fields[i];supplied=true;}
+        if(!supplied || java.util.Arrays.equals(old,next))return false;
+        sourceFacts.put(name,next);return true;
+    }
+    synchronized void resetSourceEvents(){sourceFacts.clear();}
+    void sourceChanged() {
+        expectedConnected=-1;edgeCurrent=lastCurrent;awaitingCurrent=true;edgeInput=lastInput;awaitingInput=true;
+    }
 
     void edge(boolean connected) {
         expectedConnected=connected?1:0;
-        edgeCurrent=lastCurrent;awaitingCurrent=true;edgeInput=lastInput;
+        edgeCurrent=lastCurrent;awaitingCurrent=true;edgeInput=lastInput;awaitingInput=true;
     }
     boolean pending(){return expectedConnected>=0 || awaitingCurrent;}
     boolean changedCurrent(long ua){return pending() && ua!=Long.MIN_VALUE && ua!=lastCurrent;}
@@ -39,22 +54,25 @@ class MonitorPower {
         if(ua!=Long.MIN_VALUE)lastCurrent=ua;
         Double net=connectionMatches&&!awaitingCurrent?netWatts(plugged,status,mv,ua):null;
         String batteryValidity=!connectionMatches?"WAITING_POWER_STATE":awaitingCurrent?"WAITING_SOURCE_UPDATE":net==null?"UNAVAILABLE_SOURCE_OR_DIRECTION":"DRIVER_READING";
-        String inputValidity=plugged==0?"DISCONNECTED":"UNAVAILABLE_PORT_MAPPING",supply="";
+        String inputValidity=plugged==0?"DISCONNECTED":"UNAVAILABLE_PORT_MAPPING",supply="",protocol=null;
         Long uv=null, inputUa=null;
         Double input=null;
         if(plugged>0 && connectionMatches) {
-            Long one=number("ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1","online");
-            Long two=number("ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi2","online");
-            if(one!=null && two!=null && ((one==1 && two==0)||(one==0 && two==1))) {
-                supply=one==1?"usb":"wireless";
-                uv=number(supply,"voltage_now");inputUa=number(supply,"current_now");
+            Long one=number("usb","voltage_now"),two=number("wireless","voltage_now");
+            boolean first=voltageValid(one),second=voltageValid(two);
+            if(first!=second) {
+                // The inactive path retains current readings; only one energized voltage path qualifies.
+                supply=first?"usb":"wireless";uv=first?one:two;
+                protocol=read("usb","real_type");
+                boolean conventional=protocol!=null && java.util.Arrays.asList("SDP","CDP","DCP").contains(protocol);
+                if(conventional)inputUa=number(supply,"current_now");
                 String fingerprint=supply+":"+uv+":"+inputUa;
-                boolean unchangedEdge=expectedConnected==1 && fingerprint.equals(edgeInput);
+                boolean unchangedEdge=awaitingInput && fingerprint.equals(edgeInput);
+                if(!unchangedEdge)awaitingInput=false;
                 lastInput=fingerprint;
-                String protocol=read("usb","real_type");
                 if(protocol==null)inputValidity="UNAVAILABLE_PROTOCOL";
                 // Charge-pump contributions are not qualified by this logical input-current node.
-                else if(!protocol.equals("SDP") && !protocol.equals("CDP") && !protocol.equals("DCP"))inputValidity="UNQUALIFIED_PROTOCOL_INPUT_CURRENT";
+                else if(!conventional)inputValidity="UNQUALIFIED_PROTOCOL_INPUT_CURRENT";
                 else if(unchangedEdge)inputValidity="WAITING_SOURCE_UPDATE";
                 else if(uv!=null && inputUa!=null && uv>=4000000 && uv<=24000000 && inputUa>=0 && inputUa<=10000000) {
                     input=uv*(inputUa/1000000000000.0);inputValidity="DRIVER_READING";
@@ -67,17 +85,18 @@ class MonitorPower {
                 "batteryNetSource","BATTERY_LOGICAL_SUPPLY_MV_UA","batteryNetReadElapsedMs",now,
                 "batteryNetSourceMeasurementTime",null,"batteryNetTimestampAvailable",false,
                 "inputPowerW",input,"inputPowerValidity",inputValidity,"inputPowerSupply",supply,
-                "inputVoltageUv",uv,"inputCurrentUa",inputUa,"inputPowerReadElapsedMs",now,
+                "inputVoltageUv",uv,"inputCurrentUa",inputUa,"inputProtocol",protocol,"inputPowerReadElapsedMs",now,
                 "inputPowerSourceMeasurementTime",null,"inputPowerTimestampAvailable",false);
     }
 
     MonitorPower() { this(new File("/sys/class/power_supply")); }
     MonitorPower(File supplies) { this.supplies = supplies; }
-    String read(String supply, String field) {
+    private String read(String supply, String field) {
         scalarReads++;
         try { return MonitorSources.line(new File(new File(supplies,supply),field).getPath()); }
         catch (IOException | SecurityException e) { return null; }
     }
+    private static boolean voltageValid(Long uv){return uv!=null && uv>=4000000 && uv<=24000000;}
     private Long number(String supply, String field) {
         try { String text=read(supply,field); return text==null?null:Long.valueOf(text); }
         catch (NumberFormatException e) { return null; }

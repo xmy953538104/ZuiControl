@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import static com.zui.server.control.PolicyJson.*;
 
 public class UserTransportFixture {
+    static class AckCallbacks {void publishAck(int user,String id,String hash,String ack){}}
+    final AckCallbacks mControls=new AckCallbacks();
     static final String PROP_COMMAND_ID="id",PROP_COMMAND_SHA256="hash",PROP_COMMAND_SEQ="seq",SETTING_REQUEST_TEXT="request",SETTING_UPERF_RULES="zui_control_uperf_rules_text",TIMING_TAG="timing",TAG="test";
     final AppPolicyFixture.Disk disk=new AppPolicyFixture.Disk();
     AppPolicyStore mAppPolicies;
