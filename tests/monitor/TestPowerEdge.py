@@ -130,6 +130,13 @@ public class PowerEdgeTest {
   Handler.next();if(Handler.delays.get(0)==0)Handler.next();
   check(snapshot(source).get("batteryNetPowerW") instanceof Number&&((Number)snapshot(source).get("batteryNetPowerW")).doubleValue()==0.0,"new observed zero is valid without inventing an ADC timestamp: "+snapshot(source));
   check(snapshot(source).get("batteryNetSourceMeasurementTime")==null&&Handler.delays.get(0)==5000,"unknown measurement time and normal cadence retained");
+  SystemClock.now+=2500;BatteryManager.currentUa=-68000;
+  eventFacts.put("POWER_SUPPLY_CURRENT_NOW","-68000");observer.onUEvent(new UEventObserver.UEvent(eventFacts));
+  Handler.next();
+  check(Handler.delays.get(0)==0,"a genuine changed-current event after accepted zero must wake the existing producer");
+  Handler.next();check(((Number)snapshot(source).get("batteryNetPowerW")).doubleValue()>0&&Handler.delays.get(0)==5000,"post-zero current updated, then normal cadence");
+  observer.onUEvent(new UEventObserver.UEvent(eventFacts));Handler.next();
+  check(Handler.delays.get(0)==5000,"unchanged settled current event adds no sample");
   long burstSamples=metric(source,"monitorSamples");
   Map<String,String> firstEdge=new HashMap<>(),lastEdge=new HashMap<>();
   firstEdge.put("POWER_SUPPLY_NAME","usb");firstEdge.put("POWER_SUPPLY_ONLINE","0");

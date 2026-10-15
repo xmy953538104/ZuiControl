@@ -17,6 +17,7 @@ final class MonitorPower {
     private int expectedConnected = -1;
     private final java.util.Map<String,Long> inputReadings=new java.util.HashMap<>(),edgeInputs=new java.util.HashMap<>();
     private boolean awaitingInput;
+    private String activeInputSupply="";
     private long notifiedCurrent = Long.MIN_VALUE;
     private final java.util.Map<String,Long> notifiedInputs=new java.util.HashMap<>();
     private final java.util.Map<String,String[]> sourceFacts=new java.util.HashMap<>();
@@ -34,10 +35,10 @@ final class MonitorPower {
         if(current==null || current.length()>32)return false;
         final long value;
         try { value=Long.parseLong(current); } catch(NumberFormatException e){return false;}
-        if("battery".equals(name) && awaitingCurrent && value>=-30000000 && value<=30000000){
+        if("battery".equals(name) && (awaitingCurrent || value!=lastCurrent) && value>=-30000000 && value<=30000000){
             notifiedCurrent=value;return true;
         }
-        if(("usb".equals(name)||"wireless".equals(name)) && awaitingInput && value>=0 && value<=10000000){
+        if(("usb".equals(name)||"wireless".equals(name)) && (awaitingInput || name.equals(activeInputSupply) && !Long.valueOf(value).equals(inputReadings.get(name))) && value>=0 && value<=10000000){
             notifiedInputs.put(name,value);return true;
         }
         return false;
@@ -77,6 +78,7 @@ final class MonitorPower {
         Double net=connectionMatches&&!awaitingCurrent?netWatts(plugged,status,mv,ua):null;
         String batteryValidity=!connectionMatches?"WAITING_POWER_STATE":awaitingCurrent?"WAITING_SOURCE_UPDATE":net==null?"UNAVAILABLE_SOURCE_OR_DIRECTION":"DRIVER_READING";
         String inputValidity=plugged==0?"DISCONNECTED":"UNAVAILABLE_PORT_MAPPING",supply="",protocol=null;
+        activeInputSupply="";
         if(plugged==0 && connectionMatches)awaitingInput=false;
         Long uv=null, inputUa=null;
         Double input=null;
@@ -88,7 +90,7 @@ final class MonitorPower {
                 supply=first?"usb":"wireless";uv=first?one:two;
                 protocol=read("usb","real_type");
                 boolean conventional=protocol!=null && java.util.Arrays.asList("SDP","CDP","DCP").contains(protocol);
-                if(conventional)inputUa=number(supply,"current_now");
+                if(conventional){activeInputSupply=supply;inputUa=number(supply,"current_now");}
                 boolean inputNotified=inputUa!=null && inputUa.equals(notifiedInputs.get(supply));
                 Long before=edgeInputs.get(supply);
                 boolean unchangedEdge=awaitingInput && !inputNotified && (before==null || before.equals(inputUa));
@@ -107,7 +109,7 @@ final class MonitorPower {
         return map("batteryNetPowerW",net,"batteryNetValidity",batteryValidity,
                 "batteryNetSign","POSITIVE_CHARGING_NEGATIVE_DISCHARGING",
                 "batteryNetSource","BATTERY_LOGICAL_SUPPLY_MV_UA","batteryNetReadElapsedMs",now,
-                "batteryNetObservation",notified?"POST_EDGE_DRIVER_EVENT_MATCH_TIME_UNKNOWN":"READ_TIME_ONLY_MEASUREMENT_TIME_UNKNOWN",
+                "batteryNetObservation",notified?"DRIVER_EVENT_MATCH_TIME_UNKNOWN":"READ_TIME_ONLY_MEASUREMENT_TIME_UNKNOWN",
                 "batteryNetSourceMeasurementTime",null,"batteryNetTimestampAvailable",false,
                 "inputPowerW",input,"inputPowerValidity",inputValidity,"inputPowerSupply",supply,
                 "inputVoltageUv",uv,"inputCurrentUa",inputUa,"inputProtocol",protocol,"inputPowerReadElapsedMs",now,

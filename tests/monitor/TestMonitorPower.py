@@ -69,7 +69,15 @@ public class MonitorPowerTest {
    need(reader.measurementEvent("battery","0"));
    Map<String,Object> zero=reader.sample(1,5,4000,0,24);
    need(zero.get("batteryNetPowerW").equals(0.0)&&zero.get("batteryNetSourceMeasurementTime")==null);
-   need(zero.get("batteryNetObservation").equals("POST_EDGE_DRIVER_EVENT_MATCH_TIME_UNKNOWN"));
+   need(zero.get("batteryNetObservation").equals("DRIVER_EVENT_MATCH_TIME_UNKNOWN"));
+   need(!reader.measurementEvent("battery","0"));
+   need(reader.measurementEvent("battery","-68000"));
+   need((Double)reader.sample(1,2,4000,-68000,24).get("batteryNetPowerW")>0);
+   need(!reader.measurementEvent("usb","200000"));
+   need(reader.measurementEvent("usb","300000"));put(usb,"current_now","300000");
+   need(reader.sample(1,5,4000,0,24).get("inputPowerW").equals(1.5));
+   put(usb,"real_type","PD_PPS");reader.sample(1,5,4000,0,24);
+   need(!reader.measurementEvent("usb","400000")); // unqualified PD current does not create a scalar wake stream
    reader.edge(true);need(reader.sample(1,5,4000,0,25).get("batteryNetPowerW")==null); // old notices cannot qualify the next edge
    reader.measurementEvent("battery","0");reader.resetSourceEvents();
    need(reader.sample(1,5,4000,0,26).get("batteryNetPowerW")==null);
