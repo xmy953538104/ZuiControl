@@ -1969,7 +1969,7 @@ class MainActivity : Activity() {
     }
     private fun actionRow(title: String,subtitle: String,action:()->Unit)=owner.row().apply{
         minimumHeight=dp(46);setPadding(0,dp(6),0,dp(6))
-        val icon=when(title){"立即备份"->R.drawable.owner_backup;"从备份恢复"->R.drawable.owner_restore;"恢复出厂配置"->R.drawable.owner_reset;"导出运行日志"->R.drawable.owner_logs;"重启调度核心"->R.drawable.owner_restart;"使用帮助"->R.drawable.owner_help;"ZUIopt 已进入故障保护"->R.drawable.owner_warn;else->error("Owner row icon is required: $title")}
+        val icon=when(title){"立即备份"->R.drawable.owner_backup;"从备份恢复"->R.drawable.owner_restore;"恢复出厂配置"->R.drawable.owner_reset;"导出运行日志"->R.drawable.owner_logs;"重启调度核心"->R.drawable.owner_restart;"使用帮助"->R.drawable.owner_help;"电池健康与容量"->R.drawable.owner_health;"ZUIopt 已进入故障保护"->R.drawable.owner_warn;else->error("Owner row icon is required: $title")}
         val tone=when(title){"恢复出厂配置","重启调度核心"->owner.inks[3];"导出运行日志","使用帮助"->owner.muted;else->owner.accent}
         addView(owner.icon(icon,tone,16).apply{background=owner.shape(owner.soft(tone),10f);setPadding(dp(8),dp(8),dp(8),dp(8))},LinearLayout.LayoutParams(dp(32),dp(32)).apply{marginEnd=dp(12)})
         addView(owner.column().apply{addView(owner.label(title,13f,owner.text,800));addView(note(subtitle,owner.muted))},LinearLayout.LayoutParams(0,-2,1f))

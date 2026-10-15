@@ -168,7 +168,8 @@ jobs:
           python3 tests/command_plane/TestAckObservation.py || scripts_failed=1
           python3 tests/command_plane/TestFrontendPackages.py || scripts_failed=1
           python3 tests/command_plane/TestCachedDraft.py || scripts_failed=1
-          python3 tests/command_plane/TestResponseDraw.py || scripts_failed=1
+          python3 tests/command_plane/TestResponseDraw.py
+          python3 tests/monitor/TestActionRowIcons.py || scripts_failed=1
           python3 tests/gpu/TestGpuFailureIsolation.py || scripts_failed=1
           python3 tests/command_plane/TestProjectionMode.py || scripts_failed=1
           python3 tests/command_plane/TestNativeTransportContract.py || scripts_failed=1
@@ -229,6 +230,21 @@ jobs:
           bash -n payload/system/etc/zuiopt/zuiopt_boot_state.sh || scripts_failed=1
           bash -n payload/system/etc/zuiopt/crash_gate.sh || scripts_failed=1
           test "$scripts_failed" -eq 0
+
+      # Signed development APK is available after App/host gates; final payload still waits for all gates.
+      - name: Build release APK
+        run: |
+          gradle -p . :app:assembleRelease \
+            -Pzuicontrol.storeFile="$RUNNER_TEMP/ZuiControl-release.jks" \
+            -Pzuicontrol.storePassword="${{ secrets.KEYSTORE_PASSWORD }}" \
+            -Pzuicontrol.keyAlias="${{ secrets.KEY_ALIAS }}" \
+            -Pzuicontrol.keyPassword="${{ secrets.KEY_PASSWORD }}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZuiControl-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
 
       - name: Test and build ZUIopt production integration
         if: ${{ !cancelled() }}
@@ -489,14 +505,6 @@ jobs:
             ${{ runner.temp }}/terminal-framework/classes6.dex
           if-no-files-found: error
 
-      - name: Build release APK
-        run: |
-          gradle -p . :app:assembleRelease \
-            -Pzuicontrol.storeFile="$RUNNER_TEMP/ZuiControl-release.jks" \
-            -Pzuicontrol.storePassword="${{ secrets.KEYSTORE_PASSWORD }}" \
-            -Pzuicontrol.keyAlias="${{ secrets.KEY_ALIAS }}" \
-            -Pzuicontrol.keyPassword="${{ secrets.KEY_PASSWORD }}"
-
       - name: Stage payload APK
         run: |
           sha256sum -c "$RUNNER_TEMP/command-build.sha256"
@@ -543,12 +551,6 @@ jobs:
           mkdir -p payload/system/priv-app/ZuiControlV84
           cp app/build/outputs/apk/release/app-release.apk \
             payload/system/priv-app/ZuiControlV84/ZuiControl.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZuiControl-release-apk
-          path: app/build/outputs/apk/release/app-release.apk
 
       - name: Upload payload
         uses: actions/upload-artifact@v4
