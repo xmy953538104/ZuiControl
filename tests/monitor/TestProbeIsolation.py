@@ -19,6 +19,7 @@ assert 'ACK_TARGET_ARMED id=' in probe and 'PRIMARY_FAILURE mode=' in probe and 
 assert 'controlsOwner.controls(true,probeCallback)' in probe and 'getMethod("controls"' not in probe
 assert 'Pending fault requires actual HOME scene' in probe
 assert 'READ_ONLY_ACK_CONTRACT_PASS' in probe and '.stateText()' not in probe
+assert 'subscribedSnapshot=initial;' in probe and probe.count('globalRefresh(subscribedSnapshot)')==2
 source=ROOT/'app/src/androidTest/java/com/zui/zuicontrol/probe/AckFaultGate.java'
 with tempfile.TemporaryDirectory(prefix='zui-r5-ack-gate-') as directory:
     path=Path(directory);shutil.copyfile(source,path/source.name)
@@ -34,4 +35,16 @@ public class GateTest {public static void main(String[] args){
 ''',encoding='utf-8')
     subprocess.run(['javac','-d',str(path),str(path/source.name),str(path/'GateTest.java')],check=True)
     subprocess.run(['java','-cp',str(path),'com.zui.zuicontrol.probe.GateTest'],check=True)
+    method=probe.split('    private static int globalRefresh(',1)[1].split('\n    }',1)[0]
+    (path/'SnapshotTest.java').write_text('''public class SnapshotTest{
+    private static int globalRefresh('''+method+'''
+    }
+    public static void main(String[] args){
+     for(int hz:new int[]{60,90,120,144,165})if(globalRefresh("ok=1\\nsavedGlobalRefresh="+hz+"\\nsavedGlobalUperf=balance")!=hz)throw new AssertionError();
+     for(String invalid:new String[]{"ok=1\\ncurrentScenePackage=example","savedGlobalRefresh=0","savedGlobalRefresh=bad"}){
+      try{globalRefresh(invalid);throw new AssertionError();}catch(RuntimeException expected){}}
+     System.out.println("EXACT_REGISTERED_SNAPSHOT_CONTRACT=PASS");
+    }}''',encoding='utf8')
+    subprocess.run(['javac','-d',str(path),str(path/'SnapshotTest.java')],check=True)
+    subprocess.run(['java','-cp',str(path),'SnapshotTest'],check=True)
 print('TEST_PROFILE_NEVER_STAGED_IN_PRODUCTION_PAYLOAD=PASS')

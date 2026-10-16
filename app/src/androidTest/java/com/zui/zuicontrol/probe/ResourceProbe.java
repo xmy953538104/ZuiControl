@@ -34,6 +34,7 @@ public final class ResourceProbe extends Instrumentation {
     private android.zui.ZuiControlManager controlsOwner;
     private IBinder originalCallback,probeCallback;
     private long subscriptionEpoch;
+    private String subscribedSnapshot="";
     private final AckFaultGate fault=new AckFaultGate();
     private volatile boolean callbackRunning;
     @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
@@ -100,6 +101,7 @@ public final class ResourceProbe extends Instrumentation {
         put(controlsState,"callback",probeCallback);
         String initial=controlsOwner.controls(true,probeCallback);
         if(!initial.toString().startsWith("ok=1"))throw new IllegalStateException("Real registration failed");
+        subscribedSnapshot=initial;
         Log.i("R6Probe","ACK_SUBSCRIPTION_PROOF appUid="+android.os.Process.myUid()+" epoch="+subscriptionEpoch+" descriptor="+probeCallback.getInterfaceDescriptor());
     }
     private void callbackCase(String mode){
@@ -110,9 +112,7 @@ public final class ResourceProbe extends Instrumentation {
                 Exception[] connected={null};runOnMainSync(()->{try{wrapCallback();}catch(Exception e){connected[0]=e;}});
                 if(connected[0]!=null)throw connected[0];
                 String scene=com.zui.zuicontrol.ZuiControlClient.INSTANCE.currentSceneText();
-                String state=scene;
-                for(String line:state.split("\n"))if(line.startsWith("savedGlobalRefresh="))original=Integer.parseInt(line.substring("savedGlobalRefresh=".length()).trim());
-                if(original<=0)throw new IllegalStateException("Current global intent unavailable");
+                original=globalRefresh(subscribedSnapshot);
                 int target=original==90?120:90;
                 if(mode.equals("ackPending")&&!java.util.Arrays.asList(scene.split("\n")).contains("editableSceneIsHome=true"))throw new IllegalStateException("Pending fault requires actual HOME scene");
                 String id=com.zui.zuicontrol.ZuiControlClient.INSTANCE.sendPolicy(context,"refresh","",mode.equals("ackPending")?"FOREGROUND":"GLOBAL",target,"",0,0,scene,null,null);
@@ -146,12 +146,11 @@ public final class ResourceProbe extends Instrumentation {
         Activity activity=current.get();Context context=getTargetContext();
         if("ackContract".equals(op)){
             try{wrapCallback();
-                String scene=com.zui.zuicontrol.ZuiControlClient.INSTANCE.currentSceneText();
-                if(!scene.matches("(?s).*\\nsavedGlobalRefresh=(60|90|120|144|165)(\\n|$).*"))throw new IllegalStateException("Current scene global contract absent");
+                globalRefresh(subscribedSnapshot);
                 Class<?> request=Class.forName("com.zui.zuicontrol.ZuiControlRequest");boolean pending=false;
                 for(java.lang.reflect.Method m:request.getDeclaredMethods())if(m.getName().startsWith("pendingIdentity"))pending=true;
                 if(!pending)throw new IllegalStateException("Pending identity entry absent");
-                Log.i("R6Probe","READ_ONLY_ACK_CONTRACT_PASS appUid="+android.os.Process.myUid()+" epoch="+subscriptionEpoch+" sceneBytes="+scene.length());
+                Log.i("R6Probe","READ_ONLY_ACK_CONTRACT_PASS appUid="+android.os.Process.myUid()+" epoch="+subscriptionEpoch+" snapshotBytes="+subscribedSnapshot.length());
             }finally{restoreCallback();}return;
         }
         if("ackDrop".equals(op)||"ackLate".equals(op)||"ackPending".equals(op)){callbackCase(op);return;}
@@ -195,5 +194,12 @@ public final class ResourceProbe extends Instrumentation {
             for(String name:new String[]{"viewBindings","coreHealthBindings","controlBindings","loading"})try{Object v=field(activity,name);j.put(name,v instanceof Map?((Map<?,?>)v).size():((java.util.Collection<?>)v).size());}catch(NoSuchFieldException ignored){}
         }
         Log.i("R6Probe",j.toString());
+    }
+    private static int globalRefresh(String snapshot){
+        for(String line:snapshot.split("\n"))if(line.startsWith("savedGlobalRefresh=")){
+            int value=Integer.parseInt(line.substring("savedGlobalRefresh=".length()).trim());
+            if(value==60||value==90||value==120||value==144||value==165)return value;
+        }
+        throw new IllegalStateException("Fresh registered controls snapshot global contract absent");
     }
 }
