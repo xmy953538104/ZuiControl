@@ -36,6 +36,7 @@ class NotificationRenderer(unittest.TestCase):
         for name,labels in [('refresh_row',['60','90','120','144','165']),('uperf_row',['节能','均衡','性能','快速'])]:
             self.assertEqual(ids[name].get(A+'layout_height'),'30dp')
             self.assertEqual(ids[name].get(A+'padding'),'2dp')
+            self.assertEqual(ids[name].get(A+'baselineAligned'),'false')
             self.assertEqual([n.get(A+'text') for n in ids[name]],labels)
         self.assertEqual(ids['uperf_row'].get(A+'layout_marginTop'),'4dp')
         self.assertEqual(14+64+14+56+14+208+14,384)

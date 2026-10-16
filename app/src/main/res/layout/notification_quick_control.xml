@@ -23,14 +23,14 @@
     </LinearLayout>
     <LinearLayout android:id="@+id/quick_controls" android:layout_width="0dp" android:layout_weight="1" android:layout_height="64dp"
         android:layout_marginStart="14dp" android:orientation="vertical">
-        <LinearLayout android:id="@+id/refresh_row" android:layout_width="match_parent" android:layout_height="30dp" android:padding="2dp" android:background="@drawable/notify_capsule_track" android:orientation="horizontal">
+        <LinearLayout android:id="@+id/refresh_row" android:layout_width="match_parent" android:layout_height="30dp" android:padding="2dp" android:background="@drawable/notify_capsule_track" android:orientation="horizontal" android:baselineAligned="false">
             <TextView android:id="@+id/refresh_60" style="@style/NotificationControl" android:text="60" />
             <TextView android:id="@+id/refresh_90" style="@style/NotificationControl" android:text="90" android:layout_marginStart="4.5dp" />
             <TextView android:id="@+id/refresh_120" style="@style/NotificationControl" android:text="120" android:layout_marginStart="4.5dp" />
             <TextView android:id="@+id/refresh_144" style="@style/NotificationControl" android:text="144" android:layout_marginStart="4.5dp" />
             <TextView android:id="@+id/refresh_165" style="@style/NotificationControl" android:text="165" android:layout_marginStart="4.5dp" />
         </LinearLayout>
-        <LinearLayout android:id="@+id/uperf_row" android:layout_width="match_parent" android:layout_height="30dp" android:padding="2dp" android:background="@drawable/notify_capsule_track" android:orientation="horizontal" android:layout_marginTop="4dp">
+        <LinearLayout android:id="@+id/uperf_row" android:layout_width="match_parent" android:layout_height="30dp" android:padding="2dp" android:background="@drawable/notify_capsule_track" android:orientation="horizontal" android:layout_marginTop="4dp" android:baselineAligned="false">
             <TextView android:id="@+id/mode_powersave" style="@style/NotificationControl" android:text="节能" />
             <TextView android:id="@+id/mode_balance" style="@style/NotificationControl" android:text="均衡" android:layout_marginStart="4.667dp" />
             <TextView android:id="@+id/mode_performance" style="@style/NotificationControl" android:text="性能" android:layout_marginStart="4.667dp" />
