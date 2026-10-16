@@ -35,6 +35,12 @@ static std::string jsonQuote(const std::string &text) {
     return result + '"';
 }
 struct Field { std::string path, unit; long period; long long next = 0; };
+static constexpr long long slotsDue(long long due, long long now, long long period) {
+    return now < due ? 0 : (now - due) / period + 1;
+}
+static_assert(slotsDue(1000, 999, 1000) == 0);
+static_assert(slotsDue(1000, 1001, 1000) == 1);
+static_assert(slotsDue(1000, 3100, 1000) == 3);
 static std::mutex output;
 static std::atomic<unsigned long> sequence{0};
 static std::string identity;
@@ -81,6 +87,7 @@ int main(int argc, char **argv) {
     int bufferSize = 1024 * 1024;
     setsockopt(socketFd, SOL_SOCKET, SO_RCVBUF, &bufferSize, sizeof(bufferSize));
     const long long start = bootNs();
+    for (Field &field : fields) field.next = start;
     std::atomic<long long> deadline{start + seconds * 1000000000LL};
     std::atomic<bool> barrier{false};
     alarm(static_cast<unsigned>(seconds + afterDisconnect + 15)); // A blocked read is an explicit failed run.
@@ -115,11 +122,13 @@ int main(int argc, char **argv) {
     });
     unsigned batches = 0;
     do {
-        long long batchStart = bootNs();
         for (Field &field : fields) {
             long long before = bootNs();
-            if (before < field.next) continue;
-            field.next = before + field.period * 1000000LL;
+            const long long period = field.period * 1000000LL;
+            const long long slots = slotsDue(field.next, before, period);
+            if (!slots) continue;
+            const long long scheduled = field.next;
+            field.next += slots * period;
             char buffer[4097]; int error = 0;
             int fd = open(field.path.c_str(), O_RDONLY | O_CLOEXEC);
             ssize_t bytes = -1;
@@ -133,6 +142,8 @@ int main(int argc, char **argv) {
             }
             long long after = bootNs();
             emit(",\"kind\":\"READ\",\"batch\":" + std::to_string(batches) + ",\"read_start_boot_ns\":" + std::to_string(before)
+                 + ",\"scheduled_boot_ns\":" + std::to_string(scheduled) + ",\"period_ms\":" + std::to_string(field.period)
+                 + ",\"missed\":" + std::to_string(slots - 1)
                  + ",\"read_end_boot_ns\":" + std::to_string(after) + ",\"source\":\"sysfs\",\"path\":" + jsonQuote(field.path)
                  + ",\"unit\":" + jsonQuote(field.unit) + ",\"raw\":" + (error ? "null" : jsonQuote(std::string(buffer, static_cast<size_t>(bytes))))
                  + ",\"errno\":" + std::to_string(error) + ",\"valid\":" + (error ? "false" : "true")
@@ -140,7 +151,9 @@ int main(int argc, char **argv) {
             if (after >= deadline.load()) break;
         }
         batches++;
-        long long remaining = std::min(deadline.load(), batchStart + 1000000000LL) - bootNs();
+        long long next = deadline.load();
+        for (const Field &field : fields) next = std::min(next, field.next);
+        long long remaining = next - bootNs();
         if (remaining > 0) std::this_thread::sleep_for(std::chrono::nanoseconds(remaining));
     } while (bootNs() < deadline.load());
     done = true; events.join(); close(socketFd); alarm(0);

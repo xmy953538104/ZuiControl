@@ -120,13 +120,13 @@ class ZuiControlQuickService : Service() {
         val nextQuiet = if (fresh && quiet.isFinite() && quiet > 0) quiet else -1.0
         val nextPower = if (fresh && power.isFinite()) power else Double.NaN
         val invalidated = NotificationQuickControlHelper.availabilityChanged(quietC, nextQuiet, powerW, nextPower)
-        val changed = NotificationQuickControlHelper.metricNumber(quietC) != NotificationQuickControlHelper.metricNumber(nextQuiet) ||
-            LivePower.number(powerW) != LivePower.number(nextPower)
+        val powerChanged = LivePower.number(powerW) != LivePower.number(nextPower)
+        val changed = NotificationQuickControlHelper.metricNumber(quietC) != NotificationQuickControlHelper.metricNumber(nextQuiet) || powerChanged
         quietC = nextQuiet; powerW = nextPower; readingTime = if (fresh) elapsed else 0L
         handler.removeCallbacks(readingExpiry)
         if (fresh) handler.postDelayed(readingExpiry, (elapsed + readingTtl + 1L - now).coerceAtLeast(1))
         if (!changed) return
-        if (invalidated) {
+        if (invalidated || powerChanged) {
             handler.removeCallbacks(readingUpdate); requestRefresh(false)
         } else if (!handler.hasCallbacks(readingUpdate)) {
             handler.postDelayed(readingUpdate, (lastReadingPublish + 1000L - now).coerceAtLeast(0))
@@ -149,6 +149,7 @@ class ZuiControlQuickService : Service() {
         val content = renderNotification(state)
         getSystemService(NotificationManager::class.java).notify(ID, content)
         notificationPublishes++
+        OwnerRenderTrace.event("POWER_NOTIFICATION_POSTED","elapsed=$readingTime;net=${LivePower.number(powerW)}")
         QuickControlTrace.mark(trace,"T3","NotificationManager.notify_returned_logical_state")
     }
     private var pendingIntentCreations = 0L

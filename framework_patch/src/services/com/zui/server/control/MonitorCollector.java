@@ -50,12 +50,14 @@ class MonitorCollector {
         @Override public void onUEvent(UEvent event){
             Handler target=handler;
             if(target==null)return;
+            long receivedAt=SystemClock.elapsedRealtimeNanos();
             String name=event.get("POWER_SUPPLY_NAME"),current=event.get("POWER_SUPPLY_CURRENT_NOW");
             target.post(()->{synchronized(MonitorCollector.this){
                 if(target!=handler || !scalarActive())return;
+                if(receivedAt<powerEdgeAtNs){traceEdge("STALE_POWER_EVENT_IGNORED","receivedNs="+receivedAt);return;}
                 boolean sourceChanged=sources.power.sourceEvent(name,event.get("POWER_SUPPLY_ONLINE"),
                         event.get("POWER_SUPPLY_PRESENT"),event.get("POWER_SUPPLY_REAL_TYPE"),event.get("POWER_SUPPLY_USB_TYPE"));
-                if(sourceChanged){sources.power.sourceChanged();powerRecheckPending=true;}
+                if(sourceChanged){powerEdgeAtNs=receivedAt;sources.power.sourceChanged();powerRecheckPending=true;}
                 boolean measurement=sources.power.measurementEvent(name,current);
                 if(!sourceChanged && !measurement)return;
                 traceEdge(sourceChanged?"POWER_SUPPLY_SOURCE_EVENT":"POWER_SUPPLY_MEASUREMENT_EVENT",
@@ -67,6 +69,7 @@ class MonitorCollector {
     private boolean scheduled;
     private Runnable clock;
     private int expectedPowerPlugged=-1;
+    private long powerEdgeAtNs;
     private boolean powerRecheckPending;
     private boolean powerWakePending;
     private long edgeTraceUntil,edgeTraceDropped;
@@ -344,6 +347,7 @@ class MonitorCollector {
     synchronized void invalidatePower(boolean connected){
         // Replace the pending edge on the existing clock; never retain pre-edge watts.
         expectedPowerPlugged=connected?1:0;
+        powerEdgeAtNs=SystemClock.elapsedRealtimeNanos();
         long receivedAt=SystemClock.elapsedRealtime();
         powerRecheckPending=true;
         sources.power.edge(connected);
@@ -366,7 +370,7 @@ class MonitorCollector {
                 expectedPowerPlugged==0&&plugged==0&&status==3&&watts>=0;
     }
     synchronized void onBatteryStateChanged(Intent battery){
-        if(battery==null||(expectedPowerPlugged==-1&&!sources.power.pending()&&!edgeTraceActive()))return;
+        if(battery==null||!scalarActive())return;
         int plugged=battery.getIntExtra(BatteryManager.EXTRA_PLUGGED,-1);
         int status=battery.getIntExtra(BatteryManager.EXTRA_STATUS,-1);
         int voltage=battery.getIntExtra(BatteryManager.EXTRA_VOLTAGE,-1);
@@ -376,7 +380,7 @@ class MonitorCollector {
                 +" voltageMv="+voltage+" currentUa="+current+" expectedPlugged="+expectedPowerPlugged);
         // Retain an unresolved discharge edge until the existing strict source is valid.
         // A later current-only fact wakes this clock once, including after the bounded window.
-        if(powerWakePending||!scalarActive()||!(sources.power.changedCurrent(current)||powerEdgeSettled(plugged,status,
+        if(powerWakePending||!scalarActive()||!(sources.power.changedCurrent(current)||expectedPowerPlugged!=-1&&powerEdgeSettled(plugged,status,
                 MonitorSources.batteryWatts(plugged,status,voltage,current))))return;
         powerWakePending=true;
         wakePower(false); // Same worker, sticky-battery reader and snapshot authority.
@@ -501,6 +505,7 @@ class MonitorCollector {
             traceEdge("SAMPLE_END","plugged="+plugged+" batteryStatus="+batteryStatus
                     +" voltageMv="+milliVolts+" currentUa="+microAmps
                     +" batteryNetValidity="+powerDetails.get("batteryNetValidity")+" batteryNetPowerW="+powerDetails.get("batteryNetPowerW")
+                    +" netSource="+powerDetails.get("batteryNetSource")+" netCurrentUa="+powerDetails.get("batteryNetCurrentUa")
                     +" inputPowerValidity="+powerDetails.get("inputPowerValidity")+" inputPowerW="+powerDetails.get("inputPowerW")
                     +" powerValidity="+(power<0?"UNAVAILABLE":"VALID")+" powerW="+power);
             // Only a completed sample proves pipeline recovery. Expected lack of demand or

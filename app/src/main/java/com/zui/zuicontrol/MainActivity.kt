@@ -48,6 +48,8 @@ class MainActivity : Activity() {
     private fun rebindControl(control:Any){controlBindings[control]?.toList()?.forEach{it()};OwnerRenderTrace.event("CONTROL_PRESENTATION_REBOUND",when(control){refresh->"refresh";mode->"uperf";else->"overlay"})}
     private val cpuSparklines=OwnerCpuSparklineLoader()
     private var ownerModal: OwnerModal? = null
+    private var batteryPowerBinding: (() -> Unit)? = null
+    private var batteryHealthBinding: (() -> Unit)? = null
     private var ownerQuiet: OwnerMeter? = null
     private var ownerPower: OwnerMeter? = null
     private var ownerSwitch: View? = null
@@ -301,6 +303,7 @@ class MainActivity : Activity() {
         session.ownedExternalFlow=false
         FrontendPackages.observe(applicationContext,inventoryChanged)
         render();ControlsState.observe(controlsChanged); MonitorPresentation.observe(monitorChanged); load()
+        if(session.batteryWindow.isOpen)powerDialog()
         if(session.section=="monitor" && recordThreads && selectedThread==null)selectedRecord?.let{record->
             val targets=mutableListOf<Pair<String,OwnerCpuSparklineView>>()
             fun visit(view:View){if(view is OwnerCpuSparklineView)targets+=view.tag.toString() to view;else if(view is ViewGroup)for(i in 0 until view.childCount)visit(view.getChildAt(i))}
@@ -312,11 +315,12 @@ class MainActivity : Activity() {
     override fun onPause() {
         visible = false; session.onChanged = null;session.onReconciled=null; session.onControlsChanged = null; ControlsState.remove(controlsChanged)
         MonitorPresentation.remove(monitorChanged)
+        session.batteryWindow.changed=null
         FrontendPackages.remove(inventoryChanged)
         handler.removeCallbacks(recordClock); handler.removeCallbacks(coreTicker); super.onPause()
         cpuSparklines.cancel()
     }
-    override fun onDestroy() { cpuSparklines.close(); super.onDestroy() }
+    override fun onDestroy() { if(!isChangingConfigurations)session.batteryWindow.close();cpuSparklines.close(); super.onDestroy() }
     private val loading = mutableSetOf<String>()
     /** Each operation consumes its own transport result and presents on the main thread. */
     private fun <T,R> read(name:String, shared:Boolean=false, accept:()->Boolean={true}, finished:()->Unit={}, failed:(Throwable)->Unit={session.error=it.message.orEmpty();if(visible)render()}, fetch:()->T, parse:(T)->R, present:(R)->Unit) {
@@ -486,11 +490,13 @@ class MainActivity : Activity() {
         powerUnit?.visibility=if(p.isFinite())View.VISIBLE else View.GONE
         powerReason?.text = if(!fresh)"等待数据" else if(!p.isFinite())LivePower.reason(monitor) else if(p>0)"净充入" else if(p<0)"净放出" else "净电流为零"
         powerReason?.contentDescription="电池净功率，正为充入，负为放出；${LivePower.reason(monitor)}"
+        OwnerRenderTrace.event("POWER_HOME_BOUND","sample=${monitor.optLong("sample")};elapsed=${monitor.optLong("elapsedMs")};net=${LivePower.number(p)}")
         overlayButton?.text = if (this@MainActivity.overlay.displayed) "已开启" else "已关闭"
         recordBanner?.visibility = if (monitor.optString("recordState") == "RECORDING") View.VISIBLE else View.GONE
         val active = (0 until records.length()).map { records.getJSONObject(it) }.firstOrNull { it.optBoolean("active") }
         val elapsed = if (active != null) active.optLong("duration") + (SystemClock.elapsedRealtime() - recordsReadAt).coerceAtLeast(0) else 0
         recordLabel?.text = "正在记录：${active?.optString("label") ?: "当前应用"} · ${duration(elapsed)}"
+        batteryPowerBinding?.invoke()
     }
     private fun createShell() {
         check(!::physicalHost.isInitialized)
@@ -1752,7 +1758,6 @@ class MainActivity : Activity() {
                     listOf("Release" to "releaseVersion","Build" to "sourceBuild","Integration" to "integrationSchema","AppPolicy" to "appPolicySchema","ZUIopt" to "zuioptSchema").forEach{(title,key)->addView(owner.formRow(title,note(value(caps,key).ifEmpty{"暂不可用"})))}
                 },gap())
                 detail.addView(card().apply{
-                    addView(actionRow("电池健康与容量","只读驱动容量与来源；不执行校准或强制充放电"){batteryHealthDialog()})
                 },gap())
                 detail.addView(card().apply{addView(actionRow("使用帮助","功能说明与监测记录指引"){monitorGuidance()})},gap())
             }
@@ -1760,33 +1765,54 @@ class MainActivity : Activity() {
     }
     private var themeFramePending=false
     private fun powerDialog() {
-        val fresh=monitor.optLong("elapsedMs")>0 && SystemClock.elapsedRealtime()-monitor.optLong("elapsedMs") in 0..monitor.optLong("ttlMs",3500)
-        val body=owner.column().apply {
-            addView(note("电池净功率：${LivePower.number(if(fresh)LivePower.value(monitor) else Double.NaN)} W\n正为充入、负为放出；${if(fresh)LivePower.reason(monitor) else "快照已过期"}"))
-            addView(note("外部输入：${LivePower.number(if(fresh)LivePower.value(monitor,true) else Double.NaN)} W\n${if(fresh)LivePower.reason(monitor,true) else "快照已过期"}"))
-            addView(note("输入测量源：${monitor.optString("inputPowerSupply").ifEmpty{"不可读"}}。由同一通路的电压、电流读数相乘；不是充电器额定值或限流值。"))
-            addView(note("读数没有硬件测量时间戳；读取时刻不能证明传感器刚更新。电池净功率包含电池充放电，不等于插电时的整机耗电。"))
-            addView(note("历史录制的功耗仍只表示未插电放电功率，历史含义不变。"))
+        val window=session.batteryWindow
+        if(batteryPowerBinding!=null && ownerModal?.isOpen==true){window.changed=batteryHealthBinding;batteryHealthBinding?.invoke();return}
+        val started=window.open();val id=window.requestId
+        val net=note("");val input=note("");val healthText=note("");val healthSource=note("");val powerSource=note("")
+        val sources=owner.column().apply{
+            visibility=View.GONE;addView(powerSource);addView(healthSource)
+            addView(note("功率无硬件测量时间戳。净充入/放出不是插电整机耗电；历史录制仍只表示未插电放电功率。"))
+            addView(note("公开参考：典型6550 / 额定6400 mAh，非实测容量。不乘2；health GOOD不代表容量100%。"))
         }
-        ownerModal?.open("功率与来源","同一 Monitor 快照 · 不额外采样",460,body,listOf(owner.button("关闭"){ownerModal?.close()}))
-    }
-    private fun batteryHealthDialog() {
-        read("batteryHealth",accept={visible && session.section=="settings"},
-            fetch={PerformanceMonitor.command("batteryHealth","")},parse={text->
-                check(text.startsWith("ok=1\n")){"当前后端未提供电池健康读数"}
-                JSONObject(text.lineSequence().first{it.startsWith("batteryHealth=")}.substringAfter('='))
-            }) { health ->
-            fun value(key:String,scale:Double=1.0):String = if(health.isNull(key))"不可读" else String.format(java.util.Locale.ROOT,"%.1f",health.getDouble(key)/scale)
-            val age=((SystemClock.elapsedRealtime()-health.optLong("readElapsedMs"))/1000).coerceAtLeast(0)
-            val body=owner.column().apply{
-                addView(note("FCC ${value("chargeFullUah",1000.0)} mAh · 驱动设计 ${value("chargeFullDesignUah",1000.0)} mAh"))
-                addView(note("同口径 FCC/design：${value("fccDesignPercent")}% · 驱动估计"))
-                addView(note("驱动另报 SOH：${value("driverSohPercent")}% · 不与上项混用"))
-                addView(note("循环次数：${value("cycleCount")} · 读取于 ${age} 秒前"))
-                addView(note("公开参考：典型6550 mAh / 额定6400 mAh；不是本次实测容量。"))
-                addView(note("来源：${health.optString("source")} · ${health.optString("unit")}\n${if(health.isNull("fccDesignPercent"))"同口径容量数据不足" else "同一逻辑电池驱动估计，非独立容量实测"}\n物理电芯口径尚未验证，不乘2。驱动无硬件测量时间戳，health GOOD不等于容量100%。"))
+        val body=owner.column().apply{
+            addView(net);addView(input);addView(healthText)
+            addView(owner.button("来源与限制"){sources.visibility=if(sources.visibility==View.GONE)View.VISIBLE else View.GONE})
+            addView(sources)
+        }
+        batteryPowerBinding={
+            val fresh=monitor.optLong("elapsedMs")>0 && SystemClock.elapsedRealtime()-monitor.optLong("elapsedMs") in 0..monitor.optLong("ttlMs",3500)
+            fun watts(external:Boolean)=LivePower.number(if(fresh)LivePower.value(monitor,external) else Double.NaN)
+            net.text="电池净功率：${watts(false)} W · 正为充入、负为放出\n${if(fresh)LivePower.reason(monitor) else "快照已过期"}"
+            input.text="外部输入：${watts(true)} W · ${if(fresh)LivePower.reason(monitor,true) else "快照已过期"}"
+            powerSource.text="输入通路：${monitor.optString("inputPowerSupply").ifEmpty{"不可读"}}；同通路电压×电流，非额定值或限流值。"
+            OwnerRenderTrace.event("BATTERY_WINDOW_POWER","request=$id;sample=${monitor.optLong("sample")};elapsed=${monitor.optLong("elapsedMs")};net=${watts(false)};input=${watts(true)}")
+        }
+        batteryHealthBinding={
+            val health=window.health
+            healthText.text=if(health==null){if(window.pending)"正在读取本次健康快照…" else "本次健康读取失败：${window.error}"}else{
+                fun value(key:String,scale:Double=1.0)=if(health.isNull(key))"不可读" else String.format(Locale.ROOT,"%.1f",health.getDouble(key)/scale)
+                val readTime=Date(System.currentTimeMillis()-(SystemClock.elapsedRealtime()-health.optLong("readElapsedMs")).coerceAtLeast(0))
+                val cycles=if(health.isNull("cycleCount"))"不可读" else health.getLong("cycleCount").toString()
+                "FCC ${value("chargeFullUah",1000.0)} mAh · 驱动设计 ${value("chargeFullDesignUah",1000.0)} mAh\nFCC/design ${value("fccDesignPercent")}% · 另报SOH ${value("driverSohPercent")}%\n循环次数：$cycles · 本次读取 ${DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.MEDIUM).format(readTime)}"
             }
-            ownerModal?.open("电池健康与容量","保留原始口径；慢变化字段最多五分钟读取一次",460,body,listOf(owner.button("关闭"){ownerModal?.close()}))
+            healthSource.text="健康来源：${health?.optString("source") ?: "等待本次读取"} · 同一逻辑电池驱动估计，非独立容量实测；物理电芯口径未验证。窗口内不重复读取。"
+        }
+        ownerModal?.open("电池与供电","实时功率 · 本次单次健康快照",520,body,listOf(owner.button("关闭"){ownerModal?.close()}),onDismiss={
+            window.close();batteryPowerBinding=null;batteryHealthBinding=null;if(visible)render()
+        })
+        window.changed=batteryHealthBinding;batteryPowerBinding?.invoke();batteryHealthBinding?.invoke()
+        if(started){
+            handler.postDelayed({window.complete(id,Result.failure(IllegalStateException("读取超时，请关闭后重新打开")))},5000)
+            try{session.directRead{
+                if(window.accepts(id)){
+                    val result=runCatching{
+                        val text=PerformanceMonitor.command("batteryHealth","")
+                        check(text.startsWith("ok=1\n")){"当前后端未提供电池健康读数"}
+                        JSONObject(text.lineSequence().first{it.startsWith("batteryHealth=")}.substringAfter('='))
+                    }
+                    handler.post{window.complete(id,result)}
+                }
+            }}catch(error:java.util.concurrent.RejectedExecutionException){window.complete(id,Result.failure(error))}
         }
     }
     private fun theme(theme: String) {

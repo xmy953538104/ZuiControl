@@ -20,6 +20,7 @@ internal class FrontendSession(val gateway: FrontendGateway, val userId: Int,
         else->false
     }
     var settingsModule = 0
+    val batteryWindow = BatteryWindow()
     fun sameContext(section: String, module: Int = settingsModule) =
         this.section == section && (section == "settings" || selected.isEmpty()) &&
             (section != "settings" || settingsModule == module)

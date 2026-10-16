@@ -7,12 +7,10 @@ import static com.zui.server.control.PolicyJson.*;
 
 /** TB321FU logical battery supply. Read-only; owned by the existing Monitor collector. */
 final class MonitorPower {
-    static final long HEALTH_TTL_MS = 300000;
     private final File supplies;
-    private Map<String,Object> health;
-    private long healthReadAt = -1;
     long scalarReads, healthReads;
     private long lastCurrent = Long.MIN_VALUE, edgeCurrent = Long.MIN_VALUE;
+    private long lastHealthCurrent = Long.MIN_VALUE;
     private boolean awaitingCurrent;
     private int expectedConnected = -1;
     private final java.util.Map<String,Long> inputReadings=new java.util.HashMap<>(),edgeInputs=new java.util.HashMap<>();
@@ -58,7 +56,7 @@ final class MonitorPower {
         beginSourceUpdate();
     }
     boolean pending(){return expectedConnected>=0 || awaitingCurrent;}
-    boolean changedCurrent(long ua){return pending() && ua!=Long.MIN_VALUE && ua!=lastCurrent;}
+    boolean changedCurrent(long ua){return ua!=Long.MIN_VALUE && ua!=lastHealthCurrent;}
 
     static Double netWatts(int plugged,int status,int mv,long ua) {
         if(plugged<0 || status<2 || status>5 || mv<2000 || mv>6000 || ua==Long.MIN_VALUE
@@ -69,6 +67,14 @@ final class MonitorPower {
     }
 
     Map<String,Object> sample(int plugged,int status,int mv,long ua,long now) {
+        if(ua!=Long.MIN_VALUE)lastHealthCurrent=ua;
+        Long directUa=number("battery","current_now"),directUv=number("battery","voltage_now");
+        String directStatus=read("battery","status");
+        int statusIndex=java.util.Arrays.asList("Unknown","Charging","Discharging","Not charging","Full").indexOf(directStatus);
+        boolean direct=directUa!=null && directUv!=null && statusIndex>0
+                && directUv>=2000000 && directUv<=6000000 && directUa>=-30000000 && directUa<=30000000;
+        // Read the logical supply in this sample; Health HAL current can lag a genuine notification.
+        if(direct){ua=directUa;mv=(int)(directUv/1000);status=statusIndex+1;}
         boolean connectionMatches=expectedConnected<0 || (plugged>0?1:plugged)==expectedConnected;
         // A post-edge driver notification can confirm an unchanged read, never an ADC timestamp.
         boolean notified=ua!=Long.MIN_VALUE && ua==notifiedCurrent;
@@ -106,15 +112,18 @@ final class MonitorPower {
             }
         }
         if(connectionMatches && !awaitingCurrent)expectedConnected=-1;
-        return map("batteryNetPowerW",net,"batteryNetValidity",batteryValidity,
+        Map<String,Object> result=map("batteryNetPowerW",net,"batteryNetValidity",batteryValidity,
                 "batteryNetSign","POSITIVE_CHARGING_NEGATIVE_DISCHARGING",
-                "batteryNetSource","BATTERY_LOGICAL_SUPPLY_MV_UA","batteryNetReadElapsedMs",now,
+                "batteryNetSource",direct?"BATTERY_LOGICAL_SYSFS_UV_UA":"BATTERY_HEALTH_HAL_MV_UA","batteryNetReadElapsedMs",now,
+                "batteryNetCurrentUa",ua,"batteryNetVoltageMv",mv,"batteryNetStatus",status,
                 "batteryNetObservation",notified?"DRIVER_EVENT_MATCH_TIME_UNKNOWN":"READ_TIME_ONLY_MEASUREMENT_TIME_UNKNOWN",
                 "batteryNetSourceMeasurementTime",null,"batteryNetTimestampAvailable",false,
                 "inputPowerW",input,"inputPowerValidity",inputValidity,"inputPowerSupply",supply,
                 "inputVoltageUv",uv,"inputCurrentUa",inputUa,"inputProtocol",protocol,"inputPowerReadElapsedMs",now,
                 "inputProtocolSource","/sys/class/power_supply/usb/real_type","inputProtocolScope","PLATFORM_SHARED_SINGLE_INPUT_ONLY",
                 "inputPowerSourceMeasurementTime",null,"inputPowerTimestampAvailable",false);
+        notifiedCurrent=Long.MIN_VALUE;notifiedInputs.clear();
+        return result;
     }
 
     MonitorPower() { this(new File("/sys/class/power_supply")); }
@@ -135,12 +144,11 @@ final class MonitorPower {
         return full*100.0/design;
     }
     Map<String,Object> health(long now) {
-        if (health!=null && now>=healthReadAt && now-healthReadAt<HEALTH_TTL_MS) return health;
         healthReads++;
         Long full=number("battery","charge_full"), design=number("battery","charge_full_design");
         Long cycles=number("battery","cycle_count"), soh=number("battery","soh");
         Double percent=ratio(full,design);
-        health=map("schema",1,"readElapsedMs",now,"ttlMs",HEALTH_TTL_MS,
+        return map("schema",1,"readElapsedMs",now,"readPolicy","EXPLICIT_WINDOW_OPEN_ONCE",
                 "source","/sys/class/power_supply/battery","unit","uAh",
                 "chargeFullUah",full,"chargeFullDesignUah",design,
                 "fccDesignPercent",percent,"confidence",percent==null?"INSUFFICIENT_DATA":"DRIVER_ESTIMATE_SAME_LOGICAL_SUPPLY",
@@ -150,7 +158,5 @@ final class MonitorPower {
                 "referenceRetentionQualified",false,"physicalCellCountQualified",false,
                 "sourceMeasurementTime",null,"sourceTimestampAvailable",false,
                 "capacityScaling",1,"independentCapacityMeasurement",false);
-        healthReadAt=now;
-        return health;
     }
 }

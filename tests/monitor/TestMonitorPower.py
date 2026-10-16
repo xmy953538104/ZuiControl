@@ -1,4 +1,4 @@
-"""Real sysfs reader against bounded temporary files: units, missing data and TTL."""
+"""Real sysfs reader: explicit health reads, units, missing data and power edges."""
 from pathlib import Path
 import subprocess,tempfile
 ROOT=Path(__file__).resolve().parents[2]
@@ -16,15 +16,15 @@ public class MonitorPowerTest {
    MonitorPower reader=new MonitorPower(root.toFile());Map<String,Object> first=reader.health(100);
    need(Math.abs((Double)first.get("fccDesignPercent")-92.30769231)<0.00001);
    need(first.get("driverSohPercent").equals(95L));need(first.get("capacityScaling").equals(1));
-   put(battery,"charge_full","3200000");need(reader.health(101)==first&&reader.healthReads==1);
-   Map<String,Object> next=reader.health(300100);need(next!=first&&next.get("chargeFullUah").equals(3200000L));
+   put(battery,"charge_full","3200000");Map<String,Object> next=reader.health(101);
+   need(next!=first&&next.get("chargeFullUah").equals(3200000L)&&reader.healthReads==2);
    need((Double)next.get("fccDesignPercent")<50);need(!((Boolean)next.get("physicalCellCountQualified")));
    put(battery,"charge_full_design","3200000");need((Double)reader.health(600100).get("fccDesignPercent")==100);
    Files.delete(battery.resolve("charge_full"));need(reader.health(900100).get("fccDesignPercent")==null);
    put(battery,"charge_full","bad");need(reader.health(1200100).get("chargeFullUah")==null);
    need(MonitorPower.ratio(Long.MAX_VALUE,1L)==null&&MonitorPower.ratio(0L,6550000L)==null);
    need(MonitorPower.ratio(6600000L,6550000L)>100); // do not silently clamp driver over-design estimates
-   need(reader.health(1)!=next);need(reader.healthReads==6); // elapsed-clock reset invalidates TTL
+   need(reader.health(1)!=next);need(reader.healthReads==6); // only explicit calls read, irrespective of age
    need(MonitorPower.netWatts(0,3,4000,1000000)==-4);
    need(MonitorPower.netWatts(1,2,4000,-1000000)==4);
    need(MonitorPower.netWatts(1,5,4000,0)==0);
@@ -83,8 +83,16 @@ public class MonitorPowerTest {
    need(reader.sample(1,5,4000,0,26).get("batteryNetPowerW")==null);
    reader.edge(false);reader.sample(0,3,4000,1000000,27);
    need(!reader.measurementEvent("usb","0")); // disconnected input cannot keep waking the producer
+   put(battery,"status","Charging");put(battery,"voltage_now","4100000");put(battery,"current_now","-250000");
+   Map<String,Object> direct=reader.sample(1,3,4000,1000000,28);
+   need(direct.get("batteryNetSource").equals("BATTERY_LOGICAL_SYSFS_UV_UA"));
+   need(Math.abs((Double)direct.get("batteryNetPowerW")-1.025)<0.00001);
+   need(direct.get("batteryNetCurrentUa").equals(-250000L));
+   put(battery,"current_now","bad");
+   need(reader.sample(1,2,4000,-1000000,29).get("batteryNetSource").equals("BATTERY_HEALTH_HAL_MV_UA"));
+   need(reader.changedCurrent(-2000000)); // settled current-only Health delivery must remain observable
    for(Path dir:new Path[]{usb,other}){for(Path p:Files.newDirectoryStream(dir))Files.delete(p);Files.delete(dir);}
-   System.out.println("MONITOR_HEALTH_UNITS_RAW_SOURCE_NULL_AND_TTL=PASS");
+   System.out.println("MONITOR_HEALTH_EXPLICIT_READ_UNITS_RAW_SOURCE_NULL=PASS");
    System.out.println("POWER_SIGN_ZERO_EDGE_PORT_SELECTION_PROTOCOL_AND_NULL=PASS");
   }finally{for(Path p:Files.newDirectoryStream(battery))Files.delete(p);Files.delete(battery);Files.delete(root);}
  }

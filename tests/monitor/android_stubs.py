@@ -25,7 +25,7 @@ stubs = {
         public boolean postDelayed(Runnable r,long delay){if(delay!=3000)throw new AssertionError();pending.add(r);return true;}
         public void removeCallbacksAndMessages(Object o){pending.clear();}
         public static void next(){pending.remove(0).run();}}''',
-    'android/os/SystemClock.java': 'package android.os; public class SystemClock {static long t; public static long elapsedRealtime(){return t+=3000;}}',
+    'android/os/SystemClock.java': 'package android.os; public class SystemClock {static long t; public static long elapsedRealtime(){return t+=3000;}public static long elapsedRealtimeNanos(){return t*1000000;}}',
     'android/os/BatteryManager.java': 'package android.os; public class BatteryManager {public static final String EXTRA_TEMPERATURE="temp";}',
     'android/system/OsConstants.java': 'package android.system; public class OsConstants {public static final int _SC_CLK_TCK=1;}',
     'android/system/Os.java': 'package android.system; public class Os {public static long sysconf(int c){return 100;}}',

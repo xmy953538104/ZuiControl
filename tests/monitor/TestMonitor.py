@@ -9,7 +9,7 @@ stubs['org/json/JSONObject.java']=stubs['org/json/JSONObject.java'].replace('pub
 stubs.update({
  'android/os/UserHandle.java':'package android.os;public class UserHandle {public final int id;private UserHandle(int id){this.id=id;}public static UserHandle getUserHandleForUid(int uid){return new UserHandle(uid/100000);}}',
  'android/os/PowerManager.java':'package android.os;public class PowerManager {public static boolean interactive=true;public boolean isInteractive(){return interactive;}}',
- 'android/os/SystemClock.java':'package android.os;public class SystemClock {public static long now;public static long elapsedRealtime(){return now;}}',
+ 'android/os/SystemClock.java':'package android.os;public class SystemClock {public static long now;public static long elapsedRealtime(){return now;}public static long elapsedRealtimeNanos(){return now*1000000;}}',
  'android/os/Handler.java':'''package android.os;import java.util.*;public class Handler {
  public static final List<Runnable> pending=new ArrayList<>();public Handler(Object o){}
  public boolean post(Runnable r){pending.add(r);return true;}

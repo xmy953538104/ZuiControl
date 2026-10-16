@@ -10,7 +10,7 @@ class RuntimeR6Scope(unittest.TestCase):
     text=(ROOT/row['path']).read_text(encoding='utf8')
     previous=subprocess.run(['git','show',RUNTIME_R6['baseHead']+':'+row['path']],cwd=ROOT,capture_output=True)
     self.assertEqual(reverse_runtime_r6(row['path'],text),previous.stdout.decode().replace('\r\n','\n') if previous.returncode==0 else '')
-    with self.assertRaisesRegex(AssertionError,'(?:R6|POST_BASELINE) exact authorized bytes'):reverse_runtime_r6(row['path'],text+'\n// outside scope\n')
+    with self.assertRaisesRegex(AssertionError,'(?:R6|POST_BASELINE|POWER_PORT_R3) exact authorized bytes'):reverse_runtime_r6(row['path'],text+'\n// outside scope\n')
  def test_historical_manifests(self):
   for path in (ROOT/'tests/zuiopt').glob('*delta.json'):
    if path.name=='runtime_r6_delta.json':continue

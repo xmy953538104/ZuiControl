@@ -292,6 +292,7 @@ class PerformanceMonitor(private val context: Context,
         // Both consumers receive the exact same scalar sample, including OFF notifications.
         displayPower = LivePower.value(next, positions.optString("powerPresentation")=="INPUT")
         snapshot = next
+        OwnerRenderTrace.event("POWER_CONSUMER","producer=${next.optString("producerEpoch")};sample=${next.optLong("sample")};elapsed=${next.optLong("elapsedMs")};net=${LivePower.number(LivePower.value(next))}")
         MonitorPresentation.publish(next)
         if (modeChanged) onModeChanged()
         circle = pendingShape ?: next.optBoolean("circle", circle)

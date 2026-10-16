@@ -79,6 +79,15 @@ public class PowerEdgeTest {
   }
  }
  public static void main(String[] args)throws Exception {
+  Client healthClient=new Client();MonitorCollector healthCollector=begin(false,healthClient);
+  long healthBefore=metric(healthCollector,"monitorHealthReads"),healthStart=SystemClock.now;
+  while(SystemClock.now-healthStart<=305000)Handler.next();
+  check(metric(healthCollector,"monitorHealthReads")==healthBefore,"five minutes of power ticks never request health");
+  check(healthCollector.command("batteryHealth",0,"").startsWith("ok=1"),"explicit health command");
+  Handler.next();check(metric(healthCollector,"monitorHealthReads")==healthBefore+1,"power tick does not reread health");
+  healthCollector.command("batteryHealth",0,"");
+  check(metric(healthCollector,"monitorHealthReads")==healthBefore+2,"explicit reopen reads within old TTL");
+  healthCollector.unregister(healthClient);
   for(boolean full:new boolean[]{false,true})for(boolean connected:new boolean[]{false,true})
    for(long delay:new long[]{200,600,2500})delayed(full,connected,delay);
   Client client=new Client();MonitorCollector c=begin(false,client);
@@ -137,6 +146,14 @@ public class PowerEdgeTest {
   Handler.next();check(((Number)snapshot(source).get("batteryNetPowerW")).doubleValue()>0&&Handler.delays.get(0)==5000,"post-zero current updated, then normal cadence");
   observer.onUEvent(new UEventObserver.UEvent(eventFacts));Handler.next();
   check(Handler.delays.get(0)==5000,"unchanged settled current event adds no sample");
+  SystemClock.now+=500;BatteryManager.currentUa=-90000;event(source);
+  check(Handler.delays.get(0)==0,"current-only Health broadcast after accepted zero wakes the producer");
+  Handler.next();check(((Number)snapshot(source).get("batteryNetCurrentUa")).longValue()==-90000,"current-only Health value reaches snapshot");
+  event(source);check(Handler.delays.get(0)==5000,"unchanged settled Health broadcast adds no sample");
+  eventFacts.put("POWER_SUPPLY_CURRENT_NOW","0");observer.onUEvent(new UEventObserver.UEvent(eventFacts));
+  SystemClock.now+=1;source.invalidatePower(true);
+  Handler.next();if(Handler.delays.get(0)==0)Handler.next();
+  check(!snapshot(source).get("batteryNetObservation").equals("DRIVER_EVENT_MATCH_TIME_UNKNOWN"),"old queued notification cannot qualify a newer edge");
   long burstSamples=metric(source,"monitorSamples");
   Map<String,String> firstEdge=new HashMap<>(),lastEdge=new HashMap<>();
   firstEdge.put("POWER_SUPPLY_NAME","usb");firstEdge.put("POWER_SUPPLY_ONLINE","0");
@@ -271,8 +288,6 @@ public class ZuiControlService {
  }
 }'''.replace('\n METHODS\n','\n'+methods+'\n').replace('actualUserPresent(){ROUTE}','actualUserPresent(){'+user_present+'}')
 stubs['com/zui/server/control/ZuiControlService.java']=fixture
-stubs['android/os/SystemClock.java']=stubs['android/os/SystemClock.java'].replace(
- 'public static long elapsedRealtime(){return now;}','public static long elapsedRealtime(){return now;}public static long elapsedRealtimeNanos(){return now*1000000;}')
 with tempfile.TemporaryDirectory(prefix='service-unlock-global-') as tmp:
  files=[]
  for name,text in stubs.items():

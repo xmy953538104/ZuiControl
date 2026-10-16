@@ -55,8 +55,23 @@ assert POWER_PORT_R2['phase']=='ZUICONTROL_POWER_PORT_R2_ACTUAL_EVIDENCE_AND_FIX
 assert POWER_PORT_R2['baseHead']=='1f67fc0f1476e728a6a9e9fe8eac6062fb3b83d1'
 assert set(POWER_PORT_R2['allowedPaths'])=={'framework_patch/src/services/com/zui/server/control/'+n for n in ('MonitorCollector.java','MonitorPower.java')}
 assert set(POWER_PORT_R2['allowedPaths'])=={r['path'] for r in POWER_PORT_R2['files']}
+POWER_PORT_R3=json.loads((ROOT/'tests/power_port_r3_delta.json').read_text(encoding='utf8'))
+assert POWER_PORT_R3['phase']=='ZUICONTROL_POWER_PORT_R3_ON_DEMAND_AND_DELTA_REVIEW'
+assert POWER_PORT_R3['baseHead']=='64af33c72f2ca3a4655ecb16d4b2e771d58e5bfb'
+POWER_PORT_R3_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('BatteryWindow.kt','FrontendSession.kt','MainActivity.kt','PerformanceMonitor.kt','ZuiControlQuickService.kt')}
+POWER_PORT_R3_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('MonitorCollector.java','MonitorPower.java')}
+POWER_PORT_R3_ALLOWED.add('app/src/test/java/com/zui/zuicontrol/BatteryWindowTest.kt')
+POWER_PORT_R3_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeR5Scope.py','TestRuntimeR6Scope.py')}
+assert set(POWER_PORT_R3['allowedPaths'])==POWER_PORT_R3_ALLOWED=={r['path'] for r in POWER_PORT_R3['files']}
 
 def reverse_response_battery(path,text):
+    delta=next((r for r in POWER_PORT_R3['files'] if r['path']==path),None)
+    if delta:
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('POWER_PORT_R3 exact authorized bytes',path)
+        for h in reversed(delta['hunks']):
+            assert text.count(h['after'])==1,('POWER_PORT_R3 exact hunk',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['beforeSha256'],('POWER_PORT_R3 preserved R2 base',path)
     delta=next((r for r in POWER_PORT_R2['files'] if r['path']==path),None)
     if delta:
         assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('POWER_PORT_R2 exact authorized bytes',path)
@@ -75,6 +90,11 @@ def reverse_response_battery(path,text):
 
 def reverse_response_battery_entries(current,*scopes):
     result=list(current)
+    for row in POWER_PORT_R3['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('POWER_PORT_R3 exact authorized source',row['path'])
+        result.remove(row['afterEntry'].encode())
+        if row['beforeEntry'] is not None:result.append(row['beforeEntry'].encode())
     for row in POWER_PORT_R2['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['afterEntry'].encode())==1,('POWER_PORT_R2 exact authorized source',row['path'])
