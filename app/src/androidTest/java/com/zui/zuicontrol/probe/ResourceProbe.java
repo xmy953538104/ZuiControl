@@ -84,8 +84,8 @@ public final class ResourceProbe extends Instrumentation {
                 if(Binder.getCallingUid()!=1000||(flags&IBinder.FLAG_ONEWAY)==0)return false;
                 if(code==2){
                     int position=data.dataPosition();data.enforceInterface("android.zui.IControlsSnapshotV2");
-                    String id=data.readString(),sha=data.readString();data.setDataPosition(position);
-                    int action=fault.take(id,sha);
+                    String id=data.readString(),sha=data.readString(),ack=data.readString();data.setDataPosition(position);
+                    int action=fault.take(id,sha,ack);
                     if(action!=0){
                         Log.i("R6Probe","ACK_FAULT uid="+Binder.getCallingUid()+" epoch="+subscriptionEpoch+" id="+id+" action="+action+" ns="+SystemClock.elapsedRealtimeNanos());
                         if(action==1)return true;

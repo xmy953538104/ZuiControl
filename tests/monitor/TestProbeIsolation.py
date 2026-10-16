@@ -23,10 +23,11 @@ with tempfile.TemporaryDirectory(prefix='zui-r5-ack-gate-') as directory:
     path=Path(directory);shutil.copyfile(source,path/source.name)
     (path/'GateTest.java').write_text('''package com.zui.zuicontrol.probe;
 public class GateTest {public static void main(String[] args){
- AckFaultGate gate=new AckFaultGate();String sha="a".repeat(64);if(gate.take("id",sha)!=0)throw new AssertionError();
+ AckFaultGate gate=new AckFaultGate();String sha="a".repeat(64),ack="id|done|policy|OK";if(gate.take("id",sha,ack)!=0)throw new AssertionError();
  for(int action:new int[]{1,2}){gate.arm("id",sha,action);
-  if(gate.take("wrong",sha)!=0||gate.take("id","b".repeat(64))!=0||gate.consumed())throw new AssertionError();
-  if(gate.take("id",sha)!=action||!gate.consumed()||gate.take("id",sha)!=0)throw new AssertionError();}
+  if(gate.take("wrong",sha,ack)!=0||gate.take("id","b".repeat(64),ack)!=0||gate.consumed())throw new AssertionError();
+  for(String other:new String[]{null,"id|processing|policy|WAIT","wrong|done|policy|OK","id|done|other|OK","id|done|policy|OK|extra"})if(gate.take("id",sha,other)!=0||gate.consumed())throw new AssertionError();
+  if(gate.take("id",sha,ack)!=action||!gate.consumed()||gate.take("id",sha,ack)!=0)throw new AssertionError();}
  for(int invalid:new int[]{-1,0,3}){try{gate.arm("id",sha,invalid);throw new AssertionError();}catch(IllegalArgumentException expected){}}
  System.out.println("EXACT_ID_HASH_ONE_FAULT_THEN_PASS_THROUGH=PASS");}}
 ''',encoding='utf-8')
