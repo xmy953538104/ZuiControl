@@ -37,6 +37,26 @@ public final class ResourceProbe extends Instrumentation {
     private String subscribedSnapshot="";
     private final AckFaultGate fault=new AckFaultGate();
     private volatile boolean callbackRunning;
+    private final List<WeakReference<View>> watchedRoots=new ArrayList<>();
+    private final java.util.Set<Integer> watchedIds=new java.util.HashSet<>();
+    private void objectSnapshot(Activity activity)throws Exception{
+        JSONObject j=new JSONObject().put("event","RESOURCE_OBJECTS").put("boottime_ns",SystemClock.elapsedRealtimeNanos())
+            .put("pid",android.os.Process.myPid()).put("profileableByShell",activity.getApplicationInfo().isProfileableByShell())
+            .put("native_size",Debug.getNativeHeapSize()).put("native_alloc",Debug.getNativeHeapAllocatedSize()).put("native_free",Debug.getNativeHeapFreeSize())
+            .put("java_used",Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory()).put("natural_gc_count",Debug.getRuntimeStat("art.gc.gc-count"));
+        for(String name:new String[]{"detail","ownerHost"}){Object v=field(activity,name);if(v instanceof View){View root=(View)v;int id=System.identityHashCode(root);
+            if(watchedIds.add(id)&&watchedRoots.size()<96)watchedRoots.add(new WeakReference<>(root));j.put(name+"_identity",id);}}
+        Object modal=field(activity,"ownerModal");Object overlay=field(modal,"overlay");
+        if(overlay instanceof View){View view=(View)overlay;int id=System.identityHashCode(view);if(watchedIds.add(id)&&watchedRoots.size()<96)watchedRoots.add(new WeakReference<>(view));}
+        j.put("modal_open",overlay!=null);j.put("modal_host_children",((ViewGroup)field(activity,"ownerHost")).getChildCount());
+        Object pages=field(activity,"pageHost");j.put("page_children",((ViewGroup)pages).getChildCount());
+        for(String name:new String[]{"pageBindings","masterSelectionBindings","ownerControls","coreHealthBindings","controlBindings","loading"}){
+            Object value=field(activity,name);j.put(name,value instanceof Map?((Map<?,?>)value).values().stream().mapToInt(v->v instanceof java.util.Collection?((java.util.Collection<?>)v).size():1).sum():((java.util.Collection<?>)value).size());}
+        int alive=0,attached=0;for(WeakReference<View> ref:watchedRoots){View v=ref.get();if(v!=null){alive++;if(v.isAttachedToWindow())attached++;}}
+        j.put("watched",watchedRoots.size()).put("weak_alive",alive).put("weak_attached",attached).put("weak_cleared",watchedRoots.size()-alive);
+        Log.i("R6Probe",j.toString());
+    }
+
     @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
     @Override public void callActivityOnResume(Activity activity) {
         super.callActivityOnResume(activity); current = new WeakReference<>(activity);
@@ -143,6 +163,7 @@ public final class ResourceProbe extends Instrumentation {
     }
     @SuppressWarnings("unchecked") private void operation(String op) throws Exception {
         Activity activity=current.get();Context context=getTargetContext();
+        if("objects".equals(op)){objectSnapshot(activity);return;}
         if("ackContract".equals(op)){
             try{wrapCallback();
                 globalRefresh(subscribedSnapshot);

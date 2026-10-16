@@ -1,0 +1,26 @@
+{
+  "phase": "ZUICONTROL_R6_RESIDENCY_CAUSE_AND_REMAINING_SCOPE",
+  "baseHead": "5493fd44d25db343550029de4bad5cc795d5f510",
+  "allowedPaths": [
+    "app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java"
+  ],
+  "files": [
+    {
+      "path": "app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java",
+      "beforeSha256": "81475d28ee8daf096f1198646e69e6f2ef0faee87fb44a02229afc86bcf311c0",
+      "afterSha256": "93d9dcd8d26d6f7dd656e3acfcfbd97e71c1a2995a4e49308b82440e72c82090",
+      "beforeEntry": "100644 blob d5f38610977e43185e2fea107b0b5178236c6d9c\tapp/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java",
+      "afterEntry": "100644 blob abdc20c6676b99c5dbeb12a34165d95a31923487\tapp/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java",
+      "hunks": [
+        {
+          "before": "    private String subscribedSnapshot=\"\";\n    private final AckFaultGate fault=new AckFaultGate();\n    private volatile boolean callbackRunning;\n    @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }\n    @Override public void callActivityOnResume(Activity activity) {\n        super.callActivityOnResume(activity); current = new WeakReference<>(activity);\n",
+          "after": "    private String subscribedSnapshot=\"\";\n    private final AckFaultGate fault=new AckFaultGate();\n    private volatile boolean callbackRunning;\n    private final List<WeakReference<View>> watchedRoots=new ArrayList<>();\n    private final java.util.Set<Integer> watchedIds=new java.util.HashSet<>();\n    private void objectSnapshot(Activity activity)throws Exception{\n        JSONObject j=new JSONObject().put(\"event\",\"RESOURCE_OBJECTS\").put(\"boottime_ns\",SystemClock.elapsedRealtimeNanos())\n            .put(\"pid\",android.os.Process.myPid()).put(\"profileableByShell\",activity.getApplicationInfo().isProfileableByShell())\n            .put(\"native_size\",Debug.getNativeHeapSize()).put(\"native_alloc\",Debug.getNativeHeapAllocatedSize()).put(\"native_free\",Debug.getNativeHeapFreeSize())\n            .put(\"java_used\",Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory()).put(\"natural_gc_count\",Debug.getRuntimeStat(\"art.gc.gc-count\"));\n        for(String name:new String[]{\"detail\",\"ownerHost\"}){Object v=field(activity,name);if(v instanceof View){View root=(View)v;int id=System.identityHashCode(root);\n            if(watchedIds.add(id)&&watchedRoots.size()<96)watchedRoots.add(new WeakReference<>(root));j.put(name+\"_identity\",id);}}\n        Object modal=field(activity,\"ownerModal\");Object overlay=field(modal,\"overlay\");\n        if(overlay instanceof View){View view=(View)overlay;int id=System.identityHashCode(view);if(watchedIds.add(id)&&watchedRoots.size()<96)watchedRoots.add(new WeakReference<>(view));}\n        j.put(\"modal_open\",overlay!=null);j.put(\"modal_host_children\",((ViewGroup)field(activity,\"ownerHost\")).getChildCount());\n        Object pages=field(activity,\"pageHost\");j.put(\"page_children\",((ViewGroup)pages).getChildCount());\n        for(String name:new String[]{\"pageBindings\",\"masterSelectionBindings\",\"ownerControls\",\"coreHealthBindings\",\"controlBindings\",\"loading\"}){\n            Object value=field(activity,name);j.put(name,value instanceof Map?((Map<?,?>)value).values().stream().mapToInt(v->v instanceof java.util.Collection?((java.util.Collection<?>)v).size():1).sum():((java.util.Collection<?>)value).size());}\n        int alive=0,attached=0;for(WeakReference<View> ref:watchedRoots){View v=ref.get();if(v!=null){alive++;if(v.isAttachedToWindow())attached++;}}\n        j.put(\"watched\",watchedRoots.size()).put(\"weak_alive\",alive).put(\"weak_attached\",attached).put(\"weak_cleared\",watchedRoots.size()-alive);\n        Log.i(\"R6Probe\",j.toString());\n    }\n\n    @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }\n    @Override public void callActivityOnResume(Activity activity) {\n        super.callActivityOnResume(activity); current = new WeakReference<>(activity);\n"
+        },
+        {
+          "before": "    }\n    @SuppressWarnings(\"unchecked\") private void operation(String op) throws Exception {\n        Activity activity=current.get();Context context=getTargetContext();\n        if(\"ackContract\".equals(op)){\n            try{wrapCallback();\n                globalRefresh(subscribedSnapshot);\n",
+          "after": "    }\n    @SuppressWarnings(\"unchecked\") private void operation(String op) throws Exception {\n        Activity activity=current.get();Context context=getTargetContext();\n        if(\"objects\".equals(op)){objectSnapshot(activity);return;}\n        if(\"ackContract\".equals(op)){\n            try{wrapCallback();\n                globalRefresh(subscribedSnapshot);\n"
+        }
+      ]
+    }
+  ]
+}

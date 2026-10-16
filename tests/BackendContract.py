@@ -85,6 +85,12 @@ RESIDENCY_R5_ALLOWED.add('tests/monitor/TestOwnerEffects.py')
 assert RESIDENCY_R5['phase']=='ZUICONTROL_R5_NATIVE_RESIDENCY_CALLBACK_AND_POWER_CLOSEOUT' and RESIDENCY_R5['baseHead']=='00be2b28ce856d6b59555f1dd475caea3e1b53ec'
 assert set(RESIDENCY_R5['allowedPaths'])==RESIDENCY_R5_ALLOWED=={r['path'] for r in RESIDENCY_R5['files']}
 
+RESIDENCY_R6=json.loads((ROOT/'tests/residency_cause_r6_delta.json').read_text(encoding='utf8'))
+RESIDENCY_R6_ALLOWED={'app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java'}
+RESIDENCY_R6_ALLOWED|={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('MainActivity.kt','OwnerUi.kt','OwnerMasterList.kt','TunePageController.kt','ThreadPageController.kt','MonitorPageController.kt','SettingsPageController.kt')}
+assert RESIDENCY_R6['phase']=='ZUICONTROL_R6_RESIDENCY_CAUSE_AND_REMAINING_SCOPE' and RESIDENCY_R6['baseHead']=='5493fd44d25db343550029de4bad5cc795d5f510'
+assert set(RESIDENCY_R6['allowedPaths'])=={r['path'] for r in RESIDENCY_R6['files']} and set(RESIDENCY_R6['allowedPaths'])<=RESIDENCY_R6_ALLOWED
+
 # Exact local R1 build/fixture changes are separate from the public runtime ancestry.
 BASELINE_LOCAL={}
 for path,before,after in (
@@ -97,6 +103,13 @@ for path,before,after in (
     BASELINE_LOCAL[path]=(original,local)
 
 def reverse_response_battery(path,text):
+    delta=next((r for r in RESIDENCY_R6['files'] if r['path']==path),None)
+    if delta:
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('RESIDENCY_R6 exact authorized bytes',path)
+        for h in reversed(delta['hunks']):
+            assert text.count(h['after'])==1,('RESIDENCY_R6 exact hunk',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['beforeSha256'],('RESIDENCY_R6 preserved 5493 source',path)
     delta=next((r for r in RESIDENCY_R5['files'] if r['path']==path),None)
     if delta:
         assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('RESIDENCY_R5 exact authorized bytes',path)
@@ -138,6 +151,11 @@ def reverse_response_battery(path,text):
 
 def reverse_response_battery_entries(current,*scopes):
     result=list(current)
+    for row in RESIDENCY_R6['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('RESIDENCY_R6 exact authorized source',row['path'])
+        result.remove(row['afterEntry'].encode())
+        if row['beforeEntry'] is not None:result.append(row['beforeEntry'].encode())
     for row in RESIDENCY_R5['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['afterEntry'].encode())==1,('RESIDENCY_R5 exact authorized source',row['path'])
