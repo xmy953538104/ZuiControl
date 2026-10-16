@@ -116,7 +116,7 @@ with tempfile.TemporaryDirectory(prefix='zui-gpu-lifecycle-') as directory:
  p=Path(directory)
  for name,text in sources.items():(p/name).write_text(text,encoding='utf8')
  cp=os.pathsep.join(map(str,[stdlib,gson,*annotations]))
- cmd=[java,'-cp',os.pathsep.join(map(str,[*jars,*annotations])),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',cp,'-d',str(p/'classes'),*[str(APP/n) for n in ('FrontendSession.kt','FrontendTransport.kt','FrontendState.kt','GpuRanges.kt','ZuioptRuleModel.kt')],*map(str,p.glob('*.kt'))]
+ cmd=[java,'-cp',os.pathsep.join(map(str,[*jars,*annotations])),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',cp,'-d',str(p/'classes'),*[str(APP/n) for n in ('BatteryWindow.kt','FrontendSession.kt','FrontendTransport.kt','FrontendState.kt','GpuRanges.kt','ZuioptRuleModel.kt')],*map(str,p.glob('*.kt'))]
  result=subprocess.run(cmd,capture_output=True,text=True,encoding='utf8',errors='replace',timeout=60)
  assert result.returncode==0,result.stdout+result.stderr
  result=subprocess.run([java,'-cp',os.pathsep.join([str(p/'classes'),cp]),'com.zui.zuicontrol.HarnessKt'],capture_output=True,text=True,timeout=20)

@@ -11,7 +11,8 @@
     "framework_patch/src/services/com/zui/server/control/MonitorPower.java",
     "app/src/test/java/com/zui/zuicontrol/BatteryWindowTest.kt",
     "tests/zuiopt/TestRuntimeR5Scope.py",
-    "tests/zuiopt/TestRuntimeR6Scope.py"
+    "tests/zuiopt/TestRuntimeR6Scope.py",
+    "tests/monitor/TestGpuDraftLifecycle.py"
   ],
   "files": [
     {
@@ -76,22 +77,22 @@
     {
       "path": "app/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
       "beforeSha256": "5de367955de4c218fcbad8365897dbc88bb36f30f39499bcaf4655e3ee4c959e",
-      "afterSha256": "80827177b8905603ec029878ed687f4995b60e1cf954e5bafc41b33245789852",
+      "afterSha256": "236d2f7eb3e73254cedd2033d57222df72f2f52810a60f6576e7773adc1f0fc7",
       "beforeEntry": "100644 blob 11130e37d45b79f2dd9a5ce537e3da88e7d5e20d\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
-      "afterEntry": "100644 blob 28c9b1cbb4c575c48ecb8088fe9da6f6c2e37e07\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
+      "afterEntry": "100644 blob 402b74b183b22a224bd56cc3d849680bd6d61f53\tapp/src/main/java/com/zui/zuicontrol/PerformanceMonitor.kt",
       "hunks": [
         {
           "before": "        // Both consumers receive the exact same scalar sample, including OFF notifications.\n        displayPower = LivePower.value(next, positions.optString(\"powerPresentation\")==\"INPUT\")\n        snapshot = next\n        MonitorPresentation.publish(next)\n        if (modeChanged) onModeChanged()\n        circle = pendingShape ?: next.optBoolean(\"circle\", circle)\n",
-          "after": "        // Both consumers receive the exact same scalar sample, including OFF notifications.\n        displayPower = LivePower.value(next, positions.optString(\"powerPresentation\")==\"INPUT\")\n        snapshot = next\n        OwnerRenderTrace.event(\"POWER_CONSUMER\",\"producer=${next.optString(\"producerEpoch\")};sample=${next.optLong(\"sample\")};elapsed=${next.optLong(\"elapsedMs\")};net=${LivePower.number(LivePower.value(next))}\")\n        MonitorPresentation.publish(next)\n        if (modeChanged) onModeChanged()\n        circle = pendingShape ?: next.optBoolean(\"circle\", circle)\n"
+          "after": "        // Both consumers receive the exact same scalar sample, including OFF notifications.\n        displayPower = LivePower.value(next, positions.optString(\"powerPresentation\")==\"INPUT\")\n        snapshot = next\n        OwnerRenderTrace.event(\"POWER_CONSUMER\",\"producer=${next.optString(\"producerEpoch\")};sample=${next.optLong(\"sample\")};elapsed=${next.optLong(\"elapsedMs\")};net=${LivePower.number(LivePower.value(next))};input=${LivePower.number(LivePower.value(next,true))};presentation=${positions.optString(\"powerPresentation\")}\")\n        MonitorPresentation.publish(next)\n        if (modeChanged) onModeChanged()\n        circle = pendingShape ?: next.optBoolean(\"circle\", circle)\n"
         }
       ]
     },
     {
       "path": "app/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
       "beforeSha256": "377830046a117aaff064fa254982d6fc83233f89a528127c91cca2754831abd4",
-      "afterSha256": "4878a6832aa1b74f1685995efb4bf0eb85e29564e5e1dc1034ace66a3db2af0c",
+      "afterSha256": "8008ab2d1e34a755cec39c39edbd9ca39f30805f09adb11006380399cab2ee49",
       "beforeEntry": "100644 blob 5f119d2701c312306138ae5192d0bc85cdbb4e2a\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
-      "afterEntry": "100644 blob 69302543e11e5c29725dca5df82f1cc756e8798c\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
+      "afterEntry": "100644 blob d95ac5329fddc2cf412d76284ec48bdbedd0bdad\tapp/src/main/java/com/zui/zuicontrol/ZuiControlQuickService.kt",
       "hunks": [
         {
           "before": "        val nextQuiet = if (fresh && quiet.isFinite() && quiet > 0) quiet else -1.0\n        val nextPower = if (fresh && power.isFinite()) power else Double.NaN\n        val invalidated = NotificationQuickControlHelper.availabilityChanged(quietC, nextQuiet, powerW, nextPower)\n        val changed = NotificationQuickControlHelper.metricNumber(quietC) != NotificationQuickControlHelper.metricNumber(nextQuiet) ||\n            LivePower.number(powerW) != LivePower.number(nextPower)\n        quietC = nextQuiet; powerW = nextPower; readingTime = if (fresh) elapsed else 0L\n        handler.removeCallbacks(readingExpiry)\n        if (fresh) handler.postDelayed(readingExpiry, (elapsed + readingTtl + 1L - now).coerceAtLeast(1))\n        if (!changed) return\n        if (invalidated) {\n            handler.removeCallbacks(readingUpdate); requestRefresh(false)\n        } else if (!handler.hasCallbacks(readingUpdate)) {\n            handler.postDelayed(readingUpdate, (lastReadingPublish + 1000L - now).coerceAtLeast(0))\n",
@@ -99,7 +100,7 @@
         },
         {
           "before": "        val content = renderNotification(state)\n        getSystemService(NotificationManager::class.java).notify(ID, content)\n        notificationPublishes++\n        QuickControlTrace.mark(trace,\"T3\",\"NotificationManager.notify_returned_logical_state\")\n    }\n    private var pendingIntentCreations = 0L\n",
-          "after": "        val content = renderNotification(state)\n        getSystemService(NotificationManager::class.java).notify(ID, content)\n        notificationPublishes++\n        OwnerRenderTrace.event(\"POWER_NOTIFICATION_POSTED\",\"elapsed=$readingTime;net=${LivePower.number(powerW)}\")\n        QuickControlTrace.mark(trace,\"T3\",\"NotificationManager.notify_returned_logical_state\")\n    }\n    private var pendingIntentCreations = 0L\n"
+          "after": "        val content = renderNotification(state)\n        getSystemService(NotificationManager::class.java).notify(ID, content)\n        notificationPublishes++\n        OwnerRenderTrace.event(\"POWER_NOTIFICATION_POSTED\",\"elapsed=$readingTime;displayPower=${LivePower.number(powerW)}\")\n        QuickControlTrace.mark(trace,\"T3\",\"NotificationManager.notify_returned_logical_state\")\n    }\n    private var pendingIntentCreations = 0L\n"
         }
       ]
     },
@@ -205,6 +206,19 @@
         {
           "before": "    text=(ROOT/row['path']).read_text(encoding='utf8')\n    previous=subprocess.run(['git','show',RUNTIME_R6['baseHead']+':'+row['path']],cwd=ROOT,capture_output=True)\n    self.assertEqual(reverse_runtime_r6(row['path'],text),previous.stdout.decode().replace('\\r\\n','\\n') if previous.returncode==0 else '')\n    with self.assertRaisesRegex(AssertionError,'(?:R6|POST_BASELINE) exact authorized bytes'):reverse_runtime_r6(row['path'],text+'\\n// outside scope\\n')\n def test_historical_manifests(self):\n  for path in (ROOT/'tests/zuiopt').glob('*delta.json'):\n   if path.name=='runtime_r6_delta.json':continue\n",
           "after": "    text=(ROOT/row['path']).read_text(encoding='utf8')\n    previous=subprocess.run(['git','show',RUNTIME_R6['baseHead']+':'+row['path']],cwd=ROOT,capture_output=True)\n    self.assertEqual(reverse_runtime_r6(row['path'],text),previous.stdout.decode().replace('\\r\\n','\\n') if previous.returncode==0 else '')\n    with self.assertRaisesRegex(AssertionError,'(?:R6|POST_BASELINE|POWER_PORT_R3) exact authorized bytes'):reverse_runtime_r6(row['path'],text+'\\n// outside scope\\n')\n def test_historical_manifests(self):\n  for path in (ROOT/'tests/zuiopt').glob('*delta.json'):\n   if path.name=='runtime_r6_delta.json':continue\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/monitor/TestGpuDraftLifecycle.py",
+      "beforeSha256": "149bf5c88ad4564ea7ab950c2dc736adb16c35d779c6f09a96c588bf6ecd0178",
+      "afterSha256": "67ba76da7be8871628f2a84d73e9fa4e78b02fcf9aeaeb2951f074ef4b56b97f",
+      "beforeEntry": "100644 blob dc588b02fd43a23e223cbb25c33757a423d4ed7e\ttests/monitor/TestGpuDraftLifecycle.py",
+      "afterEntry": "100644 blob 93d6f16a444a272a0c8b946d1dab32fa01dacc7a\ttests/monitor/TestGpuDraftLifecycle.py",
+      "hunks": [
+        {
+          "before": " p=Path(directory)\n for name,text in sources.items():(p/name).write_text(text,encoding='utf8')\n cp=os.pathsep.join(map(str,[stdlib,gson,*annotations]))\n cmd=[java,'-cp',os.pathsep.join(map(str,[*jars,*annotations])),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',cp,'-d',str(p/'classes'),*[str(APP/n) for n in ('FrontendSession.kt','FrontendTransport.kt','FrontendState.kt','GpuRanges.kt','ZuioptRuleModel.kt')],*map(str,p.glob('*.kt'))]\n result=subprocess.run(cmd,capture_output=True,text=True,encoding='utf8',errors='replace',timeout=60)\n assert result.returncode==0,result.stdout+result.stderr\n result=subprocess.run([java,'-cp',os.pathsep.join([str(p/'classes'),cp]),'com.zui.zuicontrol.HarnessKt'],capture_output=True,text=True,timeout=20)\n",
+          "after": " p=Path(directory)\n for name,text in sources.items():(p/name).write_text(text,encoding='utf8')\n cp=os.pathsep.join(map(str,[stdlib,gson,*annotations]))\n cmd=[java,'-cp',os.pathsep.join(map(str,[*jars,*annotations])),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',cp,'-d',str(p/'classes'),*[str(APP/n) for n in ('BatteryWindow.kt','FrontendSession.kt','FrontendTransport.kt','FrontendState.kt','GpuRanges.kt','ZuioptRuleModel.kt')],*map(str,p.glob('*.kt'))]\n result=subprocess.run(cmd,capture_output=True,text=True,encoding='utf8',errors='replace',timeout=60)\n assert result.returncode==0,result.stdout+result.stderr\n result=subprocess.run([java,'-cp',os.pathsep.join([str(p/'classes'),cp]),'com.zui.zuicontrol.HarnessKt'],capture_output=True,text=True,timeout=20)\n"
         }
       ]
     }

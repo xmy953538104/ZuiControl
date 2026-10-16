@@ -62,6 +62,7 @@ POWER_PORT_R3_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('Batt
 POWER_PORT_R3_ALLOWED|={'framework_patch/src/services/com/zui/server/control/'+n for n in ('MonitorCollector.java','MonitorPower.java')}
 POWER_PORT_R3_ALLOWED.add('app/src/test/java/com/zui/zuicontrol/BatteryWindowTest.kt')
 POWER_PORT_R3_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeR5Scope.py','TestRuntimeR6Scope.py')}
+POWER_PORT_R3_ALLOWED.add('tests/monitor/TestGpuDraftLifecycle.py')
 assert set(POWER_PORT_R3['allowedPaths'])==POWER_PORT_R3_ALLOWED=={r['path'] for r in POWER_PORT_R3['files']}
 
 def reverse_response_battery(path,text):

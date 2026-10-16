@@ -149,7 +149,7 @@ class ZuiControlQuickService : Service() {
         val content = renderNotification(state)
         getSystemService(NotificationManager::class.java).notify(ID, content)
         notificationPublishes++
-        OwnerRenderTrace.event("POWER_NOTIFICATION_POSTED","elapsed=$readingTime;net=${LivePower.number(powerW)}")
+        OwnerRenderTrace.event("POWER_NOTIFICATION_POSTED","elapsed=$readingTime;displayPower=${LivePower.number(powerW)}")
         QuickControlTrace.mark(trace,"T3","NotificationManager.notify_returned_logical_state")
     }
     private var pendingIntentCreations = 0L
