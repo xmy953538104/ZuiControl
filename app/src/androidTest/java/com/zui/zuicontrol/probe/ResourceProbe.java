@@ -26,11 +26,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Test APK only. No policy writes; may suspend this client's callback registration. */
+/** Test APK only. Controlled formal requests restore their initial intent. */
 public final class ResourceProbe extends Instrumentation {
     private WeakReference<Activity> current = new WeakReference<>(null);
     private boolean frozen;
-    private Object controlsState,controlsOwner;
+    private Object controlsState;
+    private android.zui.ZuiControlManager controlsOwner;
     private IBinder originalCallback,probeCallback;
     private long subscriptionEpoch;
     private final AckFaultGate fault=new AckFaultGate();
@@ -63,16 +64,16 @@ public final class ResourceProbe extends Instrumentation {
     }
     private void restoreCallback()throws Exception{
         if(probeCallback==null)return;
-        Object state=controlsState,owner=controlsOwner;IBinder proxy=probeCallback,original=originalCallback;
+        Object state=controlsState;android.zui.ZuiControlManager owner=controlsOwner;IBinder proxy=probeCallback,original=originalCallback;
         probeCallback=null;
-        owner.getClass().getMethod("controls",boolean.class,IBinder.class).invoke(owner,false,proxy);
+        owner.controls(false,proxy);
         if(((Number)field(state,"epoch")).longValue()==subscriptionEpoch&&field(state,"callback")==proxy){
-            put(state,"callback",original);owner.getClass().getMethod("controls",boolean.class,IBinder.class).invoke(owner,true,original);
+            put(state,"callback",original);owner.controls(true,original);
         }
     }
     private void wrapCallback()throws Exception{
         Class<?> type=Class.forName("com.zui.zuicontrol.ControlsState");controlsState=type.getField("INSTANCE").get(null);
-        controlsOwner=field(controlsState,"backend");originalCallback=(IBinder)field(controlsState,"callback");
+        controlsOwner=(android.zui.ZuiControlManager)field(controlsState,"backend");originalCallback=(IBinder)field(controlsState,"callback");
         if(controlsOwner==null||originalCallback==null)throw new IllegalStateException("Real UID/epoch subscription not ready");
         subscriptionEpoch=((Number)field(controlsState,"epoch")).longValue();
         final IBinder delegate=originalCallback;
@@ -95,9 +96,9 @@ public final class ResourceProbe extends Instrumentation {
                 return delegate.transact(code,data,reply,flags);
             }
         };
-        controlsOwner.getClass().getMethod("controls",boolean.class,IBinder.class).invoke(controlsOwner,false,originalCallback);
+        controlsOwner.controls(false,originalCallback);
         put(controlsState,"callback",probeCallback);
-        Object initial=controlsOwner.getClass().getMethod("controls",boolean.class,IBinder.class).invoke(controlsOwner,true,probeCallback);
+        String initial=controlsOwner.controls(true,probeCallback);
         if(!initial.toString().startsWith("ok=1"))throw new IllegalStateException("Real registration failed");
         Log.i("R6Probe","ACK_SUBSCRIPTION_PROOF appUid="+android.os.Process.myUid()+" epoch="+subscriptionEpoch+" descriptor="+probeCallback.getInterfaceDescriptor());
     }
@@ -112,8 +113,9 @@ public final class ResourceProbe extends Instrumentation {
                 for(String line:state.split("\n"))if(line.startsWith("savedGlobalRefresh="))original=Integer.parseInt(line.substring("savedGlobalRefresh=".length()).trim());
                 if(original<=0)throw new IllegalStateException("Current global intent unavailable");
                 int target=original==90?120:90;
-                String id=com.zui.zuicontrol.ZuiControlClient.INSTANCE.sendPolicy(context,"refresh","","GLOBAL",target,"",0,0,
-                    com.zui.zuicontrol.ZuiControlClient.INSTANCE.currentSceneText(),null,null);
+                String scene=com.zui.zuicontrol.ZuiControlClient.INSTANCE.currentSceneText();
+                if(mode.equals("ackPending")&&!java.util.Arrays.asList(scene.split("\n")).contains("editableSceneIsHome=true"))throw new IllegalStateException("Pending fault requires actual HOME scene");
+                String id=com.zui.zuicontrol.ZuiControlClient.INSTANCE.sendPolicy(context,"refresh","",mode.equals("ackPending")?"FOREGROUND":"GLOBAL",target,"",0,0,scene,null,null);
                 Object request=Class.forName("com.zui.zuicontrol.ZuiControlRequest").getField("INSTANCE").get(null),pending=null;
                 for(java.lang.reflect.Method m:request.getClass().getDeclaredMethods())if(m.getName().startsWith("pendingIdentity")){m.setAccessible(true);pending=m.invoke(request,context);break;}
                 if(pending==null)throw new IllegalStateException("Exact pending identity already gone");
@@ -124,7 +126,7 @@ public final class ResourceProbe extends Instrumentation {
                 Log.i("R6Probe","ACK_TARGET_ARMED id="+id+" sha="+digest+" ns="+SystemClock.elapsedRealtimeNanos());
                 com.zui.zuicontrol.ZuiControlRequest.Ack ack=com.zui.zuicontrol.ZuiControlRequest.INSTANCE.awaitTerminalAck(context,id,5000,null);
                 if(!fault.consumed()||!ack.getSucceeded())throw new IllegalStateException("Fault not injected or command failed");
-                SystemClock.sleep(mode.equals("ackLate")?1700:50);
+                SystemClock.sleep(mode.equals("ackDrop")?50:1700);
                 Log.i("R6Probe","ACK_CASE_PASS mode="+mode+" id="+id+" ns="+SystemClock.elapsedRealtimeNanos());
             }catch(Throwable e){primary=e;Log.e("R6Probe","PRIMARY_FAILURE mode="+mode,e);}
             finally{
@@ -142,15 +144,14 @@ public final class ResourceProbe extends Instrumentation {
     }
     @SuppressWarnings("unchecked") private void operation(String op) throws Exception {
         Activity activity=current.get();Context context=getTargetContext();
-        if("ackDrop".equals(op)||"ackLate".equals(op)){callbackCase(op);return;}
+        if("ackDrop".equals(op)||"ackLate".equals(op)||"ackPending".equals(op)){callbackCase(op);return;}
         if("finish".equals(op)){restoreCallback();finish(0,new Bundle());return;}
         if("controlsDisconnect".equals(op)||"controlsReconnect".equals(op)) {
             Class<?> type=Class.forName("com.zui.zuicontrol.ControlsState");
             Object state=type.getField("INSTANCE").get(null);
             Object owner=field(state,"backend"),callback=field(state,"callback");
             if(owner==null||callback==null)throw new IllegalStateException("Real callback not connected");
-            owner.getClass().getMethod("controls",boolean.class,android.os.IBinder.class)
-                .invoke(owner,"controlsReconnect".equals(op),callback);
+            ((android.zui.ZuiControlManager)owner).controls("controlsReconnect".equals(op),callback);
             Log.i("R6Probe",op+"_COMPLETE_EXISTING_CLIENT_ONLY");return;
         }
         Class<?> packages=Class.forName("com.zui.zuicontrol.FrontendPackages");

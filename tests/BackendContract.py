@@ -80,6 +80,8 @@ RESIDENCY_R5=json.loads((ROOT/'tests/native_residency_r5_delta.json').read_text(
 RESIDENCY_R5_ALLOWED={'app/build.gradle.kts','.github/workflows/build.yml','tests/monitor/TestProbeIsolation.py'}
 RESIDENCY_R5_ALLOWED|={'app/src/androidTest/java/com/zui/zuicontrol/probe/'+n for n in ('ResourceProbe.java','AckFaultGate.java')}
 RESIDENCY_R5_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeFrontendScope.py','TestRuntimeR5Scope.py','TestRuntimeR6Scope.py')}
+RESIDENCY_R5_ALLOWED|={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('OwnerEffects.kt','ZuiControlQuickService.kt')}
+RESIDENCY_R5_ALLOWED.add('tests/monitor/TestOwnerEffects.py')
 assert RESIDENCY_R5['phase']=='ZUICONTROL_R5_NATIVE_RESIDENCY_CALLBACK_AND_POWER_CLOSEOUT' and RESIDENCY_R5['baseHead']=='00be2b28ce856d6b59555f1dd475caea3e1b53ec'
 assert set(RESIDENCY_R5['allowedPaths'])==RESIDENCY_R5_ALLOWED=={r['path'] for r in RESIDENCY_R5['files']}
 

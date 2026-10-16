@@ -174,6 +174,7 @@ class ZuiControlQuickService : Service() {
             val control=when(parsed.optString("action")){"refresh"->"refresh";"mode"->"uperf";else->return@execute}
             val target=QuickControlState.Target(parsed.getInt("userId"),parsed.getString("packageName"),parsed.getString("scope"),parsed.getLong("sceneGeneration"))
             val operation=operations.recover(control,target,if(control=="refresh")parsed.getInt("value").toString() else parsed.getString("mode"),pending.first)
+            OwnerRenderTrace.event("QUICK_RECOVER","control=$control;id=${pending.first};phase=VERIFYING")
             handler.post{if(!destroyed)requestRefresh(false)}
             try{
                 val ack=ZuiControlRequest.awaitTerminalAck(this,pending.first)

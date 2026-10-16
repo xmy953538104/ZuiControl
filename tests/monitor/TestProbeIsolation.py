@@ -7,6 +7,7 @@ release=gradle.split('getByName("release") {',1)[1].split('getByName("debug")',1
 profile=gradle.split('create("nativeProfile") {',1)[1].split('\n        }',1)[0]
 assert 'isDebuggable = false' in release and 'isProfileable = false' in release
 assert 'initWith(getByName("release"))' in profile and 'isProfileable = true' in profile
+assert 'androidTestCompileOnly(project(":framework-stubs"))' in gradle
 workflow=(ROOT/'.github/workflows/build.yml').read_text(encoding='utf-8')
 stage=workflow.split('- name: Stage payload APK',1)[1]
 assert 'app/build/outputs/apk/release/app-release.apk' in stage and 'nativeProfile' not in stage
@@ -15,6 +16,8 @@ probe=(ROOT/'app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.jav
 assert 'startActivitySync(launch)' in probe and 'Binder.getCallingUid()!=1000' in probe
 assert 'data.setDataPosition(position)' in probe and 'delegate.transact(code,data,reply,flags)' in probe
 assert 'ACK_TARGET_ARMED id=' in probe and 'PRIMARY_FAILURE mode=' in probe and 'CLEANUP_FAILURE mode=' in probe
+assert 'controlsOwner.controls(true,probeCallback)' in probe and 'getMethod("controls"' not in probe
+assert 'Pending fault requires actual HOME scene' in probe
 source=ROOT/'app/src/androidTest/java/com/zui/zuicontrol/probe/AckFaultGate.java'
 with tempfile.TemporaryDirectory(prefix='zui-r5-ack-gate-') as directory:
     path=Path(directory);shutil.copyfile(source,path/source.name)

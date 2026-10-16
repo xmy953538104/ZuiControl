@@ -167,6 +167,7 @@ jobs:
           python3 tests/command_plane/TestRuntimeDomains.py || scripts_failed=1
           python3 tests/command_plane/TestAckObservation.py || scripts_failed=1
           python3 tests/monitor/TestProbeIsolation.py || scripts_failed=1
+            python3 tests/monitor/TestOwnerEffects.py || scripts_failed=1
           python3 tests/command_plane/TestFrontendPackages.py || scripts_failed=1
           python3 tests/command_plane/TestCachedDraft.py || scripts_failed=1
           python3 tests/command_plane/TestResponseDraw.py
