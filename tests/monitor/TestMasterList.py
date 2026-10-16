@@ -12,9 +12,10 @@ assert 'recycled as? RowView ?: RowView()' in source and 'setOnClickListener{cho
 assert 'key=value.key' in source and 'bound!=value||palette!=ui.dark' in source
 assert 'masterViewport ?: OwnerMasterList' in main and 'recycled.showSection(session.section)' in main
 body=main.split('private fun populateList(',1)[1].split('private fun select(pkg:',1)[0]
-assert 'removeAllViews' not in body and 'list.submit(rows.filter' in body
-assert 'query.isBlank()||it.key.contains(query,true)||it.title.contains(query,true)' in body
+assert 'removeAllViews' not in body and 'list.submit(OwnerMasterList.matching' in body
+assert 'query.isBlank())rows else rows.filter{it.key.contains(query,true)||it.title.contains(query,true)}' in source
 assert 'save' not in body.lower() and 'commit' not in body.lower()
+matching=source.split('    companion object {',1)[1].split('\n    }',1)[0]
 methods=source[source.index('    fun showSection('):source.index('    fun select(')]
 row=source.split('    data class Row(',1)[1].split('\n',1)[0]
 program="""package com.zui.zuicontrol
@@ -35,9 +36,12 @@ class Rows{
  val list=FakeList();val empty=FakeText();var notices=0
  private val adapter=object:Any(){fun notifyDataSetChanged(){notices++}}
  METHODS
+ companion object { MATCHING
+ }
 }
 fun main(){
  val v=Rows();val a=Rows.Row("a","A");val b=Rows.Row("b","B");val c=Rows.Row("c","C")
+ check(Rows.matching(listOf(a,b,c),"b")==listOf(b));check(Rows.matching(listOf(a,b,c)," ")==listOf(a,b,c));check(Rows.matching(listOf(a,b,c),"unknown").isEmpty())
  v.showSection("tune");v.submit(listOf(a,b,c),"empty");v.list.firstVisiblePosition=1
  v.submit(listOf(c,b,a),"empty");val old=checkNotNull(v.restoreScroll);val notices=v.notices
  v.submit(listOf(c,b,a),"changed");check(v.notices==notices&&v.empty.text=="changed")
@@ -47,5 +51,5 @@ fun main(){
  v.showSection("thread");check(v.rows.isEmpty()&&v.selected.isEmpty()&&v.list.firstVisiblePosition==0)
  check(v.restoreScroll==null);println("OWNER_LIST_ANCHOR_STALE_REQUEST_SECTION_ISOLATION_PASS")
 }
-""".replace('ROW',row).replace('METHODS',methods)
+""".replace('ROW',row).replace('METHODS',methods).replace('MATCHING',matching)
 compile_run({'OwnerRows.kt':program},'com.zui.zuicontrol.OwnerRowsKt',[])

@@ -740,7 +740,7 @@ class MainActivity : Activity() {
                 OwnerMasterList.Row(app.packageName,name(app.packageName),chips=listOf(OwnerMasterList.Chip(sourceTitle(source),if(source=="USER_MODIFIED")3 else 0,source=="USER_CREATED"),OwnerMasterList.Chip("${p.rules.size} 条规则")))}
             else -> (0 until records.length()).map{i->val r=records.getJSONObject(i);OwnerMasterList.Row(r.getString("package"),r.optString("label",r.getString("package")),"${whenRecorded(r.optLong("wall"))} · ${duration(r.optLong("duration"))}")}
         }
-        list.submit(rows.filter{query.isBlank()||it.key.contains(query,true)||it.title.contains(query,true)},if(loading.isNotEmpty())"正在读取…" else "暂无应用")
+        list.submit(OwnerMasterList.matching(rows,query),if(loading.isNotEmpty())"正在读取…" else "暂无应用")
         list.select(session.selected)
     }
     private fun select(pkg: String) {

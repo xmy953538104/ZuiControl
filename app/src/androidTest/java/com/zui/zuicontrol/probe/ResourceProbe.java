@@ -37,6 +37,7 @@ public final class ResourceProbe extends Instrumentation {
     private String subscribedSnapshot="";
     private final AckFaultGate fault=new AckFaultGate();
     private volatile boolean callbackRunning;
+    private MasterListFixture fixture;
     private final List<WeakReference<View>> watchedRoots=new ArrayList<>();
     private final java.util.Set<Integer> watchedIds=new java.util.HashSet<>();
     private void objectSnapshot(Activity activity)throws Exception{
@@ -163,6 +164,13 @@ public final class ResourceProbe extends Instrumentation {
     }
     @SuppressWarnings("unchecked") private void operation(String op) throws Exception {
         Activity activity=current.get();Context context=getTargetContext();
+        if("fixture3".equals(op)||"fixture500".equals(op)){
+            if(field(field(activity,"ownerModal"),"overlay")!=null)throw new IllegalStateException("Owner modal active");
+            if(fixture!=null)fixture.close();fixture=new MasterListFixture(activity,"fixture3".equals(op)?3:500);return;
+        }
+        if("fixtureSnapshot".equals(op)){fixture.snapshot("OBSERVE");return;}
+        if("fixtureEnd".equals(op)){fixture.end();return;}
+        if("fixtureClose".equals(op)){if(fixture!=null)fixture.close();fixture=null;return;}
         if("objects".equals(op)){objectSnapshot(activity);return;}
         if("ackContract".equals(op)){
             try{wrapCallback();
@@ -174,7 +182,7 @@ public final class ResourceProbe extends Instrumentation {
             }finally{restoreCallback();}return;
         }
         if("ackDrop".equals(op)||"ackLate".equals(op)){callbackCase(op);return;}
-        if("finish".equals(op)){restoreCallback();finish(0,new Bundle());return;}
+        if("finish".equals(op)){if(fixture!=null)fixture.close();fixture=null;restoreCallback();finish(0,new Bundle());return;}
         if("controlsDisconnect".equals(op)||"controlsReconnect".equals(op)) {
             Class<?> type=Class.forName("com.zui.zuicontrol.ControlsState");
             Object state=type.getField("INSTANCE").get(null);

@@ -13,6 +13,9 @@ internal class OwnerMasterList(context:Context,private val ui:OwnerUi,
     private val icon:(String)->Drawable?,private val choose:(String)->Unit):FrameLayout(context) {
     data class Chip(val text:String,val tier:Int=0,val created:Boolean=false)
     data class Row(val key:String,val title:String,val subtitle:String="",val chips:List<Chip> = emptyList(),val ruleMarker:Boolean=false)
+    companion object {
+        fun matching(rows:List<Row>,query:String)=if(query.isBlank())rows else rows.filter{it.key.contains(query,true)||it.title.contains(query,true)}
+    }
     private var rows=emptyList<Row>()
     private var selected=""
     private var section=""
