@@ -21,7 +21,7 @@ class Plan2(unittest.TestCase):
   main=read('MainActivity.kt');window=read('OwnerWindow.kt')
   theme=main.split('private fun theme(theme: String)',1)[1].split('private fun monitorGuidance',1)[0]
   appearance=window.split('fun updateSystemBarAppearance',1)[1].split('fun transitionSystemBars',1)[0]
-  self.assertEqual(main.count('OwnerWindow.fullscreen(this)'),1)
+  self.assertEqual(main.count('OwnerWindow.fullscreen(this,owner.detail)'),1)
   self.assertIn('ownerCanvas.postOnAnimation',theme)
   self.assertIn('OwnerWindow.transitionSystemBars(this,physicalHost,ownerCanvas,dark,palette=',theme)
   for forbidden in ('fullscreen(', 'requestApplyInsets', 'setContentView', 'recreate(', 'setDecorFitsSystemWindows', 'show(WindowInsets', 'LAYOUT_', 'statusBarColor=', 'navigationBarColor='):

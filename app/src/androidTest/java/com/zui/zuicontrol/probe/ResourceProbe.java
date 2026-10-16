@@ -22,7 +22,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Test APK only. Never packaged in production; no policy/transport writes. */
+/** Test APK only. No policy writes; may suspend this client's callback registration. */
 public final class ResourceProbe extends Instrumentation {
     private WeakReference<Activity> current = new WeakReference<>(null);
     private boolean frozen;
@@ -52,6 +52,15 @@ public final class ResourceProbe extends Instrumentation {
     }
     @SuppressWarnings("unchecked") private void operation(String op) throws Exception {
         Activity activity=current.get();Context context=getTargetContext();
+        if("controlsDisconnect".equals(op)||"controlsReconnect".equals(op)) {
+            Class<?> type=Class.forName("com.zui.zuicontrol.ControlsState");
+            Object state=type.getField("INSTANCE").get(null);
+            Object owner=field(state,"backend"),callback=field(state,"callback");
+            if(owner==null||callback==null)throw new IllegalStateException("Real callback not connected");
+            owner.getClass().getMethod("controls",boolean.class,android.os.IBinder.class)
+                .invoke(owner,"controlsReconnect".equals(op),callback);
+            Log.i("R6Probe",op+"_COMPLETE_EXISTING_CLIENT_ONLY");return;
+        }
         Class<?> packages=Class.forName("com.zui.zuicontrol.FrontendPackages");
         Object singleton=packages.getField("INSTANCE").get(null);
         Field cache=packages.getDeclaredField("cached");cache.setAccessible(true);

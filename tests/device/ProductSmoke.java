@@ -78,6 +78,23 @@ public final class ProductSmoke extends UiAutomatorTestCase {
    waitTrace(path,"PAGE_TRANSITION_END","children=1;y=0.0",start);event("NAV_"+(i+1)+"_READY",start);
   }}finally{log.close();}
  }
+ public void testAdviceCallbackFallback()throws Exception{
+  Configurator.getInstance().setWaitForIdleTimeout(0).setWaitForSelectorTimeout(0).setActionAcknowledgmentTimeout(0);
+  String path=getParams().getString("out");assertTrue(path.startsWith("/data/local/tmp/baseline-ui-"));log=new PrintWriter(path+"/events.jsonl");
+  JSONObject original=global();int hz=original.getInt("refreshHz"),target=hz==90?120:90;String apps=policy().getJSONArray("apps").toString();
+  try{
+   getUiDevice().pressHome();
+   process("am","broadcast","-a","com.zui.zuicontrol.probe.OP","--es","op","controlsDisconnect");
+   long start=SystemClock.elapsedRealtimeNanos();process("cmd","statusbar","expand-notifications");
+   UiObject button=new UiObject(new UiSelector().descriptionStartsWith(target+"Hz "));assertTrue(button.waitForExists(4000));button.click();event("FALLBACK_REAL_GUI_CLICK",start);
+   waitTrace(path,"QUICK_TERMINAL","control=refresh;",start);waitGlobal("refreshHz",Integer.toString(target));event("FALLBACK_AUTHORITY_CONFIRMED",start);
+  }finally{
+   process("am","broadcast","-a","com.zui.zuicontrol.probe.OP","--es","op","controlsReconnect");
+   getUiDevice().pressHome();quickChoice(path,"refresh",hz+"Hz ","FALLBACK_RESTORE");waitGlobal("refreshHz",Integer.toString(hz));
+   assertEquals(apps,policy().getJSONArray("apps").toString());assertEquals(original.toString(),global().toString());
+   process("cmd","statusbar","collapse");process("am","start","-n","com.zui.zuicontrol/.MainActivity");log.close();
+  }
+ }
  void memoryStage(String path,String name,String visibleText)throws Exception{
   long start=SystemClock.elapsedRealtimeNanos();
   for(int i=0;i<2;i++){

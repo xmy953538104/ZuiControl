@@ -70,6 +70,7 @@ ADVICE_R4_ALLOWED|={'app/src/main/res/'+n for n in ('drawable/notify_pending.xml
 ADVICE_R4_ALLOWED.add('app/src/test/java/com/zui/zuicontrol/QuickControlStateTest.kt')
 ADVICE_R4_ALLOWED|={'tests/monitor/TestFrontendV3.py','tests/monitor/TestNotificationRenderer.py','tests/device/ProductSmoke.java'}
 ADVICE_R4_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeFrontendScope.py','TestRuntimeR3Scope.py','TestRuntimeR5Scope.py','TestRuntimeR6Scope.py')}
+ADVICE_R4_ALLOWED|={'tests/monitor/TestPlan2.py','app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java'}
 assert ADVICE_R4['phase']=='ZUICONTROL_FINAL_ADVICE_CLOSEOUT_R4' and ADVICE_R4['baseHead']=='c64aa686829ca0420d7b523eb28c2ce2e71c6c7f'
 assert set(ADVICE_R4['allowedPaths'])==ADVICE_R4_ALLOWED=={r['path'] for r in ADVICE_R4['files']}
 
