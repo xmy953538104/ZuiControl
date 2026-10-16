@@ -38,6 +38,15 @@ public final class ResourceProbe extends Instrumentation {
     private final AckFaultGate fault=new AckFaultGate();
     private volatile boolean callbackRunning;
     private MasterListFixture fixture;
+    private Activity windowTarget;
+    private int windowMode;
+    private float windowRefresh;
+    private void restoreWindow(){
+        if(windowTarget==null)return;
+        android.view.WindowManager.LayoutParams lp=windowTarget.getWindow().getAttributes();
+        lp.preferredDisplayModeId=windowMode;lp.preferredRefreshRate=windowRefresh;
+        windowTarget.getWindow().setAttributes(lp);windowTarget=null;
+    }
     private final List<WeakReference<View>> watchedRoots=new ArrayList<>();
     private final java.util.Set<Integer> watchedIds=new java.util.HashSet<>();
     private void objectSnapshot(Activity activity)throws Exception{
@@ -164,6 +173,18 @@ public final class ResourceProbe extends Instrumentation {
     }
     @SuppressWarnings("unchecked") private void operation(String op) throws Exception {
         Activity activity=current.get();Context context=getTargetContext();
+        if("window60".equals(op)){
+            if(windowTarget!=null)throw new IllegalStateException("Window request already active");
+            android.view.Display.Mode chosen=null;
+            for(android.view.Display.Mode mode:activity.getDisplay().getSupportedModes())
+                if(Math.abs(mode.getRefreshRate()-60f)<.1f)chosen=mode;
+            if(chosen==null)throw new IllegalStateException("No real 60Hz mode");
+            android.view.WindowManager.LayoutParams lp=activity.getWindow().getAttributes();
+            windowTarget=activity;windowMode=lp.preferredDisplayModeId;windowRefresh=lp.preferredRefreshRate;
+            lp.preferredDisplayModeId=chosen.getModeId();lp.preferredRefreshRate=chosen.getRefreshRate();
+            activity.getWindow().setAttributes(lp);Log.i("R6Probe","REAL_WINDOW_MODE_60 id="+chosen.getModeId());return;
+        }
+        if("windowRestore".equals(op)){restoreWindow();Log.i("R6Probe","REAL_WINDOW_MODE_RESTORED");return;}
         if("fixture3".equals(op)||"fixture500".equals(op)){
             if(field(field(activity,"ownerModal"),"overlay")!=null)throw new IllegalStateException("Owner modal active");
             if(fixture!=null)fixture.close();fixture=new MasterListFixture(activity,"fixture3".equals(op)?3:500);return;
@@ -182,7 +203,7 @@ public final class ResourceProbe extends Instrumentation {
             }finally{restoreCallback();}return;
         }
         if("ackDrop".equals(op)||"ackLate".equals(op)){callbackCase(op);return;}
-        if("finish".equals(op)){if(fixture!=null)fixture.close();fixture=null;restoreCallback();finish(0,new Bundle());return;}
+        if("finish".equals(op)){if(fixture!=null)fixture.close();fixture=null;restoreWindow();restoreCallback();finish(0,new Bundle());return;}
         if("controlsDisconnect".equals(op)||"controlsReconnect".equals(op)) {
             Class<?> type=Class.forName("com.zui.zuicontrol.ControlsState");
             Object state=type.getField("INSTANCE").get(null);
