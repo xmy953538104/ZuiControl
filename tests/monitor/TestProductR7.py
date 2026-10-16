@@ -20,9 +20,9 @@ class ProductR7(unittest.TestCase):
         self.assertIn('isEnabled=configurable&&custom',compact)
         self.assertIn('valcustom=d.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM',compact)
         self.assertIn('editableSceneIsHome',quick)
-        self.assertIn('|| UperfAppPolicy.isConfigurable(packageManager, pkg)',quick)
+        self.assertIn('UperfAppPolicy.isConfigurable(packageManager,operation.target.pkg)',quick)
         self.assertIn('snapshot.uperfEnabled, modeIntent(value)',app('NotificationQuickControlHelper.kt'))
-        self.assertIn('UperfAppPolicy.isConfigurable(packageManager, pkg)',quick)
+        self.assertIn('UperfAppPolicy.isConfigurable(packageManager,pkg)',quick)
 
     def test_shared_policy_and_bounded_queries(self):
         policy=app('UperfAppPolicy.kt');daemon=read('payload/system/bin/zui_controld')

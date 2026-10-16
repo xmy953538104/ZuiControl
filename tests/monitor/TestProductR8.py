@@ -40,7 +40,12 @@ fun main(){
         self.assertIn('if(model==null)emptyList() else installed.mapNotNull',main)
         page=main.split('private fun render()',1)[1].split('private fun buildMaster()',1)[0]
         for forbidden in ('next.alpha=0','next.translationY','next.animate()', 'previous.animate()'):self.assertNotIn(forbidden,page)
-        self.assertIn('pageHost.removeViewAt(i)',page);self.assertIn('OwnerRenderTrace.event("PAGE_CHANGED",page)',page)
+        self.assertIn('pageHost.show(',page);self.assertIn('OwnerRenderTrace.event("PAGE_CHANGED",page)',page)
+        host=(APP/'OwnerPageHost.kt').read_text('utf8')
+        self.assertIn('old?.let(::removeView)',host)
+        self.assertIn('ticket != sequence',host)
+        self.assertIn('duration = 200',host)
+        self.assertNotIn('alpha =',host);self.assertNotIn('scaleX',host)
         self.assertIn('check(digest(data) == field(state, "user_sha256"))',rules)
         self.assertIn('part[0]==generation&&part[1]==out.size().toString()',up)
         self.assertIn('check(ZuioptRules.digest(bytes)==hash)',up)

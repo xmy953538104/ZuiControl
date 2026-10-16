@@ -759,9 +759,13 @@ class ProductionBindingTest(unittest.TestCase):
         self.assertIn("ZuiControlClient.editableDisplayHz()", self.tile)
         # R6 restores direct Refresh via that same accepted editable-scene transaction.
         self.assertIn('"editableDisplayHz"', self.quick)
-        self.assertIn("ZuiControlClient.setCurrentSceneDisplayHz", self.quick)
+        self.assertIn("ZuiControlClient.sendPolicy(this,", self.quick)
+        self.assertIn('if(operation.control=="refresh")"refresh" else "mode",operation.target.pkg,"FOREGROUND"', self.quick)
+        self.assertIn('check(sceneTarget(scene)==operation.target)', self.quick)
+        self.assertIn('ZuiControlRequest.awaitTerminalAck(this,id)', self.quick)
         self.assertNotIn("cycleCurrentScene", self.quick)
-        self.assertIn('mutate { check(PerformanceMonitor.command("full")', self.quick)
+        self.assertIn('PerformanceMonitor.command(if(operation.value=="true")"full" else "off")', self.quick)
+        self.assertIn('check(modeReply.toString()==operation.value)', self.quick)
         self.assertNotIn('MONITOR_FPS', self.quick)
 
     def test_apply_success_order_and_failure_cleanup(self) -> None:

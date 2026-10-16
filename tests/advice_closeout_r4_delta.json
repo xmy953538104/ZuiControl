@@ -25,7 +25,11 @@
     "tests/zuiopt/TestRuntimeR5Scope.py",
     "tests/zuiopt/TestRuntimeR6Scope.py",
     "app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java",
-    "tests/monitor/TestPlan2.py"
+    "tests/monitor/TestPlan2.py",
+    "tests/monitor/TestProductR6.py",
+    "tests/monitor/TestProductR7.py",
+    "tests/monitor/TestProductR8.py",
+    "tests/refresh/TestRefreshStateMachine.py"
   ],
   "files": [
     {
@@ -469,6 +473,58 @@
         {
           "before": "  main=read('MainActivity.kt');window=read('OwnerWindow.kt')\n  theme=main.split('private fun theme(theme: String)',1)[1].split('private fun monitorGuidance',1)[0]\n  appearance=window.split('fun updateSystemBarAppearance',1)[1].split('fun transitionSystemBars',1)[0]\n  self.assertEqual(main.count('OwnerWindow.fullscreen(this)'),1)\n  self.assertIn('ownerCanvas.postOnAnimation',theme)\n  self.assertIn('OwnerWindow.transitionSystemBars(this,physicalHost,ownerCanvas,dark,palette=',theme)\n  for forbidden in ('fullscreen(', 'requestApplyInsets', 'setContentView', 'recreate(', 'setDecorFitsSystemWindows', 'show(WindowInsets', 'LAYOUT_', 'statusBarColor=', 'navigationBarColor='):\n",
           "after": "  main=read('MainActivity.kt');window=read('OwnerWindow.kt')\n  theme=main.split('private fun theme(theme: String)',1)[1].split('private fun monitorGuidance',1)[0]\n  appearance=window.split('fun updateSystemBarAppearance',1)[1].split('fun transitionSystemBars',1)[0]\n  self.assertEqual(main.count('OwnerWindow.fullscreen(this,owner.detail)'),1)\n  self.assertIn('ownerCanvas.postOnAnimation',theme)\n  self.assertIn('OwnerWindow.transitionSystemBars(this,physicalHost,ownerCanvas,dark,palette=',theme)\n  for forbidden in ('fullscreen(', 'requestApplyInsets', 'setContentView', 'recreate(', 'setDecorFitsSystemWindows', 'show(WindowInsets', 'LAYOUT_', 'statusBarColor=', 'navigationBarColor='):\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/monitor/TestProductR6.py",
+      "beforeSha256": "608e91d7a782e2b718b40dcf1cfe3bb8b93c367b9abe7fbbeabe77806890fa50",
+      "afterSha256": "d6b28f6a208824bfe7e033f1c0b64aeb8d86bcd737269d97ca6b4521892d99e8",
+      "beforeEntry": "100644 blob 759b7613606182767a7d663bedb4d72e3fb5081c\ttests/monitor/TestProductR6.py",
+      "afterEntry": "100644 blob cb4227000467a8bf0a2735a89146d3f24afc3ec5\ttests/monitor/TestProductR6.py",
+      "hunks": [
+        {
+          "before": "        quick=source('ZuiControlQuickService.kt');client=source('ZuiControlClient.kt');main=source('MainActivity.kt')\n        self.assertIn('it.getCurrentScene()',client)\n        self.assertIn('\"editableScenePackage\"',quick)\n        self.assertIn('ZuiControlClient.setCurrentSceneDisplayHz',quick)\n        self.assertIn('ZuiControlClient.sendPolicy(this, \"mode\", pkg, \"FOREGROUND\"',quick)\n        self.assertIn('ZuiControlRequest.send(',client)\n        self.assertIn('session.saveApp(after)',main)\n        self.assertIn('gateway.saveAppPolicy(captured)',source('FrontendSession.kt'))\n        self.assertIn('scene = scene',quick)\n        for surface in (quick,main):\n            self.assertIn('ControlsState.observe(controlsChanged)',surface)\n            self.assertIn('ControlsState.remove(controlsChanged)',surface)\n",
+          "after": "        quick=source('ZuiControlQuickService.kt');client=source('ZuiControlClient.kt');main=source('MainActivity.kt')\n        self.assertIn('it.getCurrentScene()',client)\n        self.assertIn('\"editableScenePackage\"',quick)\n        self.assertIn('ZuiControlClient.sendPolicy(this,',quick)\n        self.assertIn('if(operation.control==\"refresh\")\"refresh\" else \"mode\",operation.target.pkg,\"FOREGROUND\"',quick)\n        self.assertIn('ZuiControlRequest.awaitTerminalAck(this,id)',quick)\n        self.assertIn('check(sceneTarget(scene)==operation.target)',quick)\n        self.assertIn('ZuiControlRequest.send(',client)\n        self.assertIn('session.saveApp(after)',main)\n        self.assertIn('gateway.saveAppPolicy(captured)',source('FrontendSession.kt'))\n        self.assertIn('scene=scene',quick)\n        for surface in (quick,main):\n            self.assertIn('ControlsState.observe(controlsChanged)',surface)\n            self.assertIn('ControlsState.remove(controlsChanged)',surface)\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/monitor/TestProductR7.py",
+      "beforeSha256": "f3c820441f7347c0194a22d4a68a4fa7c83b26ff34c96db5b4e33269a291ff5f",
+      "afterSha256": "289d41740b4ed56de0308476ba09dcce3b71c43de10a90f4799938ca73553748",
+      "beforeEntry": "100644 blob 5a27bb24a9f0655c2850d1a3aa44c5c5ca88d247\ttests/monitor/TestProductR7.py",
+      "afterEntry": "100644 blob 748066a99f9dcc71ddb9e4459fa8af1823770d58\ttests/monitor/TestProductR7.py",
+      "hunks": [
+        {
+          "before": "        self.assertIn('isEnabled=configurable&&custom',compact)\n        self.assertIn('valcustom=d.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM',compact)\n        self.assertIn('editableSceneIsHome',quick)\n        self.assertIn('|| UperfAppPolicy.isConfigurable(packageManager, pkg)',quick)\n        self.assertIn('snapshot.uperfEnabled, modeIntent(value)',app('NotificationQuickControlHelper.kt'))\n        self.assertIn('UperfAppPolicy.isConfigurable(packageManager, pkg)',quick)\n\n    def test_shared_policy_and_bounded_queries(self):\n        policy=app('UperfAppPolicy.kt');daemon=read('payload/system/bin/zui_controld')\n",
+          "after": "        self.assertIn('isEnabled=configurable&&custom',compact)\n        self.assertIn('valcustom=d.gpuPolicy==ZuiControlClient.GpuPolicy.CUSTOM',compact)\n        self.assertIn('editableSceneIsHome',quick)\n        self.assertIn('UperfAppPolicy.isConfigurable(packageManager,operation.target.pkg)',quick)\n        self.assertIn('snapshot.uperfEnabled, modeIntent(value)',app('NotificationQuickControlHelper.kt'))\n        self.assertIn('UperfAppPolicy.isConfigurable(packageManager,pkg)',quick)\n\n    def test_shared_policy_and_bounded_queries(self):\n        policy=app('UperfAppPolicy.kt');daemon=read('payload/system/bin/zui_controld')\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/monitor/TestProductR8.py",
+      "beforeSha256": "b03e6f5e4840fa50f07a876800d1ef3f79272067571923be9a65721c19839935",
+      "afterSha256": "47c56629ac9ac3d9a2eca112557d15d12d1d9bc3482c2216009a301355f91640",
+      "beforeEntry": "100644 blob c85a6571b9f71053f9f9017f1619d8a0571f08cc\ttests/monitor/TestProductR8.py",
+      "afterEntry": "100644 blob 49082c48db551adb9b9a238dcefd6a3b7e232347\ttests/monitor/TestProductR8.py",
+      "hunks": [
+        {
+          "before": "        self.assertIn('if(model==null)emptyList() else installed.mapNotNull',main)\n        page=main.split('private fun render()',1)[1].split('private fun buildMaster()',1)[0]\n        for forbidden in ('next.alpha=0','next.translationY','next.animate()', 'previous.animate()'):self.assertNotIn(forbidden,page)\n        self.assertIn('pageHost.removeViewAt(i)',page);self.assertIn('OwnerRenderTrace.event(\"PAGE_CHANGED\",page)',page)\n        self.assertIn('check(digest(data) == field(state, \"user_sha256\"))',rules)\n        self.assertIn('part[0]==generation&&part[1]==out.size().toString()',up)\n        self.assertIn('check(ZuioptRules.digest(bytes)==hash)',up)\n",
+          "after": "        self.assertIn('if(model==null)emptyList() else installed.mapNotNull',main)\n        page=main.split('private fun render()',1)[1].split('private fun buildMaster()',1)[0]\n        for forbidden in ('next.alpha=0','next.translationY','next.animate()', 'previous.animate()'):self.assertNotIn(forbidden,page)\n        self.assertIn('pageHost.show(',page);self.assertIn('OwnerRenderTrace.event(\"PAGE_CHANGED\",page)',page)\n        host=(APP/'OwnerPageHost.kt').read_text('utf8')\n        self.assertIn('old?.let(::removeView)',host)\n        self.assertIn('ticket != sequence',host)\n        self.assertIn('duration = 200',host)\n        self.assertNotIn('alpha =',host);self.assertNotIn('scaleX',host)\n        self.assertIn('check(digest(data) == field(state, \"user_sha256\"))',rules)\n        self.assertIn('part[0]==generation&&part[1]==out.size().toString()',up)\n        self.assertIn('check(ZuioptRules.digest(bytes)==hash)',up)\n"
+        }
+      ]
+    },
+    {
+      "path": "tests/refresh/TestRefreshStateMachine.py",
+      "beforeSha256": "b7ed72cdca0cf56a6eade3cdae95220b49db77cd2eb65c80ad869b8e3726a88f",
+      "afterSha256": "c7069b81240b69c2c17e89647d47ce20d3992fa7be3497fa2bdf91bf7399c7c1",
+      "beforeEntry": "100644 blob 90f367dd217bfdf4817c32406570072f572b9c8e\ttests/refresh/TestRefreshStateMachine.py",
+      "afterEntry": "100644 blob 0949950612a53e0d8e33a80dbc4f29a985c9f1c3\ttests/refresh/TestRefreshStateMachine.py",
+      "hunks": [
+        {
+          "before": "        self.assertIn(\"ZuiControlClient.editableDisplayHz()\", self.tile)\n        # R6 restores direct Refresh via that same accepted editable-scene transaction.\n        self.assertIn('\"editableDisplayHz\"', self.quick)\n        self.assertIn(\"ZuiControlClient.setCurrentSceneDisplayHz\", self.quick)\n        self.assertNotIn(\"cycleCurrentScene\", self.quick)\n        self.assertIn('mutate { check(PerformanceMonitor.command(\"full\")', self.quick)\n        self.assertNotIn('MONITOR_FPS', self.quick)\n\n    def test_apply_success_order_and_failure_cleanup(self) -> None:\n",
+          "after": "        self.assertIn(\"ZuiControlClient.editableDisplayHz()\", self.tile)\n        # R6 restores direct Refresh via that same accepted editable-scene transaction.\n        self.assertIn('\"editableDisplayHz\"', self.quick)\n        self.assertIn(\"ZuiControlClient.sendPolicy(this,\", self.quick)\n        self.assertIn('if(operation.control==\"refresh\")\"refresh\" else \"mode\",operation.target.pkg,\"FOREGROUND\"', self.quick)\n        self.assertIn('check(sceneTarget(scene)==operation.target)', self.quick)\n        self.assertIn('ZuiControlRequest.awaitTerminalAck(this,id)', self.quick)\n        self.assertNotIn(\"cycleCurrentScene\", self.quick)\n        self.assertIn('PerformanceMonitor.command(if(operation.value==\"true\")\"full\" else \"off\")', self.quick)\n        self.assertIn('check(modeReply.toString()==operation.value)', self.quick)\n        self.assertNotIn('MONITOR_FPS', self.quick)\n\n    def test_apply_success_order_and_failure_cleanup(self) -> None:\n"
         }
       ]
     }
