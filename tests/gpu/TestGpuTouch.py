@@ -6,8 +6,11 @@ from pathlib import Path
 import hashlib, os, shutil, subprocess, tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
 APP = ROOT/'app/src/main/java/com/zui/zuicontrol'
-source = (APP/'GpuRangeBar.kt').read_text(encoding='utf8')
+source = read_frontend(APP/'GpuRangeBar.kt')
 
 def between(start, end):
     return source[source.index(start):source.index(end, source.index(start))]

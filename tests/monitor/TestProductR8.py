@@ -1,5 +1,8 @@
 """Execute the exact in-memory cache predicate; rendering/latency remain device gates."""
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests'))
+from FrontendSource import read_frontend
 import sys,unittest
 ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
 sys.path.insert(0,str(ROOT/'tests/command_plane'))
@@ -10,7 +13,7 @@ class ProductR8(unittest.TestCase):
         from TestOwnerPageHost import check_page_host
         check_page_host()
     def test_exact_cache_and_mismatch(self):
-        main=(APP/'MainActivity.kt').read_text('utf8')
+        main=read_frontend(APP/'MainActivity.kt')
         cache=main[main.index('    private data class LoadedRules'):main.index('    private companion object')].replace('private data class','data class')
         source='''package com.zui.zuicontrol
 object ZuioptRules{data class Snapshot(val generation:String,val text:String);fun field(s:String,k:String)=s.lineSequence().firstOrNull{it.startsWith("$k=")}?.substringAfter('=') ?: ""}
@@ -30,7 +33,7 @@ fun main(){
 }'''.replace('\nCACHE\n','\n'+cache+'\n')
         compile_run({'Cache.kt':source},'com.zui.zuicontrol.CacheKt',[])
     def test_progress_and_stationary_page_contract(self):
-        main=(APP/'MainActivity.kt').read_text('utf8');rules=(APP/'ZuioptRules.kt').read_text('utf8');up=(APP/'ZuioptLibrary.kt').read_text('utf8')
+        main=read_frontend(APP/'MainActivity.kt');rules=read_frontend(APP/'ZuioptRules.kt');up=read_frontend(APP/'ZuioptLibrary.kt')
         loader=main.split('private fun loadRules()',1)[1].split('private fun loadRecords()',1)[0]
         fetch=main.split('fun sharedRules(',1)[1].split('private var rulesRefreshPending',1)[0]
         self.assertEqual(fetch.count('ZuioptRules.state(context)'),1)
@@ -44,7 +47,7 @@ fun main(){
         page=main.split('private fun render()',1)[1].split('private fun buildMaster()',1)[0]
         for forbidden in ('next.alpha=0','next.translationY','next.animate()', 'previous.animate()'):self.assertNotIn(forbidden,page)
         self.assertIn('pageHost.show(',page);self.assertIn('OwnerRenderTrace.event("PAGE_CHANGED",page)',page)
-        host=(APP/'OwnerPageHost.kt').read_text('utf8')
+        host=read_frontend(APP/'OwnerPageHost.kt')
         self.assertIn('old?.let(::removeView)',host)
         self.assertIn('ticket != sequence',host)
         self.assertIn('duration = 200',host)

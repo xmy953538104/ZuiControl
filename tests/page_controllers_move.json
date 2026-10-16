@@ -1,0 +1,416 @@
+{
+  "source_before": "e3c61ce3c617bb2a375a840b4cb05a92356b6d96",
+  "before_main_sha256": "5dabcffe694dc2e636c031df48a6b1b237d1416092bd2e3371d878ec40699afc",
+  "methods": [
+    {
+      "method": "dashboard",
+      "extension": "renderTunePage",
+      "file": "TunePageController.kt",
+      "beforeSha256": "714f76e68af7961fe2b939cd8864331aee23d6f50fa6b2bff66760d85ad5c928",
+      "wrapper": "    private fun dashboard() = renderTunePage()"
+    },
+    {
+      "method": "threadHome",
+      "extension": "renderThreadPage",
+      "file": "ThreadPageController.kt",
+      "beforeSha256": "b2f5b0d0f5be6128fe32c284a6eeea7ca766a03dad467ad7c7b77036ab4d4183",
+      "wrapper": "    private fun threadHome() = renderThreadPage()"
+    },
+    {
+      "method": "monitorPage",
+      "extension": "renderMonitorPage",
+      "file": "MonitorPageController.kt",
+      "beforeSha256": "84359efb05854fedf907c975117e0b723e2215a6014f3ae3c8824525508e4504",
+      "wrapper": "    private fun monitorPage() = renderMonitorPage()"
+    },
+    {
+      "method": "settingsPage",
+      "extension": "renderSettingsPage",
+      "file": "SettingsPageController.kt",
+      "beforeSha256": "43a9f7a7b7274f57eb6d8a523a56bc8bf57fb91b9fbfdc4e46a508f7d75625ba",
+      "wrapper": "    private fun settingsPage() = renderSettingsPage()"
+    }
+  ],
+  "visibility": [
+    {
+      "before": "    private lateinit var session",
+      "after": "    internal lateinit var session"
+    },
+    {
+      "before": "    private lateinit var owner",
+      "after": "    internal lateinit var owner"
+    },
+    {
+      "before": "    private fun bindPresentation",
+      "after": "    internal fun bindPresentation"
+    },
+    {
+      "before": "    private fun bindControl",
+      "after": "    internal fun bindControl"
+    },
+    {
+      "before": "    private val cpuSparklines",
+      "after": "    internal val cpuSparklines"
+    },
+    {
+      "before": "    private var ownerQuiet",
+      "after": "    internal var ownerQuiet"
+    },
+    {
+      "before": "    private var ownerPower",
+      "after": "    internal var ownerPower"
+    },
+    {
+      "before": "    private var ownerSwitch",
+      "after": "    internal var ownerSwitch"
+    },
+    {
+      "before": "    private fun <T:View> ownerControl",
+      "after": "    internal fun <T:View> ownerControl"
+    },
+    {
+      "before": "    private val handler",
+      "after": "    internal val handler"
+    },
+    {
+      "before": "    private val prefs",
+      "after": "    internal val prefs"
+    },
+    {
+      "before": "    private lateinit var detail",
+      "after": "    internal lateinit var detail"
+    },
+    {
+      "before": "    private var state",
+      "after": "    internal var state"
+    },
+    {
+      "before": "    private var caps",
+      "after": "    internal var caps"
+    },
+    {
+      "before": "    private var snapshot",
+      "after": "    internal var snapshot"
+    },
+    {
+      "before": "    private var model",
+      "after": "    internal var model"
+    },
+    {
+      "before": "    private var baseline",
+      "after": "    internal var baseline"
+    },
+    {
+      "before": "    private var ruleState",
+      "after": "    internal var ruleState"
+    },
+    {
+      "before": "    private var ruleError",
+      "after": "    internal var ruleError"
+    },
+    {
+      "before": "    private var rulesQualified",
+      "after": "    internal var rulesQualified"
+    },
+    {
+      "before": "    private var ruleLoadStage",
+      "after": "    internal var ruleLoadStage"
+    },
+    {
+      "before": "    private var records",
+      "after": "    internal var records"
+    },
+    {
+      "before": "    private var installed",
+      "after": "    internal var installed"
+    },
+    {
+      "before": "    private var filter",
+      "after": "    internal var filter"
+    },
+    {
+      "before": "    private var latest",
+      "after": "    internal var latest"
+    },
+    {
+      "before": "    private var updateStatus",
+      "after": "    internal var updateStatus"
+    },
+    {
+      "before": "    private var source",
+      "after": "    internal var source"
+    },
+    {
+      "before": "    private var quietLabel",
+      "after": "    internal var quietLabel"
+    },
+    {
+      "before": "    private var powerLabel",
+      "after": "    internal var powerLabel"
+    },
+    {
+      "before": "    private var powerReason",
+      "after": "    internal var powerReason"
+    },
+    {
+      "before": "    private var powerUnit",
+      "after": "    internal var powerUnit"
+    },
+    {
+      "before": "    private var recordLabel",
+      "after": "    internal var recordLabel"
+    },
+    {
+      "before": "    private var recordBanner",
+      "after": "    internal var recordBanner"
+    },
+    {
+      "before": "    private var coreLabel",
+      "after": "    internal var coreLabel"
+    },
+    {
+      "before": "    private var coreSlot",
+      "after": "    internal var coreSlot"
+    },
+    {
+      "before": "    private val coreTicker",
+      "after": "    internal val coreTicker"
+    },
+    {
+      "before": "    private val refresh",
+      "after": "    internal val refresh"
+    },
+    {
+      "before": "    private val mode",
+      "after": "    internal val mode"
+    },
+    {
+      "before": "    private val overlay",
+      "after": "    internal val overlay"
+    },
+    {
+      "before": "    private var exportBytes",
+      "after": "    internal var exportBytes"
+    },
+    {
+      "before": "    private var backupBytes",
+      "after": "    internal var backupBytes"
+    },
+    {
+      "before": "    private var selectedRecord",
+      "after": "    internal var selectedRecord"
+    },
+    {
+      "before": "    private var selectedThread",
+      "after": "    internal var selectedThread"
+    },
+    {
+      "before": "    private var recordThreads",
+      "after": "    internal var recordThreads"
+    },
+    {
+      "before": "    private var recordDetailLoading",
+      "after": "    internal var recordDetailLoading"
+    },
+    {
+      "before": "    private var threadDetailLoading",
+      "after": "    internal var threadDetailLoading"
+    },
+    {
+      "before": "    private val accent",
+      "after": "    internal val accent"
+    },
+    {
+      "before": "    private val sub",
+      "after": "    internal val sub"
+    },
+    {
+      "before": "    private val field",
+      "after": "    internal val field"
+    },
+    {
+      "before": "    private val orange",
+      "after": "    internal val orange"
+    },
+    {
+      "before": "    private fun <T,R> read",
+      "after": "    internal fun <T,R> read"
+    },
+    {
+      "before": "    private fun loadRules",
+      "after": "    internal fun loadRules"
+    },
+    {
+      "before": "    private fun render",
+      "after": "    internal fun render"
+    },
+    {
+      "before": "    private fun <T> optimistic",
+      "after": "    internal fun <T> optimistic"
+    },
+    {
+      "before": "    private fun toggleOverlay",
+      "after": "    internal fun toggleOverlay"
+    },
+    {
+      "before": "    private fun coreHealth",
+      "after": "    internal fun coreHealth"
+    },
+    {
+      "before": "    private fun gpuDefaultsPage",
+      "after": "    internal fun gpuDefaultsPage"
+    },
+    {
+      "before": "    private fun checkUpdates",
+      "after": "    internal fun checkUpdates"
+    },
+    {
+      "before": "    private fun syncUpstream",
+      "after": "    internal fun syncUpstream"
+    },
+    {
+      "before": "    private fun rawView",
+      "after": "    internal fun rawView"
+    },
+    {
+      "before": "    private fun runtimeDefaultsDialog",
+      "after": "    internal fun runtimeDefaultsDialog"
+    },
+    {
+      "before": "    private fun readRecord",
+      "after": "    internal fun readRecord"
+    },
+    {
+      "before": "    private fun readThread",
+      "after": "    internal fun readThread"
+    },
+    {
+      "before": "    private fun powerDialog",
+      "after": "    internal fun powerDialog"
+    },
+    {
+      "before": "    private fun theme",
+      "after": "    internal fun theme"
+    },
+    {
+      "before": "    private fun monitorGuidance",
+      "after": "    internal fun monitorGuidance"
+    },
+    {
+      "before": "    private fun ownedActivity",
+      "after": "    internal fun ownedActivity"
+    },
+    {
+      "before": "    private fun overlayPermission",
+      "after": "    internal fun overlayPermission"
+    },
+    {
+      "before": "    private fun export",
+      "after": "    internal fun export"
+    },
+    {
+      "before": "    private fun document",
+      "after": "    internal fun document"
+    },
+    {
+      "before": "    private fun presentPending",
+      "after": "    internal fun presentPending"
+    },
+    {
+      "before": "    private fun snapshotValue",
+      "after": "    internal fun snapshotValue"
+    },
+    {
+      "before": "    private fun supportedRates",
+      "after": "    internal fun supportedRates"
+    },
+    {
+      "before": "    private fun provenance",
+      "after": "    internal fun provenance"
+    },
+    {
+      "before": "    private fun modeTitle",
+      "after": "    internal fun modeTitle"
+    },
+    {
+      "before": "    private fun value",
+      "after": "    internal fun value"
+    },
+    {
+      "before": "    private fun name",
+      "after": "    internal fun name"
+    },
+    {
+      "before": "    private fun whenRecorded",
+      "after": "    internal fun whenRecorded"
+    },
+    {
+      "before": "    private fun duration",
+      "after": "    internal fun duration"
+    },
+    {
+      "before": "    private fun number",
+      "after": "    internal fun number"
+    },
+    {
+      "before": "    private fun confirm",
+      "after": "    internal fun confirm"
+    },
+    {
+      "before": "    private fun dp",
+      "after": "    internal fun dp"
+    },
+    {
+      "before": "    private fun row",
+      "after": "    internal fun row"
+    },
+    {
+      "before": "    private fun column",
+      "after": "    internal fun column"
+    },
+    {
+      "before": "    private fun shape",
+      "after": "    internal fun shape"
+    },
+    {
+      "before": "    private fun meter",
+      "after": "    internal fun meter"
+    },
+    {
+      "before": "    private fun card",
+      "after": "    internal fun card"
+    },
+    {
+      "before": "    private fun gap",
+      "after": "    internal fun gap"
+    },
+    {
+      "before": "    private fun label",
+      "after": "    internal fun label"
+    },
+    {
+      "before": "    private fun heading",
+      "after": "    internal fun heading"
+    },
+    {
+      "before": "    private fun note",
+      "after": "    internal fun note"
+    },
+    {
+      "before": "    private fun button",
+      "after": "    internal fun button"
+    },
+    {
+      "before": "    private fun segment",
+      "after": "    internal fun segment"
+    },
+    {
+      "before": "    private fun tiers",
+      "after": "    internal fun tiers"
+    },
+    {
+      "before": "    private fun actionRow",
+      "after": "    internal fun actionRow"
+    }
+  ]
+}

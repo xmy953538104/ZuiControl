@@ -4,7 +4,10 @@ This tests RemoteViews actions; it does not claim a SystemUI pixel/device render
 from pathlib import Path
 import os,re,shutil,subprocess,tempfile,unittest
 ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
-def read(name):return (APP/name).read_text(encoding='utf-8')
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
+def read(name):return read_frontend(APP/name)
 
 class FrontendV3(unittest.TestCase):
     def test_shared_command_reads_use_existing_session_queue(self):

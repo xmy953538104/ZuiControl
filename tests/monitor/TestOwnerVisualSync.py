@@ -2,9 +2,12 @@
 from pathlib import Path
 import sys,unittest
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'tests'))
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
 from BackendContract import entries,reverse_entries
 APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
-def read(name):return (APP/name).read_text(encoding='utf8')
+def read(name):return read_frontend(APP/name)
 class OwnerVisualSync(unittest.TestCase):
  def test_retained_mode_ping_rebinds_without_restarting_motion(self):
   main=read('MainActivity.kt');ui=read('OwnerUi.kt')

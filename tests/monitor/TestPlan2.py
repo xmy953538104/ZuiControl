@@ -1,8 +1,11 @@
 """Plan2 UI ownership checks; actual pixels, input and latency require device evidence."""
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests'))
+from FrontendSource import read_frontend
 import unittest
 APP=Path(__file__).resolve().parents[2]/'app/src/main/java/com/zui/zuicontrol'
-def read(name):return (APP/name).read_text(encoding='utf8')
+def read(name):return read_frontend(APP/name)
 class Plan2(unittest.TestCase):
  def test_late_capabilities_rebind_only_selector_choices(self):
   main=read('MainActivity.kt');ui=read('OwnerUi.kt')

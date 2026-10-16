@@ -1,9 +1,12 @@
 """Scoped R7 source contracts; actual gestures, rendering and runtime are device gates."""
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests'))
+from FrontendSource import read_frontend
 import re,unittest,xml.etree.ElementTree as ET
 ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
-def read(name):return (ROOT/name).read_text(encoding='utf8')
-def app(name):return (APP/name).read_text(encoding='utf8')
+def read(name):return read_frontend(ROOT/name)
+def app(name):return read_frontend(APP/name)
 
 class ProductR7(unittest.TestCase):
     def test_selection_calls_and_policy_reachability(self):

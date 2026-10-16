@@ -2,8 +2,11 @@
 from pathlib import Path
 from TestUtilityTruth import compile_run
 ROOT=Path(__file__).resolve().parents[2]
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
 app=ROOT/'app/src/main/java/com/zui/zuicontrol'
-source=(app/'MainActivity.kt').read_text('utf8')
+source=read_frontend(app/'MainActivity.kt')
 assert 'responseFrameKey==responseKey' in source
 assert '(!editable || rulesQualified && inventoryVersion==FrontendPackages.version)' in source
 assert 'session.notice==notice && session.busy==busy' in source

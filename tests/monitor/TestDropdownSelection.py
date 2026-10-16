@@ -2,7 +2,10 @@
 from pathlib import Path
 import hashlib,os,shutil,subprocess,tempfile,re
 ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
-ui=(APP/'UiControls.kt').read_text(encoding='utf8');main=(APP/'MainActivity.kt').read_text(encoding='utf8')
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
+ui=read_frontend(APP/'UiControls.kt');main=read_frontend(APP/'MainActivity.kt')
 commit=ui[ui.index('    fun commitSelection('):ui.index('    private fun showChoices(')]
 listener=re.search(r'            setOnItemClickListener \{.*?\n            }',ui,re.S)[0]
 # Current Owner form uses segmented classes; keep the production dropdown

@@ -4,6 +4,9 @@ Producer bytes use production PolicyJson; App parsing uses the existing real org
 Android Binder, SQLite bindings and rendering remain merged-ROM device gates.
 """
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests'))
+from FrontendSource import read_frontend
 import base64, json, os, re, shutil, subprocess, sys, tempfile
 import xml.etree.ElementTree as ET
 
@@ -19,7 +22,7 @@ manifest = ET.parse(ROOT / 'app/src/main/AndroidManifest.xml')
 android = '{http://schemas.android.com/apk/res/android}'
 assert all(a.get(android+'screenOrientation') == 'sensorLandscape' for a in manifest.findall('./application/activity'))
 for filename in ('MainActivity.kt', 'FrontendGateway.kt', 'FrontendSession.kt', 'PerformanceRecordActivity.kt'):
-    text = (APP / filename).read_text('utf8')
+    text = read_frontend(APP / filename)
     assert all(bad not in text for bad in ('recordStart', 'analysisStart', 'analysisStop', 'FakeFrontendGateway', 'DemoBackend', 'Math.random'))
 backend_scopes = ['framework_patch', 'native', 'payload/system', 'payload/patches']
 # Current Owner Plan3 deltas must reverse exactly to the immutable integration

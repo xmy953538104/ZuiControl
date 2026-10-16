@@ -2,7 +2,10 @@
 from pathlib import Path
 import os,shutil,subprocess,tempfile
 ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
-quick=(APP/'ZuiControlQuickService.kt').read_text('utf8')
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
+quick=read_frontend(APP/'ZuiControlQuickService.kt')
 cache_method=quick[quick.index('    private var pendingIntentCreations'):quick.index('    private fun snapshot():')]
 harness='''package com.zui.zuicontrol
 class Intent(val context:Any,val type:Class<*>) {var action="";fun setAction(value:String):Intent{action=value;return this}}

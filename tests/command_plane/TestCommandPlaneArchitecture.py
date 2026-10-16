@@ -2,6 +2,9 @@
 """Host-only checks for the permanent command-plane architecture contract."""
 
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests'))
+from FrontendSource import read_frontend
 import re
 import unittest
 
@@ -10,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def read(relative: str) -> str:
-    return (ROOT / relative).read_text(encoding="utf-8")
+    return read_frontend(ROOT / relative)
 
 
 def section(text: str, start: str, end: str) -> str:

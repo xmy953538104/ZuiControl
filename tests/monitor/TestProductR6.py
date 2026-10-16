@@ -1,13 +1,16 @@
 """Owner R6 reachability and source boundaries; rendering/runtime remain device gates."""
 import sys
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests'))
+from FrontendSource import read_frontend
 import hashlib,json,re,unittest,xml.etree.ElementTree as ET
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests'))
 from BackendContract import reverse_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE
 APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
 SERVICE=ROOT/'framework_patch/src/services/com/zui/server/control/ZuiControlService.java'
-def source(name):return (APP/name).read_text(encoding='utf8')
+def source(name):return read_frontend(APP/name)
 def block(text, signature):
     pos=text.index(signature);start=text.index('{',pos);depth=1;end=start+1
     while depth:

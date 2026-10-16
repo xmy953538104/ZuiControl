@@ -3,7 +3,10 @@ from pathlib import Path
 from TestUtilityTruth import compile_run
 
 ROOT=Path(__file__).resolve().parents[2]
-source=(ROOT/'app/src/main/java/com/zui/zuicontrol/MainActivity.kt').read_text('utf8')
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
+source=read_frontend(ROOT/'app/src/main/java/com/zui/zuicontrol/MainActivity.kt')
 open_rule=source.split('    private fun openRule(',1)[1].split('    private fun ordinaryTemplateDialog',1)[0]
 mutate=source.split('    private fun mutateRule(',1)[1].split('    private fun moveRule',1)[0]
 assert 'if(session.section=="thread" && !rulesQualified)' in source.split('private fun saveDraft',1)[1].split('private fun addApp',1)[0]

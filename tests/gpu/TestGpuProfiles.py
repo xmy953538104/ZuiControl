@@ -3,6 +3,9 @@ from pathlib import Path
 import subprocess,tempfile,unittest
 
 ROOT=Path(__file__).resolve().parents[2]
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
 
 class GpuProfiles(unittest.TestCase):
     def test_real_parser_serializer_global_transaction(self):
@@ -24,7 +27,7 @@ class GpuProfiles(unittest.TestCase):
         self.assertIn('paint.strokeWidth = 10 * unit',bar)
         self.assertIn('radius-4*unit',bar)
         self.assertNotIn('canvas.drawText',bar)
-        main=(ROOT/'app/src/main/java/com/zui/zuicontrol/MainActivity.kt').read_text(encoding='utf8')
+        main=read_frontend(ROOT/'app/src/main/java/com/zui/zuicontrol/MainActivity.kt')
         self.assertIn('ownerUpdateReadout(readout,it)',main)
 
 if __name__=='__main__':unittest.main()

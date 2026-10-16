@@ -4,6 +4,9 @@ import sys
 sys.path.insert(0,str(Path(__file__).parent))
 from TestUtilityTruth import compile_run
 ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
 context='''package android.content
 class Prefs {val values=mutableMapOf<String,String>();fun getString(k:String,d:String?):String?=values[k]?:d;fun edit()=Editor(this)
  class Editor(val p:Prefs){val pending=p.values.toMutableMap();fun putString(k:String,v:String):Editor{pending[k]=v;return this};fun clear():Editor{pending.clear();return this};fun commit():Boolean{p.values.clear();p.values.putAll(pending);return true}}}
@@ -61,9 +64,9 @@ fun main(args:Array<String>){
 }
 '''
 for variant in ['callback','dropped','real']:
- source=(APP/'ZuiControlRequest.kt').read_text('utf8')
+ source=read_frontend(APP/'ZuiControlRequest.kt')
  assert source.count('waiter.signal.wait(waitMs)')==1
  if variant!='real':source=source.replace('waiter.signal.wait(waitMs)','ZuiControlClient.waitForAck(waitMs)')
  files={'Context.kt':context,'Clock.kt':clock,'Log.kt':'package android.util\nobject Log{fun i(t:String,s:String)=0}',
-        'Client.kt':client,'ZuiControlRequest.kt':source,'ZuiControlContract.kt':(APP/'ZuiControlContract.kt').read_text('utf8')}
+        'Client.kt':client,'ZuiControlRequest.kt':source,'ZuiControlContract.kt':read_frontend(APP/'ZuiControlContract.kt')}
  compile_run(files,'com.zui.zuicontrol.ClientKt',[variant])

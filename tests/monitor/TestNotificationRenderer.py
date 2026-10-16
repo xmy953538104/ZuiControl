@@ -5,6 +5,9 @@ import unittest
 import xml.etree.ElementTree as ET
 
 ROOT=Path(__file__).resolve().parents[2]
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
 RES=ROOT/'app/src/main/res'
 APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
 A='{http://schemas.android.com/apk/res/android}'
@@ -44,8 +47,8 @@ class NotificationRenderer(unittest.TestCase):
         self.assertFalse((RES/'layout/notification_zuicontrol.xml').exists())
 
     def test_every_update_uses_one_fresh_renderer(self):
-        quick=(APP/'ZuiControlQuickService.kt').read_text('utf8')
-        helper=(APP/'NotificationQuickControlHelper.kt').read_text('utf8')
+        quick=read_frontend(APP/'ZuiControlQuickService.kt')
+        helper=read_frontend(APP/'NotificationQuickControlHelper.kt')
         all_source='\n'.join(p.read_text('utf8') for p in APP.glob('*.kt'))
         self.assertEqual(all_source.count('RemoteViews(packageName,'),1)
         self.assertIn('startForeground(ID, renderNotification(snapshot()))',quick)
@@ -65,9 +68,9 @@ class NotificationRenderer(unittest.TestCase):
         self.assertNotRegex(helper,r'private (?:var|val)\s+\w+.*RemoteViews')
 
     def test_off_scalar_independence_and_cost_guards(self):
-        helper=(APP/'NotificationQuickControlHelper.kt').read_text('utf8')
-        quick=(APP/'ZuiControlQuickService.kt').read_text('utf8')
-        monitor=(APP/'PerformanceMonitor.kt').read_text('utf8')
+        helper=read_frontend(APP/'NotificationQuickControlHelper.kt')
+        quick=read_frontend(APP/'ZuiControlQuickService.kt')
+        monitor=read_frontend(APP/'PerformanceMonitor.kt')
         self.assertIn('metric(views, R.id.notification_quiet, snapshot.quietC,',helper)
         self.assertIn('metric(views, R.id.notification_power, snapshot.powerW,',helper)
         normal=quick[quick.index('private fun snapshot()'):quick.index('private fun renderNotification(')]
@@ -96,9 +99,9 @@ class NotificationRenderer(unittest.TestCase):
             self.assertEqual(shape.find('corners').get(A+'radius'),'11dp')
 
     def test_existing_single_callback_and_bounded_display_only_updates(self):
-        quick=(APP/'ZuiControlQuickService.kt').read_text('utf8')
-        monitor=(APP/'PerformanceMonitor.kt').read_text('utf8')
-        helper=(APP/'NotificationQuickControlHelper.kt').read_text('utf8')
+        quick=read_frontend(APP/'ZuiControlQuickService.kt')
+        monitor=read_frontend(APP/'PerformanceMonitor.kt')
+        helper=read_frontend(APP/'NotificationQuickControlHelper.kt')
         self.assertEqual(len(re.findall(r'monitor\("register",\s*"",\s*false,\s*false,\s*callback\)',monitor)),1)
         self.assertNotIn('monitor("register"',quick)
         for forbidden in ('BatteryManager','thermal_zone','readTasks','MonitorStore','Runtime.getRuntime'):

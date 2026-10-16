@@ -2,8 +2,11 @@
 from pathlib import Path
 import re
 ROOT=Path(__file__).resolve().parents[2]
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
 APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
-source=(APP/'ZuiControlRequest.kt').read_text('utf8')
+source=read_frontend(APP/'ZuiControlRequest.kt')
 encoder=source[source.index('    internal fun buildRequestText('):source.index('    internal fun hasPendingRequest(')]
 match=re.fullmatch(r'\s*internal fun buildRequestText\(\s*requestId: String,\s*command: String,\s*packageName: String,\s*mode: String,\s*\): String = listOf\((.*?)\)\.joinToString\("([^"]*)"\)\s*',encoder,re.S)
 assert match,'Production encoder changed: bind the new implementation explicitly'
@@ -17,12 +20,12 @@ def java_encoder():
     return 'static String appWire(String requestId,String command,String packageName,String mode){return String.join("'+SEPARATOR+'",'+','.join(TOKENS)+');}'
 
 # Bind business caller placement, independently of the consumer's numeric indices.
-settings=(APP/'SettingsBackup.kt').read_text('utf8')
+settings=read_frontend(APP/'SettingsBackup.kt')
 assert 'ZuiControlRequest.send(context,action,pkg=tx)' in settings
 assert 'command(context,"sb_restore",inspection.transaction)' in settings
 assert 'command(context,"sb_reset",tx)' in settings
 confirm=settings.index('transport("backupConfirm",')
 assert confirm < settings.index('command(context,"sb_restore",inspection.transaction)')
 assert '.put("hash",inspection.hash)' in settings[confirm:settings.index('command(context,"sb_restore",inspection.transaction)')]
-rules=(APP/'ZuioptRules.kt').read_text('utf8')
+rules=read_frontend(APP/'ZuioptRules.kt')
 assert 'ZuiControlRequest.send(context, command, pkg = key, mode = value)' in rules

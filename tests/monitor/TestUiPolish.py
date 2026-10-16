@@ -1,10 +1,13 @@
 """Production source reachability/layout contracts; actual rendering is a device gate."""
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests'))
+from FrontendSource import read_frontend
 import re, unittest, xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 APP = ROOT/'app/src/main/java/com/zui/zuicontrol'
-def source(name): return (APP/name).read_text(encoding='utf8')
+def source(name): return read_frontend(APP/name)
 
 class UiPolish(unittest.TestCase):
     def test_move_returns_before_commit_and_preview_is_local(self):

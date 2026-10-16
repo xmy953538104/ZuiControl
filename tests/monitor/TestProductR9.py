@@ -1,5 +1,8 @@
 """Execute production in-flight rules sharing; Android presentation is a device gate."""
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests'))
+from FrontendSource import read_frontend
 import sys,unittest
 ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
 sys.path.insert(0,str(ROOT/'tests/command_plane'))
@@ -7,7 +10,7 @@ from TestUtilityTruth import compile_run
 
 class ProductR9(unittest.TestCase):
     def test_shared_read_completion_failure_and_later_identity(self):
-        main=(APP/'MainActivity.kt').read_text('utf8')
+        main=read_frontend(APP/'MainActivity.kt')
         cache=main[main.index('    private data class LoadedRules'):main.index('    private companion object')].replace('private data class','data class')
         companion=main.split('    private companion object {',1)[1].split('    private var rulesRefreshPending',1)[0]
         code='''package com.zui.zuicontrol
@@ -73,7 +76,7 @@ fun main() {
 '''.replace('\nCACHE\n','\n'+cache+'\n').replace('COMPANION',companion)
         compile_run({'Shared.kt':code},'com.zui.zuicontrol.SharedKt',[])
     def test_last_snapshot_is_read_only_until_fresh_qualification(self):
-        main=(APP/'MainActivity.kt').read_text('utf8');load=main.split('private fun loadRules()',1)[1].split('private fun loadRecords()',1)[0]
+        main=read_frontend(APP/'MainActivity.kt');load=main.split('private fun loadRules()',1)[1].split('private fun loadRecords()',1)[0]
         self.assertNotIn('snapshot=null',load);self.assertNotIn('model=null',load)
         self.assertIn('rulesQualified=false',load);self.assertIn('failed={error->',load)
         page=main.split('private fun render()',1)[1].split('private fun buildMaster()',1)[0]

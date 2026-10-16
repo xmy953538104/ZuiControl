@@ -2,6 +2,9 @@
 from pathlib import Path
 import os,subprocess,tempfile,sys
 ROOT=Path(__file__).resolve().parents[2];APP=ROOT/'app/src/main/java/com/zui/zuicontrol'
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
 def compile_run(files,main,args,extra_classpath=()):
     cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1'
     compiler=list((cache/'org.jetbrains.kotlin/kotlin-compiler-embeddable').glob('*/*/*.jar'))
@@ -21,9 +24,9 @@ def compile_run(files,main,args,extra_classpath=()):
         subprocess.run(['java','-cp',os.pathsep.join(map(str,[tmp/'classes',stdlib,*extra_classpath])),main,*args],check=True,timeout=20)
 
 def saf(case):
-    source=(APP/'MainActivity.kt').read_text('utf8')
+    source=read_frontend(APP/'MainActivity.kt')
     body=source.split('            101 -> ',1)[1].split('\n            102 -> ',1)[0]
-    session=(APP/'FrontendSession.kt').read_text('utf8')
+    session=read_frontend(APP/'FrontendSession.kt')
     work=session[session.index('    fun work('):session.index('    fun saveApp(')]
     lifecycle=session[session.index('    @Volatile var onQueueEvent:'):session.index('    val controlsPending')]
     # Execute the current export branch and exact success/error owner. Only the
@@ -93,8 +96,8 @@ for(reason in listOf("request_busy","request_payload_mismatch","Binder transport
 }
 println("UTILITY_DEFINITIVE_REJECTION_NEXT_REQUEST=PASS")}
 ''',
-    'ZuiControlRequest.kt':(APP/'ZuiControlRequest.kt').read_text('utf8'),
-    'ZuiControlContract.kt':(APP/'ZuiControlContract.kt').read_text('utf8')}
+    'ZuiControlRequest.kt':read_frontend(APP/'ZuiControlRequest.kt'),
+    'ZuiControlContract.kt':read_frontend(APP/'ZuiControlContract.kt')}
     compile_run(files,'com.zui.zuicontrol.ClientKt',[])
 
 if __name__=='__main__':

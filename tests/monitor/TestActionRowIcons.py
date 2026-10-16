@@ -3,7 +3,10 @@ from pathlib import Path
 import re
 
 ROOT=Path(__file__).resolve().parents[2]
-source=(ROOT/'app/src/main/java/com/zui/zuicontrol/MainActivity.kt').read_text('utf8')
+import sys
+sys.path.insert(0,str(ROOT/'tests'))
+from FrontendSource import read_frontend
+source=read_frontend(ROOT/'app/src/main/java/com/zui/zuicontrol/MainActivity.kt')
 titles=set(re.findall(r'\bactionRow\("([^"\n]+)"',source))
 icon_map=source.split('val icon=when(title){',1)[1].split('\n',1)[0]
 icons={title:icon for title,icon in re.findall(r'"([^"\n]+)"->R\.drawable\.(\w+)',icon_map)}

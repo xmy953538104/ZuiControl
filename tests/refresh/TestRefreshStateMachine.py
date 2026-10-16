@@ -2,6 +2,9 @@
 """Host-only state-machine and production-binding tests for Refresh."""
 
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests'))
+from FrontendSource import read_frontend
 import unittest
 
 
@@ -10,7 +13,7 @@ ALLOWED_HZ = (60, 90, 120, 144, 165)
 
 
 def read(relative: str) -> str:
-    return (ROOT / relative).read_text(encoding="utf-8")
+    return read_frontend(ROOT / relative)
 
 
 def is_transient(package_name: str) -> bool:

@@ -1,5 +1,8 @@
 """Permanent terminal scope/absence/reset/init contracts against real sources."""
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests'))
+from FrontendSource import read_frontend
 import hashlib
 import json
 import re
@@ -11,7 +14,7 @@ from RuntimePurityAudit import audit_system
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests'))
 from BackendContract import reverse_runtime_r5, reverse_text, reverse_runtime_text, reverse_entries, entries as scope_entries, MANIFEST as ABC_SCOPE
-def live(name): return (ROOT/name).read_text(encoding='utf8')
+def live(name): return read_frontend(ROOT/name)
 def read(name):
     text=live(name)
     return reverse_runtime_r5(name,text) if name.startswith('native/zuiopt/') else text
