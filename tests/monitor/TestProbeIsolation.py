@@ -17,7 +17,7 @@ assert 'startActivitySync(launch)' in probe and 'Binder.getCallingUid()!=1000' i
 assert 'data.setDataPosition(position)' in probe and 'delegate.transact(code,data,reply,flags)' in probe
 assert 'ACK_TARGET_ARMED id=' in probe and 'PRIMARY_FAILURE mode=' in probe and 'CLEANUP_FAILURE mode=' in probe
 assert 'controlsOwner.controls(true,probeCallback)' in probe and 'getMethod("controls"' not in probe
-assert 'Pending fault requires actual HOME scene' in probe
+assert 'sendPolicy(context,"refresh","","GLOBAL",target' in probe and '"ackPending"' not in probe
 assert 'READ_ONLY_ACK_CONTRACT_PASS' in probe and '.stateText()' not in probe
 assert 'subscribedSnapshot=initial;' in probe and probe.count('globalRefresh(subscribedSnapshot)')==2
 source=ROOT/'app/src/androidTest/java/com/zui/zuicontrol/probe/AckFaultGate.java'

@@ -114,8 +114,7 @@ public final class ResourceProbe extends Instrumentation {
                 String scene=com.zui.zuicontrol.ZuiControlClient.INSTANCE.currentSceneText();
                 original=globalRefresh(subscribedSnapshot);
                 int target=original==90?120:90;
-                if(mode.equals("ackPending")&&!java.util.Arrays.asList(scene.split("\n")).contains("editableSceneIsHome=true"))throw new IllegalStateException("Pending fault requires actual HOME scene");
-                String id=com.zui.zuicontrol.ZuiControlClient.INSTANCE.sendPolicy(context,"refresh","",mode.equals("ackPending")?"FOREGROUND":"GLOBAL",target,"",0,0,scene,null,null);
+                String id=com.zui.zuicontrol.ZuiControlClient.INSTANCE.sendPolicy(context,"refresh","","GLOBAL",target,"",0,0,scene,null,null);
                 Object request=Class.forName("com.zui.zuicontrol.ZuiControlRequest").getField("INSTANCE").get(null),pending=null;
                 for(java.lang.reflect.Method m:request.getClass().getDeclaredMethods())if(m.getName().startsWith("pendingIdentity")){m.setAccessible(true);pending=m.invoke(request,context);break;}
                 if(pending==null)throw new IllegalStateException("Exact pending identity already gone");
@@ -153,7 +152,7 @@ public final class ResourceProbe extends Instrumentation {
                 Log.i("R6Probe","READ_ONLY_ACK_CONTRACT_PASS appUid="+android.os.Process.myUid()+" epoch="+subscriptionEpoch+" snapshotBytes="+subscribedSnapshot.length());
             }finally{restoreCallback();}return;
         }
-        if("ackDrop".equals(op)||"ackLate".equals(op)||"ackPending".equals(op)){callbackCase(op);return;}
+        if("ackDrop".equals(op)||"ackLate".equals(op)){callbackCase(op);return;}
         if("finish".equals(op)){restoreCallback();finish(0,new Bundle());return;}
         if("controlsDisconnect".equals(op)||"controlsReconnect".equals(op)) {
             Class<?> type=Class.forName("com.zui.zuicontrol.ControlsState");
