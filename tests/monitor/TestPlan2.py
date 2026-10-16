@@ -4,6 +4,15 @@ import unittest
 APP=Path(__file__).resolve().parents[2]/'app/src/main/java/com/zui/zuicontrol'
 def read(name):return (APP/name).read_text(encoding='utf8')
 class Plan2(unittest.TestCase):
+ def test_late_capabilities_rebind_only_selector_choices(self):
+  main=read('MainActivity.kt');ui=read('OwnerUi.kt')
+  self.assertIn('refreshSelector.showChoices(current.map',main)
+  self.assertIn('appRefresh.showChoices(current.map',main)
+  self.assertIn('supportedRates().getOrNull(i)',main)
+  choices=ui.split('fun showChoices(',1)[1].split('override fun onMeasure',1)[0]
+  self.assertIn('if(next==values){showSelection(selected);return}',choices)
+  self.assertIn('animator?.cancel()',choices)
+  self.assertIn('options.removeAllViews();rebuildOptions()',choices)
  def test_settings_theme_selection_follows_preference_on_same_palette(self):
   main=read('MainActivity.kt')
   settings=main.split('private fun settingsPage()',1)[1].split('private var themeFramePending',1)[0]

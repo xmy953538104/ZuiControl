@@ -29,8 +29,17 @@ public final class ProductSmoke extends UiAutomatorTestCase {
    long end=SystemClock.elapsedRealtime()+4000;boolean confirmed=false;
    do{if(button.exists()){String text=button.getContentDescription();if(text.contains("已选择")&&!text.contains("应用中")&&!text.contains("核对中")&&!text.contains("失败")){confirmed=true;break;}}SystemClock.sleep(20);}while(SystemClock.elapsedRealtime()<end);
    assertTrue("ACK did not reach current notification selection",confirmed);
+  }else{
+   process("cmd","statusbar","collapse");
+   long end=SystemClock.elapsedRealtime()+3000;
+   while(button.exists()&&SystemClock.elapsedRealtime()<end)SystemClock.sleep(20);
+   assertFalse("Previous shade close has not completed",button.exists());
   }
   event(id+"_GUI_TERMINAL_OBSERVED",start);
+ }
+ public void testAdviceColdChoices()throws Exception{
+  String path=getParams().getString("out");assertTrue(path.startsWith("/data/local/tmp/baseline-ui-"));log=new PrintWriter(path+"/events.jsonl");
+  try{long start=SystemClock.elapsedRealtimeNanos();process("am","start","-n","com.zui.zuicontrol/.MainActivity");click("调控");waitText("系统全局状态",5000);waitText("60Hz",5000);event("CURRENT_CAPABILITY_CHOICES_VISIBLE",start);getUiDevice().takeScreenshot(new File(path+"/capability-choices.png"));}finally{log.close();}
  }
  public void testAdviceQuickControls()throws Exception{
   Configurator.getInstance().setWaitForIdleTimeout(0).setWaitForSelectorTimeout(0).setActionAcknowledgmentTimeout(0);

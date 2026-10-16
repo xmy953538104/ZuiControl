@@ -304,7 +304,7 @@ internal class OwnerDesignLayout(context: Context): FrameLayout(context) {
 }
 
 @SuppressLint("ViewConstructor")
-internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val values: List<String>,selected: Int,
+internal class OwnerSegment(context: Context,private val ui: OwnerUi,private var values: List<String>,selected: Int,
     private val small: Boolean=false,enabled: Boolean=true,private val action:(Int)->Unit): FrameLayout(context) {
     private var position=selected.toFloat();private var index=selected;private var animator: ValueAnimator?=null
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
@@ -312,10 +312,15 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
     init {
         setWillNotDraw(false);background=ui.shape(ui.card2,if(small)10f else 14f);isEnabled=enabled;alpha=if(enabled)1f else .6f
         val pad=ui.px(if(small)3 else 4);options.setPadding(pad,pad,pad,pad)
+        rebuildOptions()
+        addView(options,LayoutParams(-1,-1));minimumHeight=ui.px(if(small)34 else 50)
+        layoutParams=LinearLayout.LayoutParams(-1,ui.px(if(small)34 else 50))
+    }
+    private fun rebuildOptions(){
         values.forEachIndexed { i,value ->
             val text=ui.label(value,if(small)12f else 15f,if(i==index)Color.WHITE else ui.sub,if(small)700 else 800).apply{
                 ellipsize=null
-                gravity=Gravity.CENTER;isFocusable=true;contentDescription=value;isEnabled=enabled
+                gravity=Gravity.CENTER;isFocusable=true;contentDescription=value;isEnabled=this@OwnerSegment.isEnabled
                 if(value.endsWith(" Hz")) {
                     val s=android.text.SpannableString(value.replace(" Hz","Hz"));s.setSpan(android.text.style.RelativeSizeSpan(10f/15f),s.length-2,s.length,0)
                     s.setSpan(android.text.style.ForegroundColorSpan(if(i==index)0xd9ffffff.toInt() else ui.soft(ui.sub,153)),s.length-2,s.length,0);setText(s,TextView.BufferType.SPANNABLE)
@@ -329,9 +334,13 @@ internal class OwnerSegment(context: Context,private val ui: OwnerUi,private val
             options.addView(text,LinearLayout.LayoutParams(0,-1,1f).apply{if(i>0)marginStart=ui.px(if(small)2 else 4)})
         }
         val measure=Paint(Paint.ANTI_ALIAS_FLAG).apply{textSize=ui.px(if(small)OwnerTypography.BUTTON.size else 15f).toFloat();typeface=Typeface.create("sans-serif",Typeface.BOLD)}
+        val pad=ui.px(if(small)3 else 4)
         minimumWidth=((values.maxOfOrNull{measure.measureText(it)} ?: 0f)+ui.px(if(small)16 else 24)).roundToInt()*values.size+pad*2+ui.px(if(small)2 else 4)*(values.size-1).coerceAtLeast(0)
-        addView(options,LayoutParams(-1,-1));minimumHeight=ui.px(if(small)34 else 50)
-        layoutParams=LinearLayout.LayoutParams(-1,ui.px(if(small)34 else 50))
+    }
+    fun showChoices(next:List<String>,selected:Int){
+        if(next==values){showSelection(selected);return}
+        animator?.cancel();values=next;index=selected;position=selected.toFloat()
+        options.removeAllViews();rebuildOptions();requestLayout();invalidate()
     }
     override fun onMeasure(widthMeasureSpec:Int,heightMeasureSpec:Int) {
         super.onMeasure(widthMeasureSpec,heightMeasureSpec)

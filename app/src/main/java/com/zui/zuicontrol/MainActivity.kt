@@ -819,8 +819,8 @@ class MainActivity : Activity() {
         detail.addView(owner.card().apply{
             addView(owner.section("全局刷新率","全局默认屏幕刷新率档位模式"))
             val rates=supportedRates();val refreshSelector=ownerControl(OwnerSegment(this@MainActivity,owner,rates.map{"$it Hz"},rates.indexOf(refresh.displayed)){i->
-                optimistic(refresh,rates[i]){target->session.gateway.setGlobal("refresh",value=target)}
-            });addView(refreshSelector);bindControl(refresh){refreshSelector.showSelection(rates.indexOf(refresh.displayed))}
+                supportedRates().getOrNull(i)?.let{optimistic(refresh,it){target->session.gateway.setGlobal("refresh",value=target)}}
+            });addView(refreshSelector);bindControl(refresh){val current=supportedRates();refreshSelector.showChoices(current.map{"$it Hz"},current.indexOf(refresh.displayed))}
             val unknown=owner.label("全局档位尚未确认",11f,owner.inks[2]);addView(unknown)
             bindControl(refresh){unknown.visibility=if(refresh.confirmed==0)View.VISIBLE else View.GONE}
             addView(owner.divider());addView(owner.section("全局性能档位","日常系统调度激进程度"))
@@ -923,8 +923,8 @@ class MainActivity : Activity() {
         val rates=supportedRates()
         val box=owner.card()
         box.addView(owner.section("自定义应用刷新率","前台应用自定义刷新率档位"))
-        val appRefresh=OwnerSegment(this,owner,rates.map{"$it Hz"},rates.indexOf(d.refreshHz)){session.appDraft=checkNotNull(session.appDraft).copy(refreshHz=rates[it]);markDirty()}
-        box.addView(appRefresh);bindPresentation{session.appDraft?.let{appRefresh.showSelection(rates.indexOf(it.refreshHz))}}
+        val appRefresh=OwnerSegment(this,owner,rates.map{"$it Hz"},rates.indexOf(d.refreshHz)){i->supportedRates().getOrNull(i)?.let{session.appDraft=checkNotNull(session.appDraft).copy(refreshHz=it);markDirty()}}
+        box.addView(appRefresh);bindPresentation{session.appDraft?.let{val current=supportedRates();appRefresh.showChoices(current.map{"$it Hz"},current.indexOf(it.refreshHz))}}
         box.addView(owner.divider());box.addView(owner.section("自定义应用性能档位","调配集群负载迁移阈值与超大核激进度"))
         box.addView(owner.tiers(d.uperfMode,true,configurable,reconcile={bind->pageBindings+={session.appDraft?.let{bind(it.uperfMode)}}}){id->session.appDraft=checkNotNull(session.appDraft).copy(uperfMode=id,gpuPolicy=ZuiControlClient.GpuPolicy.DEFAULT_FOR_MODE,gpuMinMHz=null,gpuMaxMHz=null);syncGpu();markDirty()})
         if(!configurable)box.addView(owner.label("此应用不支持 Uperf 配置；刷新率和适用的线程规则仍可配置",11f,owner.muted).apply{setSingleLine(false)})
