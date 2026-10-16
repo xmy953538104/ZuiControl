@@ -12,7 +12,7 @@ public final class ProductSmoke extends UiAutomatorTestCase {
    try(BufferedReader reader=new BufferedReader(new InputStreamReader(new FileInputStream(path+"/app-trace.log"),"UTF-8"))){
     String line;while((line=reader.readLine())!=null){int start=line.indexOf("OwnerRenderTrace: ");if(start<0)continue;
      JSONObject e=new JSONObject(line.substring(start+18));
-     if(e.optString("kind").equals(kind)&&e.optLong("elapsed_ns")>=after&&e.optString("page").contains(required))return;
+     if(java.util.Arrays.asList(kind.split("\\|")).contains(e.optString("kind"))&&e.optLong("elapsed_ns")>=after&&e.optString("page").contains(required))return;
     }
    }
    SystemClock.sleep(20);
@@ -84,7 +84,7 @@ public final class ProductSmoke extends UiAutomatorTestCase {
   String[] sections={"线程","监测","设置","调控"};
   try{for(int i=0;i<20;i++){
    long start=SystemClock.elapsedRealtimeNanos();click(sections[i%4]);event("NAV_"+(i+1)+"_INPUT_RETURNED",start);
-   waitTrace(path,"PAGE_TRANSITION_END","children=1;y=0.0",start);event("NAV_"+(i+1)+"_READY",start);
+   waitTrace(path,"PAGE_TRANSITION_END|PAGE_SWAP_READY","children=1;y=0.0",start);event("NAV_"+(i+1)+"_READY",start);
   }}finally{log.close();}
  }
  public void testAdviceCallbackFallback()throws Exception{

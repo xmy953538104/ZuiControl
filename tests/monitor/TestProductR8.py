@@ -6,6 +6,9 @@ sys.path.insert(0,str(ROOT/'tests/command_plane'))
 from TestUtilityTruth import compile_run
 
 class ProductR8(unittest.TestCase):
+    def test_cancelled_page_observers_and_release(self):
+        from TestOwnerPageHost import check_page_host
+        check_page_host()
     def test_exact_cache_and_mismatch(self):
         main=(APP/'MainActivity.kt').read_text('utf8')
         cache=main[main.index('    private data class LoadedRules'):main.index('    private companion object')].replace('private data class','data class')

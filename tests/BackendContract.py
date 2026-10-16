@@ -73,6 +73,7 @@ ADVICE_R4_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeFrontendScope.py','T
 ADVICE_R4_ALLOWED|={'tests/monitor/TestPlan2.py','app/src/androidTest/java/com/zui/zuicontrol/probe/ResourceProbe.java'}
 ADVICE_R4_ALLOWED|=set(['tests/monitor/'+n for n in ('TestProductR6.py','TestProductR7.py','TestProductR8.py')])
 ADVICE_R4_ALLOWED.add('tests/refresh/TestRefreshStateMachine.py')
+ADVICE_R4_ALLOWED.add('tests/monitor/TestOwnerPageHost.py')
 assert ADVICE_R4['phase']=='ZUICONTROL_FINAL_ADVICE_CLOSEOUT_R4' and ADVICE_R4['baseHead']=='c64aa686829ca0420d7b523eb28c2ce2e71c6c7f'
 assert set(ADVICE_R4['allowedPaths'])==ADVICE_R4_ALLOWED=={r['path'] for r in ADVICE_R4['files']}
 
