@@ -109,11 +109,11 @@ public final class ResourceProbe extends Instrumentation {
             try{
                 Exception[] connected={null};runOnMainSync(()->{try{wrapCallback();}catch(Exception e){connected[0]=e;}});
                 if(connected[0]!=null)throw connected[0];
-                String state=com.zui.zuicontrol.ZuiControlClient.INSTANCE.stateText();
+                String scene=com.zui.zuicontrol.ZuiControlClient.INSTANCE.currentSceneText();
+                String state=scene;
                 for(String line:state.split("\n"))if(line.startsWith("savedGlobalRefresh="))original=Integer.parseInt(line.substring("savedGlobalRefresh=".length()).trim());
                 if(original<=0)throw new IllegalStateException("Current global intent unavailable");
                 int target=original==90?120:90;
-                String scene=com.zui.zuicontrol.ZuiControlClient.INSTANCE.currentSceneText();
                 if(mode.equals("ackPending")&&!java.util.Arrays.asList(scene.split("\n")).contains("editableSceneIsHome=true"))throw new IllegalStateException("Pending fault requires actual HOME scene");
                 String id=com.zui.zuicontrol.ZuiControlClient.INSTANCE.sendPolicy(context,"refresh","",mode.equals("ackPending")?"FOREGROUND":"GLOBAL",target,"",0,0,scene,null,null);
                 Object request=Class.forName("com.zui.zuicontrol.ZuiControlRequest").getField("INSTANCE").get(null),pending=null;
@@ -144,6 +144,16 @@ public final class ResourceProbe extends Instrumentation {
     }
     @SuppressWarnings("unchecked") private void operation(String op) throws Exception {
         Activity activity=current.get();Context context=getTargetContext();
+        if("ackContract".equals(op)){
+            try{wrapCallback();
+                String scene=com.zui.zuicontrol.ZuiControlClient.INSTANCE.currentSceneText();
+                if(!scene.matches("(?s).*\\nsavedGlobalRefresh=(60|90|120|144|165)(\\n|$).*"))throw new IllegalStateException("Current scene global contract absent");
+                Class<?> request=Class.forName("com.zui.zuicontrol.ZuiControlRequest");boolean pending=false;
+                for(java.lang.reflect.Method m:request.getDeclaredMethods())if(m.getName().startsWith("pendingIdentity"))pending=true;
+                if(!pending)throw new IllegalStateException("Pending identity entry absent");
+                Log.i("R6Probe","READ_ONLY_ACK_CONTRACT_PASS appUid="+android.os.Process.myUid()+" epoch="+subscriptionEpoch+" sceneBytes="+scene.length());
+            }finally{restoreCallback();}return;
+        }
         if("ackDrop".equals(op)||"ackLate".equals(op)||"ackPending".equals(op)){callbackCase(op);return;}
         if("finish".equals(op)){restoreCallback();finish(0,new Bundle());return;}
         if("controlsDisconnect".equals(op)||"controlsReconnect".equals(op)) {

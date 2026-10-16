@@ -18,6 +18,7 @@ assert 'data.setDataPosition(position)' in probe and 'delegate.transact(code,dat
 assert 'ACK_TARGET_ARMED id=' in probe and 'PRIMARY_FAILURE mode=' in probe and 'CLEANUP_FAILURE mode=' in probe
 assert 'controlsOwner.controls(true,probeCallback)' in probe and 'getMethod("controls"' not in probe
 assert 'Pending fault requires actual HOME scene' in probe
+assert 'READ_ONLY_ACK_CONTRACT_PASS' in probe and '.stateText()' not in probe
 source=ROOT/'app/src/androidTest/java/com/zui/zuicontrol/probe/AckFaultGate.java'
 with tempfile.TemporaryDirectory(prefix='zui-r5-ack-gate-') as directory:
     path=Path(directory);shutil.copyfile(source,path/source.name)
