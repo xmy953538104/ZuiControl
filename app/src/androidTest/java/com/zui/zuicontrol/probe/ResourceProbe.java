@@ -41,6 +41,13 @@ public final class ResourceProbe extends Instrumentation {
     private Activity windowTarget;
     private int windowMode;
     private float windowRefresh;
+    private android.zui.ZuiControlManager moduleTarget;
+    private void restoreModule(){
+        if(moduleTarget==null)return;
+        String reply=moduleTarget.setModuleEnabled("refresh",true);
+        if(!reply.startsWith("ok=1"))throw new IllegalStateException("Module restore rejected: "+reply);
+        moduleTarget=null;Log.i("R6Probe","REFRESH_MODULE_RESTORED");
+    }
     private void restoreWindow(){
         if(windowTarget==null)return;
         android.view.WindowManager.LayoutParams lp=windowTarget.getWindow().getAttributes();
@@ -173,6 +180,17 @@ public final class ResourceProbe extends Instrumentation {
     }
     @SuppressWarnings("unchecked") private void operation(String op) throws Exception {
         Activity activity=current.get();Context context=getTargetContext();
+        if("moduleOff".equals(op)){
+            if(moduleTarget!=null)throw new IllegalStateException("Module test already active");
+            Object state=Class.forName("com.zui.zuicontrol.ControlsState").getField("INSTANCE").get(null);
+            android.zui.ZuiControlManager owner=(android.zui.ZuiControlManager)field(state,"backend");
+            if(owner==null||!owner.getState().contains("\nrefreshDisabled=false\n"))
+                throw new IllegalStateException("Owner module not enabled; do not overwrite intent");
+            moduleTarget=owner;String reply=owner.setModuleEnabled("refresh",false);
+            if(!reply.startsWith("ok=1"))throw new IllegalStateException("Module disable rejected: "+reply);
+            Log.i("R6Probe","REFRESH_MODULE_DISABLED_REAL_APP_UID="+android.os.Process.myUid());return;
+        }
+        if("moduleRestore".equals(op)){restoreModule();return;}
         if("window60".equals(op)){
             if(windowTarget!=null)throw new IllegalStateException("Window request already active");
             android.view.Display.Mode chosen=null;
@@ -203,7 +221,7 @@ public final class ResourceProbe extends Instrumentation {
             }finally{restoreCallback();}return;
         }
         if("ackDrop".equals(op)||"ackLate".equals(op)){callbackCase(op);return;}
-        if("finish".equals(op)){if(fixture!=null)fixture.close();fixture=null;restoreWindow();restoreCallback();finish(0,new Bundle());return;}
+        if("finish".equals(op)){if(fixture!=null)fixture.close();fixture=null;restoreWindow();restoreModule();restoreCallback();finish(0,new Bundle());return;}
         if("controlsDisconnect".equals(op)||"controlsReconnect".equals(op)) {
             Class<?> type=Class.forName("com.zui.zuicontrol.ControlsState");
             Object state=type.getField("INSTANCE").get(null);
