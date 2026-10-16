@@ -10,7 +10,7 @@ class RuntimeR5Scope(unittest.TestCase):
     text=(ROOT/row['path']).read_text(encoding='utf8')
     old=subprocess.run(['git','show',RUNTIME_R5['baseHead']+':'+row['path']],cwd=ROOT,capture_output=True)
     self.assertEqual(reverse_runtime_r5(row['path'],text),old.stdout.decode('utf8').replace('\r\n','\n') if old.returncode==0 else '')
-    with self.assertRaisesRegex(AssertionError,'(?:R[56]|ADVICE_R4|POST_BASELINE|POWER_PORT_R3) exact authorized bytes'):reverse_runtime_r5(row['path'],text+'\n// outside scope\n')
+    with self.assertRaisesRegex(AssertionError,'(?:R[56]|RESIDENCY_R5|ADVICE_R4|POST_BASELINE|POWER_PORT_R3) exact authorized bytes'):reverse_runtime_r5(row['path'],text+'\n// outside scope\n')
   expected=subprocess.check_output(['git','ls-tree','-r',RUNTIME_R5['baseHead'],'--','native/zuiopt'],cwd=ROOT).splitlines()
   self.assertEqual(sorted(reverse_runtime_r5_entries(entries('native/zuiopt'),'native/zuiopt')),sorted(expected))
  def test_historical_overlays_unchanged(self):

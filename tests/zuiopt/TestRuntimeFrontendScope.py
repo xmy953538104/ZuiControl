@@ -9,7 +9,7 @@ class FrontendRuntimeScope(unittest.TestCase):
             with self.subTest(path=row['path']):
                 source=(ROOT/row['path']).read_text(encoding='utf8');old=subprocess.check_output(['git','-C',str(ROOT),'show',FRONTEND_RUNTIME_R2['baseHead']+':'+row['path']]).decode('utf8').replace('\r\n','\n')
                 self.assertEqual(old,reverse_frontend_runtime_r2(row['path'],source))
-                with self.assertRaisesRegex(AssertionError,'(?:R[2356]|ADVICE_R4|POST_BASELINE) (?:C/B |library inheritance )?exact authorized bytes'):reverse_frontend_runtime_r2(row['path'],source+'\n// outside Owner delta\n')
+                with self.assertRaisesRegex(AssertionError,'(?:R[2356]|RESIDENCY_R5|ADVICE_R4|POST_BASELINE) (?:C/B |library inheritance )?exact authorized bytes'):reverse_frontend_runtime_r2(row['path'],source+'\n// outside Owner delta\n')
         actual=entries('native/zuiopt');old=subprocess.check_output(['git','-C',str(ROOT),'ls-tree','-r',FRONTEND_RUNTIME_R2['baseHead'],'--','native/zuiopt']).splitlines()
         self.assertEqual(sorted(old),sorted(reverse_frontend_runtime_entries(actual,'native/zuiopt')))
     def test_execution_and_historical_manifests_unchanged(self):
@@ -23,7 +23,7 @@ class FrontendRuntimeScope(unittest.TestCase):
                 source=(ROOT/row['path']).read_text(encoding='utf8')
                 old=subprocess.check_output(['git','-C',str(ROOT),'show',LIBRARY_INHERITANCE_R2['baseHead']+':'+row['path']]).decode('utf8').replace('\r\n','\n')
                 self.assertEqual(old,reverse_library_inheritance_r2(row['path'],source))
-                with self.assertRaisesRegex(AssertionError,'(?:R[2356]|ADVICE_R4|POST_BASELINE) (?:library inheritance )?exact authorized bytes'):reverse_library_inheritance_r2(row['path'],source+'\n// unauthorized\n')
+                with self.assertRaisesRegex(AssertionError,'(?:R[2356]|RESIDENCY_R5|ADVICE_R4|POST_BASELINE) (?:library inheritance )?exact authorized bytes'):reverse_library_inheritance_r2(row['path'],source+'\n// unauthorized\n')
         path='tests/zuiopt/runtime_frontend_r2_delta.json'
         self.assertEqual((ROOT/path).read_text(encoding='utf8'),subprocess.check_output(['git','-C',str(ROOT),'show',LIBRARY_INHERITANCE_R2['baseHead']+':'+path]).decode('utf8').replace('\r\n','\n'))
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -76,8 +76,34 @@ ADVICE_R4_ALLOWED.add('tests/refresh/TestRefreshStateMachine.py')
 ADVICE_R4_ALLOWED.add('tests/monitor/TestOwnerPageHost.py')
 assert ADVICE_R4['phase']=='ZUICONTROL_FINAL_ADVICE_CLOSEOUT_R4' and ADVICE_R4['baseHead']=='c64aa686829ca0420d7b523eb28c2ce2e71c6c7f'
 assert set(ADVICE_R4['allowedPaths'])==ADVICE_R4_ALLOWED=={r['path'] for r in ADVICE_R4['files']}
+RESIDENCY_R5=json.loads((ROOT/'tests/native_residency_r5_delta.json').read_text(encoding='utf8'))
+RESIDENCY_R5_ALLOWED={'app/build.gradle.kts','.github/workflows/build.yml','tests/monitor/TestProbeIsolation.py'}
+RESIDENCY_R5_ALLOWED|={'app/src/androidTest/java/com/zui/zuicontrol/probe/'+n for n in ('ResourceProbe.java','AckFaultGate.java')}
+RESIDENCY_R5_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeFrontendScope.py','TestRuntimeR5Scope.py','TestRuntimeR6Scope.py')}
+assert RESIDENCY_R5['phase']=='ZUICONTROL_R5_NATIVE_RESIDENCY_CALLBACK_AND_POWER_CLOSEOUT' and RESIDENCY_R5['baseHead']=='00be2b28ce856d6b59555f1dd475caea3e1b53ec'
+assert set(RESIDENCY_R5['allowedPaths'])==RESIDENCY_R5_ALLOWED=={r['path'] for r in RESIDENCY_R5['files']}
+
+# Exact local R1 build/fixture changes are separate from the public runtime ancestry.
+BASELINE_LOCAL={}
+for path,before,after in (
+    ('app/build.gradle.kts','            signingConfig = signingConfigs.getByName("release")\n',
+     '            // The baseline receiver compiles unsigned and verifies an authorized CI signature separately.\n            if (!providers.gradleProperty("zuicontrol.unsignedBaseline").isPresent) {\n                signingConfig = signingConfigs.getByName("release")\n            }\n'),
+    ('host_retirement/TestRetirement.py',"serial=R.SERIAL,model='TB321FU'","serial='FIXTURE_DEVICE_SERIAL',model='TB321FU'")):
+    original=subprocess.check_output(['git','-C',str(ROOT),'show','3565f3d4ecf66bce0f8bac2ca93d9ae180745e1c:'+path]).decode().replace('\r\n','\n')
+    assert original.count(before)==1
+    local=original.replace(before,after,1)
+    BASELINE_LOCAL[path]=(original,local)
 
 def reverse_response_battery(path,text):
+    delta=next((r for r in RESIDENCY_R5['files'] if r['path']==path),None)
+    if delta:
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('RESIDENCY_R5 exact authorized bytes',path)
+        for h in reversed(delta['hunks']):
+            assert text.count(h['after'])==1,('RESIDENCY_R5 exact hunk',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['beforeSha256'],('RESIDENCY_R5 preserved 00be source',path)
+    baseline=BASELINE_LOCAL.get(path)
+    if baseline and text==baseline[1]:text=baseline[0]
     delta=next((r for r in ADVICE_R4['files'] if r['path']==path),None)
     if delta:
         assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('ADVICE_R4 exact authorized bytes',path)
@@ -110,6 +136,18 @@ def reverse_response_battery(path,text):
 
 def reverse_response_battery_entries(current,*scopes):
     result=list(current)
+    for row in RESIDENCY_R5['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('RESIDENCY_R5 exact authorized source',row['path'])
+        result.remove(row['afterEntry'].encode())
+        if row['beforeEntry'] is not None:result.append(row['beforeEntry'].encode())
+    for path,(original,local) in BASELINE_LOCAL.items():
+        if not any(path.startswith(scope+'/') for scope in scopes):continue
+        def baseline_entry(value):
+            data=value.encode();oid=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+            return ('100644 blob '+oid+'\t'+path).encode()
+        old,new=baseline_entry(original),baseline_entry(local)
+        if new in result:result.remove(new);result.append(old)
     for row in ADVICE_R4['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['afterEntry'].encode())==1,('ADVICE_R4 exact authorized source',row['path'])

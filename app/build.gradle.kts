@@ -36,11 +36,20 @@ android {
     buildTypes {
         getByName("release") {
             isDebuggable = false
+            isProfileable = false
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            // The baseline receiver compiles unsigned and verifies an authorized CI signature separately.
+            if (!providers.gradleProperty("zuicontrol.unsignedBaseline").isPresent) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         getByName("debug") {
             isDebuggable = true
+        }
+        create("nativeProfile") {
+            initWith(getByName("release"))
+            isProfileable = true
+            matchingFallbacks += "release"
         }
     }
 

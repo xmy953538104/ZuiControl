@@ -166,6 +166,7 @@ jobs:
           python3 tests/command_plane/TestControlsCallbacks.py || scripts_failed=1
           python3 tests/command_plane/TestRuntimeDomains.py || scripts_failed=1
           python3 tests/command_plane/TestAckObservation.py || scripts_failed=1
+          python3 tests/monitor/TestProbeIsolation.py || scripts_failed=1
           python3 tests/command_plane/TestFrontendPackages.py || scripts_failed=1
           python3 tests/command_plane/TestCachedDraft.py || scripts_failed=1
           python3 tests/command_plane/TestResponseDraw.py
@@ -245,6 +246,22 @@ jobs:
         with:
           name: ZuiControl-release-apk
           path: app/build/outputs/apk/release/app-release.apk
+
+      - name: Build native profiling APK
+        # Diagnostic manifest only. This distinct output never replaces the release payload APK.
+        run: |
+          gradle -p . :app:assembleNativeProfile \
+            -Pzuicontrol.storeFile="$RUNNER_TEMP/ZuiControl-release.jks" \
+            -Pzuicontrol.storePassword="${{ secrets.KEYSTORE_PASSWORD }}" \
+            -Pzuicontrol.keyAlias="${{ secrets.KEY_ALIAS }}" \
+            -Pzuicontrol.keyPassword="${{ secrets.KEY_PASSWORD }}"
+
+      - name: Upload native profiling APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZuiControl-native-profile-apk
+          path: app/build/outputs/apk/nativeProfile/app-nativeProfile.apk
+          if-no-files-found: error
 
       - name: Test and build ZUIopt production integration
         if: ${{ !cancelled() }}
