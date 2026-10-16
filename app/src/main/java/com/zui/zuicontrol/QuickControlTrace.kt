@@ -12,7 +12,7 @@ internal object QuickControlTrace {
     @Synchronized fun enable(seconds: Int) { until = SystemClock.elapsedRealtime() + seconds.coerceIn(0,600)*1000L }
     @Synchronized fun begin(kind: String, value: String): Long {
         if (SystemClock.elapsedRealtime() >= until) return 0
-        if (rows.size == 16) rows.removeFirst()
+        if (rows.size == 64) rows.removeFirst()
         val id = ++nextId
         rows.addLast(JSONObject().put("id",id).put("kind",kind).put("value",value)
             .put("T0",SystemClock.elapsedRealtimeNanos()))
@@ -28,17 +28,17 @@ internal object QuickControlTrace {
         rows.firstOrNull { it.optLong("id") == id }?.put("package",pkg)
         mark(id,"T1",pkg)
     }
-    @Synchronized fun observed(pkg: String, rate: Int, mode: String, phase: String): Long {
+    @Synchronized fun observed(pkg: String, rate: Int, mode: String, phase: String,full:Boolean=false): Long {
         if (SystemClock.elapsedRealtime() >= until) return 0
-        rows.lastOrNull()?.let { row ->
-            if (row.optString("package") == pkg && row.optString("value") ==
-                (if (row.optString("kind") == "Refresh") rate.toString() else mode)) {
+        rows.lastOrNull { row->
+            row.optString("package") == (if(row.optString("kind")=="Monitor")"" else pkg) && row.optString("value") ==
+                when(row.optString("kind")){"Refresh"->rate.toString();"Monitor"->full.toString();else->mode}
+        }?.let { row ->
                 val id = row.getLong("id")
                 // Uperf Settings publication occurs only after the daemon's durable rule write.
                 mark(id,"T2","authoritative_profile_observed")
                 mark(id,phase)
                 return id
-            }
         }
         return 0
     }

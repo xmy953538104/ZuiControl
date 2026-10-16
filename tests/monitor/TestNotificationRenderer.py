@@ -69,7 +69,11 @@ class NotificationRenderer(unittest.TestCase):
         monitor=(APP/'PerformanceMonitor.kt').read_text('utf8')
         self.assertIn('metric(views, R.id.notification_quiet, snapshot.quietC,',helper)
         self.assertIn('metric(views, R.id.notification_power, snapshot.powerW,',helper)
-        self.assertNotIn('PerformanceMonitor.command("state")',quick)
+        normal=quick[quick.index('private fun snapshot()'):quick.index('private fun renderNotification(')]
+        self.assertNotIn('PerformanceMonitor.command("state")',normal)
+        recovery=quick[quick.index('private fun reconcileVerifying()'):quick.index('private fun errorToast')]
+        self.assertIn('operations.verifying()',recovery)
+        self.assertIn('QuickControlState.Phase.UNKNOWN',recovery)
         self.assertIn('monitor?.desiredFull()',quick)
         self.assertIn('if (controlsDirty || controls == null)',quick)
         self.assertIn('if (displayed == lastRendered) return',quick)

@@ -250,6 +250,10 @@ object ZuiControlRequest {
         return null
     }
 
+    /** UI recovery reads the existing authenticated identity without admitting another request. */
+    @Synchronized internal fun pendingIdentity(context: Context): Pair<String, String>? =
+        loadPending(context)?.let { it.requestId to it.requestText }
+
     @Synchronized private fun clearPending(context: Context, requestId: String) {
         val prefs = preferences(context)
         if (prefs.getString(PREF_REQUEST_ID, null) == requestId) {

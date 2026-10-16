@@ -15,7 +15,10 @@ internal object NotificationQuickControlHelper {
     data class Snapshot(
         val pkg: String, val currentHz: Int, val currentMode: UperfMode,
         val isFloatActive: Boolean, val refreshEnabled: Boolean, val uperfEnabled: Boolean,
-        val quietC: Double = -1.0, val powerW: Double = Double.NaN, val dark:Boolean=false
+        val quietC: Double = -1.0, val powerW: Double = Double.NaN, val dark:Boolean=false,
+        val refreshStatus:QuickControlState.Presentation?=null,
+        val uperfStatus:QuickControlState.Presentation?=null,
+        val monitorStatus:QuickControlState.Presentation?=null
     )
 
     fun updateRemoteViews(
@@ -30,14 +33,17 @@ internal object NotificationQuickControlHelper {
             setViewVisibility(id, View.VISIBLE)
         }
         setInt(R.id.monitor_toggle, "setBackgroundResource",
-            R.drawable.notify_monitor_active)
+            if(snapshot.monitorStatus?.phase in listOf(QuickControlState.Phase.PENDING,QuickControlState.Phase.VERIFYING)) R.drawable.notify_monitor_pending else R.drawable.notify_monitor_active)
+        val monitorLabel=statusLabel(snapshot.monitorStatus)
+        setTextViewText(R.id.monitor_status,monitorLabel)
+        setViewVisibility(R.id.monitor_status,if(monitorLabel.isEmpty())View.GONE else View.VISIBLE)
         setBoolean(R.id.monitor_toggle, "setEnabled", true)
         setImageViewResource(R.id.monitor_icon, R.drawable.notify_monitor_ecg)
         setInt(R.id.monitor_icon, "setColorFilter",
             Color.WHITE)
         setImageViewResource(R.id.monitor_indicator, R.drawable.notify_monitor_indicator)
         setViewVisibility(R.id.monitor_indicator, if (snapshot.isFloatActive) View.VISIBLE else View.GONE)
-        setContentDescription(R.id.monitor_toggle, "监视器 ${if (snapshot.isFloatActive) "开启" else "关闭"}")
+        setContentDescription(R.id.monitor_toggle, "监视器 ${if (snapshot.isFloatActive) "开启" else "关闭"} $monitorLabel")
         setOnClickPendingIntent(R.id.monitor_toggle, monitorIntent)
         metric(views, R.id.notification_quiet, snapshot.quietC,
             "°C", "quiet-therm 温度",snapshot.dark)
@@ -48,7 +54,7 @@ internal object NotificationQuickControlHelper {
             .zip(ZuiControlContract.rates).forEach { (id, value) ->
                 button(views, id, value.toString(), value == snapshot.currentHz,
                     R.drawable.notify_rate_selected, snapshot.refreshEnabled, refreshIntent(value),
-                    "${value}Hz",snapshot.dark)
+                    "${value}Hz",snapshot.dark,snapshot.refreshStatus?.takeIf{it.value==value.toString()})
             }
         val backgrounds = listOf(R.drawable.notify_mode_powersave, R.drawable.notify_mode_balance,
             R.drawable.notify_mode_performance, R.drawable.notify_mode_fast)
@@ -56,7 +62,7 @@ internal object NotificationQuickControlHelper {
             .zip(UperfMode.entries).forEach { (id, value) ->
                 val title = value.title
                 button(views, id, title, value == snapshot.currentMode, backgrounds[value.ordinal],
-                    snapshot.uperfEnabled, modeIntent(value), title,snapshot.dark)
+                    snapshot.uperfEnabled, modeIntent(value), title,snapshot.dark,snapshot.uperfStatus?.takeIf{it.value==value.id})
             }
     }
 
@@ -82,14 +88,27 @@ internal object NotificationQuickControlHelper {
         views.setContentDescription(id, if (valid) "$description $text" else "$description 暂不可用")
     }
 
+    private fun statusLabel(status:QuickControlState.Presentation?):String=when(status?.phase){
+        QuickControlState.Phase.PENDING->"应用中"
+        QuickControlState.Phase.VERIFYING->"核对中"
+        QuickControlState.Phase.UNKNOWN->"结果未知"
+        QuickControlState.Phase.FAILED->"失败"
+        else->""
+    }
     private fun button(views: RemoteViews, id: Int, text: String, selected: Boolean,
-                       activeBackground: Int, enabled: Boolean, intent: PendingIntent, description: String,dark:Boolean) {
-        views.setTextViewText(id, text)
-        views.setTextColor(id, if(selected && enabled)Color.WHITE else if(enabled)if(dark)Color.rgb(165,176,195)else Color.rgb(71,85,105) else if(dark)Color.rgb(108,120,144)else Color.rgb(142,155,174))
-        views.setInt(id, "setBackgroundResource", if (selected && enabled) activeBackground else R.drawable.notify_rate_normal)
+                       activeBackground: Int, enabled: Boolean, intent: PendingIntent, description: String,dark:Boolean,
+                       status:QuickControlState.Presentation?=null) {
+        val label=statusLabel(status)
+        val pending=status?.phase in listOf(QuickControlState.Phase.PENDING,QuickControlState.Phase.VERIFYING)
+        val title=SpannableString(if(label.isEmpty())text else "$text\n$label")
+        if(label.isNotEmpty())title.setSpan(RelativeSizeSpan(.65f),text.length+1,title.length,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        views.setInt(id,"setMaxLines",2)
+        views.setTextViewText(id, title)
+        views.setTextColor(id, if(pending)Color.rgb(91,140,255) else if(selected && enabled)Color.WHITE else if(enabled)if(dark)Color.rgb(165,176,195)else Color.rgb(71,85,105) else if(dark)Color.rgb(108,120,144)else Color.rgb(142,155,174))
+        views.setInt(id, "setBackgroundResource", if(pending)R.drawable.notify_pending else if (selected && enabled) activeBackground else R.drawable.notify_rate_normal)
         views.setViewVisibility(id, View.VISIBLE)
         views.setBoolean(id, "setEnabled", enabled)
-        views.setContentDescription(id, "$description ${if (selected) "已选择" else "未选择"} ${if (enabled) "可用" else "不可配置"}")
+        views.setContentDescription(id, "$description ${if (selected) "已选择" else "未选择"} ${if (enabled) "可用" else "不可配置"} $label")
         views.setOnClickPendingIntent(id, intent)
     }
 }

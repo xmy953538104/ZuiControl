@@ -6,8 +6,125 @@ import java.io.*;
 
 /** Real GUI inputs; Root reads observe authority. No storage or kernel repairs. */
 public final class ProductSmoke extends UiAutomatorTestCase {
+ void waitTrace(String path,String kind,String required,long after)throws Exception{
+  long end=SystemClock.elapsedRealtime()+8000;
+  do{
+   try(BufferedReader reader=new BufferedReader(new InputStreamReader(new FileInputStream(path+"/app-trace.log"),"UTF-8"))){
+    String line;while((line=reader.readLine())!=null){int start=line.indexOf("OwnerRenderTrace: ");if(start<0)continue;
+     JSONObject e=new JSONObject(line.substring(start+18));
+     if(e.optString("kind").equals(kind)&&e.optLong("elapsed_ns")>=after&&e.optString("page").contains(required))return;
+    }
+   }
+   SystemClock.sleep(20);
+  }while(SystemClock.elapsedRealtime()<end);
+  fail("Current operation trace missing: "+kind+" / "+required);
+ }
+ void quickChoice(String path,String control,String prefix,String id)throws Exception{
+  process("cmd","statusbar","expand-notifications");
+  UiObject button=new UiObject(new UiSelector().descriptionStartsWith(prefix));
+  assertTrue("Real notification control missing: "+prefix,button.waitForExists(4000));assertTrue(button.isEnabled());
+  long start=SystemClock.elapsedRealtimeNanos();button.click();event(id+"_INPUT_RETURNED",start);
+  waitTrace(path,"QUICK_TERMINAL","control="+control+";",start);
+  if(!control.equals("monitor")){
+   long end=SystemClock.elapsedRealtime()+4000;boolean confirmed=false;
+   do{if(button.exists()){String text=button.getContentDescription();if(text.contains("已选择")&&!text.contains("应用中")&&!text.contains("核对中")&&!text.contains("失败")){confirmed=true;break;}}SystemClock.sleep(20);}while(SystemClock.elapsedRealtime()<end);
+   assertTrue("ACK did not reach current notification selection",confirmed);
+  }
+  event(id+"_GUI_TERMINAL_OBSERVED",start);
+ }
+ public void testAdviceQuickControls()throws Exception{
+  Configurator.getInstance().setWaitForIdleTimeout(0).setWaitForSelectorTimeout(0).setActionAcknowledgmentTimeout(0);
+  String path=getParams().getString("out");assertTrue(path.startsWith("/data/local/tmp/baseline-ui-"));log=new PrintWriter(path+"/events.jsonl");
+  assertTrue(process("dumpsys","zui_control").contains("monitorRecordState=IDLE"));
+  int originalMonitor=process("dumpsys","zui_control").contains("monitorMode=1\n")?1:0;
+  JSONObject original=global();String apps=policy().getJSONArray("apps").toString();
+  String mode=original.getString("uperfMode");int hz=original.getInt("refreshHz");
+  java.util.Map<String,String> titles=new java.util.HashMap<>();titles.put("powersave","节能");titles.put("balance","均衡");titles.put("performance","性能");titles.put("fast","快速");
+  assertTrue("Current rate cannot be restored through accepted GUI",java.util.Arrays.asList(60,90,120,144,165).contains(hz));
+  try{
+   getUiDevice().pressHome();
+   int[] available={60,90,120,144,165};int offset=0;while(available[offset]!=hz)offset++;
+   int[] rates=new int[5];for(int i=0;i<5;i++)rates[i]=available[(offset+i+1)%5];
+   for(int i=0;i<rates.length;i++){quickChoice(path,"refresh",rates[i]+"Hz ","REFRESH_"+(i+1));waitGlobal("refreshHz",Integer.toString(rates[i]));}
+   waitGlobal("refreshHz",Integer.toString(hz));
+   String[] availableModes={"powersave","balance","performance","fast"};int modeOffset=java.util.Arrays.asList(availableModes).indexOf(mode);
+   String[] modes=new String[5];for(int i=0;i<5;i++)modes[i]=availableModes[(modeOffset+i+1)%4];
+   for(int i=0;i<modes.length;i++){quickChoice(path,"uperf",titles.get(modes[i])+" ","UPERF_"+(i+1));waitGlobal("uperfMode",modes[i]);}
+   quickChoice(path,"uperf",titles.get(mode)+" ","UPERF_RESTORE");waitGlobal("uperfMode",mode);
+   for(int i=0;i<5;i++){quickChoice(path,"monitor","监视器 ","MONITOR_"+(i+1));waitMonitor((originalMonitor+i+1)%2);}
+   quickChoice(path,"monitor","监视器 ","MONITOR_RESTORE");waitMonitor(originalMonitor);
+   assertEquals("HOME controls changed an App override",apps,policy().getJSONArray("apps").toString());
+   assertEquals("Owner global semantics not restored",original.toString(),global().toString());
+  }catch(Exception|AssertionError failure){
+   log.println(new JSONObject().put("event","PRIMARY_QUICK_FAILURE").put("error",failure.toString()));log.flush();throw failure;
+  }finally{
+   try{
+    getUiDevice().pressHome();
+    if(global().getInt("refreshHz")!=hz){quickChoice(path,"refresh",hz+"Hz ","REFRESH_CLEANUP");waitGlobal("refreshHz",Integer.toString(hz));}
+    if(!global().getString("uperfMode").equals(mode)){quickChoice(path,"uperf",titles.get(mode)+" ","UPERF_CLEANUP");waitGlobal("uperfMode",mode);}
+    if(!process("dumpsys","zui_control").contains("monitorMode="+originalMonitor+"\n")){quickChoice(path,"monitor","监视器 ","MONITOR_CLEANUP");waitMonitor(originalMonitor);}
+   }finally{
+   process("cmd","statusbar","collapse");process("am","start","-n","com.zui.zuicontrol/.MainActivity");log.close();
+   }
+  }
+ }
+ public void testAdviceNavigation()throws Exception{
+  Configurator.getInstance().setWaitForIdleTimeout(0).setWaitForSelectorTimeout(0).setActionAcknowledgmentTimeout(0);
+  String path=getParams().getString("out");assertTrue(path.startsWith("/data/local/tmp/baseline-ui-"));log=new PrintWriter(path+"/events.jsonl");
+  process("am","start","-n","com.zui.zuicontrol/.MainActivity");waitText("调控",5000);click("调控");
+  String[] sections={"线程","监测","设置","调控"};
+  try{for(int i=0;i<20;i++){
+   long start=SystemClock.elapsedRealtimeNanos();click(sections[i%4]);event("NAV_"+(i+1)+"_INPUT_RETURNED",start);
+   waitTrace(path,"PAGE_TRANSITION_END","children=1;y=0.0",start);event("NAV_"+(i+1)+"_READY",start);
+  }}finally{log.close();}
+ }
+ void memoryStage(String path,String name,String visibleText)throws Exception{
+  long start=SystemClock.elapsedRealtimeNanos();
+  for(int i=0;i<2;i++){
+   SystemClock.sleep(15000);
+   if(visibleText.isEmpty())getUiDevice().pressHome();else click(visibleText);
+  }
+  event(name+"_STABLE_30S",start);
+  getUiDevice().takeScreenshot(new File(path+"/"+name+".png"));
+  log.println(new JSONObject().put("event",name+"_RESOURCE_CAPTURE").put("output",process("sh",path+"/memory-stage.sh",name)));
+  log.flush();
+ }
+ void quickMonitor()throws Exception{
+  process("cmd","statusbar","expand-notifications");
+  UiObject button=new UiObject(new UiSelector().descriptionStartsWith("监视器 "));
+  assertTrue("Real notification Monitor control missing",button.waitForExists(4000));button.click();
+  process("cmd","statusbar","collapse");
+ }
+ void waitMonitor(int mode)throws Exception{
+  long end=SystemClock.elapsedRealtime()+5000;
+  while(SystemClock.elapsedRealtime()<end){if(process("dumpsys","zui_control").contains("monitorMode="+mode+"\n"))return;SystemClock.sleep(50);}
+  fail("Actual Monitor mode not confirmed: "+mode);
+ }
+ public void testAdviceMemoryStates()throws Exception{
+  Configurator.getInstance().setWaitForIdleTimeout(0).setWaitForSelectorTimeout(0).setActionAcknowledgmentTimeout(0);
+  String path=getParams().getString("out");assertTrue(path.startsWith("/data/local/tmp/baseline-ui-"));
+  String before=process("dumpsys","zui_control");assertTrue(before.contains("monitorRecordState=IDLE"));
+  assertTrue("Preserve an already active Overlay",before.contains("monitorMode=0\n"));
+  log=new PrintWriter(path+"/events.jsonl");
+  try{
+   process("am","start","-n","com.zui.zuicontrol/.MainActivity");waitText("调控",5000);
+   assertFalse("Keep Owner draft",object("未保存").exists());click("调控");waitText("系统全局状态",5000);
+   memoryStage(path,"HOME","系统全局状态");
+   click("线程");waitText("全局调度默认",5000);assertFalse(generation().isEmpty());
+   memoryStage(path,"THREAD","线程策略");
+   getUiDevice().pressHome();waitLeftApp();memoryStage(path,"NOTIFICATION","");
+   quickMonitor();waitMonitor(1);getUiDevice().pressHome();memoryStage(path,"OVERLAY","");
+   quickMonitor();waitMonitor(0);getUiDevice().pressHome();
+   log.println(new JSONObject().put("event","EXPLICIT_TRIM_REQUEST").put("result",process("am","send-trim-memory","com.zui.zuicontrol","RUNNING_LOW")));log.flush();
+   memoryStage(path,"TRIM","");
+  }finally{
+   if(process("dumpsys","zui_control").contains("monitorMode=1\n")){quickMonitor();waitMonitor(0);}
+   process("am","start","-n","com.zui.zuicontrol/.MainActivity");
+   log.close();
+  }
+ }
  PrintWriter log;
- String process(String... args)throws Exception{Process p=new ProcessBuilder(args).redirectErrorStream(true).start();ByteArrayOutputStream b=new ByteArrayOutputStream();byte[] buf=new byte[4096];int n;while((n=p.getInputStream().read(buf))>0)b.write(buf,0,n);assertEquals(0,p.waitFor());return b.toString("UTF-8").trim();}
+ String process(String... args)throws Exception{Process p=new ProcessBuilder(args).redirectErrorStream(true).start();ByteArrayOutputStream b=new ByteArrayOutputStream();byte[] buf=new byte[4096];int n;while((n=p.getInputStream().read(buf))>0)b.write(buf,0,n);String text=b.toString("UTF-8").trim();assertEquals(args[0]+" failed: "+text.substring(0,Math.min(1000,text.length())),0,p.waitFor());return text;}
  JSONObject policy()throws Exception{return new JSONObject(process("cat","/data/system/zui_control/policy-v2.json"));}
  JSONObject row(JSONObject p,String key)throws Exception{JSONArray rows=p.getJSONArray("apps");for(int i=0;i<rows.length();i++)if(rows.getJSONObject(i).getString("key").equals(key))return rows.getJSONObject(i).getJSONObject("value");throw new AssertionError("Dedicated existing policy row missing");}
  UiObject object(String text){return new UiObject(new UiSelector().text(text));}

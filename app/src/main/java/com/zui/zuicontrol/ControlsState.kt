@@ -48,6 +48,7 @@ internal object ControlsState {
         if (listeners.isEmpty() || connecting) return
         connecting=true
         val ticket = ++epoch
+        OwnerRenderTrace.event("ACK_SUBSCRIBE","epoch=$ticket")
         val next = object : Binder() {
             init { attachInterface(null,"android.zui.IControlsSnapshotV2") }
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
@@ -59,7 +60,8 @@ internal object ControlsState {
                     val sha=data.readString() ?: return false
                     val ack=data.readString() ?: return false
                     if(id.length>64 || sha.length!=64 || ack.length>8192 || data.dataAvail()!=0)return false
-                    if(ticket==epoch)ZuiControlRequest.acceptAckCallback(id,sha,ack)
+                    val accepted=ticket==epoch && ZuiControlRequest.acceptAckCallback(id,sha,ack)
+                    OwnerRenderTrace.event("ACK_CALLBACK","epoch=$ticket;current=$epoch;id=$id;accepted=$accepted")
                     return true
                 }
                 data.enforceInterface("android.zui.IControlsSnapshot")

@@ -120,7 +120,7 @@ internal class OwnerUi(val context: Context) {
         if(leading!=null)addView(leading,LinearLayout.LayoutParams(leading.layoutParams?.width ?: -2,leading.layoutParams?.height ?: -2).apply{marginEnd=px(14)})
         addView(column().apply {
             addView(label(title,20f,text,800),LinearLayout.LayoutParams(-1,px(27)))
-            addView(label(subtitle,11.5f,muted),LinearLayout.LayoutParams(-1,px(15)).apply{topMargin=px(4)})
+            addView(label(subtitle,11.5f,muted).apply{tag="owner-subtitle"},LinearLayout.LayoutParams(-1,px(15)).apply{topMargin=px(4)})
         },LinearLayout.LayoutParams(0,px(46),1f))
         if(trailing!=null)addView(trailing,LinearLayout.LayoutParams(-2,-2).apply{marginStart=px(14)})
         layoutParams=gap()
@@ -157,7 +157,7 @@ internal class OwnerUi(val context: Context) {
         addView(icon(icon,fg,glyph).apply{background=shape(bg,if(small)10f else 12f);val p=px((size-glyph)/2f);setPadding(p,p,p,p)},LinearLayout.LayoutParams(px(size),px(size)).apply{marginEnd=px(if(small)12 else 14)})
         addView(column().apply{
             addView(label(title,if(small)13f else 14f,if(small)accent else text,800),LinearLayout.LayoutParams(-1,if(small)-2 else px(19)))
-            addView(label(subtitle,11f,muted),LinearLayout.LayoutParams(-1,if(small)-2 else px(15)).apply{topMargin=px(if(small)2 else 3)})
+            addView(label(subtitle,11f,muted).apply{tag="owner-subtitle"},LinearLayout.LayoutParams(-1,if(small)-2 else px(15)).apply{topMargin=px(if(small)2 else 3)})
         },LinearLayout.LayoutParams(0,-2,1f))
         addView(icon(R.drawable.owner_chevron,muted,16).apply{alpha=.6f},LinearLayout.LayoutParams(px(16),px(16)).apply{marginStart=px(if(small)12 else 14)})
         isFocusable=true;contentDescription=title;setOnClickListener{action()};press(this)
@@ -165,11 +165,12 @@ internal class OwnerUi(val context: Context) {
     fun section(title: String,subtitle: String,trailing: View?=null)=row().apply {
         addView(column().apply{
                     addView(label(title,14f,this@OwnerUi.text,800),LinearLayout.LayoutParams(-1,px(20)))
-            addView(label(subtitle,11f,muted),LinearLayout.LayoutParams(-1,px(14)).apply{topMargin=px(4)})
+            addView(label(subtitle,11f,muted).apply{tag="owner-subtitle"},LinearLayout.LayoutParams(-1,px(14)).apply{topMargin=px(4)})
         },LinearLayout.LayoutParams(0,px(38),1f))
         if(trailing!=null)addView(trailing);layoutParams=LinearLayout.LayoutParams(-1,px(38)).apply{bottomMargin=px(14)}
     }
     fun divider()=View(context).apply{setBackgroundColor(line);layoutParams=LinearLayout.LayoutParams(-1,px(1)).apply{topMargin=px(20);bottomMargin=px(18)}}
+    fun caption(view:View,text:String){view.findViewWithTag<TextView>("owner-subtitle")?.text=text}
     fun search(hint: String,value: String=""): Pair<View,EditText> {
         val input=EditText(context).apply{
             this.hint=hint;setText(value);setTextSize(TypedValue.COMPLEX_UNIT_DIP,12f);setTextColor(this@OwnerUi.text);setHintTextColor(muted)
@@ -186,7 +187,7 @@ internal class OwnerUi(val context: Context) {
         gravity=Gravity.CENTER;setPadding(px(24),px(24),px(24),px(24));background=shape(if(error)chipBg[3] else card,18f,line)
         addView(icon(if(error)R.drawable.owner_warn else R.drawable.owner_info,if(error)chipFg[3] else muted,24),LinearLayout.LayoutParams(px(24),px(24)).apply{bottomMargin=px(12)})
         addView(label(title,13f,if(error)chipFg[3] else sub,700).apply{setSingleLine(false);gravity=Gravity.CENTER})
-        addView(label(description,11.5f,if(error)chipFg[3] else muted).apply{setSingleLine(false);gravity=Gravity.CENTER;setLineSpacing(0f,1.5f)},LinearLayout.LayoutParams(-1,-2).apply{topMargin=px(6)})
+        addView(label(description,11.5f,if(error)chipFg[3] else muted).apply{tag="owner-subtitle";setSingleLine(false);gravity=Gravity.CENTER;setLineSpacing(0f,1.5f)},LinearLayout.LayoutParams(-1,-2).apply{topMargin=px(6)})
     }
     fun formRow(title: String,control: View)=row().apply{
         setPadding(0,px(9),0,px(9))

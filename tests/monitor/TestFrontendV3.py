@@ -130,7 +130,15 @@ fun main() {
   check((views.properties[R.id.notification_power to "description"] as String).contains("暂不可用"))
   check((views.properties[R.id.mode_fast to "click"] as PendingIntent).action=="mode:fast")
  }
- println("EXACT_RENDERER_REBIND_20_COMBINATIONS_60_TRANSITIONS=PASS")
+ for(phase in listOf(QuickControlState.Phase.PENDING,QuickControlState.Phase.VERIFYING,QuickControlState.Phase.FAILED,QuickControlState.Phase.UNKNOWN)) {
+  val pending=QuickControlState.Presentation("90",phase,"")
+  helper.updateRemoteViews(views,NotificationQuickControlHelper.Snapshot("org.test.app",120,UperfMode.BALANCE,false,true,true,refreshStatus=pending),PendingIntent("monitor"),{PendingIntent("hz:$it")},{PendingIntent("mode:${it.id}")})
+  check(views.properties[R.id.refresh_90 to "setEnabled"]==true)
+  check(views.properties[R.id.refresh_120 to "textColor"]==Color.WHITE)
+  check(views.properties[R.id.refresh_90 to "textColor"]!=Color.WHITE)
+  check((views.properties[R.id.refresh_90 to "text"] as String).startsWith("90\\n"))
+ }
+ println("EXACT_RENDERER_REBIND_20_COMBINATIONS_60_TRANSITIONS_AND_PENDING_TRUTH=PASS")
 }
 '''
         cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1'
@@ -145,8 +153,8 @@ fun main() {
             tmp=Path(directory)
             for name,text in stubs.items():(tmp/name).write_text(text,encoding='utf-8')
             (tmp/'Harness.kt').write_text(harness,encoding='utf-8')
-            subprocess.run([java,'-cp',os.pathsep.join(map(str,jars)),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',os.pathsep.join(map(str,[stdlib,jsonlib,*annotations])),'-d',str(tmp/'classes'),str(APP/'NotificationQuickControlHelper.kt'),str(APP/'LivePower.kt'),str(APP/'UperfMode.kt'),*map(str,tmp.glob('*.kt'))],check=True,timeout=60,capture_output=True)
+            subprocess.run([java,'-cp',os.pathsep.join(map(str,jars)),'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler','-no-stdlib','-no-reflect','-classpath',os.pathsep.join(map(str,[stdlib,jsonlib,*annotations])),'-d',str(tmp/'classes'),str(APP/'NotificationQuickControlHelper.kt'),str(APP/'QuickControlState.kt'),str(APP/'LivePower.kt'),str(APP/'UperfMode.kt'),*map(str,tmp.glob('*.kt'))],check=True,timeout=60,capture_output=True)
             r=subprocess.run([java,'-cp',os.pathsep.join(map(str,[tmp/'classes',stdlib,jsonlib])),'com.zui.zuicontrol.HarnessKt'],check=True,timeout=20,capture_output=True,text=True)
-            self.assertIn('60_TRANSITIONS=PASS',r.stdout);print(r.stdout.strip())
+            self.assertIn('60_TRANSITIONS_AND_PENDING_TRUTH=PASS',r.stdout);print(r.stdout.strip())
 
 if __name__=='__main__':unittest.main(verbosity=2)

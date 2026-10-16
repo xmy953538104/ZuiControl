@@ -22,7 +22,11 @@ import java.io.PrintWriter
 class ZuiControlQuickService : Service() {
     private var monitor: PerformanceMonitor? = null
     private val handler = Handler(Looper.getMainLooper())
-    private val intentEpoch=java.util.concurrent.ConcurrentHashMap<String,Long>()
+    private val operations=QuickControlState()
+    private var destroyed=false
+    private var acknowledgedMonitorMode:Boolean?=null
+    private var monitorAcknowledgedAt=0L
+    private var reconciling=false
     private var refreshPosted = false
     private var controlsDirty = true
     private var controls: NotificationQuickControlHelper.Snapshot? = null
@@ -40,7 +44,7 @@ class ZuiControlQuickService : Service() {
     private val readingUpdate = Runnable { lastReadingPublish = SystemClock.elapsedRealtime(); requestRefresh(false) }
     // A one-shot expiry only; it does not read a sensor or wake a sleeping device.
     private val readingExpiry = Runnable { acceptReading(-1.0, Double.NaN, 0L, 3500L) }
-    private val controlsChanged: () -> Unit = { requestRefresh() }
+    private val controlsChanged: () -> Unit = { requestRefresh();reconcileVerifying() }
     override fun onCreate() {
         super.onCreate()
         getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -52,6 +56,7 @@ class ZuiControlQuickService : Service() {
         ControlsState.observe(controlsChanged)
         FrontendPackages.observe(applicationContext,packagesChanged)
         monitor = PerformanceMonitor(this, onReading = ::acceptReading) { requestRefresh() }.also { it.start() }
+        recoverControl()
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action.orEmpty()
@@ -65,56 +70,143 @@ class ZuiControlQuickService : Service() {
                         android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 } else {
                     monitor?.start()
-                    mutate { check(PerformanceMonitor.command("full").startsWith("ok=1")){"监视器不可用"} }
+                    val current=snapshot()
+                    val target=monitorTarget()
+                    val pending=operations.presentation("monitor",target)
+                    if(pending?.phase !in listOf(QuickControlState.Phase.PENDING,QuickControlState.Phase.VERIFYING))
+                        offer("monitor",target,(!current.isFloatActive).toString(),current.isFloatActive.toString())
+                    else reconcileVerifying()
                 }
             }
             action.startsWith(REFRESH) -> {
                 val rate = action.removePrefix(REFRESH).toIntOrNull()
-                val trace = QuickControlTrace.begin("Refresh",rate.toString())
-                if (rate in ZuiControlContract.rates) mutate("refresh") {
-                    val scene = ZuiControlClient.currentSceneText()
-                    QuickControlTrace.target(trace,ZuiControlClient.stateValue(scene,"editableScenePackage").orEmpty())
-                    // Same transaction as the accepted current-scene Refresh control.
-                    val reply = ZuiControlClient.setCurrentSceneDisplayHz(this, rate!!, scene)
-                    check(reply.ok) { reply.text }
-                    QuickControlTrace.mark(trace,"T2","profile_transaction_committed")
-                }
+                val current=snapshot()
+                if(rate in ZuiControlContract.rates && current.refreshEnabled)
+                    offer("refresh",sceneTarget(ControlsState.snapshot),rate.toString(),current.currentHz.toString())
             }
             action.startsWith(UPERF) -> {
                 val mode = UperfMode.fromId(action.removePrefix(UPERF))
-                val trace = QuickControlTrace.begin("Uperf",mode?.id.orEmpty())
-                if (mode != null) mutate("uperf") {
-                    // Read the accepted editable scene at this action, never shade focus or a cache.
-                    val scene = ZuiControlClient.currentSceneText()
-                    val pkg = ZuiControlClient.stateValue(scene, "editableScenePackage").orEmpty()
-                    QuickControlTrace.target(trace,pkg)
-                    check(ZuiControlClient.stateValue(scene, "editableSceneIsHome") == "true" || UperfAppPolicy.isConfigurable(packageManager, pkg)) { "当前应用不支持性能配置" }
-                    val request = ZuiControlClient.sendPolicy(this, "mode", pkg, "FOREGROUND", mode = mode.id, scene = scene)
-                    QuickControlTrace.mark(trace,"dispatch",request)
-                    val ack = ZuiControlRequest.awaitTerminalAck(this, request)
-                    check(ack.succeeded) { ack.detail }
-                    QuickControlTrace.mark(trace,"terminalAck",ack.detail)
-                }
+                val current=snapshot()
+                if(mode!=null && current.uperfEnabled)
+                    offer("uperf",sceneTarget(ControlsState.snapshot),mode.id,current.currentMode.id)
             }
         }
         requestRefresh()
         return START_STICKY
     }
-    private fun mutate(control:String="",block: () -> Unit) {
-        val ticket=(intentEpoch[control] ?: 0)+1;intentEpoch[control]=ticket
+    private fun monitorTarget()=QuickControlState.Target(ZuiControlClient.currentUserId(),"","GLOBAL",0)
+    private fun sceneTarget(scene:String)=QuickControlState.Target(ZuiControlClient.currentUserId(),
+        ZuiControlClient.stateValue(scene,"editableScenePackage").orEmpty(),"FOREGROUND",
+        ZuiControlClient.stateValue(scene,"policySceneGeneration")?.toLongOrNull() ?: -1)
+    private fun offer(control:String,target:QuickControlState.Target,value:String,confirmed:String){
+        val trace=QuickControlTrace.begin(if(control=="refresh")"Refresh" else if(control=="uperf")"Uperf" else "Monitor",value)
+        QuickControlTrace.target(trace,target.pkg)
+        OwnerRenderTrace.event("QUICK_INTENT","trace=$trace;control=$control;value=$value;user=${target.user};package=${target.pkg};scope=${target.scope};scene=${target.scene}")
+        val operation=operations.offer(control,target,value,confirmed,trace)
+        if(operation==null)reconcileVerifying()
+        requestRefresh(false)
+        if(operation!=null)execute(operation)
+    }
+    private fun execute(operation:QuickControlState.Operation){
         FrontendTransport.commands.execute {
-            // Coalesce only not-yet-dispatched intents for the same control.
-            if(control.isNotEmpty() && intentEpoch[control]!=ticket)return@execute
-            val result = runCatching(block)
-            handler.post {
-                result.onFailure { errorToast(it.message ?: "设置失败") }
-                requestRefresh()
+            if(!operations.dispatch(operation))return@execute
+            QuickControlTrace.mark(operation.trace,"dequeued")
+            var phase=QuickControlState.Phase.FAILED
+            var detail=""
+            var modeReply:Boolean?=null
+            var monitorIssued=false
+            var definitiveRejection=false
+            val started=SystemClock.elapsedRealtime()
+            try{
+                check(operation.target.user==ZuiControlClient.currentUserId()){"用户已变化"}
+                if(operation.control=="monitor"){
+                    monitorIssued=true
+                    val reply=PerformanceMonitor.command(if(operation.value=="true")"full" else "off")
+                    definitiveRejection=reply.startsWith("ok=0")
+                    check(reply.startsWith("ok=1")){reply}
+                    modeReply=ZuiControlClient.stateValue(reply,"monitorMode")=="1"
+                    check(modeReply.toString()==operation.value){"监视器状态已变化"}
+                    phase=QuickControlState.Phase.CONFIRMED
+                    detail="DIRECT_MONITOR_REPLY"
+                }else{
+                    val scene=ZuiControlClient.currentSceneText()
+                    check(sceneTarget(scene)==operation.target){"前台场景已变化，未派发旧目标"}
+                    if(operation.control=="uperf")check(ZuiControlClient.stateValue(scene,"editableSceneIsHome")=="true" ||
+                        UperfAppPolicy.isConfigurable(packageManager,operation.target.pkg)){"当前应用不可配置"}
+                    val id=ZuiControlClient.sendPolicy(this,
+                        if(operation.control=="refresh")"refresh" else "mode",operation.target.pkg,"FOREGROUND",
+                        value=if(operation.control=="refresh")operation.value.toInt() else 0,
+                        mode=if(operation.control=="uperf")operation.value else "",scene=scene)
+                    operations.identify(operation,id)
+                    QuickControlTrace.mark(operation.trace,"dispatch",id)
+                    val ack=ZuiControlRequest.awaitTerminalAck(this,id)
+                    phase=if(ack.succeeded)QuickControlState.Phase.CONFIRMED else QuickControlState.Phase.FAILED
+                    detail=ack.detail
+                    QuickControlTrace.mark(operation.trace,"terminalAck",ack.state)
+                }
+            }catch(error:Exception){
+                detail=error.message.orEmpty()
+                if(operation.requestId.isNotEmpty() || monitorIssued && !definitiveRejection)phase=QuickControlState.Phase.VERIFYING
             }
+            finish(operation,phase,detail,modeReply,started)
+        }
+    }
+    private fun finish(operation:QuickControlState.Operation,phase:QuickControlState.Phase,detail:String,
+                       modeReply:Boolean?=null,started:Long=0){
+        handler.post{
+            if(destroyed)return@post
+            if(modeReply!=null){acknowledgedMonitorMode=modeReply;monitorAcknowledgedAt=started}
+            val next=operations.finish(operation,phase,detail)
+            OwnerRenderTrace.event("QUICK_TERMINAL","trace=${operation.trace};control=${operation.control};id=${operation.requestId};phase=$phase;sequence=${operation.sequence}")
+            if(phase==QuickControlState.Phase.FAILED)errorToast(detail.take(120))
+            requestRefresh()
+            if(next!=null)execute(next)
+        }
+    }
+    private fun recoverControl(){
+        FrontendTransport.commands.execute{
+            val pending=ZuiControlRequest.pendingIdentity(this) ?: return@execute
+            val parsed=runCatching{
+                val fields=pending.second.split('|',limit=5)
+                check(fields[1]=="policy")
+                org.json.JSONObject(java.util.Base64.getDecoder().decode(fields[4]).toString(Charsets.UTF_8))
+            }.getOrNull() ?: return@execute
+            val control=when(parsed.optString("action")){"refresh"->"refresh";"mode"->"uperf";else->return@execute}
+            val target=QuickControlState.Target(parsed.getInt("userId"),parsed.getString("packageName"),parsed.getString("scope"),parsed.getLong("sceneGeneration"))
+            val operation=operations.recover(control,target,if(control=="refresh")parsed.getInt("value").toString() else parsed.getString("mode"),pending.first)
+            handler.post{if(!destroyed)requestRefresh(false)}
+            try{
+                val ack=ZuiControlRequest.awaitTerminalAck(this,pending.first)
+                finish(operation,if(ack.succeeded)QuickControlState.Phase.CONFIRMED else QuickControlState.Phase.FAILED,ack.detail)
+            }catch(error:Exception){
+                finish(operation,QuickControlState.Phase.VERIFYING,error.message.orEmpty())
+            }
+        }
+    }
+    /** One exact read after an authority event or explicit tap; no periodic retry sampler. */
+    private fun reconcileVerifying(){
+        val waiting=operations.verifying()
+        if(reconciling || waiting.isEmpty())return
+        reconciling=true
+        FrontendTransport.commands.execute{
+            try{for(operation in waiting){
+                if(operation.target.user!=ZuiControlClient.currentUserId())continue
+                if(operation.requestId.isNotEmpty()){
+                    val ack=ZuiControlRequest.parseAck(ZuiControlClient.utilityValue("ack",operation.requestId))
+                    if(ack?.isTerminal==true && ack.requestId==operation.requestId && ack.command=="policy")
+                        finish(operation,if(ack.succeeded)QuickControlState.Phase.CONFIRMED else QuickControlState.Phase.FAILED,ack.detail)
+                }else if(operation.control=="monitor"){
+                    val reply=PerformanceMonitor.command("state")
+                    if(reply.startsWith("ok=1"))finish(operation,QuickControlState.Phase.UNKNOWN,
+                        "当前状态已核对；上次命令结果仍未知",ZuiControlClient.stateValue(reply,"monitorMode")=="1",SystemClock.elapsedRealtime())
+                }
+            }}finally{handler.post{reconciling=false}}
         }
     }
     private fun errorToast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     private fun acceptReading(quiet: Double, power: Double, elapsed: Long, ttl: Long) {
         val now = SystemClock.elapsedRealtime()
+        if(elapsed>=monitorAcknowledgedAt && elapsed>0)acknowledgedMonitorMode=null
         readingTtl = ttl.coerceIn(3500L, 7500L)
         val fresh = elapsed > 0 && now - elapsed in 0..readingTtl
         val nextQuiet = if (fresh && quiet.isFinite() && quiet > 0) quiet else -1.0
@@ -145,10 +237,16 @@ class ZuiControlQuickService : Service() {
             powerW = LivePower.number(state.powerW).toDoubleOrNull() ?: Double.NaN)
         if (displayed == lastRendered) return
         lastRendered = displayed
-        val trace = QuickControlTrace.observed(state.pkg, state.currentHz, state.currentMode.id, "T2")
+        val trace = QuickControlTrace.observed(state.pkg, state.currentHz, state.currentMode.id, "T2",state.isFloatActive)
         val content = renderNotification(state)
         getSystemService(NotificationManager::class.java).notify(ID, content)
         notificationPublishes++
+        listOfNotNull(state.refreshStatus,state.uperfStatus,state.monitorStatus).forEach{
+            if(it.phase==QuickControlState.Phase.PENDING || it.phase==QuickControlState.Phase.VERIFYING)
+                QuickControlTrace.mark(it.trace,"localFeedbackPosted","NotificationManager.notify_returned")
+        }
+        QuickControlTrace.mark(trace,"feedbackPosted","notify_returned")
+        OwnerRenderTrace.event("QUICK_NOTIFICATION_POSTED","refresh=${state.refreshStatus?.phase};refreshId=${state.refreshStatus?.trace};uperf=${state.uperfStatus?.phase};uperfId=${state.uperfStatus?.trace};monitor=${state.monitorStatus?.phase};monitorId=${state.monitorStatus?.trace}")
         OwnerRenderTrace.event("POWER_NOTIFICATION_POSTED","elapsed=$readingTime;displayPower=${LivePower.number(powerW)}")
         QuickControlTrace.mark(trace,"T3","NotificationManager.notify_returned_logical_state")
     }
@@ -184,9 +282,12 @@ class ZuiControlQuickService : Service() {
         }
         val fresh = readingTime > 0 && SystemClock.elapsedRealtime() - readingTime in 0..readingTtl
         // monitorMode comes from the existing authenticated producer snapshot, never a second state query.
-        return controls!!.copy(isFloatActive = monitor?.desiredFull() == true,
+        val scene=sceneTarget(ControlsState.snapshot)
+        return controls!!.copy(isFloatActive = acknowledgedMonitorMode ?: (monitor?.desiredFull() == true),
             quietC = if (fresh) quietC else -1.0, powerW = if (fresh) powerW else Double.NaN,
-            dark=resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES)
+            dark=resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES,
+            refreshStatus=operations.presentation("refresh",scene),uperfStatus=operations.presentation("uperf",scene),
+            monitorStatus=operations.presentation("monitor",monitorTarget()))
     }
     @Suppress("DEPRECATION")
     private fun renderNotification(snapshot: NotificationQuickControlHelper.Snapshot): Notification {
@@ -213,6 +314,7 @@ class ZuiControlQuickService : Service() {
         monitor?.dump(writer); QuickControlTrace.dump(writer)
     }
     override fun onDestroy() {
+        destroyed=true
         ControlsState.remove(controlsChanged)
         FrontendPackages.remove(packagesChanged)
         monitor?.close(); monitor = null

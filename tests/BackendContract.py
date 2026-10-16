@@ -64,8 +64,23 @@ POWER_PORT_R3_ALLOWED.add('app/src/test/java/com/zui/zuicontrol/BatteryWindowTes
 POWER_PORT_R3_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeR5Scope.py','TestRuntimeR6Scope.py')}
 POWER_PORT_R3_ALLOWED.add('tests/monitor/TestGpuDraftLifecycle.py')
 assert set(POWER_PORT_R3['allowedPaths'])==POWER_PORT_R3_ALLOWED=={r['path'] for r in POWER_PORT_R3['files']}
+ADVICE_R4=json.loads((ROOT/'tests/advice_closeout_r4_delta.json').read_text(encoding='utf8'))
+ADVICE_R4_ALLOWED={'app/src/main/java/com/zui/zuicontrol/'+n for n in ('ControlsState.kt','MainActivity.kt','NotificationQuickControlHelper.kt','OwnerPageHost.kt','OwnerUi.kt','OwnerWindow.kt','QuickControlState.kt','QuickControlTrace.kt','ZuiControlQuickService.kt','ZuiControlRequest.kt')}
+ADVICE_R4_ALLOWED|={'app/src/main/res/'+n for n in ('drawable/notify_pending.xml','drawable/notify_monitor_pending.xml','layout/notification_quick_control.xml','values/styles.xml')}
+ADVICE_R4_ALLOWED.add('app/src/test/java/com/zui/zuicontrol/QuickControlStateTest.kt')
+ADVICE_R4_ALLOWED|={'tests/monitor/TestFrontendV3.py','tests/monitor/TestNotificationRenderer.py','tests/device/ProductSmoke.java'}
+ADVICE_R4_ALLOWED|={'tests/zuiopt/'+n for n in ('TestRuntimeFrontendScope.py','TestRuntimeR3Scope.py','TestRuntimeR5Scope.py','TestRuntimeR6Scope.py')}
+assert ADVICE_R4['phase']=='ZUICONTROL_FINAL_ADVICE_CLOSEOUT_R4' and ADVICE_R4['baseHead']=='c64aa686829ca0420d7b523eb28c2ce2e71c6c7f'
+assert set(ADVICE_R4['allowedPaths'])==ADVICE_R4_ALLOWED=={r['path'] for r in ADVICE_R4['files']}
 
 def reverse_response_battery(path,text):
+    delta=next((r for r in ADVICE_R4['files'] if r['path']==path),None)
+    if delta:
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('ADVICE_R4 exact authorized bytes',path)
+        for h in reversed(delta['hunks']):
+            assert text.count(h['after'])==1,('ADVICE_R4 exact hunk',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['beforeSha256'],('ADVICE_R4 preserved c64 source',path)
     delta=next((r for r in POWER_PORT_R3['files'] if r['path']==path),None)
     if delta:
         assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('POWER_PORT_R3 exact authorized bytes',path)
@@ -91,6 +106,11 @@ def reverse_response_battery(path,text):
 
 def reverse_response_battery_entries(current,*scopes):
     result=list(current)
+    for row in ADVICE_R4['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('ADVICE_R4 exact authorized source',row['path'])
+        result.remove(row['afterEntry'].encode())
+        if row['beforeEntry'] is not None:result.append(row['beforeEntry'].encode())
     for row in POWER_PORT_R3['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['afterEntry'].encode())==1,('POWER_PORT_R3 exact authorized source',row['path'])
