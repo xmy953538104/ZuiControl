@@ -98,8 +98,25 @@ public class DeadlineTest {
   fields.put("POWER_SUPPLY_NAME","usb");fields.put("POWER_SUPPLY_REAL_TYPE","PD_PPS");observer.onUEvent(new UEventObserver.UEvent(fields));Handler.next();Handler.next();
   check(metric("monitorPowerEdge")==2&&metric("monitorPowerRechecksPlanned")==2&&Handler.due.get(0)==SystemClock.now+800,"actual known protocol change creates one new edge");finish();
  }
+ static void portBeforeUsbCache(boolean reverse)throws Exception {
+  begin(false);Intent.plugged=reverse?0:1;Intent.status=reverse?3:5;BatteryManager.currentUa=reverse?300000:0;
+  c.invalidatePower(!reverse);Handler.next();
+  UEventObserver listener=observer();Map<String,String> fields=new HashMap<>();
+  fields.put("POWER_SUPPLY_NAME","usb");fields.put("POWER_SUPPLY_ONLINE",reverse?"0":"1");fields.put("POWER_SUPPLY_REAL_TYPE","SDP");
+  listener.onUEvent(new UEventObserver.UEvent(fields));Handler.next();
+  fields.put("POWER_SUPPLY_NAME","ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1");fields.put("POWER_SUPPLY_PRESENT",reverse?"0":"1");
+  listener.onUEvent(new UEventObserver.UEvent(fields));Handler.next();
+  SystemClock.now+=10;fields.put("POWER_SUPPLY_ONLINE",reverse?"1":"0");listener.onUEvent(new UEventObserver.UEvent(fields));
+  while(Handler.delays.get(0)==0)Handler.next();long edge=metric("monitorPowerEdge");
+  Intent.plugged=reverse?1:0;Intent.status=reverse?2:3;BatteryManager.currentUa=reverse?-200000:300000;
+  SystemClock.now+=100;c.onBatteryStateChanged(new Intent());while(Handler.delays.get(0)==0)Handler.next();
+  check("DRIVER_READING".equals(PowerEdgeTest.snapshot(c).get("batteryNetValidity")),"UCSI-first actual state must not wait for the previous cached USB online value");
+  check(((Number)PowerEdgeTest.snapshot(c).get("batteryNetPowerW")).doubleValue()*(reverse?1:-1)>0,"current edge direction preserved");
+  fields.put("POWER_SUPPLY_NAME","usb");fields.put("POWER_SUPPLY_PRESENT",reverse?"1":"0");listener.onUEvent(new UEventObserver.UEvent(fields));Handler.next();
+  c.invalidatePower(reverse);check(metric("monitorPowerEdge")==edge,"late matching USB/action coalesces without resetting state or budget");finish();
+ }
  public static void main(String[] args)throws Exception {
-  pending(false);pending(true);early();zero();modesAndSleep();oppositeAndLate();queuedEventSurvivesMode();sourceDuplicates();actionBeforeSource();
+  pending(false);pending(true);early();zero();modesAndSleep();oppositeAndLate();queuedEventSurvivesMode();sourceDuplicates();actionBeforeSource();portBeforeUsbCache(false);portBeforeUsbCache(true);
   System.out.println("POWER_RECHECK_DEADLINE=PASS pending/early-valid/real-zero/duplicates/deadline-burst/reverse/stale-clock/modes/screen/queued-callback/bounded-no-data; PHYSICAL=NOT_CLAIMED");
  }
 }'''

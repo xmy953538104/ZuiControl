@@ -61,8 +61,12 @@ class MonitorCollector {
                 boolean connectionEdge=sourceChanged&&sources.power.sourceConnectionChanged()&&connected>=0&&connected!=powerActionConnected;
                 boolean sourceEdge=connectionEdge||sourceChanged&&sources.power.sourceIdentityChanged();
                 if(sourceEdge){
-                    powerEdgeAtNs=receivedAt;sources.power.sourceChanged();beginPowerRecheck();
+                    powerEdgeAtNs=receivedAt;
                     if(connectionEdge)powerActionConnected=connected;
+                    // Port events can precede the shared USB cache and its matching broadcast.
+                    if(powerActionConnected>=0){expectedPowerPlugged=powerActionConnected;sources.power.edge(powerActionConnected==1);}
+                    else sources.power.sourceChanged();
+                    beginPowerRecheck();
                 }
                 boolean measurement=sources.power.measurementEvent(name,current);
                 if(!sourceEdge && !measurement){if(sourceChanged)traceEdge("POWER_SOURCE_COALESCED","edge="+powerEdgeId+" source="+name);return;}
