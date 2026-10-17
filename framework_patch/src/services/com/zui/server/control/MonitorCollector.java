@@ -57,16 +57,18 @@ class MonitorCollector {
                 if(receivedAt<powerEdgeAtNs){traceEdge("STALE_POWER_EVENT_IGNORED","receivedNs="+receivedAt);return;}
                 boolean sourceChanged=sources.power.sourceEvent(name,event.get("POWER_SUPPLY_ONLINE"),
                         event.get("POWER_SUPPLY_PRESENT"),event.get("POWER_SUPPLY_REAL_TYPE"),event.get("POWER_SUPPLY_USB_TYPE"));
-                if(sourceChanged){
-                    String online=event.get("POWER_SUPPLY_ONLINE");
+                int connected=sources.power.sourceConnected(name);
+                boolean connectionEdge=sourceChanged&&sources.power.sourceConnectionChanged()&&connected>=0&&connected!=powerActionConnected;
+                boolean sourceEdge=connectionEdge||sourceChanged&&sources.power.sourceIdentityChanged();
+                if(sourceEdge){
                     powerEdgeAtNs=receivedAt;sources.power.sourceChanged();beginPowerRecheck();
-                    if("usb".equals(name)&&("0".equals(online)||"1".equals(online)))powerActionConnected=Integer.parseInt(online);
+                    if(connectionEdge)powerActionConnected=connected;
                 }
                 boolean measurement=sources.power.measurementEvent(name,current);
-                if(!sourceChanged && !measurement)return;
-                traceEdge(sourceChanged?"POWER_SUPPLY_SOURCE_EVENT":"POWER_SUPPLY_MEASUREMENT_EVENT",
+                if(!sourceEdge && !measurement){if(sourceChanged)traceEdge("POWER_SOURCE_COALESCED","edge="+powerEdgeId+" source="+name);return;}
+                traceEdge(sourceEdge?"POWER_SUPPLY_SOURCE_EVENT":"POWER_SUPPLY_MEASUREMENT_EVENT",
                         "source="+name+" currentUa="+current+" measurementTime=UNKNOWN");
-                if(!powerWakePending){powerWakePending=true;wakePower(sourceChanged);}
+                if(!powerWakePending){powerWakePending=true;wakePower(sourceEdge);}
             }});
         }
     };

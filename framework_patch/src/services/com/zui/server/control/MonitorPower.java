@@ -19,14 +19,25 @@ final class MonitorPower {
     private long notifiedCurrent = Long.MIN_VALUE;
     private final java.util.Map<String,Long> notifiedInputs=new java.util.HashMap<>();
     private final java.util.Map<String,String[]> sourceFacts=new java.util.HashMap<>();
+    private boolean sourceConnectionChanged,sourceIdentityChanged;
 
     synchronized boolean sourceEvent(String name,String... fields) {
+        sourceConnectionChanged=false;sourceIdentityChanged=false;
         if(!java.util.Arrays.asList("usb","wireless","ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1","ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi2").contains(name) || fields.length!=4)return false;
         String[] old=sourceFacts.get(name),next=old==null?new String[4]:old.clone();
         boolean supplied=false;
         for(int i=0;i<fields.length;i++)if(fields[i]!=null && fields[i].length()<=96 && fields[i].indexOf('\n')<0 && fields[i].indexOf('\0')<0){next[i]=fields[i];supplied=true;}
         if(!supplied || java.util.Arrays.equals(old,next))return false;
+        // Initial protocol/port facts establish a baseline, not a second copy of a broadcast edge.
+        sourceConnectionChanged=old==null?"usb".equals(name)&&next[0]!=null:
+                old[0]!=null&&next[0]!=null&&!old[0].equals(next[0]);
+        if(old!=null&&!sourceConnectionChanged)for(int i=1;i<4;i++)if(old[i]!=null&&next[i]!=null&&!old[i].equals(next[i]))sourceIdentityChanged=true;
         sourceFacts.put(name,next);return true;
+    }
+    synchronized boolean sourceConnectionChanged(){return sourceConnectionChanged;}
+    synchronized boolean sourceIdentityChanged(){return sourceIdentityChanged;}
+    synchronized int sourceConnected(String name){
+        String[] fact=sourceFacts.get(name);return fact==null?-1:"1".equals(fact[0])?1:"0".equals(fact[0])?0:-1;
     }
     synchronized void resetSourceEvents(){sourceFacts.clear();notifiedCurrent=Long.MIN_VALUE;notifiedInputs.clear();}
     boolean measurementEvent(String name,String current) {

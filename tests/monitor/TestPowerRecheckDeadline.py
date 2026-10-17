@@ -83,10 +83,23 @@ public class DeadlineTest {
   UEventObserver observer=observer();observer.onUEvent(new UEventObserver.UEvent(fields));Handler.next();Handler.next();long planned=Handler.due.get(0);
   for(int i=0;i<3;i++){observer.onUEvent(new UEventObserver.UEvent(fields));Handler.next();check(Handler.due.get(0)==planned,"same source/protocol retains deadline");}
   c.invalidatePower(true);check(Handler.due.get(0)==planned&&metric("monitorPowerEdge")==1,"matching Android action coalesces with hardware edge");
-  Handler.next();check(metric("monitorPowerRechecksExecuted")==1&&metric("monitorPowerRechecksPlanned")==1,"source duplicates consume one budget");finish();
+  Handler.next();check(metric("monitorPowerRechecksExecuted")==1&&metric("monitorPowerRechecksPlanned")==1,"source duplicates consume one budget");
+  c.invalidatePower(false);Handler.next();long next=Handler.due.get(0);
+  fields.put("POWER_SUPPLY_ONLINE","0");fields.put("POWER_SUPPLY_PRESENT","0");fields.put("POWER_SUPPLY_REAL_TYPE","Unknown");observer.onUEvent(new UEventObserver.UEvent(fields));Handler.next();
+  check(metric("monitorPowerEdge")==2&&Handler.due.get(0)==next,"known online/present/protocol packet confirms the existing action edge");finish();
+ }
+ static void actionBeforeSource()throws Exception {
+  begin(false);long planned=edge();SystemClock.now=planned-500;
+  Map<String,String> fields=new HashMap<>();fields.put("POWER_SUPPLY_NAME","usb");fields.put("POWER_SUPPLY_ONLINE","0");fields.put("POWER_SUPPLY_REAL_TYPE","SDP");
+  UEventObserver observer=observer();observer.onUEvent(new UEventObserver.UEvent(fields));Handler.next();
+  check(metric("monitorPowerEdge")==1&&metric("monitorPowerRechecksPlanned")==1&&Handler.due.get(0)==planned,"Android action then matching first kernel fact cannot create a second edge");
+  fields.put("POWER_SUPPLY_NAME","ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1");observer.onUEvent(new UEventObserver.UEvent(fields));Handler.next();
+  check(metric("monitorPowerEdge")==1&&Handler.due.get(0)==planned,"first port baseline is not another transition");
+  fields.put("POWER_SUPPLY_NAME","usb");fields.put("POWER_SUPPLY_REAL_TYPE","PD_PPS");observer.onUEvent(new UEventObserver.UEvent(fields));Handler.next();Handler.next();
+  check(metric("monitorPowerEdge")==2&&metric("monitorPowerRechecksPlanned")==2&&Handler.due.get(0)==SystemClock.now+800,"actual known protocol change creates one new edge");finish();
  }
  public static void main(String[] args)throws Exception {
-  pending(false);pending(true);early();zero();modesAndSleep();oppositeAndLate();queuedEventSurvivesMode();sourceDuplicates();
+  pending(false);pending(true);early();zero();modesAndSleep();oppositeAndLate();queuedEventSurvivesMode();sourceDuplicates();actionBeforeSource();
   System.out.println("POWER_RECHECK_DEADLINE=PASS pending/early-valid/real-zero/duplicates/deadline-burst/reverse/stale-clock/modes/screen/queued-callback/bounded-no-data; PHYSICAL=NOT_CLAIMED");
  }
 }'''
@@ -108,4 +121,4 @@ for row in POWER_RECHECK['files']:
     try:reverse_response_battery(row['path'],current+'\n// outside authorized deadline fix\n')
     except AssertionError:pass
     else:raise AssertionError('Out-of-scope mutation accepted: '+row['path'])
-print('POWER_RECHECK_EXACT_SCOPE=PASS one production file; old manifests unchanged')
+print('POWER_RECHECK_EXACT_SCOPE=PASS Collector plus source-event classification; old manifests unchanged')

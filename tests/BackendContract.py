@@ -99,7 +99,7 @@ assert set(RESIDENCY_R6['allowedPaths'])=={r['path'] for r in RESIDENCY_R6['file
 POWER_RECHECK=json.loads((ROOT/'tests/power_recheck_deadline_delta.json').read_text(encoding='utf8'))
 assert POWER_RECHECK['phase']=='ZUICONTROL_POWER_RECHECK_DEADLINE_FIX_R1' and POWER_RECHECK['baseHead']=='51c604000682a2e9b0db6c4d758a59de73e7f7d6'
 assert set(POWER_RECHECK['allowedPaths'])=={r['path'] for r in POWER_RECHECK['files']}
-assert {p for p in POWER_RECHECK['allowedPaths'] if p.startswith(('app/','framework_patch/','native/','payload/'))}=={'framework_patch/src/services/com/zui/server/control/MonitorCollector.java'}
+assert {p for p in POWER_RECHECK['allowedPaths'] if p.startswith(('app/','framework_patch/','native/','payload/'))}=={'framework_patch/src/services/com/zui/server/control/'+n for n in ('MonitorCollector.java','MonitorPower.java')}
 BASELINE_LOCAL={}
 for path,before,after in (
     ('app/build.gradle.kts','            signingConfig = signingConfigs.getByName("release")\n',
