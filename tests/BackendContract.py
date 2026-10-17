@@ -96,6 +96,10 @@ assert RESIDENCY_R6['phase']=='ZUICONTROL_R6_RESIDENCY_CAUSE_AND_REMAINING_SCOPE
 assert set(RESIDENCY_R6['allowedPaths'])=={r['path'] for r in RESIDENCY_R6['files']} and set(RESIDENCY_R6['allowedPaths'])<=RESIDENCY_R6_ALLOWED
 
 # Exact local R1 build/fixture changes are separate from the public runtime ancestry.
+POWER_RECHECK=json.loads((ROOT/'tests/power_recheck_deadline_delta.json').read_text(encoding='utf8'))
+assert POWER_RECHECK['phase']=='ZUICONTROL_POWER_RECHECK_DEADLINE_FIX_R1' and POWER_RECHECK['baseHead']=='51c604000682a2e9b0db6c4d758a59de73e7f7d6'
+assert set(POWER_RECHECK['allowedPaths'])=={r['path'] for r in POWER_RECHECK['files']}
+assert {p for p in POWER_RECHECK['allowedPaths'] if p.startswith(('app/','framework_patch/','native/','payload/'))}=={'framework_patch/src/services/com/zui/server/control/MonitorCollector.java'}
 BASELINE_LOCAL={}
 for path,before,after in (
     ('app/build.gradle.kts','            signingConfig = signingConfigs.getByName("release")\n',
@@ -107,6 +111,13 @@ for path,before,after in (
     BASELINE_LOCAL[path]=(original,local)
 
 def reverse_response_battery(path,text):
+    delta=next((r for r in POWER_RECHECK['files'] if r['path']==path),None)
+    if delta:
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('POWER_RECHECK exact authorized bytes',path)
+        for h in reversed(delta['hunks']):
+            assert text.count(h['after'])==1,('POWER_RECHECK exact hunk',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['beforeSha256'],('POWER_RECHECK preserved 51c source',path)
     delta=next((r for r in RESIDENCY_R6['files'] if r['path']==path),None)
     if delta:
         assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('RESIDENCY_R6 exact authorized bytes',path)
@@ -155,6 +166,11 @@ def reverse_response_battery(path,text):
 
 def reverse_response_battery_entries(current,*scopes):
     result=list(current)
+    for row in POWER_RECHECK['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('POWER_RECHECK exact authorized source',row['path'])
+        result.remove(row['afterEntry'].encode())
+        if row['beforeEntry'] is not None:result.append(row['beforeEntry'].encode())
     for row in RESIDENCY_R6['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['afterEntry'].encode())==1,('RESIDENCY_R6 exact authorized source',row['path'])

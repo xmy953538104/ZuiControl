@@ -183,6 +183,7 @@ jobs:
           python3 tests/gpu/TestBackupInspection.py || scripts_failed=1
           python3 tests/gpu/TestFactoryReset.py || scripts_failed=1
           python3 tests/monitor/TestPowerEdge.py || scripts_failed=1
+            python3 tests/monitor/TestPowerRecheckDeadline.py || scripts_failed=1
           python3 tests/monitor/TestMonitorPower.py || scripts_failed=1
           python3 tests/monitor/TestPowerAccessPolicy.py || scripts_failed=1
           python3 tests/monitor/TestMonitorHealth.py || scripts_failed=1

@@ -55,9 +55,10 @@ public class PowerEdgeTest {
   check(Handler.pending.get(0)==wake&&client.calls==callbacks,"duplicate coalesced before sample");
   Handler.next();check(SystemClock.now==start+delay,"authoritative fact extra wait zero");
   check(connected?watts(c)<0:watts(c)==8,"existing strict source");
-  check(Handler.delays.get(0)==(full?1000:5000),"normal cadence restored");
+  long nextDelay=delay<800?800-delay:(full?1000:5000);
+  check(Handler.delays.get(0)==nextDelay,"legacy watts alone cannot discard a still-pending net-source confirmation");
   samples=metric(c,"monitorSamples");event(c);stale.run();
-  check(metric(c,"monitorSamples")==samples&&Handler.delays.get(0)==(full?1000:5000),"completed duplicate and canceled epoch ignored");
+  check(metric(c,"monitorSamples")==samples&&Handler.delays.get(0)==nextDelay,"completed duplicate and canceled epoch ignored");
   check(metric(c,"monitorThreadEnumerations")==0&&metric(c,"monitorDbWrites")==0,"no event scan/write");
   check(HandlerThread.active==1,"one worker");c.unregister(client);check(HandlerThread.active==0,"retired");
   System.out.println("EVENT_CASE=PASS mode="+(full?"FULL":"OFF")+" connected="+connected+" settleMs="+delay+" EXTRA_WAIT=0");
@@ -93,7 +94,7 @@ public class PowerEdgeTest {
   Client client=new Client();MonitorCollector c=begin(false,client);
   BatteryManager.currentUa=0;c.invalidatePower(false);Handler.next();
   check(watts(c)<0&&Handler.delays.get(0)==800,"invalid current retains edge");
-  SystemClock.now+=600;BatteryManager.currentUa=-2000000;event(c);check(Handler.delays.get(0)==0,"same tuple current-only wake");
+  SystemClock.now+=600;BatteryManager.currentUa=2000000;event(c);check(Handler.delays.get(0)==0,"same tuple current-only wake");
   Handler.next();check(watts(c)==8&&Handler.delays.get(0)==5000,"same tuple validity qualified");
   settled(false);c.invalidatePower(true);Handler.next();long start=SystemClock.now;
   check(Handler.next()==800,"one bounded confirmation");
@@ -108,7 +109,7 @@ public class PowerEdgeTest {
   c.scene("org.example.app",0,true);Handler.next();check(watts(c)==8,"screen resume source");
   settled(true);c.invalidatePower(false);Handler.next();Client replacement=new Client();c.register(replacement);
   int oldCalls=client.calls;settled(false);event(c);Handler.next();check(client.calls==oldCalls&&watts(c)==8,"replacement client only");
-  c.armEdgeTrace(1);c.invalidatePower(false);Handler.next();
+  c.invalidatePower(true);Handler.next();c.armEdgeTrace(1);c.invalidatePower(false);Handler.next();
   String facts=c.edgeTrace();check(facts.contains("ACTION_POWER_DISCONNECTED")&&facts.contains("factSource=STICKY_BATTERY_AT_POWER_EVENT plugged=0 batteryStatus=3 voltageMv=4000 currentUa=-2000000")&&facts.contains("SAMPLE_START")&&facts.contains("SAMPLE_END")&&facts.contains("powerValidity=VALID powerW=8.0")&&facts.contains("SCHEDULE delayMs=800"),"legacy watts retained; opposite-sign net source still awaits confirmation");
   c.armEdgeTrace(1);for(int i=0;i<600;i++)c.traceUnlock(true,false);
   String trace=c.edgeTrace();check(trace.contains("monitorEdgeTrace[511]=")&&!trace.contains("monitorEdgeTrace[512]=")&&trace.contains("monitorEdgeTraceDropped=89"),"bounded memory");
@@ -130,6 +131,7 @@ public class PowerEdgeTest {
   Handler.next();check(metric(source,"monitorSamples")==samples+1&&metric(source,"monitorThreadEnumerations")==0&&metric(source,"monitorDbWrites")==0,"event uses the one scalar producer");
   while(Handler.delays.get(0)==0)Handler.next(); // queued duplicate notifications are retained, then ignored
   Intent.plugged=1;Intent.status=5;BatteryManager.currentUa=0;
+  source.invalidatePower(false);Handler.next();
   source.invalidatePower(true);Handler.next();
   source.invalidatePower(true);Handler.next();Handler.next();
   check(snapshot(source).get("batteryNetPowerW")==null,"unchanged zero needs a post-edge source observation");
@@ -151,7 +153,7 @@ public class PowerEdgeTest {
   Handler.next();check(((Number)snapshot(source).get("batteryNetCurrentUa")).longValue()==-90000,"current-only Health value reaches snapshot");
   event(source);check(Handler.delays.get(0)==5000,"unchanged settled Health broadcast adds no sample");
   eventFacts.put("POWER_SUPPLY_CURRENT_NOW","0");observer.onUEvent(new UEventObserver.UEvent(eventFacts));
-  SystemClock.now+=1;source.invalidatePower(true);
+  SystemClock.now+=1;source.invalidatePower(false);source.invalidatePower(true);
   Handler.next();if(Handler.delays.get(0)==0)Handler.next();
   check(!snapshot(source).get("batteryNetObservation").equals("DRIVER_EVENT_MATCH_TIME_UNKNOWN"),"old queued notification cannot qualify a newer edge");
   long burstSamples=metric(source,"monitorSamples");

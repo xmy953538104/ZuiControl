@@ -57,7 +57,11 @@ class MonitorCollector {
                 if(receivedAt<powerEdgeAtNs){traceEdge("STALE_POWER_EVENT_IGNORED","receivedNs="+receivedAt);return;}
                 boolean sourceChanged=sources.power.sourceEvent(name,event.get("POWER_SUPPLY_ONLINE"),
                         event.get("POWER_SUPPLY_PRESENT"),event.get("POWER_SUPPLY_REAL_TYPE"),event.get("POWER_SUPPLY_USB_TYPE"));
-                if(sourceChanged){powerEdgeAtNs=receivedAt;sources.power.sourceChanged();powerRecheckPending=true;}
+                if(sourceChanged){
+                    String online=event.get("POWER_SUPPLY_ONLINE");
+                    powerEdgeAtNs=receivedAt;sources.power.sourceChanged();beginPowerRecheck();
+                    if("usb".equals(name)&&("0".equals(online)||"1".equals(online)))powerActionConnected=Integer.parseInt(online);
+                }
                 boolean measurement=sources.power.measurementEvent(name,current);
                 if(!sourceChanged && !measurement)return;
                 traceEdge(sourceChanged?"POWER_SUPPLY_SOURCE_EVENT":"POWER_SUPPLY_MEASUREMENT_EVENT",
@@ -71,6 +75,8 @@ class MonitorCollector {
     private int expectedPowerPlugged=-1;
     private long powerEdgeAtNs;
     private boolean powerRecheckPending;
+    private long powerRecheckDeadlineMs,powerEdgeId,powerRechecksPlanned,powerRechecksExecuted,powerRechecksMerged;
+    private int powerActionConnected=-1;
     private boolean powerWakePending;
     private long edgeTraceUntil,edgeTraceDropped;
     private final List<String> edgeTrace=new ArrayList<>();
@@ -302,7 +308,7 @@ class MonitorCollector {
     synchronized void stop(){
         // Keep the one worker while the client has an active sampling lifetime.
         if(!scalarActive()&&analyses.isEmpty())drain();
-        else {epoch++;scheduled=false;clock=null;if(handler!=null)handler.removeCallbacksAndMessages(null);}
+        else {epoch++;scheduled=false;if(handler!=null&&clock!=null)handler.removeCallbacks(clock);clock=null;}
         // Invalidate all cached values, never relabel old target readings as a fresh sample.
         try {
             String invalid=metadata(new JSONObject()).put("elapsedMs",0).put("fps",-1)
@@ -332,6 +338,8 @@ class MonitorCollector {
     }
     synchronized void invalidatePower(){stop();schedule();}
     private void wakePower(boolean invalidate){
+        traceEdge("POWER_CLOCK_REPLACED","edge="+powerEdgeId+" reason="+(invalidate?"SOURCE_EDGE":"DATA_EVENT")
+                +" pending="+powerRecheckPending+" deadlineMs="+powerRecheckDeadlineMs);
         epoch++;scheduled=false;
         if(handler!=null && clock!=null)handler.removeCallbacks(clock);
         clock=null;
@@ -345,11 +353,16 @@ class MonitorCollector {
         schedule();
     }
     synchronized void invalidatePower(boolean connected){
+        if(powerActionConnected==(connected?1:0)){
+            traceEdge("POWER_EDGE_COALESCED","edge="+powerEdgeId+" connected="+connected);
+            return;
+        }
+        powerActionConnected=connected?1:0;
         // Replace the pending edge on the existing clock; never retain pre-edge watts.
         expectedPowerPlugged=connected?1:0;
         powerEdgeAtNs=SystemClock.elapsedRealtimeNanos();
         long receivedAt=SystemClock.elapsedRealtime();
-        powerRecheckPending=true;
+        beginPowerRecheck();
         sources.power.edge(connected);
         String edgeFacts="receivedAt="+receivedAt+" expectedPlugged="+expectedPowerPlugged+" timedRechecks=1";
         if(edgeTraceActive()){
@@ -364,6 +377,11 @@ class MonitorCollector {
                 edgeFacts);
         powerWakePending=scalarActive();
         if(powerWakePending)wakePower(true);
+    }
+    private void beginPowerRecheck(){
+        if(powerRecheckPending)traceEdge("POWER_RECHECK_SUPERSEDED","edge="+powerEdgeId+" deadlineMs="+powerRecheckDeadlineMs);
+        powerEdgeId++;powerRecheckPending=true;powerRecheckDeadlineMs=0;
+        traceEdge("POWER_EDGE","edge="+powerEdgeId+" receivedNs="+powerEdgeAtNs);
     }
     private boolean powerEdgeSettled(int plugged,int status,double watts){
         return expectedPowerPlugged==1?plugged>0:
@@ -418,6 +436,9 @@ class MonitorCollector {
             +"\nmonitorFpsReads="+sources.fpsReads+"\nmonitorFpsError="+sources.fpsError
             +"\nmonitorPowerEventObserver="+powerEventsStarted+"\nmonitorPowerEventError="+powerEventsError
             +"\nmonitorPowerSourceReads="+sources.power.scalarReads+"\nmonitorHealthReads="+sources.power.healthReads
+            +"\nmonitorPowerEdge="+powerEdgeId+"\nmonitorPowerRecheckPending="+powerRecheckPending
+            +"\nmonitorPowerRecheckDeadlineMs="+powerRecheckDeadlineMs+"\nmonitorPowerRechecksPlanned="+powerRechecksPlanned
+            +"\nmonitorPowerRechecksExecuted="+powerRechecksExecuted+"\nmonitorPowerRechecksMerged="+powerRechecksMerged
             +"\nmonitorQuietError="+sources.quietError+"\nmonitorError="+error+"\nmonitorFinalizeError="+finalizeError
             +"\nmonitorLastRequestError="+lastRequestError
             +"\nanalysisEnumerations="+analysisEnumerations+"\nanalysisTaskReads="+analysisReads+"\nanalysisResultWrites="+analysisWrites;
@@ -426,16 +447,20 @@ class MonitorCollector {
         if(ticket!=epoch||handler==null||(!scalarActive()&&analyses.isEmpty()))return;
         scheduled=false;clock=null;
         powerWakePending=false;
-        traceEdge("SAMPLE_START","expectedPlugged="+expectedPowerPlugged+" recheckPending="+powerRecheckPending);
-        long powerDelay=0;
+        traceEdge("SAMPLE_START","edge="+powerEdgeId+" expectedPlugged="+expectedPowerPlugged+" recheckPending="+powerRecheckPending+" deadlineMs="+powerRecheckDeadlineMs);
+        if(powerRecheckPending&&powerRecheckDeadlineMs!=0&&SystemClock.elapsedRealtime()>=powerRecheckDeadlineMs){
+            powerRecheckPending=false;powerRechecksExecuted++;
+            traceEdge("POWER_RECHECK_EXECUTED","edge="+powerEdgeId+" deadlineMs="+powerRecheckDeadlineMs);
+            powerRecheckDeadlineMs=0;
+        }
         try{
             // End the recording before enumerating at or beyond its deadline.
             checkTerminal(session.terminal(SystemClock.elapsedRealtime()));
             updateAnalyses(SystemClock.elapsedRealtime());
-            if(!scalarActive()){reschedule(0);return;}
+            if(!scalarActive()){reschedule();return;}
             String screen=screenTerminal();
             if(!screen.isEmpty()){
-                terminate(screen,false);session.scene(session.foreground,session.user,false);clearThreadBaseline();stop();reschedule(0);return;
+                terminate(screen,false);session.scene(session.foreground,session.user,false);clearThreadBaseline();stop();reschedule();return;
             }
             long now=SystemClock.elapsedRealtime();
             String terminal=session.terminal(now);
@@ -466,7 +491,10 @@ class MonitorCollector {
                     power=-1;
                 }
             }
-            if(powerRecheckPending){if(sources.power.pending())powerDelay=800;powerRecheckPending=false;}
+            if(powerRecheckPending&&!sources.power.pending()){
+                powerRecheckPending=false;powerRecheckDeadlineMs=0;powerRechecksMerged++;
+                traceEdge("POWER_RECHECK_MERGED","edge="+powerEdgeId+" reason=SOURCE_CONFIRMED");
+            }
             if(capture){
                 MonitorSnapshot.Task process=identity(session.recordingPid);
                 if(process!=null&&session.sameProcess(process.tid,process.start)){
@@ -502,7 +530,7 @@ class MonitorCollector {
             for(java.util.Map.Entry<String,Object> field:powerDetails.entrySet())
                 data.put(field.getKey(),field.getValue()==null?JSONObject.NULL:field.getValue());
             lastSnapshot=data.toString();deliver(lastSnapshot);
-            traceEdge("SAMPLE_END","plugged="+plugged+" batteryStatus="+batteryStatus
+            traceEdge("SAMPLE_END","edge="+powerEdgeId+" plugged="+plugged+" batteryStatus="+batteryStatus
                     +" voltageMv="+milliVolts+" currentUa="+microAmps
                     +" batteryNetValidity="+powerDetails.get("batteryNetValidity")+" batteryNetPowerW="+powerDetails.get("batteryNetPowerW")
                     +" netSource="+powerDetails.get("batteryNetSource")+" netCurrentUa="+powerDetails.get("batteryNetCurrentUa")
@@ -515,14 +543,22 @@ class MonitorCollector {
         }catch(Exception e){error=boundedError(e.getClass().getSimpleName()+":"+e.getMessage());
             traceEdge("SAMPLE_END","error="+error);
             terminate("SOURCE_PIPELINE_FAILURE",true);stop();}
-        reschedule(powerDelay);
+        reschedule();
     }}
-    private void reschedule(long powerDelay){
+    private void reschedule(){
         if(!scalarActive()&&analyses.isEmpty()){drain();return;}
         if(handler!=null&&(scalarActive()||!analyses.isEmpty())&&!scheduled){
             scheduled=true;long next=epoch;
             long now=SystemClock.elapsedRealtime();
-            long delay=scalarActive()?(powerDelay>0?powerDelay:session.interval()):ThreadAnalysis.MAX_WALL;
+            long delay=scalarActive()?session.interval():ThreadAnalysis.MAX_WALL;
+            if(scalarActive()&&powerRecheckPending){
+                // The edge owns this deadline; replacing the queued clock cannot spend or extend it.
+                if(powerRecheckDeadlineMs==0){
+                    powerRecheckDeadlineMs=now+800;powerRechecksPlanned++;
+                    traceEdge("POWER_RECHECK_PLANNED","edge="+powerEdgeId+" deadlineMs="+powerRecheckDeadlineMs);
+                }
+                delay=Math.min(delay,Math.max(0,powerRecheckDeadlineMs-now));
+            }
             for(ThreadAnalysis a:analyses.values()){
                 if(a.recordBound)continue; // The Recording deadline and shared scan clock own this lifetime.
                 delay=Math.min(delay,Math.max(1,a.began+ThreadAnalysis.MAX_WALL-now));
@@ -533,7 +569,8 @@ class MonitorCollector {
                 delay=Math.min(delay,recordScanTime<0?1:Math.max(1,recordScanTime+ThreadAnalysis.INTERVAL-now));
                 delay=Math.min(delay,Math.max(1,session.recordingStart+MonitorSession.MAX_RECORD_MS-now));
             }
-            traceEdge("SCHEDULE","delayMs="+delay+" expectedPlugged="+expectedPowerPlugged);
+            traceEdge("SCHEDULE","delayMs="+delay+" expectedPlugged="+expectedPowerPlugged+" edge="+powerEdgeId
+                    +" recheckPending="+powerRecheckPending+" deadlineMs="+powerRecheckDeadlineMs);
             clock=()->sample(next);handler.postDelayed(clock,delay);
         }
     }

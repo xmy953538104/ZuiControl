@@ -103,6 +103,7 @@ python tests/gpu/TestAtomicPolicy.py
 python tests/gpu/TestBackupInspection.py
 python tests/gpu/TestFactoryReset.py
 python tests/monitor/TestPowerEdge.py
+python tests/monitor/TestPowerRecheckDeadline.py
 python tests/monitor/TestMonitorHealth.py
 python tests/monitor/TestThreadAnalysis.py
 python tests/monitor/TestFrontendV3.py
