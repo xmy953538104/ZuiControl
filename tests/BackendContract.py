@@ -116,7 +116,7 @@ assert GPU_POWER_R2['baseHead']=='f799f0847e6c7bbb2184925d45ad2ae1b64d87d9'
 assert set(GPU_POWER_R2['allowedPaths'])=={r['path'] for r in GPU_POWER_R2['files']}=={
     'framework_patch/src/services/com/zui/server/control/GpuPolicyController.java',
     'framework_patch/src/services/com/zui/server/control/ZuiControlService.java',
-    '.github/workflows/build.yml','tests/gpu/TestGpuRecovery.py'}
+    '.github/workflows/build.yml','tests/gpu/TestGpuRecovery.py','tests/gpu/GpuProofTest.java'}
 
 def reverse_response_battery(path,text):
     delta=next((r for r in GPU_POWER_R2['files'] if r['path']==path),None)

@@ -12,10 +12,11 @@ final class GpuPolicyController {
         default String diagnostic() { return ""; }
     }
     static final class QtiTransport implements Transport {
-        private Object boost;
-        private Method acquire;
-        private Method release;
-        private boolean noLeaseProof;
+        private static final String NAME = "vendor.qti.hardware.perf2.IPerf/default";
+        private static final String TOKEN = "vendor.qti.hardware.perf2.IPerf";
+        private static final String HASH = "c5d67f27386b8feb13a185a4cdd647afbeb758ce";
+        private Object service;
+        private boolean noLeaseProof = true;
         private String diagnostic = "NOT_INITIALIZED";
         private static Object invoke(Method method, Object object, Object... args) throws Exception {
             try { return method.invoke(object, args); }
@@ -26,71 +27,82 @@ final class GpuPolicyController {
                 throw e;
             }
         }
+        private Object call(int code, int handle, int duration, int[] pairs) throws Exception {
+            Class<?> parcel = Class.forName("android.os.Parcel");
+            Object input = invoke(parcel.getMethod("obtain"), null);
+            Object output = invoke(parcel.getMethod("obtain"), null);
+            try {
+                invoke(parcel.getMethod("writeInterfaceToken", String.class), input, TOKEN);
+                if (code == 11 || code == 13) {
+                    invoke(parcel.getMethod("writeInt", int.class), input, handle);
+                    if (code == 11) {
+                        invoke(parcel.getMethod("writeInt", int.class), input, duration);
+                        invoke(parcel.getMethod("writeIntArray", int[].class), input, pairs);
+                    }
+                    Class<?> process = Class.forName("android.os.Process");
+                    int tid = (Integer) invoke(process.getMethod("myTid"), null);
+                    int pid = (Integer) invoke(process.getMethod("myPid"), null);
+                    invoke(parcel.getMethod("writeIntArray", int[].class), input, new int[] {tid, pid});
+                }
+                // V1 proxy 515c383f: acquire11(handle,duration,pairs,reserved), release13(handle,reserved).
+                if (code == 11) noLeaseProof = false;
+                boolean handled = Boolean.TRUE.equals(invoke(Class.forName("android.os.IBinder").getMethod(
+                        "transact", int.class, parcel, parcel, int.class), service, code, input, output, 0));
+                if (!handled) {
+                    if (code == 11) noLeaseProof = true; // UNKNOWN_TRANSACTION never entered the method.
+                    throw new IllegalStateException("Perf2 V1 method unavailable: " + code);
+                }
+                invoke(parcel.getMethod("readException"), output);
+                Object value = code == 13 ? Integer.valueOf(0) : invoke(parcel.getMethod(
+                        code == 16777214 ? "readString" : "readInt"), output);
+                if ((Integer) invoke(parcel.getMethod("dataAvail"), output) != 0)
+                    throw new IllegalStateException("Perf2 V1 reply grammar: " + code + ":" + value);
+                return value;
+            } finally {
+                invoke(parcel.getMethod("recycle"), input);
+                invoke(parcel.getMethod("recycle"), output);
+            }
+        }
         private void init() throws Exception {
-            if (boost != null) return;
-            noLeaseProof = true; // No acquire has crossed the transport boundary.
+            if (service != null && Boolean.TRUE.equals(invoke(
+                    Class.forName("android.os.IBinder").getMethod("pingBinder"), service))) return;
+            if (!noLeaseProof) throw new IllegalStateException("Previous Perf2 ownership unresolved");
+            service = null;
             Class<?> manager = Class.forName("android.os.ServiceManager");
-            Object service = invoke(manager.getMethod("checkService", String.class), null,
-                    "vendor.qti.hardware.perf2.IPerf/default");
+            service = invoke(manager.getMethod("checkService", String.class), null, NAME);
             if (service == null || !Boolean.TRUE.equals(invoke(
                     Class.forName("android.os.IBinder").getMethod("pingBinder"), service))) {
                 diagnostic = "HAL_SERVICE_NOT_READY:beforeAcquire";
                 throw new IllegalStateException("QTI HAL service not ready before acquire");
             }
-            Class<?> cls = Class.forName("android.util.BoostFramework");
-            Object instance = cls.getConstructor().newInstance();
-            java.lang.reflect.Field perf = cls.getDeclaredField("mPerf");
-            perf.setAccessible(true);
-            Object client = perf.get(instance);
-            if (client == null) throw new IllegalStateException("QTI client not initialized");
-            Class<?> owner = client.getClass();
-            if (!"com.qualcomm.qti.Performance".equals(owner.getName()))
-                throw new IllegalStateException("Unsupported QTI client " + owner.getName());
-            Method version = owner.getMethod("perfGetHalVer");
-            Object hal;
-            try { hal = invoke(version, client); }
-            catch (UnsatisfiedLinkError notRegistered) {
-                // Register JNI for its boot-class owner, not this services classloader.
-                Method load = Runtime.class.getDeclaredMethod("loadLibrary0", Class.class, String.class);
-                load.setAccessible(true);
-                invoke(load, Runtime.getRuntime(), owner, "qti_performance");
-                hal = invoke(version, client);
+            String token = (String) invoke(Class.forName("android.os.IBinder").getMethod("getInterfaceDescriptor"), service);
+            if (!TOKEN.equals(token)) {
+                service = null;
+                diagnostic = "UNSUPPORTED_PERF2_DESCRIPTOR:" + token;
+                throw new IllegalStateException(diagnostic);
             }
-            if (!(hal instanceof Number) || !Double.isFinite(((Number) hal).doubleValue())
-                    || ((Number) hal).doubleValue() <= 0) {
-                diagnostic = "HAL_VERSION_NOT_READY:" + hal + ":beforeAcquire";
-                throw new IllegalStateException("QTI HAL version not ready before acquire");
+            int version = (Integer) call(16777215, 0, 0, null);
+            String hash = (String) call(16777214, 0, 0, null);
+            if (version != 1 || !HASH.equals(hash)) {
+                diagnostic = "UNSUPPORTED_PERF2_ABI:" + version + ":" + hash;
+                service = null;
+                throw new IllegalStateException(diagnostic);
             }
-            Method a = owner.getMethod("perfLockAcquire", int.class, int[].class);
-            Method r = owner.getMethod("perfLockReleaseHandler", int.class);
-            acquire = a;
-            release = r;
-            boost = client;
-            diagnostic = "JNI_READY:hal=" + hal + ":client=" + owner.getName();
+            diagnostic = "AIDL_V1_READY:hash=" + hash;
         }
         public int acquire(int duration, int[] pairs) throws Exception {
-            try { init(); }
-            catch (LinkageError e) { throw new IllegalStateException("QTI before acquire:" + e, e); }
-            noLeaseProof = false;
-            try { return ((Integer) invoke(acquire, boost, duration, pairs)).intValue(); }
-            catch (LinkageError e) {
-                noLeaseProof = e instanceof UnsatisfiedLinkError;
-                throw new IllegalStateException("QTI native entry failure", e);
-            }
+            init();
+            return (Integer) call(11, 0, duration, pairs);
         }
         public int release(int handle) throws Exception {
-            init();
-            try {
-                int result = ((Integer) invoke(release, boost, handle)).intValue();
-                // This OEM release-handler API leaves Performance.mHandle unchanged.
-                if (result >= 0) { boost = null; noLeaseProof = true; }
-                return result;
-            }
-            catch (LinkageError e) { throw new IllegalStateException("QTI release native entry failure", e); }
+            if (service == null) throw new IllegalStateException("Original Perf2 owner unavailable");
+            call(13, handle, 0, null); // This V1 release returns a void status ACK.
+            noLeaseProof = true;
+            return 0;
         }
         public boolean recoverUnowned() throws Exception {
             if (!noLeaseProof) return false;
-            boost = null;
+            service = null;
             init();
             return true;
         }
@@ -109,6 +121,7 @@ final class GpuPolicyController {
     private int acquireCount;
     private int releaseCount;
     private int lastRelease = -1;
+    private boolean releaseUncertain;
     private String error = "";
     private long firstAcquireMonotonicNs;
     private String firstAcquireTarget = "";
@@ -174,16 +187,19 @@ final class GpuPolicyController {
 
     private boolean releaseOwned() {
         if (handle <= 0) return true;
+        if (releaseUncertain) return false;
         try {
             lastRelease = transport.release(handle);
             releaseCount++;
             if (lastRelease < 0) throw new IllegalStateException("release returned " + lastRelease);
             handle = 0;
             owned = null;
+            releaseUncertain = false;
             return true;
         } catch (Exception e) {
             // Keep the uncertain handle visible and never acquire a second one.
             failed = true;
+            releaseUncertain = true;
             acquireFailure = false;
             mode = "OFF";
             error = "release:" + e.getClass().getSimpleName() + ":" + e.getMessage();
@@ -204,6 +220,7 @@ final class GpuPolicyController {
                 + "\ngpuAcquireCount=" + acquireCount + "\ngpuReleaseCount=" + releaseCount
                 + "\ngpuLastRelease=" + lastRelease + "\ngpuTransport=QTI_PerfLock"
                 + "\ngpuRecoveryCount=" + recoveryCount + "\ngpuTransportDiagnostic=" + transport.diagnostic()
+                + "\ngpuReleaseUncertain=" + releaseUncertain
                 + "\ngpuFirstAcquireMonotonicNs=" + firstAcquireMonotonicNs + "\ngpuFirstAcquireTarget=" + firstAcquireTarget
                 + "\ngpuPeriodicWork=0";
     }

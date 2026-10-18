@@ -39,55 +39,82 @@ with tempfile.TemporaryDirectory() as tmp:
     tmp=Path(tmp);(tmp/'GpuRecoveryTest.java').write_text(fixture,encoding='utf8')
     subprocess.run(['javac','-encoding','UTF-8','-d',str(tmp),str(source/'GpuPolicyController.java'),str(source/'GpuRange.java'),str(tmp/'GpuRecoveryTest.java')],check=True)
     subprocess.run(['java','-cp',str(tmp),'com.zui.server.control.GpuRecoveryTest'],check=True)
-    perf=tmp/'com/qualcomm/qti/Performance.java';perf.parent.mkdir(parents=True)
-    perf.write_text('''package com.qualcomm.qti;
-public class Performance {
- public static boolean ready,ambiguous;public static int calls,active;public static double version=2.3;
- private boolean released;
- public double perfGetHalVer(){if(!ready)throw new UnsatisfiedLinkError("not registered");return version;}
- public int perfLockAcquire(int duration,int[] pairs){if(released)throw new AssertionError("released client reused");calls++;if(ambiguous){active=99;return -1;}return active=73;}
- public int perfLockReleaseHandler(int handle){if(handle!=active)throw new AssertionError("wrong handle");released=true;active=0;return 1;}
-}''',encoding='utf8')
-    boost=tmp/'android/util/BoostFramework.java';boost.parent.mkdir(parents=True)
-    boost.write_text('''package android.util;
-public class BoostFramework {private Object mPerf=new com.qualcomm.qti.Performance();}
-''',encoding='utf8')
     binder=tmp/'android/os/IBinder.java';binder.parent.mkdir(parents=True)
-    binder.write_text('package android.os;public interface IBinder{boolean pingBinder();}',encoding='utf8')
+    binder.write_text('''package android.os;public interface IBinder{
+ boolean pingBinder();String getInterfaceDescriptor();boolean transact(int code,Parcel in,Parcel out,int flags);
+}''',encoding='utf8')
+    parcel=tmp/'android/os/Parcel.java'
+    parcel.write_text('''package android.os;
+public class Parcel {
+ public java.util.ArrayList<Object> values=new java.util.ArrayList<>();public int position;
+ public static int obtained,recycled;
+ public static Parcel obtain(){obtained++;return new Parcel();}
+ public void writeInterfaceToken(String s){values.add(s);} public void writeInt(int n){values.add(n);}
+ public void writeIntArray(int[] v){values.add(v.clone());} public void writeString(String s){values.add(s);}
+ public void readException(){} public int readInt(){return (Integer)values.get(position++);}
+ public String readString(){return (String)values.get(position++);} public int dataAvail(){return values.size()-position;}
+ public void recycle(){recycled++;}
+}''',encoding='utf8')
+    process=tmp/'android/os/Process.java'
+    process.write_text('package android.os;public class Process{public static int myTid(){return 14;}public static int myPid(){return 28;}}',encoding='utf8')
     manager=tmp/'android/os/ServiceManager.java'
     manager.write_text('''package android.os;
-public class ServiceManager{public static boolean ready=true;
- public static IBinder checkService(String name){if(!name.equals("vendor.qti.hardware.perf2.IPerf/default"))throw new AssertionError(name);return ready?()->true:null;}}
+public class ServiceManager {
+ public static boolean ready=true;public static Perf binder=new Perf();
+ public static IBinder checkService(String name){if(!name.equals("vendor.qti.hardware.perf2.IPerf/default"))throw new AssertionError(name);return ready?binder:null;}
+ public static class Perf implements IBinder {
+  public int calls,releases,active,version=1;public boolean ambiguous,releaseFails,dead,unknown,extra;
+  public String hash="c5d67f27386b8feb13a185a4cdd647afbeb758ce";
+  public boolean pingBinder(){return !dead;}public String getInterfaceDescriptor(){return "vendor.qti.hardware.perf2.IPerf";}
+  public boolean transact(int code,Parcel in,Parcel out,int flags){
+   if(dead)throw new IllegalStateException("DEAD_OBJECT");
+   if(flags!=0||!in.values.get(0).equals(getInterfaceDescriptor()))throw new AssertionError("protocol");
+   if(code==16777215){out.writeInt(version);return true;}if(code==16777214){out.writeString(hash);return true;}
+   if(code==11){
+    if(unknown)return false;
+    if(active!=0||in.values.size()!=5||(Integer)in.values.get(1)!=0||(Integer)in.values.get(2)!=0)throw new AssertionError("fresh exclusive acquisition grammar");
+    if(!java.util.Arrays.equals((int[])in.values.get(3),new int[]{0x42804000,8,0x42808000,0})||!java.util.Arrays.equals((int[])in.values.get(4),new int[]{14,28}))throw new AssertionError("pairs/reserved");
+    calls++;active=73;if(ambiguous){active=99;out.writeInt(-1);}else out.writeInt(active);if(extra)out.writeInt(123);return true;
+   }
+   if(code==13){releases++;if(in.values.size()!=3||(Integer)in.values.get(1)!=active)throw new AssertionError("release owner grammar");if(releaseFails)throw new IllegalStateException("lost release ACK");active=0;return true;}
+   throw new AssertionError("unqualified transaction "+code);
+  }
+ }
+}
 ''',encoding='utf8')
     native_test=tmp/'QtiBoundaryTest.java'
     native_test.write_text('''package com.zui.server.control;
-import com.qualcomm.qti.Performance;
+import android.os.ServiceManager;import android.os.Parcel;
 public class QtiBoundaryTest {
  static void need(boolean value,String reason){if(!value)throw new AssertionError(reason);}
  static void scene(GpuPolicyController c){c.resolve("test.app","performance",null,true,true,true);}
  public static void main(String[]args){
+  ServiceManager.ready=false;
   GpuPolicyController c=new GpuPolicyController(new GpuPolicyController.QtiTransport());
-  scene(c);need(Performance.calls==0,"unregistered JNI crossed acquire boundary");
-  Performance.ready=true;scene(c);need(Performance.calls==0,"implicit retry");
-  need(c.recover(),"proven pre-call failure did not recover");scene(c);need(Performance.calls==1 && Performance.active==73,"no real acquisition");
-  c.resolve("home","balance",null,false,true,true);need(Performance.active==0,"release");
-  scene(c);need(Performance.calls==2 && Performance.active==73,"fresh client after acknowledged release");
+  scene(c);ServiceManager.ready=true;scene(c);need(ServiceManager.binder.calls==0,"implicit service retry");
+  need(c.recover(),"proven pre-IPC failure cannot recover");scene(c);need(ServiceManager.binder.calls==1&&ServiceManager.binder.active==73,"live V1 acquisition");
+  scene(c);need(ServiceManager.binder.calls==1,"same range dedup");
+  c.resolve("home","balance",null,false,true,true);need(ServiceManager.binder.active==0,"void ACK release");
+  scene(c);need(ServiceManager.binder.calls==2,"fresh handle after release");
   c.resolve("home","balance",null,false,true,true);
-  android.os.ServiceManager.ready=false;int count=Performance.calls;
-  c=new GpuPolicyController(new GpuPolicyController.QtiTransport());scene(c);
-  need(Performance.calls==count,"unready HAL received an acquisition");
-  android.os.ServiceManager.ready=true;scene(c);need(Performance.calls==count,"service readiness caused generic retry");
-  need(c.recover(),"ready service cannot recover proven pre-IPC failure");scene(c);
-  need(Performance.calls==count+1 && Performance.active==73,"explicit service recovery");
+  ServiceManager.binder.dead=true;ServiceManager.binder=new ServiceManager.Perf();
+  scene(c);need(ServiceManager.binder.calls==1&&ServiceManager.binder.active==73,"safe zero-owned service rebind");
   c.resolve("home","balance",null,false,true,true);
-  Performance.version=0;count=Performance.calls;c=new GpuPolicyController(new GpuPolicyController.QtiTransport());scene(c);
-  need(Performance.calls==count,"unready native version received acquire");Performance.version=2.3;
-  need(c.recover(),"version readiness proof");scene(c);c.resolve("home","balance",null,false,true,true);
-  Performance.ambiguous=true;c=new GpuPolicyController(new GpuPolicyController.QtiTransport());scene(c);
-  int before=Performance.calls;need(!c.recover(),"negative return treated as no remote lease");scene(c);
-  need(Performance.calls==before && Performance.active==99,"double unknown handle");
-  System.out.println("REAL_QTI_TRANSPORT_PRECALL_PROOF=PASS; AMBIGUOUS_NEGATIVE_REJECTED=PASS");
+  ServiceManager.binder=new ServiceManager.Perf();ServiceManager.binder.hash="wrong";
+  c=new GpuPolicyController(new GpuPolicyController.QtiTransport());scene(c);need(ServiceManager.binder.calls==0,"unqualified ABI crossed GPU boundary");
+  ServiceManager.binder.hash="c5d67f27386b8feb13a185a4cdd647afbeb758ce";need(c.recover(),"ABI restored before any acquisition");scene(c);c.resolve("home","balance",null,false,true,true);
+  ServiceManager.binder=new ServiceManager.Perf();ServiceManager.binder.ambiguous=true;
+  c=new GpuPolicyController(new GpuPolicyController.QtiTransport());scene(c);need(!c.recover(),"negative return implies no remote lease");scene(c);need(ServiceManager.binder.calls==1&&ServiceManager.binder.active==99,"double unknown handle");
+  ServiceManager.binder=new ServiceManager.Perf();ServiceManager.binder.extra=true;
+  c=new GpuPolicyController(new GpuPolicyController.QtiTransport());scene(c);need(!c.recover(),"malformed reply discarded possible handle");scene(c);need(ServiceManager.binder.calls==1,"reply error triggered second request");
+  ServiceManager.binder=new ServiceManager.Perf();ServiceManager.Perf original=ServiceManager.binder;
+  c=new GpuPolicyController(new GpuPolicyController.QtiTransport());scene(c);original.releaseFails=true;c.resolve("home","balance",null,false,true,true);
+  ServiceManager.binder=new ServiceManager.Perf();ServiceManager.binder.active=99;
+  for(int i=0;i<4;i++)scene(c);c.failSafe("manual");need(original.releases==1,"unknown release repeated on navigation");
+  need(!c.recover()&&ServiceManager.binder.calls==0&&ServiceManager.binder.active==99,"new service's foreign lease touched");
+  need(Parcel.obtained==Parcel.recycled,"parcel leak");
+  System.out.println("REAL_AIDL_V1_BOUNDARY=PASS; UNKNOWN_RELEASE_NO_RETRY=PASS; NO_DOUBLE_HANDLE=PASS");
  }
 }''',encoding='utf8')
-    subprocess.run(['javac','-encoding','UTF-8','-d',str(tmp),str(source/'GpuPolicyController.java'),str(source/'GpuRange.java'),str(perf),str(boost),str(binder),str(manager),str(native_test)],check=True)
+    subprocess.run(['javac','-encoding','UTF-8','-d',str(tmp),str(source/'GpuPolicyController.java'),str(source/'GpuRange.java'),str(binder),str(parcel),str(process),str(manager),str(native_test)],check=True)
     subprocess.run(['java','-cp',str(tmp),'com.zui.server.control.QtiBoundaryTest'],check=True)

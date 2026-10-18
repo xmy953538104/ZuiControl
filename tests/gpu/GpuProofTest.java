@@ -114,7 +114,8 @@ public final class GpuProofTest {
         c.resolve(game,"performance",null,true,true,true);
         check(f.count == 1 && f.active > 0 && c.stateLines().contains("gpuFailSafe=true"));
         f.releaseResult = 1; c.resolve(game,"performance",null,true,true,false);
-        check(f.active == 0);
+        check(f.active > 0 && c.stateLines().contains("gpuReleaseUncertain=true"));
+        // A later successful stub cannot prove that the old handle was not reused remotely.
         GpuRange global = new GpuRange(231,500), override = new GpuRange(422,500);
         check(GpuRange.resolve(null,null,"performance").same(new GpuRange(422,903)));
         check(GpuRange.resolve(null,global,"performance").same(global));
