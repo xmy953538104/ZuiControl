@@ -29,6 +29,14 @@ final class GpuPolicyController {
         private void init() throws Exception {
             if (boost != null) return;
             noLeaseProof = true; // No acquire has crossed the transport boundary.
+            Class<?> manager = Class.forName("android.os.ServiceManager");
+            Object service = invoke(manager.getMethod("checkService", String.class), null,
+                    "vendor.qti.hardware.perf2.IPerf/default");
+            if (service == null || !Boolean.TRUE.equals(invoke(
+                    Class.forName("android.os.IBinder").getMethod("pingBinder"), service))) {
+                diagnostic = "HAL_SERVICE_NOT_READY:beforeAcquire";
+                throw new IllegalStateException("QTI HAL service not ready before acquire");
+            }
             Class<?> cls = Class.forName("android.util.BoostFramework");
             Object instance = cls.getConstructor().newInstance();
             java.lang.reflect.Field perf = cls.getDeclaredField("mPerf");
@@ -47,6 +55,11 @@ final class GpuPolicyController {
                 load.setAccessible(true);
                 invoke(load, Runtime.getRuntime(), owner, "qti_performance");
                 hal = invoke(version, client);
+            }
+            if (!(hal instanceof Number) || !Double.isFinite(((Number) hal).doubleValue())
+                    || ((Number) hal).doubleValue() <= 0) {
+                diagnostic = "HAL_VERSION_NOT_READY:" + hal + ":beforeAcquire";
+                throw new IllegalStateException("QTI HAL version not ready before acquire");
             }
             Method a = owner.getMethod("perfLockAcquire", int.class, int[].class);
             Method r = owner.getMethod("perfLockReleaseHandler", int.class);

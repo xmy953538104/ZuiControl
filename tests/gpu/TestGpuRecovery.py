@@ -42,15 +42,22 @@ with tempfile.TemporaryDirectory() as tmp:
     perf=tmp/'com/qualcomm/qti/Performance.java';perf.parent.mkdir(parents=True)
     perf.write_text('''package com.qualcomm.qti;
 public class Performance {
- public static boolean ready,ambiguous;public static int calls,active;
+ public static boolean ready,ambiguous;public static int calls,active;public static double version=2.3;
  private boolean released;
- public double perfGetHalVer(){if(!ready)throw new UnsatisfiedLinkError("not registered");return 2.3;}
+ public double perfGetHalVer(){if(!ready)throw new UnsatisfiedLinkError("not registered");return version;}
  public int perfLockAcquire(int duration,int[] pairs){if(released)throw new AssertionError("released client reused");calls++;if(ambiguous){active=99;return -1;}return active=73;}
  public int perfLockReleaseHandler(int handle){if(handle!=active)throw new AssertionError("wrong handle");released=true;active=0;return 1;}
 }''',encoding='utf8')
     boost=tmp/'android/util/BoostFramework.java';boost.parent.mkdir(parents=True)
     boost.write_text('''package android.util;
 public class BoostFramework {private Object mPerf=new com.qualcomm.qti.Performance();}
+''',encoding='utf8')
+    binder=tmp/'android/os/IBinder.java';binder.parent.mkdir(parents=True)
+    binder.write_text('package android.os;public interface IBinder{boolean pingBinder();}',encoding='utf8')
+    manager=tmp/'android/os/ServiceManager.java'
+    manager.write_text('''package android.os;
+public class ServiceManager{public static boolean ready=true;
+ public static IBinder checkService(String name){if(!name.equals("vendor.qti.hardware.perf2.IPerf/default"))throw new AssertionError(name);return ready?()->true:null;}}
 ''',encoding='utf8')
     native_test=tmp/'QtiBoundaryTest.java'
     native_test.write_text('''package com.zui.server.control;
@@ -66,11 +73,21 @@ public class QtiBoundaryTest {
   c.resolve("home","balance",null,false,true,true);need(Performance.active==0,"release");
   scene(c);need(Performance.calls==2 && Performance.active==73,"fresh client after acknowledged release");
   c.resolve("home","balance",null,false,true,true);
+  android.os.ServiceManager.ready=false;int count=Performance.calls;
+  c=new GpuPolicyController(new GpuPolicyController.QtiTransport());scene(c);
+  need(Performance.calls==count,"unready HAL received an acquisition");
+  android.os.ServiceManager.ready=true;scene(c);need(Performance.calls==count,"service readiness caused generic retry");
+  need(c.recover(),"ready service cannot recover proven pre-IPC failure");scene(c);
+  need(Performance.calls==count+1 && Performance.active==73,"explicit service recovery");
+  c.resolve("home","balance",null,false,true,true);
+  Performance.version=0;count=Performance.calls;c=new GpuPolicyController(new GpuPolicyController.QtiTransport());scene(c);
+  need(Performance.calls==count,"unready native version received acquire");Performance.version=2.3;
+  need(c.recover(),"version readiness proof");scene(c);c.resolve("home","balance",null,false,true,true);
   Performance.ambiguous=true;c=new GpuPolicyController(new GpuPolicyController.QtiTransport());scene(c);
   int before=Performance.calls;need(!c.recover(),"negative return treated as no remote lease");scene(c);
   need(Performance.calls==before && Performance.active==99,"double unknown handle");
   System.out.println("REAL_QTI_TRANSPORT_PRECALL_PROOF=PASS; AMBIGUOUS_NEGATIVE_REJECTED=PASS");
  }
 }''',encoding='utf8')
-    subprocess.run(['javac','-encoding','UTF-8','-d',str(tmp),str(source/'GpuPolicyController.java'),str(source/'GpuRange.java'),str(perf),str(boost),str(native_test)],check=True)
+    subprocess.run(['javac','-encoding','UTF-8','-d',str(tmp),str(source/'GpuPolicyController.java'),str(source/'GpuRange.java'),str(perf),str(boost),str(binder),str(manager),str(native_test)],check=True)
     subprocess.run(['java','-cp',str(tmp),'com.zui.server.control.QtiBoundaryTest'],check=True)
