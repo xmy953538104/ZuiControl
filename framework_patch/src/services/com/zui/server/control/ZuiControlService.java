@@ -750,6 +750,11 @@ public final class ZuiControlService extends Binder {
     protected synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         int uid=Binder.getCallingUid();
         if(uid==Process.ROOT_UID||uid==Process.SHELL_UID||uid==Process.SYSTEM_UID){
+            if(args!=null)for(String arg:args)if("--gpu-recover".equals(arg)){
+                boolean recovered=mGpuPolicy.recover();
+                if(recovered)mUperfScenePolicy.refreshGpu();
+                pw.println("gpuExplicitRecovery="+recovered);
+            }
             if(args!=null)for(String arg:args)if(arg.startsWith("--edge-trace-seconds="))
                 mMonitor.armEdgeTrace(Integer.parseInt(arg.substring("--edge-trace-seconds=".length())));
             pw.print(state()+mMonitor.edgeTrace());

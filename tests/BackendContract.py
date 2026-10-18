@@ -110,7 +110,22 @@ for path,before,after in (
     local=original.replace(before,after,1)
     BASELINE_LOCAL[path]=(original,local)
 
+GPU_POWER_R2=json.loads((ROOT/'tests/gpu_power_source_r2_delta.json').read_text(encoding='utf8'))
+assert GPU_POWER_R2['phase']=='ZUICONTROL_GPU_RECOVERY_AND_POWER_SOURCE_R2'
+assert GPU_POWER_R2['baseHead']=='f799f0847e6c7bbb2184925d45ad2ae1b64d87d9'
+assert set(GPU_POWER_R2['allowedPaths'])=={r['path'] for r in GPU_POWER_R2['files']}=={
+    'framework_patch/src/services/com/zui/server/control/GpuPolicyController.java',
+    'framework_patch/src/services/com/zui/server/control/ZuiControlService.java',
+    '.github/workflows/build.yml','tests/gpu/TestGpuRecovery.py'}
+
 def reverse_response_battery(path,text):
+    delta=next((r for r in GPU_POWER_R2['files'] if r['path']==path),None)
+    if delta:
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('GPU_POWER_R2 exact authorized bytes',path)
+        for h in reversed(delta['hunks']):
+            assert text.count(h['after'])==1,('GPU_POWER_R2 exact hunk',path)
+            text=text.replace(h['after'],h['before'],1)
+        assert hashlib.sha256(text.encode()).hexdigest()==delta['beforeSha256'],('GPU_POWER_R2 preserved f799 source',path)
     delta=next((r for r in POWER_RECHECK['files'] if r['path']==path),None)
     if delta:
         assert hashlib.sha256(text.encode()).hexdigest()==delta['afterSha256'],('POWER_RECHECK exact authorized bytes',path)
@@ -166,6 +181,11 @@ def reverse_response_battery(path,text):
 
 def reverse_response_battery_entries(current,*scopes):
     result=list(current)
+    for row in GPU_POWER_R2['files']:
+        if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
+        assert result.count(row['afterEntry'].encode())==1,('GPU_POWER_R2 exact authorized source',row['path'])
+        result.remove(row['afterEntry'].encode())
+        if row['beforeEntry'] is not None:result.append(row['beforeEntry'].encode())
     for row in POWER_RECHECK['files']:
         if not any(row['path'].startswith(scope+'/') for scope in scopes):continue
         assert result.count(row['afterEntry'].encode())==1,('POWER_RECHECK exact authorized source',row['path'])

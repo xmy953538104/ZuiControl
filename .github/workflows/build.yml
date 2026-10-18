@@ -138,6 +138,7 @@ jobs:
           python3 tests/monitor/TestFinalIntegration.py || app_failed=1
           python3 tests/zuiopt/TestRulePublisher.py || app_failed=1
           python3 tests/gpu/TestGpuTouch.py || app_failed=1
+          python3 tests/gpu/TestGpuRecovery.py || app_failed=1
           python3 tests/monitor/TestDropdownSelection.py || app_failed=1
           python3 tests/monitor/TestPendingIntentCache.py || app_failed=1
           for case in null empty throw ok rejection; do
