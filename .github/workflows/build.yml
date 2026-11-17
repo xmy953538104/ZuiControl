@@ -2,6 +2,11 @@ name: Build ZuiControl
 
 on:
   workflow_dispatch:
+    inputs:
+      reproduce_apk:
+        description: Rebuild the exact previously released source for byte comparison only
+        type: boolean
+        default: false
   push:
     paths:
       - "app/**"
@@ -18,6 +23,7 @@ on:
 
 jobs:
   build:
+    if: ${{ !inputs.reproduce_apk }}
     runs-on: ubuntu-latest
 
     steps:
@@ -579,3 +585,60 @@ jobs:
         with:
           name: zui-control-payload
           path: payload
+
+  reproduce_apk:
+    if: ${{ inputs.reproduce_apk }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 0e8aebcedbee4eb7a0ddbc5c457b30b5aa447a85
+          fetch-depth: 0
+          clean: false
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+          cache-disabled: true
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install original build-tool versions
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "build-tools;36.0.0"
+      - name: Recompile and sign original release source
+        env:
+          RELEASE_KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 0e8aebcedbee4eb7a0ddbc5c457b30b5aa447a85
+          test ! -d app/build
+          printf '%s' "$RELEASE_KEYSTORE" | base64 -d > "$RUNNER_TEMP/ZuiControl-release.jks"
+          export KEYSTORE_FILE="$RUNNER_TEMP/ZuiControl-release.jks"
+          mkdir reproduction-evidence
+          git rev-parse HEAD > reproduction-evidence/source-head.txt
+          java -version 2> reproduction-evidence/java-version.txt
+          gradle --version > reproduction-evidence/gradle-version.txt
+          gradle -p . --no-build-cache --rerun-tasks :app:assembleRelease
+          sha256sum app/build/outputs/apk/release/app-release.apk > reproduction-evidence/apk.sha256
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk > reproduction-evidence/certificate.txt
+          find app/build/intermediates -path '*sdk_dependency*' -type f -exec cp --parents '{}' reproduction-evidence/ \;
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reproduction-signed-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reproduction-build-evidence
+          path: reproduction-evidence
+          if-no-files-found: error
